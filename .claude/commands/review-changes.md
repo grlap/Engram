@@ -1,0 +1,134 @@
+---
+name: review-changes
+description: Run Engram quality gates, freeze the worktree, and obtain independent Codex and Claude reviews.
+metadata:
+  termal:
+    title:
+      strategy: default
+---
+
+Review all staged, unstaged, and untracked changes from the existing writable
+parent session.
+
+**Do not delegate `/review-changes` itself.** The parent owns build artifacts,
+quality gates, the worktree freeze, fan-in, and Beads reconciliation. Only the
+two `/review-code` children are delegated, both with `writePolicy: readOnly`.
+
+**Never commit, push, rebase, sync remotes, or close beads without explicit
+user authority.**
+
+This workflow requires TermAl MCP delegation tools. Attempt exactly two child
+spawns: one Codex and one Claude. Do not substitute platform subagents, shell
+processes, raw HTTP, or nested TermAl review sessions.
+
+## 1. Confirm the target
+
+Run:
+
+```bash
+git status --short
+git diff --name-only
+git diff --cached --name-only
+git ls-files --others --exclude-standard
+```
+
+If there are no changes, report that and stop.
+
+## 2. Run parent-owned gates
+
+Run, in order:
+
+```bash
+cargo fmt --check
+cargo check
+cargo clippy --all-targets --all-features -- -D warnings
+scripts/test-rust.sh
+node --test scripts/review-freeze-fingerprint.test.mjs
+node scripts/check-doc-links.mjs
+```
+
+On any failure, stop the review workflow and immediately investigate the
+failing path. Classify and fix the product/test/environment defect or create or
+update a Beads item with evidence. Do not spawn reviewers until every gate
+passes.
+
+## 3. Freeze the review input
+
+Run:
+
+```bash
+node scripts/review-freeze-fingerprint.mjs --write .git/engram-review-freeze.json
+```
+
+The snapshot covers HEAD, the index, tracked worktree changes, untracked file
+contents, symlink targets, and executable modes. The file is kept under `.git`
+so it never becomes review input.
+
+## 4. Spawn exactly two reviewers
+
+Use `termal_spawn_session` twice from the current parent:
+
+1. Codex: prompt `/review-code`, mode `reviewer`, `writePolicy: readOnly`, title
+   `Codex /review-code`.
+2. Claude: prompt `/review-code`, mode `reviewer`, `writePolicy: readOnly`, title
+   `Claude /review-code`.
+
+If one spawn fails after the other succeeds, continue waiting for the created
+reviewer and report the missing one as unavailable.
+
+## 5. Wait through TermAl fan-in
+
+Call `termal_resume_after_delegations` with the created delegation ids and
+`mode: "all"`. Report the wait id and child session ids, then end the turn.
+Do not continue until TermAl resumes the parent with the fan-in prompt.
+
+## 6. Verify the freeze and collect results
+
+Before accepting reviewer output, run:
+
+```bash
+node scripts/review-freeze-fingerprint.mjs --check .git/engram-review-freeze.json
+```
+
+If it reports drift, stop: the reviewers did not inspect the current input and
+the review must be restarted from the gates.
+
+Fetch both structured result packets using `termal_get_session_result`.
+Validated structured submissions are authoritative. If a submission is
+missing or failed, report that reviewer as unavailable; never infer a clean
+review from prose output.
+
+Present:
+
+```markdown
+# Delegated Review
+
+## Codex /review-code
+- Status:
+- Findings:
+- Changed files:
+- Commands run:
+
+## Claude /review-code
+- Status:
+- Findings:
+- Changed files:
+- Commands run:
+
+## Consolidated Action
+- Critical/High:
+- Medium/Low:
+- Notes:
+```
+
+Deduplicate overlapping findings and tracker suggestions.
+
+## 7. Reconcile Beads in the parent
+
+Only after consolidation, search Beads for each actionable finding. Create a
+bug/task only when it is not already tracked; otherwise update or comment on
+the existing bead. Do not close implementation beads—record evidence and leave
+final closure to Greg. Informational notes need no tracker mutation.
+
+Do not fix source files during this command. Review findings begin a separate
+implementation iteration followed by fresh gates and review.

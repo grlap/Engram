@@ -1,0 +1,581 @@
+//! MCP stdio surface for Engram's common coding-agent memory loop.
+
+use std::{path::PathBuf, str::FromStr};
+
+use chrono::Utc;
+use rmcp::{
+    ServerHandler, handler::server::wrapper::Parameters, model::CallToolResult,
+    schemars::JsonSchema, tool, tool_handler, tool_router,
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::{
+    ActorContext, Authority, ChangeCursor, DevelopmentNoopRedactor, MemoryKind, NoteRequest,
+    NoteVisibility, ObjectHash, ProjectId, Sensitivity, SessionId, SqliteStore, TaskId,
+    domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation},
+    storage::StoreError,
+};
+
+/// Immutable host context asserted for one MCP connection.
+#[derive(Clone, Debug)]
+pub struct McpServer {
+    database: PathBuf,
+    project_id: ProjectId,
+    actor_id: String,
+    session_id: SessionId,
+    source_skill: Option<String>,
+}
+
+impl McpServer {
+    /// Creates a tools-only MCP service. Task binding itself is stored in
+    /// SQLite, so a new server process resumes the session's active task.
+    #[must_use]
+    pub fn new(
+        database: PathBuf,
+        project_id: ProjectId,
+        actor_id: String,
+        session_id: SessionId,
+        source_skill: Option<String>,
+    ) -> Self {
+        Self {
+            database,
+            project_id,
+            actor_id,
+            session_id,
+            source_skill,
+        }
+    }
+
+    fn store(&self) -> Result<SqliteStore, StoreError> {
+        SqliteStore::open(&self.database)
+    }
+
+    fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {
+        ActorContext {
+            actor_id: self.actor_id.clone(),
+            actor_kind: "agent".into(),
+            assurance: AssuranceLevel::Asserted,
+            run_id: None,
+            session_id: Some(self.session_id.clone()),
+            source_tool: Some(format!("mcp:{tool_name}")),
+            source_skill: self.source_skill.clone(),
+            provenance_chain: vec![ProvenanceLink {
+                relation: ProvenanceRelation::AssertedBy,
+                source: self.actor_id.clone(),
+                reference: Some(self.session_id.0.clone()),
+            }],
+            reason: reason.into(),
+        }
+    }
+
+    fn bound_task(&self, store: &SqliteStore) -> Result<TaskId, StoreError> {
+        store.bound_task(&self.project_id, &self.session_id)
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct TaskStartArgs {
+    /// Organizational ticket reference used by every session to rendezvous.
+    external_ref: String,
+    /// Short local execution title; the external tracker remains authoritative.
+    title: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct TaskJoinArgs {
+    /// Organizational ticket reference; no Engram UUID is required.
+    external_ref: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct MemoryNoteArgs {
+    /// Natural-language note. Labels such as `Decision:`, `Fact:`, and
+    /// `Constraint:` plus rule cues are optional hints.
+    prose: String,
+    /// Stable key for safe retry. Omit for a new write; the receipt returns one.
+    idempotency_key: Option<String>,
+    /// Keep this note private to the asserted agent rather than task-shared.
+    private: Option<bool>,
+    /// Optional explicit kind override; normal capture should omit it.
+    kind: Option<String>,
+    /// Optional explicit authority override; normal capture should omit it.
+    authority: Option<String>,
+    /// Optional external evidence or source references.
+    refs: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct DeltaArgs {
+    /// Last processed task cursor; only strictly newer changes are returned.
+    after: i64,
+    /// Maximum changes to return (default 100, maximum 1000).
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SearchArgs {
+    /// Full-text query over visible memory titles and bodies.
+    query: String,
+    /// Maximum matches to return (default 20, maximum 1000).
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct HashArgs {
+    /// Lowercase SHA-256 version hash from a memory write receipt.
+    hash: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ContradictionArgs {
+    /// First memory version hash returned by `memory_note` or `memory_show`.
+    first_version: String,
+    /// Second memory version hash that cannot safely guide action with the first.
+    second_version: String,
+    /// Attributed explanation of the concrete conflict.
+    reason: String,
+    /// Stable key for safe retry. Omit for a new declaration.
+    idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ClaimArgs {
+    /// Lease duration in seconds (1..86400).
+    ttl_seconds: i64,
+    /// Stable key for a safe acquisition retry; omit for a new attempt.
+    idempotency_key: Option<String>,
+}
+
+#[tool_router]
+impl McpServer {
+    /// Start a local execution task or bind to the existing task with this ref.
+    #[tool(
+        name = "task_start",
+        description = "Start or ref-idempotently bind a local Engram task"
+    )]
+    fn task_start(&self, Parameters(args): Parameters<TaskStartArgs>) -> CallToolResult {
+        let mut store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.start_task(
+                &self.project_id,
+                &args.external_ref,
+                &args.title,
+                &self.session_id,
+                self.actor("task_start", "bind this session to local task execution"),
+                Utc::now(),
+            ),
+            "task_start",
+        )
+    }
+
+    /// Join a local task using only the external tracker reference.
+    #[tool(
+        name = "task_join",
+        description = "Join an existing task by external reference only"
+    )]
+    fn task_join(&self, Parameters(args): Parameters<TaskJoinArgs>) -> CallToolResult {
+        let mut store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.join_task(
+                &self.project_id,
+                &args.external_ref,
+                &self.session_id,
+                self.actor(
+                    "task_join",
+                    "join shared execution memory by external reference",
+                ),
+                Utc::now(),
+            ),
+            "task_join",
+        )
+    }
+
+    /// Capture one prose note into the active task's canonical working set.
+    #[tool(
+        name = "memory_note",
+        description = "Capture one classified task note; optional cues: Decision:, Fact:, Constraint:, Never, Always, Must, Do not, Only"
+    )]
+    fn memory_note(&self, Parameters(args): Parameters<MemoryNoteArgs>) -> CallToolResult {
+        let mut store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => task_id,
+            Err(error) => return store_error(&error),
+        };
+        let kind = match args.kind.as_deref().map(parse_kind).transpose() {
+            Ok(kind) => kind,
+            Err(error) => return invalid_argument("kind", error),
+        };
+        let authority = match args.authority.as_deref().map(parse_authority).transpose() {
+            Ok(authority) => authority,
+            Err(error) => return invalid_argument("authority", error),
+        };
+        let request = NoteRequest {
+            project_id: self.project_id.clone(),
+            task_id: Some(task_id),
+            prose: args.prose,
+            visibility: if args.private.unwrap_or(false) {
+                NoteVisibility::Private
+            } else {
+                NoteVisibility::Shared
+            },
+            kind,
+            authority,
+            sensitivity: Some(Sensitivity::Internal),
+            title: None,
+            tags: Vec::new(),
+            evidence: Vec::new(),
+            refs: args.refs.unwrap_or_default(),
+            actor: self.actor(
+                "memory_note",
+                "record once for context, peer delta, handoff, and final report inputs",
+            ),
+            idempotency_key: args
+                .idempotency_key
+                .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+            created_at: Utc::now(),
+        };
+        result(
+            store.capture_note(&request, &DevelopmentNoopRedactor),
+            "memory_note",
+        )
+    }
+
+    /// Mark two existing shared memory versions as explicitly contradictory.
+    #[tool(
+        name = "memory_contradict",
+        description = "Declare an attributed contradiction between two visible version hashes"
+    )]
+    fn memory_contradict(&self, Parameters(args): Parameters<ContradictionArgs>) -> CallToolResult {
+        let first = match ObjectHash::from_str(&args.first_version) {
+            Ok(hash) => hash,
+            Err(message) => return invalid_argument("first_version", message),
+        };
+        let second = match ObjectHash::from_str(&args.second_version) {
+            Ok(hash) => hash,
+            Err(message) => return invalid_argument("second_version", message),
+        };
+        let mut store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => task_id,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.record_memory_contradiction(
+                &self.project_id,
+                task_id,
+                &self.session_id,
+                &self.actor_id,
+                &first,
+                &second,
+                &args.reason,
+                &args
+                    .idempotency_key
+                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+                self.actor(
+                    "memory_contradict",
+                    "surface incompatible guidance before a peer acts",
+                ),
+                Utc::now(),
+            ),
+            "memory_contradict",
+        )
+    }
+
+    /// Build the bounded task context for this session and remember its packet.
+    #[tool(
+        name = "memory_context",
+        description = "Build a bounded context packet for the active task"
+    )]
+    fn memory_context(&self) -> CallToolResult {
+        let mut store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => task_id,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.build_context(
+                &self.project_id,
+                Some(task_id),
+                &self.session_id,
+                &self.actor_id,
+                Utc::now(),
+            ),
+            "memory_context",
+        )
+    }
+
+    /// Return only task-shared changes after a processed cursor.
+    #[tool(
+        name = "memory_delta",
+        description = "Read the authoritative task delta after a cursor"
+    )]
+    fn memory_delta(&self, Parameters(args): Parameters<DeltaArgs>) -> CallToolResult {
+        let store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => task_id,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.task_delta(
+                &self.project_id,
+                task_id,
+                &self.session_id,
+                &self.actor_id,
+                ChangeCursor(args.after.max(0)),
+                args.limit.unwrap_or(100),
+            ),
+            "memory_delta",
+        )
+    }
+
+    /// Search only memory visible to this session and active task.
+    #[tool(
+        name = "memory_search",
+        description = "Full-text search visible memory without crossing private scope"
+    )]
+    fn memory_search(&self, Parameters(args): Parameters<SearchArgs>) -> CallToolResult {
+        let store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => task_id,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.search_memories(
+                &self.project_id,
+                Some(task_id),
+                &self.actor_id,
+                Some(&args.query),
+                args.limit.unwrap_or(20),
+            ),
+            "memory_search",
+        )
+    }
+
+    /// Inspect a complete memory through the same scope checks as retrieval.
+    #[tool(
+        name = "memory_show",
+        description = "Verify and inspect an authorized memory by receipt hash"
+    )]
+    fn memory_show(&self, Parameters(args): Parameters<HashArgs>) -> CallToolResult {
+        let hash = match ObjectHash::from_str(&args.hash) {
+            Ok(hash) => hash,
+            Err(message) => return invalid_argument("hash", message),
+        };
+        let store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => task_id,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.show_memory(
+                &hash,
+                &self.project_id,
+                Some(task_id),
+                &self.session_id,
+                &self.actor_id,
+            ),
+            "memory_show",
+        )
+    }
+
+    /// Explain all inclusion and omission decisions in a context packet.
+    #[tool(
+        name = "context_explain",
+        description = "Explain a context packet by its receipt hash"
+    )]
+    fn context_explain(&self, Parameters(args): Parameters<HashArgs>) -> CallToolResult {
+        let hash = match ObjectHash::from_str(&args.hash) {
+            Ok(hash) => hash,
+            Err(message) => return invalid_argument("hash", message),
+        };
+        let store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        result(
+            store.explain_context(&hash, &self.actor_id),
+            "context_explain",
+        )
+    }
+
+    /// Atomically claim the active task under a short, expiring lease.
+    #[tool(
+        name = "task_claim",
+        description = "Acquire an expiring task lease with typed conflict details"
+    )]
+    fn task_claim(&self, Parameters(args): Parameters<ClaimArgs>) -> CallToolResult {
+        if !(1..=86_400).contains(&args.ttl_seconds) {
+            return invalid_argument("ttl_seconds", "expected a value from 1 through 86400");
+        }
+        let mut store = match self.store() {
+            Ok(store) => store,
+            Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => task_id,
+            Err(error) => return store_error(&error),
+        };
+        let now = Utc::now();
+        result(
+            store.claim_task(
+                task_id,
+                &self.session_id,
+                &args
+                    .idempotency_key
+                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+                now,
+                args.ttl_seconds,
+                self.actor("task_claim", "acquire exclusive execution ownership"),
+            ),
+            "task_claim",
+        )
+    }
+}
+
+#[allow(
+    clippy::unused_async_trait_impl,
+    reason = "the rmcp handler macro emits required async trait methods"
+)]
+#[tool_handler(
+    name = "engram",
+    version = "0.1.0",
+    instructions = "Bind by external ref, record each finding once with memory_note, refresh with memory_context then memory_delta. Private notes never enter peer views."
+)]
+impl ServerHandler for McpServer {}
+
+fn result<T: serde::Serialize>(value: Result<T, StoreError>, operation: &str) -> CallToolResult {
+    match value {
+        Ok(value) => match serde_json::to_value(value) {
+            Ok(value) => CallToolResult::structured(value),
+            Err(error) => CallToolResult::structured_error(json!({
+                "error": {
+                    "code": "serialization_failed",
+                    "operation": operation,
+                    "message": error.to_string(),
+                }
+            })),
+        },
+        Err(error) => store_error(&error),
+    }
+}
+
+fn store_error(error: &StoreError) -> CallToolResult {
+    let details = match error {
+        StoreError::TaskClaimHeld { holder, expires_at } => json!({
+            "holder": holder,
+            "expires_at_ms": expires_at,
+            "expires_at": chrono::DateTime::<Utc>::from_timestamp_millis(*expires_at)
+                .map(|value| value.to_rfc3339()),
+        }),
+        StoreError::NoteIdempotencyConflict(key)
+        | StoreError::ClaimIdempotencyConflict(key)
+        | StoreError::ContradictionIdempotencyConflict(key) => {
+            json!({ "idempotency_key": key })
+        }
+        StoreError::ContradictionAlreadyRecorded(hash) => {
+            json!({ "contradiction_hash": hash })
+        }
+        StoreError::PinnedContradiction {
+            contradiction,
+            left,
+            right,
+        } => json!({
+            "contradiction_hash": contradiction,
+            "left_version": left,
+            "right_version": right,
+        }),
+        StoreError::TaskAccessDenied { task, session } => json!({
+            "task_id": task.0,
+            "session_id": session,
+        }),
+        StoreError::MemoryAccessDenied(hash)
+        | StoreError::MemoryNotFound(hash)
+        | StoreError::PacketAccessDenied(hash) => json!({ "object_hash": hash }),
+        _ => Value::Null,
+    };
+    CallToolResult::structured_error(json!({
+        "error": {
+            "code": error_code(error),
+            "message": error.to_string(),
+            "details": details,
+        }
+    }))
+}
+
+fn error_code(error: &StoreError) -> &'static str {
+    match error {
+        StoreError::TaskClaimHeld { .. } => "task_claim_held",
+        StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
+        StoreError::ClaimIdempotencyConflict(_) => "claim_idempotency_conflict",
+        StoreError::ContradictionIdempotencyConflict(_) => "contradiction_idempotency_conflict",
+        StoreError::ContradictionAlreadyRecorded(_) => "contradiction_already_recorded",
+        StoreError::InvalidContradiction(_) => "invalid_contradiction",
+        StoreError::PinnedContradiction { .. } => "pinned_contradiction",
+        StoreError::NoActiveTask(_) => "no_active_task",
+        StoreError::TaskReferenceNotFound(_) => "task_reference_not_found",
+        StoreError::TaskAccessDenied { .. } => "task_access_denied",
+        StoreError::MemoryAccessDenied(_) => "memory_access_denied",
+        StoreError::MemoryNotFound(_) => "memory_not_found",
+        StoreError::PacketAccessDenied(_) => "packet_access_denied",
+        StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
+        StoreError::EmptyNote => "empty_note",
+        StoreError::RedactionRefused(_) => "redaction_refused",
+        _ => "engram_store_error",
+    }
+}
+
+fn invalid_argument(field: &str, message: &str) -> CallToolResult {
+    CallToolResult::structured_error(json!({
+        "error": {
+            "code": "invalid_argument",
+            "message": message,
+            "details": { "field": field },
+        }
+    }))
+}
+
+fn parse_kind(value: &str) -> Result<MemoryKind, &'static str> {
+    match value {
+        "constraint" => Ok(MemoryKind::Constraint),
+        "decision" => Ok(MemoryKind::Decision),
+        "convention" => Ok(MemoryKind::Convention),
+        "fact" => Ok(MemoryKind::Fact),
+        "preference" => Ok(MemoryKind::Preference),
+        "episode" => Ok(MemoryKind::Episode),
+        _ => Err("expected constraint, decision, convention, fact, preference, or episode"),
+    }
+}
+
+fn parse_authority(value: &str) -> Result<Authority, &'static str> {
+    match value {
+        "hard" => Ok(Authority::Hard),
+        "firm" => Ok(Authority::Firm),
+        "soft" => Ok(Authority::Soft),
+        _ => Err("expected hard, firm, or soft"),
+    }
+}

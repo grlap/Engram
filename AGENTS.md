@@ -1,5 +1,87 @@
 # Agent Instructions
 
+## Engram Standing Instructions
+
+Engram is a host-local concurrent execution-memory system for coding agents.
+Agent-private scratch and task-shared working memory stay local during
+execution; an immutable, polished report is the only artifact published to an
+external organizational tracker.
+
+### Authority and Git
+
+- Never commit, push, rebase, force-push, or run `bd dolt push/pull` without
+  explicit user permission. Read-only Git inspection is always allowed.
+- The initial `bd init` command created the repository's first Git commit
+  automatically. Do not treat that as standing commit authority.
+- Implementers claim their own beads. When implementation is complete, leave
+  the bead `in_progress` with a completion and validation comment; Greg owns
+  final `bd close` actions.
+- Beads ids belong in tracker metadata, commits, and review notes—not source
+  comments, identifiers, documentation prose, or user-facing output.
+
+### Architecture Boundaries
+
+- `src/domain.rs` owns substrate-neutral memory, task, report, and actor types.
+- `src/canonical.rs` owns RFC 8785 canonical bytes and SHA-256 object identity.
+- `src/storage.rs` owns V1 SQLite persistence and integrity verification.
+- `src/tracker.rs` owns the neutral external tracker port and dummy adapter.
+- The external tracker stores organizational work and published reports. A
+  local task may reference a ticket; it must never mirror the ticket.
+- One stable project id must resolve concurrent sessions and worktrees to the
+  same host-local SQLite store. Local never means single-session.
+- Task scope is shared among participants and is the default for execution
+  findings. Agent scope is private scratch.
+- Packet hashes reproduce content; monotonic task-event cursors order peer
+  deltas. Do not use a hash as a change cursor.
+- Claims are atomic idempotent leases with explicit handoff and audited
+  recovery. Every lease transition emits an immutable task event.
+- Do not freeze a report until every expected participant contributed and
+  marked ready, or an attributed waiver accounts for the omission.
+- One capture should generate task deltas, handoff material, and report input.
+  Never create a second status ledger beside the external backlog tracker.
+- Once a report reaches `report_ready`, its bytes, hash, and idempotency key are
+  frozen. A publish retry sends the same payload. A revision creates a
+  superseding report and a new key.
+- Actor/authority text supplied through tools and skills is asserted context,
+  not authenticated identity. Never claim stronger assurance than recorded.
+- SQLite is canonical in V1. FTS and other query projections are rebuildable.
+  Git/team sync, proprietary tracker integration, embeddings, real DLP,
+  signing, service storage, and encryption are deferred—not silently assumed.
+
+### Documentation and Skills
+
+- Architecture and behavior live under `docs/`; feature briefs live under
+  `docs/features/` and should be cross-linked when they overlap.
+- Use the project skill at `.agents/skills/engram-repo/SKILL.md` before changing
+  Engram domain, persistence, publication, or review behavior.
+- Track implementation work in Beads, never Markdown TODO lists.
+
+### Required Quality Gates
+
+Run these before handing off code changes:
+
+```bash
+cargo fmt --check
+cargo check
+cargo clippy --all-targets --all-features -- -D warnings
+scripts/test-rust.sh
+node --test scripts/review-freeze-fingerprint.test.mjs
+node --test scripts/mcp-dogfood.test.mjs
+node scripts/check-doc-links.mjs
+```
+
+After any gate failure, investigate the failing path and classify/fix or track
+the actual defect. Do not normalize retries or call an intermittent failure an
+acceptable flaky test.
+
+### Review Cadence
+
+- `/review-changes` runs parent-owned quality gates, freezes the worktree, and
+  delegates exactly one Codex and one Claude `/review-code` reviewer through
+  TermAl with `writePolicy: readOnly`.
+- `/review-code` is a read-only, non-nesting leaf. It does not edit files, run
+  quality gates, inspect Beads, or mutate the tracker.
+
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
 > **Architecture in one line:** Issues live in a local Dolt database

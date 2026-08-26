@@ -1,4 +1,16 @@
 
+# Rust build output
+/target/
+
+# Local Engram state. Exports intended for sharing must be written elsewhere.
+/.engram/
+
+# Local tooling and editor state
+.DS_Store
+.idea/
+.vscode/
+*.diff
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
