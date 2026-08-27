@@ -107,6 +107,9 @@ dogfood without an unmodeled workflow.
 | SSO/LDAP identity | Compliance-grade attribution becomes a deployment promise |
 | Embeddings | FTS5 + good titles measurably stop being enough (per the evaluation harness) |
 | Service backend / Signer / envelope encryption | Team scale or compliance posture demands them |
+| Capability requirements on work items matched against the host's bind-time capability map | More than one hosting environment can take the same item, or a host without a required skill claims work it cannot finish — [execution pipeline](features/execution-pipeline.md) |
+| Environment fingerprint as required seal evidence | Acceptance or report provenance must distinguish environments, or a result must be reproduced across hosts — [execution pipeline](features/execution-pipeline.md) |
+| External intake system (enrichment, planning, sufficiency check) | The manual import → execute → publish loop has closed several times and the manual steps are the bottleneck — [execution pipeline](features/execution-pipeline.md) |
 
 ## Open decisions
 

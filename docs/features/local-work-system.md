@@ -4,8 +4,9 @@
 > and [spec §9](../spec.md#9-local-work-reports--external-systems).
 > Related briefs: [behavioral control plane](behavioral-control-plane.md),
 > [local tasks & reports](local-tasks-and-reports.md),
-> [tracker adapter](tracker-adapter.md), and
-> [CLI & MCP](cli-and-mcp.md).
+> [tracker adapter](tracker-adapter.md),
+> [CLI & MCP](cli-and-mcp.md), and
+> [execution pipeline](execution-pipeline.md).
 
 Engram's target is a first-class, host-local graph of work. A user or model can open
 work directly, split it into smaller units, express prerequisites, find ready

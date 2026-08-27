@@ -17,6 +17,7 @@ references another.
 | [Local tasks & reports](local-tasks-and-reports.md) | Root execution, single-executor child runs, scoped leases, handoffs, completion seals, fenced report assembly, and optional receipted publication |
 | [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; sequential portability; deferred concurrent sync |
 | [External adapters](tracker-adapter.md) | Optional snapshot intake, backup/portable storage, and separately authorized publication |
+| [Execution pipeline](execution-pipeline.md) | Layer map from external ticket to published report: external intake/planning, Engram decides and remembers, the hosting environment executes |
 | [Security & trust](security-and-trust.md) | Asserted runtime identity with assurance levels; sensitivity labels; redaction; purge realism |
 | [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing memory/work tools and host-private turn channel over one core; material action mediation remains planned |
 

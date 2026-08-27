@@ -2,8 +2,9 @@
 
 > Normative reference: [spec §4](../spec.md#4-context-packets--retrieval).
 > Related briefs: [typed memory model](typed-memory-model.md),
-> [CLI & MCP](cli-and-mcp.md), and
-> [behavioral control plane](behavioral-control-plane.md).
+> [CLI & MCP](cli-and-mcp.md),
+> [behavioral control plane](behavioral-control-plane.md), and
+> [execution pipeline](execution-pipeline.md).
 
 A context packet is the unit of memory delivery: the block an agent receives
 at session start or on request. Packet construction is a first-class core API

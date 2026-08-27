@@ -1,8 +1,9 @@
 # External Adapters
 
 > Normative reference: [spec §9](../spec.md#9-local-work-reports--external-systems).
-> Related briefs: [local work system](local-work-system.md) and
-> [local tasks & reports](local-tasks-and-reports.md).
+> Related briefs: [local work system](local-work-system.md),
+> [local tasks & reports](local-tasks-and-reports.md), and
+> [execution pipeline](execution-pipeline.md).
 
 External systems are optional sources, backup/portable/sync substrates, and publication
 targets, never a prerequisite for local work. The core defines vendor-neutral ports—no

@@ -5,8 +5,9 @@
 > Related briefs: [context packets](context-packets.md),
 > [local work system](local-work-system.md),
 > [local tasks & reports](local-tasks-and-reports.md),
-> [CLI & MCP](cli-and-mcp.md), and
-> [security & trust](security-and-trust.md).
+> [CLI & MCP](cli-and-mcp.md),
+> [security & trust](security-and-trust.md), and
+> [execution pipeline](execution-pipeline.md).
 
 This brief specifies the **target V1 architecture**. Engram is not complete
 when it merely offers coordination tools that a coding

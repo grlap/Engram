@@ -4,8 +4,9 @@
 > and [spec §9.5](../spec.md#95-finalization--the-report-contract).
 > Related briefs: [tracker adapter](tracker-adapter.md),
 > [local work system](local-work-system.md),
-> [write policy & review](write-policy-and-review.md), and
-> [behavioral control plane](behavioral-control-plane.md).
+> [write policy & review](write-policy-and-review.md),
+> [behavioral control plane](behavioral-control-plane.md), and
+> [execution pipeline](execution-pipeline.md).
 
 An Engram `RootExecution` coordinates the live multi-session execution of one
 root and its descendants. Each `WorkRun` is the execution generation for one
