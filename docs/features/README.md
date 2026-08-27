@@ -9,14 +9,16 @@ references another.
 
 | Brief | One line |
 | --- | --- |
+| [Behavioral control plane](behavioral-control-plane.md) | Shipped host-private turn admission channel with exact bounded delivery, scoped leases, checkpoints, and restart recovery; enforcement depends on the embedding host and action gating remains planned |
 | [Typed memory model](typed-memory-model.md) | Kind × authority × delivery axes over immutable, content-addressed versions |
 | [Context packets](context-packets.md) | Budgeted retrieval, reproducible hashes, ordered peer deltas, visible review pressure |
 | [Write policy & review](write-policy-and-review.md) | Origin × authority promotion matrix; distillation proposes, never writes; review lifecycle |
-| [Local tasks & reports](local-tasks-and-reports.md) | Claims/leases, handoffs, participant barrier, frozen reports, receipted publication |
-| [SQLite store](sqlite-store.md) | Local append-only canonical store; canonical-bytes contract; deferred Git team backend |
-| [Tracker adapter](tracker-adapter.md) | Vendor-neutral port; DummyTrackerAdapter proving the production contract in V1 |
+| [Local work system](local-work-system.md) | First-class local work graph, decomposition, readiness, claims, evidence, and optional external interchange |
+| [Local tasks & reports](local-tasks-and-reports.md) | Root execution, single-executor child runs, scoped leases, handoffs, completion seals, fenced report assembly, and optional receipted publication |
+| [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; sequential portability; deferred concurrent sync |
+| [External adapters](tracker-adapter.md) | Optional snapshot intake, backup/portable storage, and separately authorized publication |
 | [Security & trust](security-and-trust.md) | Asserted runtime identity with assurance levels; sensitivity labels; redaction; purge realism |
-| [CLI & MCP](cli-and-mcp.md) | One core, two thin faces; one-hook host integration |
+| [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing memory/work tools and host-private turn channel over one core; material action mediation remains planned |
 
 ## Conventions
 

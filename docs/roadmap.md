@@ -6,32 +6,77 @@ trigger revisiting it.
 
 ## V1 — close the loop
 
-Everything in V1 serves one loop: **bind a backlog item → coordinate local
-sessions under shared task memory → assemble and freeze one report → publish
-it → review promotion candidates.**
+Everything in V1 serves one loop: **open/import local work → decompose and
+select ready work → admit synchronized turns and coordinated actions →
+complete with evidence → optionally freeze/publish → review promotion
+candidates.**
+
+Control ships progressively: first observe/replay with every decision allowed,
+then repair the task/cursor/lease/finalization prerequisites, then mediate
+freshness, and only then enable a replay-proven refusal set and action gates.
+This keeps false refusals and hook latency measurable before Engram can block
+work.
+
+Current milestone: the separate JSON-lines host service process-tests a
+restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
+loop with transactional context and stale-grant refusal. It also process-tests
+exclusive resource acquisition/release, overlap fencing, denial of unleased
+local mutation, and a lease-backed local-mutation turn. Per-action mediation,
+the full lease recovery/handoff lifecycle, and controlled finalization remain
+on the V1 path below.
 
 - Rust core; local SQLite canonical store (append-only, content-addressed)
   with stable project identity, WAL multi-process access, ordered task events,
   and derived FTS5 tables — [SQLite store](features/sqlite-store.md)
-- Same-host multi-session tasks: atomic claim leases, explicit handoff,
-  task-shared memory, participant contributions, and a finalization barrier
+- First-class local work graph: parent forest, transactionally cycle-checked
+  completion-dependency DAG (explicit prerequisites plus required-child
+  edges), priority, assignment, labels, deferral, derived readiness, fenced
+  claims, acceptance evidence, human decisions, and the six-operation ambient
+  model protocol —
+  [local work system](features/local-work-system.md)
+- Behavioral control: deterministic turn decisions, typed recovery
+  directives, inline packet/delta delivery, recovery/finalizer grants,
+  checkpoints, effect-specific degraded debt, mediation coverage reporting,
+  and honest advisory/turn-gated/action-gated assurance —
+  [behavioral control plane](features/behavioral-control-plane.md)
+- Same-host multi-session roots: one executor/claim per child `WorkRun` under a
+  `RootExecution`, work claims distinct from normalized resource-scoped fenced
+  leases, suspension-aware expiry, explicit handoff, root-shared memory,
+  contribution/child-seal barrier, and a separate fenced report-assembly claim
 - Context packets: budgets, fail-closed pinned tier, omission manifest,
-  packet hash + explain, event cursor + peer delta, and review counts —
+  packet hash + explain, typed source-feed vectors plus independent
+  per-session delivery positions, peer deltas, and review counts —
   [context packets](features/context-packets.md)
 - `engram note` / `memory_note`: prose-first capture with inspectable inferred
   defaults; one write feeds peer and report views
 - Write policy matrix, proposal/approval, review queue,
   supersede/contradict/contested, tombstones —
   [write policy & review](features/write-policy-and-review.md)
-- Local tasks: deterministic report assembly, polish/freeze state machine,
-  `DummyTrackerAdapter` publication under idempotent receipts —
+- Optional report path: deterministic assembly, polish/freeze state machine,
+  dummy publication under idempotent receipts —
   [local tasks & reports](features/local-tasks-and-reports.md),
   [tracker adapter](features/tracker-adapter.md)
 - Audit attribution at asserted-runtime-context assurance; visibly labeled
   no-op Redactor — [security & trust](features/security-and-trust.md)
-- CLI + MCP over one core — [CLI & MCP](features/cli-and-mcp.md)
-- Safe JSONL export + local backup; fixture-level retrieval checks;
-  `doctor` / `rebuild-index`
+- CLI + agent-facing MCP + host-private control transport over one core;
+  hostile-process tests prove turn and declared-capability bypasses fail —
+  [CLI & MCP](features/cli-and-mcp.md)
+- Deterministic recovery snapshot/restore, round-trip Beads migration,
+  referential/projection integrity, fixture-level retrieval checks, and
+  `doctor` / `rebuild-index`. External durability is optional; V1 adds
+  sequential `portable` push/handoff/restore with remote-head CAS, scheduled
+  cadence, visible lag/degradation, writer-epoch validation at startup/resume,
+  exact-base restore, divergence refusal, complete shared-state projection with
+  explicit exclusion stubs/feed placeholders, and no transfer of live
+  claims/leases/grants/private scratch. `doctor` reports `local`,
+  `local_backed_up`, `portable`, or later `synchronized` honestly.
+
+The replacement acceptance test is operational: run one real multi-session
+project with Engram as its only writable local tracker and Beads available
+read-only for fallback comparison. Every fallback becomes a missing-primitive
+finding. Cut over this repository only after the work graph, agent protocol,
+restore path for the selected durability mode, and control binding pass that
+dogfood without an unmodeled workflow.
 
 ## V1.x — improve the loop
 
@@ -39,14 +84,15 @@ it → review promotion candidates.**
 - Episodic compaction automation
 - Post-publication retention compaction
 - Budget tuning from retrieval decision logs
+- Optional configured external backup automation
 
 ## V2+ — widen the loop
 
-- Proprietary tracker adapter (real publication)
-- Git object-store team backend with org/team scopes
-  ([design preserved](spec.md#32-deferred-git-object-store-for-team-sync))
+- Real source/publication adapters
+- Concurrent Git/external-storage/service backend with org/team scopes
+  ([design preserved](spec.md#33-deferred-concurrent-cross-host-sync))
 - Optional embeddings for retrieval
-- Wider outbound ticketing: comments, link-backs, webhook checkpoints
+- Wider outbound publication: comments and link-backs; no continuous mirror
 - Real Redactor/DLP integration
 - Postgres/service `Store` backend behind the same ports
 - Signer-based attestation; envelope encryption for crypto-shredding
@@ -55,7 +101,7 @@ it → review promotion candidates.**
 
 | Deferred capability | Revisit when |
 | --- | --- |
-| Git team-sync backend | Coordination must cross machines; same-host peers are V1 |
+| Concurrent team-sync backend | Two hosts must coordinate live; sequential cross-machine handoff is V1 `portable` |
 | Proprietary tracker adapter | Work authorizes real publication |
 | Real DLP/redaction backend | A tool is mandated, or memory starts holding sensitive material |
 | SSO/LDAP identity | Compliance-grade attribution becomes a deployment promise |
@@ -66,4 +112,6 @@ it → review promotion candidates.**
 
 - Default grace period for post-publication retention — pick during V1
   implementation.
+- Default decomposition budgets, standing-delegation expiry, optional backup
+  recovery-point objective, and portable push cadence.
 - See [spec §12](spec.md#12-decisions) for the resolved decision record.

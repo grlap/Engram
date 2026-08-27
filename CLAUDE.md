@@ -1,10 +1,10 @@
 # Engram — Standing Instructions for Claude
 
-Read this before changing the repository. Engram is a host-local concurrent
-execution-memory system for coding agents. Agent-private scratch and
-task-shared working memory remain local during execution; an immutable,
-polished final report is the deliberate publication boundary to an external
-organizational tracker.
+Read this before changing the repository. Engram is a local-first work,
+behavioral-control, and execution-memory system for coding agents. SQLite is
+canonical on the active host; agent-private scratch and live execution
+authority stay there. External intake, backup/portable/sync, and publication
+are independent optional capabilities.
 
 ## Authority and Git
 
@@ -22,30 +22,57 @@ organizational tracker.
 - `src/domain.rs`: substrate-neutral memory, task, report, and actor types.
 - `src/canonical.rs`: RFC 8785 canonical bytes and SHA-256 object identity.
 - `src/storage.rs`: V1 SQLite persistence and integrity checks.
-- `src/tracker.rs`: neutral tracker port and side-effect-free dummy adapter.
-- A local task may reference an external ticket but must never mirror it.
-- A stable project id resolves concurrent sessions and worktrees to one local
-  store. Task scope is shared by default; agent scope is private scratch.
-- Claims are atomic idempotent leases with explicit handoff and audited
-  recovery; their transitions append immutable task events.
-- Packet hashes reproduce content, while monotonic event cursors order peer
-  deltas. They are not interchangeable.
-- Report freeze requires every participant contribution or an attributed
-  waiver. One capture feeds deltas, handoffs, and report input instead of
-  becoming another status ledger beside the external backlog tracker.
-- `report_ready` freezes report bytes, hash, and idempotency key. Retry uses the
-  same payload; revision creates a superseding report and a new key.
+- `src/storage/work.rs`: local-work projections, feeds, claims, and seals.
+- `src/control.rs`: pure deterministic control-policy evaluation.
+- `src/host.rs`: host-private JSON-lines transport only.
+- `src/work_service.rs`: six-operation ambient work protocol translation into
+  canonical storage operations.
+- `src/tracker.rs`: current neutral external adapter port and side-effect-free
+  dummy publication adapter.
+- Engram owns host-local work. An imported item cites an immutable external
+  snapshot but never silently mirrors external task state.
+- A stable project id resolves concurrent sessions and worktrees to one
+  active-host store. Optional portable handoff may restore it on the next
+  active host. Task scope is shared by default; agent scope is private scratch.
+- Assignment plans future ownership; a fenced work claim schedules live work;
+  a fenced resource lease authorizes mutation. Their handoff/recovery events
+  are immutable and audited.
+- Packet hashes reproduce content, while typed dense positions in named
+  project, root-work, and run-execution feeds order deltas. A session's dense
+  delivery position is distinct from its source-feed progress vector. Global
+  row ids and hashes are not safety cursors.
+- V1 has one ordinary executor/claim per `WorkRun`; parallel sessions claim
+  distinct child runs under a `RootExecution` aggregate.
+- Root completion requires a `CompletionSeal` over the dense run-feed cut,
+  required child seals, contributions, reconciled actions/leases, acceptance,
+  and evidence, or a human-authorized waiver. Planned report assembly
+  consumes that seal under a separate fenced `ReportAssemblyClaim`. One
+  capture feeds deltas, handoffs, evidence, and report input; a future portable
+  projection remains a dormant transfer/restore head rather than a second live
+  ledger.
+- `report_ready` freezes report bytes and hash. A separately requested
+  publication freezes target and idempotency key; retry uses the same payload,
+  while revision creates a superseding report and intent.
 - Tool/skill-provided actor context is asserted, not authenticated.
-- SQLite is canonical in V1; query projections are rebuildable. Team sync,
-  proprietary adapters, embeddings, real DLP, signing, service storage, and
-  encryption are deferred.
+- SQLite is canonical on the active host; query projections are rebuildable.
+  Planned backup may raise `local_backed_up`; planned `portable` mode provides
+  one-active-host handoff with writer-epoch release/acquire, head CAS,
+  divergence refusal, and no transfer of live claims, leases, grants, delivery
+  state, or private scratch. Release freezes old-host mutation; acquire must
+  succeed before new-host mutation; portable startup/resume validates the
+  remote epoch. Portable shared executable state is transitively closed;
+  excluded provenance uses explicit stubs/placeholders, never dangling refs or
+  rewritten canonical bytes. Concurrent
+  team sync, proprietary adapters, embeddings, real DLP, signing, service
+  storage, and encryption are deferred.
 
 ## Documentation, Skills, and Review
 
 - Architecture and behavior live under `docs/`; feature briefs live under
   `docs/features/` and should be cross-linked when related.
 - Read `.agents/skills/engram-repo/SKILL.md` before changing core behavior.
-- Use Beads for task tracking. Do not create Markdown TODO lists.
+- Use Beads for this repository's task tracking until an explicit Engram
+  dogfood cutover. Do not create Markdown TODO lists.
 - `/review-changes` runs gates in the writable parent and delegates exactly one
   Codex and one Claude `/review-code` reviewer through TermAl in read-only mode.
 - `/review-code` is inspection-only and never edits, runs gates, or calls `bd`.
@@ -59,6 +86,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
 node --test scripts/review-freeze-fingerprint.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
+node --test scripts/control-dogfood.test.mjs
 node scripts/check-doc-links.mjs
 ```
 

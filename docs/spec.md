@@ -1,6 +1,6 @@
 # Engram — Specification
 
-**Draft 0.5 · 2026-08-23 · Multi-session-first working draft**
+**Draft 0.8 · 2026-08-26 · Local-work/control/portability working draft**
 Authors: Fable::AgentMemory (Claude) · Codex::AgentMemory (Codex) — at Greg's
 request. Decision provenance in [Appendix A](#appendix-a--decision-log).
 
@@ -12,56 +12,72 @@ document wins.
 
 ## 1. Purpose & principles
 
-Engram gives humans and coding agents a memory with two deliberate lifecycle
-layers: **local working memory** while work is underway — constraints never
+Engram gives humans and coding agents a first-class local work system backed
+by memory with two deliberate lifecycle layers: **local working memory** while work is underway — constraints never
 silently dropped, decisions that keep their provenance, findings retrievable
 when relevant — and a **durable final report**, assembled and polished at task
-completion and published to the organization's tracker.
+completion and optionally published through an external adapter.
 
 It is a new standalone project for use in a work environment, with no
 dependency on TermAl, Beads, or any one agent runtime. V1 is **local-first,
-not single-session**: multiple concurrent sessions and worktrees share one
-host-local project store. Coordination and decision memory live on the
-machine doing the work, and the external ticketing system is the durable
-cross-team publication boundary — reached only through explicit task
-finalization (§9.5), never by mirroring Engram's local event stream.
+not single-session**: multiple concurrent sessions and worktrees share the
+active host's project store. Coordination authority lives on that host;
+optional `portable` mode moves the canonical shared projection sequentially
+between hosts without transferring live authority. Work may originate locally
+or from an explicit external snapshot. Publication is a separate optional
+boundary reached only through explicit authorization (§9.5), never by
+mirroring Engram's local event stream.
 
-The V1 product definition is deliberately narrow: **a local, concurrent
-execution-memory service for multiple agent sessions, producing context,
-coordination state, handoffs, and one frozen report — not a general knowledge
-graph yet.**
+The V1 product definition is deliberately narrow: **a host-local work graph
+and behavioral/coordination control plane for multiple agent sessions, backed
+by typed execution memory and producing context, controlled handoffs,
+evidence-gated completion, and optional frozen reports — not a general
+knowledge graph or process scheduler.**
 
 ### 1.1 Goals
 
+- A first-class host-local work graph: roots, bounded decomposition,
+  prerequisites, derived readiness, assignment, claims, evidence, and
+  acceptance-gated completion without an external tracker dependency.
 - Local working memory that coordinates agents and outlives sessions: task
   state, decisions, evidence, constraints, and intermediate findings while
   work is underway.
 - Same-host multi-session coordination with atomic ownership, an ordered
   change feed, explicit handoffs, and a finalization barrier.
-- A polished final report per task, published to the external tracker under a
-  durable receipt — the cross-team handoff artifact.
+- Optional sequential cross-machine portability with scheduled durable push,
+  explicit handoff/restore, divergence refusal, and no live-authority transfer.
+- Host-enforced turn admission and material-action authorization: context,
+  peer-delta, lease, checkpoint, and finalization obligations are protocol
+  preconditions rather than optional agent habits.
+- An optional polished final report per completed root, published only under a
+  separately authorized durable receipt.
 - Bounded, predictable context cost: memory never crowds out the work it is
   meant to inform.
 - Audit-grade provenance: every assertion is attributed, immutable, and
   reproducible.
-- Clean ports to external systems — ticketing first — with the core
+- Clean optional ports to external systems — Beads migration first — with the core
   containing no vendor-shaped types, and team/service backends addable later
   without changing semantics.
-- One capture action producing the task delta, handoff material, and report
+- One capture action producing work/run deltas, handoff material, and report
   inputs instead of making an agent repeat the same status in several tools.
 
 ### 1.2 Non-goals
 
-- Not the organizational tracker. Engram tracks *local operational tasks*
-  while work is underway (§2.6), but the external ticketing system stays
-  authoritative for the organizational work item; Engram publishes reports to
-  it rather than competing with it (§9.1).
+- Not a **concurrent** cross-host organizational planning service in V1.
+  Engram is the active-host work source of truth in `local` mode and may be
+  handed to the next host in `portable` mode; §3 reports durability and writer
+  assumptions, never making external storage a precondition for local
+  authority. Wider organization-wide commitments may still live in external
+  systems and enter only as explicit snapshots (§9.1).
 - Not a transcript archive. Raw session logs are not persisted by default
   (§7).
 - Not a secrets store. Sensitive values are held as vault references, never
   as remembered plaintext (§7).
 - Not a RAG framework over arbitrary documents. Engram stores curated,
   attributed claims, not crawled corpora.
+- Not an agent process supervisor. Engram derives ready work and deterministic
+  priority ordering; the host chooses models, prompts, and process lifecycle.
+  Engram never starts, pauses, wakes, or stops a session (§2.7, §8).
 
 ### 1.3 Design principles
 
@@ -74,12 +90,17 @@ graph yet.**
 - **Budgeted delivery.** Injection operates under hard byte budgets with
   visible omission; the constraint tier fails closed rather than truncating
   silently (§4).
-- **Local while working, explicit when publishing.** Working memory stays on
-  the machine; nothing crosses the organizational boundary except a finalized
-  report, published through an idempotent adapter under a receipt (§9.5).
-- **One write, many views.** Engram is the execution-time working set bound
-  to the tracker item; task deltas, handoffs, and final reports derive from
-  that set. It must not become another status ledger (§8, §9).
+- **Local while working, explicit at every external boundary.** Local work and
+  memory need no external system. Intake is an immutable snapshot; publication
+  sends a frozen payload through an idempotent adapter under a receipt (§9.5).
+- **One write, many views.** The local work graph and execution memory produce
+  ready views, deltas, handoffs, evidence, and final reports. External adapters
+  receive projections; they are not a second live ledger (§8, §9).
+- **Durability is explicit, not implicit.** A host-local SQLite store is a
+  valid local source of truth. Engram reports whether it is `local`,
+  `local_backed_up`, sequentially `portable`, or concurrently `synchronized`;
+  it claims off-host recovery only when a verified optional backend and
+  restore path provide it (§3).
 - **Trust follows origin and authority.** Who asserted something, and how
   binding it claims to be, determine whether it activates immediately or
   awaits approval (§5).
@@ -89,6 +110,10 @@ graph yet.**
 - **One core, many faces.** CLI, MCP server, and future service front the
   same core API, including packet construction, so delivery semantics cannot
   drift (§8).
+- **Control requires a reference monitor.** An agent-visible tool is
+  advisory. Engram controls behavior only to the extent that a host mediates
+  turns and declared material capabilities through its decisions (§2.7,
+  §8.3).
 
 ## 2. Data model
 
@@ -141,9 +166,10 @@ applicable scope are delivered, and cross-scope conflicts surface as
 proximity never silently outranks authority, and an unresolved contradiction
 between applicable pinned records blocks packet construction (§4.1).
 
-V1 operates on one host with a stable project id shared across sessions and
-worktrees. `org`/`global` and cross-host team scope activate with a shared
-backend later (§3.2, §12).
+V1 execution authority operates on one active host with a stable project id
+shared across sessions and worktrees. Sequential `portable` handoff may move
+that local authority between hosts; `org`/`global` and concurrent cross-host
+team scope activate with a shared backend later (§3.2–3.3, §12).
 
 ### 2.4 Version schema
 
@@ -201,50 +227,305 @@ Typed, behavior-bearing links between memories: `supersedes` (lifecycle),
 (compaction and distillation provenance), `relates_to` (navigation only).
 Edges are objects too — attributed and immutable.
 
-### 2.6 Local tasks & finalization
+### 2.6 Local work graph & execution
 
-Engram tracks the operational task one or more sessions are executing on the
-host. A task carries a `task_id`, stable `project_id`, an optional
-`external_ref` to the organizational ticket (a reference, never a mirror),
-its participants, its shared working-memory scope, an ordered event cursor,
-and a finalization state:
+Engram is the system of record for a host-local graph of `WorkItem`s. A work
+item has a stable collision-resistant id plus a short display ref, project and
+root ids, optional parent, kind, title, intended outcome, acceptance criteria,
+integer priority, labels, optional assignment and deferral, origin/provenance,
+authority policy, and immutable revision history. No external reference is
+required.
+
+Parent/child decomposition is a forest. Explicit prerequisite edges plus the
+implicit completion edge `parent requires required-child` form one
+completion-dependency graph. Every hierarchy, required/optional, and
+prerequisite mutation rejects cycles in that union transactionally; optional
+children add no implicit edge. `ready` is derived—not stored—from admission,
+deferral, prerequisites, required parent constraints, and live claim state.
+Project policy bounds depth, fanout, and open descendants. Assignment records
+future planning intent. A **work claim** is fenced live responsibility.
+Neither authorizes resource mutation.
+
+A `RootExecution` is one aggregate execution generation for a root. It owns
+the contributor roster, current child-run membership, required child
+`CompletionSeal` hashes, root decisions/waivers, and the root completion
+barrier. A `WorkRun` is one execution generation for one work item. V1 gives
+it exactly one ordinary executor and at most one live `WorkClaim`; parallel
+sessions execute distinct child runs under the same root execution. A run
+owns its ordered execution feed, executor checkpoint, evidence, claim,
+resource leases, and completion state. Root members without that run's claim
+may inspect permitted root memory and communicate but cannot mutate or
+complete the run. V1 permits one active run per item. Reopen creates a new run
+generation so old claims, grants, and evidence cannot revive. The shared
+working-memory ring belongs to the **root work item**, not `RootExecution` or
+`WorkRun`, and survives every generation; memories reference narrower
+work/run ids for filtering and provenance. Reopen preserves memory and resets
+execution state. Memory scope does not recursively nest with the work graph.
+
+The target durable work lifecycle is `proposed → open → completion_pending →
+completed | cancelled | superseded`; an attributed completion abort returns
+to `open`. The shipped alpha seals `open → completed` directly only when its
+linked action-outcome and resource-lease drain sets are empty; it refuses a
+nonempty drain until controlled `completion_pending` ships. Availability
+(`ready`, `claimed`, `active`, `blocked`, `deferred`,
+`waiting`) is a derived projection. Completion binds the accepted work
+revision, run generation, claim fence, checkpoint position, acceptance
+results, and evidence hashes. Required children and prerequisites must be
+complete or an explicitly authorized waiver must account for them. Root
+completion additionally binds required child seals or grant-backed waivers for
+disposed required children, plus the `RootExecution`
+roster/contributions. Root completion is a human decision by default; a
+bounded, expiring delegation may authorize an agent. Acceptance records
+whether evidence was independently verified or self-attested.
+
+Every claimed mutation revalidates the full ancestor chain and the run's
+membership in the currently active `RootExecution`. Root completion refuses
+while any descendant has a live claim or handoff offer. Optional unfinished
+children may be named in the seal, but the closed ancestor and completed root
+execution fence their old runs immediately. They must be disposed leaf-first
+before root reopen; the new root generation never silently inherits an old
+child run.
+
+**Claims schedule; leases authorize mutation.** A resource lease can be
+issued only to a session holding a live claim whose work scope covers the
+resource. Mutating work uses fenced execution leases over canonical
+project-relative path or versioned logical subjects; absolute worktree paths
+are forbidden. An intent lease reserves planned mutation; a coordination
+lease authorizes exclusive run/report transitions; shared analysis needs no
+exclusive resource lease. Releasing, handing off, or recovering a claim bumps
+its fence and transactionally revokes or transfers dependent leases. Lease
+claim, renewal, handoff, release, and recovery use compare-and-swap revisions,
+monotonic fencing epochs, expiry/heartbeat, and idempotency keys. Every
+behaviorally relevant transition appends an immutable work/run event even
+when its current view is a mutable projection.
+
+Mediated actions heartbeat implicitly. A host-reported pause suspends expiry
+only through a bounded `max_suspension`; afterward ownership is recoverable,
+not silently free. Recovery is attributed, increments fences, and forces a
+returning holder to reconcile. Pause remains host process state.
+
+**Completion is the execution barrier.** In the target controlled path, `work_complete` enters
+`completion_pending`, denies new ordinary mutation, drains in-flight actions,
+terminalizes the run claim, releases or transfers every dependent resource
+lease, and waits for its executor checkpoint or an authorized decision. A
+root barrier additionally freezes the expected `RootExecution` contributor
+roster and waits for required child seals or explicit disposed-child waivers,
+plus contributions or
+human-authorized waivers. `completion_seal` captures one dense run-feed cut
+plus the accepted work revision, run/claim fences, action reconciliation,
+acceptance results, and evidence hashes; a root seal also binds those child
+seals and aggregate contributions. The seal makes the work `completed`; an
+attributed abort before it returns to `open`. Reopen preserves root-work
+memory but creates a clean run generation.
+
+Optional report state is separate from work completion:
 
 ```
-active → finalization_pending → report_ready → publishing → published
-                                     ↑              |
-                                     └── failure ───┘
+not_requested → finalization_pending → report_ready → publishing → published
+                       └── abort → not_requested            └── failure → report_ready
 ```
 
-- Finalizing distills the task's working memory into a report (§9.5).
-  Reaching `report_ready` **freezes it**: the report is persisted as an
-  immutable object with a `report_hash`, bound to a durable publication
-  idempotency key.
-- An adapter failure returns the task to `report_ready` — recording the last
-  error and attempt metadata — *never* back into distillation. Every retry
-  sends the exact same frozen report bytes under the same key; same key with
-  a different payload is a conflict.
-- Revising the report after a failure creates a *superseding report version*
-  with a *new* publication intent and idempotency key; the old intent is
-  never mutated or reused.
-- A task is never marked `published` without an adapter receipt.
+Optional report finalization consumes the completed run's `CompletionSeal`;
+it never quiesces or drains execution a second time. Participant completion
+contributions and human-authorized waivers are already bound to the cut. The
+host creates a `ReportAssembly` anchored to the root seal and acquires a
+fenced `ReportAssemblyClaim` for its designated finalizer. This post-completion
+claim is neither a `WorkClaim` nor a `ResourceLease`, requires no live work
+claim, and permits no ordinary workspace mutation. The narrow finalizer grant
+binds the seal hash, assembly generation/revision, and assembly-claim fence
+for deterministic assembly and one polishing pass. Handoff or recovery bumps
+that fence. Reaching `report_ready` terminalizes the claim and freezes
+immutable bytes and a report hash. A publication intent and idempotency key
+exist only when a target is requested; retry sends the same bytes, and
+revision creates a superseding report.
 
-While a task is active, its working memory is the operational source of truth
-for the agents on it.
+### 2.7 Execution control
 
-**Ownership is an atomic lease, not a convention.** Claim, renewal, handoff,
-release, and force-release use compare-and-swap revisions and idempotency
-keys. A lease has an expiry and heartbeat policy so a dead session cannot
-hold work forever; force-release is explicit and audited. Ownership
-transitions append immutable task events even though the current lease is a
-mutable coordination projection.
+Memory can govern behavior only when the host makes Engram's decision a
+precondition for execution. Engram is the policy decision point; the host
+runtime is the policy enforcement point and actuator. The agent may request
+coordination operations but cannot grant itself permission. Effective
+authority is always the intersection of user/host policy and an Engram grant:
+an Engram grant is necessary for a controlled operation and can never widen
+the host's authority.
 
-**Finalization is a barrier.** Every expected participant submits a report
-contribution and marks ready. The coordinator may freeze only after all are
-ready, or after explicitly waiving a missing participant with an attributed
-reason. This prevents one session from freezing a report while a peer is
-still producing evidence. Deterministic assembly buckets task memories and
-participant contributions into the report contract (§9.5); an agent polishes
-that single draft before it is frozen.
+Each bound session follows a durable protocol:
+
+```text
+unbound -> sync_required -> ready -> turn_open -> checkpoint_required -> ready
+             ^                |             |                 |
+             +-- restart -----+             +-- handoff ------+
+
+sync_required -> recovery_open -> checkpoint_required -> sync_required
+                                                       +-- reevaluate -> ready
+
+ready -> completion_required -> participant_ready -> exited
+                                  +-- optional finalizer_open -> exited
+```
+
+Before a turn, the core deterministically evaluates store and schema health,
+the declared control policy, root-execution membership, focused work/run,
+work revision, claim fence and run state, exact context-delivery
+acknowledgements, host-confirmed delivery position and source-feed progress,
+applicable
+pinned context, lease fences, and outstanding checkpoints. It returns one of:
+
+- a short-lived `TurnGrant` bound to one canonical turn intent, session,
+  work item/revision, run generation, claim fence, context packet,
+  named source-feed position vector, host-confirmed session delivery position,
+  project-policy and work-admission epochs, optional portable writer epoch and
+  validation deadline, mediated capability envelope, resource-lease fences,
+  expiry,
+  and any exact bounded context/delta injections still required; or
+- a typed refusal with stable code, blocking directives, and the capabilities
+  that remain safe for recovery. A refusal whose repair needs model reasoning
+  may include a short-lived `TurnGrant { purpose: recovery }` restricted to
+  exact directive ids and read/capture/coordination capabilities; ordinary
+  mutation and new external effects remain denied. Its checkpoint returns to
+  `sync_required` for reevaluation. Host-automatic and human-only directives
+  do not create agent turns; or
+- a typed `defer` for ordinary contention, with retry/wake conditions distinct
+  from an authority or safety refusal.
+
+The common pre-turn path grants with missing context/deltas inlined; it does
+not refuse merely to tell the agent to call `memory_delta`. Immediately before
+prompt dispatch, `turn_begin` atomically rechecks grant expiry, project-policy
+epoch, work-admission epoch, work revision, claim fence, resource-lease
+fences, the optional portable writer epoch/validation deadline, and the
+session blocking watermark,
+then records those exact delivery tokens as **tentative** and activates the grant. Checkpoint
+atomically promotes the contiguous session delivery position and its exact
+source-feed progress vector. Restart never promotes an uncheckpointed advance.
+An observe-only partial recovery page remains attached to its begun grant and
+is returned exactly through session status for safe redelivery; other uncertain
+begun prompts remain checkpoint/reconciliation required and are not replayed.
+Refusal is reserved for an unsafe packet,
+unreconciled recovery, lifecycle hold, unknown prior action, missing authority,
+or another condition that cannot be delivered safely.
+
+An action-gated host obtains a single-use `ActionGrant` immediately before a
+material capability call. It is bound to the parent turn, effect class,
+canonical structured resource subjects, authority references, and request
+fingerprint. Authorization rechecks the session blocking watermark as well as
+policy and lease fences. A transactional `action_begin` fences replay and
+atomically rechecks the complete grant basis: parent/grant state and expiry,
+project-policy and work-admission epochs, optional portable writer
+epoch/validation deadline, blocking watermark, session/run phase, work
+revision and claim fence, capability-map revision, request fingerprint, authority references,
+and every lease subject/holder/fence/expiry. A stale basis refuses without
+consuming the grant. `action_complete` stores a minimal redacted
+receipt. A crash after begin but before a terminal receipt produces
+`outcome_unknown`, never an assumed failure or blind retry. Read-only
+diagnostics and precisely scoped recovery operations remain available when a
+write or external effect fails closed.
+
+Filesystem action gating also requires symlink-safe, execution-bound
+resolution. A conforming host traverses from a registered project-root handle,
+retains the resolved or nearest-ancestor handles through invocation, binds
+their identities and any unresolved tail into the grant, and creates or
+renames relative to those handles. `action_begin` rejects a changed binding as
+`resource_remapped`. A host that can only re-resolve and compare immediately
+before invocation still has a final check/use race and must report filesystem
+coverage as detection-only rather than `action_gated`.
+
+Turn completion is one structured checkpoint, not a second status dialogue.
+The host supplies recorded action receipts; the agent adds durable findings,
+typed blocker references, a bounded next-intent value, and lease disposition
+beside its ordinary response. Meaningful progress prose is captured once as
+typed memory and cited by hash. The checkpoint drives deltas, handoff
+material, and report input without storing raw reasoning traces or creating
+another work ledger.
+
+An ordinary mutation is never gated on creating a memory, and checkpoint
+capture hashes may be empty. Semantic capture is prompted at meaningful
+boundaries and required only for the participant contribution; structural
+action metadata is captured automatically. This prevents a capture quota from
+being satisfied with low-value prose.
+
+Context delivery is itself durable protocol state. Cursor identity is typed:
+
+```text
+FeedPosition { kind: project | root_work | run_execution, id, position }
+DeliveryPosition { session_id, position }
+FeedRange { kind, id, from_position, to_position, observed_head_position }
+```
+
+Initial packets and delta pages receive a dense per-session
+`DeliveryPosition` and record their exact `FeedRange` sources, `has_more`
+state, content digest, and delivery token. A `TurnGrant` binds
+`basis_feed_positions[]` separately from `basis_delivery_position`.
+Standalone acknowledgement stages only exact contiguous source ranges under
+the next contiguous session delivery position; it never assumes adjacent
+global row ids belong to the same feed. `turn_begin` records tentative use.
+Checkpoint compare-and-swap supplies the expected checkpointed delivery
+position, promotes through one contiguous delivery position, and atomically
+records the resulting source-feed position vector. It means the host asserts
+delivery, not that Engram proved model comprehension.
+
+Work/run events store intrinsic type plus audience/resource selectors. A named
+built-in classifier derives per-session admission impact and blocking
+watermark: `blocking` events such as an applicable pinned change, lease
+recovery, freeze, or addressed handoff must be injected or reconciled before
+the affected operation; `advisory` events are bundled under budget with
+visible omission and create a next-turn `delta_backlog` obligation only after
+a configured count/age/bytes threshold; `informational` events never block by
+lag count. `turn_begin` and action authorization recheck the watermark. A
+reported context compaction invalidates packet delivery and forces pinned
+re-injection even when the cursor did not change.
+
+The packet hash reproduces content; the event cursor orders behaviorally
+relevant work/run changes; a project policy epoch invalidates grants after global
+control/mediation changes; a work admission epoch invalidates grants after
+applicable pinned-rule, participant-access, work-revision, claim, or run-state
+changes; resource-lease fencing epochs invalidate grants after ownership changes. These values are not
+interchangeable. Unknown safety-relevant schema or policy versions block
+admission rather than being ignored.
+
+State-changing control transitions are idempotent and emit immutable canonical
+events; current session, delivery, action, and lease records are rebuildable
+projections. Live grants and high-volume allow/refusal diagnostics are
+immutable operational records with bounded retention, not canonical memory;
+restart discards their authority. Compact durable request-key tombstones bind
+kind/key/intent/terminal state through work retention so pruning or expiry can
+never reinterpret an old key as fresh authority. Only a transition that can change peer
+behavior enters the work/run delta feed, so control does not become a second
+status ledger.
+
+Initialization installs and selects a versioned safe project-scoped
+`ControlPolicy`. Missing, unknown, or ambiguous active policy blocks grants
+while leaving disclosure-authorized diagnostics and advisory memory
+available. A new immutable version requires `project_policy_admin` user/host
+authority; selecting it and advancing the project epoch is one transaction.
+Every active run rechecks that shared epoch at turn/action boundaries—no
+single work claim or resource lease controls project policy. Host/user
+authority is the ceiling; control policy and work-applicable pinned rules may
+only restrict it. External action intents cite durable authority references bound to work/run, effect,
+payload fingerprint, and validity window.
+
+Failure policy is capability-specific. Observation remains available where
+disclosure permits. On a decision-service deadline or clean unavailability,
+policy may allow only reversible local work as `degraded_open` under a
+previously issued unexpired envelope bound to policy/epoch, mediation map,
+resources, lease fences, and action/debt limits. The host durably spools typed
+`DegradedActionDebt` for idempotent upload and reconciliation; communication
+remains closed while Engram is unavailable, and the host must not create an
+offline message ledger. After recovery, a scoped recovery turn may capture a
+durable semantic finding through the ordinary typed-memory path. Shared
+mutation, external effects, and lifecycle actions remain closed. Store
+corruption, unknown safety schemas,
+user/host denial, missing mediation, and unverifiable external authority are
+non-overridable. Break-glass applies only to explicitly policy-authorized
+coordination exceptions after those invariants pass.
+
+Control assurance is recorded honestly:
+
+- `advisory`: Engram tools can be bypassed;
+- `turn_gated`: the host mediates every model turn;
+- `action_gated`: the host also mediates every declared material capability.
+
+The full protocol, effect classes, failure semantics, and host conformance
+contract are specified in the
+[behavioral control-plane brief](features/behavioral-control-plane.md).
 
 ## 3. Storage & sync
 
@@ -264,22 +545,35 @@ and atomic compare-and-swap operations for coordination projections.
 Deployments must never derive store identity solely from the current working
 directory, because that would silently fork memory across worktrees.
 
-Immutable task events also feed a monotonically increasing local cursor.
-Current leases and indexes are mutable projections, but their transitions are
-auditable through those events. The cursor orders peer deltas; it is not an
-object identity and does not cross stores as a global sequence number.
+Each project, root-work, and run-execution feed allocates its own dense
+`feed_position` inside the same transaction as the event append. Delivery has
+its own dense per-session sequence over emitted pages. "Contiguous" always means adjacent
+positions in one named feed; a global SQLite row id may be useful internally
+but is never a cursor. This identity is fixed before work-graph migration so
+safety CAS never depends on sparse cross-feed numbering.
+Current sessions, delivery progress, leases, actions, finalization barriers,
+and indexes are mutable projections, but their safety-relevant transitions
+are auditable through canonical events. Live grants and decision diagnostics
+occupy a separate bounded operational tier and never become peer context. The
+cursor orders peer deltas; it is not an object identity and does not cross
+stores as a global sequence number.
 
 ```
 engram.db
   objects      // content-addressed rows: versions, events, edges, evidence — write-once
   derived.*    // heads, status, FTS5, usage counters — rebuildable, never truth
+  control.*    // live grants + bounded diagnostics — operational, never memory
   meta         // store schema version; guards old clients
 ```
 
 Derived tables are a cache rebuilt deterministically from `objects`
-(`engram rebuild-index`); `engram doctor` verifies hashes and index
-freshness. Durability is transactions plus local backup and JSONL export — no
-distributed merge semantics are needed while the store is single-machine.
+(`engram rebuild-index`); `engram doctor` verifies hashes, graph references,
+and index freshness. `local` mode relies on SQLite transactions. An optional
+deterministic recovery snapshot and verified restore provide
+`local_backed_up`. Sequential off-host transfer under one active host provides
+`portable`. A later concurrent `Sync` backend provides `synchronized`.
+Distributed merge semantics are not required for valid local-only or portable
+operation.
 
 #### 3.1.1 Canonical-bytes contract
 
@@ -289,7 +583,7 @@ the contract is part of the spec, not an implementation detail:
 - Objects serialize as **RFC 8785 (JCS) canonical JSON**, UTF-8.
 - `version_id` = SHA-256 over the canonical bytes, with the hash field itself
   excluded; the object's storage key — SQLite row key today, filename in a
-  Git backend (§3.2) — is that hash.
+  portable/shared backend (§3.2–3.3) — is that hash.
 - Hashes are **verified at read time**, so `engram doctor` distinguishes
   corruption from formatting drift.
 - Every object carries a schema version. Objects with an *unknown* schema
@@ -302,32 +596,154 @@ semantically identical records, and integrity checking would be impossible to
 define. It holds regardless of substrate — which is what keeps the deferred
 backend below a drop-in.
 
-### 3.2 Deferred: Git object store for team sync
+### 3.2 Optional portable replication
 
-**Deferred, not rejected.** Draft 0.2's canonical team backend — a dedicated
-Git repository of append-only objects (`objects/<sha256>.json`), set-union
-merges that never conflict, concurrent heads surfacing as *contested* (§6.3),
-tombstones preventing resurrection, offline-first with no server to run —
-solves a cross-host shared-memory problem V1 deliberately does not start
-with. Same-host concurrent sessions are already a V1 requirement. The
-design is recorded here as the intended team backend. Because objects are
-already content-addressed under the same bytes contract (§3.1.1), migration
-is exporting rows to files and pointing the `Store`/`Sync` ports at the new
-backend; no domain semantics change. One of its rules applies from day one
-regardless, because it is nearly impossible to retrofit: sensitive values
-never enter any shared history — vault references only (§7).
+`portable` is the V1 cross-machine mode for sequential handoff, not live team
+coordination. SQLite remains canonical on the active host. Engram projects a
+canonical, human-readable recovery tree containing an immutable manifest,
+shared objects, work/events, typed feed ordering, schemas, and permitted
+evidence references. A configured transport publishes that tree on a cadence
+and at clean session end. `engram doctor` reports the verified remote head and
+unpushed event, byte, and age lag; failed publication is a visible degraded
+durability state, not a work-execution failure.
 
-### 3.3 Ports
+Each projection comes from one consistent SQLite read cut. Its manifest binds:
+
+```text
+PortableManifest {
+  project_id, lineage_id, parent_manifest_hash?
+  schema_versions[], object_set_hash, feed_heads[]
+  writer_epoch, writer_instance_id, writer_state: active | released
+  export_policy_hash, projection_coverage_hash, created_at
+}
+```
+
+Routine cadence pushes preserve the active writer epoch. A cross-machine move
+uses `engram portable release`: checkpoint/exit every local control session,
+make unfinished work claims recoverable, release every resource lease,
+invalidate grants/delivery authority, advance the writer epoch, publish a
+`released` manifest by head CAS, and make that local store mutation-read-only.
+The next host runs `engram portable acquire`, restores the exact released head,
+CAS-publishes its new instance/epoch as `active`, and only then enables local
+mutation. If the old host crashed without release, acquisition requires an
+attributed recovery command that advances the epoch. An unreachable remote
+blocks acquiring the optional portable writer; it never blocks a project that
+was configured and operated as `local`.
+
+Acquire/restore never overwrites an arbitrary local store. Its destination
+must be empty or already at the exact expected manifest with no unpushed local
+tail. Otherwise Engram preserves the destination as a recovery bundle and
+refuses `portable_local_diverged`. On every process/session start or crash
+resume in portable mode, the host performs a bounded remote head/epoch check
+before issuing any mutation-capable turn or action grant. Remote mismatch
+makes the local store mutation-read-only and routes to reconcile; remote
+unavailability fails portable authority acquisition closed while leaving
+permitted reads/diagnostics available. This head check is authority
+validation, not use of the remote as a second work database. During an active
+session, a configured bounded cadence revalidates the epoch; forced takeover
+of an actually still-running old host therefore has an explicit detection
+window rather than an impossible distributed-lock claim. A detected mismatch
+advances the local admission epoch and invalidates outstanding grants.
+
+Each push compare-and-swaps the expected parent manifest. A changed remote
+head produces `portable_diverged`; Engram refuses to push or merge. The named
+`engram portable reconcile` workflow previews both immutable lineages and
+either continues one while retaining the other as a recovery bundle/proposed
+import, or forks a new project identity. It never silently drops a lineage or
+renumbers its dense feeds. Moving to another machine is an explicit clean
+flush/handoff followed by `engram portable restore` of that head. Normal
+active execution never reads the remote as a second live database.
+
+Portable state never restores execution authority. Live work claims,
+resource leases, control sessions, grants, action state, delivery progress,
+and agent-private scratch are excluded. Immutable claim lifecycle events may
+be retained for audit and fencing history, but an unfinished prior-host claim
+restores as `recoverable`; attributed recovery advances its generation/fence,
+and resource leases must be reacquired. Inert lease lifecycle audit events may
+cross, but never rebuild an active lease. This prevents a user from locking
+their new machine out with authority held by the old one.
+
+Portable projection is closed, not an arbitrary filtered object subset:
+
+- **Executable shared-state closure** includes every transitive object needed
+  to rebuild work items/edges/events, readiness, policy/authority, root-shared
+  context, acceptance/evidence, completion seals, and typed feed heads. If
+  export policy will not permit one of those objects, release fails
+  `portable_projection_incomplete`; a stub may not stand in for executable
+  state.
+- A provenance-only reference into excluded private or non-executable content
+  resolves through an `ExclusionStub { target_hash, object_kind, reason,
+  export_policy_hash, stub_hash }`. The stub is a projection record under its
+  own canonical `stub_hash`; it asserts but never impersonates the excluded
+  object's content hash. `doctor` treats a matching stub as deliberately
+  excluded and a missing target/stub as corruption.
+- An excluded non-semantic feed payload leaves an `ExcludedFeedEntry` binding
+  feed identity, dense position, original event hash, exclusion-stub hash, and
+  policy hash. Positions are never removed or renumbered. A behavior-affecting
+  shared event cannot be replaced this way and must be included or fail the
+  release.
+- Projection of an already canonical object is **pass or exclude, never byte
+  rewrite**. A Redactor may transform a candidate before its canonical id is
+  minted on initial write; it cannot mutate bytes during export while keeping
+  the old hash. Sanitized derivatives are new canonical objects with explicit
+  provenance.
+
+The manifest coverage hash commits included objects, stubs, excluded feed
+entries, and closure results. `doctor` reports counts/reasons and may claim
+`portable` only when executable shared-state closure is complete. Stubs leak
+existence, kind, and hashes; the portable target must be authorized for that
+metadata. If policy forbids even stubs, Engram can make a marked-truncated
+backup/export but cannot call it portable or activate it as a working store.
+Acquire requires the same recognized `export_policy_hash`; mismatch refuses
+`portable_policy_mismatch` until an attributed policy adoption/migration or a
+new lineage is chosen.
+
+The port is substrate-neutral. For a personal or small private Git transport,
+the recommended layout is a dedicated plumbing ref such as
+`refs/engram/<project-id>/<scope>`, never a checked-out branch or the working
+tree. The configured remote is a disclosure boundary: export policy and the
+`Redactor` run before projection, `secret-ref` values remain references,
+agent-private scratch never leaves the host, and `engram doctor` reports the
+no-op redactor honestly. A shared code repository is not the organization-
+scale default: hundreds of developers require per-user private repositories,
+an access-controlled internal object store, or the service backend so ref
+count, privacy, and lifecycle do not couple to the code remote.
+
+### 3.3 Deferred: concurrent cross-host sync
+
+**Deferred, not rejected.** Draft 0.2's shared backend—append-only
+content-addressed objects, set-union object transfer, concurrent heads
+surfacing as *contested* (§6.3), and tombstones preventing resurrection—solves
+live cross-host coordination. Same-host concurrent sessions and sequential
+portable handoff are already V1 requirements. Concurrent sync additionally
+needs per-origin feed positions or a trusted sequencer; it may not reinterpret
+one portable dense sequence as globally contiguous after divergent writes.
+
+Because objects already use the same canonical-bytes contract (§3.1.1), the
+object transfer remains simple, but claim/resource coordination, feed merge,
+privacy, and conflict semantics are not. The intended organization-scale
+substrate is a dedicated service/object store or private per-user/task stores,
+not hundreds of automation-generated refs in a shared code repository.
+Sensitive values never enter any shared history—vault references only (§7).
+
+### 3.4 Ports
 
 Domain semantics bind to interfaces, not backends: `Store` (append / get /
-list-heads), `Index` (rebuild / search), `Sync` (fetch / push / verify —
-dormant in V1), `Tracker` (§9.2), `Redactor` (§7), `Signer` (optional, §7).
-V1 ships `SqliteStore` and `DummyTrackerAdapter`; the Git backend (§3.2) or a
-Postgres-backed service later implements the same `Store`/`Sync` contract
-with nothing above the ports changing.
+list-heads), `Index` (rebuild / search), optional `BackupAdapter`,
+`PortableStoreAdapter`, and later `Sync`, `WorkSourceAdapter` and
+`PublicationAdapter` (§9.2), `Redactor` (§7), and `Signer` (optional, §7). V1
+ships `SqliteStore`, recovery snapshot/restore, the portable sequential
+contract, and a side-effect-free dummy publication adapter. Git, internal
+object storage, and later service transports implement the appropriate port
+without changing work semantics.
 
-**Interchange:** deterministic JSONL export exists for viewers and migration
-— it is never canonical storage, sync transport, or backup.
+**Interchange and durability modes:** SQLite is canonical in `local` mode.
+`local_backed_up` adds a verified restore-only off-host snapshot. `portable`
+adds a transferable working snapshot with exactly one active host, explicit
+handoff/restore, scheduled push, and divergence refusal. `synchronized`
+activates a later shared multi-writer backend. `engram doctor` reports mode,
+remote head, recovery point, lag/degradation, and writer assumption rather
+than implying durability or concurrency that is not present.
 
 ## 4. Context packets & retrieval
 
@@ -337,10 +753,11 @@ core API used identically by every interface (§8), and every packet is
 reproducible: it has a content hash, and `engram context explain <packet>`
 shows exactly what was included, omitted, and why.
 
-Every packet also carries the task event cursor observed during construction.
-The hash answers “what exact content did I receive?”; the cursor answers “what
-changed after that?” `engram context delta --since <cursor>` returns the
-ordered peer-visible changes without rebuilding the whole packet. A runtime
+Every packet also carries the observed positions of its named dense project,
+root-work, and run-execution feeds. The hash answers “what exact content did I
+receive?”; feed positions answer “what changed after that?” `engram context
+delta --feed <id> --since <position>` returns the ordered peer-visible changes
+without rebuilding the whole packet. A runtime
 may use its own mailbox or notification mechanism as a doorbell, but Engram's
 durable change feed is authoritative. Engram is not a chat bus.
 
@@ -404,7 +821,10 @@ immediately or awaits approval depends on **origin and authority**. Every
 promotion is its own attributed audit event. Writes pass through the
 `Redactor` port before persistence (§7).
 
-The common capture path is `engram note <prose>` / `memory_note`. It infers
+The common capture path is `engram note <prose>` / `memory_note`. Every call
+supplies a caller-stable idempotency key so a lost response can be retried
+without duplicating the note; reusing the key for different prose is a
+conflict. The path infers
 kind, authority, delivery, and scope from the active task plus asserted host
 context, returns the inference in its receipt, and asks only when genuinely
 ambiguous. The explicit `assert` surface remains for callers that need exact
@@ -477,12 +897,12 @@ makes "forget" safe to use freely.
 
 > **Purge is not an ordinary operation.** V1 purge = logical tombstone. In
 > the local SQLite store, physical erasure is *technically* feasible (delete
-> + vacuum), but it still spans every backup and JSONL export and it breaks
+> + vacuum), but it still spans every backup, portable head, and JSONL export and it breaks
 > the append-only contract — so it remains an exceptional, documented runbook
 > with preview and audit, not a CLI verb. Two boundaries stay effectively
 > irreversible regardless: anything already *published* in a report (§9.5)
-> lives on in the external tracker's history, and a future Git-backed team
-> store (§3.2) retains history across clones, reflogs, and host backups —
+> may live on in the external target's history, and any Git-backed portable or
+> team store (§3.2–3.3) retains history across clones, reflogs, and host backups —
 > where erasure means coordinated history rewrite, force-push, and clone
 > invalidation. A v2 option is envelope encryption of sensitive payloads with
 > per-record keys, so crypto-shredding can render retained ciphertext
@@ -515,13 +935,19 @@ add-ons:
 - **Pre-write redaction:** a pluggable `Redactor` port (DLP / secret
   scanning) runs on every write and fails closed where policy demands.
   Secrets and PII are stored as vault references, never as remembered values.
+  It may transform a candidate before canonical identity is minted. Export of
+  an existing canonical object is pass-or-exclude, never byte rewrite under
+  the old hash; sanitized derivatives receive new ids and provenance.
   No backend is selected for V1: the shipped implementation is a *visibly
   labeled no-op for development* — surfaced in `engram doctor` output,
   implying no compliance assurance whatsoever.
 - **No raw transcript persistence** by default; any ephemeral retention is
   explicit, bounded, and audited.
-- **Safe export defaults:** JSONL export excludes restricted and secret-ref
-  records unless explicitly widened.
+- **Safe export defaults:** JSONL/backup/portable export excludes restricted
+  records unless explicitly widened and exports `secret-ref` only as a vault
+  reference. Portable mode additionally requires complete executable
+  shared-state closure; excluded provenance uses policy-authorized stubs and
+  feed placeholders (§3.2), while agent-private scratch never leaves the host.
 - **Signing is policy, not a dependency:** a `Signer` port supports signed
   objects and signed Git commits where a deployment requires cryptographic
   attestation. Baseline v1 runs without it — at asserted-identity assurance;
@@ -529,9 +955,10 @@ add-ons:
 
 ## 8. Interfaces
 
-One core library owns the object model, derived state, and — critically —
-packet construction. The CLI and the MCP server are thin faces over it; a
-future service is a third. No interface reimplements delivery logic.
+One core library owns the object model, derived state, packet construction,
+and control decisions. The CLI, MCP server, and host control transport are
+thin faces over it; a future service is another. No interface reimplements
+delivery or admission logic.
 
 ### 8.1 CLI
 
@@ -553,98 +980,195 @@ engram review               engram conflicts           engram compact --dry-run
 engram sync                 engram doctor              engram rebuild-index
 engram export --jsonl       # purge: exceptional runbook, not a CLI verb (§6.5)
 
-# tasks & reports (§2.6, §9.5)
-engram task start [--ref <external-ref>]    engram task status
-engram task claim <id>                      engram task handoff <id> --to <session>
-engram task contribute <id>                 engram task ready <id>
-engram task finalize <task-id>              # barrier → assemble → polish → report_ready
-engram report show <task-id>                engram report publish <task-id>  # idempotent, receipted
+# local work and reports (§2.6, §9.5)
+engram work next              engram work show <ref>       engram work search <query>
+engram work propose [...]     engram work focus <ref>      engram work update [...]
+engram work complete [...]    engram work handoff --to <actor>
+engram work list [filters]    engram work stats            engram work preflight
+engram report finalize <root-ref>            # optional barrier → polish → report_ready
+engram report show <root-ref>                engram report publish <root-ref> # optional, receipted
 
-# ticketing (§9)
-engram ticket get <ref>     engram ticket search <query>
+# control diagnostics and recovery (§2.7)
+engram control status                       engram control explain <decision-id>
+engram lease renew <resource>               engram lease release <resource>
+engram action reconcile <action-id>
+
+# optional external adapters (§9)
+engram import preview <adapter> <ref>        engram import apply <snapshot>
+engram export preview <adapter> <work-ref>   engram export apply <intent>
 ```
 
-### 8.2 MCP server
+### 8.2 Agent-facing MCP server
 
-Tools mirror the CLI over the same core: `memory_context`, `memory_delta`,
-`memory_note`, `memory_search`, `memory_show`, `memory_history`,
-`memory_assert` (policy-gated per §5), `memory_review_queue`, `task_start`,
-`task_claim`, `task_handoff`, `task_contribute`, `task_ready`,
-`task_finalize`, `report_publish`, `ticket_get`, `ticket_search`.
+Memory tools mirror the CLI over the same core: `memory_context`,
+`memory_delta`, `memory_note`, `memory_search`, `memory_show`,
+`memory_history`, `memory_assert` (policy-gated per §5), and
+`memory_review_queue`. The hot work protocol is deliberately only
+`work_next`, `work_focus`, `work_propose`, `work_update`, `work_complete`, and
+`work_handoff`; the session binding supplies project, actor, current work, and
+cursors. Optional import, publication, and administrative queries remain
+separate tools rather than expanding every model turn.
 
-Host integration has two small responsibilities: inject `memory_context` at
-session start, then request `memory_delta` after a host notification or before
-the next work turn. The runtime owns wake-up delivery; Engram owns the state
-and cursor. No host-specific dependency enters the core.
+This surface is for capture, retrieval, explanation, and coordination
+requests. It is not a self-authorization channel: a model-callable MCP tool
+cannot prove that the host withheld a turn or a side effect. Replayable grant
+tokens never appear in model-visible results; the private host channel owns
+them.
 
-## 9. Tasks, reports & ticketing
+### 8.3 Host control channel
+
+A separate host-private transport exposes the §2.7 protocol:
+
+```text
+control_bootstrap   session_bind        turn_evaluate       turn_begin
+delivery_ack        action_authorize    action_begin        action_complete
+turn_checkpoint     session_heartbeat   session_exit
+```
+
+Current implementation status: `engram control` ships the JSON-lines subset
+`session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
+`turn_checkpoint`, plus `lease_acquire` and `lease_release`, for the built-in
+`observe`/`communicate`/lease-backed-`mutate_local` policy. It persists
+exact retry evidence across restart, invalidates unbegun grants when a new
+control connection opens, fails stale begin-time rechecks closed, and binds a
+local-mutation turn to the live exclusive execution lease and overlap fence
+covering each declared resource. A begun mutation turn pins its bound leases:
+release refuses and successor acquisition defers across nominal expiry until
+the begun grant is checkpointed, preserving the fence across restart.
+Replacement connections fence live
+predecessors; begun grants remain checkpoint-required and discoverable, with
+the exact frozen grant returned only for safely replayable observe-only partial
+recovery. Path
+subjects are bound to the project and conservatively NFC/case normalized,
+and cross-task rebind is rejected while active leases remain. The remaining operations and all individual
+action/shared/external/lifecycle authority are not yet shipped;
+`action_gated` declarations are rejected.
+
+The transport may be an in-process API, native host integration, wrapper, or
+local gateway. It is never exposed as an agent-callable way to mint grants.
+The host must bind a local work item/run before delivering a task prompt, obtain a `TurnGrant`
+before every ordinary model turn, inject all required deliveries/directives,
+activate them through `turn_begin`, and persist
+a checkpoint before the next turn. A scoped recovery/finalizer grant may
+admit only its named repair/report prompt while ordinary turns remain denied.
+An `action_gated` host must additionally
+intercept every declared material capability, obtain and begin a matching
+single-use action grant, and record its outcome even if the model turn later
+fails.
+
+Hooks can satisfy `turn_gated` conformance. `action_gated` conformance needs
+native mediation around the declared tools; MCP alone remains `advisory`.
+The runtime owns notification delivery and action execution. Engram owns
+durable protocol state, deterministic decisions, and cursors. No
+host-specific dependency enters the domain core.
+
+## 9. Local work, reports & external systems
 
 ### 9.1 The boundary
 
-> **Division of labor.** The tracker owns the organizational work item.
-> Engram owns the local working memory around it — and the finalized report
-> it publishes back. Tickets are never mirrored into memory (a local task
-> stores an `external_ref`, nothing more); memories reference tickets and may
-> snapshot the minimum needed for reproducible provenance. The external
-> system is the durable cross-team publication boundary, not a replica of
-> Engram's local event stream.
+> **Division of labor.** Engram owns host-local work and execution memory.
+> External systems are optional snapshot sources, backup/portable/sync substrates, or
+> publication targets. None is the live local work database, and none is
+> required to open, decompose, execute, or complete work.
 
-The core contains no Jira-shaped types: everything vendor-specific lives
-behind the `Tracker` port in per-backend adapters.
+The core contains no Jira-, GitHub-, or Beads-shaped types. Everything
+vendor-specific lives behind neutral adapter ports. Optional durability
+storage is separate from work intake and publication; configuring one does not
+silently enable the others.
 
-### 9.2 The Tracker port
+### 9.2 External adapter ports
 
 ```
-Tracker {
+WorkSourceAdapter {
   capabilities()                    // what this backend supports
   normalize_ref(text) → Ref         // "ABC-123", URL, … → canonical ref
-  get(ref, field_projection) → TicketDTO
-  search(query, cursor) → [TicketDTO]
-  fingerprint(ref) → SourceRevision // snapshot hash for provenance (§9.3)
-  publish_report(ref, report, idempotency_key) → Receipt
-                                    // durable, idempotent; capability-gated (§9.5)
+  fetch_snapshot(ref, projection) → WorkSourceSnapshot
+  search(query, cursor) → [SourceCandidate]
 }
-// TicketDTO (backend-neutral): ref, title, body, status, owner,
-// updated_at, source_revision, canonical_url, raw{} extension data
+
+BackupAdapter {
+  put_snapshot(project, manifest, bytes) → BackupReceipt
+  get_snapshot(project, snapshot_id) → RecoverySnapshot
+  list_snapshots(project, cursor) → [SnapshotMetadata]
+}
+
+PortableStoreAdapter {
+  read_head(project) → PortableHead
+  fetch_snapshot(project, head_hash) → RecoverySnapshot
+  publish(project, expected_parent, active_snapshot) → PortableReceipt
+  release_writer(project, expected_active_head, released_snapshot) → PortableReceipt
+  acquire_writer(project, expected_released_head, active_manifest) → PortableReceipt
+  recover_writer(project, expected_head, recovery_intent, active_manifest) → PortableReceipt
+  validate_writer(project, writer_instance_id, writer_epoch) → WriterValidation
+}
+
+PublicationAdapter {
+  capabilities()
+  publish_report(target, report, idempotency_key) → Receipt
+  publish_work?(target, projection, idempotency_key) → Receipt
+}
 ```
+
+`WorkSourceSnapshot` is backend-neutral: canonical ref, projected title/body/
+status/owner, captured time, source revision, canonical URL, canonical payload
+hash, and bounded extension data. A `PublicationAdapter` accepts only an
+explicit target and frozen payload under a durable idempotency key.
+`BackupAdapter` stores/restores immutable recovery snapshots.
+`PortableStoreAdapter` publishes and restores a sequential working snapshot
+under parent-head compare-and-swap; it never merges or restores live execution
+authority. Both are separate from a later live multi-writer `Sync` backend.
 
 ### 9.3 Provenance across a mutable source
 
-When a memory derives from ticket state, it stores the ref *plus* a minimal
-immutable `source_snapshot` (revision fingerprint, captured-at, relevant
-excerpt hash) — so the claim's basis remains reproducible after the ticket
-changes or is deleted. This is snapshot-for-provenance, not mirroring: the
-snapshot is evidence attached to one claim, not a synced copy of the ticket.
+An import creates immutable `source_snapshot` evidence and a local work
+revision. The local item then evolves independently. An explicit refresh
+creates another snapshot and a proposed revision; it never overwrites local
+priority, graph edges, claims, evidence, or completion. Memories derived from
+mutable external state cite the relevant snapshot hash so their basis remains
+reproducible after the source changes or disappears.
 
 ### 9.4 Adapters & phasing
 
-- **V1 — `DummyTrackerAdapter`:** the tracker at work is proprietary, and no
-  proprietary integration ships in V1. Instead, a dummy adapter exercises the
-  *exact* production contract with no external side effects: it accepts a
-  projected ticket ref, a report, and an idempotency key; writes and returns
-  a deterministic local receipt; and supports retry/idempotency tests. The
-  real adapter later swaps in behind an already-proven contract.
-- **V1 read surface:** `normalize_ref` / `get` / `search` for on-demand
-  context enrichment and distillation evidence — served by the dummy in V1.
-  No mirroring, no webhook cache.
-- **Later — the proprietary adapter and wider outbound:** real publication,
-  comments and link-backs, transitions if ever authorized; incremental
-  webhook/poll checkpoints with reconciliation. Outbound actions require
-  explicit user or policy authorization and durable idempotency receipts.
+- **V1 local:** no external adapter is required. SQLite is canonical and the
+  work graph is fully functional in `local` durability mode.
+- **V1 portability/compatibility:** previewed, round-trip Beads snapshot
+  import/export; deterministic work-graph recovery snapshot/restore;
+  sequential portable publish/handoff/restore with cadence, lag reporting,
+  head CAS, and divergence refusal; a dummy publication adapter proving
+  frozen-payload idempotency with no external side effects. The existing
+  `DummyTrackerAdapter` name may remain temporarily during migration.
+- **Later optional modes:** live concurrent `Sync`, real GitHub/Jira/
+  proprietary intake and publication, comments, and link-backs. Automatic
+  tracker mirroring and autonomous reprioritization remain non-goals.
+  Outbound actions require explicit user authority or a bounded delegation and
+  durable idempotency receipts.
 
 ### 9.5 Finalization & the report contract
 
-Publication is driven by the task state machine (§2.6). Finalization first
-opens the participant barrier: every expected session contributes and marks
-ready, or an arbiter records an explicit waiver. Engram then deterministically
-buckets task memories and contribution fragments into the report sections;
-an agent polishes that single draft. Only then is it **frozen at
-`report_ready`** — an immutable object whose `report_hash` is bound to the
-publication idempotency key.
+Report finalization is an optional path after local work completion (§2.6).
+It consumes the run's immutable `CompletionSeal`; it never quiesces or drains
+execution again. The root seal already proves every expected contributor
+supplied a required child seal or authorized omission, reconciled every action
+outcome, released or transferred resource leases, contributed, and satisfied
+acceptance—or a human-authorized waiver records the omission. Reopening the root before report
+freeze supersedes that run and aborts assembly; reopening after `report_ready`
+requires a superseding report rather than mutating frozen bytes.
 
-Publishing hands the frozen bytes to the `Tracker` adapter under that key;
+After the barrier, Engram creates a `ReportAssembly` anchored to the root
+`CompletionSeal`. The designated finalizer holds a fenced
+`ReportAssemblyClaim`; this authority is distinct from the terminalized work
+claim and released execution/resource leases. Its finalizer grant binds the
+seal hash, assembly generation/revision, and assembly-claim fence and is
+restricted to deterministic report assembly and polishing. It cannot
+authorize ordinary execution mutation. Only then is the report **frozen at
+`report_ready`**—an immutable object with a `report_hash`—and the assembly
+claim terminalizes. If publication is requested, a separate immutable intent
+binds those bytes to a target and idempotency key.
+
+Publishing hands the frozen bytes to a `PublicationAdapter` under that key;
 failures retry the identical payload, and only an adapter receipt marks the
-task `published`. A revised report is a superseding version under a new intent
+report `published`. Local work remains completed regardless of publication
+state. A revised report is a superseding version under a new intent
 and key — the pairing of one immutable payload with one idempotency key is
 what makes "retry" a safe word. Session-end distillation may update local
 working memory at any time, but nothing reaches the external system except
@@ -659,7 +1183,7 @@ The report contract, in order:
 5. Validation and evidence
 6. Unresolved risks, blockers, follow-ups
 7. Durable-memory promotion candidates
-8. Provenance: local task id, memory/version and participant-contribution
+8. Provenance: local root/work/run ids, memory/version and participant-contribution
    hashes, timestamps, actors, assurance, and any finalization waivers
 
 The report **cites the local memory and version IDs it was distilled from**,
@@ -670,10 +1194,12 @@ so the local record can always explain the published artifact.
 > candidates* — they never silently become global or org memory. Promotion
 > back into durable memory follows the ordinary write policy (§5).
 
-**Retention after publication** is configurable. Default: retain the local
-task and its source memories until a confirmed publication receipt plus a
-grace period, then compact to the final report, a provenance index, and
-tombstones. Unpublished source state is never auto-deleted.
+**Retention after completion or publication** is configurable. Completed local
+work remains durable without a publication target. When publication is
+requested, retain source memories through the confirmed receipt plus a grace
+period, then compact according to policy to the final report, provenance
+index, and tombstones. No source state is auto-deleted merely because no
+external adapter exists.
 
 ## 10. Evaluation & telemetry
 
@@ -696,15 +1222,16 @@ evaluation harness:
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed host-local SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; one-verb capture; context packets with budgets, fail-closed pinned tier, omission manifest, content hash, event cursor + peer delta, and visible review counts; write policy matrix and proposal/approval; supersede/contradict/contested; task-shared working memory with claims/leases, explicit handoff, participant contributions and finalization barrier; deterministic report assembly, polish/freeze, and `DummyTrackerAdapter` publication under idempotent receipts; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + MCP over one core; safe JSONL export + local backup; fixture-level retrieval tests; `doctor` / `rebuild-index`. |
-| **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction automation; post-publication retention compaction; budget tuning from retrieval logs. |
-| **v2+** | Proprietary tracker adapter (real publication); Git object-store team backend (§3.2) with org/team scopes; optional embeddings; wider outbound ticketing (comments, link-backs, webhook checkpoints); real Redactor/DLP integration; Postgres/service `Store` backend; Signer-based attestation; envelope encryption for crypto-shredding. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from resource leases, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; scoped resource leases, handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts; deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / `rebuild-index`. |
+| **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
+| **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 
 > **Scope discipline.** V1's riskiest cut is doing too much. Everything in v1
-> serves one loop: bind a backlog item → coordinate concurrent local sessions
-> under shared task memory → assemble and freeze one report → publish it →
-> review promotion candidates. Cross-host sync, the real tracker integration,
-> decay automation, and embeddings improve that loop; none close it.
+> serves one loop: open or import local work → decompose/select ready work →
+> coordinate concurrent sessions under enforced turn/action preconditions →
+> complete with evidence → optionally freeze/publish a report → review
+> promotion candidates. Cross-host sync and real external adapters widen that
+> loop but are not dependencies of local execution.
 
 ## 12. Decisions
 
@@ -715,22 +1242,30 @@ Codex::AgentMemory):
 | --- | --- |
 | Name | **Engram** — settled (binary: `engram`). |
 | Implementation language | **Rust.** |
-| Ticketing backend | Proprietary. V1 ships `DummyTrackerAdapter` against the real port (§9.4); no proprietary integration in V1. |
+| External adapters | Optional on intake, durability, and publication. V1 targets deterministic recovery plus sequential portable handoff, keeps a dummy publication adapter, and targets round-trip Beads compatibility; no proprietary integration is required (§9.4). |
 | Identity source | Proprietary runtime context: instruction/authority arrives as text through the tools and skills in use — asserted context, not cryptographic identity (§7). No SSO/LDAP in V1. |
-| Memory-repo hosting / team scope | Not in V1 — start local. The Git team backend is deferred with its design preserved (§3.2). |
+| Cross-host storage / team scope | V1 starts local and adds optional sequential `portable` handoff for one active host. Concurrent team scope remains deferred with its design preserved (§3.3). |
 | Redaction backend | None selected. Port + safe defaults ship; the no-op development implementation is visibly labeled and implies no compliance assurance (§7). |
-| Architecture refinement | Dual-layer model adopted: local working memory during execution; durable final report published at task finalization (§1, §2.6, §9.5). |
-| Multi-session operating model | Normal in V1 on one host. Task memory is shared by default; agent scratch is private. Claims/leases, cursor deltas, participant contributions, and a finalization barrier are V1 primitives. |
-| Product seam | The external tracker owns backlog; Engram owns the bound execution-time working set. One capture generates task delta, handoff, and report inputs. |
+| Architecture refinement | Local work graph plus dual-layer memory/report model; final report and publication are optional state machines after local completion (§1, §2.6, §9.5). |
+| Multi-session operating model | Normal in V1 on one host. Root-work memory is shared by default; agent scratch is private. Each `WorkRun` has one ordinary executor/claim, parallel sessions claim distinct children under a `RootExecution`, and claims/leases, typed source/delivery positions, contributions, child seals, and a completion barrier are V1 primitives. |
+| Product seam | Engram owns host-local work from creation/decomposition through completion. External intake, storage/sync, and publication are independent optional ports. One capture generates work delta, handoff, evidence, and report inputs. |
+| Behavioral control | Engram decides task-bound readiness and capability eligibility; the host enforces those decisions at turn and declared tool boundaries. MCP alone is advisory. Effective authority is the intersection of Engram and user/host policy (§2.7, §8.3). |
 
 ### Still open
 
 - Default grace period for post-publication retention (§9.5) — pick during V1
   implementation.
-- Trigger for reviving the team backend (§3.2) — revisit when coordination
-  must cross machines. Multiple sessions on one host are already V1.
+- Trigger for sequential portability (§3.2) has fired: cross-machine handoff
+  is a V1 target. Concurrent sync (§3.3) remains deferred until two hosts must
+  coordinate live; same-host sessions do not trigger it.
 - Timing of the proprietary tracker adapter — when work authorizes real
   publication.
+- Default decomposition depth/fanout/open-descendant budgets and standing
+  delegation expiry.
+- Recovery snapshot format and recovery-point defaults for optional
+  `local_backed_up` mode; portable push cadence and first transport substrate
+  (recommended: a private dedicated Git ref, not a branch; internal object
+  storage for organization scale).
 
 ## Appendix A — Decision log
 
@@ -757,21 +1292,32 @@ outcomes:
 | Dual memory / report model | Greg: local working memory while work runs; polished final report published to the tracker at finalization. Codex elaboration: SQLite canonical in V1; Git store deferred, not rejected; finalization state machine; report contract with cited memory/version IDs; configurable post-publication retention | | Adopted (§1, §2.6, §3, §9.5) → Draft 0.3 |
 | Round-4 correction | Failure transition returned to `finalization_pending` | Freeze the report at `report_ready`: immutable report + hash bound to the idempotency key; failure retries identical bytes, never re-enters distillation; revision = superseding version + new intent. Endorsed keeping §3.1.1/JCS in V1 | **Codex**, adopted (§2.6, §9.5) → Draft 0.4, final ACK by both authors |
 | Round-5 product test | Greg asked whether the authors would actually use Engram and clarified that multi-session work is normal. Fable identified capture ceremony, double entry, claims, and peer visibility as adoption blockers. | Codex separated packet hash from ordered event cursor, added leases/recovery, finalization barrier, and stable project identity across worktrees. | **Both**, joint position confirmed: narrow Engram to concurrent execution memory with three visibility rings, one-write-many-views, deterministic report assembly, and the backlog/execution seam (§1–5, §8–9) → Draft 0.5 |
+| Round-6 control correction | Greg identified the missing behavioral and coordination layer and asked Engram to control it. Engram::Opus independently argued that the hot path should mediate by inlining fresh context, with refusal as a narrow tail; semantic capture must not gate edits; enforcement needs observe/replay evidence and honest coverage. | A voluntary memory loop is not control. Separate deterministic decisions from host enforcement; add recovery/finalizer grants and a stable quiescence cut to avoid refusal/finalization deadlocks; mediate declared material capabilities with scoped fenced leases, checkpoints, and crash-safe receipts. | **Adopted:** Engram becomes the task-bound behavioral/coordination decision plane while the host remains actuator/reference monitor. Normal pre-turn grants inline delivery; capability-specific failure policy, observe-first rollout, and advisory/turn-gated/action-gated assurance keep the claim honest (§2.7, §8.3) → Draft 0.6 |
+| Round-7 local-work correction | Greg required Engram to replace Beads for local work: external injection and publication are both optional because heavy external systems do not scale to execution-time decomposition. Engram::Opus endorsed local ownership, claim/lease separation, derived readiness, and optional boundaries, while challenging durability, assignment, agent ceremony, root memory scope, and authority escalation. | Add a first-class work graph and six-operation ambient model protocol; keep assignment, claim, and resource lease distinct; bind grants to work/claim/lease/context fences; make completion evidence-based; separate publication; expose explicit durability modes. | **Adopted with Greg's clarification:** SQLite is immediately authoritative in valid `local` mode; optional durability improves over time but is never a prerequisite for local execution. Honest mode claims, restore/integrity tooling, and round-trip Beads compatibility bound the replacement promise (§2.6, §3.4, §8, §9) → Draft 0.7. |
+| Round-7 independent rereview | Engram::Opus accepted Greg's optional-storage clarification but found stale durability-gate prose, run-owned memory that would disappear on reopen, ambiguous sparse/global cursors in safety CAS, focus/claim coupling, and completion/report drain ordering. | Preserve memory on the root work item across runs; use dense named project/root/run source feeds plus a separate per-session delivery sequence; make focus navigation-only; put draining in `CompletionSeal` and make optional report assembly consume it. | **Adopted before implementation.** The rereview identified no additional P0/P1 category beyond these exact corrections (§1.2, §2.6–2.7, §3.1, §8–9). |
+| Round-7 Codex verification | Independent read-only verification found four implementation-blocking ambiguities: finalizer authority survived a terminal work claim, participant plurality conflicted with a singular run claim, scalar cursors lacked feed identity, and separately acyclic hierarchy/prerequisite graphs could still create a completion deadlock. | Add fenced post-completion `ReportAssemblyClaim`; make one executor own each child `WorkRun` under a root aggregate; type source feed positions separately from session delivery positions; cycle-check explicit prerequisites plus implicit required-child completion edges as one graph. | **Adopted before implementation.** No external storage is required by any correction (§2.6–2.7, §3.1, §9.5). |
+| Round-8 portability correction | Greg stated that Engram starts local but must persist remotely, that he moves between machines, and that repository scale may reach hundreds of developers. He agreed to a canonical human-readable work projection and proposed a branch. | Engram::Opus separated restore-only backup, sequential portability, and concurrent sync; recommended a dedicated plumbing ref rather than a branch/working tree, scheduled push with visible lag, divergence refusal, sensitivity filtering, and no transfer of live claims/leases. | **Adopted as the transport-neutral contract:** optional V1 `portable` mode has one active host, explicit handoff/restore, head CAS, and no live-authority transfer. A private dedicated Git ref is the recommended personal transport; organization-scale substrate remains a product choice (§3.2–3.4, §7, §9.2–9.4) → Draft 0.8. |
+| Round-8 portability verification | Independent Codex verification and Engram::Opus both found that push-time CAS alone did not protect restore/startup and that sensitivity-filtered content-addressed projections could sever object/feed references. | Add writer-epoch release/acquire, exact-base restore, bounded startup/resume validation, and honest forced-takeover detection; require executable shared-state closure, separately hashed exclusion stubs, dense feed placeholders, export pass-or-exclude, coverage diagnostics, and policy-hash equality on acquire. | **Adopted before portable implementation.** Steps 1–4 remain independent of remote storage; the portable step must satisfy these conformance rules (§2.7, §3.2, §7, §9.2–9.4). |
 
 ## Appendix B — Beads verdict
 
 Both authors studied [Beads](https://github.com/gastownhall/beads) (Codex
 read the memoryops, prime rendering, merge settlement, and compaction code;
 Fable analyzed the docs and its observed behavior in production use). Shared
-conclusion: don't clone it — borrow its operational discipline, replace its
-memory model.
+The earlier conclusion was "don't clone it—borrow its operational discipline,
+replace its memory model." Draft 0.8 supersedes the product boundary behind
+that sentence: Engram now also owns local work. It still does not copy Beads'
+implementation or make Beads a dependency; it must cover the useful local
+workflow while integrating task state with typed memory, evidence, and
+behavioral control.
 
 **Borrow:** an explicit canonical source of truth distinct from
 export/interchange formats; local/offline-first operation;
 collision-resistant ids for concurrent writers; task state kept separate from
 persistent note memory; typed graph edges with behavior
 (supersedes / duplicates / derived-from); immutable audit/change history;
-dry-run preview before anything destructive; a session-start context packet
+assignment distinct from live claim, priority/labels/deferral, ready and
+blocked indexes, acceptance criteria, round-trip migration, dry-run preview before anything destructive; a session-start context packet
 with explicit caps and visible omission; human and machine interfaces over
 one core.
 

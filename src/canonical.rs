@@ -7,13 +7,13 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 
 use crate::storage::StoreError;
 
 /// A lowercase SHA-256 digest of RFC 8785 canonical JSON bytes.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct ObjectHash(String);
 
@@ -55,6 +55,18 @@ impl FromStr for ObjectHash {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::from_stored(value.to_owned()).ok_or("expected a lowercase 64-character SHA-256 hash")
+    }
+}
+
+impl<'de> Deserialize<'de> for ObjectHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::from_stored(value).ok_or_else(|| {
+            serde::de::Error::custom("expected a lowercase 64-character SHA-256 hash")
+        })
     }
 }
 
@@ -158,5 +170,11 @@ mod tests {
             CanonicalObject::verify(&hash, bytes),
             Err(StoreError::NonCanonicalObject(_))
         ));
+    }
+
+    #[test]
+    fn object_hash_deserialization_rejects_invalid_nested_digests() {
+        assert!(serde_json::from_str::<ObjectHash>(r#""bogus""#).is_err());
+        assert!(serde_json::from_str::<ObjectHash>(&format!(r#""{}""#, "A".repeat(64))).is_err());
     }
 }

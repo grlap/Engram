@@ -11,8 +11,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ActorContext, Authority, ChangeCursor, DevelopmentNoopRedactor, MemoryKind, NoteRequest,
-    NoteVisibility, ObjectHash, ProjectId, Sensitivity, SessionId, SqliteStore, TaskId,
+    ActorContext, Authority, ChangeCursor, DevelopmentNoopRedactor, LocalWorkService, MemoryKind,
+    NoteRequest, NoteVisibility, ObjectHash, ProjectId, Sensitivity, SessionId, SqliteStore,
+    TaskId, WorkAvailability, WorkCompleteInput, WorkHandoffInput, WorkLifecycle, WorkNextQuery,
+    WorkNextSection, WorkProposeInput, WorkUpdateInput,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation},
     storage::StoreError,
 };
@@ -25,6 +27,7 @@ pub struct McpServer {
     actor_id: String,
     session_id: SessionId,
     source_skill: Option<String>,
+    work_authority_grant: Option<ObjectHash>,
 }
 
 impl McpServer {
@@ -44,7 +47,15 @@ impl McpServer {
             actor_id,
             session_id,
             source_skill,
+            work_authority_grant: None,
         }
+    }
+
+    /// Binds one host-selected grant to this connection's work mutations.
+    #[must_use]
+    pub fn with_work_authority_grant(mut self, grant: Option<ObjectHash>) -> Self {
+        self.work_authority_grant = grant;
+        self
     }
 
     fn store(&self) -> Result<SqliteStore, StoreError> {
@@ -72,6 +83,17 @@ impl McpServer {
     fn bound_task(&self, store: &SqliteStore) -> Result<TaskId, StoreError> {
         store.bound_task(&self.project_id, &self.session_id)
     }
+
+    fn work_service(&self) -> LocalWorkService {
+        LocalWorkService::new(
+            self.database.clone(),
+            self.project_id.clone(),
+            self.actor_id.clone(),
+            self.session_id.clone(),
+            self.source_skill.clone(),
+            self.work_authority_grant.clone(),
+        )
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -93,8 +115,10 @@ struct MemoryNoteArgs {
     /// Natural-language note. Labels such as `Decision:`, `Fact:`, and
     /// `Constraint:` plus rule cues are optional hints.
     prose: String,
-    /// Stable key for safe retry. Omit for a new write; the receipt returns one.
-    idempotency_key: Option<String>,
+    /// Caller-stable key required for safe lost-response retry.
+    idempotency_key: String,
+    /// Required when both a legacy task and local work focus are active.
+    target: Option<MemoryNoteTarget>,
     /// Keep this note private to the asserted agent rather than task-shared.
     private: Option<bool>,
     /// Optional explicit kind override; normal capture should omit it.
@@ -103,6 +127,13 @@ struct MemoryNoteArgs {
     authority: Option<String>,
     /// Optional external evidence or source references.
     refs: Option<Vec<String>>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum MemoryNoteTarget {
+    Task,
+    Work,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -145,6 +176,75 @@ struct ClaimArgs {
     ttl_seconds: i64,
     /// Stable key for a safe acquisition retry; omit for a new attempt.
     idempotency_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkNextArgs {
+    /// Maximum ready candidates and feed changes to return (default 20, max 1000).
+    limit: Option<u32>,
+    /// Exact `delivered_through` value from the prior successfully received
+    /// page. Omit to replay any unacknowledged page. Before changing focus,
+    /// replay an unknown pending page first, then acknowledge the cursor that
+    /// was actually received while selecting sections that exclude `changes`.
+    acknowledge_through: Option<i64>,
+    /// Opaque `delivery_token` returned with the same successfully received
+    /// page. Required to advance a pending delivery cursor.
+    acknowledge_token: Option<String>,
+    /// Response sections to include: focus, ready, catalog, and/or changes.
+    /// Omit for all sections. Excluding changes never stages a delivery page.
+    #[serde(default)]
+    sections: Vec<String>,
+    /// Case-insensitive text search over refs, titles, outcomes, labels, and blockers.
+    search: Option<String>,
+    /// Lifecycle filters such as open, completed, cancelled, or superseded.
+    #[serde(default)]
+    lifecycles: Vec<String>,
+    /// Availability filters such as ready, claimed, active, blocked, deferred, or closed.
+    #[serde(default)]
+    availabilities: Vec<String>,
+    /// Return only work with an active graph/manual blocker.
+    #[serde(default)]
+    blocked_only: bool,
+    /// Exact case-insensitive assignee filter.
+    assigned_to: Option<String>,
+    /// Exact case-insensitive label filter.
+    label: Option<String>,
+    /// Continue catalog pagination after this short ref or full UUID.
+    catalog_after: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkFocusArgs {
+    /// Short Engram work ref or full UUID; subsequent mutations use this focus.
+    work_ref: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkProposeArgs {
+    /// Root creation or atomic decomposition operation.
+    #[schemars(with = "WorkProposeInput")]
+    input: Value,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkUpdateArgs {
+    /// Typed mutation against ambient focused work.
+    #[schemars(with = "WorkUpdateInput")]
+    input: Value,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkCompleteArgs {
+    /// Evidence-backed acceptance against ambient focused work.
+    #[schemars(with = "WorkCompleteInput")]
+    input: Value,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkHandoffArgs {
+    /// Checkpoint-coupled offer, accept, or cancellation.
+    #[schemars(with = "WorkHandoffInput")]
+    input: Value,
 }
 
 #[tool_router]
@@ -200,16 +300,45 @@ impl McpServer {
     /// Capture one prose note into the active task's canonical working set.
     #[tool(
         name = "memory_note",
-        description = "Capture one classified task note; optional cues: Decision:, Fact:, Constraint:, Never, Always, Must, Do not, Only"
+        description = "Capture one classified task/work note; target is required when both contexts are active. Optional cues: Decision:, Fact:, Constraint:, Never, Always, Must, Do not, Only"
     )]
     fn memory_note(&self, Parameters(args): Parameters<MemoryNoteArgs>) -> CallToolResult {
         let mut store = match self.store() {
             Ok(store) => store,
             Err(error) => return store_error(&error),
         };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => task_id,
+        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
+        {
+            Ok(state) => state.focused_work_id,
             Err(error) => return store_error(&error),
+        };
+        let task_id = match self.bound_task(&store) {
+            Ok(task_id) => Some(task_id),
+            Err(StoreError::NoActiveTask(_)) => None,
+            Err(error) => return store_error(&error),
+        };
+        let (task_id, work_id) = match (args.target, task_id, work_id) {
+            (Some(MemoryNoteTarget::Task), Some(task_id), _) | (None, Some(task_id), None) => {
+                (Some(task_id), None)
+            }
+            (Some(MemoryNoteTarget::Task), None, _) => {
+                return invalid_argument("target", "no legacy task is active");
+            }
+            (Some(MemoryNoteTarget::Work), _, Some(work_id)) | (None, None, Some(work_id)) => {
+                (None, Some(work_id))
+            }
+            (Some(MemoryNoteTarget::Work), _, None) => {
+                return invalid_argument("target", "no local work item is focused");
+            }
+            (None, Some(_), Some(_)) => {
+                return invalid_argument(
+                    "target",
+                    "choose task or work when both a legacy task and local work focus are active",
+                );
+            }
+            (None, None, None) => {
+                return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
+            }
         };
         let kind = match args.kind.as_deref().map(parse_kind).transpose() {
             Ok(kind) => kind,
@@ -221,7 +350,8 @@ impl McpServer {
         };
         let request = NoteRequest {
             project_id: self.project_id.clone(),
-            task_id: Some(task_id),
+            task_id,
+            work_id,
             prose: args.prose,
             visibility: if args.private.unwrap_or(false) {
                 NoteVisibility::Private
@@ -239,9 +369,7 @@ impl McpServer {
                 "memory_note",
                 "record once for context, peer delta, handoff, and final report inputs",
             ),
-            idempotency_key: args
-                .idempotency_key
-                .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
+            idempotency_key: args.idempotency_key,
             created_at: Utc::now(),
         };
         result(
@@ -250,7 +378,7 @@ impl McpServer {
         )
     }
 
-    /// Mark two existing shared memory versions as explicitly contradictory.
+    /// Mark two visible task/work shared memory versions as contradictory.
     #[tool(
         name = "memory_contradict",
         description = "Declare an attributed contradiction between two visible version hashes"
@@ -269,13 +397,23 @@ impl McpServer {
             Err(error) => return store_error(&error),
         };
         let task_id = match self.bound_task(&store) {
-            Ok(task_id) => task_id,
+            Ok(task_id) => Some(task_id),
+            Err(StoreError::NoActiveTask(_)) => None,
             Err(error) => return store_error(&error),
         };
+        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
+        {
+            Ok(state) => state.focused_work_id,
+            Err(error) => return store_error(&error),
+        };
+        if task_id.is_none() && work_id.is_none() {
+            return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
+        }
         result(
             store.record_memory_contradiction(
                 &self.project_id,
                 task_id,
+                work_id,
                 &self.session_id,
                 &self.actor_id,
                 &first,
@@ -294,10 +432,10 @@ impl McpServer {
         )
     }
 
-    /// Build the bounded task context for this session and remember its packet.
+    /// Build the bounded task/work context for this session and remember its packet.
     #[tool(
         name = "memory_context",
-        description = "Build a bounded context packet for the active task"
+        description = "Build a bounded context packet for the active task and focused local work"
     )]
     fn memory_context(&self) -> CallToolResult {
         let mut store = match self.store() {
@@ -305,13 +443,22 @@ impl McpServer {
             Err(error) => return store_error(&error),
         };
         let task_id = match self.bound_task(&store) {
-            Ok(task_id) => task_id,
+            Ok(task_id) => Some(task_id),
+            Err(StoreError::NoActiveTask(_)) => None,
             Err(error) => return store_error(&error),
         };
+        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
+        {
+            Ok(state) => state.focused_work_id,
+            Err(error) => return store_error(&error),
+        };
+        if task_id.is_none() && work_id.is_none() {
+            return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
+        }
         result(
             store.build_context(
                 &self.project_id,
-                Some(task_id),
+                task_id,
                 &self.session_id,
                 &self.actor_id,
                 Utc::now(),
@@ -347,7 +494,7 @@ impl McpServer {
         )
     }
 
-    /// Search only memory visible to this session and active task.
+    /// Search only memory visible to this session's active task and work focus.
     #[tool(
         name = "memory_search",
         description = "Full-text search visible memory without crossing private scope"
@@ -358,13 +505,24 @@ impl McpServer {
             Err(error) => return store_error(&error),
         };
         let task_id = match self.bound_task(&store) {
-            Ok(task_id) => task_id,
+            Ok(task_id) => Some(task_id),
+            Err(StoreError::NoActiveTask(_)) => None,
             Err(error) => return store_error(&error),
         };
+        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
+        {
+            Ok(state) => state.focused_work_id,
+            Err(error) => return store_error(&error),
+        };
+        if task_id.is_none() && work_id.is_none() {
+            return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
+        }
         result(
             store.search_memories(
                 &self.project_id,
-                Some(task_id),
+                task_id,
+                work_id,
+                &self.session_id,
                 &self.actor_id,
                 Some(&args.query),
                 args.limit.unwrap_or(20),
@@ -387,15 +545,22 @@ impl McpServer {
             Ok(store) => store,
             Err(error) => return store_error(&error),
         };
+        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
+        {
+            Ok(state) => state.focused_work_id,
+            Err(error) => return store_error(&error),
+        };
         let task_id = match self.bound_task(&store) {
-            Ok(task_id) => task_id,
+            Ok(task_id) => Some(task_id),
+            Err(StoreError::NoActiveTask(_)) => None,
             Err(error) => return store_error(&error),
         };
         result(
             store.show_memory(
                 &hash,
                 &self.project_id,
-                Some(task_id),
+                task_id,
+                work_id,
                 &self.session_id,
                 &self.actor_id,
             ),
@@ -418,7 +583,7 @@ impl McpServer {
             Err(error) => return store_error(&error),
         };
         result(
-            store.explain_context(&hash, &self.actor_id),
+            store.explain_context(&hash, &self.project_id, &self.session_id, &self.actor_id),
             "context_explain",
         )
     }
@@ -455,6 +620,121 @@ impl McpServer {
             "task_claim",
         )
     }
+
+    /// Return ambient focus, obligations, ready candidates, and project changes.
+    #[tool(
+        name = "work_next",
+        description = "Return selected bounded focus, ready, catalog, and project-change sections. A change page replays until acknowledged. Before changing focus, first replay any pending changes without acknowledging, then acknowledge the delivered_through and delivery_token actually received while selecting sections excluding changes"
+    )]
+    fn work_next(&self, Parameters(args): Parameters<WorkNextArgs>) -> CallToolResult {
+        let sections = match parse_enum_values::<WorkNextSection>(&args.sections) {
+            Ok(values) => values,
+            Err(message) => return invalid_argument("sections", &message),
+        };
+        let lifecycles = match parse_enum_values::<WorkLifecycle>(&args.lifecycles) {
+            Ok(values) => values,
+            Err(message) => return invalid_argument("lifecycles", &message),
+        };
+        let availabilities = match parse_enum_values::<WorkAvailability>(&args.availabilities) {
+            Ok(values) => values,
+            Err(message) => return invalid_argument("availabilities", &message),
+        };
+        result(
+            self.work_service().work_next_with_delivery_token(
+                args.limit.unwrap_or(20),
+                args.acknowledge_through,
+                args.acknowledge_token.as_deref(),
+                WorkNextQuery {
+                    sections,
+                    search: args.search,
+                    lifecycles,
+                    availabilities,
+                    blocked_only: args.blocked_only,
+                    assigned_to: args.assigned_to,
+                    label: args.label,
+                    after: args.catalog_after,
+                },
+                Utc::now(),
+            ),
+            "work_next",
+        )
+    }
+
+    /// Select and fully inspect ambient work without claiming it.
+    #[tool(
+        name = "work_focus",
+        description = "Select work by short ref or UUID as ambient focus and return acceptance, graph, claim, handoff, evidence, and allowed-next state; never claims implicitly"
+    )]
+    fn work_focus(&self, Parameters(args): Parameters<WorkFocusArgs>) -> CallToolResult {
+        result(
+            self.work_service().work_focus(&args.work_ref, Utc::now()),
+            "work_focus",
+        )
+    }
+
+    /// Create a root or atomically decompose ambient work.
+    #[tool(
+        name = "work_propose",
+        description = "Create a local root or atomically decompose ambient work. Every mutation requires a caller-stable idempotency_key; the input schema enumerates all variants and fields"
+    )]
+    fn work_propose(&self, Parameters(args): Parameters<WorkProposeArgs>) -> CallToolResult {
+        let input = match serde_json::from_value::<WorkProposeInput>(args.input) {
+            Ok(input) => input,
+            Err(error) => return invalid_argument("input", &error.to_string()),
+        };
+        result(
+            self.work_service().work_propose(input, Utc::now()),
+            "work_propose",
+        )
+    }
+
+    /// Apply a typed mutation to ambient focused work.
+    #[tool(
+        name = "work_update",
+        description = "Apply one typed mutation against ambient focused work. Current work revision, run, claim, and fence are inferred; the input schema enumerates every variant"
+    )]
+    fn work_update(&self, Parameters(args): Parameters<WorkUpdateArgs>) -> CallToolResult {
+        let input = match serde_json::from_value::<WorkUpdateInput>(args.input) {
+            Ok(input) => input,
+            Err(error) => return invalid_argument("input", &error.to_string()),
+        };
+        result(
+            self.work_service().work_update(input, Utc::now()),
+            "work_update",
+        )
+    }
+
+    /// Complete ambient work under inferred fences and explicit acceptance.
+    #[tool(
+        name = "work_complete",
+        description = "Complete ambient focused work with explicit evidence and acceptance. Current work/run/claim fences, actor assurance, and host grant are inferred; idempotency_key is required"
+    )]
+    fn work_complete(&self, Parameters(args): Parameters<WorkCompleteArgs>) -> CallToolResult {
+        let input = match serde_json::from_value::<WorkCompleteInput>(args.input) {
+            Ok(input) => input,
+            Err(error) => return invalid_argument("input", &error.to_string()),
+        };
+        result(
+            self.work_service().work_complete(input, Utc::now()),
+            "work_complete",
+        )
+    }
+
+    /// Offer, accept, or cancel a checkpoint-coupled ambient claim handoff.
+    #[tool(
+        name = "work_handoff",
+        description = "Manage ambient handoff without lifecycle ids. The unique matching offer and current claim fence are inferred; every variant requires idempotency_key"
+    )]
+    fn work_handoff(&self, Parameters(args): Parameters<WorkHandoffArgs>) -> CallToolResult {
+        let input = match serde_json::from_value::<WorkHandoffInput>(args.input) {
+            Ok(input) => input,
+            Err(error) => return invalid_argument("input", &error.to_string()),
+        };
+        result(
+            self.work_service().work_handoff(input, Utc::now()),
+            "work_handoff",
+        )
+    }
 }
 
 #[allow(
@@ -464,7 +744,7 @@ impl McpServer {
 #[tool_handler(
     name = "engram",
     version = "0.1.0",
-    instructions = "Bind by external ref, record each finding once with memory_note, refresh with memory_context then memory_delta. Private notes never enter peer views."
+    instructions = "Use work_next for bounded local ready work and deltas, work_focus to navigate without claiming, then work_update/work_complete/work_handoff against ambient focus. A host-bound grant controls mutations. Record each finding once with memory_note; private notes never enter peer views."
 )]
 impl ServerHandler for McpServer {}
 
@@ -516,6 +796,60 @@ fn store_error(error: &StoreError) -> CallToolResult {
         StoreError::MemoryAccessDenied(hash)
         | StoreError::MemoryNotFound(hash)
         | StoreError::PacketAccessDenied(hash) => json!({ "object_hash": hash }),
+        StoreError::WorkNotFound(work) => json!({
+            "work_id": work,
+            "remedy": "call work_next to search/list work, then work_focus using a returned short_ref",
+        }),
+        StoreError::PendingWorkDelivery => json!({
+            "remedy": "first call work_next with changes selected and no acknowledgement to replay the pending page; then call work_next with the returned delivered_through and delivery_token as acknowledge_through and acknowledge_token while selecting sections excluding changes; finally retry the focus-changing operation with the same idempotency key",
+        }),
+        StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
+            "reason": message,
+            "remedy": "refresh with work_focus/work_next and follow allowed_next",
+        }),
+        StoreError::WorkRevisionConflict {
+            work,
+            expected,
+            current,
+        } => json!({
+            "work_id": work,
+            "expected_revision": expected,
+            "current_revision": current,
+            "remedy": "refresh the ambient item with work_focus before retrying with a new idempotency_key",
+        }),
+        StoreError::WorkOperationIdempotencyConflict { operation, key } => json!({
+            "operation": operation,
+            "idempotency_key": key,
+            "remedy": "retry the original payload exactly or use a new key for a different intent",
+        }),
+        StoreError::WorkDependencyCycle => json!({
+            "remedy": "remove or change the prerequisite edge that introduces the cycle",
+        }),
+        StoreError::WorkNotOpen(work) => json!({
+            "work_id": work,
+            "remedy": "refresh with work_focus and follow allowed_next",
+        }),
+        StoreError::WorkClaimHeld {
+            work,
+            holder,
+            expires_at,
+        } => json!({
+            "work_id": work,
+            "holder_session_id": holder,
+            "expires_at_ms": expires_at,
+            "expires_at": chrono::DateTime::<Utc>::from_timestamp_millis(*expires_at)
+                .map(|value| value.to_rfc3339()),
+            "remedy": "wait for expiry or coordinate an explicit checkpointed handoff",
+        }),
+        StoreError::WorkClaimMismatch { work } => json!({
+            "work_id": work,
+            "remedy": "refresh with work_focus; reclaim or accept a handoff before mutating",
+        }),
+        StoreError::WorkCompletionRefused { work, reason } => json!({
+            "work_id": work,
+            "reason": reason,
+            "remedy": "record evidence, checkpoint the current feed cut, and satisfy every current acceptance criterion",
+        }),
         _ => Value::Null,
     };
     CallToolResult::structured_error(json!({
@@ -545,6 +879,17 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::EmptyNote => "empty_note",
         StoreError::RedactionRefused(_) => "redaction_refused",
+        StoreError::WorkNotFound(_) => "work_not_found",
+        StoreError::PendingWorkDelivery => "work_delivery_pending",
+        StoreError::InvalidWork(_) => "work_invalid",
+        StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
+        StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
+        StoreError::WorkOperationIdempotencyConflict { .. } => "work_idempotency_conflict",
+        StoreError::WorkDependencyCycle => "work_dependency_cycle",
+        StoreError::WorkNotOpen(_) => "work_not_open",
+        StoreError::WorkClaimHeld { .. } => "work_claim_held",
+        StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
+        StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
         _ => "engram_store_error",
     }
 }
@@ -557,6 +902,19 @@ fn invalid_argument(field: &str, message: &str) -> CallToolResult {
             "details": { "field": field },
         }
     }))
+}
+
+fn parse_enum_values<T>(values: &[String]) -> Result<Vec<T>, String>
+where
+    T: serde::de::DeserializeOwned,
+{
+    values
+        .iter()
+        .map(|value| {
+            serde_json::from_value(Value::String(value.trim().to_lowercase()))
+                .map_err(|error| error.to_string())
+        })
+        .collect()
 }
 
 fn parse_kind(value: &str) -> Result<MemoryKind, &'static str> {

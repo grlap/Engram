@@ -5,10 +5,12 @@ description: Work in the Engram repository when changing its typed memory model,
 
 # Engram Repository
 
-Engram is a host-local concurrent execution-memory service for multiple agent
-sessions. It keeps agent-private scratch and task-shared operational memory
-local while agents work, then publishes one frozen report to the referenced
-external task. Preserve that boundary in code, tests, docs, and commands.
+Engram is a local-first work, behavioral-control, and execution-memory service
+for multiple agent sessions. It owns local work from creation/decomposition
+through evidence-backed completion. SQLite is canonical on the active host;
+agent-private scratch and live execution authority remain there. External
+snapshot intake, backup/portable/sync, and frozen publication are independent
+optional capabilities. Preserve that boundary in code, tests, docs, and commands.
 
 ## Read the Relevant Contract
 
@@ -17,6 +19,9 @@ external task. Preserve that boundary in code, tests, docs, and commands.
   visibility, versioning, and contradiction behavior.
 - Read `docs/features/local-tasks-and-reports.md` when changing tasks, report generation,
   publication, retry, receipts, or retention.
+- Read `docs/features/local-work-system.md` when changing work items,
+  decomposition, dependencies, readiness, assignment, claims, completion, or
+  external work migration.
 - Read `docs/features/security-and-trust.md` for identity assurance, redaction, secrets, and
   irreversible publication constraints.
 
@@ -31,22 +36,41 @@ contract and keep the change narrow.
 - Unknown schema versions may be retained but are never activated.
 - Applicable hard/firm pinned contradictions and pinned-budget overflow fail
   context assembly before an agent acts.
-- Local tasks reference external tickets; they do not mirror ticket state.
+- Local work needs no external reference. Explicit imports preserve immutable
+  source snapshots and never silently mirror external state.
 - Local does not mean single-session: one stable project id resolves every
-  session and worktree to the same host-local store.
+  session and worktree to the same active-host store. Optional portable
+  handoff may restore it on the next active host.
 - Agent scope is private; task scope is shared among participants and is the
   default for execution findings.
-- Claims are atomic, idempotent leases with expiry and explicit handoff or
-  audited recovery. Every transition emits an immutable task event.
-- Packet hashes reproduce content; monotonic event cursors order peer deltas.
-  Never substitute one for the other.
-- Report freeze requires every expected participant contribution or an
-  explicit attributed waiver.
-- One capture must feed peer deltas, handoffs, and report assembly. Do not add
-  a second status ledger beside the external backlog tracker.
-- `report_ready` freezes report bytes, hash, and publication idempotency key.
-  Failed publication returns to the same frozen report. A revision creates a
-  superseding version and a new publication intent.
+- Assignment is future intent; fenced work claims schedule execution; fenced
+  resource leases authorize mutation. Never infer one from another. Every
+  handoff/recovery transition emits an immutable event.
+- Packet hashes reproduce content; typed dense positions in named project,
+  root-work, and run-execution feeds order deltas. A session's dense delivery
+  position is distinct from its source-feed progress vector. Never substitute
+  a hash or global row id for either.
+- V1 has one ordinary executor/claim per `WorkRun`; parallel sessions claim
+  distinct child runs under a `RootExecution` aggregate.
+- Root completion requires a `CompletionSeal` over the dense run-feed cut,
+  required child seals, contributions, reconciled actions/leases, acceptance,
+  and evidence, or a human-authorized waiver. Planned report assembly
+  consumes the seal under a separate fenced `ReportAssemblyClaim`, without
+  retaining completed-run authority or draining execution again.
+- One capture must feed work/peer deltas, handoffs, evidence, and report
+  assembly. A future portable projection is a dormant transfer/restore head, not a
+  second live status ledger.
+- Planned `portable` mode is one-active-host handoff: scheduled push, writer-epoch
+  release/acquire under remote-head CAS, explicit restore, and divergence
+  refusal. Release freezes old-host mutation; acquire must succeed before
+  new-host mutation, and portable startup/resume validates the remote epoch.
+  Never restore live work claims, resource leases, control grants/delivery
+  state, or agent-private scratch. Portable executable shared state must be
+  transitively closed; excluded provenance uses explicit stubs/placeholders,
+  never dangling references or rewritten canonical bytes.
+- `report_ready` freezes report bytes and hash. A separately requested
+  publication freezes target and idempotency key. Failed publication returns
+  to the same frozen report; revision creates a superseding report and intent.
 - No adapter receipt means the task is not published.
 - Host-provided actor/authority text is asserted context unless a stronger
   assurance mechanism actually verified it.
@@ -59,7 +83,14 @@ contract and keep the change narrow.
 - `canonical`: serialization and content identity only.
 - `storage`: SQLite transactions, migrations, immutable rows, integrity, and
   rebuildable indexes.
-- `tracker`: backend-neutral capabilities, idempotency, and receipts.
+- `storage/work`: local-work projections, typed feeds, claims, and seals.
+- `control`: pure control-policy evaluation without I/O.
+- `host`: host-private transport without policy forks.
+- `work_service`: six-operation ambient protocol translation into canonical
+  storage operations.
+- external adapters: backend-neutral source snapshots, backup, portable
+  handoff, later concurrent sync, frozen publication, idempotency, and receipt
+  capabilities.
 - CLI/MCP front doors translate requests; they do not redefine domain rules.
 
 Keep proprietary tracker types, authentication schemes, and organization
@@ -76,6 +107,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
 node --test scripts/review-freeze-fingerprint.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
+node --test scripts/control-dogfood.test.mjs
 node scripts/check-doc-links.mjs
 ```
 

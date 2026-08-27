@@ -50,8 +50,9 @@ Session-end distillation drafts candidate memories from what happened and
 files them as `proposed` — automation's capture rate with review's quality
 gate. It deduplicates first: exact duplicates no-op; semantic near-duplicates
 are proposed *linked* to the existing memory, never auto-merged. Distillation
-touches only local working memory; publication to the external tracker
-happens solely through explicit task finalization
+touches only local working memory; optional publication to an external target
+happens solely through explicit report finalization and a separately
+authorized publication intent
 ([local tasks & reports](local-tasks-and-reports.md)).
 
 ## Review lifecycle

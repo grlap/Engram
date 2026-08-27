@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { captureFingerprint, runCli } from "./review-freeze-fingerprint.mjs";
 
@@ -58,10 +59,10 @@ test("tracked worktree and index changes alter the fingerprint", () => {
   });
 });
 
-test("untracked names and contents are length-delimited and reviewable", () => {
+test("untracked contents are length-delimited and reviewable", () => {
   withRepository((root) => {
     const baseline = captureFingerprint(root).fingerprint;
-    const unusualName = "line\nbreak.txt";
+    const unusualName = "spaced-ł-name.txt";
     writeFileSync(join(root, unusualName), "first\0payload");
     const first = captureFingerprint(root);
     writeFileSync(join(root, unusualName), "second\0payload");
@@ -72,6 +73,18 @@ test("untracked names and contents are length-delimited and reviewable", () => {
     assert.equal(first.untracked[0].path, unusualName);
   });
 });
+
+test(
+  "newline-bearing untracked names survive length delimiting",
+  { skip: process.platform === "win32" },
+  () => {
+    withRepository((root) => {
+      const unusualName = "line\nbreak.txt";
+      writeFileSync(join(root, unusualName), "payload");
+      assert.equal(captureFingerprint(root).untracked[0].path, unusualName);
+    });
+  },
+);
 
 test(
   "executable mode is part of untracked identity",
@@ -121,14 +134,16 @@ test("check mode rejects drift after a snapshot", () => {
 
 test("CLI exits nonzero when review input drifted", () => {
   withRepository((root) => {
-    const script = new URL("./review-freeze-fingerprint.mjs", import.meta.url);
+    const script = fileURLToPath(
+      new URL("./review-freeze-fingerprint.mjs", import.meta.url),
+    );
     const snapshot = join(root, ".git", "engram-review-freeze.json");
-    run(process.execPath, [script.pathname, "--write", snapshot], root);
+    run(process.execPath, [script, "--write", snapshot], root);
     writeFileSync(join(root, "untracked.txt"), "new\n");
 
     const result = spawnSync(
       process.execPath,
-      [script.pathname, "--check", snapshot],
+      [script, "--check", snapshot],
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(result.status, 1);

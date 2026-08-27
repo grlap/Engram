@@ -1,5 +1,12 @@
 //! Local SQLite object store and integrity verification.
 
+mod work;
+
+pub(crate) use work::{StageWorkSessionDelivery, normalize_completion_acceptance_shape};
+
+#[cfg(test)]
+pub(crate) use work::{reset_work_event_decode_count, work_event_decode_count};
+
 use std::{collections::HashMap, path::Path, time::Duration};
 
 use chrono::{DateTime, Utc};
@@ -10,12 +17,21 @@ use thiserror::Error;
 use crate::{
     CanonicalObject, ObjectHash,
     domain::{
-        ActorContext, ChangeCursor, ContextItem, ContextOmission, ContextPacket,
-        ContextPacketHeader, ContextPacketPayload, Delivery, DeltaItem, LocalTask,
-        MemoryAssertionEvent, MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId,
-        MemoryRecord, MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest,
-        NoteVisibility, SCHEMA_VERSION, Scope, Sensitivity, SessionId, TaskBindReceipt,
-        TaskClaimEvent, TaskDelta, TaskId, TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState,
+        ActorContext, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextItem, ContextOmission,
+        ContextOmissionSummary, ContextPacket, ContextPacketHeader, ContextPacketPayload,
+        ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth, ControlSessionBinding,
+        ControlSessionStatus, ControlTurnBeginDecision, ControlTurnCheckpointDecision,
+        ControlTurnDecision, Delivery, DeliveryPage, DeltaItem, EffectClass, HostPathPolicy,
+        IssuedTurnGrant, LocalTask, MemoryAssertionEvent, MemoryContradictionEvent,
+        MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus, MemorySummary,
+        MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, ObservedTurnDecision,
+        PacketSafety, ParticipantMembership, ProjectPolicyEpoch, SCHEMA_VERSION, Scope,
+        Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent,
+        TaskDelta, TaskId, TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState,
+        TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
+        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
+        TurnEvaluationInput, TurnGrantState, TurnIntent, TurnNextIntent, WorkLease,
+        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
     },
     memory::{Redactor, activation_policy, classify_note},
 };
@@ -24,6 +40,7 @@ use crate::{
 struct NoteIntentFingerprint<'a> {
     project_id: &'a crate::domain::ProjectId,
     task_id: Option<TaskId>,
+    work_id: Option<crate::domain::WorkId>,
     prose: &'a str,
     visibility: NoteVisibility,
     kind: Option<crate::domain::MemoryKind>,
@@ -37,13 +54,92 @@ struct NoteIntentFingerprint<'a> {
 }
 
 #[derive(Serialize)]
+struct NoteIntentKey<'a> {
+    project_id: &'a crate::domain::ProjectId,
+    actor_id: &'a str,
+    session_id: Option<&'a SessionId>,
+    caller_key: &'a str,
+}
+
+pub(crate) struct BeginWorkProtocolAttempt<'a, T, B> {
+    pub(crate) project_id: &'a crate::domain::ProjectId,
+    pub(crate) session_id: &'a SessionId,
+    pub(crate) operation: &'a str,
+    pub(crate) idempotency_key: &'a str,
+    pub(crate) intent: &'a T,
+    pub(crate) basis: &'a B,
+    pub(crate) now: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
 struct ContradictionIntentFingerprint<'a> {
     project_id: &'a crate::domain::ProjectId,
-    task_id: TaskId,
+    task_id: Option<TaskId>,
+    work_id: Option<crate::domain::WorkId>,
+    work_root_id: Option<crate::domain::WorkId>,
     left_version: &'a ObjectHash,
     right_version: &'a ObjectHash,
     reason: &'a str,
     actor: &'a ActorContext,
+}
+
+#[derive(Serialize)]
+struct TurnObservationIntentFingerprint<'a> {
+    control_schema_version: u16,
+    session_id: &'a SessionId,
+    task_id: Option<TaskId>,
+    intent: &'a TurnIntent,
+}
+
+#[derive(Serialize)]
+struct ControlSessionBindFingerprint<'a> {
+    control_schema_version: u16,
+    project_id: &'a crate::domain::ProjectId,
+    external_ref: &'a str,
+    title: &'a str,
+    session_id: &'a SessionId,
+    actor: &'a ActorContext,
+    assurance: ControlAssurance,
+    mediated_effects: &'a [EffectClass],
+    capability_map_revision: i64,
+    idempotency_key: &'a str,
+}
+
+#[derive(Serialize)]
+struct ControlTurnBeginFingerprint<'a> {
+    control_schema_version: u16,
+    session_id: &'a SessionId,
+    grant_id: &'a str,
+    delivery_tokens: &'a [String],
+    idempotency_key: &'a str,
+}
+
+#[derive(Serialize)]
+struct ControlTurnCheckpointFingerprint<'a> {
+    control_schema_version: u16,
+    session_id: &'a SessionId,
+    grant_id: &'a str,
+    next_intent: TurnNextIntent,
+    idempotency_key: &'a str,
+}
+
+#[derive(Serialize)]
+struct WorkLeaseAcquireFingerprint<'a> {
+    control_schema_version: u16,
+    session_id: &'a SessionId,
+    kind: crate::domain::LeaseKind,
+    mode: crate::domain::LeaseMode,
+    subject: &'a crate::domain::ResourceSubject,
+    ttl_seconds: i64,
+    idempotency_key: &'a str,
+}
+
+#[derive(Serialize)]
+struct WorkLeaseReleaseFingerprint<'a> {
+    control_schema_version: u16,
+    session_id: &'a SessionId,
+    lease_id: &'a str,
+    idempotency_key: &'a str,
 }
 
 /// Errors at the immutable storage boundary.
@@ -114,8 +210,76 @@ pub enum StoreError {
     MemoryAccessDenied(ObjectHash),
     #[error("caller is not authorized to explain context packet {0}")]
     PacketAccessDenied(ObjectHash),
+    #[error("turn observation idempotency key {0:?} was reused for a different intent")]
+    TurnObservationIdempotencyConflict(String),
+    #[error("control observation projection contains invalid data: {0}")]
+    InvalidControlObservation(String),
+    #[error("control session input is invalid: {0}")]
+    InvalidControlSession(String),
+    #[error("session {0:?} has no host-private control binding")]
+    ControlSessionNotBound(String),
+    #[error("routing token does not match control session {0:?}")]
+    ControlSessionTokenMismatch(String),
+    #[error("host control connection for session {0:?} was superseded")]
+    ControlConnectionSuperseded(String),
+    #[error("control session bind key {0:?} was reused for a different intent")]
+    ControlSessionBindConflict(String),
+    #[error("turn request key {0:?} was reused for a different intent")]
+    ControlTurnIdempotencyConflict(String),
+    #[error("control operation {operation} key {key:?} was reused for a different intent")]
+    ControlOperationIdempotencyConflict { operation: String, key: String },
+    #[error("turn grant {0:?} does not exist")]
+    ControlTurnGrantNotFound(String),
+    #[error("work lease {0:?} does not exist")]
+    WorkLeaseNotFound(String),
+    #[error("work lease {lease_id:?} is not held by session {session:?}")]
+    WorkLeaseNotHeld { lease_id: String, session: String },
+    #[error("work lease {lease_id:?} expired at {expired_at}")]
+    WorkLeaseExpired {
+        lease_id: String,
+        expired_at: DateTime<Utc>,
+    },
+    #[error("control projection contains invalid data: {0}")]
+    InvalidControlProjection(String),
     #[error("pinned context requires {required} bytes, exceeding the {budget}-byte budget")]
     PinnedBudgetExceeded { required: usize, budget: usize },
+    #[error("local work item {0:?} does not exist")]
+    WorkNotFound(crate::domain::WorkId),
+    #[error("local work input is invalid: {0}")]
+    InvalidWork(String),
+    #[error(
+        "work delivery is still pending; call work_next with changes selected and no acknowledgement to replay it, then acknowledge the returned delivered_through and delivery_token with sections excluding changes before retrying the focus-changing operation with the same idempotency key"
+    )]
+    PendingWorkDelivery,
+    #[error("work projection contains invalid data: {0}")]
+    InvalidWorkProjection(String),
+    #[error(
+        "work revision changed for {work:?}: expected {expected}, current revision is {current}"
+    )]
+    WorkRevisionConflict {
+        work: crate::domain::WorkId,
+        expected: i64,
+        current: i64,
+    },
+    #[error("work operation {operation} key {key:?} was reused for a different intent")]
+    WorkOperationIdempotencyConflict { operation: String, key: String },
+    #[error("work completion dependency graph would contain a cycle")]
+    WorkDependencyCycle,
+    #[error("work {0:?} is not open for this operation")]
+    WorkNotOpen(crate::domain::WorkId),
+    #[error("work {work:?} is claimed by session {holder} until {expires_at}")]
+    WorkClaimHeld {
+        work: crate::domain::WorkId,
+        holder: String,
+        expires_at: i64,
+    },
+    #[error("claim authority for work {work:?} is stale or does not match the holder")]
+    WorkClaimMismatch { work: crate::domain::WorkId },
+    #[error("completion for work {work:?} was refused: {reason}")]
+    WorkCompletionRefused {
+        work: crate::domain::WorkId,
+        reason: String,
+    },
 }
 
 /// Result of scanning every immutable object in the store.
@@ -123,6 +287,26 @@ pub enum StoreError {
 pub struct IntegrityReport {
     pub checked_objects: usize,
     pub invalid_objects: Vec<String>,
+    pub checked_control_records: usize,
+    pub invalid_control_records: Vec<String>,
+    pub checked_work_records: usize,
+    pub invalid_work_records: Vec<String>,
+}
+
+/// Operator-facing summary of the currently enforceable control envelope.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ControlDiagnostics {
+    pub control_schema_version: u16,
+    pub policy_epoch: ProjectPolicyEpoch,
+    pub required_assurance: ControlAssurance,
+    pub supported_effects: Vec<EffectClass>,
+    pub unenforced_effects: Vec<EffectClass>,
+    pub active_sessions: usize,
+    pub issued_turns: usize,
+    pub begun_turns: usize,
+    pub action_gating_available: bool,
+    pub authority_mediation_available: bool,
+    pub action_outcome_tracking_available: bool,
 }
 
 /// One ordered entry in a task's authoritative local change feed.
@@ -145,11 +329,14 @@ type MemorySummaryRow = (
     String,
     Option<String>,
     Option<String>,
+    Option<String>,
     String,
     String,
     String,
     i64,
 );
+
+type LegacyContradictionRow = (String, String, String, String, String);
 
 struct PreparedNote {
     version: MemoryVersion,
@@ -160,13 +347,144 @@ struct PreparedNote {
 
 const PINNED_CONTEXT_BUDGET: usize = 4 * 1_024;
 const INDEX_CONTEXT_BUDGET: usize = 8 * 1_024;
+const MAX_CONTROL_DELIVERY_EVENTS: i64 = 128;
+const MAX_CONTROL_DELIVERY_OBJECT_BYTES: i64 = 128 * 1_024;
+const MAX_CONTROL_DELIVERY_BYTES: usize = 256 * 1_024;
+const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
+const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
 
 struct ContextAssembly {
     pinned: Vec<ContextItem>,
     index: Vec<ContextItem>,
     omissions: Vec<ContextOmission>,
+    omission_summaries: Vec<ContextOmissionSummary>,
     proposed_count: u32,
     stale_count: u32,
+}
+
+struct StoredControlObservation {
+    sequence: i64,
+    session_id: String,
+    task_id: Option<String>,
+    idempotency_key: String,
+    intent_hash: String,
+    observed_at_ms: i64,
+    input_hash: String,
+    input_json: Vec<u8>,
+    decision_hash: String,
+    decision_json: Vec<u8>,
+}
+
+struct StoredControlSession {
+    project_id: crate::domain::ProjectId,
+    task_id: TaskId,
+    session_id: SessionId,
+    routing_token: String,
+    actor: ActorContext,
+    bind_key: String,
+    bind_intent_hash: String,
+    phase: SessionPhase,
+    assurance: ControlAssurance,
+    mediated_effects: Vec<EffectClass>,
+    confirmed_cursor: ChangeCursor,
+    tentative_cursor: Option<ChangeCursor>,
+    epochs: ControlEpochs,
+    blocking_watermark: ChangeCursor,
+    capability_map_revision: i64,
+    revision: i64,
+    open_grant_id: Option<String>,
+}
+
+struct RawControlSession {
+    project_id: String,
+    task_id: String,
+    routing_token: String,
+    actor_json: Vec<u8>,
+    bind_key: String,
+    bind_intent_hash: String,
+    bind_intent_json: Vec<u8>,
+    phase: String,
+    assurance: String,
+    mediated_effects_json: String,
+    confirmed_cursor: i64,
+    tentative_cursor: Option<i64>,
+    project_policy_epoch: i64,
+    task_admission_epoch: i64,
+    blocking_watermark: i64,
+    capability_map_revision: i64,
+    revision: i64,
+    open_grant_id: Option<String>,
+}
+
+struct ControlPolicyProjection {
+    epoch: ProjectPolicyEpoch,
+    required_assurance: ControlAssurance,
+    supported_effects: Vec<EffectClass>,
+    grant_ttl_seconds: i64,
+}
+
+struct StoredTurnGrant {
+    grant: IssuedTurnGrant,
+    state: TurnGrantState,
+}
+
+fn safely_redeliverable_partial_recovery(grant: &IssuedTurnGrant) -> bool {
+    matches!(grant.basis.purpose, crate::domain::TurnPurpose::Recovery)
+        && !grant.basis.requested_effects.is_empty()
+        && grant
+            .basis
+            .requested_effects
+            .iter()
+            .all(|effect| matches!(effect, EffectClass::Observe))
+        && grant
+            .delivery
+            .as_ref()
+            .is_some_and(|delivery| delivery.page.has_more)
+        && crate::control::delivery_matches_grant(grant)
+}
+
+struct StoredControlTurnResult {
+    sequence: i64,
+    session_id: String,
+    task_id: String,
+    idempotency_key: String,
+    intent_hash: String,
+    intent_json: Vec<u8>,
+    decision_hash: String,
+    decision_json: Vec<u8>,
+}
+
+struct StoredControlGrantRow {
+    grant_id: String,
+    session_id: String,
+    task_id: String,
+    request_key: String,
+    grant_hash: String,
+    grant_json: Vec<u8>,
+    state: String,
+    issued_at_ms: i64,
+    expires_at_ms: i64,
+}
+
+struct StoredControlOperation {
+    sequence: i64,
+    session_id: String,
+    operation: String,
+    idempotency_key: String,
+    intent_hash: String,
+    intent_json: Vec<u8>,
+    result_hash: String,
+    result_json: Vec<u8>,
+}
+
+struct StoredWorkLeaseRow {
+    lease_id: String,
+    task_id: String,
+    holder_session_id: String,
+    lease_hash: String,
+    lease_json: Vec<u8>,
+    state: String,
+    expires_at_ms: i64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -176,17 +494,29 @@ struct ApplicableContradiction {
     right: ObjectHash,
 }
 
+struct AuthorizedContradiction {
+    left: ObjectHash,
+    right: ObjectHash,
+    reason: String,
+    task_id: Option<TaskId>,
+    work_id: Option<crate::domain::WorkId>,
+    work_root_id: Option<crate::domain::WorkId>,
+}
+
 impl IntegrityReport {
     /// Whether every stored object passed canonicalization and digest checks.
     #[must_use]
     pub fn is_healthy(&self) -> bool {
         self.invalid_objects.is_empty()
+            && self.invalid_control_records.is_empty()
+            && self.invalid_work_records.is_empty()
     }
 }
 
 /// V1's canonical local persistence backend.
 pub struct SqliteStore {
     connection: Connection,
+    host_path_policy: HostPathPolicy,
 }
 
 impl SqliteStore {
@@ -197,7 +527,23 @@ impl SqliteStore {
     /// Returns [`StoreError`] when SQLite cannot open or initialize the store.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let connection = Connection::open(path)?;
-        Self::from_connection(connection)
+        Self::from_connection(connection, HostPathPolicy::host_default())
+    }
+
+    /// Opens a store with an explicit embedding-host filesystem identity policy.
+    ///
+    /// The first opener persists the policy. Later openers must present the
+    /// same policy so resource lease identities cannot drift between hosts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when initialization fails or the stored policy differs.
+    pub fn open_with_host_path_policy(
+        path: impl AsRef<Path>,
+        policy: HostPathPolicy,
+    ) -> Result<Self, StoreError> {
+        let connection = Connection::open(path)?;
+        Self::from_connection(connection, policy)
     }
 
     /// Creates an isolated store for tests or ephemeral runs.
@@ -206,17 +552,28 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when SQLite cannot initialize the schema.
     pub fn open_in_memory() -> Result<Self, StoreError> {
-        Self::from_connection(Connection::open_in_memory()?)
+        Self::from_connection(
+            Connection::open_in_memory()?,
+            HostPathPolicy::host_default(),
+        )
     }
 
     #[allow(
+        clippy::if_not_else,
         clippy::too_many_lines,
-        reason = "the complete idempotent SQLite schema is kept together for auditability"
+        reason = "the cold-schema branch stays adjacent to the complete idempotent DDL for auditability"
     )]
-    fn from_connection(connection: Connection) -> Result<Self, StoreError> {
+    fn from_connection(
+        mut connection: Connection,
+        host_path_policy: HostPathPolicy,
+    ) -> Result<Self, StoreError> {
         connection.busy_timeout(Duration::from_secs(5))?;
-        connection.execute_batch(
-            "PRAGMA foreign_keys = ON;
+        work::preflight_schema(&connection)?;
+        Self::preflight_host_path_policy(&connection, host_path_policy)?;
+        let core_schema_complete = Self::current_core_schema_is_complete(&connection)?;
+        if !core_schema_complete {
+            connection.execute_batch(
+                "PRAGMA foreign_keys = ON;
              PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              CREATE TABLE IF NOT EXISTS objects (
@@ -248,6 +605,7 @@ impl SqliteStore {
                  scope_kind TEXT NOT NULL,
                  project_id TEXT NOT NULL,
                  task_id TEXT,
+                 work_id TEXT,
                  agent_id TEXT,
                  memory_kind TEXT NOT NULL,
                  authority TEXT NOT NULL,
@@ -258,11 +616,21 @@ impl SqliteStore {
                  created_at_ms INTEGER NOT NULL
              ) STRICT;
              CREATE INDEX IF NOT EXISTS memory_heads_scope
-                 ON memory_heads(project_id, task_id, agent_id, status);
+                 ON memory_heads(project_id, task_id, work_id, agent_id, status);
              CREATE TABLE IF NOT EXISTS note_intents (
                  idempotency_key TEXT PRIMARY KEY,
                  request_hash TEXT NOT NULL,
                  receipt_json BLOB NOT NULL
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS project_context_revisions (
+                 project_id TEXT PRIMARY KEY,
+                 revision INTEGER NOT NULL CHECK(revision >= 0)
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS agent_context_revisions (
+                 project_id TEXT NOT NULL,
+                 agent_id TEXT NOT NULL,
+                 revision INTEGER NOT NULL CHECK(revision >= 0),
+                 PRIMARY KEY(project_id, agent_id)
              ) STRICT;
              CREATE TABLE IF NOT EXISTS memory_contradictions (
                  contradiction_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
@@ -274,6 +642,18 @@ impl SqliteStore {
              ) STRICT;
              CREATE INDEX IF NOT EXISTS memory_contradictions_versions
                  ON memory_contradictions(left_version_hash, right_version_hash);
+             CREATE TABLE IF NOT EXISTS memory_contradiction_edges (
+                 contradiction_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+                 project_id TEXT NOT NULL,
+                 task_id TEXT,
+                 work_root_id TEXT,
+                 left_version_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                 right_version_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                 UNIQUE(left_version_hash, right_version_hash),
+                 CHECK(left_version_hash < right_version_hash)
+             ) STRICT;
+             CREATE INDEX IF NOT EXISTS memory_contradiction_edges_context
+                 ON memory_contradiction_edges(project_id, task_id, work_root_id);
              CREATE TABLE IF NOT EXISTS contradiction_intents (
                  idempotency_key TEXT PRIMARY KEY,
                  request_hash TEXT NOT NULL,
@@ -300,17 +680,17 @@ impl SqliteStore {
                  session_id TEXT PRIMARY KEY,
                  task_id TEXT NOT NULL REFERENCES tasks(task_id),
                  bound_at_ms INTEGER NOT NULL
-             ) STRICT;
-             CREATE TABLE IF NOT EXISTS task_changes (
-                 cursor INTEGER PRIMARY KEY AUTOINCREMENT,
-                 task_id TEXT NOT NULL,
-                 object_kind TEXT NOT NULL,
-                 object_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 UNIQUE(task_id, object_hash)
-             ) STRICT;
-             CREATE INDEX IF NOT EXISTS task_changes_task_cursor
-                 ON task_changes(task_id, cursor);
-             CREATE TABLE IF NOT EXISTS task_claims (
+              ) STRICT;
+              CREATE TABLE IF NOT EXISTS task_changes (
+                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                  task_id TEXT NOT NULL,
+                  task_cursor INTEGER NOT NULL CHECK(task_cursor > 0),
+                  object_kind TEXT NOT NULL,
+                  object_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                  UNIQUE(task_id, task_cursor),
+                  UNIQUE(task_id, object_hash)
+              ) STRICT;
+              CREATE TABLE IF NOT EXISTS task_claims (
                  task_id TEXT PRIMARY KEY,
                  lease_id TEXT NOT NULL UNIQUE,
                  holder_session_id TEXT NOT NULL,
@@ -323,9 +703,480 @@ impl SqliteStore {
                  task_id TEXT NOT NULL,
                  holder_session_id TEXT NOT NULL,
                  lease_json BLOB NOT NULL
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_observations (
+                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                 session_id TEXT NOT NULL,
+                 task_id TEXT,
+                 idempotency_key TEXT NOT NULL,
+                 intent_hash TEXT NOT NULL,
+                 input_hash TEXT NOT NULL,
+                 input_json BLOB NOT NULL,
+                 decision_hash TEXT NOT NULL,
+                 decision_json BLOB NOT NULL,
+                 observed_at_ms INTEGER NOT NULL,
+                 UNIQUE(session_id, idempotency_key)
+             ) STRICT;
+             CREATE INDEX IF NOT EXISTS control_observations_session_sequence
+                 ON control_observations(session_id, sequence);
+             CREATE TABLE IF NOT EXISTS control_policy_state (
+                 singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                 schema_version INTEGER NOT NULL,
+                 policy_epoch INTEGER NOT NULL,
+                 required_assurance TEXT NOT NULL,
+                 supported_effects_json TEXT NOT NULL,
+                 grant_ttl_seconds INTEGER NOT NULL
+             ) STRICT;
+             INSERT OR IGNORE INTO control_policy_state (
+                 singleton, schema_version, policy_epoch, required_assurance,
+                 supported_effects_json, grant_ttl_seconds
+             ) VALUES (
+                 1, 1, 1, 'turn_gated',
+                 '[\"observe\",\"communicate\",\"mutate_local\"]', 30
+             );
+             CREATE TABLE IF NOT EXISTS task_control_state (
+                 task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
+                 admission_epoch INTEGER NOT NULL
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_connections (
+                 session_id TEXT PRIMARY KEY,
+                 connection_token TEXT NOT NULL,
+                 opened_at_ms INTEGER NOT NULL
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_sessions (
+                 session_id TEXT PRIMARY KEY,
+                 project_id TEXT NOT NULL,
+                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 routing_token TEXT NOT NULL,
+                 actor_json BLOB NOT NULL,
+                 bind_key TEXT NOT NULL,
+                 bind_intent_hash TEXT NOT NULL,
+                 bind_intent_json BLOB NOT NULL,
+                 phase TEXT NOT NULL,
+                 assurance TEXT NOT NULL,
+                 mediated_effects_json TEXT NOT NULL,
+                 confirmed_cursor INTEGER NOT NULL,
+                 tentative_cursor INTEGER,
+                 project_policy_epoch INTEGER NOT NULL,
+                 task_admission_epoch INTEGER NOT NULL,
+                 blocking_watermark INTEGER NOT NULL,
+                 capability_map_revision INTEGER NOT NULL,
+                 revision INTEGER NOT NULL,
+                 updated_at_ms INTEGER NOT NULL
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_turn_results (
+                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                 session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
+                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 idempotency_key TEXT NOT NULL,
+                 intent_hash TEXT NOT NULL,
+                 intent_json BLOB NOT NULL,
+                 decision_hash TEXT NOT NULL,
+                 decision_json BLOB NOT NULL,
+                 created_at_ms INTEGER NOT NULL,
+                 UNIQUE(session_id, idempotency_key)
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_turn_grants (
+                 grant_id TEXT PRIMARY KEY,
+                 session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
+                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 request_key TEXT NOT NULL,
+                 grant_hash TEXT NOT NULL,
+                 grant_json BLOB NOT NULL,
+                 state TEXT NOT NULL,
+                 issued_at_ms INTEGER NOT NULL,
+                 expires_at_ms INTEGER NOT NULL,
+                 begun_at_ms INTEGER,
+                 completed_at_ms INTEGER,
+                 UNIQUE(session_id, request_key)
+             ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_work_leases (
+                 lease_id TEXT PRIMARY KEY,
+                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 holder_session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
+                 lease_hash TEXT NOT NULL,
+                 lease_json BLOB NOT NULL,
+                 state TEXT NOT NULL,
+                 expires_at_ms INTEGER NOT NULL,
+                 UNIQUE(holder_session_id, lease_id)
+             ) STRICT;
+             CREATE INDEX IF NOT EXISTS control_work_leases_task_state
+                 ON control_work_leases(task_id, state, expires_at_ms);
+             CREATE TABLE IF NOT EXISTS control_operation_results (
+                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                 session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
+                 operation TEXT NOT NULL,
+                 idempotency_key TEXT NOT NULL,
+                 intent_hash TEXT NOT NULL,
+                 intent_json BLOB NOT NULL,
+                 result_hash TEXT NOT NULL,
+                 result_json BLOB NOT NULL,
+                 created_at_ms INTEGER NOT NULL,
+                 UNIQUE(session_id, operation, idempotency_key)
+             ) STRICT;",
+            )?;
+        } else {
+            connection.execute_batch(
+                "PRAGMA foreign_keys = ON;
+                 PRAGMA synchronous = NORMAL;",
+            )?;
+            let journal_mode =
+                connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
+            if !matches!(journal_mode.as_str(), "wal" | "memory") {
+                connection.execute_batch("PRAGMA journal_mode = WAL;")?;
+            }
+        }
+        Self::bind_host_path_policy(&mut connection, host_path_policy)?;
+        if !core_schema_complete {
+            let has_memory_work_id = connection.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM pragma_table_info('memory_heads')
+                     WHERE name = 'work_id'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if !has_memory_work_id {
+                connection.execute("ALTER TABLE memory_heads ADD COLUMN work_id TEXT", [])?;
+            }
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS memory_heads_work_scope
+                 ON memory_heads(project_id, work_id, agent_id, status)",
+                [],
+            )?;
+            connection.execute_batch(
+                "INSERT INTO project_context_revisions (project_id, revision)
+                 SELECT project_id, COUNT(*)
+                 FROM (
+                     SELECT project_id FROM memory_heads WHERE scope_kind = 'project'
+                     UNION ALL
+                     SELECT project_id FROM memory_contradiction_edges
+                 )
+                 GROUP BY project_id
+                 ON CONFLICT(project_id) DO NOTHING;
+                 INSERT INTO agent_context_revisions (project_id, agent_id, revision)
+                 SELECT project_id, agent_id, COUNT(*)
+                 FROM memory_heads
+                 WHERE scope_kind = 'agent' AND agent_id IS NOT NULL
+                 GROUP BY project_id, agent_id
+                 ON CONFLICT(project_id, agent_id) DO NOTHING;",
+            )?;
+        }
+        Self::verify_task_change_cursor_schema(&connection)?;
+        if !core_schema_complete {
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS task_changes_task_cursor
+                 ON task_changes(task_id, task_cursor)",
+                [],
+            )?;
+        }
+        work::migrate(&mut connection)?;
+        Self::migrate_memory_contradiction_edges(&mut connection)?;
+        Ok(Self {
+            connection,
+            host_path_policy,
+        })
+    }
+
+    fn current_core_schema_is_complete(connection: &Connection) -> Result<bool, StoreError> {
+        for object in [
+            "objects",
+            "publication_intents",
+            "object_fts",
+            "memory_heads",
+            "memory_heads_scope",
+            "memory_heads_work_scope",
+            "note_intents",
+            "project_context_revisions",
+            "agent_context_revisions",
+            "memory_contradictions",
+            "memory_contradictions_versions",
+            "memory_contradiction_edges",
+            "memory_contradiction_edges_context",
+            "contradiction_intents",
+            "tasks",
+            "task_participants",
+            "session_bindings",
+            "task_changes",
+            "task_changes_task_cursor",
+            "task_claims",
+            "task_claim_intents",
+            "control_observations",
+            "control_observations_session_sequence",
+            "control_policy_state",
+            "task_control_state",
+            "control_connections",
+            "control_sessions",
+            "control_turn_results",
+            "control_turn_grants",
+            "control_work_leases",
+            "control_work_leases_task_state",
+            "control_operation_results",
+        ] {
+            let exists = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = ?1)",
+                [object],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if !exists {
+                return Ok(false);
+            }
+        }
+        let has_work_id = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM pragma_table_info('memory_heads') WHERE name = 'work_id'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !has_work_id {
+            return Ok(false);
+        }
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM control_policy_state WHERE singleton = 1)",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(StoreError::from)
+    }
+
+    fn migrate_memory_contradiction_edges(connection: &mut Connection) -> Result<(), StoreError> {
+        if Self::supported_legacy_contradiction_rows_on(connection)?.is_empty() {
+            return Ok(());
+        }
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for (contradiction, project, task, left, right) in
+            Self::supported_legacy_contradiction_rows_on(&transaction)?
+        {
+            transaction.execute(
+                "INSERT INTO memory_contradiction_edges (
+                     contradiction_hash, project_id, task_id, work_root_id,
+                     left_version_hash, right_version_hash
+                 ) VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+                params![contradiction, project, task, left, right],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    fn supported_legacy_contradiction_rows_on(
+        connection: &Connection,
+    ) -> Result<Vec<LegacyContradictionRow>, StoreError> {
+        let rows = {
+            let mut statement = connection.prepare(
+                "SELECT legacy.contradiction_hash, task.project_id, legacy.task_id,
+                        legacy.left_version_hash, legacy.right_version_hash
+                 FROM memory_contradictions legacy
+                 JOIN tasks task ON task.task_id = legacy.task_id
+                 LEFT JOIN memory_contradiction_edges edge
+                   ON edge.contradiction_hash = legacy.contradiction_hash
+                 WHERE edge.contradiction_hash IS NULL
+                 ORDER BY legacy.contradiction_hash",
+            )?;
+            let mapped = statement.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })?;
+            mapped.collect::<Result<Vec<_>, _>>()?
+        };
+        let mut supported = Vec::new();
+        for (contradiction, project, task, left, right) in rows {
+            let contradiction_hash = ObjectHash::from_stored(contradiction.clone())
+                .ok_or_else(|| StoreError::InvalidStoredHash(contradiction.clone()))?;
+            let left_hash = ObjectHash::from_stored(left.clone())
+                .ok_or_else(|| StoreError::InvalidStoredHash(left.clone()))?;
+            let right_hash = ObjectHash::from_stored(right.clone())
+                .ok_or_else(|| StoreError::InvalidStoredHash(right.clone()))?;
+            let task_id = uuid::Uuid::parse_str(&task).map(TaskId).map_err(|_| {
+                StoreError::InvalidMemoryProjection(format!(
+                    "legacy contradiction has invalid task id {task}"
+                ))
+            })?;
+            let object = Self::get_canonical_object_on(
+                connection,
+                &contradiction_hash,
+                "memory_contradiction_event",
+            )?
+            .ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(format!(
+                    "legacy contradiction {contradiction_hash} has no canonical object"
+                ))
+            })?;
+            let value: serde_json::Value = serde_json::from_slice(object.bytes())?;
+            if value
+                .get("schema_version")
+                .and_then(serde_json::Value::as_u64)
+                != Some(u64::from(SCHEMA_VERSION))
+            {
+                continue;
+            }
+            let event: MemoryContradictionEvent = object.decode()?;
+            if event.task_id != Some(task_id)
+                || event.work_root_id.is_some()
+                || event.left_version != left_hash
+                || event.right_version != right_hash
+                || event
+                    .project_id
+                    .as_ref()
+                    .is_some_and(|event_project| event_project.0 != project)
+            {
+                return Err(StoreError::InvalidMemoryProjection(format!(
+                    "legacy contradiction {contradiction_hash} differs from its canonical object"
+                )));
+            }
+            supported.push((contradiction, project, task, left, right));
+        }
+        Ok(supported)
+    }
+
+    fn preflight_host_path_policy(
+        connection: &Connection,
+        expected: HostPathPolicy,
+    ) -> Result<(), StoreError> {
+        let table_exists = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE type = 'table' AND name = 'control_host_path_policy'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !table_exists {
+            if Self::has_path_bearing_control_state(connection)? {
+                return Err(StoreError::InvalidControlSession(
+                    "path-bearing control state exists without a bound host path policy".into(),
+                ));
+            }
+            return Ok(());
+        }
+        let stored = connection
+            .query_row(
+                "SELECT case_fold_paths, windows_alias_rules
+                 FROM control_host_path_policy WHERE singleton = 1",
+                [],
+                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .optional()?;
+        if stored.is_none() {
+            if Self::has_path_bearing_control_state(connection)? {
+                return Err(StoreError::InvalidControlSession(
+                    "path-bearing control state exists without a bound host path policy".into(),
+                ));
+            }
+            return Ok(());
+        }
+        if stored != Some((expected.case_fold_paths, expected.windows_alias_rules)) {
+            return Err(StoreError::InvalidControlSession(
+                "store host path policy differs from this embedding host".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn bind_host_path_policy(
+        connection: &mut Connection,
+        expected: HostPathPolicy,
+    ) -> Result<(), StoreError> {
+        let table_exists = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE type = 'table' AND name = 'control_host_path_policy'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        let stored = if table_exists {
+            connection
+                .query_row(
+                    "SELECT case_fold_paths, windows_alias_rules
+                     FROM control_host_path_policy WHERE singleton = 1",
+                    [],
+                    |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
+                )
+                .optional()?
+        } else {
+            None
+        };
+        if stored == Some((expected.case_fold_paths, expected.windows_alias_rules)) {
+            return Ok(());
+        }
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS control_host_path_policy (
+                 singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                 case_fold_paths INTEGER NOT NULL CHECK(case_fold_paths IN (0, 1)),
+                 windows_alias_rules INTEGER NOT NULL CHECK(windows_alias_rules IN (0, 1))
              ) STRICT;",
         )?;
-        Ok(Self { connection })
+        if Self::has_path_bearing_control_state(&transaction)?
+            && transaction.query_row(
+                "SELECT COUNT(*) FROM control_host_path_policy",
+                [],
+                |row| row.get::<_, i64>(0),
+            )? == 0
+        {
+            return Err(StoreError::InvalidControlSession(
+                "path-bearing control state exists without a bound host path policy".into(),
+            ));
+        }
+        transaction.execute(
+            "INSERT OR IGNORE INTO control_host_path_policy (
+                 singleton, case_fold_paths, windows_alias_rules
+             ) VALUES (1, ?1, ?2)",
+            params![
+                i64::from(expected.case_fold_paths),
+                i64::from(expected.windows_alias_rules)
+            ],
+        )?;
+        Self::preflight_host_path_policy(&transaction, expected)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    fn has_path_bearing_control_state(connection: &Connection) -> Result<bool, StoreError> {
+        for (table, column) in [
+            ("control_work_leases", "lease_json"),
+            ("control_turn_grants", "grant_json"),
+        ] {
+            let table_exists = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+                [table],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if table_exists {
+                let query = format!(
+                    "SELECT EXISTS(SELECT 1 FROM {table} WHERE CAST({column} AS TEXT) LIKE '%\"kind\":\"path\"%')"
+                );
+                if connection.query_row(&query, [], |row| row.get::<_, bool>(0))? {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    fn verify_task_change_cursor_schema(connection: &Connection) -> Result<(), StoreError> {
+        let has_task_cursor = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM pragma_table_info('task_changes')
+                 WHERE name = 'task_cursor'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if has_task_cursor {
+            return Ok(());
+        }
+        Err(StoreError::InvalidTaskProjection(
+            "legacy global task cursors cannot be renumbered safely; export the old store and explicitly rebind/reset sessions into a fresh task-local-cursor store".into(),
+        ))
     }
 
     /// Starts a task or joins the existing task already bound to the same
@@ -397,6 +1248,28 @@ impl SqliteStore {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let receipt = Self::bind_task_on(
+            &transaction,
+            project_id,
+            external_ref,
+            create_title,
+            participant,
+            actor,
+            now,
+        )?;
+        transaction.commit()?;
+        Ok(receipt)
+    }
+
+    fn bind_task_on(
+        transaction: &Transaction<'_>,
+        project_id: &crate::domain::ProjectId,
+        external_ref: &str,
+        create_title: Option<&str>,
+        participant: &SessionId,
+        actor: ActorContext,
+        now: DateTime<Utc>,
+    ) -> Result<TaskBindReceipt, StoreError> {
         let existing_task: Option<String> = transaction
             .query_row(
                 "SELECT task_id FROM tasks
@@ -424,10 +1297,10 @@ impl SqliteStore {
                     created_at: now,
                 };
                 let object = CanonicalObject::freeze(&event)?;
-                Self::insert_object(&transaction, "task_joined_event", &object)?;
-                Self::insert_task_change(&transaction, task_id, "task_joined_event", &object)?
+                Self::insert_object(transaction, "task_joined_event", &object)?;
+                Self::insert_task_change(transaction, task_id, "task_joined_event", &object)?
             } else {
-                Self::latest_task_cursor(&transaction, task_id)?
+                Self::latest_task_cursor(transaction, task_id)?
             };
             (task_id, inserted == 1, cursor)
         } else {
@@ -463,9 +1336,9 @@ impl SqliteStore {
                 created_at: now,
             };
             let object = CanonicalObject::freeze(&event)?;
-            Self::insert_object(&transaction, "task_started_event", &object)?;
+            Self::insert_object(transaction, "task_started_event", &object)?;
             let cursor =
-                Self::insert_task_change(&transaction, task_id, "task_started_event", &object)?;
+                Self::insert_task_change(transaction, task_id, "task_started_event", &object)?;
             (task_id, true, cursor)
         };
         transaction.execute(
@@ -481,8 +1354,7 @@ impl SqliteStore {
                  bound_at_ms = excluded.bound_at_ms",
             params![participant.0, task_id.0.to_string(), now.timestamp_millis()],
         )?;
-        let task = Self::load_task(&transaction, task_id)?;
-        transaction.commit()?;
+        let task = Self::load_task(transaction, task_id)?;
         Ok(TaskBindReceipt {
             task,
             joined,
@@ -519,6 +1391,1422 @@ impl SqliteStore {
             .map_err(|error| StoreError::InvalidTaskProjection(error.to_string()))
     }
 
+    /// Binds a host-private control session to a local task and rotates any
+    /// prior live, unbegun authority for that runtime session.
+    ///
+    /// The returned routing token prevents accidental cross-session request
+    /// mix-ups. It is asserted host state, not authentication.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the bind is invalid, conflicts with an
+    /// earlier request key, or cannot be persisted safely.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "the bind validates and rotates one auditable session projection transaction"
+    )]
+    pub fn bind_control_session(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        external_ref: &str,
+        title: &str,
+        session_id: &SessionId,
+        connection_token: &str,
+        actor: &ActorContext,
+        assurance: ControlAssurance,
+        mediated_effects: &[EffectClass],
+        capability_map_revision: i64,
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ControlSessionBinding, StoreError> {
+        let external_ref = external_ref.trim();
+        let title = title.trim();
+        let idempotency_key = idempotency_key.trim();
+        let effects_are_unique = mediated_effects
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            == mediated_effects.len();
+        if external_ref.is_empty()
+            || title.is_empty()
+            || idempotency_key.is_empty()
+            || session_id.0.trim().is_empty()
+            || actor.session_id.as_ref() != Some(session_id)
+            || capability_map_revision < 0
+            || mediated_effects.is_empty()
+            || !effects_are_unique
+            || matches!(assurance, ControlAssurance::ActionGated)
+        {
+            return Err(StoreError::InvalidControlSession(
+                "bind fields, actor session, mediated effects, or capability revision are invalid"
+                    .into(),
+            ));
+        }
+        let bind_intent = CanonicalObject::freeze(&ControlSessionBindFingerprint {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            project_id,
+            external_ref,
+            title,
+            session_id,
+            actor,
+            assurance,
+            mediated_effects,
+            capability_map_revision,
+            idempotency_key,
+        })?;
+
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let existing = Self::load_control_session_on(&transaction, session_id)?;
+        if let Some(existing) = &existing {
+            if existing.bind_key == idempotency_key {
+                if existing.bind_intent_hash != bind_intent.hash().as_str() {
+                    return Err(StoreError::ControlSessionBindConflict(
+                        idempotency_key.into(),
+                    ));
+                }
+                let binding = ControlSessionBinding {
+                    routing_token: existing.routing_token.clone(),
+                    status: Self::control_session_status_on(&transaction, existing)?,
+                };
+                transaction.commit()?;
+                return Ok(binding);
+            }
+            if matches!(existing.phase, SessionPhase::TurnOpen)
+                && Self::session_has_begun_turn(&transaction, session_id)?
+            {
+                return Err(StoreError::InvalidControlSession(
+                    "a begun turn must be checkpointed before rebinding".into(),
+                ));
+            }
+            let target_task: Option<String> = transaction
+                .query_row(
+                    "SELECT task_id FROM tasks WHERE project_id = ?1 AND external_ref = ?2",
+                    params![project_id.0, external_ref],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let changes_task = target_task
+                .as_deref()
+                .is_none_or(|task_id| task_id != existing.task_id.0.to_string());
+            Self::terminalize_session_work_leases(&transaction, existing, now, true)?;
+            if changes_task
+                && transaction.query_row(
+                    "SELECT EXISTS(
+                         SELECT 1 FROM control_work_leases
+                         WHERE holder_session_id = ?1 AND state = 'active'
+                           AND expires_at_ms > ?2
+                     )",
+                    params![session_id.0.as_str(), now.timestamp_millis()],
+                    |row| row.get::<_, i64>(0),
+                )? == 1
+            {
+                return Err(StoreError::InvalidControlSession(
+                    "release every active work lease before rebinding to another task".into(),
+                ));
+            }
+        }
+
+        let task = Self::bind_task_on(
+            &transaction,
+            project_id,
+            external_ref,
+            Some(title),
+            session_id,
+            actor.clone(),
+            now,
+        )?;
+        let policy = Self::load_control_policy(&transaction)?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO task_control_state (task_id, admission_epoch)
+             VALUES (?1, 1)",
+            [task.task.task_id.0.to_string()],
+        )?;
+        let admission_epoch = transaction.query_row(
+            "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
+            [task.task.task_id.0.to_string()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let previous_revision = existing.as_ref().map_or(0, |session| session.revision);
+        let routing_token = uuid::Uuid::now_v7().to_string();
+        let head = Self::latest_task_cursor(&transaction, task.task.task_id)?;
+        transaction.execute(
+            "UPDATE control_turn_grants SET state = 'expired'
+             WHERE session_id = ?1 AND state = 'issued'",
+            [session_id.0.as_str()],
+        )?;
+        transaction.execute(
+            "INSERT INTO control_sessions (
+                 session_id, project_id, task_id, routing_token, actor_json,
+                 bind_key, bind_intent_hash, bind_intent_json, phase, assurance,
+                 mediated_effects_json, confirmed_cursor, tentative_cursor,
+                 project_policy_epoch, task_admission_epoch, blocking_watermark,
+                 capability_map_revision, revision, updated_at_ms
+             ) VALUES (
+                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'sync_required', ?9, ?10,
+                 0, NULL, ?11, ?12, ?13, ?14, ?15, ?16
+             )
+             ON CONFLICT(session_id) DO UPDATE SET
+                 project_id = excluded.project_id,
+                 task_id = excluded.task_id,
+                 routing_token = excluded.routing_token,
+                 actor_json = excluded.actor_json,
+                 bind_key = excluded.bind_key,
+                 bind_intent_hash = excluded.bind_intent_hash,
+                 bind_intent_json = excluded.bind_intent_json,
+                 phase = excluded.phase,
+                 assurance = excluded.assurance,
+                 mediated_effects_json = excluded.mediated_effects_json,
+                 confirmed_cursor = excluded.confirmed_cursor,
+                 tentative_cursor = excluded.tentative_cursor,
+                 project_policy_epoch = excluded.project_policy_epoch,
+                 task_admission_epoch = excluded.task_admission_epoch,
+                 blocking_watermark = excluded.blocking_watermark,
+                 capability_map_revision = excluded.capability_map_revision,
+                 revision = excluded.revision,
+                 updated_at_ms = excluded.updated_at_ms",
+            params![
+                session_id.0,
+                project_id.0,
+                task.task.task_id.0.to_string(),
+                routing_token,
+                serde_json::to_vec(actor)?,
+                idempotency_key,
+                bind_intent.hash().as_str(),
+                bind_intent.bytes(),
+                enum_name(assurance)?,
+                serde_json::to_string(mediated_effects)?,
+                policy.epoch.0,
+                admission_epoch,
+                head.0,
+                capability_map_revision,
+                previous_revision + 1,
+                now.timestamp_millis(),
+            ],
+        )?;
+        let stored = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        let binding = ControlSessionBinding {
+            routing_token: stored.routing_token.clone(),
+            status: Self::control_session_status_on(&transaction, &stored)?,
+        };
+        transaction.commit()?;
+        Ok(binding)
+    }
+
+    /// Returns current host-control state after validating the routing token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for an unknown session, wrong project, or token
+    /// mismatch.
+    pub fn control_status(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ControlSessionStatus, StoreError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let mut stored = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&stored, project_id, routing_token)?;
+        if Self::expire_unbegun_turn(&transaction, &stored, now)? {
+            stored = Self::load_control_session_on(&transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        }
+        let status = Self::control_session_status_on(&transaction, &stored)?;
+        transaction.commit()?;
+        Ok(status)
+    }
+
+    /// Invalidates authority that was issued but never begun when a new
+    /// host-control connection takes ownership of the runtime session.
+    /// Begun turns remain checkpoint-required so an uncertain prompt outcome
+    /// cannot be silently replayed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the restart transition cannot be persisted.
+    pub fn resume_control_connection(
+        &mut self,
+        session_id: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<String, StoreError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let connection_token = uuid::Uuid::now_v7().to_string();
+        transaction.execute(
+            "INSERT INTO control_connections (session_id, connection_token, opened_at_ms)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(session_id) DO UPDATE SET
+                 connection_token = excluded.connection_token,
+                 opened_at_ms = excluded.opened_at_ms",
+            params![session_id.0, connection_token, now.timestamp_millis()],
+        )?;
+        let Some(session) = Self::load_control_session_on(&transaction, session_id)? else {
+            transaction.commit()?;
+            return Ok(connection_token);
+        };
+        let invalidated = transaction.execute(
+            "UPDATE control_turn_grants SET state = 'expired'
+             WHERE session_id = ?1 AND state = 'issued'",
+            [session_id.0.as_str()],
+        )?;
+        if invalidated > 0
+            && matches!(session.phase, SessionPhase::TurnOpen)
+            && !Self::session_has_begun_turn(&transaction, session_id)?
+        {
+            transaction.execute(
+                "UPDATE control_sessions SET
+                     phase = 'sync_required', tentative_cursor = NULL,
+                     revision = revision + 1, updated_at_ms = ?2
+                 WHERE session_id = ?1",
+                params![session_id.0, now.timestamp_millis()],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(connection_token)
+    }
+
+    /// Atomically acquires one normalized resource lease for a synchronized
+    /// control session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for invalid routing, unsafe resource shapes,
+    /// unsynchronized sessions, idempotency conflicts, or persistence errors.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "lease acquisition validates routing, synchronization, conflicts, and audit event atomically"
+    )]
+    pub fn acquire_work_lease(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        kind: crate::domain::LeaseKind,
+        mode: crate::domain::LeaseMode,
+        subject: &crate::domain::ResourceSubject,
+        ttl_seconds: i64,
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkLeaseDecision, StoreError> {
+        if !(1..=3_600).contains(&ttl_seconds) || idempotency_key.trim().is_empty() {
+            return Err(StoreError::InvalidControlSession(
+                "lease TTL or idempotency key is invalid".into(),
+            ));
+        }
+        let subject = subject
+            .normalized_for_project_with_policy(project_id, self.host_path_policy)
+            .ok_or_else(|| {
+                StoreError::InvalidControlSession(
+                    "lease subject is invalid or belongs to another project".into(),
+                )
+            })?;
+        let intent = CanonicalObject::freeze(&WorkLeaseAcquireFingerprint {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id,
+            kind,
+            mode,
+            subject: &subject,
+            ttl_seconds,
+            idempotency_key,
+        })?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let session = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&session, project_id, routing_token)?;
+        if let Some(replay) = Self::replay_control_operation(
+            &transaction,
+            session_id,
+            "lease_acquire",
+            idempotency_key,
+            intent.hash(),
+        )? {
+            transaction.commit()?;
+            return Ok(replay);
+        }
+        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
+        if !matches!(session.phase, SessionPhase::Ready)
+            || session.confirmed_cursor != head
+            || !Self::session_is_current_participant(
+                &transaction,
+                project_id,
+                session.task_id,
+                session_id,
+            )?
+            || !matches!(
+                Self::task_state_on(&transaction, project_id, session.task_id)?,
+                TaskState::Active
+            )
+        {
+            return Err(StoreError::InvalidControlSession(
+                "lease acquisition requires a synchronized ready participant on an active task"
+                    .into(),
+            ));
+        }
+
+        let rows = Self::project_work_lease_rows(&transaction, project_id)?;
+        let decoded = rows
+            .iter()
+            .map(Self::decode_work_lease_row)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut active = Vec::new();
+        let mut expired_predecessor = false;
+        for (row, lease) in rows.iter().zip(&decoded) {
+            if row.state != "active" {
+                continue;
+            }
+            let checkpoint_required =
+                Self::begun_turn_pinning_lease(&transaction, &lease.holder, &lease.lease_id)?
+                    .is_some();
+            if lease.expires_at <= now
+                && !checkpoint_required
+                && Self::resource_subjects_overlap(&lease.subject, &subject)
+            {
+                Self::terminalize_work_lease(
+                    &transaction,
+                    row,
+                    lease.clone(),
+                    WorkLeaseTransition::Expired,
+                    &session.actor,
+                    now,
+                )?;
+                expired_predecessor = true;
+                continue;
+            }
+            if lease.expires_at > now || checkpoint_required {
+                active.push((lease, checkpoint_required));
+            }
+        }
+        if active.iter().any(|(lease, _)| {
+            lease.holder == *session_id && Self::resource_subjects_overlap(&lease.subject, &subject)
+        }) {
+            return Err(StoreError::InvalidControlSession(
+                "the session already holds an overlapping lease with a different basis".into(),
+            ));
+        }
+        if let Some((conflict, checkpoint_required)) = active.iter().find(|(lease, _)| {
+            lease.holder != *session_id && Self::resource_subjects_overlap(&lease.subject, &subject)
+        }) {
+            let decision = WorkLeaseDecision::Defer {
+                holder: conflict.holder.clone(),
+                conflicting_lease_id: conflict.lease_id.clone(),
+                expires_at: conflict.expires_at,
+                checkpoint_required: *checkpoint_required,
+            };
+            Self::persist_control_operation(
+                &transaction,
+                session_id,
+                "lease_acquire",
+                idempotency_key,
+                &intent,
+                &decision,
+                now,
+            )?;
+            transaction.commit()?;
+            return Ok(decision);
+        }
+        let fence = decoded
+            .iter()
+            .filter(|lease| Self::resource_subjects_overlap(&lease.subject, &subject))
+            .map(|lease| lease.fence)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let lease = WorkLease {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            lease_id: uuid::Uuid::now_v7().to_string(),
+            task_id: session.task_id,
+            holder: session_id.clone(),
+            kind,
+            mode,
+            subject,
+            fence,
+            revision: 1,
+            idempotency_key: idempotency_key.into(),
+            expires_at: now + chrono::TimeDelta::seconds(ttl_seconds),
+        };
+        let lease_object = CanonicalObject::freeze(&lease)?;
+        transaction.execute(
+            "INSERT INTO control_work_leases (
+                 lease_id, task_id, holder_session_id, lease_hash, lease_json,
+                 state, expires_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)",
+            params![
+                lease.lease_id,
+                lease.task_id.0.to_string(),
+                lease.holder.0,
+                lease_object.hash().as_str(),
+                lease_object.bytes(),
+                lease.expires_at.timestamp_millis(),
+            ],
+        )?;
+        let event = WorkLeaseEvent {
+            schema_version: SCHEMA_VERSION,
+            task_id: session.task_id,
+            lease: lease.clone(),
+            transition: WorkLeaseTransition::Acquired,
+            actor: session.actor.clone(),
+            created_at: now,
+        };
+        let event_object = CanonicalObject::freeze(&event)?;
+        Self::insert_object(&transaction, "work_lease_event", &event_object)?;
+        let cursor = Self::insert_task_change(
+            &transaction,
+            session.task_id,
+            "work_lease_event",
+            &event_object,
+        )?;
+        transaction.execute(
+            "UPDATE control_sessions SET
+                 confirmed_cursor = ?2, blocking_watermark = ?3,
+                 revision = revision + 1, updated_at_ms = ?4
+             WHERE session_id = ?1",
+            params![
+                session_id.0,
+                if expired_predecessor {
+                    session.confirmed_cursor.0
+                } else {
+                    cursor.0
+                },
+                cursor.0,
+                now.timestamp_millis()
+            ],
+        )?;
+        let decision = WorkLeaseDecision::Granted { lease };
+        Self::persist_control_operation(
+            &transaction,
+            session_id,
+            "lease_acquire",
+            idempotency_key,
+            &intent,
+            &decision,
+            now,
+        )?;
+        transaction.commit()?;
+        Ok(decision)
+    }
+
+    /// Releases one held resource lease and appends its fenced transition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for invalid routing, ownership, idempotency, or
+    /// persistence failures.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "lease release updates the projection and task-feed audit event atomically"
+    )]
+    pub fn release_work_lease(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        lease_id: &str,
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkLeaseReleaseReceipt, StoreError> {
+        let intent = CanonicalObject::freeze(&WorkLeaseReleaseFingerprint {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id,
+            lease_id,
+            idempotency_key,
+        })?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let session = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&session, project_id, routing_token)?;
+        if let Some(replay) = Self::replay_control_operation(
+            &transaction,
+            session_id,
+            "lease_release",
+            idempotency_key,
+            intent.hash(),
+        )? {
+            transaction.commit()?;
+            return Ok(replay);
+        }
+        let row = Self::work_lease_row(&transaction, lease_id)?
+            .ok_or_else(|| StoreError::WorkLeaseNotFound(lease_id.into()))?;
+        let lease = Self::decode_work_lease_row(&row)?;
+        if lease.holder != *session_id || lease.task_id != session.task_id {
+            return Err(StoreError::WorkLeaseNotHeld {
+                lease_id: lease_id.into(),
+                session: session_id.0.clone(),
+            });
+        }
+        if row.state == "expired" {
+            return Err(StoreError::WorkLeaseExpired {
+                lease_id: lease_id.into(),
+                expired_at: lease.expires_at,
+            });
+        }
+        if row.state != "active" {
+            return Err(StoreError::WorkLeaseNotHeld {
+                lease_id: lease_id.into(),
+                session: session_id.0.clone(),
+            });
+        }
+        if let Some(grant_id) = Self::begun_turn_pinning_lease(&transaction, session_id, lease_id)?
+        {
+            return Err(StoreError::InvalidControlSession(format!(
+                "work lease {lease_id:?} is pinned by begun turn {grant_id:?}; checkpoint the turn before releasing the lease"
+            )));
+        }
+        if lease.expires_at <= now {
+            let cursor = Self::terminalize_work_lease(
+                &transaction,
+                &row,
+                lease.clone(),
+                WorkLeaseTransition::Expired,
+                &session.actor,
+                now,
+            )?;
+            transaction.execute(
+                "UPDATE control_sessions SET blocking_watermark = ?2,
+                     revision = revision + 1, updated_at_ms = ?3
+                 WHERE session_id = ?1",
+                params![session_id.0, cursor.0, now.timestamp_millis()],
+            )?;
+            transaction.commit()?;
+            return Err(StoreError::WorkLeaseExpired {
+                lease_id: lease_id.into(),
+                expired_at: lease.expires_at,
+            });
+        }
+        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
+        let cursor = Self::terminalize_work_lease(
+            &transaction,
+            &row,
+            lease.clone(),
+            WorkLeaseTransition::Released,
+            &session.actor,
+            now,
+        )?;
+        let confirmed_cursor =
+            if session.confirmed_cursor == head && matches!(session.phase, SessionPhase::Ready) {
+                cursor
+            } else {
+                session.confirmed_cursor
+            };
+        transaction.execute(
+            "UPDATE control_sessions SET
+                 confirmed_cursor = ?2, blocking_watermark = ?3,
+                 revision = revision + 1, updated_at_ms = ?4
+             WHERE session_id = ?1",
+            params![
+                session_id.0,
+                confirmed_cursor.0,
+                cursor.0,
+                now.timestamp_millis(),
+            ],
+        )?;
+        let receipt = WorkLeaseReleaseReceipt {
+            lease_id: lease_id.into(),
+            task_id: session.task_id,
+            holder: session_id.clone(),
+            fence: lease.fence,
+            cursor,
+            released_at: now,
+        };
+        Self::persist_control_operation(
+            &transaction,
+            session_id,
+            "lease_release",
+            idempotency_key,
+            &intent,
+            &receipt,
+            now,
+        )?;
+        transaction.commit()?;
+        Ok(receipt)
+    }
+
+    fn terminalize_session_work_leases(
+        transaction: &Transaction<'_>,
+        session: &StoredControlSession,
+        now: DateTime<Utc>,
+        expired_only: bool,
+    ) -> Result<Vec<ChangeCursor>, StoreError> {
+        let rows = {
+            let mut statement = transaction.prepare(
+                "SELECT lease_id, task_id, holder_session_id, lease_hash, lease_json,
+                        state, expires_at_ms
+                 FROM control_work_leases
+                 WHERE holder_session_id = ?1 AND state = 'active'
+                   AND (?2 = 0 OR expires_at_ms <= ?3)
+                 ORDER BY lease_id",
+            )?;
+            statement
+                .query_map(
+                    params![
+                        session.session_id.0,
+                        i64::from(expired_only),
+                        now.timestamp_millis()
+                    ],
+                    |row| {
+                        Ok(StoredWorkLeaseRow {
+                            lease_id: row.get(0)?,
+                            task_id: row.get(1)?,
+                            holder_session_id: row.get(2)?,
+                            lease_hash: row.get(3)?,
+                            lease_json: row.get(4)?,
+                            state: row.get(5)?,
+                            expires_at_ms: row.get(6)?,
+                        })
+                    },
+                )?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut cursors = Vec::with_capacity(rows.len());
+        for row in rows {
+            let lease = Self::decode_work_lease_row(&row)?;
+            if lease.task_id != session.task_id || lease.holder != session.session_id {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "work lease {} is not bound to its holder session",
+                    lease.lease_id
+                )));
+            }
+            let expired = lease.expires_at <= now;
+            let transition = if expired {
+                WorkLeaseTransition::Expired
+            } else {
+                WorkLeaseTransition::Released
+            };
+            cursors.push(Self::terminalize_work_lease(
+                transaction,
+                &row,
+                lease,
+                transition,
+                &session.actor,
+                now,
+            )?);
+        }
+        Ok(cursors)
+    }
+
+    fn terminalize_work_lease(
+        transaction: &Transaction<'_>,
+        row: &StoredWorkLeaseRow,
+        mut lease: WorkLease,
+        transition: WorkLeaseTransition,
+        actor: &ActorContext,
+        now: DateTime<Utc>,
+    ) -> Result<ChangeCursor, StoreError> {
+        let state = match transition {
+            WorkLeaseTransition::Released => "released",
+            WorkLeaseTransition::Expired => "expired",
+            WorkLeaseTransition::Acquired => {
+                return Err(StoreError::InvalidControlProjection(
+                    "an acquired work lease cannot be terminalized".into(),
+                ));
+            }
+        };
+        if row.state != "active" || row.lease_id != lease.lease_id {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "work lease {} was not active during terminalization",
+                lease.lease_id
+            )));
+        }
+        lease.revision += 1;
+        let lease_object = CanonicalObject::freeze(&lease)?;
+        let changed = transaction.execute(
+            "UPDATE control_work_leases SET lease_hash = ?2, lease_json = ?3, state = ?4
+             WHERE lease_id = ?1 AND state = 'active'",
+            params![
+                lease.lease_id,
+                lease_object.hash().as_str(),
+                lease_object.bytes(),
+                state
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "work lease {} was not active during terminalization",
+                lease.lease_id
+            )));
+        }
+        let event = WorkLeaseEvent {
+            schema_version: SCHEMA_VERSION,
+            task_id: lease.task_id,
+            lease,
+            transition,
+            actor: actor.clone(),
+            created_at: now,
+        };
+        let event_object = CanonicalObject::freeze(&event)?;
+        Self::insert_object(transaction, "work_lease_event", &event_object)?;
+        Self::insert_task_change(
+            transaction,
+            event.task_id,
+            "work_lease_event",
+            &event_object,
+        )
+    }
+
+    /// Evaluates and persists one host-enforced turn request from durable
+    /// policy, membership, lifecycle, and context state.
+    ///
+    /// The built-in alpha policy grants `observe`, `communicate`, and
+    /// turn-gated `mutate_local`. Local mutation requires a live exclusive
+    /// execution lease covering every declared resource intent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for invalid routing, idempotency conflicts,
+    /// corrupt projections, or persistence failures.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "evaluation snapshots context and persists the decision and grant atomically"
+    )]
+    pub fn evaluate_control_turn(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        intent: &TurnIntent,
+        now: DateTime<Utc>,
+    ) -> Result<ControlTurnDecision, StoreError> {
+        let mut intent = intent.clone();
+        intent.resource_intents = intent
+            .resource_intents
+            .iter()
+            .map(|resource| {
+                resource.normalized_for_project_with_policy(project_id, self.host_path_policy)
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                StoreError::InvalidControlSession(
+                    "turn resource intent is invalid or belongs to another project".into(),
+                )
+            })?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let mut session = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&session, project_id, routing_token)?;
+        let intent_object = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id,
+            task_id: Some(session.task_id),
+            intent: &intent,
+        })?;
+        if let Some((stored_intent_hash, decision_hash, decision_json)) = transaction
+            .query_row(
+                "SELECT intent_hash, decision_hash, decision_json
+                 FROM control_turn_results
+                 WHERE session_id = ?1 AND idempotency_key = ?2",
+                params![session_id.0, intent.idempotency_key],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                    ))
+                },
+            )
+            .optional()?
+        {
+            if stored_intent_hash != intent_object.hash().as_str() {
+                return Err(StoreError::ControlTurnIdempotencyConflict(
+                    intent.idempotency_key.clone(),
+                ));
+            }
+            let decision = Self::decode_canonical_projection(&decision_hash, decision_json)?;
+            transaction.commit()?;
+            return Ok(decision);
+        }
+
+        if Self::expire_unbegun_turn(&transaction, &session, now)? {
+            session = Self::load_control_session_on(&transaction, session_id)?
+                .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        }
+        let policy = Self::load_control_policy(&transaction)?;
+        let task_state = transaction
+            .query_row(
+                "SELECT state FROM tasks WHERE task_id = ?1 AND project_id = ?2",
+                params![session.task_id.0.to_string(), project_id.0],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .map(|state| parse_enum::<TaskState>(&state))
+            .transpose()?;
+        let membership = transaction.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM task_participants
+                 WHERE task_id = ?1 AND session_id = ?2
+             ) AND EXISTS(
+                 SELECT 1 FROM session_bindings
+                 WHERE task_id = ?1 AND session_id = ?2
+             )",
+            params![session.task_id.0.to_string(), session_id.0],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let task_admission_epoch = transaction.query_row(
+            "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
+            [session.task_id.0.to_string()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
+        let page_to = if membership == 1 && session.confirmed_cursor < head {
+            Some(Self::task_delivery_page_end(
+                &transaction,
+                session.task_id,
+                session.confirmed_cursor,
+            )?)
+        } else {
+            None
+        };
+        let has_more = page_to.is_some_and(|page_to| page_to < head);
+        let (mut packet_safety, context) = if membership == 1 && !has_more {
+            match Self::build_context_on(
+                &transaction,
+                project_id,
+                Some(session.task_id),
+                session_id,
+                &session.actor.actor_id,
+                now,
+            ) {
+                Ok(packet) => (PacketSafety::Safe, Some(packet)),
+                Err(StoreError::PinnedContradiction { .. }) => {
+                    (PacketSafety::PinnedContradiction, None)
+                }
+                Err(StoreError::PinnedBudgetExceeded { .. }) => {
+                    (PacketSafety::PinnedBudgetExceeded, None)
+                }
+                Err(error) => return Err(error),
+            }
+        } else {
+            (PacketSafety::Safe, None)
+        };
+        let delivery_to = page_to.or_else(|| context.as_ref().map(|_| head));
+        let mut delivery = if let Some(page_to) = delivery_to
+            && (has_more || context.is_some())
+        {
+            let delta = Self::task_delta_range_on(
+                &transaction,
+                session.task_id,
+                session.confirmed_cursor,
+                page_to,
+            )?;
+            let content_digest = crate::control::delivery_content_digest(context.as_ref(), &delta)?;
+            let page = DeliveryPage {
+                from_cursor: session.confirmed_cursor,
+                to_cursor: page_to,
+                head_cursor: head,
+                has_more,
+                content_digest,
+                delivery_token: uuid::Uuid::now_v7().to_string(),
+            };
+            Some(ControlDelivery {
+                page,
+                context,
+                delta,
+            })
+        } else {
+            None
+        };
+        let delivery_too_large = delivery
+            .as_ref()
+            .map(CanonicalObject::freeze)
+            .transpose()?
+            .is_some_and(|object| object.bytes().len() > MAX_CONTROL_DELIVERY_BYTES);
+        if delivery_too_large {
+            packet_safety = PacketSafety::DeliveryBudgetExceeded;
+            delivery = None;
+        }
+        let leases = Self::active_work_lease_bases(&transaction, session.task_id, session_id, now)?
+            .into_iter()
+            .filter(|lease| {
+                intent
+                    .resource_intents
+                    .iter()
+                    .any(|resource| lease.subject.covers(resource))
+            })
+            .collect();
+        let input = TurnEvaluationInput {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id: session_id.clone(),
+            task_id: Some(session.task_id),
+            participant_membership: if membership == 1 {
+                ParticipantMembership::Member
+            } else {
+                ParticipantMembership::NotMember
+            },
+            task_state,
+            phase: session.phase,
+            health: ControlHealth::Healthy,
+            active_policy_known: true,
+            host_assurance: session.assurance,
+            required_assurance: policy.required_assurance,
+            policy_effects: policy.supported_effects,
+            mediated_effects: session.mediated_effects.clone(),
+            current_epochs: ControlEpochs {
+                project_policy: policy.epoch,
+                task_admission: TaskAdmissionEpoch(task_admission_epoch),
+            },
+            session_epochs: session.epochs,
+            confirmed_cursor: session.confirmed_cursor,
+            head_cursor: head,
+            pending_delivery: delivery.as_ref().map(|delivery| delivery.page.clone()),
+            packet_safety,
+            blocking_watermark: head,
+            acknowledged_blocking_watermark: session.confirmed_cursor,
+            has_unknown_action_outcome: false,
+            authority_satisfied: true,
+            capability_map_revision: session.capability_map_revision,
+            leases,
+            intent: intent.clone(),
+            evaluated_at: now,
+            grant_ttl_seconds: policy.grant_ttl_seconds,
+        };
+        let observed = crate::control::observe_turn(&input);
+        let decision = match observed.decision {
+            TurnDecision::Grant { basis } => {
+                let grant = IssuedTurnGrant {
+                    control_schema_version: CONTROL_SCHEMA_VERSION,
+                    grant_id: uuid::Uuid::now_v7().to_string(),
+                    request_key: intent.idempotency_key.clone(),
+                    basis: *basis,
+                    delivery,
+                    issued_at: now,
+                };
+                let grant_object = CanonicalObject::freeze(&grant)?;
+                transaction.execute(
+                    "INSERT INTO control_turn_grants (
+                         grant_id, session_id, task_id, request_key, grant_hash,
+                         grant_json, state, issued_at_ms, expires_at_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'issued', ?7, ?8)",
+                    params![
+                        grant.grant_id,
+                        session_id.0,
+                        session.task_id.0.to_string(),
+                        intent.idempotency_key,
+                        grant_object.hash().as_str(),
+                        grant_object.bytes(),
+                        now.timestamp_millis(),
+                        grant.basis.expires_at.timestamp_millis(),
+                    ],
+                )?;
+                transaction.execute(
+                    "UPDATE control_sessions SET
+                         phase = 'turn_open', blocking_watermark = ?2,
+                         revision = revision + 1, updated_at_ms = ?3
+                     WHERE session_id = ?1",
+                    params![session_id.0, head.0, now.timestamp_millis()],
+                )?;
+                ControlTurnDecision::Grant {
+                    grant: Box::new(grant),
+                }
+            }
+            TurnDecision::Refuse { directive } => ControlTurnDecision::Refuse { directive },
+            TurnDecision::Defer { deferral } => ControlTurnDecision::Defer { deferral },
+        };
+        let decision_object = CanonicalObject::freeze(&decision)?;
+        transaction.execute(
+            "INSERT INTO control_turn_results (
+                 session_id, task_id, idempotency_key, intent_hash, intent_json,
+                 decision_hash, decision_json, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                session_id.0,
+                session.task_id.0.to_string(),
+                intent.idempotency_key,
+                intent_object.hash().as_str(),
+                intent_object.bytes(),
+                decision_object.hash().as_str(),
+                decision_object.bytes(),
+                now.timestamp_millis(),
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(decision)
+    }
+
+    /// Atomically rechecks and begins one issued turn grant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for invalid routing, unknown grants,
+    /// idempotency conflicts, corrupt projections, or persistence failures.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "begin rechecks and consumes the complete persisted grant basis atomically"
+    )]
+    pub fn begin_control_turn(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        grant_id: &str,
+        delivery_tokens: &[String],
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ControlTurnBeginDecision, StoreError> {
+        let intent_object = CanonicalObject::freeze(&ControlTurnBeginFingerprint {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id,
+            grant_id,
+            delivery_tokens,
+            idempotency_key,
+        })?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let session = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&session, project_id, routing_token)?;
+        if let Some(replay) = Self::replay_control_operation(
+            &transaction,
+            session_id,
+            "turn_begin",
+            idempotency_key,
+            intent_object.hash(),
+        )? {
+            transaction.commit()?;
+            return Ok(replay);
+        }
+        let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
+            .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
+        let policy = Self::load_control_policy(&transaction)?;
+        let task_admission_epoch = transaction.query_row(
+            "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
+            [session.task_id.0.to_string()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let head = Self::latest_task_cursor(&transaction, session.task_id)?;
+        let (task_state, membership) = transaction.query_row(
+            "SELECT t.state,
+                    EXISTS(
+                        SELECT 1 FROM task_participants
+                        WHERE task_id = t.task_id AND session_id = ?2
+                    ) AND EXISTS(
+                        SELECT 1 FROM session_bindings
+                        WHERE task_id = t.task_id AND session_id = ?2
+                    )
+             FROM tasks t WHERE t.task_id = ?1 AND t.project_id = ?3",
+            params![session.task_id.0.to_string(), session_id.0, project_id.0],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )?;
+        let current_leases =
+            Self::active_work_lease_bases(&transaction, session.task_id, session_id, now)?
+                .into_iter()
+                .filter(|lease| {
+                    grant
+                        .grant
+                        .basis
+                        .leases
+                        .iter()
+                        .any(|granted| granted.lease_id == lease.lease_id)
+                })
+                .collect();
+        let context_current = if let Some(context) = grant
+            .grant
+            .delivery
+            .as_ref()
+            .and_then(|delivery| delivery.context.as_ref())
+        {
+            let (focused_work, _) =
+                Self::focused_work_for_session_on(&transaction, project_id, session_id)?;
+            let (project_context_revision, private_context_revision) =
+                Self::context_revisions_on(&transaction, project_id, &session.actor.actor_id)?;
+            if context.header.project_context_revision != project_context_revision
+                || context.header.private_context_revision != private_context_revision
+                || context.header.work_id != focused_work
+            {
+                false
+            } else if let Some(work_id) = focused_work {
+                work::context_work_feed_heads(&transaction, work_id)?
+                    == context.header.work_feed_heads
+            } else {
+                context.header.work_feed_heads.is_empty()
+            }
+        } else {
+            true
+        };
+        let snapshot = TurnBeginSnapshot {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id: session_id.clone(),
+            task_id: session.task_id,
+            phase: session.phase,
+            participant_membership: if membership == 1 {
+                ParticipantMembership::Member
+            } else {
+                ParticipantMembership::NotMember
+            },
+            task_state: Some(parse_enum(&task_state)?),
+            grant_state: grant.state,
+            current_epochs: ControlEpochs {
+                project_policy: policy.epoch,
+                task_admission: TaskAdmissionEpoch(task_admission_epoch),
+            },
+            current_head: head,
+            context_current,
+            capability_map_revision: session.capability_map_revision,
+            delivery_tokens: delivery_tokens.to_vec(),
+            leases: current_leases,
+            observed_at: now,
+        };
+        let decision = match crate::control::evaluate_turn_begin(&grant.grant, &snapshot) {
+            TurnBeginDecision::Begin => {
+                let changed = transaction.execute(
+                    "UPDATE control_turn_grants SET state = 'begun', begun_at_ms = ?2
+                     WHERE grant_id = ?1 AND state = 'issued'",
+                    params![grant_id, now.timestamp_millis()],
+                )?;
+                if changed != 1 {
+                    return Err(StoreError::InvalidControlProjection(format!(
+                        "turn grant {grant_id:?} was not issued during begin"
+                    )));
+                }
+                let revision = transaction.query_row(
+                    "UPDATE control_sessions SET
+                         tentative_cursor = ?2, revision = revision + 1,
+                         updated_at_ms = ?3
+                     WHERE session_id = ?1
+                     RETURNING revision",
+                    params![
+                        session_id.0,
+                        grant.grant.basis.delivery_cursor.0,
+                        now.timestamp_millis(),
+                    ],
+                    |row| row.get::<_, i64>(0),
+                )?;
+                ControlTurnBeginDecision::Begin {
+                    receipt: TurnBeginReceipt {
+                        grant_id: grant_id.into(),
+                        session_id: session_id.clone(),
+                        task_id: session.task_id,
+                        phase: SessionPhase::TurnOpen,
+                        tentative_cursor: grant.grant.basis.delivery_cursor,
+                        session_revision: revision,
+                        begun_at: now,
+                    },
+                }
+            }
+            TurnBeginDecision::Refuse { code } => {
+                if matches!(
+                    code,
+                    crate::domain::ControlRefusalCode::GrantExpired
+                        | crate::domain::ControlRefusalCode::PolicyEpochChanged
+                        | crate::domain::ControlRefusalCode::TaskAdmissionEpochChanged
+                        | crate::domain::ControlRefusalCode::DeltaRequired
+                        | crate::domain::ControlRefusalCode::StaleFence
+                ) && matches!(grant.state, TurnGrantState::Issued)
+                {
+                    transaction.execute(
+                        "UPDATE control_turn_grants SET state = 'expired'
+                         WHERE grant_id = ?1 AND state = 'issued'",
+                        [grant_id],
+                    )?;
+                    let next_phase =
+                        if matches!(code, crate::domain::ControlRefusalCode::StaleFence)
+                            && session.confirmed_cursor == head
+                        {
+                            "ready"
+                        } else {
+                            "sync_required"
+                        };
+                    transaction.execute(
+                        "UPDATE control_sessions SET
+                             phase = ?2, tentative_cursor = NULL,
+                             revision = revision + 1, updated_at_ms = ?3
+                         WHERE session_id = ?1",
+                        params![session_id.0, next_phase, now.timestamp_millis()],
+                    )?;
+                }
+                ControlTurnBeginDecision::Refuse { code }
+            }
+        };
+        Self::persist_control_operation(
+            &transaction,
+            session_id,
+            "turn_begin",
+            idempotency_key,
+            &intent_object,
+            &decision,
+            now,
+        )?;
+        transaction.commit()?;
+        Ok(decision)
+    }
+
+    /// Checkpoints a begun turn, promotes its tentative delivery cursor, and
+    /// emits one immutable task event.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] for invalid routing, unknown grants,
+    /// idempotency conflicts, corrupt projections, or persistence failures.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "checkpoint closes the grant and emits its canonical transition atomically"
+    )]
+    pub fn checkpoint_control_turn(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        grant_id: &str,
+        next_intent: TurnNextIntent,
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ControlTurnCheckpointDecision, StoreError> {
+        let intent_object = CanonicalObject::freeze(&ControlTurnCheckpointFingerprint {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id,
+            grant_id,
+            next_intent,
+            idempotency_key,
+        })?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let session = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&session, project_id, routing_token)?;
+        if let Some(replay) = Self::replay_control_operation(
+            &transaction,
+            session_id,
+            "turn_checkpoint",
+            idempotency_key,
+            intent_object.hash(),
+        )? {
+            transaction.commit()?;
+            return Ok(replay);
+        }
+        let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
+            .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
+        let snapshot = TurnCheckpointSnapshot {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id: session_id.clone(),
+            task_id: session.task_id,
+            phase: session.phase,
+            grant_state: grant.state,
+        };
+        let decision = match crate::control::evaluate_turn_checkpoint(&grant.grant, &snapshot) {
+            TurnCheckpointDecision::Checkpoint => {
+                if matches!(next_intent, TurnNextIntent::Exit) {
+                    Self::terminalize_session_work_leases(&transaction, &session, now, false)?;
+                }
+                let event = TurnCheckpointEvent {
+                    schema_version: SCHEMA_VERSION,
+                    task_id: session.task_id,
+                    session_id: session_id.clone(),
+                    grant_id: grant_id.into(),
+                    delivered_cursor: grant.grant.basis.delivery_cursor,
+                    next_intent,
+                    actor: session.actor.clone(),
+                    created_at: now,
+                };
+                let event_object = CanonicalObject::freeze(&event)?;
+                Self::insert_object(&transaction, "turn_checkpoint_event", &event_object)?;
+                let head_before_checkpoint =
+                    Self::latest_task_cursor(&transaction, session.task_id)?;
+                let cursor = Self::insert_task_change(
+                    &transaction,
+                    session.task_id,
+                    "turn_checkpoint_event",
+                    &event_object,
+                )?;
+                let confirmed_cursor =
+                    if head_before_checkpoint == grant.grant.basis.delivery_cursor {
+                        cursor
+                    } else {
+                        grant.grant.basis.delivery_cursor
+                    };
+                let phase = if matches!(next_intent, TurnNextIntent::Exit) {
+                    SessionPhase::Exited
+                } else if confirmed_cursor < cursor {
+                    SessionPhase::SyncRequired
+                } else {
+                    SessionPhase::Ready
+                };
+                let changed = transaction.execute(
+                    "UPDATE control_turn_grants SET
+                         state = 'completed', completed_at_ms = ?2
+                      WHERE grant_id = ?1 AND state = 'begun'",
+                    params![grant_id, now.timestamp_millis()],
+                )?;
+                if changed != 1 {
+                    return Err(StoreError::InvalidControlProjection(format!(
+                        "turn grant {grant_id:?} was not begun during checkpoint"
+                    )));
+                }
+                let revision = transaction.query_row(
+                    "UPDATE control_sessions SET
+                         phase = ?2, confirmed_cursor = ?3,
+                         tentative_cursor = NULL, blocking_watermark = ?4,
+                         revision = revision + 1, updated_at_ms = ?5
+                     WHERE session_id = ?1
+                     RETURNING revision",
+                    params![
+                        session_id.0,
+                        enum_name(phase)?,
+                        confirmed_cursor.0,
+                        cursor.0,
+                        now.timestamp_millis(),
+                    ],
+                    |row| row.get::<_, i64>(0),
+                )?;
+                ControlTurnCheckpointDecision::Checkpointed {
+                    receipt: TurnCheckpointReceipt {
+                        grant_id: grant_id.into(),
+                        checkpoint: event_object.hash().clone(),
+                        cursor,
+                        confirmed_cursor,
+                        phase,
+                        session_revision: revision,
+                        checkpointed_at: now,
+                    },
+                }
+            }
+            TurnCheckpointDecision::Refuse { code } => {
+                ControlTurnCheckpointDecision::Refuse { code }
+            }
+        };
+        Self::persist_control_operation(
+            &transaction,
+            session_id,
+            "turn_checkpoint",
+            idempotency_key,
+            &intent_object,
+            &decision,
+            now,
+        )?;
+        transaction.commit()?;
+        Ok(decision)
+    }
+
     /// Captures one attributed prose note through the configured pre-write
     /// inspection port. Classification, canonical objects, projections, peer
     /// feed entry, and idempotency receipt commit atomically.
@@ -532,22 +2820,19 @@ impl SqliteStore {
         request: &NoteRequest,
         redactor: &R,
     ) -> Result<NoteReceipt, StoreError> {
-        if request.prose.trim().is_empty() {
-            return Err(StoreError::EmptyNote);
-        }
-        redactor
-            .inspect(&request.prose)
-            .map_err(StoreError::RedactionRefused)?;
+        Self::validate_note_content(request, redactor)?;
 
         let request_object = note_fingerprint(request)?;
+        let intent_key = note_intent_key(request)?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::validate_note_anchors_on(&transaction, request)?;
         if let Some((stored_request, receipt_json)) = transaction
             .query_row(
                 "SELECT request_hash, receipt_json FROM note_intents
                  WHERE idempotency_key = ?1",
-                [&request.idempotency_key],
+                [&intent_key],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
             )
             .optional()?
@@ -590,6 +2875,20 @@ impl SqliteStore {
             &prepared.version,
             &prepared.assertion,
         )?;
+        Self::bump_memory_context_revision_on(&transaction, &prepared.version.scope)?;
+        let work_positions = if prepared.version.scope.is_work_shared() {
+            let work_id = prepared.version.scope.work_id().ok_or_else(|| {
+                StoreError::InvalidMemoryProjection("shared work scope has no work id".into())
+            })?;
+            work::append_memory_capture_to_work_feeds(
+                &transaction,
+                work_id,
+                &prepared.version_object,
+                &prepared.assertion_object,
+            )?
+        } else {
+            Vec::new()
+        };
 
         let receipt = NoteReceipt {
             idempotency_key: request.idempotency_key.clone(),
@@ -602,15 +2901,16 @@ impl SqliteStore {
             delivery: prepared.version.delivery,
             scope: prepared.version.scope.clone(),
             cursor,
+            work_positions,
             classification_reason: prepared.version.classification_reason.clone(),
             policy_reason: prepared.assertion.policy_reason.clone(),
             duplicate: false,
         };
         transaction.execute(
             "INSERT INTO note_intents (idempotency_key, request_hash, receipt_json)
-             VALUES (?1, ?2, ?3)",
+              VALUES (?1, ?2, ?3)",
             params![
-                request.idempotency_key,
+                intent_key,
                 request_object.hash().as_str(),
                 serde_json::to_vec(&receipt)?,
             ],
@@ -619,21 +2919,74 @@ impl SqliteStore {
         Ok(receipt)
     }
 
+    fn validate_note_content<R: Redactor>(
+        request: &NoteRequest,
+        redactor: &R,
+    ) -> Result<(), StoreError> {
+        if request.prose.trim().is_empty() {
+            return Err(StoreError::EmptyNote);
+        }
+        redactor
+            .inspect(&request.prose)
+            .map_err(StoreError::RedactionRefused)?;
+        Ok(())
+    }
+
+    fn validate_note_anchors_on(
+        connection: &Connection,
+        request: &NoteRequest,
+    ) -> Result<(), StoreError> {
+        if let Some(task_id) = request.task_id {
+            let session_id = request.actor.session_id.as_ref().ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(
+                    "task-scoped memory requires an attributed session".into(),
+                )
+            })?;
+            Self::ensure_active_task_on(connection, &request.project_id, task_id, session_id)?;
+        }
+        if let Some(work_id) = request.work_id {
+            let session_id = request.actor.session_id.as_ref().ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(
+                    "work-scoped memory requires an attributed session".into(),
+                )
+            })?;
+            let (focused_work_id, _) =
+                Self::focused_work_for_session_on(connection, &request.project_id, session_id)?;
+            if focused_work_id != Some(work_id) {
+                return Err(StoreError::InvalidMemoryProjection(
+                    "work-scoped memory must match the session's persisted focus".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     #[allow(
         clippy::too_many_arguments,
+        clippy::too_many_lines,
         reason = "authorization must bind the exact project, task, session, and actor view"
     )]
-    fn authorize_contradiction_pair(
-        &self,
+    fn authorize_contradiction_pair_on(
+        connection: &Connection,
         project_id: &crate::domain::ProjectId,
-        task_id: TaskId,
+        task_id: Option<TaskId>,
+        work_id: Option<crate::domain::WorkId>,
         session_id: &SessionId,
         agent_id: &str,
         first_version: &ObjectHash,
         second_version: &ObjectHash,
         reason: &str,
-    ) -> Result<(ObjectHash, ObjectHash, String), StoreError> {
-        self.ensure_task_participant(project_id, task_id, session_id)?;
+    ) -> Result<AuthorizedContradiction, StoreError> {
+        if let Some(task_id) = task_id {
+            Self::ensure_active_task_on(connection, project_id, task_id, session_id)?;
+        }
+        let (focused_work_id, focused_root_id) =
+            Self::focused_work_for_session_on(connection, project_id, session_id)?;
+        if work_id.is_some() && work_id != focused_work_id {
+            return Err(StoreError::InvalidContradiction(
+                "work contradiction must match the session's persisted focus".into(),
+            ));
+        }
         if first_version == second_version {
             return Err(StoreError::InvalidContradiction(
                 "a version cannot contradict itself".into(),
@@ -645,17 +2998,21 @@ impl SqliteStore {
                 "an attributed reason is required".into(),
             ));
         }
-        let first = self.show_memory(
+        let first = Self::show_memory_on(
+            connection,
             first_version,
             project_id,
-            Some(task_id),
+            task_id,
+            work_id,
             session_id,
             agent_id,
         )?;
-        let second = self.show_memory(
+        let second = Self::show_memory_on(
+            connection,
             second_version,
             project_id,
-            Some(task_id),
+            task_id,
+            work_id,
             session_id,
             agent_id,
         )?;
@@ -663,7 +3020,61 @@ impl SqliteStore {
             || matches!(second.version.scope, Scope::Agent { .. })
         {
             return Err(StoreError::InvalidContradiction(
-                "private memories cannot enter a task-shared contradiction edge".into(),
+                "private memories cannot enter a shared contradiction edge".into(),
+            ));
+        }
+        let scoped_task = |scope: &Scope| match scope {
+            Scope::Task { task, .. } => Some(*task),
+            Scope::Project { .. } | Scope::Work { .. } | Scope::Agent { .. } => None,
+        };
+        let first_task = scoped_task(&first.version.scope);
+        let second_task = scoped_task(&second.version.scope);
+        if first_task.is_some() && second_task.is_some() && first_task != second_task {
+            return Err(StoreError::InvalidContradiction(
+                "contradiction endpoints belong to different tasks".into(),
+            ));
+        }
+        let task_anchor = first_task.or(second_task);
+
+        let scoped_work_root =
+            |scope: &Scope| -> Result<Option<crate::domain::WorkId>, StoreError> {
+                match scope {
+                    Scope::Work { work, .. } => {
+                        work::verified_work_identity(connection, *work).map(|(_, root)| Some(root))
+                    }
+                    Scope::Project { .. } | Scope::Task { .. } | Scope::Agent { .. } => Ok(None),
+                }
+            };
+        let first_root = scoped_work_root(&first.version.scope)?;
+        let second_root = scoped_work_root(&second.version.scope)?;
+        if first_root.is_some() && second_root.is_some() && first_root != second_root {
+            return Err(StoreError::InvalidContradiction(
+                "contradiction endpoints belong to different work roots".into(),
+            ));
+        }
+        let work_root_anchor = first_root.or(second_root);
+        let (task_anchor, work_root_anchor) = if task_anchor.is_none() && work_root_anchor.is_none()
+        {
+            if task_id.is_some() {
+                (task_id, None)
+            } else if focused_root_id.is_some() {
+                (None, focused_root_id)
+            } else {
+                return Err(StoreError::InvalidContradiction(
+                    "a contradiction requires an active task or work context".into(),
+                ));
+            }
+        } else {
+            (task_anchor, work_root_anchor)
+        };
+        if task_anchor.is_some() && task_anchor != task_id {
+            return Err(StoreError::InvalidContradiction(
+                "task-scoped contradiction does not match the active task".into(),
+            ));
+        }
+        if work_root_anchor.is_some() && work_root_anchor != focused_root_id {
+            return Err(StoreError::InvalidContradiction(
+                "work-scoped contradiction does not match the focused work root".into(),
             ));
         }
         let (left, right) = if first_version < second_version {
@@ -671,12 +3082,19 @@ impl SqliteStore {
         } else {
             (second_version.clone(), first_version.clone())
         };
-        Ok((left, right, reason.into()))
+        Ok(AuthorizedContradiction {
+            left,
+            right,
+            reason: reason.into(),
+            task_id: task_anchor,
+            work_id: work_root_anchor.and(work_id),
+            work_root_id: work_root_anchor,
+        })
     }
 
     /// Declares an explicit contradiction between two visible, non-private
     /// memory versions. The immutable edge and both contested projections are
-    /// committed with one ordered task-feed event.
+    /// committed with the applicable task and/or work-root feed events.
     ///
     /// Engram deliberately does not guess semantic conflicts from prose. An
     /// agent or human must name both versions and give an attributed reason.
@@ -688,12 +3106,14 @@ impl SqliteStore {
     /// atomic write fails.
     #[allow(
         clippy::too_many_arguments,
+        clippy::too_many_lines,
         reason = "the explicit authorization and idempotency inputs are part of the core boundary"
     )]
     pub fn record_memory_contradiction(
         &mut self,
         project_id: &crate::domain::ProjectId,
-        task_id: TaskId,
+        task_id: Option<TaskId>,
+        work_id: Option<crate::domain::WorkId>,
         session_id: &SessionId,
         agent_id: &str,
         first_version: &ObjectHash,
@@ -703,9 +3123,14 @@ impl SqliteStore {
         actor: ActorContext,
         now: DateTime<Utc>,
     ) -> Result<MemoryContradictionReceipt, StoreError> {
-        let (left_version, right_version, reason) = self.authorize_contradiction_pair(
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let authorized = Self::authorize_contradiction_pair_on(
+            &transaction,
             project_id,
             task_id,
+            work_id,
             session_id,
             agent_id,
             first_version,
@@ -714,15 +3139,14 @@ impl SqliteStore {
         )?;
         let request = CanonicalObject::freeze(&ContradictionIntentFingerprint {
             project_id,
-            task_id,
-            left_version: &left_version,
-            right_version: &right_version,
-            reason: &reason,
+            task_id: authorized.task_id,
+            work_id: authorized.work_id,
+            work_root_id: authorized.work_root_id,
+            left_version: &authorized.left,
+            right_version: &authorized.right,
+            reason: &authorized.reason,
             actor: &actor,
         })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         if let Some((stored_request, receipt_json)) = transaction
             .query_row(
                 "SELECT request_hash, receipt_json FROM contradiction_intents
@@ -743,9 +3167,9 @@ impl SqliteStore {
         }
         let existing: Option<String> = transaction
             .query_row(
-                "SELECT contradiction_hash FROM memory_contradictions
+                "SELECT contradiction_hash FROM memory_contradiction_edges
                  WHERE left_version_hash = ?1 AND right_version_hash = ?2",
-                params![left_version.as_str(), right_version.as_str()],
+                params![authorized.left.as_str(), authorized.right.as_str()],
                 |row| row.get(0),
             )
             .optional()?;
@@ -757,39 +3181,85 @@ impl SqliteStore {
 
         let event = MemoryContradictionEvent {
             schema_version: SCHEMA_VERSION,
-            task_id,
-            left_version: left_version.clone(),
-            right_version: right_version.clone(),
-            reason,
+            project_id: Some(project_id.clone()),
+            task_id: authorized.task_id,
+            work_root_id: authorized.work_root_id,
+            left_version: authorized.left.clone(),
+            right_version: authorized.right.clone(),
+            reason: authorized.reason,
             actor,
             created_at: now,
         };
         let object = CanonicalObject::freeze(&event)?;
         Self::insert_object(&transaction, "memory_contradiction_event", &object)?;
         transaction.execute(
-            "INSERT INTO memory_contradictions (
-                 contradiction_hash, task_id, left_version_hash, right_version_hash
-             ) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO memory_contradiction_edges (
+                 contradiction_hash, project_id, task_id, work_root_id,
+                 left_version_hash, right_version_hash
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 object.hash().as_str(),
-                task_id.0.to_string(),
-                left_version.as_str(),
-                right_version.as_str(),
+                project_id.0,
+                authorized.task_id.map(|task| task.0.to_string()),
+                authorized.work_root_id.map(|work| work.0.to_string()),
+                authorized.left.as_str(),
+                authorized.right.as_str(),
             ],
         )?;
+        if authorized.work_root_id.is_none()
+            && let Some(task_id) = authorized.task_id
+        {
+            transaction.execute(
+                "INSERT INTO memory_contradictions (
+                     contradiction_hash, task_id, left_version_hash, right_version_hash
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    object.hash().as_str(),
+                    task_id.0.to_string(),
+                    authorized.left.as_str(),
+                    authorized.right.as_str(),
+                ],
+            )?;
+        }
         transaction.execute(
             "UPDATE memory_heads SET status = 'contested'
              WHERE version_hash IN (?1, ?2) AND status IN ('active', 'stale')",
-            params![left_version.as_str(), right_version.as_str()],
+            params![authorized.left.as_str(), authorized.right.as_str()],
         )?;
-        let cursor =
-            Self::insert_task_change(&transaction, task_id, "memory_contradiction_event", &object)?;
+        // A contradiction can change the globally visible status of a
+        // project-scoped endpoint even when the edge itself is task/work
+        // anchored. Fence every project context without publishing either
+        // endpoint through an unrelated shared feed.
+        Self::bump_project_context_revision_on(&transaction, project_id)?;
+        let cursor = authorized
+            .task_id
+            .map(|task_id| {
+                Self::insert_task_change(
+                    &transaction,
+                    task_id,
+                    "memory_contradiction_event",
+                    &object,
+                )
+            })
+            .transpose()?;
+        let work_positions = authorized.work_id.map_or_else(
+            || Ok(Vec::new()),
+            |work_id| {
+                work::append_context_object_to_work_feeds(
+                    &transaction,
+                    work_id,
+                    "memory_contradiction_event",
+                    &object,
+                )
+            },
+        )?;
         let receipt = MemoryContradictionReceipt {
             idempotency_key: idempotency_key.into(),
             contradiction: object.hash().clone(),
-            left_version: left_version.clone(),
-            right_version: right_version.clone(),
+            left_version: authorized.left,
+            right_version: authorized.right,
             cursor,
+            work_positions,
             duplicate: false,
         };
         transaction.execute(
@@ -814,36 +3284,189 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when the derived index contains invalid data or
     /// SQLite cannot perform the query.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "search authorization binds project, task, work focus, session, and actor"
+    )]
     pub fn search_memories(
         &self,
         project_id: &crate::domain::ProjectId,
         task_id: Option<TaskId>,
+        work_id: Option<crate::domain::WorkId>,
+        session_id: &SessionId,
         agent_id: &str,
         query: Option<&str>,
         limit: u32,
     ) -> Result<Vec<MemorySummary>, StoreError> {
-        let visibility = "h.project_id = ?1 AND (h.scope_kind = 'project' OR
-             (h.scope_kind = 'task' AND h.task_id = ?2) OR
-             (h.scope_kind = 'agent' AND h.agent_id = ?3 AND
-              (h.task_id IS NULL OR h.task_id = ?2)))";
-        let limit = i64::from(limit.clamp(1, 1_000));
+        let transaction = self.connection.unchecked_transaction()?;
+        if let Some(task_id) = task_id {
+            Self::ensure_active_task_on(&transaction, project_id, task_id, session_id)?;
+        }
+        let (focused_work_id, focused_root_id) =
+            Self::focused_work_for_session_on(&transaction, project_id, session_id)?;
+        if work_id.is_some() && work_id != focused_work_id {
+            return Err(StoreError::InvalidWork(
+                "work-memory search must match the session's persisted focus".into(),
+            ));
+        }
+        let work_root_id = work_id.and(focused_root_id);
+        let memories = Self::search_memories_on(
+            &transaction,
+            project_id,
+            task_id,
+            work_id,
+            work_root_id,
+            agent_id,
+            query,
+            Some(limit),
+        )?;
+        transaction.commit()?;
+        Ok(memories)
+    }
+
+    /// Returns current memories bound to one local work item and visible to
+    /// the requesting actor. Shared work memories are visible to every actor
+    /// focused on the item; agent-scoped work memories remain private.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the work belongs to another project, a
+    /// canonical projection is invalid, or SQLite cannot perform the query.
+    pub fn search_work_memories(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        work_id: crate::domain::WorkId,
+        session_id: &SessionId,
+        agent_id: &str,
+        query: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Vec<MemorySummary>, StoreError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let (focused_work_id, _) =
+            Self::focused_work_for_session_on(&transaction, project_id, session_id)?;
+        if focused_work_id != Some(work_id) {
+            return Err(StoreError::InvalidWork(
+                "work-memory query must match the session's persisted focus".into(),
+            ));
+        }
+        let (work_project, work_root_id) = work::verified_work_identity(&transaction, work_id)?;
+        if work_project != *project_id {
+            return Err(StoreError::InvalidWork(
+                "work-memory query must stay within the bound project".into(),
+            ));
+        }
+        let visibility = "h.project_id = ?1 AND h.work_id = ?2 AND
+             h.sensitivity != 'restricted' AND
+             h.status IN ('active', 'proposed', 'contested', 'stale') AND
+             (h.scope_kind = 'agent' AND h.agent_id = ?3)";
+        let root_visibility = "h.project_id = ?1 AND
+             h.sensitivity != 'restricted' AND
+             h.status IN ('active', 'proposed', 'contested', 'stale') AND
+             h.scope_kind = 'work' AND h.work_id IN (
+                 SELECT item.work_id FROM work_items item
+                 WHERE item.project_id = ?1 AND item.root_id = ?4
+             )";
+        let visibility = format!("(({visibility}) OR ({root_visibility}))");
+        let limit = limit.map_or(i64::MAX, |limit| i64::from(limit.clamp(1, 1_000)));
         let rows = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
             let fts_query = fts_query(query);
             let sql = format!(
                 "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
-                        h.task_id, h.agent_id, h.title, h.body, h.sensitivity,
+                        h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
                  FROM object_fts f JOIN memory_heads h
                    ON h.version_hash = f.object_hash
-                 WHERE {visibility} AND object_fts MATCH ?4
-                 ORDER BY bm25(object_fts), h.created_at_ms DESC LIMIT ?5"
+                 WHERE {visibility} AND object_fts MATCH ?5
+                 ORDER BY bm25(object_fts), h.created_at_ms DESC LIMIT ?6"
             );
-            let mut statement = self.connection.prepare(&sql)?;
+            let mut statement = transaction.prepare(&sql)?;
+            let mapped = statement.query_map(
+                params![
+                    project_id.0,
+                    work_id.0.to_string(),
+                    agent_id,
+                    work_root_id.0.to_string(),
+                    fts_query,
+                    limit
+                ],
+                Self::decode_memory_summary,
+            )?;
+            mapped.collect::<Result<Vec<_>, _>>()?
+        } else {
+            let sql = format!(
+                "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
+                        h.authority, h.delivery, h.scope_kind, h.project_id,
+                        h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
+                        h.created_at_ms
+                 FROM memory_heads h WHERE {visibility}
+                 ORDER BY h.created_at_ms DESC, h.memory_id LIMIT ?5"
+            );
+            let mut statement = transaction.prepare(&sql)?;
+            let mapped = statement.query_map(
+                params![
+                    project_id.0,
+                    work_id.0.to_string(),
+                    agent_id,
+                    work_root_id.0.to_string(),
+                    limit
+                ],
+                Self::decode_memory_summary,
+            )?;
+            mapped.collect::<Result<Vec<_>, _>>()?
+        };
+        let memories = rows
+            .into_iter()
+            .map(Self::parse_memory_summary)
+            .collect::<Result<Vec<_>, _>>()?;
+        transaction.commit()?;
+        Ok(memories)
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "context assembly supplies independently verified task and work-root anchors"
+    )]
+    fn search_memories_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        task_id: Option<TaskId>,
+        work_id: Option<crate::domain::WorkId>,
+        work_root_id: Option<crate::domain::WorkId>,
+        agent_id: &str,
+        query: Option<&str>,
+        limit: Option<u32>,
+    ) -> Result<Vec<MemorySummary>, StoreError> {
+        let visibility = "h.project_id = ?1 AND h.sensitivity != 'restricted' AND
+             (h.scope_kind = 'project' OR
+              (h.scope_kind = 'task' AND h.task_id = ?2) OR
+              (h.scope_kind = 'work' AND h.work_id IN (
+                   SELECT item.work_id FROM work_items item
+                   WHERE item.project_id = ?1 AND item.root_id = ?4
+               )) OR
+              (h.scope_kind = 'agent' AND h.agent_id = ?5 AND
+               (h.task_id IS NULL OR h.task_id = ?2) AND
+               (h.work_id IS NULL OR h.work_id = ?3)))";
+        let limit = limit.map_or(i64::MAX, |limit| i64::from(limit.clamp(1, 1_000)));
+        let rows = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
+            let fts_query = fts_query(query);
+            let sql = format!(
+                "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
+                        h.authority, h.delivery, h.scope_kind, h.project_id,
+                        h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
+                        h.created_at_ms
+                 FROM object_fts f JOIN memory_heads h
+                   ON h.version_hash = f.object_hash
+                 WHERE {visibility} AND object_fts MATCH ?6
+                 ORDER BY bm25(object_fts), h.created_at_ms DESC LIMIT ?7"
+            );
+            let mut statement = connection.prepare(&sql)?;
             let mapped = statement.query_map(
                 params![
                     project_id.0,
                     task_id.map(|value| value.0.to_string()),
+                    work_id.map(|value| value.0.to_string()),
+                    work_root_id.map(|value| value.0.to_string()),
                     agent_id,
                     fts_query,
                     limit,
@@ -855,16 +3478,18 @@ impl SqliteStore {
             let sql = format!(
                 "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
-                        h.task_id, h.agent_id, h.title, h.body, h.sensitivity,
+                        h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
                  FROM memory_heads h WHERE {visibility}
-                 ORDER BY h.created_at_ms DESC, h.memory_id LIMIT ?4"
+                 ORDER BY h.created_at_ms DESC, h.memory_id LIMIT ?6"
             );
-            let mut statement = self.connection.prepare(&sql)?;
+            let mut statement = connection.prepare(&sql)?;
             let mapped = statement.query_map(
                 params![
                     project_id.0,
                     task_id.map(|value| value.0.to_string()),
+                    work_id.map(|value| value.0.to_string()),
+                    work_root_id.map(|value| value.0.to_string()),
                     agent_id,
                     limit,
                 ],
@@ -913,6 +3538,7 @@ impl SqliteStore {
         transaction.execute("DELETE FROM memory_heads", [])?;
         transaction.execute("DELETE FROM object_fts", [])?;
         transaction.execute("DELETE FROM memory_contradictions", [])?;
+        transaction.execute("DELETE FROM memory_contradiction_edges", [])?;
         let mut activated = 0;
         for (stored_hash, bytes) in assertions {
             let assertion_hash = ObjectHash::from_stored(stored_hash.clone())
@@ -961,6 +3587,7 @@ impl SqliteStore {
             activated += 1;
         }
         Self::rebuild_contradiction_projection(&transaction, contradictions)?;
+        Self::bump_rebuilt_context_revisions_on(&transaction)?;
         transaction.commit()?;
         Ok(activated)
     }
@@ -982,26 +3609,169 @@ impl SqliteStore {
                 continue;
             }
             let edge: MemoryContradictionEvent = object.decode()?;
+            let project_id = if let Some(project_id) = edge.project_id.clone() {
+                project_id
+            } else if let Some(task_id) = edge.task_id {
+                let project_id = transaction
+                    .query_row(
+                        "SELECT project_id FROM tasks WHERE task_id = ?1",
+                        [task_id.0.to_string()],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()?
+                    .ok_or_else(|| {
+                        StoreError::InvalidMemoryProjection(
+                            "legacy contradiction references an unknown task".into(),
+                        )
+                    })?;
+                crate::domain::ProjectId(project_id)
+            } else {
+                return Err(StoreError::InvalidMemoryProjection(
+                    "contradiction has no project or task anchor".into(),
+                ));
+            };
             transaction.execute(
-                "INSERT INTO memory_contradictions (
-                     contradiction_hash, task_id, left_version_hash, right_version_hash
-                 ) VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO memory_contradiction_edges (
+                     contradiction_hash, project_id, task_id, work_root_id,
+                     left_version_hash, right_version_hash
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     contradiction_hash.as_str(),
-                    edge.task_id.0.to_string(),
+                    project_id.0,
+                    edge.task_id.map(|task| task.0.to_string()),
+                    edge.work_root_id.map(|work| work.0.to_string()),
                     edge.left_version.as_str(),
                     edge.right_version.as_str(),
                 ],
             )?;
+            if edge.work_root_id.is_none()
+                && let Some(task_id) = edge.task_id
+            {
+                transaction.execute(
+                    "INSERT INTO memory_contradictions (
+                         contradiction_hash, task_id,
+                         left_version_hash, right_version_hash
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        contradiction_hash.as_str(),
+                        task_id.0.to_string(),
+                        edge.left_version.as_str(),
+                        edge.right_version.as_str(),
+                    ],
+                )?;
+            }
         }
         transaction.execute(
             "UPDATE memory_heads SET status = 'contested'
              WHERE status IN ('active', 'stale') AND version_hash IN (
-                 SELECT left_version_hash FROM memory_contradictions
-                 UNION SELECT right_version_hash FROM memory_contradictions
+                 SELECT left_version_hash FROM memory_contradiction_edges
+                 UNION SELECT right_version_hash FROM memory_contradiction_edges
              )",
             [],
         )?;
+        Ok(())
+    }
+
+    fn context_revisions_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        agent_id: &str,
+    ) -> Result<(i64, i64), StoreError> {
+        connection
+            .query_row(
+                "SELECT
+                     COALESCE((
+                         SELECT revision FROM project_context_revisions
+                         WHERE project_id = ?1
+                     ), 0),
+                     COALESCE((
+                         SELECT revision FROM agent_context_revisions
+                         WHERE project_id = ?1 AND agent_id = ?2
+                     ), 0)",
+                params![project_id.0, agent_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(StoreError::from)
+    }
+
+    fn bump_project_context_revision_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+    ) -> Result<(), StoreError> {
+        connection.execute(
+            "INSERT INTO project_context_revisions (project_id, revision)
+             VALUES (?1, 1)
+             ON CONFLICT(project_id) DO UPDATE
+             SET revision = revision + 1",
+            [project_id.0.as_str()],
+        )?;
+        Ok(())
+    }
+
+    fn bump_agent_context_revision_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        agent_id: &str,
+    ) -> Result<(), StoreError> {
+        connection.execute(
+            "INSERT INTO agent_context_revisions (project_id, agent_id, revision)
+             VALUES (?1, ?2, 1)
+             ON CONFLICT(project_id, agent_id) DO UPDATE
+             SET revision = revision + 1",
+            params![project_id.0, agent_id],
+        )?;
+        Ok(())
+    }
+
+    fn bump_memory_context_revision_on(
+        connection: &Connection,
+        scope: &Scope,
+    ) -> Result<(), StoreError> {
+        match scope {
+            Scope::Project { project } => {
+                Self::bump_project_context_revision_on(connection, project)
+            }
+            Scope::Agent { project, agent, .. } => {
+                Self::bump_agent_context_revision_on(connection, project, agent)
+            }
+            Scope::Task { .. } | Scope::Work { .. } => Ok(()),
+        }
+    }
+
+    fn bump_rebuilt_context_revisions_on(connection: &Connection) -> Result<(), StoreError> {
+        let affected_projects = {
+            let mut statement = connection.prepare(
+                "SELECT project_id FROM project_context_revisions
+                 UNION SELECT DISTINCT project_id FROM memory_heads
+                 UNION SELECT DISTINCT project_id FROM memory_contradiction_edges",
+            )?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        for project_id in affected_projects {
+            Self::bump_project_context_revision_on(
+                connection,
+                &crate::domain::ProjectId(project_id),
+            )?;
+        }
+        let affected_agents = {
+            let mut statement = connection.prepare(
+                "SELECT project_id, agent_id FROM agent_context_revisions
+                 UNION SELECT DISTINCT project_id, agent_id FROM memory_heads
+                 WHERE scope_kind = 'agent' AND agent_id IS NOT NULL",
+            )?;
+            let rows = statement.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        for (project_id, agent_id) in affected_agents {
+            Self::bump_agent_context_revision_on(
+                connection,
+                &crate::domain::ProjectId(project_id),
+                &agent_id,
+            )?;
+        }
         Ok(())
     }
 
@@ -1020,34 +3790,84 @@ impl SqliteStore {
         agent_id: &str,
         now: DateTime<Utc>,
     ) -> Result<ContextPacket, StoreError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let packet =
+            Self::build_context_on(&transaction, project_id, task_id, session_id, agent_id, now)?;
+        transaction.commit()?;
+        Ok(packet)
+    }
+
+    fn build_context_on(
+        transaction: &Transaction<'_>,
+        project_id: &crate::domain::ProjectId,
+        task_id: Option<TaskId>,
+        session_id: &SessionId,
+        agent_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ContextPacket, StoreError> {
         if let Some(task_id) = task_id {
-            self.ensure_task_participant(project_id, task_id, session_id)?;
+            Self::ensure_active_task_on(transaction, project_id, task_id, session_id)?;
         }
-        let memories = self.search_memories(project_id, task_id, agent_id, None, 1_000)?;
-        let contradictions = self.applicable_contradictions(task_id, &memories)?;
+        let (work_id, work_root_id) =
+            Self::focused_work_for_session_on(transaction, project_id, session_id)?;
+        let work_feed_heads = work_id.map_or_else(
+            || Ok(Vec::new()),
+            |work_id| work::context_work_feed_heads(transaction, work_id),
+        )?;
+        let (project_context_revision, private_context_revision) =
+            Self::context_revisions_on(transaction, project_id, agent_id)?;
+        let memories = Self::search_memories_on(
+            transaction,
+            project_id,
+            task_id,
+            work_id,
+            work_root_id,
+            agent_id,
+            None,
+            None,
+        )?;
+        let contradictions = Self::applicable_contradictions_on(
+            transaction,
+            project_id,
+            task_id,
+            work_root_id,
+            &memories,
+        )?;
         let assembly = assemble_context(memories, &contradictions)?;
 
         let event_cursor = task_id.map_or(Ok(ChangeCursor::default()), |task_id| {
-            self.latest_task_cursor_read(task_id)
+            Self::latest_task_cursor(transaction, task_id)
         })?;
         let payload = ContextPacketPayload {
             schema_version: SCHEMA_VERSION,
             project_id: project_id.clone(),
             task_id,
+            work_id,
+            work_feed_heads: work_feed_heads.clone(),
+            project_context_revision,
+            private_context_revision,
             agent_id: agent_id.into(),
             event_cursor,
             pinned: assembly.pinned.clone(),
             index: assembly.index.clone(),
             omissions: assembly.omissions.clone(),
+            omission_summaries: assembly.omission_summaries.clone(),
             proposed_count: assembly.proposed_count,
             stale_count: assembly.stale_count,
             created_at: now,
         };
-        let object = self.append("context_packet", &payload)?;
-        Ok(ContextPacket {
+        let object = CanonicalObject::freeze(&payload)?;
+        Self::insert_object(transaction, "context_packet", &object)?;
+        let packet = ContextPacket {
             header: ContextPacketHeader {
                 project_id: project_id.clone(),
                 task_id,
+                work_id,
+                work_feed_heads,
+                project_context_revision,
+                private_context_revision,
                 packet_hash: object.hash().clone(),
                 event_cursor,
                 proposed_count: assembly.proposed_count,
@@ -1056,54 +3876,130 @@ impl SqliteStore {
             pinned: assembly.pinned,
             index: assembly.index,
             omissions: assembly.omissions,
-        })
+            omission_summaries: assembly.omission_summaries,
+        };
+        Ok(packet)
     }
 
-    /// Explains a previously built packet, with owner authorization enforced
-    /// before any packet content is returned.
+    fn focused_work_for_session_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+    ) -> Result<(Option<crate::domain::WorkId>, Option<crate::domain::WorkId>), StoreError> {
+        let stored = connection
+            .query_row(
+                "SELECT focused_work_id FROM work_session_state
+                 WHERE project_id = ?1 AND session_id = ?2",
+                params![project_id.0, session_id.0],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        let Some(stored) = stored else {
+            return Ok((None, None));
+        };
+        let work_id = uuid::Uuid::parse_str(&stored)
+            .map(crate::domain::WorkId)
+            .map_err(|_| {
+                StoreError::InvalidWorkProjection(format!(
+                    "work session focus contains invalid work id {stored}"
+                ))
+            })?;
+        let (work_project, root_id) = work::verified_work_identity(connection, work_id)?;
+        if work_project != *project_id {
+            return Err(StoreError::InvalidWorkProjection(
+                "focused work crosses its session project binding".into(),
+            ));
+        }
+        Ok((Some(work_id), Some(root_id)))
+    }
+
+    /// Explains a previously built packet only while its exact project, task,
+    /// and focused-work context remains active for the requesting session.
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError`] for unknown packets, integrity failures, or an
-    /// owner mismatch.
+    /// Returns [`StoreError`] for unknown packets, integrity failures, or a
+    /// current-context mismatch.
     pub fn explain_context(
         &self,
         packet_hash: &ObjectHash,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
         agent_id: &str,
     ) -> Result<ContextPacketPayload, StoreError> {
+        let transaction = self.connection.unchecked_transaction()?;
         let payload: ContextPacketPayload =
-            self.get_typed_object(packet_hash, "context_packet")?
+            Self::get_typed_object_on(&transaction, packet_hash, "context_packet")?
                 .ok_or_else(|| StoreError::PacketAccessDenied(packet_hash.clone()))?;
-        if payload.schema_version != SCHEMA_VERSION || payload.agent_id != agent_id {
+        if payload.schema_version != SCHEMA_VERSION
+            || payload.project_id != *project_id
+            || payload.agent_id != agent_id
+        {
             return Err(StoreError::PacketAccessDenied(packet_hash.clone()));
         }
+
+        if let Some(task_id) = payload.task_id {
+            match Self::ensure_active_task_on(&transaction, project_id, task_id, session_id) {
+                Ok(()) => {}
+                Err(StoreError::TaskAccessDenied { .. }) => {
+                    return Err(StoreError::PacketAccessDenied(packet_hash.clone()));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        if let Some(work_id) = payload.work_id {
+            let (focused_work_id, _) =
+                Self::focused_work_for_session_on(&transaction, project_id, session_id)?;
+            if focused_work_id != Some(work_id) {
+                return Err(StoreError::PacketAccessDenied(packet_hash.clone()));
+            }
+        }
+        transaction.commit()?;
         Ok(payload)
     }
 
-    fn applicable_contradictions(
-        &self,
+    #[allow(
+        clippy::too_many_lines,
+        reason = "applicability verifies every projection anchor against the canonical edge"
+    )]
+    fn applicable_contradictions_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
         task_id: Option<TaskId>,
+        work_root_id: Option<crate::domain::WorkId>,
         memories: &[MemorySummary],
     ) -> Result<Vec<ApplicableContradiction>, StoreError> {
-        let Some(task_id) = task_id else {
-            return Ok(Vec::new());
-        };
         let visible: std::collections::HashSet<_> =
             memories.iter().map(|memory| &memory.version).collect();
-        let mut statement = self.connection.prepare(
-            "SELECT contradiction_hash, left_version_hash, right_version_hash
-             FROM memory_contradictions WHERE task_id = ?1
+        let mut statement = connection.prepare(
+            "SELECT contradiction_hash, task_id, work_root_id,
+                    left_version_hash, right_version_hash
+             FROM memory_contradiction_edges
+             WHERE project_id = ?1
+               AND (task_id IS NULL OR task_id = ?2)
+               AND (work_root_id IS NULL OR work_root_id = ?3)
              ORDER BY contradiction_hash",
         )?;
-        let rows = statement.query_map([task_id.0.to_string()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
+        let rows = statement.query_map(
+            params![
+                project_id.0,
+                task_id.map(|task| task.0.to_string()),
+                work_root_id.map(|work| work.0.to_string())
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )?;
         rows.filter_map(|row| match row {
-            Ok((contradiction, left, right)) => {
+            Ok((contradiction, stored_task, stored_root, left, right)) => {
                 let parsed = (|| {
                     let contradiction = ObjectHash::from_stored(contradiction.clone())
                         .ok_or(StoreError::InvalidStoredHash(contradiction))?;
@@ -1111,6 +4007,72 @@ impl SqliteStore {
                         .ok_or(StoreError::InvalidStoredHash(left))?;
                     let right = ObjectHash::from_stored(right.clone())
                         .ok_or(StoreError::InvalidStoredHash(right))?;
+                    let stored_task = stored_task
+                        .map(|task| {
+                            uuid::Uuid::parse_str(&task).map(TaskId).map_err(|_| {
+                                StoreError::InvalidMemoryProjection(format!(
+                                    "contradiction edge has invalid task id {task}"
+                                ))
+                            })
+                        })
+                        .transpose()?;
+                    let stored_root = stored_root
+                        .map(|root| {
+                            uuid::Uuid::parse_str(&root)
+                                .map(crate::domain::WorkId)
+                                .map_err(|_| {
+                                    StoreError::InvalidMemoryProjection(format!(
+                                        "contradiction edge has invalid work root id {root}"
+                                    ))
+                                })
+                        })
+                        .transpose()?;
+                    let object = Self::get_canonical_object_on(
+                        connection,
+                        &contradiction,
+                        "memory_contradiction_event",
+                    )?
+                    .ok_or_else(|| {
+                        StoreError::InvalidMemoryProjection(format!(
+                            "contradiction edge {contradiction} has no canonical object"
+                        ))
+                    })?;
+                    let value: serde_json::Value = serde_json::from_slice(object.bytes())?;
+                    if value
+                        .get("schema_version")
+                        .and_then(serde_json::Value::as_u64)
+                        != Some(u64::from(SCHEMA_VERSION))
+                    {
+                        return Err(StoreError::InvalidMemoryProjection(format!(
+                            "contradiction edge {contradiction} has an unsupported schema version"
+                        )));
+                    }
+                    let event: MemoryContradictionEvent = object.decode()?;
+                    let project_bound = if let Some(event_project) = event.project_id.as_ref() {
+                        event_project == project_id
+                    } else if let Some(event_task) = event.task_id {
+                        connection
+                            .query_row(
+                                "SELECT project_id FROM tasks WHERE task_id = ?1",
+                                [event_task.0.to_string()],
+                                |row| row.get::<_, String>(0),
+                            )
+                            .optional()?
+                            .as_deref()
+                            == Some(project_id.0.as_str())
+                    } else {
+                        false
+                    };
+                    if !project_bound
+                        || event.task_id != stored_task
+                        || event.work_root_id != stored_root
+                        || event.left_version != left
+                        || event.right_version != right
+                    {
+                        return Err(StoreError::InvalidMemoryProjection(format!(
+                            "contradiction edge {contradiction} differs from its canonical object"
+                        )));
+                    }
                     Ok(ApplicableContradiction {
                         contradiction,
                         left,
@@ -1142,11 +4104,43 @@ impl SqliteStore {
         version_hash: &ObjectHash,
         project_id: &crate::domain::ProjectId,
         task_id: Option<TaskId>,
+        work_id: Option<crate::domain::WorkId>,
         session_id: &SessionId,
         agent_id: &str,
     ) -> Result<MemoryRecord, StoreError> {
-        let assertion_hash: Option<String> = self
-            .connection
+        let transaction = self.connection.unchecked_transaction()?;
+        let record = Self::show_memory_on(
+            &transaction,
+            version_hash,
+            project_id,
+            task_id,
+            work_id,
+            session_id,
+            agent_id,
+        )?;
+        transaction.commit()?;
+        Ok(record)
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "authorization binds the exact persisted task/work session context"
+    )]
+    fn show_memory_on(
+        connection: &Connection,
+        version_hash: &ObjectHash,
+        project_id: &crate::domain::ProjectId,
+        task_id: Option<TaskId>,
+        work_id: Option<crate::domain::WorkId>,
+        session_id: &SessionId,
+        agent_id: &str,
+    ) -> Result<MemoryRecord, StoreError> {
+        let (focused_work_id, focused_root_id) =
+            Self::focused_work_for_session_on(connection, project_id, session_id)?;
+        if work_id.is_some() && work_id != focused_work_id {
+            return Err(StoreError::MemoryAccessDenied(version_hash.clone()));
+        }
+        let assertion_hash: Option<String> = connection
             .query_row(
                 "SELECT assertion_hash FROM memory_heads WHERE version_hash = ?1",
                 [version_hash.as_str()],
@@ -1158,30 +4152,49 @@ impl SqliteStore {
         };
         let assertion_hash = ObjectHash::from_stored(assertion_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(assertion_hash))?;
-        let version: MemoryVersion = self
-            .get_typed_object(version_hash, "memory_version")?
-            .ok_or_else(|| StoreError::MemoryNotFound(version_hash.clone()))?;
+        let version: MemoryVersion =
+            Self::get_typed_object_on(connection, version_hash, "memory_version")?
+                .ok_or_else(|| StoreError::MemoryNotFound(version_hash.clone()))?;
         let authorized = match &version.scope {
             Scope::Project { project } => project == project_id,
             Scope::Task { project, task } => {
                 project == project_id
                     && Some(*task) == task_id
-                    && self
-                        .ensure_task_participant(project_id, *task, session_id)
+                    && Self::ensure_active_task_on(connection, project_id, *task, session_id)
                         .is_ok()
+            }
+            Scope::Work { project, work } => {
+                if project != project_id {
+                    false
+                } else if let Some(focused_root) = focused_root_id {
+                    let (scoped_project, scoped_root) =
+                        work::verified_work_identity(connection, *work)?;
+                    scoped_project == *project_id && scoped_root == focused_root
+                } else {
+                    false
+                }
             }
             Scope::Agent {
                 project,
                 task,
+                work,
                 agent,
-            } => project == project_id && *task == task_id && agent == agent_id,
+            } => {
+                let task_authorized = task.is_none_or(|task| {
+                    Some(task) == task_id
+                        && Self::ensure_active_task_on(connection, project_id, task, session_id)
+                            .is_ok()
+                });
+                let work_authorized = work.is_none_or(|work| Some(work) == focused_work_id);
+                project == project_id && task_authorized && work_authorized && agent == agent_id
+            }
         };
         if !authorized || version.sensitivity == Sensitivity::Restricted {
             return Err(StoreError::MemoryAccessDenied(version_hash.clone()));
         }
-        let assertion: MemoryAssertionEvent = self
-            .get_typed_object(&assertion_hash, "memory_assertion_event")?
-            .ok_or_else(|| StoreError::MemoryNotFound(version_hash.clone()))?;
+        let assertion: MemoryAssertionEvent =
+            Self::get_typed_object_on(connection, &assertion_hash, "memory_assertion_event")?
+                .ok_or_else(|| StoreError::MemoryNotFound(version_hash.clone()))?;
         Ok(MemoryRecord {
             version_hash: version_hash.clone(),
             assertion_hash,
@@ -1205,8 +4218,16 @@ impl SqliteStore {
         after: ChangeCursor,
         limit: u32,
     ) -> Result<TaskDelta, StoreError> {
-        self.ensure_task_participant(project_id, task_id, session_id)?;
-        let visible = self.search_memories(project_id, Some(task_id), agent_id, None, 1_000)?;
+        Self::ensure_active_task_on(&self.connection, project_id, task_id, session_id)?;
+        let visible = self.search_memories(
+            project_id,
+            Some(task_id),
+            None,
+            session_id,
+            agent_id,
+            None,
+            1_000,
+        )?;
         let changes = self.task_changes_since(task_id, after, limit)?;
         let mut items = Vec::with_capacity(changes.len());
         for change in changes {
@@ -1242,6 +4263,148 @@ impl SqliteStore {
             cursor,
             changes: items,
         })
+    }
+
+    /// Evaluates and durably records one shadow-only turn decision.
+    ///
+    /// An exact retry for the same session and intent returns the originally
+    /// observed bytes even after restart. Reusing the request key for a
+    /// different intent is rejected. This operation never creates a grant and
+    /// does not alter the advisory CLI/MCP path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when canonicalization, persistence, or replay
+    /// validation fails.
+    pub fn record_turn_observation(
+        &mut self,
+        input: &TurnEvaluationInput,
+    ) -> Result<ObservedTurnDecision, StoreError> {
+        let intent = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
+            control_schema_version: input.control_schema_version,
+            session_id: &input.session_id,
+            task_id: input.task_id,
+            intent: &input.intent,
+        })?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut evaluated_input = input.clone();
+        Self::hydrate_durable_turn_state(&transaction, &mut evaluated_input)?;
+        let input_object = CanonicalObject::freeze(&evaluated_input)?;
+        let existing = transaction
+            .query_row(
+                "SELECT intent_hash, sequence, session_id, task_id, idempotency_key,
+                        observed_at_ms, input_hash, input_json, decision_hash, decision_json
+                 FROM control_observations
+                 WHERE session_id = ?1 AND idempotency_key = ?2",
+                params![input.session_id.0, input.intent.idempotency_key],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        StoredControlObservation {
+                            sequence: row.get(1)?,
+                            session_id: row.get(2)?,
+                            task_id: row.get(3)?,
+                            idempotency_key: row.get(4)?,
+                            intent_hash: row.get(0)?,
+                            observed_at_ms: row.get(5)?,
+                            input_hash: row.get(6)?,
+                            input_json: row.get(7)?,
+                            decision_hash: row.get(8)?,
+                            decision_json: row.get(9)?,
+                        },
+                    ))
+                },
+            )
+            .optional()?;
+
+        if let Some((stored_intent_hash, stored)) = existing {
+            if stored_intent_hash != intent.hash().as_str() {
+                return Err(StoreError::TurnObservationIdempotencyConflict(
+                    input.intent.idempotency_key.clone(),
+                ));
+            }
+            let observation = Self::decode_control_observation(&stored)?;
+            transaction.commit()?;
+            return Ok(observation);
+        }
+
+        let observation = crate::control::observe_turn(&evaluated_input);
+        let decision_object = CanonicalObject::freeze(&observation)?;
+        transaction.execute(
+            "INSERT INTO control_observations (
+                 session_id, task_id, idempotency_key, intent_hash, input_hash,
+                 input_json, decision_hash, decision_json, observed_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                evaluated_input.session_id.0,
+                evaluated_input.task_id.map(|task_id| task_id.0.to_string()),
+                evaluated_input.intent.idempotency_key,
+                intent.hash().as_str(),
+                input_object.hash().as_str(),
+                input_object.bytes(),
+                decision_object.hash().as_str(),
+                decision_object.bytes(),
+                evaluated_input.evaluated_at.timestamp_millis(),
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(observation)
+    }
+
+    fn hydrate_durable_turn_state(
+        transaction: &Transaction<'_>,
+        input: &mut TurnEvaluationInput,
+    ) -> Result<(), StoreError> {
+        let Some(task_id) = input.task_id else {
+            input.task_state = None;
+            input.participant_membership = ParticipantMembership::NotMember;
+            input.head_cursor = ChangeCursor::default();
+            return Ok(());
+        };
+        let stored = transaction
+            .query_row(
+                "SELECT state,
+                        (
+                            SELECT COALESCE(MAX(task_cursor), 0) FROM task_changes
+                            WHERE task_id = ?1
+                        ),
+                        EXISTS(
+                            SELECT 1 FROM task_participants
+                            WHERE task_id = ?1 AND session_id = ?2
+                        ),
+                        EXISTS(
+                            SELECT 1 FROM session_bindings
+                            WHERE task_id = ?1 AND session_id = ?2
+                        )
+                 FROM tasks WHERE task_id = ?1",
+                params![task_id.0.to_string(), input.session_id.0],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        if let Some((state, cursor, is_participant, is_bound)) = stored {
+            input.task_state = Some(parse_enum::<TaskState>(&state)?);
+            input.head_cursor = ChangeCursor(cursor);
+            input.participant_membership = if is_participant == 1 && is_bound == 1 {
+                ParticipantMembership::Member
+            } else {
+                ParticipantMembership::NotMember
+            };
+        } else {
+            input.task_state = None;
+            input.participant_membership = ParticipantMembership::NotMember;
+            input.head_cursor = ChangeCursor::default();
+        }
+        Ok(())
     }
 
     /// Appends an immutable object. Re-appending identical content is
@@ -1299,10 +4462,10 @@ impl SqliteStore {
         limit: u32,
     ) -> Result<Vec<TaskChange>, StoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT cursor, object_kind, object_hash
+            "SELECT task_cursor, object_kind, object_hash
              FROM task_changes
-             WHERE task_id = ?1 AND cursor > ?2
-             ORDER BY cursor
+             WHERE task_id = ?1 AND task_cursor > ?2
+             ORDER BY task_cursor
              LIMIT ?3",
         )?;
         let rows = statement.query_map(
@@ -1332,6 +4495,124 @@ impl SqliteStore {
             })
         })
         .collect()
+    }
+
+    fn task_delta_range_on(
+        transaction: &Transaction<'_>,
+        task_id: TaskId,
+        after: ChangeCursor,
+        through: ChangeCursor,
+    ) -> Result<TaskDelta, StoreError> {
+        if through < after {
+            return Err(StoreError::InvalidTaskProjection(
+                "task delivery range ends before its confirmed cursor".into(),
+            ));
+        }
+        let raw = {
+            let mut statement = transaction.prepare(
+                "SELECT task_cursor, object_kind, object_hash
+                 FROM task_changes
+                 WHERE task_id = ?1 AND task_cursor > ?2 AND task_cursor <= ?3
+                 ORDER BY task_cursor",
+            )?;
+            statement
+                .query_map(params![task_id.0.to_string(), after.0, through.0], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut changes = Vec::with_capacity(raw.len());
+        for (cursor, object_kind, stored_hash) in raw {
+            let object_hash = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let stored: Option<(String, Vec<u8>)> = transaction
+                .query_row(
+                    "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+                    [object_hash.as_str()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let Some((stored_kind, bytes)) = stored else {
+                return Err(StoreError::InvalidTaskProjection(format!(
+                    "task change {cursor} references a missing object"
+                )));
+            };
+            if stored_kind != object_kind {
+                return Err(StoreError::ObjectKindMismatch {
+                    hash: object_hash,
+                    stored: stored_kind,
+                    requested: object_kind,
+                });
+            }
+            let object = CanonicalObject::verify(&object_hash, bytes)?.decode()?;
+            changes.push(DeltaItem {
+                cursor: ChangeCursor(cursor),
+                object_kind: stored_kind,
+                object_hash,
+                memory: None,
+                object,
+            });
+        }
+        let expected = usize::try_from(through.0 - after.0).map_err(|_| {
+            StoreError::InvalidTaskProjection("task delivery range overflowed".into())
+        })?;
+        let dense = changes.iter().enumerate().all(|(offset, change)| {
+            i64::try_from(offset).is_ok_and(|offset| change.cursor.0 == after.0 + offset + 1)
+        });
+        if changes.len() != expected || !dense {
+            return Err(StoreError::InvalidTaskProjection(format!(
+                "task delivery interval ({}, {}] is not dense",
+                after.0, through.0
+            )));
+        }
+        Ok(TaskDelta {
+            task_id,
+            after,
+            cursor: through,
+            changes,
+        })
+    }
+
+    fn task_delivery_page_end(
+        transaction: &Transaction<'_>,
+        task_id: TaskId,
+        after: ChangeCursor,
+    ) -> Result<ChangeCursor, StoreError> {
+        let mut statement = transaction.prepare(
+            "SELECT change.task_cursor, LENGTH(object.canonical_json)
+             FROM task_changes change
+             JOIN objects object ON object.object_hash = change.object_hash
+             WHERE change.task_id = ?1 AND change.task_cursor > ?2
+             ORDER BY change.task_cursor
+             LIMIT ?3",
+        )?;
+        let rows = statement
+            .query_map(
+                params![task_id.0.to_string(), after.0, MAX_CONTROL_DELIVERY_EVENTS],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut total_bytes = 0_i64;
+        let mut through = None;
+        for (cursor, bytes) in rows {
+            let Some(next_total) = total_bytes.checked_add(bytes) else {
+                break;
+            };
+            if next_total > MAX_CONTROL_DELIVERY_OBJECT_BYTES {
+                break;
+            }
+            total_bytes = next_total;
+            through = Some(ChangeCursor(cursor));
+        }
+        through.ok_or_else(|| {
+            StoreError::InvalidTaskProjection(
+                "one task event exceeds the bounded host-delivery object budget".into(),
+            )
+        })
     }
 
     /// Atomically acquires an execution lease. An exact idempotent retry
@@ -1475,11 +4756,68 @@ impl SqliteStore {
             .transpose()
     }
 
-    /// Verifies canonical bytes and hashes for every stored object.
+    /// Summarizes the built-in control policy and live operational envelope.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when policy or control projections are invalid.
+    pub fn control_diagnostics(&self) -> Result<ControlDiagnostics, StoreError> {
+        let policy = Self::load_control_policy(&self.connection)?;
+        let active_sessions = self.connection.query_row(
+            "SELECT COUNT(*) FROM control_sessions WHERE phase != 'exited'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let issued_turns = self.connection.query_row(
+            "SELECT COUNT(*) FROM control_turn_grants
+             WHERE state = 'issued'
+               AND expires_at_ms > CAST(strftime('%s', 'now') AS INTEGER) * 1000",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let begun_turns = self.connection.query_row(
+            "SELECT COUNT(*) FROM control_turn_grants WHERE state = 'begun'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let all_effects = [
+            EffectClass::Observe,
+            EffectClass::Communicate,
+            EffectClass::MutateLocal,
+            EffectClass::MutateShared,
+            EffectClass::ExternalSideEffect,
+            EffectClass::Lifecycle,
+        ];
+        let unenforced_effects = all_effects
+            .into_iter()
+            .filter(|effect| !policy.supported_effects.contains(effect))
+            .collect();
+        Ok(ControlDiagnostics {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            policy_epoch: policy.epoch,
+            required_assurance: policy.required_assurance,
+            supported_effects: policy.supported_effects,
+            unenforced_effects,
+            active_sessions: Self::control_count(active_sessions, "active session")?,
+            issued_turns: Self::control_count(issued_turns, "issued turn")?,
+            begun_turns: Self::control_count(begun_turns, "begun turn")?,
+            // These are explicit alpha capability disclosures, not probes.
+            action_gating_available: false,
+            authority_mediation_available: false,
+            action_outcome_tracking_available: false,
+        })
+    }
+
+    /// Verifies canonical bytes and hashes for every stored object and control
+    /// observation.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when SQLite cannot scan the object table.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the integrity scanner enumerates every canonical and operational control tier"
+    )]
     pub fn verify_all(&self) -> Result<IntegrityReport, StoreError> {
         let mut statement = self
             .connection
@@ -1498,7 +4836,326 @@ impl SqliteStore {
                 report.invalid_objects.push(stored_hash);
             }
         }
+
+        let mut control_statement = self.connection.prepare(
+            "SELECT sequence, session_id, task_id, idempotency_key, intent_hash,
+                    observed_at_ms, input_hash, input_json, decision_hash, decision_json
+             FROM control_observations ORDER BY sequence",
+        )?;
+        let control_rows = control_statement.query_map([], |row| {
+            Ok(StoredControlObservation {
+                sequence: row.get(0)?,
+                session_id: row.get(1)?,
+                task_id: row.get(2)?,
+                idempotency_key: row.get(3)?,
+                intent_hash: row.get(4)?,
+                observed_at_ms: row.get(5)?,
+                input_hash: row.get(6)?,
+                input_json: row.get(7)?,
+                decision_hash: row.get(8)?,
+                decision_json: row.get(9)?,
+            })
+        })?;
+        for row in control_rows {
+            let stored = row?;
+            report.checked_control_records += 1;
+            if Self::decode_control_observation(&stored).is_err() {
+                report
+                    .invalid_control_records
+                    .push(format!("control_observation:{}", stored.sequence));
+            }
+        }
+
+        let mut session_statement = self
+            .connection
+            .prepare("SELECT session_id FROM control_sessions ORDER BY session_id")?;
+        let session_rows = session_statement.query_map([], |row| row.get::<_, String>(0))?;
+        for row in session_rows {
+            let session_id = row?;
+            report.checked_control_records += 1;
+            if Self::load_control_session_on(&self.connection, &SessionId(session_id.clone()))
+                .is_err()
+            {
+                report
+                    .invalid_control_records
+                    .push(format!("control_session:{session_id}"));
+            }
+        }
+
+        let mut turn_statement = self.connection.prepare(
+            "SELECT sequence, session_id, task_id, idempotency_key,
+                    intent_hash, intent_json, decision_hash, decision_json
+             FROM control_turn_results ORDER BY sequence",
+        )?;
+        let turn_rows = turn_statement.query_map([], |row| {
+            Ok(StoredControlTurnResult {
+                sequence: row.get(0)?,
+                session_id: row.get(1)?,
+                task_id: row.get(2)?,
+                idempotency_key: row.get(3)?,
+                intent_hash: row.get(4)?,
+                intent_json: row.get(5)?,
+                decision_hash: row.get(6)?,
+                decision_json: row.get(7)?,
+            })
+        })?;
+        for row in turn_rows {
+            let stored = row?;
+            report.checked_control_records += 1;
+            if Self::verify_control_turn_result(&stored).is_err() {
+                report
+                    .invalid_control_records
+                    .push(format!("control_turn_result:{}", stored.sequence));
+            }
+        }
+
+        let mut grant_statement = self.connection.prepare(
+            "SELECT grant_id, session_id, task_id, request_key, grant_hash,
+                    grant_json, state, issued_at_ms, expires_at_ms
+             FROM control_turn_grants ORDER BY issued_at_ms, grant_id",
+        )?;
+        let grant_rows = grant_statement.query_map([], |row| {
+            Ok(StoredControlGrantRow {
+                grant_id: row.get(0)?,
+                session_id: row.get(1)?,
+                task_id: row.get(2)?,
+                request_key: row.get(3)?,
+                grant_hash: row.get(4)?,
+                grant_json: row.get(5)?,
+                state: row.get(6)?,
+                issued_at_ms: row.get(7)?,
+                expires_at_ms: row.get(8)?,
+            })
+        })?;
+        for row in grant_rows {
+            let stored = row?;
+            report.checked_control_records += 1;
+            if Self::verify_control_grant_row(&stored).is_err() {
+                report
+                    .invalid_control_records
+                    .push(format!("control_turn_grant:{}", stored.grant_id));
+            }
+        }
+
+        let mut lease_statement = self.connection.prepare(
+            "SELECT lease_id, task_id, holder_session_id, lease_hash,
+                    lease_json, state, expires_at_ms
+             FROM control_work_leases ORDER BY lease_id",
+        )?;
+        let lease_rows = lease_statement.query_map([], |row| {
+            Ok(StoredWorkLeaseRow {
+                lease_id: row.get(0)?,
+                task_id: row.get(1)?,
+                holder_session_id: row.get(2)?,
+                lease_hash: row.get(3)?,
+                lease_json: row.get(4)?,
+                state: row.get(5)?,
+                expires_at_ms: row.get(6)?,
+            })
+        })?;
+        for row in lease_rows {
+            let stored = row?;
+            report.checked_control_records += 1;
+            if Self::decode_work_lease_row(&stored).is_err() {
+                report
+                    .invalid_control_records
+                    .push(format!("control_work_lease:{}", stored.lease_id));
+            }
+        }
+
+        let mut operation_statement = self.connection.prepare(
+            "SELECT sequence, session_id, operation, idempotency_key,
+                    intent_hash, intent_json, result_hash, result_json
+             FROM control_operation_results ORDER BY sequence",
+        )?;
+        let operation_rows = operation_statement.query_map([], |row| {
+            Ok(StoredControlOperation {
+                sequence: row.get(0)?,
+                session_id: row.get(1)?,
+                operation: row.get(2)?,
+                idempotency_key: row.get(3)?,
+                intent_hash: row.get(4)?,
+                intent_json: row.get(5)?,
+                result_hash: row.get(6)?,
+                result_json: row.get(7)?,
+            })
+        })?;
+        for row in operation_rows {
+            let stored = row?;
+            report.checked_control_records += 1;
+            if Self::verify_control_operation(&stored).is_err() {
+                report
+                    .invalid_control_records
+                    .push(format!("control_operation:{}", stored.sequence));
+            }
+        }
+        let (checked_work_records, invalid_work_records) = self.verify_work_projections()?;
+        report.checked_work_records = checked_work_records;
+        report.invalid_work_records = invalid_work_records;
         Ok(report)
+    }
+
+    fn decode_control_observation(
+        stored: &StoredControlObservation,
+    ) -> Result<ObservedTurnDecision, StoreError> {
+        let input_hash = ObjectHash::from_stored(stored.input_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredHash(stored.input_hash.clone()))?;
+        let input: TurnEvaluationInput =
+            CanonicalObject::verify(&input_hash, stored.input_json.clone())?.decode()?;
+        let expected_intent = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
+            control_schema_version: input.control_schema_version,
+            session_id: &input.session_id,
+            task_id: input.task_id,
+            intent: &input.intent,
+        })?;
+        let decision_hash = ObjectHash::from_stored(stored.decision_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredHash(stored.decision_hash.clone()))?;
+        let observation: ObservedTurnDecision =
+            CanonicalObject::verify(&decision_hash, stored.decision_json.clone())?.decode()?;
+
+        let input_task = input.task_id.map(|task_id| task_id.0.to_string());
+        let row_matches = expected_intent.hash().as_str() == stored.intent_hash
+            && observation.control_schema_version == CONTROL_SCHEMA_VERSION
+            && input.session_id.0 == stored.session_id
+            && input_task == stored.task_id
+            && input.intent.idempotency_key == stored.idempotency_key
+            && input.evaluated_at.timestamp_millis() == stored.observed_at_ms
+            && observation.request_key == stored.idempotency_key
+            && observation.observed_at.timestamp_millis() == stored.observed_at_ms;
+        if !row_matches {
+            return Err(StoreError::InvalidControlObservation(format!(
+                "row {} does not match its input and decision",
+                stored.sequence
+            )));
+        }
+
+        let schema_matches = input.control_schema_version == CONTROL_SCHEMA_VERSION
+            || matches!(
+                &observation.decision,
+                TurnDecision::Refuse { directive }
+                    if directive.code == crate::domain::ControlRefusalCode::UnknownControlSchema
+            );
+        let decision_matches = schema_matches
+            && match &observation.decision {
+                TurnDecision::Grant { basis } => {
+                    Some(basis.task_id) == input.task_id
+                        && basis.session_id == input.session_id
+                        && basis.purpose == input.intent.purpose
+                        && basis.intent_fingerprint == input.intent.intent_fingerprint
+                }
+                TurnDecision::Refuse { directive } => {
+                    directive.directive_id
+                        == format!("{}:{}", stored.idempotency_key, directive.code.as_str())
+                }
+                TurnDecision::Defer { deferral } => !deferral.wake_condition.trim().is_empty(),
+            };
+        if !decision_matches {
+            return Err(StoreError::InvalidControlObservation(format!(
+                "decision {} is not bound to its input",
+                stored.sequence
+            )));
+        }
+
+        Ok(observation)
+    }
+
+    fn verify_control_turn_result(stored: &StoredControlTurnResult) -> Result<(), StoreError> {
+        let intent = Self::decode_canonical_value(&stored.intent_hash, stored.intent_json.clone())?;
+        let decision: ControlTurnDecision =
+            Self::decode_canonical_projection(&stored.decision_hash, stored.decision_json.clone())?;
+        let row_matches = intent.get("session_id").and_then(serde_json::Value::as_str)
+            == Some(stored.session_id.as_str())
+            && intent.get("task_id").and_then(serde_json::Value::as_str)
+                == Some(stored.task_id.as_str())
+            && intent
+                .get("intent")
+                .and_then(|value| value.get("idempotency_key"))
+                .and_then(serde_json::Value::as_str)
+                == Some(stored.idempotency_key.as_str());
+        let decision_matches = match decision {
+            ControlTurnDecision::Grant { grant } => {
+                grant.control_schema_version == CONTROL_SCHEMA_VERSION
+                    && grant.request_key == stored.idempotency_key
+                    && grant.basis.session_id.0 == stored.session_id
+                    && grant.basis.task_id.0.to_string() == stored.task_id
+            }
+            ControlTurnDecision::Refuse { directive } => directive
+                .directive_id
+                .starts_with(&format!("{}:", stored.idempotency_key)),
+            ControlTurnDecision::Defer { deferral } => !deferral.wake_condition.trim().is_empty(),
+        };
+        if !row_matches || !decision_matches {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "turn result {} is not bound to its row",
+                stored.sequence
+            )));
+        }
+        Ok(())
+    }
+
+    fn verify_control_grant_row(stored: &StoredControlGrantRow) -> Result<(), StoreError> {
+        let grant: IssuedTurnGrant =
+            Self::decode_canonical_projection(&stored.grant_hash, stored.grant_json.clone())?;
+        let state = parse_enum::<TurnGrantState>(&stored.state)?;
+        let delivery_matches = crate::control::delivery_matches_grant(&grant);
+        let row_matches = grant.control_schema_version == CONTROL_SCHEMA_VERSION
+            && grant.grant_id == stored.grant_id
+            && grant.request_key == stored.request_key
+            && grant.basis.session_id.0 == stored.session_id
+            && grant.basis.task_id.0.to_string() == stored.task_id
+            && grant.issued_at.timestamp_millis() == stored.issued_at_ms
+            && grant.basis.expires_at.timestamp_millis() == stored.expires_at_ms
+            && stored.expires_at_ms > stored.issued_at_ms
+            && matches!(
+                state,
+                TurnGrantState::Issued
+                    | TurnGrantState::Begun
+                    | TurnGrantState::Completed
+                    | TurnGrantState::Expired
+            );
+        if !row_matches || !delivery_matches {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "turn grant {:?} is not bound to its row",
+                stored.grant_id
+            )));
+        }
+        Ok(())
+    }
+
+    fn verify_control_operation(stored: &StoredControlOperation) -> Result<(), StoreError> {
+        let intent = Self::decode_canonical_value(&stored.intent_hash, stored.intent_json.clone())?;
+        let result = Self::decode_canonical_value(&stored.result_hash, stored.result_json.clone())?;
+        let row_matches = intent.get("session_id").and_then(serde_json::Value::as_str)
+            == Some(stored.session_id.as_str())
+            && intent
+                .get("idempotency_key")
+                .and_then(serde_json::Value::as_str)
+                == Some(stored.idempotency_key.as_str())
+            && match stored.operation.as_str() {
+                "turn_begin" | "turn_checkpoint" | "lease_acquire" => result
+                    .get("decision")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some(),
+                "lease_release" => result
+                    .get("lease_id")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some(),
+                _ => false,
+            };
+        if !row_matches {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control operation {} is not bound to its row",
+                stored.sequence
+            )));
+        }
+        Ok(())
+    }
+
+    fn decode_canonical_value(
+        stored_hash: &str,
+        bytes: Vec<u8>,
+    ) -> Result<serde_json::Value, StoreError> {
+        Self::decode_canonical_projection(stored_hash, bytes)
     }
 
     fn apply_memory_projection(
@@ -1518,29 +5175,36 @@ impl SqliteStore {
             ));
         }
 
-        let (scope_kind, project_id, task_id, agent_id) = match &version.scope {
-            Scope::Project { project } => ("project", &project.0, None, None),
-            Scope::Task { project, task } => ("task", &project.0, Some(task.0.to_string()), None),
+        let (scope_kind, project_id, task_id, work_id, agent_id) = match &version.scope {
+            Scope::Project { project } => ("project", &project.0, None, None, None),
+            Scope::Task { project, task } => {
+                ("task", &project.0, Some(task.0.to_string()), None, None)
+            }
+            Scope::Work { project, work } => {
+                ("work", &project.0, None, Some(work.0.to_string()), None)
+            }
             Scope::Agent {
                 project,
                 task,
+                work,
                 agent,
             } => (
                 "agent",
                 &project.0,
                 task.map(|value| value.0.to_string()),
+                work.map(|value| value.0.to_string()),
                 Some(agent.as_str()),
             ),
         };
         transaction.execute(
             "INSERT INTO memory_heads (
                  memory_id, version_hash, assertion_hash, schema_version,
-                 status, scope_kind, project_id, task_id, agent_id,
+                 status, scope_kind, project_id, task_id, work_id, agent_id,
                  memory_kind, authority, delivery, sensitivity, title, body,
                  created_at_ms
              ) VALUES (
                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                 ?14, ?15, ?16
+                 ?14, ?15, ?16, ?17
              )
              ON CONFLICT(memory_id) DO UPDATE SET
                  version_hash = excluded.version_hash,
@@ -1550,6 +5214,7 @@ impl SqliteStore {
                  scope_kind = excluded.scope_kind,
                  project_id = excluded.project_id,
                  task_id = excluded.task_id,
+                 work_id = excluded.work_id,
                  agent_id = excluded.agent_id,
                  memory_kind = excluded.memory_kind,
                  authority = excluded.authority,
@@ -1567,6 +5232,7 @@ impl SqliteStore {
                 scope_kind,
                 project_id,
                 task_id,
+                work_id,
                 agent_id,
                 enum_name(version.kind)?,
                 enum_name(version.authority)?,
@@ -1593,30 +5259,600 @@ impl SqliteStore {
         task_id: TaskId,
     ) -> Result<ChangeCursor, StoreError> {
         let cursor = transaction.query_row(
-            "SELECT COALESCE(MAX(cursor), 0) FROM task_changes WHERE task_id = ?1",
+            "SELECT COALESCE(MAX(task_cursor), 0) FROM task_changes WHERE task_id = ?1",
             [task_id.0.to_string()],
             |row| row.get(0),
         )?;
         Ok(ChangeCursor(cursor))
     }
 
-    fn latest_task_cursor_read(&self, task_id: TaskId) -> Result<ChangeCursor, StoreError> {
-        let cursor = self.connection.query_row(
-            "SELECT COALESCE(MAX(cursor), 0) FROM task_changes WHERE task_id = ?1",
-            [task_id.0.to_string()],
-            |row| row.get(0),
+    fn load_control_policy(connection: &Connection) -> Result<ControlPolicyProjection, StoreError> {
+        let (schema_version, epoch, required_assurance, supported_effects, grant_ttl): (
+            i64,
+            i64,
+            String,
+            String,
+            i64,
+        ) = connection.query_row(
+            "SELECT schema_version, policy_epoch, required_assurance,
+                    supported_effects_json, grant_ttl_seconds
+             FROM control_policy_state WHERE singleton = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )?;
-        Ok(ChangeCursor(cursor))
+        if schema_version != i64::from(CONTROL_SCHEMA_VERSION) || epoch < 0 || grant_ttl <= 0 {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy has an unknown schema or invalid bounds".into(),
+            ));
+        }
+        let supported_effects: Vec<EffectClass> = serde_json::from_str(&supported_effects)?;
+        if supported_effects.is_empty()
+            || supported_effects
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != supported_effects.len()
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy effect set is empty or duplicated".into(),
+            ));
+        }
+        Ok(ControlPolicyProjection {
+            epoch: ProjectPolicyEpoch(epoch),
+            required_assurance: parse_enum(&required_assurance)?,
+            supported_effects,
+            grant_ttl_seconds: grant_ttl,
+        })
     }
 
-    fn ensure_task_participant(
-        &self,
+    fn control_count(value: i64, label: &str) -> Result<usize, StoreError> {
+        usize::try_from(value)
+            .map_err(|_| StoreError::InvalidControlProjection(format!("{label} count overflowed")))
+    }
+
+    fn load_control_session_on(
+        connection: &Connection,
+        session_id: &SessionId,
+    ) -> Result<Option<StoredControlSession>, StoreError> {
+        let raw = connection
+            .query_row(
+                "SELECT project_id, task_id, routing_token, actor_json,
+                        bind_key, bind_intent_hash, bind_intent_json, phase, assurance,
+                        mediated_effects_json, confirmed_cursor, tentative_cursor,
+                        project_policy_epoch, task_admission_epoch,
+                        blocking_watermark, capability_map_revision, revision,
+                        (SELECT grant_id FROM control_turn_grants g
+                         WHERE g.session_id = control_sessions.session_id
+                           AND g.state IN ('issued', 'begun')
+                         ORDER BY g.issued_at_ms DESC LIMIT 1)
+                 FROM control_sessions WHERE session_id = ?1",
+                [session_id.0.as_str()],
+                |row| {
+                    Ok(RawControlSession {
+                        project_id: row.get(0)?,
+                        task_id: row.get(1)?,
+                        routing_token: row.get(2)?,
+                        actor_json: row.get(3)?,
+                        bind_key: row.get(4)?,
+                        bind_intent_hash: row.get(5)?,
+                        bind_intent_json: row.get(6)?,
+                        phase: row.get(7)?,
+                        assurance: row.get(8)?,
+                        mediated_effects_json: row.get(9)?,
+                        confirmed_cursor: row.get(10)?,
+                        tentative_cursor: row.get(11)?,
+                        project_policy_epoch: row.get(12)?,
+                        task_admission_epoch: row.get(13)?,
+                        blocking_watermark: row.get(14)?,
+                        capability_map_revision: row.get(15)?,
+                        revision: row.get(16)?,
+                        open_grant_id: row.get(17)?,
+                    })
+                },
+            )
+            .optional()?;
+        raw.map(|raw| {
+            let task_id = uuid::Uuid::parse_str(&raw.task_id)
+                .map(TaskId)
+                .map_err(|error| StoreError::InvalidControlProjection(error.to_string()))?;
+            let actor: ActorContext = serde_json::from_slice(&raw.actor_json)?;
+            let mediated_effects: Vec<EffectClass> =
+                serde_json::from_str(&raw.mediated_effects_json)?;
+            let bind_hash = ObjectHash::from_stored(raw.bind_intent_hash.clone())
+                .ok_or_else(|| StoreError::InvalidStoredHash(raw.bind_intent_hash.clone()))?;
+            let bind_value: serde_json::Value =
+                CanonicalObject::verify(&bind_hash, raw.bind_intent_json.clone())?.decode()?;
+            if raw.confirmed_cursor < 0
+                || raw.tentative_cursor.is_some_and(|cursor| cursor < 0)
+                || raw.project_policy_epoch < 0
+                || raw.task_admission_epoch < 0
+                || raw.blocking_watermark < 0
+                || raw.capability_map_revision < 0
+                || raw.revision <= 0
+                || mediated_effects.is_empty()
+                || actor.session_id.as_ref() != Some(session_id)
+                || bind_value
+                    .get("project_id")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(raw.project_id.as_str())
+                || bind_value
+                    .get("session_id")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(session_id.0.as_str())
+                || bind_value
+                    .get("idempotency_key")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(raw.bind_key.as_str())
+            {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "control session {:?} contains invalid bounds or actor binding",
+                    session_id.0
+                )));
+            }
+            Ok(StoredControlSession {
+                project_id: crate::domain::ProjectId(raw.project_id),
+                task_id,
+                session_id: session_id.clone(),
+                routing_token: raw.routing_token,
+                actor,
+                bind_key: raw.bind_key,
+                bind_intent_hash: raw.bind_intent_hash,
+                phase: parse_enum(&raw.phase)?,
+                assurance: parse_enum(&raw.assurance)?,
+                mediated_effects,
+                confirmed_cursor: ChangeCursor(raw.confirmed_cursor),
+                tentative_cursor: raw.tentative_cursor.map(ChangeCursor),
+                epochs: ControlEpochs {
+                    project_policy: ProjectPolicyEpoch(raw.project_policy_epoch),
+                    task_admission: TaskAdmissionEpoch(raw.task_admission_epoch),
+                },
+                blocking_watermark: ChangeCursor(raw.blocking_watermark),
+                capability_map_revision: raw.capability_map_revision,
+                revision: raw.revision,
+                open_grant_id: raw.open_grant_id,
+            })
+        })
+        .transpose()
+    }
+
+    fn control_session_status_on(
+        connection: &Connection,
+        session: &StoredControlSession,
+    ) -> Result<ControlSessionStatus, StoreError> {
+        let recoverable_grant = session
+            .open_grant_id
+            .as_deref()
+            .map(|grant_id| Self::load_turn_grant(connection, &session.session_id, grant_id))
+            .transpose()?
+            .flatten()
+            .filter(|stored| {
+                matches!(stored.state, TurnGrantState::Begun)
+                    && safely_redeliverable_partial_recovery(&stored.grant)
+            })
+            .map(|stored| Box::new(stored.grant));
+        Ok(ControlSessionStatus {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            project_id: session.project_id.clone(),
+            task_id: session.task_id,
+            session_id: session.session_id.clone(),
+            phase: session.phase,
+            assurance: session.assurance,
+            mediated_effects: session.mediated_effects.clone(),
+            confirmed_cursor: session.confirmed_cursor,
+            tentative_cursor: session.tentative_cursor,
+            epochs: session.epochs,
+            blocking_watermark: session.blocking_watermark,
+            capability_map_revision: session.capability_map_revision,
+            revision: session.revision,
+            open_grant_id: session.open_grant_id.clone(),
+            recoverable_grant,
+        })
+    }
+
+    fn verify_control_connection(
+        connection: &Connection,
+        session_id: &SessionId,
+        connection_token: &str,
+    ) -> Result<(), StoreError> {
+        let current: Option<String> = connection
+            .query_row(
+                "SELECT connection_token FROM control_connections WHERE session_id = ?1",
+                [session_id.0.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if connection_token.trim().is_empty() || current.as_deref() != Some(connection_token) {
+            return Err(StoreError::ControlConnectionSuperseded(
+                session_id.0.clone(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn verify_control_session(
+        session: &StoredControlSession,
+        project_id: &crate::domain::ProjectId,
+        routing_token: &str,
+    ) -> Result<(), StoreError> {
+        if &session.project_id != project_id {
+            return Err(StoreError::ControlSessionNotBound(
+                session.session_id.0.clone(),
+            ));
+        }
+        if session.routing_token != routing_token || routing_token.trim().is_empty() {
+            return Err(StoreError::ControlSessionTokenMismatch(
+                session.session_id.0.clone(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn session_has_begun_turn(
+        connection: &Connection,
+        session_id: &SessionId,
+    ) -> Result<bool, StoreError> {
+        let exists = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM control_turn_grants
+                 WHERE session_id = ?1 AND state = 'begun'
+             )",
+            [session_id.0.as_str()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        Ok(exists == 1)
+    }
+
+    fn begun_turn_pinning_lease(
+        connection: &Connection,
+        session_id: &SessionId,
+        lease_id: &str,
+    ) -> Result<Option<String>, StoreError> {
+        let grant_ids = {
+            let mut statement = connection.prepare(
+                "SELECT grant_id FROM control_turn_grants
+                 WHERE session_id = ?1 AND state = 'begun'
+                 ORDER BY issued_at_ms, grant_id",
+            )?;
+            statement
+                .query_map([session_id.0.as_str()], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        if grant_ids.len() > 1 {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control session {:?} has more than one begun turn",
+                session_id.0
+            )));
+        }
+        let Some(grant_id) = grant_ids.into_iter().next() else {
+            return Ok(None);
+        };
+        let grant = Self::load_turn_grant(connection, session_id, &grant_id)?.ok_or_else(|| {
+            StoreError::InvalidControlProjection(format!(
+                "begun turn {grant_id:?} disappeared while checking lease {lease_id:?}"
+            ))
+        })?;
+        if !matches!(grant.state, TurnGrantState::Begun) {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "turn {grant_id:?} is not begun while checking lease {lease_id:?}"
+            )));
+        }
+        Ok(grant
+            .grant
+            .basis
+            .leases
+            .iter()
+            .any(|lease| lease.lease_id == lease_id)
+            .then_some(grant_id))
+    }
+
+    fn session_is_current_participant(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        task_id: TaskId,
+        session_id: &SessionId,
+    ) -> Result<bool, StoreError> {
+        let current = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM tasks t JOIN task_participants p
+                   ON p.task_id = t.task_id
+                 JOIN session_bindings b
+                   ON b.task_id = t.task_id AND b.session_id = p.session_id
+                 WHERE t.task_id = ?1 AND t.project_id = ?2
+                   AND p.session_id = ?3
+             )",
+            params![task_id.0.to_string(), project_id.0, session_id.0],
+            |row| row.get::<_, i64>(0),
+        )?;
+        Ok(current == 1)
+    }
+
+    fn task_state_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        task_id: TaskId,
+    ) -> Result<TaskState, StoreError> {
+        let state = connection.query_row(
+            "SELECT state FROM tasks WHERE task_id = ?1 AND project_id = ?2",
+            params![task_id.0.to_string(), project_id.0],
+            |row| row.get::<_, String>(0),
+        )?;
+        parse_enum(&state)
+    }
+
+    fn resource_subjects_overlap(
+        left: &crate::domain::ResourceSubject,
+        right: &crate::domain::ResourceSubject,
+    ) -> bool {
+        left.covers(right) || right.covers(left)
+    }
+
+    fn work_lease_rows(
+        connection: &Connection,
+        task_id: TaskId,
+    ) -> Result<Vec<StoredWorkLeaseRow>, StoreError> {
+        let mut statement = connection.prepare(
+            "SELECT lease_id, task_id, holder_session_id, lease_hash,
+                    lease_json, state, expires_at_ms
+             FROM control_work_leases WHERE task_id = ?1 ORDER BY lease_id",
+        )?;
+        let rows = statement.query_map([task_id.0.to_string()], |row| {
+            Ok(StoredWorkLeaseRow {
+                lease_id: row.get(0)?,
+                task_id: row.get(1)?,
+                holder_session_id: row.get(2)?,
+                lease_hash: row.get(3)?,
+                lease_json: row.get(4)?,
+                state: row.get(5)?,
+                expires_at_ms: row.get(6)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Sqlite)
+    }
+
+    fn project_work_lease_rows(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+    ) -> Result<Vec<StoredWorkLeaseRow>, StoreError> {
+        let mut statement = connection.prepare(
+            "SELECT lease.lease_id, lease.task_id, lease.holder_session_id,
+                    lease.lease_hash, lease.lease_json, lease.state, lease.expires_at_ms
+             FROM control_work_leases lease
+             JOIN tasks task ON task.task_id = lease.task_id
+             WHERE task.project_id = ?1
+             ORDER BY lease.lease_id",
+        )?;
+        let rows = statement.query_map([&project_id.0], |row| {
+            Ok(StoredWorkLeaseRow {
+                lease_id: row.get(0)?,
+                task_id: row.get(1)?,
+                holder_session_id: row.get(2)?,
+                lease_hash: row.get(3)?,
+                lease_json: row.get(4)?,
+                state: row.get(5)?,
+                expires_at_ms: row.get(6)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Sqlite)
+    }
+
+    fn work_lease_row(
+        connection: &Connection,
+        lease_id: &str,
+    ) -> Result<Option<StoredWorkLeaseRow>, StoreError> {
+        connection
+            .query_row(
+                "SELECT lease_id, task_id, holder_session_id, lease_hash,
+                        lease_json, state, expires_at_ms
+                 FROM control_work_leases WHERE lease_id = ?1",
+                [lease_id],
+                |row| {
+                    Ok(StoredWorkLeaseRow {
+                        lease_id: row.get(0)?,
+                        task_id: row.get(1)?,
+                        holder_session_id: row.get(2)?,
+                        lease_hash: row.get(3)?,
+                        lease_json: row.get(4)?,
+                        state: row.get(5)?,
+                        expires_at_ms: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::Sqlite)
+    }
+
+    fn decode_work_lease_row(row: &StoredWorkLeaseRow) -> Result<WorkLease, StoreError> {
+        let lease: WorkLease =
+            Self::decode_canonical_projection(&row.lease_hash, row.lease_json.clone())?;
+        if lease.control_schema_version != CONTROL_SCHEMA_VERSION
+            || lease.lease_id != row.lease_id
+            || lease.task_id.0.to_string() != row.task_id
+            || lease.holder.0 != row.holder_session_id
+            || lease.expires_at.timestamp_millis() != row.expires_at_ms
+            || lease.fence <= 0
+            || lease.revision <= 0
+            || !lease.subject.has_valid_shape()
+            || !matches!(row.state.as_str(), "active" | "released" | "expired")
+        {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "work lease {:?} is not bound to its row",
+                row.lease_id
+            )));
+        }
+        Ok(lease)
+    }
+
+    fn active_work_lease_bases(
+        connection: &Connection,
+        task_id: TaskId,
+        session_id: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<crate::domain::LeaseBasis>, StoreError> {
+        Self::work_lease_rows(connection, task_id)?
+            .into_iter()
+            .filter(|row| row.state == "active")
+            .map(|row| Self::decode_work_lease_row(&row))
+            .filter_map(|lease| match lease {
+                Ok(lease) if lease.holder == *session_id && lease.expires_at > now => {
+                    Some(Ok(lease.basis()))
+                }
+                Ok(_) => None,
+                Err(error) => Some(Err(error)),
+            })
+            .collect()
+    }
+
+    fn expire_unbegun_turn(
+        transaction: &Transaction<'_>,
+        session: &StoredControlSession,
+        now: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let expired = transaction.execute(
+            "UPDATE control_turn_grants SET state = 'expired'
+             WHERE session_id = ?1 AND state = 'issued' AND expires_at_ms <= ?2",
+            params![session.session_id.0, now.timestamp_millis()],
+        )?;
+        if expired > 0 && matches!(session.phase, SessionPhase::TurnOpen) {
+            transaction.execute(
+                "UPDATE control_sessions SET
+                     phase = 'sync_required', tentative_cursor = NULL,
+                     revision = revision + 1, updated_at_ms = ?2
+                 WHERE session_id = ?1",
+                params![session.session_id.0, now.timestamp_millis()],
+            )?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    fn load_turn_grant(
+        connection: &Connection,
+        session_id: &SessionId,
+        grant_id: &str,
+    ) -> Result<Option<StoredTurnGrant>, StoreError> {
+        let row = connection
+            .query_row(
+                "SELECT grant_hash, grant_json, state
+                 FROM control_turn_grants
+                 WHERE grant_id = ?1 AND session_id = ?2",
+                params![grant_id, session_id.0],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        row.map(|(hash, bytes, state)| {
+            let grant = Self::decode_canonical_projection(&hash, bytes)?;
+            Ok(StoredTurnGrant {
+                grant,
+                state: parse_enum(&state)?,
+            })
+        })
+        .transpose()
+    }
+
+    fn decode_canonical_projection<T: DeserializeOwned>(
+        stored_hash: &str,
+        bytes: Vec<u8>,
+    ) -> Result<T, StoreError> {
+        let hash = ObjectHash::from_stored(stored_hash.to_owned())
+            .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.to_owned()))?;
+        CanonicalObject::verify(&hash, bytes)?.decode()
+    }
+
+    fn replay_control_operation<T: DeserializeOwned>(
+        connection: &Connection,
+        session_id: &SessionId,
+        operation: &str,
+        idempotency_key: &str,
+        intent_hash: &ObjectHash,
+    ) -> Result<Option<T>, StoreError> {
+        let stored = connection
+            .query_row(
+                "SELECT intent_hash, result_hash, result_json
+                 FROM control_operation_results
+                 WHERE session_id = ?1 AND operation = ?2 AND idempotency_key = ?3",
+                params![session_id.0, operation, idempotency_key],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((stored_intent, result_hash, result_json)) = stored else {
+            return Ok(None);
+        };
+        if stored_intent != intent_hash.as_str() {
+            return Err(StoreError::ControlOperationIdempotencyConflict {
+                operation: operation.into(),
+                key: idempotency_key.into(),
+            });
+        }
+        Self::decode_canonical_projection(&result_hash, result_json).map(Some)
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "operation idempotency rows bind every independent key component"
+    )]
+    fn persist_control_operation<T: Serialize>(
+        transaction: &Transaction<'_>,
+        session_id: &SessionId,
+        operation: &str,
+        idempotency_key: &str,
+        intent: &CanonicalObject,
+        result: &T,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        if idempotency_key.trim().is_empty() {
+            return Err(StoreError::InvalidControlSession(
+                "control operation idempotency key is empty".into(),
+            ));
+        }
+        let result = CanonicalObject::freeze(result)?;
+        transaction.execute(
+            "INSERT INTO control_operation_results (
+                 session_id, operation, idempotency_key, intent_hash, intent_json,
+                 result_hash, result_json, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                session_id.0,
+                operation,
+                idempotency_key,
+                intent.hash().as_str(),
+                intent.bytes(),
+                result.hash().as_str(),
+                result.bytes(),
+                now.timestamp_millis(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn ensure_task_participant_on(
+        connection: &Connection,
         project_id: &crate::domain::ProjectId,
         task_id: TaskId,
         session_id: &SessionId,
     ) -> Result<(), StoreError> {
-        let participant: Option<i64> = self
-            .connection
+        let participant: Option<i64> = connection
             .query_row(
                 "SELECT 1 FROM tasks t JOIN task_participants p
                    ON p.task_id = t.task_id
@@ -1635,13 +5871,53 @@ impl SqliteStore {
         Ok(())
     }
 
+    fn ensure_active_task_on(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        task_id: TaskId,
+        session_id: &SessionId,
+    ) -> Result<(), StoreError> {
+        Self::ensure_task_participant_on(connection, project_id, task_id, session_id)?;
+        let bound_task = connection
+            .query_row(
+                "SELECT task_id FROM session_bindings WHERE session_id = ?1",
+                [session_id.0.as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if bound_task.as_deref() != Some(task_id.0.to_string().as_str()) {
+            return Err(StoreError::TaskAccessDenied {
+                task: task_id,
+                session: session_id.0.clone(),
+            });
+        }
+        Ok(())
+    }
+
     fn get_typed_object<T: DeserializeOwned>(
         &self,
         hash: &ObjectHash,
         object_kind: &str,
     ) -> Result<Option<T>, StoreError> {
-        let stored: Option<(String, Vec<u8>)> = self
-            .connection
+        Self::get_typed_object_on(&self.connection, hash, object_kind)
+    }
+
+    fn get_typed_object_on<T: DeserializeOwned>(
+        connection: &Connection,
+        hash: &ObjectHash,
+        object_kind: &str,
+    ) -> Result<Option<T>, StoreError> {
+        Self::get_canonical_object_on(connection, hash, object_kind)?
+            .map(|object| object.decode())
+            .transpose()
+    }
+
+    fn get_canonical_object_on(
+        connection: &Connection,
+        hash: &ObjectHash,
+        object_kind: &str,
+    ) -> Result<Option<CanonicalObject>, StoreError> {
+        let stored: Option<(String, Vec<u8>)> = connection
             .query_row(
                 "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
                 [hash.as_str()],
@@ -1658,7 +5934,7 @@ impl SqliteStore {
                 requested: object_kind.into(),
             });
         }
-        CanonicalObject::verify(hash, bytes)?.decode().map(Some)
+        CanonicalObject::verify(hash, bytes).map(Some)
     }
 
     fn load_task(transaction: &Transaction<'_>, task_id: TaskId) -> Result<LocalTask, StoreError> {
@@ -1736,6 +6012,7 @@ impl SqliteStore {
             row.get(11)?,
             row.get(12)?,
             row.get(13)?,
+            row.get(14)?,
         ))
     }
 
@@ -1750,6 +6027,7 @@ impl SqliteStore {
             scope_kind,
             project_id,
             task_id,
+            work_id,
             agent_id,
             title,
             body,
@@ -1769,6 +6047,13 @@ impl SqliteStore {
                     .map_err(|error| StoreError::InvalidMemoryProjection(error.to_string()))
             })
             .transpose()?;
+        let work = work_id
+            .map(|value| {
+                uuid::Uuid::parse_str(&value)
+                    .map(crate::domain::WorkId)
+                    .map_err(|error| StoreError::InvalidMemoryProjection(error.to_string()))
+            })
+            .transpose()?;
         let scope = match scope_kind.as_str() {
             "project" => Scope::Project { project },
             "task" => Scope::Task {
@@ -1777,9 +6062,16 @@ impl SqliteStore {
                     StoreError::InvalidMemoryProjection("task scope has no task id".into())
                 })?,
             },
+            "work" => Scope::Work {
+                project,
+                work: work.ok_or_else(|| {
+                    StoreError::InvalidMemoryProjection("work scope has no work id".into())
+                })?,
+            },
             "agent" => Scope::Agent {
                 project,
                 task,
+                work,
                 agent: agent_id.ok_or_else(|| {
                     StoreError::InvalidMemoryProjection("agent scope has no agent id".into())
                 })?,
@@ -1852,13 +6144,24 @@ impl SqliteStore {
         object_kind: &str,
         object: &CanonicalObject,
     ) -> Result<ChangeCursor, StoreError> {
+        if object.bytes().len() > MAX_TASK_CHANGE_OBJECT_BYTES {
+            return Err(StoreError::InvalidTaskProjection(format!(
+                "task event requires {} bytes, exceeding the {}-byte object limit",
+                object.bytes().len(),
+                MAX_TASK_CHANGE_OBJECT_BYTES
+            )));
+        }
         transaction.execute(
-            "INSERT OR IGNORE INTO task_changes (task_id, object_kind, object_hash)
-             VALUES (?1, ?2, ?3)",
+            "INSERT OR IGNORE INTO task_changes (
+                 task_id, task_cursor, object_kind, object_hash
+             )
+             SELECT ?1, COALESCE(MAX(task_cursor), 0) + 1, ?2, ?3
+             FROM task_changes WHERE task_id = ?1",
             params![task_id.0.to_string(), object_kind, object.hash().as_str()],
         )?;
         let cursor = transaction.query_row(
-            "SELECT cursor FROM task_changes WHERE task_id = ?1 AND object_hash = ?2",
+            "SELECT task_cursor FROM task_changes
+             WHERE task_id = ?1 AND object_hash = ?2",
             params![task_id.0.to_string(), object.hash().as_str()],
             |row| row.get(0),
         )?;
@@ -1870,6 +6173,7 @@ fn note_fingerprint(request: &NoteRequest) -> Result<CanonicalObject, StoreError
     CanonicalObject::freeze(&NoteIntentFingerprint {
         project_id: &request.project_id,
         task_id: request.task_id,
+        work_id: request.work_id,
         prose: &request.prose,
         visibility: request.visibility,
         kind: request.kind,
@@ -1881,6 +6185,18 @@ fn note_fingerprint(request: &NoteRequest) -> Result<CanonicalObject, StoreError
         refs: &request.refs,
         actor: &request.actor,
     })
+}
+
+fn note_intent_key(request: &NoteRequest) -> Result<String, StoreError> {
+    Ok(CanonicalObject::freeze(&NoteIntentKey {
+        project_id: &request.project_id,
+        actor_id: &request.actor.actor_id,
+        session_id: request.actor.session_id.as_ref(),
+        caller_key: &request.idempotency_key,
+    })?
+    .hash()
+    .as_str()
+    .to_owned())
 }
 
 fn claim_expiry(now: DateTime<Utc>, ttl_seconds: i64) -> Result<DateTime<Utc>, StoreError> {
@@ -1900,19 +6216,30 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
         request.authority,
         request.visibility,
     );
+    if request.task_id.is_some() && request.work_id.is_some() {
+        return Err(StoreError::InvalidMemoryProjection(
+            "one note cannot belong to both legacy task and local work scope".into(),
+        ));
+    }
     let scope = match request.visibility {
-        NoteVisibility::Shared => request.task_id.map_or_else(
-            || Scope::Project {
-                project: request.project_id.clone(),
-            },
-            |task| Scope::Task {
+        NoteVisibility::Shared => match (request.task_id, request.work_id) {
+            (Some(task), None) => Scope::Task {
                 project: request.project_id.clone(),
                 task,
             },
-        ),
+            (None, Some(work)) => Scope::Work {
+                project: request.project_id.clone(),
+                work,
+            },
+            (None, None) => Scope::Project {
+                project: request.project_id.clone(),
+            },
+            (Some(_), Some(_)) => unreachable!("validated above"),
+        },
         NoteVisibility::Private => Scope::Agent {
             project: request.project_id.clone(),
             task: request.task_id,
+            work: request.work_id,
             agent: request.actor.actor_id.clone(),
         },
     };
@@ -1963,6 +6290,10 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
     })
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "context selection, omission accounting, and both byte budgets stay contiguous so the fail-closed packet contract is auditable"
+)]
 fn assemble_context(
     mut memories: Vec<MemorySummary>,
     contradictions: &[ApplicableContradiction],
@@ -1989,6 +6320,7 @@ fn assemble_context(
         pinned: Vec::new(),
         index: Vec::new(),
         omissions: Vec::new(),
+        omission_summaries: Vec::new(),
         proposed_count,
         stale_count,
     };
@@ -2002,11 +6334,14 @@ fn assemble_context(
             continue;
         }
         if memory.sensitivity == Sensitivity::Restricted {
-            assembly.omissions.push(ContextOmission {
-                memory_id: memory.memory_id,
-                version: memory.version,
-                reason: "restricted sensitivity requires an unavailable authorization".into(),
-            });
+            record_context_omission(
+                &mut assembly,
+                ContextOmission {
+                    memory_id: memory.memory_id,
+                    version: memory.version,
+                    reason: "restricted sensitivity requires an unavailable authorization".into(),
+                },
+            );
             continue;
         }
         let mut reason = retrieval_reason(&memory.scope, memory.delivery);
@@ -2040,21 +6375,30 @@ fn assemble_context(
                     retrieval_reason: reason,
                 });
             }
-            Delivery::Index => assembly.omissions.push(ContextOmission {
-                memory_id: memory.memory_id,
-                version: memory.version,
-                reason: "index byte budget exhausted".into(),
-            }),
-            Delivery::OnDemand => assembly.omissions.push(ContextOmission {
-                memory_id: memory.memory_id,
-                version: memory.version,
-                reason: "on-demand memory is available through search".into(),
-            }),
-            Delivery::Suppressed => assembly.omissions.push(ContextOmission {
-                memory_id: memory.memory_id,
-                version: memory.version,
-                reason: "delivery is suppressed by attributed policy".into(),
-            }),
+            Delivery::Index => record_context_omission(
+                &mut assembly,
+                ContextOmission {
+                    memory_id: memory.memory_id,
+                    version: memory.version,
+                    reason: "index byte budget exhausted".into(),
+                },
+            ),
+            Delivery::OnDemand => record_context_omission(
+                &mut assembly,
+                ContextOmission {
+                    memory_id: memory.memory_id,
+                    version: memory.version,
+                    reason: "on-demand memory is available through search".into(),
+                },
+            ),
+            Delivery::Suppressed => record_context_omission(
+                &mut assembly,
+                ContextOmission {
+                    memory_id: memory.memory_id,
+                    version: memory.version,
+                    reason: "delivery is suppressed by attributed policy".into(),
+                },
+            ),
         }
     }
     if pinned_bytes > PINNED_CONTEXT_BUDGET {
@@ -2064,6 +6408,25 @@ fn assemble_context(
         });
     }
     Ok(assembly)
+}
+
+fn record_context_omission(assembly: &mut ContextAssembly, omission: ContextOmission) {
+    if assembly.omissions.len() < MAX_EXACT_CONTEXT_OMISSIONS {
+        assembly.omissions.push(omission);
+        return;
+    }
+    if let Some(summary) = assembly
+        .omission_summaries
+        .iter_mut()
+        .find(|summary| summary.reason == omission.reason)
+    {
+        summary.count = summary.count.saturating_add(1);
+    } else {
+        assembly.omission_summaries.push(ContextOmissionSummary {
+            reason: omission.reason,
+            count: 1,
+        });
+    }
 }
 
 fn ensure_pinned_consistency(
@@ -2135,6 +6498,7 @@ fn retrieval_reason(scope: &Scope, delivery: Delivery) -> String {
     let scope_reason = match scope {
         Scope::Project { .. } => "applicable project memory",
         Scope::Task { .. } => "shared memory for the active task",
+        Scope::Work { .. } => "shared memory for focused local work",
         Scope::Agent { .. } => "private memory owned by this agent",
     };
     let delivery_reason = match delivery {
@@ -2148,19 +6512,194 @@ fn retrieval_reason(scope: &Scope, delivery: Delivery) -> String {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeDelta;
+    use chrono::{TimeDelta, TimeZone};
     use serde::{Deserialize, Serialize};
 
     use super::*;
     use crate::{
         DevelopmentNoopRedactor,
-        domain::{AssuranceLevel, MemoryStatus, NoteRequest, NoteVisibility, ProjectId},
+        domain::{
+            AssuranceLevel, ControlAssurance, ControlEpochs, ControlHealth, EffectClass,
+            MemoryStatus, NoteRequest, NoteVisibility, PacketSafety, ProjectId, ProjectPolicyEpoch,
+            SessionPhase, TaskAdmissionEpoch, TurnDecision, TurnEvaluationInput, TurnIntent,
+            TurnPurpose,
+        },
     };
 
     #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
     struct Example {
         title: String,
         body: String,
+    }
+
+    #[test]
+    fn context_omissions_are_exact_then_losslessly_aggregated() {
+        let memories = (0..200)
+            .map(|index| MemorySummary {
+                memory_id: MemoryId::new(),
+                version: ObjectHash::from_canonical_bytes(format!("memory-{index}").as_bytes()),
+                status: MemoryStatus::Active,
+                kind: crate::domain::MemoryKind::Fact,
+                authority: crate::domain::Authority::Soft,
+                delivery: Delivery::OnDemand,
+                scope: Scope::Project {
+                    project: ProjectId("project-a".into()),
+                },
+                title: format!("Memory {index}"),
+                body: "Available through search".into(),
+                sensitivity: Sensitivity::Internal,
+                created_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            })
+            .collect();
+        let assembly = assemble_context(memories, &[]).expect("bounded context assembly");
+        assert_eq!(assembly.omissions.len(), MAX_EXACT_CONTEXT_OMISSIONS);
+        assert_eq!(
+            assembly.omission_summaries,
+            vec![ContextOmissionSummary {
+                reason: "on-demand memory is available through search".into(),
+                count: 72,
+            }]
+        );
+        assert_eq!(
+            assembly.omissions.len()
+                + assembly
+                    .omission_summaries
+                    .iter()
+                    .map(|summary| usize::try_from(summary.count).unwrap())
+                    .sum::<usize>(),
+            200
+        );
+    }
+
+    #[test]
+    fn context_assembly_never_hides_old_pinned_memory_behind_search_limits() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["agent-a"]);
+        let mut pinned_request = note_request(
+            task_id,
+            "agent-a",
+            "Constraint: preserve the oldest pinned rule",
+            "oldest-pinned",
+            NoteVisibility::Shared,
+        );
+        pinned_request.created_at = Utc::now() - TimeDelta::days(1);
+        let pinned = store
+            .capture_note(&pinned_request, &DevelopmentNoopRedactor)
+            .expect("capture oldest pinned record");
+        for index in 0..1_000 {
+            let mut request = note_request(
+                task_id,
+                "agent-a",
+                &format!("Observation: bounded filler record {index}"),
+                &format!("filler-{index}"),
+                NoteVisibility::Shared,
+            );
+            request.created_at = Utc::now() + TimeDelta::milliseconds(i64::from(index));
+            store
+                .capture_note(&request, &DevelopmentNoopRedactor)
+                .expect("capture filler memory");
+        }
+        let packet = store
+            .build_context(
+                &ProjectId("project-a".into()),
+                Some(task_id),
+                &SessionId("agent-a".into()),
+                "agent-a",
+                Utc::now(),
+            )
+            .expect("context includes all pinned candidates before budgeting");
+        assert!(
+            packet
+                .pinned
+                .iter()
+                .any(|item| item.version == pinned.version)
+        );
+    }
+
+    #[test]
+    fn store_persists_and_enforces_one_host_path_identity_policy() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("path-policy.sqlite3");
+        let policy = HostPathPolicy {
+            case_fold_paths: false,
+            windows_alias_rules: false,
+        };
+        drop(
+            SqliteStore::open_with_host_path_policy(&database, policy)
+                .expect("bind explicit path policy"),
+        );
+        drop(
+            SqliteStore::open_with_host_path_policy(&database, policy)
+                .expect("same policy reopens"),
+        );
+        let mismatch = SqliteStore::open_with_host_path_policy(
+            &database,
+            HostPathPolicy {
+                case_fold_paths: true,
+                windows_alias_rules: true,
+            },
+        );
+        assert!(matches!(
+            mismatch,
+            Err(StoreError::InvalidControlSession(_))
+        ));
+
+        let recovery_database = directory.path().join("path-policy-recovery.sqlite3");
+        drop(
+            SqliteStore::open_with_host_path_policy(&recovery_database, policy)
+                .expect("initialize recoverable policy store"),
+        );
+        let recovery = Connection::open(&recovery_database).expect("recovery connection");
+        recovery
+            .execute("DELETE FROM control_host_path_policy", [])
+            .expect("simulate crash after table creation");
+        drop(recovery);
+        drop(
+            SqliteStore::open_with_host_path_policy(&recovery_database, policy)
+                .expect("empty policy table is rebound atomically"),
+        );
+
+        let unsafe_database = directory.path().join("path-policy-unsafe.sqlite3");
+        drop(
+            SqliteStore::open_with_host_path_policy(&unsafe_database, policy)
+                .expect("initialize unsafe policy store"),
+        );
+        let unsafe_connection = Connection::open(&unsafe_database).expect("unsafe connection");
+        unsafe_connection
+            .execute("PRAGMA foreign_keys = OFF", [])
+            .expect("disable fixture foreign keys");
+        unsafe_connection
+            .execute("DELETE FROM control_host_path_policy", [])
+            .expect("remove policy binding");
+        unsafe_connection
+            .execute(
+                "INSERT INTO control_work_leases (
+                     lease_id, task_id, holder_session_id, lease_hash, lease_json,
+                     state, expires_at_ms
+                 ) VALUES ('legacy-path', 'task', 'session', 'hash',
+                           CAST('{\"subject\":{\"kind\":\"path\"}}' AS BLOB),
+                           'active', 1)",
+                [],
+            )
+            .expect("insert legacy path-bearing state");
+        drop(unsafe_connection);
+        assert!(matches!(
+            SqliteStore::open_with_host_path_policy(&unsafe_database, policy),
+            Err(StoreError::InvalidControlSession(_))
+        ));
+    }
+
+    #[test]
+    fn current_store_reopens_through_a_read_only_connection() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("engram.db");
+        drop(SqliteStore::open(&database).expect("initialize current store"));
+        let connection =
+            Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .expect("open read-only SQLite connection");
+        SqliteStore::from_connection(connection, HostPathPolicy::host_default())
+            .expect("current schema opens without a write transaction");
     }
 
     fn actor(session: &str) -> ActorContext {
@@ -2187,6 +6726,7 @@ mod tests {
         NoteRequest {
             project_id: ProjectId("project-a".into()),
             task_id: Some(task_id),
+            work_id: None,
             prose: prose.into(),
             visibility,
             kind: None,
@@ -2200,6 +6740,342 @@ mod tests {
             idempotency_key: key.into(),
             created_at: Utc::now(),
         }
+    }
+
+    #[test]
+    fn context_explanation_requires_the_current_task_and_project_binding() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let project = ProjectId("context-auth-project".into());
+        let session = SessionId("context-auth-session".into());
+        let project_packet = store
+            .build_context(&project, None, &session, "context-auth-session", Utc::now())
+            .expect("project-only context");
+        let first = store
+            .start_task(
+                &project,
+                "dummy:CONTEXT-A",
+                "First context",
+                &session,
+                actor("context-auth-session"),
+                Utc::now(),
+            )
+            .expect("first task");
+        assert!(
+            store
+                .explain_context(
+                    &project_packet.header.packet_hash,
+                    &project,
+                    &session,
+                    "context-auth-session",
+                )
+                .is_ok(),
+            "an unrelated task binding must not revoke a project-only packet"
+        );
+        let packet = store
+            .build_context(
+                &project,
+                Some(first.task.task_id),
+                &session,
+                "context-auth-session",
+                Utc::now(),
+            )
+            .expect("task context");
+        assert_eq!(
+            store
+                .explain_context(
+                    &packet.header.packet_hash,
+                    &project,
+                    &session,
+                    "context-auth-session",
+                )
+                .expect("current packet remains explainable")
+                .task_id,
+            Some(first.task.task_id)
+        );
+
+        for (requested_project, requested_session) in [
+            (ProjectId("different-project".into()), session.clone()),
+            (project.clone(), SessionId("different-session".into())),
+        ] {
+            assert!(matches!(
+                store.explain_context(
+                    &packet.header.packet_hash,
+                    &requested_project,
+                    &requested_session,
+                    "context-auth-session",
+                ),
+                Err(StoreError::PacketAccessDenied(_))
+            ));
+        }
+
+        store
+            .start_task(
+                &project,
+                "dummy:CONTEXT-B",
+                "Replacement context",
+                &session,
+                actor("context-auth-session"),
+                Utc::now(),
+            )
+            .expect("replace active task binding");
+        assert!(matches!(
+            store.explain_context(
+                &packet.header.packet_hash,
+                &project,
+                &session,
+                "context-auth-session",
+            ),
+            Err(StoreError::PacketAccessDenied(_))
+        ));
+        store
+            .join_task(
+                &project,
+                "dummy:CONTEXT-A",
+                &session,
+                actor("context-auth-session"),
+                Utc::now(),
+            )
+            .expect("restore original task binding");
+        assert!(
+            store
+                .explain_context(
+                    &packet.header.packet_hash,
+                    &project,
+                    &session,
+                    "context-auth-session",
+                )
+                .is_ok()
+        );
+    }
+
+    fn install_memory_task(store: &SqliteStore, task_id: TaskId, sessions: &[&str]) {
+        let now = Utc::now().timestamp_millis();
+        store
+            .connection
+            .execute(
+                "INSERT INTO tasks (
+                     task_id, project_id, external_ref, title, state,
+                     event_cursor, created_at_ms, updated_at_ms
+                 ) VALUES (?1, 'project-a', ?2, 'Memory test', 'active', 0, ?3, ?3)",
+                params![
+                    task_id.0.to_string(),
+                    format!("memory-test:{task_id:?}"),
+                    now
+                ],
+            )
+            .expect("install memory test task");
+        for session in sessions {
+            store
+                .connection
+                .execute(
+                    "INSERT INTO task_participants (task_id, session_id, joined_at_ms)
+                     VALUES (?1, ?2, ?3)",
+                    params![task_id.0.to_string(), session, now],
+                )
+                .expect("install memory test participant");
+            store
+                .connection
+                .execute(
+                    "INSERT INTO session_bindings (session_id, task_id, bound_at_ms)
+                     VALUES (?1, ?2, ?3)",
+                    params![session, task_id.0.to_string(), now],
+                )
+                .expect("install memory test binding");
+        }
+    }
+
+    fn turn_evaluation(task_id: TaskId) -> TurnEvaluationInput {
+        TurnEvaluationInput {
+            control_schema_version: crate::domain::CONTROL_SCHEMA_VERSION,
+            session_id: SessionId("control-session".into()),
+            task_id: Some(task_id),
+            participant_membership: crate::domain::ParticipantMembership::Member,
+            task_state: Some(TaskState::Active),
+            phase: SessionPhase::Ready,
+            health: ControlHealth::Healthy,
+            active_policy_known: true,
+            host_assurance: ControlAssurance::Advisory,
+            required_assurance: ControlAssurance::Advisory,
+            policy_effects: vec![
+                EffectClass::Observe,
+                EffectClass::Communicate,
+                EffectClass::MutateLocal,
+                EffectClass::MutateShared,
+                EffectClass::ExternalSideEffect,
+                EffectClass::Lifecycle,
+            ],
+            mediated_effects: vec![
+                EffectClass::Observe,
+                EffectClass::Communicate,
+                EffectClass::MutateLocal,
+                EffectClass::MutateShared,
+                EffectClass::ExternalSideEffect,
+                EffectClass::Lifecycle,
+            ],
+            current_epochs: ControlEpochs {
+                project_policy: ProjectPolicyEpoch(1),
+                task_admission: TaskAdmissionEpoch(2),
+            },
+            session_epochs: ControlEpochs {
+                project_policy: ProjectPolicyEpoch(1),
+                task_admission: TaskAdmissionEpoch(2),
+            },
+            confirmed_cursor: ChangeCursor(3),
+            head_cursor: ChangeCursor(3),
+            pending_delivery: None,
+            packet_safety: PacketSafety::Safe,
+            blocking_watermark: ChangeCursor(3),
+            acknowledged_blocking_watermark: ChangeCursor(3),
+            has_unknown_action_outcome: false,
+            authority_satisfied: true,
+            capability_map_revision: 1,
+            leases: Vec::new(),
+            intent: TurnIntent {
+                idempotency_key: "observe-turn-a".into(),
+                intent_fingerprint: ObjectHash::from_canonical_bytes(b"turn-a"),
+                purpose: TurnPurpose::Ordinary,
+                requested_effects: vec![EffectClass::Observe],
+                resource_intents: Vec::new(),
+            },
+            evaluated_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            grant_ttl_seconds: 30,
+        }
+    }
+
+    struct TestControlBinding {
+        binding: ControlSessionBinding,
+        connection_token: String,
+    }
+
+    impl std::ops::Deref for TestControlBinding {
+        type Target = ControlSessionBinding;
+
+        fn deref(&self) -> &Self::Target {
+            &self.binding
+        }
+    }
+
+    fn bind_control(store: &mut SqliteStore, now: DateTime<Utc>) -> TestControlBinding {
+        bind_control_for(
+            store,
+            "control-session",
+            "bind-control-a",
+            &[EffectClass::Observe, EffectClass::Communicate],
+            now,
+        )
+    }
+
+    fn bind_control_for(
+        store: &mut SqliteStore,
+        session: &str,
+        bind_key: &str,
+        mediated_effects: &[EffectClass],
+        now: DateTime<Utc>,
+    ) -> TestControlBinding {
+        bind_control_for_task(
+            store,
+            session,
+            bind_key,
+            "dummy:CONTROL-HOST-1",
+            mediated_effects,
+            now,
+        )
+    }
+
+    fn bind_control_for_task(
+        store: &mut SqliteStore,
+        session: &str,
+        bind_key: &str,
+        external_ref: &str,
+        mediated_effects: &[EffectClass],
+        now: DateTime<Utc>,
+    ) -> TestControlBinding {
+        let session_id = SessionId(session.into());
+        let connection_token = store.resume_control_connection(&session_id, now).unwrap();
+        let binding = store
+            .bind_control_session(
+                &ProjectId("project-a".into()),
+                external_ref,
+                "Exercise the host control lifecycle",
+                &session_id,
+                &connection_token,
+                &actor(session),
+                ControlAssurance::TurnGated,
+                mediated_effects,
+                1,
+                bind_key,
+                now,
+            )
+            .unwrap();
+        TestControlBinding {
+            binding,
+            connection_token,
+        }
+    }
+
+    fn complete_control_turn(
+        store: &mut SqliteStore,
+        binding: &TestControlBinding,
+        key: &str,
+        requested_effects: Vec<EffectClass>,
+        resource_intents: Vec<crate::domain::ResourceSubject>,
+        now: DateTime<Utc>,
+    ) -> IssuedTurnGrant {
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: format!("turn-{key}"),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(key.as_bytes()),
+                    purpose: crate::domain::TurnPurpose::Ordinary,
+                    requested_effects,
+                    resource_intents,
+                },
+                now,
+            )
+            .unwrap();
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("control turn {key} must grant");
+        };
+        let delivery_tokens = grant
+            .delivery
+            .iter()
+            .map(|delivery| delivery.page.delivery_token.clone())
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    &delivery_tokens,
+                    &format!("begin-{key}"),
+                    now + TimeDelta::milliseconds(1),
+                )
+                .unwrap(),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        assert!(matches!(
+            store
+                .checkpoint_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    TurnNextIntent::Continue,
+                    &format!("checkpoint-{key}"),
+                    now + TimeDelta::milliseconds(2),
+                )
+                .unwrap(),
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ));
+        *grant
     }
 
     #[test]
@@ -2221,6 +7097,10 @@ mod tests {
             IntegrityReport {
                 checked_objects: 1,
                 invalid_objects: Vec::new(),
+                checked_control_records: 0,
+                invalid_control_records: Vec::new(),
+                checked_work_records: 1,
+                invalid_work_records: Vec::new(),
             }
         );
     }
@@ -2279,6 +7159,562 @@ mod tests {
             }]
         );
         assert_ne!(first_object.hash(), second_object.hash());
+    }
+
+    #[test]
+    fn task_local_cursors_keep_exact_host_delivery_dense_across_interleaved_tasks() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let binding = bind_control(&mut store, now);
+        let task_a = binding.status.task_id;
+        let task_b = store
+            .start_task(
+                &ProjectId("project-a".into()),
+                "dummy:CONTROL-HOST-2",
+                "Interleave another task",
+                &SessionId("other-session".into()),
+                actor("other-session"),
+                now + TimeDelta::milliseconds(1),
+            )
+            .expect("second task")
+            .task
+            .task_id;
+        store
+            .capture_note(
+                &note_request(
+                    task_b,
+                    "other-session",
+                    "Decision: task B advances independently.",
+                    "interleaved-b",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("task B note");
+        store
+            .capture_note(
+                &note_request(
+                    task_a,
+                    "control-session",
+                    "Decision: task A delivery remains exact.",
+                    "interleaved-a",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("task A note");
+
+        for task_id in [task_a, task_b] {
+            let changes = store
+                .task_changes_since(task_id, ChangeCursor(0), 100)
+                .expect("task-local changes");
+            assert!(changes.iter().enumerate().all(|(offset, change)| {
+                change.cursor.0 == i64::try_from(offset).expect("small test offset") + 1
+            }));
+        }
+
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "interleaved-turn-a".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"interleaved-turn-a"),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(1),
+            )
+            .expect("evaluate exact task A delivery");
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("interleaved task delivery must grant");
+        };
+        let delivery = grant.delivery.as_ref().expect("initial exact delta");
+        assert!(
+            delivery
+                .delta
+                .changes
+                .iter()
+                .enumerate()
+                .all(|(offset, change)| {
+                    change.cursor.0 == i64::try_from(offset).expect("small test offset") + 1
+                })
+        );
+        assert!(crate::control::delivery_matches_grant(&grant));
+    }
+
+    #[test]
+    fn host_delivery_refuses_a_gap_in_the_task_local_feed() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let binding = bind_control(&mut store, now);
+        store
+            .capture_note(
+                &note_request(
+                    binding.status.task_id,
+                    "control-session",
+                    "Decision: create a second task-local event.",
+                    "gap-note-a",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("task note");
+        let head = store
+            .connection
+            .query_row(
+                "SELECT COALESCE(MAX(task_cursor), 0)
+                 FROM task_changes WHERE task_id = ?1",
+                [binding.status.task_id.0.to_string()],
+                |row| row.get::<_, i64>(0).map(ChangeCursor),
+            )
+            .expect("task head");
+        assert!(head.0 > 1);
+        store
+            .connection
+            .execute(
+                "DELETE FROM task_changes WHERE task_id = ?1 AND task_cursor = 1",
+                [binding.status.task_id.0.to_string()],
+            )
+            .expect("create corrupt task-feed gap");
+        assert!(matches!(
+            store.evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "gapped-turn".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"gapped-turn"),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(1),
+            ),
+            Err(StoreError::InvalidTaskProjection(_))
+        ));
+    }
+
+    #[test]
+    fn another_agents_private_capture_does_not_invalidate_or_enter_a_grant() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let binding = bind_control(&mut store, now);
+        let peer_session = SessionId("private-peer".into());
+        store
+            .join_task(
+                &ProjectId("project-a".into()),
+                "dummy:CONTROL-HOST-1",
+                &peer_session,
+                actor("private-peer"),
+                now,
+            )
+            .expect("join private peer");
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "owner-scoped-private-grant".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"owner-scoped-private-grant",
+                    ),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(1),
+            )
+            .expect("evaluate owner context");
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("owner context must grant");
+        };
+        let peer_private = store
+            .capture_note(
+                &note_request(
+                    binding.status.task_id,
+                    "private-peer",
+                    "Constraint: only the peer may see this private rule.",
+                    "peer-private-after-grant",
+                    NoteVisibility::Private,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("capture peer-private memory");
+        assert_eq!(peer_private.cursor, None);
+        let token = grant
+            .delivery
+            .as_ref()
+            .expect("context delivery")
+            .page
+            .delivery_token
+            .clone();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    &[token],
+                    "begin-after-peer-private",
+                    now + TimeDelta::seconds(2),
+                )
+                .expect("peer-private state cannot invalidate owner context"),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one recovery scenario proves every page advances and converges to an ordinary turn"
+    )]
+    fn recovery_turns_drain_a_bounded_backlog_before_ordinary_work_resumes() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control(&mut store, now);
+        for index in 0..(MAX_CONTROL_DELIVERY_EVENTS * 2) {
+            store
+                .append_task_object(
+                    binding.status.task_id,
+                    "backlog_test_event",
+                    &Example {
+                        title: format!("event-{index}"),
+                        body: "bounded".into(),
+                    },
+                )
+                .expect("append backlog event");
+        }
+        assert!(matches!(
+            store
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &TurnIntent {
+                        idempotency_key: "ordinary-before-recovery".into(),
+                        intent_fingerprint: ObjectHash::from_canonical_bytes(
+                            b"ordinary-before-recovery",
+                        ),
+                        purpose: TurnPurpose::Ordinary,
+                        requested_effects: vec![EffectClass::Observe],
+                        resource_intents: Vec::new(),
+                    },
+                    now + TimeDelta::milliseconds(1),
+                )
+                .expect("ordinary backlog decision"),
+            ControlTurnDecision::Refuse { directive }
+                if directive.code == crate::domain::ControlRefusalCode::RecoveryRequired
+        ));
+
+        let mut saw_partial = false;
+        let mut pages = 0_i64;
+        loop {
+            pages += 1;
+            assert!(pages <= 5, "bounded recovery must converge");
+            let decision = store
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &TurnIntent {
+                        idempotency_key: format!("recovery-page-{pages}"),
+                        intent_fingerprint: ObjectHash::from_canonical_bytes(
+                            format!("recovery-page-{pages}").as_bytes(),
+                        ),
+                        purpose: TurnPurpose::Recovery,
+                        requested_effects: vec![EffectClass::Observe],
+                        resource_intents: Vec::new(),
+                    },
+                    now + TimeDelta::seconds(pages),
+                )
+                .expect("recovery page decision");
+            let ControlTurnDecision::Grant { grant } = decision else {
+                panic!("recovery page must grant, got {decision:?}");
+            };
+            let delivery = grant.delivery.as_ref().expect("recovery delivery");
+            assert!(
+                delivery.delta.changes.len()
+                    <= usize::try_from(MAX_CONTROL_DELIVERY_EVENTS).expect("positive event budget")
+            );
+            if delivery.page.has_more {
+                saw_partial = true;
+                assert!(delivery.context.is_none());
+            } else {
+                assert!(delivery.context.is_some());
+            }
+            let begun = store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    std::slice::from_ref(&delivery.page.delivery_token),
+                    &format!("begin-recovery-page-{pages}"),
+                    now + TimeDelta::seconds(pages) + TimeDelta::milliseconds(1),
+                )
+                .expect("begin recovery page");
+            assert!(matches!(begun, ControlTurnBeginDecision::Begin { .. }));
+            let checkpoint = store
+                .checkpoint_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    TurnNextIntent::Continue,
+                    &format!("checkpoint-recovery-page-{pages}"),
+                    now + TimeDelta::seconds(pages) + TimeDelta::milliseconds(2),
+                )
+                .expect("checkpoint recovery page");
+            let ControlTurnCheckpointDecision::Checkpointed { receipt } = checkpoint else {
+                panic!("recovery page must checkpoint");
+            };
+            if !delivery.page.has_more {
+                assert_eq!(receipt.phase, SessionPhase::Ready);
+                break;
+            }
+            assert_eq!(receipt.phase, SessionPhase::SyncRequired);
+        }
+        assert!(saw_partial);
+
+        let ordinary = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "ordinary-after-recovery".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"ordinary-after-recovery",
+                    ),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(10),
+            )
+            .expect("ordinary turn after recovery");
+        let ControlTurnDecision::Grant { grant } = ordinary else {
+            panic!("ordinary turn must be granted after recovery");
+        };
+        let delivery = grant
+            .delivery
+            .expect("ordinary turn carries a context-only delivery basis");
+        assert_eq!(delivery.page.from_cursor, delivery.page.to_cursor);
+        assert_eq!(delivery.page.to_cursor, delivery.page.head_cursor);
+        assert!(!delivery.page.has_more);
+        assert!(delivery.delta.changes.is_empty());
+        assert!(delivery.context.is_some());
+
+        let oversized = store.append_task_object(
+            binding.status.task_id,
+            "oversized_test_event",
+            &Example {
+                title: "oversized".into(),
+                body: "x".repeat(MAX_TASK_CHANGE_OBJECT_BYTES + 1),
+            },
+        );
+        assert!(matches!(
+            oversized,
+            Err(StoreError::InvalidTaskProjection(_))
+        ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the restart scenario keeps frozen delivery, cursor, fencing, and checkpoint assertions together"
+    )]
+    fn begun_partial_recovery_is_exactly_redeliverable_after_host_restart() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let database = directory.path().join("engram.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open(&database).expect("store");
+        let binding = bind_control(&mut store, now);
+        for index in 0..(MAX_CONTROL_DELIVERY_EVENTS * 2) {
+            store
+                .append_task_object(
+                    binding.status.task_id,
+                    "restart_backlog_event",
+                    &Example {
+                        title: format!("event-{index}"),
+                        body: "bounded".into(),
+                    },
+                )
+                .expect("append backlog event");
+        }
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "restart-recovery-page".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"restart-recovery-page"),
+                    purpose: TurnPurpose::Recovery,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(1),
+            )
+            .expect("recovery decision");
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("partial recovery must grant");
+        };
+        let delivery = grant.delivery.as_ref().expect("delivery");
+        assert!(delivery.page.has_more);
+        store
+            .begin_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &grant.grant_id,
+                std::slice::from_ref(&delivery.page.delivery_token),
+                "begin-restart-recovery-page",
+                now + TimeDelta::seconds(2),
+            )
+            .expect("begin recovery");
+        store
+            .append_task_object(
+                binding.status.task_id,
+                "post_begin_event",
+                &Example {
+                    title: "later".into(),
+                    body: "must remain pending".into(),
+                },
+            )
+            .expect("append event after begin");
+        drop(store);
+
+        let mut reopened = SqliteStore::open(&database).expect("reopen store");
+        let connection_token = reopened
+            .resume_control_connection(&binding.status.session_id, now + TimeDelta::seconds(3))
+            .expect("resume host connection");
+        let status = reopened
+            .control_status(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &connection_token,
+                &binding.routing_token,
+                now + TimeDelta::seconds(3),
+            )
+            .expect("status after restart");
+        assert_eq!(status.phase, SessionPhase::TurnOpen);
+        assert_eq!(status.confirmed_cursor, binding.status.confirmed_cursor);
+        assert_eq!(status.tentative_cursor, Some(grant.basis.delivery_cursor));
+        assert_eq!(status.recoverable_grant.as_deref(), Some(grant.as_ref()));
+        assert!(matches!(
+            reopened.checkpoint_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                "checkpoint-from-superseded-host",
+                now + TimeDelta::seconds(4),
+            ),
+            Err(StoreError::ControlConnectionSuperseded(_))
+        ));
+
+        let checkpoint = reopened
+            .checkpoint_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &connection_token,
+                &binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                "checkpoint-redelivered-recovery-page",
+                now + TimeDelta::seconds(4),
+            )
+            .expect("checkpoint exact redelivery");
+        let ControlTurnCheckpointDecision::Checkpointed { receipt } = checkpoint else {
+            panic!("redelivered page must checkpoint");
+        };
+        assert_eq!(receipt.confirmed_cursor, grant.basis.delivery_cursor);
+        assert_eq!(receipt.phase, SessionPhase::SyncRequired);
+    }
+
+    #[test]
+    fn legacy_global_task_cursor_store_requires_an_explicit_reset_without_mutation() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let database = directory.path().join("legacy.db");
+        let connection = Connection::open(&database).expect("legacy connection");
+        connection
+            .execute_batch(
+                "CREATE TABLE task_changes (
+                     cursor INTEGER PRIMARY KEY AUTOINCREMENT,
+                     task_id TEXT NOT NULL,
+                     object_kind TEXT NOT NULL,
+                     object_hash TEXT NOT NULL,
+                     UNIQUE(task_id, object_hash)
+                 ) STRICT;
+                 CREATE TABLE control_turn_grants (
+                     grant_id TEXT PRIMARY KEY,
+                     session_id TEXT NOT NULL,
+                     task_id TEXT NOT NULL,
+                     request_key TEXT NOT NULL,
+                     grant_hash TEXT NOT NULL,
+                     grant_json BLOB NOT NULL,
+                     state TEXT NOT NULL,
+                     issued_at_ms INTEGER NOT NULL,
+                     expires_at_ms INTEGER NOT NULL,
+                     begun_at_ms INTEGER,
+                     completed_at_ms INTEGER,
+                     UNIQUE(session_id, request_key)
+                 ) STRICT;
+                 INSERT INTO control_turn_grants (
+                     grant_id, session_id, task_id, request_key, grant_hash,
+                     grant_json, state, issued_at_ms, expires_at_ms, begun_at_ms
+                 ) VALUES (
+                     'begun-grant', 'session-a', 'task-a', 'request-a',
+                     'not-read-during-migration', X'7B7D', 'begun', 1, 2, 1
+                 );",
+            )
+            .expect("legacy schema");
+        drop(connection);
+
+        assert!(matches!(
+            SqliteStore::open(&database),
+            Err(StoreError::InvalidTaskProjection(message))
+                if message.contains("cannot be renumbered safely")
+        ));
+        let connection = Connection::open(&database).expect("inspect failed migration");
+        let state = connection
+            .query_row(
+                "SELECT state FROM control_turn_grants WHERE grant_id = 'begun-grant'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("begun grant remains");
+        assert_eq!(state, "begun");
+        let has_task_cursor = connection
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM pragma_table_info('task_changes')
+                     WHERE name = 'task_cursor'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("legacy columns");
+        assert!(!has_task_cursor);
     }
 
     #[test]
@@ -2342,6 +7778,7 @@ mod tests {
     fn note_capture_is_idempotent_searchable_and_explainable() {
         let mut store = SqliteStore::open_in_memory().unwrap();
         let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["session-a", "session-b"]);
         let request = note_request(
             task_id,
             "session-a",
@@ -2358,10 +7795,19 @@ mod tests {
         let replay = store
             .capture_note(&retry_request, &DevelopmentNoopRedactor)
             .unwrap();
+        let mut restricted_request = request.clone();
+        restricted_request.prose = "restricted: never return this task memory body".into();
+        restricted_request.sensitivity = Some(Sensitivity::Restricted);
+        restricted_request.idempotency_key = "note-restricted".into();
+        let restricted = store
+            .capture_note(&restricted_request, &DevelopmentNoopRedactor)
+            .expect("capture restricted task memory");
         let visible = store
             .search_memories(
                 &request.project_id,
                 Some(task_id),
+                None,
+                &SessionId("session-b".into()),
                 "session-b",
                 Some("canonical source"),
                 20,
@@ -2375,6 +7821,7 @@ mod tests {
         assert_eq!(first.kind, crate::domain::MemoryKind::Decision);
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].version, first.version);
+        assert_ne!(visible[0].version, restricted.version);
         assert!(first.cursor.is_some());
 
         let mut conflict = request.clone();
@@ -2386,9 +7833,41 @@ mod tests {
     }
 
     #[test]
+    fn note_idempotency_keys_are_scoped_to_the_calling_session() {
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["session-a", "session-b"]);
+        let first = note_request(
+            task_id,
+            "session-a",
+            "Decision: first caller meaning",
+            "local-retry-1",
+            NoteVisibility::Shared,
+        );
+        let second = note_request(
+            task_id,
+            "session-b",
+            "Decision: second caller meaning",
+            "local-retry-1",
+            NoteVisibility::Shared,
+        );
+
+        let first = store
+            .capture_note(&first, &DevelopmentNoopRedactor)
+            .expect("first caller-local key");
+        let second = store
+            .capture_note(&second, &DevelopmentNoopRedactor)
+            .expect("same raw key is independent in another session");
+
+        assert_ne!(first.memory_id, second.memory_id);
+        assert_eq!(first.idempotency_key, second.idempotency_key);
+    }
+
+    #[test]
     fn private_task_scratch_never_enters_the_peer_feed() {
         let mut store = SqliteStore::open_in_memory().unwrap();
         let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["agent-a", "agent-b"]);
         let request = note_request(
             task_id,
             "agent-a",
@@ -2403,14 +7882,30 @@ mod tests {
         assert!(receipt.cursor.is_none());
         assert_eq!(
             store
-                .search_memories(&request.project_id, Some(task_id), "agent-a", None, 20,)
+                .search_memories(
+                    &request.project_id,
+                    Some(task_id),
+                    None,
+                    &SessionId("agent-a".into()),
+                    "agent-a",
+                    None,
+                    20,
+                )
                 .unwrap()
                 .len(),
             1
         );
         assert!(
             store
-                .search_memories(&request.project_id, Some(task_id), "agent-b", None, 20,)
+                .search_memories(
+                    &request.project_id,
+                    Some(task_id),
+                    None,
+                    &SessionId("agent-b".into()),
+                    "agent-b",
+                    None,
+                    20,
+                )
                 .unwrap()
                 .is_empty()
         );
@@ -2515,6 +8010,7 @@ mod tests {
                     &private_receipt.version,
                     &project,
                     Some(task_id),
+                    None,
                     &session_b,
                     "eval-b",
                 ),
@@ -2522,7 +8018,15 @@ mod tests {
             ));
             assert!(
                 store
-                    .search_memories(&project, Some(task_id), "eval-b", Some("hypothesis Z"), 20,)
+                    .search_memories(
+                        &project,
+                        Some(task_id),
+                        None,
+                        &session_b,
+                        "eval-b",
+                        Some("hypothesis Z"),
+                        20,
+                    )
                     .unwrap()
                     .is_empty()
             );
@@ -2555,6 +8059,7 @@ mod tests {
                 &first_receipt.version,
                 &project,
                 Some(task_id),
+                None,
                 &session_b,
                 "eval-b",
             )
@@ -2563,13 +8068,20 @@ mod tests {
         assert!(!shown.version.classification_reason.is_empty());
         assert_eq!(
             reopened
-                .explain_context(&packet.header.packet_hash, "eval-b")
+                .explain_context(&packet.header.packet_hash, &project, &session_b, "eval-b",)
                 .unwrap()
                 .event_cursor,
             packet.header.event_cursor
         );
         assert!(matches!(
-            reopened.show_memory(&private_hash, &project, Some(task_id), &session_b, "eval-b",),
+            reopened.show_memory(
+                &private_hash,
+                &project,
+                Some(task_id),
+                None,
+                &session_b,
+                "eval-b",
+            ),
             Err(StoreError::MemoryAccessDenied(_))
         ));
     }
@@ -2578,6 +8090,7 @@ mod tests {
     fn memory_projection_rebuilds_from_canonical_objects() {
         let mut store = SqliteStore::open_in_memory().unwrap();
         let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["agent-a", "agent-b"]);
         let request = note_request(
             task_id,
             "agent-a",
@@ -2594,6 +8107,8 @@ mod tests {
             .search_memories(
                 &request.project_id,
                 Some(task_id),
+                None,
+                &SessionId("agent-b".into()),
                 "agent-b",
                 Some("integration restart"),
                 20,
@@ -2601,6 +8116,45 @@ mod tests {
             .unwrap();
         assert_eq!(rebuilt.len(), 1);
         assert_eq!(rebuilt[0].kind, crate::domain::MemoryKind::Fact);
+    }
+
+    #[test]
+    fn rebuild_advances_context_revisions_even_when_a_scope_has_no_surviving_projection() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        store
+            .connection
+            .execute(
+                "INSERT INTO project_context_revisions (project_id, revision)
+                 VALUES ('removed-project-scope', 7)",
+                [],
+            )
+            .expect("install prior project revision");
+        store
+            .connection
+            .execute(
+                "INSERT INTO agent_context_revisions (project_id, agent_id, revision)
+                 VALUES ('removed-agent-scope', 'agent-a', 11)",
+                [],
+            )
+            .expect("install prior private revision");
+
+        assert_eq!(
+            store.rebuild_memory_index().expect("rebuild empty index"),
+            0
+        );
+        let revisions = store
+            .connection
+            .query_row(
+                "SELECT
+                     (SELECT revision FROM project_context_revisions
+                      WHERE project_id = 'removed-project-scope'),
+                     (SELECT revision FROM agent_context_revisions
+                      WHERE project_id = 'removed-agent-scope' AND agent_id = 'agent-a')",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .expect("read rebuilt revision fences");
+        assert_eq!(revisions, (8, 12));
     }
 
     #[test]
@@ -2661,7 +8215,8 @@ mod tests {
         let edge = store
             .record_memory_contradiction(
                 &project,
-                task.task.task_id,
+                Some(task.task.task_id),
+                None,
                 &session_a,
                 "agent-a",
                 &first.version,
@@ -2675,7 +8230,8 @@ mod tests {
         let replay = store
             .record_memory_contradiction(
                 &project,
-                task.task.task_id,
+                Some(task.task.task_id),
+                None,
                 &session_a,
                 "agent-a",
                 &second.version,
@@ -2713,7 +8269,15 @@ mod tests {
         };
         assert_fails_closed(&mut store);
         let visible = store
-            .search_memories(&project, Some(task.task.task_id), "agent-b", None, 20)
+            .search_memories(
+                &project,
+                Some(task.task.task_id),
+                None,
+                &session_b,
+                "agent-b",
+                None,
+                20,
+            )
             .unwrap();
         assert!(
             visible
@@ -2723,6 +8287,146 @@ mod tests {
 
         assert_eq!(store.rebuild_memory_index().unwrap(), 2);
         assert_fails_closed(&mut store);
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one migration fixture proves both non-activation and fail-closed current projection behavior"
+    )]
+    fn unsupported_contradiction_schema_never_activates_or_passes_projection_checks() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let database = directory.path().join("engram.db");
+        let mut store = SqliteStore::open(&database).expect("store");
+        let project = ProjectId("project-a".into());
+        let task_id = TaskId::new();
+        let now = Utc::now();
+        install_memory_task(&store, task_id, &["agent-a"]);
+        let first = store
+            .capture_note(
+                &note_request(
+                    task_id,
+                    "agent-a",
+                    "Constraint: preserve the current contradiction schema.",
+                    "unknown-edge-left",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("first endpoint");
+        let second = store
+            .capture_note(
+                &note_request(
+                    task_id,
+                    "agent-a",
+                    "Constraint: reject unsupported contradiction schemas.",
+                    "unknown-edge-right",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("second endpoint");
+        let (left, right) = if first.version < second.version {
+            (first.version, second.version)
+        } else {
+            (second.version, first.version)
+        };
+        let object = CanonicalObject::freeze(&serde_json::json!({
+            "schema_version": SCHEMA_VERSION + 1,
+            "future_edge": { "opaque": true }
+        }))
+        .expect("canonical incompatible future event");
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("begin future-event fixture");
+        SqliteStore::insert_object(&transaction, "memory_contradiction_event", &object)
+            .expect("store future event without activating it");
+        transaction.commit().expect("commit future-event fixture");
+        store
+            .connection
+            .execute(
+                "INSERT INTO memory_contradictions (
+                     contradiction_hash, task_id, left_version_hash, right_version_hash
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    object.hash().as_str(),
+                    task_id.0.to_string(),
+                    left.as_str(),
+                    right.as_str(),
+                ],
+            )
+            .expect("install legacy projection fixture");
+        drop(store);
+
+        let store = SqliteStore::open(&database)
+            .expect("writable reopen retains the object and skips its projection");
+        let activated = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM memory_contradiction_edges
+                 WHERE contradiction_hash = ?1",
+                [object.hash().as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count activated edges");
+        assert_eq!(activated, 0);
+        let retained_legacy = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM memory_contradictions
+                 WHERE contradiction_hash = ?1",
+                [object.hash().as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count retained legacy projections");
+        assert_eq!(retained_legacy, 1);
+        assert!(
+            SqliteStore::get_canonical_object_on(
+                &store.connection,
+                object.hash(),
+                "memory_contradiction_event",
+            )
+            .expect("verify retained future object")
+            .is_some()
+        );
+        drop(store);
+        let read_only =
+            Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .expect("open migrated store read-only");
+        drop(
+            SqliteStore::from_connection(read_only, HostPathPolicy::host_default())
+                .expect("unsupported legacy projection does not require later write locks"),
+        );
+
+        let mut store = SqliteStore::open(&database).expect("reopen writable test store");
+        store
+            .connection
+            .execute(
+                "INSERT INTO memory_contradiction_edges (
+                     contradiction_hash, project_id, task_id, work_root_id,
+                     left_version_hash, right_version_hash
+                 ) VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+                params![
+                    object.hash().as_str(),
+                    project.0,
+                    task_id.0.to_string(),
+                    left.as_str(),
+                    right.as_str(),
+                ],
+            )
+            .expect("install unsupported current projection fixture");
+        assert!(matches!(
+            store.build_context(
+                &project,
+                Some(task_id),
+                &SessionId("agent-a".into()),
+                "agent-a",
+                now,
+            ),
+            Err(StoreError::InvalidMemoryProjection(message))
+                if message.contains("unsupported schema version")
+        ));
     }
 
     #[test]
@@ -2768,7 +8472,8 @@ mod tests {
         store
             .record_memory_contradiction(
                 &project,
-                task.task.task_id,
+                Some(task.task.task_id),
+                None,
                 &session,
                 "agent-a",
                 &first.version,
@@ -2861,5 +8566,1368 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    #[test]
+    fn shadow_turn_observations_are_idempotent_across_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("engram.db");
+        let (first, input) = {
+            let mut store = SqliteStore::open(&database).unwrap();
+            let binding = store
+                .start_task(
+                    &ProjectId("project-a".into()),
+                    "dummy:CONTROL-1",
+                    "Observe turn admission",
+                    &SessionId("control-session".into()),
+                    actor("control-session"),
+                    Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+                )
+                .unwrap();
+            let note_cursor = store
+                .capture_note(
+                    &note_request(
+                        binding.task.task_id,
+                        "control-session",
+                        "Evidence: the durable task feed advanced after task start.",
+                        "control-note-a",
+                        NoteVisibility::Shared,
+                    ),
+                    &DevelopmentNoopRedactor,
+                )
+                .unwrap()
+                .cursor
+                .expect("shared note must advance the task feed");
+            assert!(note_cursor > binding.cursor);
+            let mut input = turn_evaluation(binding.task.task_id);
+            input.participant_membership = ParticipantMembership::NotMember;
+            input.task_state = Some(TaskState::Published);
+            input.confirmed_cursor = note_cursor;
+            input.head_cursor = ChangeCursor(999);
+            input.blocking_watermark = note_cursor;
+            input.acknowledged_blocking_watermark = note_cursor;
+            let first = store.record_turn_observation(&input).unwrap();
+            (first, input)
+        };
+        assert!(matches!(first.decision, TurnDecision::Grant { .. }));
+
+        let mut replay_input = input.clone();
+        replay_input.evaluated_at += TimeDelta::minutes(5);
+        replay_input.phase = SessionPhase::CheckpointRequired;
+        let mut reopened = SqliteStore::open(&database).unwrap();
+        let replay = reopened.record_turn_observation(&replay_input).unwrap();
+        assert_eq!(first, replay);
+        let healthy = reopened.verify_all().unwrap();
+        assert!(healthy.is_healthy());
+        assert_eq!(healthy.checked_control_records, 1);
+
+        let mut unknown_schema = input.clone();
+        unknown_schema.control_schema_version = CONTROL_SCHEMA_VERSION + 1;
+        unknown_schema.intent.idempotency_key = "observe-turn-unknown-schema".into();
+        unknown_schema.intent.intent_fingerprint =
+            ObjectHash::from_canonical_bytes(b"turn-unknown-schema");
+        let unknown_schema_observation = reopened.record_turn_observation(&unknown_schema).unwrap();
+        assert!(matches!(
+            unknown_schema_observation.decision,
+            TurnDecision::Refuse { ref directive }
+                if directive.code == crate::domain::ControlRefusalCode::UnknownControlSchema
+        ));
+        assert_eq!(
+            reopened.record_turn_observation(&unknown_schema).unwrap(),
+            unknown_schema_observation
+        );
+        let healthy_with_unknown_schema = reopened.verify_all().unwrap();
+        assert!(healthy_with_unknown_schema.is_healthy());
+        assert_eq!(healthy_with_unknown_schema.checked_control_records, 2);
+
+        let mut conflicting = input.clone();
+        conflicting
+            .intent
+            .requested_effects
+            .push(EffectClass::MutateShared);
+        assert!(matches!(
+            reopened.record_turn_observation(&conflicting),
+            Err(StoreError::TurnObservationIdempotencyConflict(_))
+        ));
+
+        reopened
+            .connection
+            .execute(
+                "UPDATE control_observations SET decision_json = ?1
+                 WHERE idempotency_key = 'observe-turn-a'",
+                params![b"{}".as_slice()],
+            )
+            .unwrap();
+        assert!(matches!(
+            reopened.record_turn_observation(&replay_input),
+            Err(StoreError::HashMismatch { .. })
+        ));
+        let corrupted = reopened.verify_all().unwrap();
+        assert_eq!(
+            corrupted.invalid_control_records,
+            vec!["control_observation:1"]
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one lifecycle test preserves the restart and stale-grant sequence"
+    )]
+    fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("engram.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open(&database).unwrap();
+        let binding = bind_control(&mut store, now);
+        assert_eq!(binding.status.phase, SessionPhase::SyncRequired);
+        assert_eq!(
+            store
+                .bind_control_session(
+                    &ProjectId("project-a".into()),
+                    "dummy:CONTROL-HOST-1",
+                    "Exercise the host control lifecycle",
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &actor("control-session"),
+                    ControlAssurance::TurnGated,
+                    &[EffectClass::Observe, EffectClass::Communicate],
+                    1,
+                    "bind-control-a",
+                    now,
+                )
+                .unwrap(),
+            binding.binding
+        );
+        assert!(matches!(
+            store.control_status(
+                &ProjectId("project-a".into()),
+                &SessionId("control-session".into()),
+                &binding.connection_token,
+                "wrong-token",
+                now,
+            ),
+            Err(StoreError::ControlSessionTokenMismatch(_))
+        ));
+        let private_writer = SessionId("private-writer".into());
+        store
+            .join_task(
+                &ProjectId("project-a".into()),
+                "dummy:CONTROL-HOST-1",
+                &private_writer,
+                actor("private-writer"),
+                now,
+            )
+            .expect("join a concurrent session for the same logical agent");
+
+        let first_intent = TurnIntent {
+            idempotency_key: "host-turn-a".into(),
+            intent_fingerprint: ObjectHash::from_canonical_bytes(b"host-turn-a"),
+            purpose: crate::domain::TurnPurpose::Ordinary,
+            requested_effects: vec![EffectClass::Observe],
+            resource_intents: Vec::new(),
+        };
+        let first = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &SessionId("control-session".into()),
+                &binding.connection_token,
+                &binding.routing_token,
+                &first_intent,
+                now + TimeDelta::seconds(1),
+            )
+            .unwrap();
+        let crate::domain::ControlTurnDecision::Grant { grant: first_grant } = first else {
+            panic!("initial synchronized turn must grant");
+        };
+        assert!(first_grant.delivery.is_some());
+        let mut private_request = note_request(
+            binding.status.task_id,
+            "private-writer",
+            "Constraint: a new owner-private rule invalidates an unbegun turn.",
+            "host-private-drift-a",
+            NoteVisibility::Private,
+        );
+        private_request.actor.actor_id = "control-session".into();
+        let private_receipt = store
+            .capture_note(&private_request, &DevelopmentNoopRedactor)
+            .unwrap();
+        assert_eq!(private_receipt.cursor, None);
+        let stale_begin = store
+            .begin_control_turn(
+                &ProjectId("project-a".into()),
+                &SessionId("control-session".into()),
+                &binding.connection_token,
+                &binding.routing_token,
+                &first_grant.grant_id,
+                &[first_grant
+                    .delivery
+                    .as_ref()
+                    .unwrap()
+                    .page
+                    .delivery_token
+                    .clone()],
+                "begin-stale-a",
+                now + TimeDelta::seconds(2),
+            )
+            .unwrap();
+        assert!(matches!(
+            stale_begin,
+            ControlTurnBeginDecision::Refuse {
+                code: crate::domain::ControlRefusalCode::DeltaRequired
+            }
+        ));
+        drop(store);
+
+        let mut reopened = SqliteStore::open(&database).unwrap();
+        let reopened_connection = reopened
+            .resume_control_connection(
+                &SessionId("control-session".into()),
+                now + TimeDelta::seconds(3),
+            )
+            .unwrap();
+        let second_intent = TurnIntent {
+            idempotency_key: "host-turn-b".into(),
+            intent_fingerprint: ObjectHash::from_canonical_bytes(b"host-turn-b"),
+            purpose: crate::domain::TurnPurpose::Ordinary,
+            requested_effects: vec![EffectClass::Observe, EffectClass::Communicate],
+            resource_intents: Vec::new(),
+        };
+        let second = reopened
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &SessionId("control-session".into()),
+                &reopened_connection,
+                &binding.routing_token,
+                &second_intent,
+                now + TimeDelta::seconds(3),
+            )
+            .unwrap();
+        let crate::domain::ControlTurnDecision::Grant { grant } = second else {
+            panic!("fresh synchronized turn must grant");
+        };
+        let delivery_token = grant.delivery.as_ref().unwrap().page.delivery_token.clone();
+        let begun = reopened
+            .begin_control_turn(
+                &ProjectId("project-a".into()),
+                &SessionId("control-session".into()),
+                &reopened_connection,
+                &binding.routing_token,
+                &grant.grant_id,
+                &[delivery_token],
+                "begin-host-b",
+                now + TimeDelta::seconds(4),
+            )
+            .unwrap();
+        assert!(matches!(begun, ControlTurnBeginDecision::Begin { .. }));
+        let checkpointed = reopened
+            .checkpoint_control_turn(
+                &ProjectId("project-a".into()),
+                &SessionId("control-session".into()),
+                &reopened_connection,
+                &binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                "checkpoint-host-b",
+                now + TimeDelta::seconds(5),
+            )
+            .unwrap();
+        assert!(matches!(
+            checkpointed,
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ));
+
+        let denied_intent = TurnIntent {
+            idempotency_key: "host-turn-mutation".into(),
+            intent_fingerprint: ObjectHash::from_canonical_bytes(b"host-turn-mutation"),
+            purpose: crate::domain::TurnPurpose::Ordinary,
+            requested_effects: vec![EffectClass::MutateLocal],
+            resource_intents: Vec::new(),
+        };
+        assert!(matches!(
+            reopened
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &SessionId("control-session".into()),
+                    &reopened_connection,
+                    &binding.routing_token,
+                    &denied_intent,
+                    now + TimeDelta::seconds(6),
+                )
+                .unwrap(),
+            ControlTurnDecision::Refuse {
+                directive: crate::domain::ControlDirective {
+                    code: crate::domain::ControlRefusalCode::ControlAssuranceInsufficient,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn integrity_scanner_covers_enforced_control_records() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let binding = bind_control(&mut store, now);
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &SessionId("control-session".into()),
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "integrity-turn-a".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"integrity-turn-a"),
+                    purpose: crate::domain::TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(1),
+            )
+            .unwrap();
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("control integrity fixture must grant");
+        };
+        let healthy = store.verify_all().unwrap();
+        assert!(healthy.is_healthy());
+        assert_eq!(healthy.checked_control_records, 3);
+
+        store
+            .connection
+            .execute(
+                "UPDATE control_sessions SET bind_intent_json = ?1",
+                params![b"{}".as_slice()],
+            )
+            .unwrap();
+        store
+            .connection
+            .execute(
+                "UPDATE control_turn_results SET decision_json = ?1",
+                params![b"{}".as_slice()],
+            )
+            .unwrap();
+        store
+            .connection
+            .execute(
+                "UPDATE control_turn_grants SET grant_json = ?1",
+                params![b"{}".as_slice()],
+            )
+            .unwrap();
+        let corrupted = store.verify_all().unwrap();
+        assert_eq!(corrupted.checked_control_records, 3);
+        assert_eq!(corrupted.invalid_control_records.len(), 3);
+        assert!(
+            corrupted
+                .invalid_control_records
+                .contains(&"control_session:control-session".into())
+        );
+        assert!(
+            corrupted
+                .invalid_control_records
+                .contains(&"control_turn_result:1".into())
+        );
+        assert!(
+            corrupted
+                .invalid_control_records
+                .contains(&format!("control_turn_grant:{}", grant.grant_id))
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the lease test preserves acquire, mutation, conflict, release, and fencing order"
+    )]
+    fn scoped_work_leases_gate_mutation_and_fence_transfer() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let effects = [
+            EffectClass::Observe,
+            EffectClass::Communicate,
+            EffectClass::MutateLocal,
+        ];
+        let session_a = bind_control_for(&mut store, "lease-a", "bind-lease-a", &effects, now);
+        let session_b = bind_control_for(&mut store, "lease-b", "bind-lease-b", &effects, now);
+        complete_control_turn(
+            &mut store,
+            &session_a,
+            "sync-lease-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let lease_subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let lease_a = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &lease_subject,
+                300,
+                "lease-src-a",
+                now + TimeDelta::seconds(2),
+            )
+            .unwrap();
+        let WorkLeaseDecision::Granted { lease: lease_a } = lease_a else {
+            panic!("first non-conflicting lease must grant");
+        };
+        assert_eq!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session_a.status.session_id,
+                    &session_a.connection_token,
+                    &session_a.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &lease_subject,
+                    300,
+                    "lease-src-a",
+                    now + TimeDelta::seconds(2),
+                )
+                .unwrap(),
+            WorkLeaseDecision::Granted {
+                lease: lease_a.clone()
+            }
+        );
+        assert!(matches!(
+            store.acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &lease_subject,
+                299,
+                "lease-src-a",
+                now + TimeDelta::seconds(2),
+            ),
+            Err(StoreError::ControlOperationIdempotencyConflict { .. })
+        ));
+        complete_control_turn(
+            &mut store,
+            &session_a,
+            "mutate-lease-a",
+            vec![EffectClass::MutateLocal],
+            vec![crate::domain::ResourceSubject::Path {
+                project_id: ProjectId("project-a".into()),
+                segments: vec!["src".into(), "lib.rs".into()],
+                coverage: crate::domain::ResourceCoverage::Exact,
+            }],
+            now + TimeDelta::seconds(3),
+        );
+
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-lease-b",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(4),
+        );
+        assert!(matches!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session_b.status.session_id,
+                    &session_b.connection_token,
+                    &session_b.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &lease_subject,
+                    300,
+                    "lease-src-b-conflict",
+                    now + TimeDelta::seconds(5),
+                )
+                .unwrap(),
+            WorkLeaseDecision::Defer { .. }
+        ));
+        assert!(matches!(
+            store.release_work_lease(
+                &ProjectId("project-a".into()),
+                &session_b.status.session_id,
+                &session_b.connection_token,
+                &session_b.routing_token,
+                &lease_a.lease_id,
+                "wrong-holder-release",
+                now + TimeDelta::seconds(6),
+            ),
+            Err(StoreError::WorkLeaseNotHeld { .. })
+        ));
+        let released = store
+            .release_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                &lease_a.lease_id,
+                "release-src-a",
+                now + TimeDelta::seconds(6),
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .release_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session_a.status.session_id,
+                    &session_a.connection_token,
+                    &session_a.routing_token,
+                    &lease_a.lease_id,
+                    "release-src-a",
+                    now + TimeDelta::seconds(6),
+                )
+                .unwrap(),
+            released
+        );
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "resync-lease-b",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(7),
+        );
+        let transferred = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_b.status.session_id,
+                &session_b.connection_token,
+                &session_b.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &lease_subject,
+                300,
+                "lease-src-b",
+                now + TimeDelta::seconds(8),
+            )
+            .unwrap();
+        let WorkLeaseDecision::Granted { lease: lease_b } = transferred else {
+            panic!("released scope must transfer");
+        };
+        assert_eq!(lease_b.fence, lease_a.fence + 1);
+        assert_eq!(lease_b.holder, session_b.status.session_id);
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the regression preserves two task bindings, conflict, release, and project-wide fence transfer in one sequence"
+    )]
+    fn resource_lease_conflicts_and_fences_span_tasks_within_a_project() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+        let session_a = bind_control_for_task(
+            &mut store,
+            "project-lease-a",
+            "bind-project-lease-a",
+            "dummy:PROJECT-LEASE-A",
+            &effects,
+            now,
+        );
+        let session_b = bind_control_for_task(
+            &mut store,
+            "project-lease-b",
+            "bind-project-lease-b",
+            "dummy:PROJECT-LEASE-B",
+            &effects,
+            now,
+        );
+        assert_ne!(session_a.status.task_id, session_b.status.task_id);
+        complete_control_turn(
+            &mut store,
+            &session_a,
+            "sync-project-lease-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-project-lease-b",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(2),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into(), "shared.rs".into()],
+            coverage: crate::domain::ResourceCoverage::Exact,
+        };
+        let WorkLeaseDecision::Granted { lease: first } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                300,
+                "project-lease-first",
+                now + TimeDelta::seconds(3),
+            )
+            .unwrap()
+        else {
+            panic!("the first task must acquire the project resource");
+        };
+        assert!(matches!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session_b.status.session_id,
+                    &session_b.connection_token,
+                    &session_b.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &subject,
+                    300,
+                    "project-lease-conflict",
+                    now + TimeDelta::seconds(4),
+                )
+                .unwrap(),
+            WorkLeaseDecision::Defer {
+                conflicting_lease_id,
+                ..
+            } if conflicting_lease_id == first.lease_id
+        ));
+        store
+            .release_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                &first.lease_id,
+                "release-project-lease-first",
+                now + TimeDelta::seconds(5),
+            )
+            .unwrap();
+        let WorkLeaseDecision::Granted { lease: second } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_b.status.session_id,
+                &session_b.connection_token,
+                &session_b.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                300,
+                "project-lease-second",
+                now + TimeDelta::seconds(6),
+            )
+            .unwrap()
+        else {
+            panic!("the second task must acquire the released project resource");
+        };
+        assert_eq!(second.task_id, session_b.status.task_id);
+        assert_eq!(second.fence, first.fence + 1);
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the expiry test preserves grant, expiry, unwind, and fence continuity"
+    )]
+    fn expired_lease_invalidates_unbegun_turn_and_preserves_fence_history() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+        let binding = bind_control_for(&mut store, "expiry-a", "bind-expiry-a", &effects, now);
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "sync-expiry-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let WorkLeaseDecision::Granted { lease: first } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                5,
+                "lease-expiry-first",
+                now + TimeDelta::seconds(2),
+            )
+            .unwrap()
+        else {
+            panic!("initial lease must grant");
+        };
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "turn-before-lease-expiry".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"turn-before-lease-expiry",
+                    ),
+                    purpose: crate::domain::TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::MutateLocal],
+                    resource_intents: vec![crate::domain::ResourceSubject::Path {
+                        project_id: ProjectId("project-a".into()),
+                        segments: vec!["src".into(), "lib.rs".into()],
+                        coverage: crate::domain::ResourceCoverage::Exact,
+                    }],
+                },
+                now + TimeDelta::seconds(3),
+            )
+            .unwrap();
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("live lease must authorize the mutation turn");
+        };
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    &[],
+                    "begin-after-lease-expiry",
+                    now + TimeDelta::seconds(8),
+                )
+                .unwrap(),
+            ControlTurnBeginDecision::Refuse {
+                code: crate::domain::ControlRefusalCode::StaleFence
+            }
+        ));
+        assert_eq!(
+            store
+                .control_status(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    now + TimeDelta::seconds(8),
+                )
+                .unwrap()
+                .phase,
+            SessionPhase::Ready
+        );
+        let head_before_takeover = ChangeCursor(
+            store
+                .connection
+                .query_row(
+                    "SELECT COALESCE(MAX(task_cursor), 0) FROM task_changes
+                     WHERE task_id = ?1",
+                    [binding.status.task_id.0.to_string()],
+                    |row| row.get(0),
+                )
+                .unwrap(),
+        );
+        let WorkLeaseDecision::Granted { lease: second } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                5,
+                "lease-expiry-second",
+                now + TimeDelta::seconds(9),
+            )
+            .unwrap()
+        else {
+            panic!("expired scope must be acquirable");
+        };
+        assert_eq!(second.fence, first.fence + 1);
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT state FROM control_work_leases WHERE lease_id = ?1",
+                    [&first.lease_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "expired"
+        );
+        let (confirmed, blocking): (i64, i64) = store
+            .connection
+            .query_row(
+                "SELECT confirmed_cursor, blocking_watermark FROM control_sessions
+                 WHERE session_id = ?1",
+                [&binding.status.session_id.0],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(confirmed, head_before_takeover.0);
+        assert_eq!(blocking, head_before_takeover.0 + 2);
+        let delta = store
+            .task_delta(
+                &ProjectId("project-a".into()),
+                binding.status.task_id,
+                &binding.status.session_id,
+                "agent",
+                head_before_takeover,
+                10,
+            )
+            .unwrap();
+        assert_eq!(delta.changes.len(), 2);
+        let expired: WorkLeaseEvent =
+            serde_json::from_value(delta.changes[0].object.clone()).unwrap();
+        let acquired: WorkLeaseEvent =
+            serde_json::from_value(delta.changes[1].object.clone()).unwrap();
+        assert_eq!(expired.lease.lease_id, first.lease_id);
+        assert_eq!(expired.transition, WorkLeaseTransition::Expired);
+        assert_eq!(acquired.lease.lease_id, second.lease_id);
+        assert_eq!(acquired.transition, WorkLeaseTransition::Acquired);
+        assert_eq!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &subject,
+                    5,
+                    "lease-expiry-second",
+                    now + TimeDelta::seconds(10),
+                )
+                .unwrap(),
+            WorkLeaseDecision::Granted {
+                lease: second.clone()
+            }
+        );
+        assert!(matches!(
+            store.release_work_lease(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &first.lease_id,
+                "release-expired-first",
+                now + TimeDelta::seconds(10),
+            ),
+            Err(StoreError::WorkLeaseExpired { .. })
+        ));
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the hostile sequence proves a begun turn pins explicit release and expiry transfer until checkpoint"
+    )]
+    fn begun_mutation_turn_pins_its_lease_until_checkpoint() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("lease-pin.sqlite3");
+        let mut store = SqliteStore::open(&database).unwrap();
+        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+        let session_a = bind_control_for(&mut store, "pin-a", "bind-pin-a", &effects, now);
+        let session_b = bind_control_for(&mut store, "pin-b", "bind-pin-b", &effects, now);
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-pin-b",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        complete_control_turn(
+            &mut store,
+            &session_a,
+            "sync-pin-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(2),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let WorkLeaseDecision::Granted { lease: first } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                5,
+                "pin-first",
+                now + TimeDelta::seconds(3),
+            )
+            .unwrap()
+        else {
+            panic!("the first lease must grant");
+        };
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                &TurnIntent {
+                    idempotency_key: "pin-mutation-turn".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"pin-mutation-turn"),
+                    purpose: crate::domain::TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::MutateLocal],
+                    resource_intents: vec![crate::domain::ResourceSubject::Path {
+                        project_id: ProjectId("project-a".into()),
+                        segments: vec!["src".into(), "lib.rs".into()],
+                        coverage: crate::domain::ResourceCoverage::Exact,
+                    }],
+                },
+                now + TimeDelta::seconds(4),
+            )
+            .unwrap();
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("the mutation turn must grant");
+        };
+        let delivery_tokens = grant
+            .delivery
+            .iter()
+            .map(|delivery| delivery.page.delivery_token.clone())
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &session_a.status.session_id,
+                    &session_a.connection_token,
+                    &session_a.routing_token,
+                    &grant.grant_id,
+                    &delivery_tokens,
+                    "begin-pinned-turn",
+                    now + TimeDelta::seconds(5),
+                )
+                .unwrap(),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        drop(store);
+        let mut store = SqliteStore::open(&database).expect("restart store");
+        let resumed_connection = store
+            .resume_control_connection(&session_a.status.session_id, now + TimeDelta::seconds(6))
+            .expect("resume begun-turn holder");
+        assert!(matches!(
+            store.release_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &resumed_connection,
+                &session_a.routing_token,
+                &first.lease_id,
+                "release-while-pinned",
+                now + TimeDelta::seconds(6),
+            ),
+            Err(StoreError::InvalidControlSession(message))
+                if message.contains("checkpoint the turn")
+        ));
+
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-pin-b-after-acquire",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(7),
+        );
+        assert!(matches!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session_b.status.session_id,
+                    &session_b.connection_token,
+                    &session_b.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &subject,
+                    30,
+                    "pin-second-deferred",
+                    now + TimeDelta::seconds(9),
+                )
+                .unwrap(),
+            WorkLeaseDecision::Defer {
+                checkpoint_required: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            store
+                .checkpoint_control_turn(
+                    &ProjectId("project-a".into()),
+                    &session_a.status.session_id,
+                    &resumed_connection,
+                    &session_a.routing_token,
+                    &grant.grant_id,
+                    TurnNextIntent::Continue,
+                    "checkpoint-pinned-turn",
+                    now + TimeDelta::seconds(10),
+                )
+                .unwrap(),
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ));
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-pin-b-after-checkpoint",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(11),
+        );
+        let WorkLeaseDecision::Granted { lease: second } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_b.status.session_id,
+                &session_b.connection_token,
+                &session_b.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                30,
+                "pin-second-granted",
+                now + TimeDelta::seconds(12),
+            )
+            .unwrap()
+        else {
+            panic!("checkpointed expired scope must transfer");
+        };
+        assert_eq!(second.fence, first.fence + 1);
+        assert_eq!(second.holder, session_b.status.session_id);
+        assert!(store.verify_all().unwrap().is_healthy());
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the hostile sequence checks aliases, project binding, rebind rollback, and release"
+    )]
+    fn resource_aliases_and_active_leases_remain_task_isolated() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+        let session_a = bind_control_for(&mut store, "alias-a", "bind-alias-a", &effects, now);
+        let session_b = bind_control_for(&mut store, "alias-b", "bind-alias-b", &effects, now);
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-alias-b",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        complete_control_turn(
+            &mut store,
+            &session_a,
+            "sync-alias-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(2),
+        );
+        let composed = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["\u{17f}rc".into(), "caf\u{e9}.rs".into()],
+            coverage: crate::domain::ResourceCoverage::Exact,
+        };
+        let WorkLeaseDecision::Granted { lease } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &composed,
+                300,
+                "lease-alias-a",
+                now + TimeDelta::seconds(4),
+            )
+            .unwrap()
+        else {
+            panic!("first normalized subject must grant");
+        };
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "resync-alias-b",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(4),
+        );
+        let decomposed = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into(), "cafe\u{301}.rs".into()],
+            coverage: crate::domain::ResourceCoverage::Exact,
+        };
+        assert!(matches!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session_b.status.session_id,
+                    &session_b.connection_token,
+                    &session_b.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &decomposed,
+                    300,
+                    "lease-alias-b",
+                    now + TimeDelta::seconds(5),
+                )
+                .unwrap(),
+            WorkLeaseDecision::Defer { .. }
+        ));
+        let wrong_project = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-b".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        assert!(matches!(
+            store.acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_b.status.session_id,
+                &session_b.connection_token,
+                &session_b.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &wrong_project,
+                300,
+                "lease-wrong-project",
+                now + TimeDelta::seconds(6),
+            ),
+            Err(StoreError::InvalidControlSession(_))
+        ));
+        assert!(matches!(
+            store.bind_control_session(
+                &ProjectId("project-a".into()),
+                "dummy:OTHER-TASK",
+                "A different task",
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &actor("alias-a"),
+                ControlAssurance::TurnGated,
+                &effects,
+                1,
+                "rebind-alias-a",
+                now + TimeDelta::seconds(7),
+            ),
+            Err(StoreError::InvalidControlSession(_))
+        ));
+        assert_eq!(
+            store
+                .control_status(
+                    &ProjectId("project-a".into()),
+                    &session_a.status.session_id,
+                    &session_a.connection_token,
+                    &session_a.routing_token,
+                    now + TimeDelta::seconds(8),
+                )
+                .unwrap()
+                .task_id,
+            session_a.status.task_id
+        );
+        let rebound = store
+            .bind_control_session(
+                &ProjectId("project-a".into()),
+                "dummy:OTHER-TASK",
+                "A different task",
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &actor("alias-a"),
+                ControlAssurance::TurnGated,
+                &effects,
+                1,
+                "rebind-after-expiry",
+                now + TimeDelta::seconds(304),
+            )
+            .unwrap();
+        assert_ne!(rebound.status.task_id, session_a.status.task_id);
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT state FROM control_work_leases WHERE lease_id = ?1",
+                    [&lease.lease_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "expired"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the exit regression preserves synchronization, acquisition, checkpoint terminalization, and fenced reacquisition order"
+    )]
+    fn exiting_a_control_session_releases_its_leases_for_the_next_holder() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().unwrap();
+        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+        let session_a = bind_control_for(&mut store, "exit-a", "bind-exit-a", &effects, now);
+        let session_b = bind_control_for(&mut store, "exit-b", "bind-exit-b", &effects, now);
+        complete_control_turn(
+            &mut store,
+            &session_a,
+            "sync-exit-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-exit-b",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(2),
+        );
+        complete_control_turn(
+            &mut store,
+            &session_a,
+            "resync-exit-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(3),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let WorkLeaseDecision::Granted { lease: first } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                300,
+                "lease-before-exit",
+                now + TimeDelta::seconds(4),
+            )
+            .unwrap()
+        else {
+            panic!("the first session must acquire the lease");
+        };
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &session_a.status.session_id,
+                &session_a.connection_token,
+                &session_a.routing_token,
+                &TurnIntent {
+                    idempotency_key: "turn-before-exit".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"turn-before-exit"),
+                    purpose: crate::domain::TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(5),
+            )
+            .unwrap();
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("the exit turn must grant");
+        };
+        let delivery_tokens = grant
+            .delivery
+            .iter()
+            .map(|delivery| delivery.page.delivery_token.clone())
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &session_a.status.session_id,
+                    &session_a.connection_token,
+                    &session_a.routing_token,
+                    &grant.grant_id,
+                    &delivery_tokens,
+                    "begin-before-exit",
+                    now + TimeDelta::seconds(6),
+                )
+                .unwrap(),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        assert!(matches!(
+            store
+                .checkpoint_control_turn(
+                    &ProjectId("project-a".into()),
+                    &session_a.status.session_id,
+                    &session_a.connection_token,
+                    &session_a.routing_token,
+                    &grant.grant_id,
+                    TurnNextIntent::Exit,
+                    "checkpoint-exit",
+                    now + TimeDelta::seconds(7),
+                )
+                .unwrap(),
+            ControlTurnCheckpointDecision::Checkpointed {
+                receipt: TurnCheckpointReceipt {
+                    phase: SessionPhase::Exited,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT state FROM control_work_leases WHERE lease_id = ?1",
+                    [&first.lease_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "released"
+        );
+        complete_control_turn(
+            &mut store,
+            &session_b,
+            "sync-after-exit",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(8),
+        );
+        let WorkLeaseDecision::Granted { lease: second } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session_b.status.session_id,
+                &session_b.connection_token,
+                &session_b.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                300,
+                "lease-after-exit",
+                now + TimeDelta::seconds(9),
+            )
+            .unwrap()
+        else {
+            panic!("the second session must acquire the released scope");
+        };
+        assert_eq!(second.fence, first.fence + 1);
     }
 }

@@ -2,10 +2,10 @@
 
 ## Engram Standing Instructions
 
-Engram is a host-local concurrent execution-memory system for coding agents.
-Agent-private scratch and task-shared working memory stay local during
-execution; an immutable, polished report is the only artifact published to an
-external organizational tracker.
+Engram is a local-first work, behavioral-control, and execution-memory system
+for coding agents. SQLite is canonical on the active host; agent-private
+scratch and live execution authority stay there. External intake,
+backup/portable/sync, and publication are independent optional capabilities.
 
 ### Authority and Git
 
@@ -24,29 +24,56 @@ external organizational tracker.
 - `src/domain.rs` owns substrate-neutral memory, task, report, and actor types.
 - `src/canonical.rs` owns RFC 8785 canonical bytes and SHA-256 object identity.
 - `src/storage.rs` owns V1 SQLite persistence and integrity verification.
-- `src/tracker.rs` owns the neutral external tracker port and dummy adapter.
-- The external tracker stores organizational work and published reports. A
-  local task may reference a ticket; it must never mirror the ticket.
+- `src/storage/work.rs` owns local-work projections, feeds, claims, and seals.
+- `src/control.rs` owns pure deterministic control-policy evaluation.
+- `src/host.rs` owns the host-private JSON-lines transport only.
+- `src/work_service.rs` owns the six-operation ambient work protocol and its
+  translation into canonical storage operations.
+- `src/tracker.rs` currently owns the neutral external adapter port and dummy
+  publication adapter; vendor-specific types stay outside the core.
+- Engram owns host-local work from creation/decomposition through completion.
+  An item may cite an immutable external snapshot, but Engram never silently
+  mirrors external task state.
 - One stable project id must resolve concurrent sessions and worktrees to the
-  same host-local SQLite store. Local never means single-session.
+  same active-host SQLite store. Local never means single-session; optional
+  portable handoff may restore that project on the next active host.
 - Task scope is shared among participants and is the default for execution
   findings. Agent scope is private scratch.
-- Packet hashes reproduce content; monotonic task-event cursors order peer
-  deltas. Do not use a hash as a change cursor.
-- Claims are atomic idempotent leases with explicit handoff and audited
-  recovery. Every lease transition emits an immutable task event.
-- Do not freeze a report until every expected participant contributed and
-  marked ready, or an attributed waiver accounts for the omission.
-- One capture should generate task deltas, handoff material, and report input.
-  Never create a second status ledger beside the external backlog tracker.
-- Once a report reaches `report_ready`, its bytes, hash, and idempotency key are
-  frozen. A publish retry sends the same payload. A revision creates a
-  superseding report and a new key.
+- Packet hashes reproduce content; typed dense positions in named project,
+  root-work, and run-execution feeds order deltas. A session's dense delivery
+  position is distinct from its source-feed progress vector. Global row ids
+  and hashes are not safety cursors.
+- Assignment is future intent; a fenced work claim schedules live execution;
+  a fenced resource lease authorizes mutation. Never conflate them. Handoff
+  and recovery are explicit and audited.
+- V1 has one ordinary executor/claim per `WorkRun`; parallel sessions claim
+  distinct child runs under a `RootExecution` aggregate.
+- Do not complete a root until `CompletionSeal` binds the dense run-feed cut,
+  required child seals, contributions, reconciled actions/leases, acceptance,
+  and evidence, or a human-authorized waiver accounts for an omission.
+  Planned report assembly consumes that seal under a separate fenced
+  `ReportAssemblyClaim`, without retaining completed-run authority or draining
+  execution again.
+- One capture should generate work/task deltas, handoff material, evidence,
+  and report input. A future portable projection is a dormant
+  transfer/restore head, not a second live ledger.
+- Once a report reaches `report_ready`, its bytes and hash are frozen. A
+  separately requested publication freezes target and idempotency key; retry
+  sends the same payload. A revision creates a superseding report and intent.
 - Actor/authority text supplied through tools and skills is asserted context,
   not authenticated identity. Never claim stronger assurance than recorded.
-- SQLite is canonical in V1. FTS and other query projections are rebuildable.
-  Git/team sync, proprietary tracker integration, embeddings, real DLP,
-  signing, service storage, and encryption are deferred—not silently assumed.
+- SQLite is canonical on the active host. Planned external backup may raise
+  `local_backed_up`; planned `portable` mode provides one-active-host handoff with
+  scheduled push, writer-epoch release/acquire under remote-head CAS,
+  divergence refusal, and no transfer of live claims/leases/grants/private
+  scratch. Release freezes old-host mutation; acquire must succeed before
+  new-host mutation; portable startup/resume must validate the remote epoch.
+  The portable projection must close every executable shared-state reference;
+  excluded provenance uses explicit stubs/placeholders, never dangling refs or
+  rewritten canonical bytes. FTS and work/query projections are
+  rebuildable. Concurrent team sync, proprietary adapters, embeddings, real
+  DLP, signing, service storage, and encryption are deferred—not silently
+  assumed.
 
 ### Documentation and Skills
 
@@ -54,7 +81,8 @@ external organizational tracker.
   `docs/features/` and should be cross-linked when they overlap.
 - Use the project skill at `.agents/skills/engram-repo/SKILL.md` before changing
   Engram domain, persistence, publication, or review behavior.
-- Track implementation work in Beads, never Markdown TODO lists.
+- Track this repository's implementation work in Beads until an explicit
+  Engram dogfood cutover; never use Markdown TODO lists as a tracker.
 
 ### Required Quality Gates
 
@@ -67,6 +95,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
 node --test scripts/review-freeze-fingerprint.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
+node --test scripts/control-dogfood.test.mjs
 node scripts/check-doc-links.mjs
 ```
 

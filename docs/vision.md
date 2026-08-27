@@ -8,10 +8,37 @@ of string-keyed memory stores before this design: users hand-encoding type,
 author, and date into prose because the schema had nowhere to put them, and
 session-start payloads growing linearly until hosts truncated them.
 
+There is a third failure: even correct memory is merely advice if an agent can
+start the next turn, mutate shared work, or publish while stale, unclaimed, or
+unfinished. Engram's target architecture therefore owns the behavioral and
+coordination decision layer around locally owned work. A host runtime must enforce
+its grants at prompt and declared tool boundaries; Engram does not pretend an
+optional agent tool is control.
+
+## The controlled execution loop
+
+For each session, the target architecture determines whether required context
+and peer deltas were host-confirmed as delivered, ownership is current,
+previous effects are reconciled, and lifecycle barriers are satisfied. The
+normal pre-turn result is a bounded grant with required delivery inlined; a
+typed recovery directive handles the unsafe tail. At the strongest integration
+level, the host also requests a single-use grant immediately before every
+declared material action and records its outcome before the next turn.
+
+Engram derives a bounded, deterministic ready-work view, but it does not
+supervise processes. The host or model selects among allowed candidates; the
+host chooses the model, process, prompts, and user-authorized tools. Engram
+decides whether that selected execution is ready and coordinated. Effective
+authority is the intersection of host/user policy and Engram state.
+
 ## The dual-layer model
 
-Engram's answer is two deliberate layers with different lifetimes and
-audiences:
+Engram's answer combines a local work graph with two memory/report layers:
+
+**The local work graph** records roots, decomposition, prerequisites,
+assignment, priority, readiness, fenced claims, evidence, and completion.
+Work may originate from a human/model prompt or an explicit external snapshot.
+No external tracker is required.
 
 **Local working memory** serves the machine doing the work. While a task is
 underway it coordinates concurrent sessions, tracks local task state, and
@@ -21,19 +48,21 @@ default among participants. It is append-only, attributed, and retrieved
 under strict byte budgets — an agent's context always has room for the task
 itself.
 
-**The durable final report** serves everyone else. When a task completes,
+**The optional durable final report** serves wider audiences. When a root completes,
 Engram distills its working memory into a polished report — outcome, work
 performed, decisions and rationale, discovered constraints, validation,
-risks, promotion candidates, provenance — freezes it, and publishes it to the
-organization's external tracker under an idempotent, receipted handoff. The
-tracker is the durable cross-team publication boundary. It never mirrors
-Engram's local event stream, and Engram never mirrors tickets.
+risks, promotion candidates, provenance—and freezes it. A separately
+authorized adapter may publish those bytes under an idempotent, receipted
+handoff. Intake, external durability, and publication are independent
+options. Publication never mirrors Engram's local event stream; an optional
+portable store replicates the canonical work projection for recovery/handoff.
 
-V1 is **local-first, not single-session**: one machine and one stable
-project-id keyed SQLite store shared by concurrent sessions and worktrees, no
-cross-host server or team sync. The design preserves an explicit migration
-path to a shared backend (see
-[architecture](architecture.md#deferred-team-backend)).
+V1 is **local-first, not single-session**: one active host and one stable
+project-id keyed SQLite store shared by concurrent sessions and worktrees.
+Optional `portable` mode moves that store between hosts sequentially through a
+canonical projection, explicit handoff/restore, and divergence refusal. Live
+cross-host team sync remains later (see
+[architecture](architecture.md#portable-and-synchronized-backends)).
 
 ## Principles
 
@@ -51,9 +80,11 @@ path to a shared backend (see
 - **Contradiction is a state, not a merge strategy.** Conflicting claims
   coexist visibly as *contested* until an attributed resolution supersedes
   them — never last-writer-wins.
-- **Local while working, explicit when publishing.** Working memory stays on
-  the machine; nothing crosses the organizational boundary except a finalized
-  report, published through an idempotent adapter under a receipt. See
+- **Local authority while working, explicit at every remote boundary.** Live
+  claims, leases, grants, delivery state, and agent-private scratch stay on the
+  active host. A configured portable target may receive a sensitivity-filtered
+  shared work projection for sequential handoff; publication separately sends
+  a frozen report or explicit work projection under an idempotent receipt. See
   [local tasks & reports](features/local-tasks-and-reports.md).
 - **One write, many views.** Capture happens in the flow of work; the same
   task record drives peer deltas, handoffs, report assembly, and publication.
@@ -61,12 +92,19 @@ path to a shared backend (see
 - **One core, many faces.** CLI, MCP server, and any future service front the
   same core — including packet construction — so delivery semantics cannot
   drift.
+- **Control requires mediation.** Engram decides; the host enforces. Turn and
+  action grants are bounded, checkpointed, and invalidated by relevant policy
+  or ownership changes. An agent never self-authorizes through MCP. See the
+  [behavioral control plane](features/behavioral-control-plane.md).
 
 ## What Engram is not
 
-- **Not the organizational tracker.** Engram tracks local operational tasks
-  while work is underway, but the external ticketing system stays
-  authoritative for the organizational work item.
+- **Not a concurrent cross-host organizational planning service in V1.**
+  Engram owns the active host's work graph. Optional external systems may
+  retain wider organizational commitments, provide backup/publication, or
+  transfer a portable snapshot to the next active host.
+- **Not a scheduler or process supervisor.** It refuses or directs execution
+  selected by the host; it does not choose agents, prompts, or backlog order.
 - **Not a transcript archive.** Raw session logs are not persisted by
   default.
 - **Not a secrets store.** Sensitive values are held as vault references,
@@ -77,5 +115,5 @@ path to a shared backend (see
 ## Further reading
 
 - [Architecture](architecture.md) — how the pieces fit
-- [Specification](spec.md) — the normative multi-session design (Draft 0.5)
+- [Specification](spec.md) — the normative local-work/control design (Draft 0.8)
 - [Roadmap](roadmap.md) — the V1 cut and what is deliberately deferred

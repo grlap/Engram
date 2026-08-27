@@ -1,64 +1,127 @@
-# Tracker Adapter
+# External Adapters
 
-> Normative reference: [spec §9](../spec.md#9-tasks-reports--ticketing).
-> Related briefs: [local tasks & reports](local-tasks-and-reports.md).
+> Normative reference: [spec §9](../spec.md#9-local-work-reports--external-systems).
+> Related briefs: [local work system](local-work-system.md) and
+> [local tasks & reports](local-tasks-and-reports.md).
 
-The external ticketing system at work is proprietary, and V1 ships **no
-proprietary integration**. Instead, the core defines a vendor-neutral
-`Tracker` port — no Jira-shaped (or any-vendor-shaped) types anywhere in the
-core — and V1 proves the entire contract against a dummy implementation.
+External systems are optional sources, backup/portable/sync substrates, and publication
+targets, never a prerequisite for local work. The core defines vendor-neutral ports—no
+Jira-, GitHub-, or Beads-shaped types—and proves outbound idempotency against
+a side-effect-free dummy implementation.
 
-## The port
+## The ports
 
 ```
-Tracker {
+WorkSourceAdapter {
   capabilities()                    // what this backend supports
   normalize_ref(text) → Ref         // "ABC-123", URL, … → canonical ref
-  get(ref, field_projection) → TicketDTO
-  search(query, cursor) → [TicketDTO]
-  fingerprint(ref) → SourceRevision // snapshot hash for provenance
-  publish_report(ref, report, idempotency_key) → Receipt
-                                    // durable, idempotent; capability-gated
+  fetch_snapshot(ref, projection) → WorkSourceSnapshot
+  search(query, cursor) → [SourceCandidate]
+}
+
+BackupAdapter {
+  put_snapshot(project, manifest, bytes) → BackupReceipt
+  get_snapshot(project, snapshot_id) → RecoverySnapshot
+  list_snapshots(project, cursor) → [SnapshotMetadata]
+}
+
+PortableStoreAdapter {
+  read_head(project) → PortableHead
+  fetch_snapshot(project, head_hash) → RecoverySnapshot
+  publish(project, expected_parent, active_snapshot) → PortableReceipt
+  release_writer(project, expected_active_head, released_snapshot) → PortableReceipt
+  acquire_writer(project, expected_released_head, active_manifest) → PortableReceipt
+  recover_writer(project, expected_head, recovery_intent, active_manifest) → PortableReceipt
+  validate_writer(project, writer_instance_id, writer_epoch) → WriterValidation
+}
+
+PublicationAdapter {
+  capabilities()
+  publish_report(target, report, idempotency_key) → Receipt
+  publish_work?(target, projection, idempotency_key) → Receipt
 }
 ```
 
-`TicketDTO` is backend-neutral: ref, title, body, status, owner, updated_at,
-source_revision, canonical_url, plus `raw{}` extension data.
+`WorkSourceSnapshot` is backend-neutral: ref, selected title/body/status/owner,
+captured time, source revision, canonical URL, payload hash, plus bounded
+`raw{}` extension data. It is immutable evidence for one explicit import.
+`BackupAdapter` stores immutable, verified recovery snapshots.
+`PortableStoreAdapter` transfers a canonical working snapshot between hosts
+under parent-head compare-and-swap and refuses divergence. It is single-writer
+handoff, not live synchronization. A later `Sync` backend provides concurrent
+cross-host coordination; none is intake/publication.
+
+Portable payloads include shared canonical objects, the work graph, feed
+ordering, schemas, and permitted evidence references. They exclude live work
+claims, resource leases, control sessions/grants, delivery progress, and
+agent-private scratch. Restore invalidates old execution authority: unfinished
+prior-host claims are recoverable and leases must be reacquired. A configured
+cadence and clean-session flush create durable receipts; `doctor` surfaces
+remote head, lag, and degraded pushes.
+
+Project movement is stronger than a routine push. `portable release`
+checkpoints/exits local sessions, clears live authority, advances a writer
+epoch, CAS-publishes a released manifest, and makes the old store
+mutation-read-only. `portable acquire` restores that exact head and
+CAS-publishes a new active writer instance/epoch before allowing mutation.
+Crash takeover is attributed recovery; it is not silent lock inheritance.
+Acquire never overwrites a destination with an unpushed local tail. Portable
+startup/resume and a bounded cadence validate only the remote head/epoch before
+mutation; mismatch or unavailability makes the store read-only. This metadata
+check is authority validation, not remote work-state retrieval.
+
+Portable export must include the transitive shared-state closure needed to
+rebuild work/readiness/policy/context/acceptance/completion. A disallowed
+executable object fails release. Provenance-only excluded targets use
+separately hashed `ExclusionStub` records, and excluded non-semantic feed
+payloads use typed placeholders that preserve dense positions. Existing
+canonical objects are pass-or-exclude, never rewritten under their old hash.
+The manifest commits projection coverage and export policy; `doctor` reports
+both, and acquire rejects a policy mismatch. If even stub metadata is not
+allowed, the filtered result is backup/export only, not `portable`.
+
+The reference personal Git transport uses a plumbing ref such as
+`refs/engram/<project-id>/<scope>`, not a branch or working-tree file. The port
+also supports private repositories and internal object storage. A shared code
+remote is not the organization-scale default because repo readership, ref
+lifecycle, and in-flight work privacy are different concerns.
 
 ## The boundary
 
-The tracker owns the organizational work item. Engram owns the local working
-memory around it and the finalized report it publishes back. **Tickets are
-never mirrored into memory** — a local task stores an `external_ref`, nothing
-more. When a memory derives from mutable ticket state it stores a minimal
-immutable `source_snapshot` (revision fingerprint, captured-at, excerpt hash)
-so the claim's basis stays reproducible after the ticket changes — evidence
-attached to one claim, not a synced copy.
+Engram owns the host-local work item after import. The source snapshot records
+what was injected and why; it does not grant the external system live write
+authority over local priority, dependency, claim, evidence, or completion.
+A refresh is an explicit new snapshot and proposed local revision, never a
+polling mirror or last-writer-wins update.
 
-This seam prevents double entry: the tracker remains the backlog of record;
-Engram is the execution-time workspace bound by reference. Task notes,
-handoffs, and report sections are views of one Engram working set rather than
-independently maintained tracker state.
+Outbound publication has its own target, authority check, frozen payload,
+idempotency key, and receipt. Intake and publication are independent: local
+work may use neither, one, or both. Task notes, handoffs, readiness, evidence,
+and report sections remain views of one Engram working set.
 
-## DummyTrackerAdapter (V1)
+## DummyPublicationAdapter (V1)
 
 The dummy exercises the *exact* production contract with no external side
 effects:
 
-- accepts a projected ticket ref, a frozen report, and an idempotency key;
+- accepts an explicit target, a frozen report, and an idempotency key;
 - writes and returns a **deterministic local receipt**;
 - supports retry/idempotency tests — same key + same payload returns the
   original receipt; same key + different payload is a conflict.
 
-Because the finalization pipeline
-([local tasks & reports](local-tasks-and-reports.md)) is fully proven against
-this contract, the proprietary adapter later swaps in with no changes above
-the port.
+Because the finalization pipeline proves this neutral contract, a real adapter
+later swaps in without changing work or report semantics. The existing
+`DummyTrackerAdapter` name may remain during migration but implements this
+publication role, not external tracker ownership.
 
-## Deferred
+## Portable durability and deferred integrations
 
-Real publication via the proprietary adapter, comments and link-backs,
-transitions (if ever authorized), webhook/poll checkpoints with
-reconciliation. All outbound actions require explicit user or policy
-authorization and durable idempotency receipts. See the
-[roadmap](../roadmap.md).
+Beads snapshot import/export and portable sequential handoff are the first
+compatibility/durability targets. A configured portable target carries durable
+replication authority, so scheduled pushes do not need a model to approve each
+transition; configuring or changing that disclosure boundary is a user/policy
+decision. Real publication, comments, link-backs, concurrent sync, and tracker
+transitions remain later adapter capabilities. Automatic webhook/poll
+mirroring is not planned; an explicit refresh may fetch another source
+snapshot. Publication actions still require user/policy authority and durable
+idempotency receipts. See the [roadmap](../roadmap.md).

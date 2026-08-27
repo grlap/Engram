@@ -1,0 +1,1328 @@
+//! Deterministic behavioral-control evaluation.
+//!
+//! [`observe_turn`] remains a shadow evidence path. The same pure rules also
+//! support the host-private persisted lifecycle, whose storage transaction is
+//! responsible for minting and consuming authority.
+
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+
+use chrono::TimeDelta;
+use serde::Serialize;
+
+use crate::{
+    CanonicalObject, ObjectHash,
+    domain::{
+        ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, CONTROL_SCHEMA_VERSION,
+        ChangeCursor, ContextPacket, ControlDirective, ControlHealth, ControlRefusalCode,
+        DirectiveSatisfaction, DirectiveTarget, EffectClass, IssuedTurnGrant, LeaseBasis,
+        LeaseKind, LeaseMode, ObservedActionBeginDecision, ObservedTurnDecision, PacketSafety,
+        ParticipantMembership, SessionPhase, TaskDelta, TaskState, TurnBeginDecision,
+        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision,
+        TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnPurpose,
+    },
+    storage::StoreError,
+};
+
+const MAX_SHADOW_GRANT_TTL_SECONDS: i64 = 300;
+
+#[derive(Serialize)]
+struct ControlDeliveryContent<'a> {
+    context: Option<&'a ContextPacket>,
+    delta: &'a TaskDelta,
+}
+
+pub(crate) fn delivery_content_digest(
+    context: Option<&ContextPacket>,
+    delta: &TaskDelta,
+) -> Result<ObjectHash, StoreError> {
+    Ok(
+        CanonicalObject::freeze(&ControlDeliveryContent { context, delta })?
+            .hash()
+            .clone(),
+    )
+}
+
+/// Evaluates one turn from explicitly supplied state without performing I/O.
+///
+/// The result is shadow evidence only. A future host-private transport must
+/// persist and activate a grant transactionally before this can authorize a
+/// model turn.
+#[must_use]
+pub fn observe_turn(input: &TurnEvaluationInput) -> ObservedTurnDecision {
+    ObservedTurnDecision {
+        control_schema_version: CONTROL_SCHEMA_VERSION,
+        request_key: input.intent.idempotency_key.clone(),
+        observed_at: input.evaluated_at,
+        decision: evaluate_turn(input),
+    }
+}
+
+/// Rechecks the complete action-grant basis at the execution boundary.
+///
+/// Like [`observe_turn`], this is shadow-only. It proves deterministic
+/// comparison semantics without consuming a grant or authorizing a side
+/// effect.
+#[must_use]
+pub fn observe_action_begin(
+    grant: &ActionGrantBasis,
+    snapshot: &ActionBeginSnapshot,
+) -> ObservedActionBeginDecision {
+    let decision = match action_begin_refusal(grant, snapshot) {
+        Some(code) => ActionBeginDecision::Refuse { code },
+        None => ActionBeginDecision::Begin {
+            grant_id: grant.grant_id.clone(),
+        },
+    };
+    ObservedActionBeginDecision {
+        control_schema_version: CONTROL_SCHEMA_VERSION,
+        grant_id: grant.grant_id.clone(),
+        observed_at: snapshot.observed_at,
+        decision,
+    }
+}
+
+/// Rechecks a persisted turn grant immediately before prompt dispatch.
+///
+/// This function performs no I/O. The storage layer must evaluate it and
+/// consume an issued grant in the same transaction as the tentative delivery
+/// and session revision update.
+#[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "begin-time validation keeps the complete fail-closed decision order visible"
+)]
+pub fn evaluate_turn_begin(
+    grant: &IssuedTurnGrant,
+    snapshot: &TurnBeginSnapshot,
+) -> TurnBeginDecision {
+    let basis = &grant.basis;
+    if grant.control_schema_version != CONTROL_SCHEMA_VERSION
+        || snapshot.control_schema_version != CONTROL_SCHEMA_VERSION
+    {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::UnknownControlSchema,
+        };
+    }
+    if grant.grant_id.trim().is_empty()
+        || grant.request_key.trim().is_empty()
+        || basis.session_id != snapshot.session_id
+        || basis.task_id != snapshot.task_id
+        || !matches!(snapshot.grant_state, TurnGrantState::Issued)
+        || !matches!(snapshot.phase, SessionPhase::TurnOpen)
+    {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::GrantScopeMismatch,
+        };
+    }
+    if !matches!(
+        snapshot.participant_membership,
+        ParticipantMembership::Member
+    ) {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::TaskAccessDenied,
+        };
+    }
+    if !snapshot
+        .task_state
+        .is_some_and(|task_state| match grant.basis.purpose {
+            TurnPurpose::Ordinary => matches!(task_state, TaskState::Active),
+            TurnPurpose::Recovery => matches!(
+                task_state,
+                TaskState::Active | TaskState::Quiescing | TaskState::FinalizationPending
+            ),
+            TurnPurpose::Finalizer => matches!(task_state, TaskState::FinalizationPending),
+        })
+    {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::LifecycleHold,
+        };
+    }
+    if snapshot.observed_at >= basis.expires_at {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::GrantExpired,
+        };
+    }
+    if snapshot.current_epochs.project_policy != basis.project_policy_epoch {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::PolicyEpochChanged,
+        };
+    }
+    if snapshot.current_epochs.task_admission != basis.task_admission_epoch {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::TaskAdmissionEpochChanged,
+        };
+    }
+    if !snapshot.context_current {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::DeltaRequired,
+        };
+    }
+    let expected_head = basis
+        .inline_delivery
+        .as_ref()
+        .map_or(basis.delivery_cursor, |page| page.head_cursor);
+    if snapshot.current_head != expected_head {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::DeltaRequired,
+        };
+    }
+    if snapshot.capability_map_revision != basis.capability_map_revision {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::GrantScopeMismatch,
+        };
+    }
+    let Some(current_leases) = lease_map(&snapshot.leases) else {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::StaleFence,
+        };
+    };
+    if basis.leases.iter().any(|granted| {
+        current_leases
+            .get(granted.lease_id.as_str())
+            .is_none_or(|current| {
+                current.holder != basis.session_id
+                    || current.kind != granted.kind
+                    || current.mode != granted.mode
+                    || current.subject != granted.subject
+                    || current.fence != granted.fence
+                    || current.expires_at <= snapshot.observed_at
+            })
+    }) {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::StaleFence,
+        };
+    }
+
+    let expected_tokens: Vec<_> = basis
+        .inline_delivery
+        .iter()
+        .map(|delivery| delivery.delivery_token.as_str())
+        .collect();
+    if expected_tokens
+        != snapshot
+            .delivery_tokens
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+        || !delivery_matches_grant(grant)
+    {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::DeliveryInvalid,
+        };
+    }
+
+    TurnBeginDecision::Begin
+}
+
+/// Checks whether a begun turn can transition to a durable checkpoint.
+///
+/// Checkpoint deliberately does not recheck expiry, policy epochs, or lease
+/// fences: begin already admitted the turn, and checkpoint must preserve its
+/// durable progress while closing that authority. Any next turn is evaluated
+/// against fresh epochs and fences.
+#[must_use]
+pub fn evaluate_turn_checkpoint(
+    grant: &IssuedTurnGrant,
+    snapshot: &TurnCheckpointSnapshot,
+) -> TurnCheckpointDecision {
+    if grant.control_schema_version != CONTROL_SCHEMA_VERSION
+        || snapshot.control_schema_version != CONTROL_SCHEMA_VERSION
+    {
+        return TurnCheckpointDecision::Refuse {
+            code: ControlRefusalCode::UnknownControlSchema,
+        };
+    }
+    if grant.grant_id.trim().is_empty()
+        || grant.basis.session_id != snapshot.session_id
+        || grant.basis.task_id != snapshot.task_id
+        || !matches!(snapshot.phase, SessionPhase::TurnOpen)
+        || !matches!(snapshot.grant_state, TurnGrantState::Begun)
+    {
+        return TurnCheckpointDecision::Refuse {
+            code: ControlRefusalCode::GrantScopeMismatch,
+        };
+    }
+    TurnCheckpointDecision::Checkpoint
+}
+
+pub(crate) fn delivery_matches_grant(grant: &IssuedTurnGrant) -> bool {
+    match (&grant.basis.inline_delivery, &grant.delivery) {
+        (None, None) => true,
+        (Some(page), Some(delivery)) => {
+            page == &delivery.page
+                && if page.has_more {
+                    delivery.context.is_none()
+                } else {
+                    delivery.context.as_ref().is_some_and(|context| {
+                        context.header.task_id == Some(grant.basis.task_id)
+                            && context.header.event_cursor == page.to_cursor
+                    })
+                }
+                && delivery.delta.task_id == grant.basis.task_id
+                && delivery_delta_matches(page, &delivery.delta)
+                && delivery_content_digest(delivery.context.as_ref(), &delivery.delta)
+                    .is_ok_and(|digest| digest == page.content_digest)
+        }
+        (None, Some(_)) | (Some(_), None) => false,
+    }
+}
+
+fn delivery_delta_matches(page: &crate::domain::DeliveryPage, delta: &TaskDelta) -> bool {
+    let Ok(expected_count) = usize::try_from(page.to_cursor.0 - page.from_cursor.0) else {
+        return false;
+    };
+    page.has_more == (page.to_cursor < page.head_cursor)
+        && delta.after == page.from_cursor
+        && delta.cursor == page.to_cursor
+        && delta.changes.len() == expected_count
+        && delta.changes.iter().enumerate().all(|(offset, change)| {
+            i64::try_from(offset).is_ok_and(|offset| {
+                change.cursor.0 == page.from_cursor.0 + offset + 1
+                    && CanonicalObject::freeze(&change.object)
+                        .is_ok_and(|object| object.hash() == &change.object_hash)
+            })
+        })
+}
+
+fn action_begin_refusal(
+    grant: &ActionGrantBasis,
+    snapshot: &ActionBeginSnapshot,
+) -> Option<ControlRefusalCode> {
+    if grant.control_schema_version != CONTROL_SCHEMA_VERSION
+        || snapshot.control_schema_version != CONTROL_SCHEMA_VERSION
+    {
+        return Some(ControlRefusalCode::UnknownControlSchema);
+    }
+    action_identity_refusal(grant, snapshot)
+        .or_else(|| action_freshness_refusal(grant, snapshot))
+        .or_else(|| action_authority_refusal(grant, snapshot))
+        .or_else(|| action_resolution_refusal(grant, snapshot))
+}
+
+fn action_identity_refusal(
+    grant: &ActionGrantBasis,
+    snapshot: &ActionBeginSnapshot,
+) -> Option<ControlRefusalCode> {
+    if !matches!(
+        snapshot.grant_state,
+        crate::domain::ActionGrantState::Available
+    ) || !matches!(
+        snapshot.parent_turn_state,
+        crate::domain::ParentTurnState::Open
+    ) || snapshot.parent_turn_id != grant.parent_turn_id
+    {
+        return Some(ControlRefusalCode::GrantScopeMismatch);
+    }
+    if grant.grant_id.trim().is_empty()
+        || grant.parent_turn_id.trim().is_empty()
+        || grant.session_id.0.trim().is_empty()
+        || grant.epochs.project_policy.0 < 0
+        || grant.epochs.task_admission.0 < 0
+        || snapshot.current_epochs.project_policy.0 < 0
+        || snapshot.current_epochs.task_admission.0 < 0
+        || grant.blocking_watermark.0 < 0
+        || snapshot.acknowledged_blocking_watermark.0 < 0
+    {
+        return Some(ControlRefusalCode::GrantScopeMismatch);
+    }
+    if snapshot.session_id != grant.session_id
+        || snapshot.task_id != grant.task_id
+        || snapshot.turn_purpose != grant.turn_purpose
+        || snapshot.effect != grant.effect
+        || snapshot.resource_subjects != grant.resource_subjects
+        || snapshot.request_fingerprint != grant.request_fingerprint
+    {
+        return Some(ControlRefusalCode::GrantScopeMismatch);
+    }
+    if snapshot.observed_at >= grant.expires_at {
+        return Some(ControlRefusalCode::GrantExpired);
+    }
+
+    None
+}
+
+fn action_freshness_refusal(
+    grant: &ActionGrantBasis,
+    snapshot: &ActionBeginSnapshot,
+) -> Option<ControlRefusalCode> {
+    if snapshot.current_epochs.project_policy != grant.epochs.project_policy {
+        return Some(ControlRefusalCode::PolicyEpochChanged);
+    }
+    if snapshot.current_epochs.task_admission != grant.epochs.task_admission {
+        return Some(ControlRefusalCode::TaskAdmissionEpochChanged);
+    }
+    if snapshot.acknowledged_blocking_watermark < grant.blocking_watermark {
+        return Some(ControlRefusalCode::DeltaRequired);
+    }
+    if !action_phase_matches(grant.turn_purpose, snapshot.phase, snapshot.task_state) {
+        return Some(ControlRefusalCode::LifecycleHold);
+    }
+    if snapshot.capability_map_revision != grant.capability_map_revision
+        || grant.capability_map_revision < 0
+        || !effect_fits_purpose(grant.turn_purpose, grant.effect)
+        || grant.resource_subjects.is_empty()
+        || !grant
+            .resource_subjects
+            .iter()
+            .all(crate::domain::ResourceSubject::has_valid_shape)
+    {
+        return Some(ControlRefusalCode::GrantScopeMismatch);
+    }
+
+    None
+}
+
+fn action_authority_refusal(
+    grant: &ActionGrantBasis,
+    snapshot: &ActionBeginSnapshot,
+) -> Option<ControlRefusalCode> {
+    if grant.authority_references.is_empty()
+        || grant
+            .authority_references
+            .iter()
+            .any(|reference| reference.trim().is_empty())
+        || !matches!(
+            snapshot.authority_state,
+            crate::domain::AuthorityState::Valid
+        )
+        || !same_unique_strings(&snapshot.authority_references, &grant.authority_references)
+    {
+        return Some(ControlRefusalCode::MissingAuthority);
+    }
+    let (Some(snapshot_fences), Some(grant_fences)) =
+        (lease_map(&snapshot.leases), lease_map(&grant.leases))
+    else {
+        return Some(ControlRefusalCode::StaleFence);
+    };
+    for (lease_id, grant_lease) in grant_fences {
+        let Some(current_lease) = snapshot_fences.get(lease_id) else {
+            return Some(ControlRefusalCode::StaleFence);
+        };
+        if current_lease.holder != grant.session_id
+            || grant_lease.holder != grant.session_id
+            || grant_lease.lease_id.trim().is_empty()
+            || current_lease.kind != grant_lease.kind
+            || current_lease.mode != grant_lease.mode
+            || current_lease.subject != grant_lease.subject
+            || current_lease.fence != grant_lease.fence
+            || current_lease.fence < 0
+            || !current_lease.subject.has_valid_shape()
+            || !grant_lease.subject.has_valid_shape()
+            || current_lease.expires_at <= snapshot.observed_at
+            || grant_lease.expires_at <= snapshot.observed_at
+        {
+            return Some(ControlRefusalCode::StaleFence);
+        }
+    }
+    if !leases_cover_action(grant, snapshot) {
+        return Some(ControlRefusalCode::LeaseRequired);
+    }
+
+    None
+}
+
+fn leases_cover_action(grant: &ActionGrantBasis, snapshot: &ActionBeginSnapshot) -> bool {
+    let required_kind = match grant.effect {
+        EffectClass::MutateLocal | EffectClass::MutateShared => Some(LeaseKind::Execution),
+        EffectClass::Lifecycle => Some(LeaseKind::Coordination),
+        EffectClass::Observe | EffectClass::Communicate | EffectClass::ExternalSideEffect => None,
+    };
+    let Some(required_kind) = required_kind else {
+        return true;
+    };
+
+    grant.resource_subjects.iter().all(|resource| {
+        grant.leases.iter().any(|granted_lease| {
+            snapshot.leases.iter().any(|current_lease| {
+                current_lease.lease_id == granted_lease.lease_id
+                    && current_lease.holder == grant.session_id
+                    && matches!(current_lease.mode, LeaseMode::Exclusive)
+                    && current_lease.kind == required_kind
+                    && current_lease.subject.covers(resource)
+            })
+        })
+    })
+}
+
+fn action_resolution_refusal(
+    grant: &ActionGrantBasis,
+    snapshot: &ActionBeginSnapshot,
+) -> Option<ControlRefusalCode> {
+    let has_path_subject = grant
+        .resource_subjects
+        .iter()
+        .any(crate::domain::ResourceSubject::is_path);
+    if has_path_subject {
+        if !matches!(
+            snapshot.resolution_assurance,
+            crate::domain::ResolutionAssurance::PinnedThroughInvocation
+        ) {
+            return Some(ControlRefusalCode::ControlAssuranceInsufficient);
+        }
+        if grant.resolution_binding_digest.is_none()
+            || snapshot.resolution_binding_digest != grant.resolution_binding_digest
+        {
+            return Some(ControlRefusalCode::ResourceRemapped);
+        }
+    } else if grant.resolution_binding_digest.is_some()
+        || snapshot.resolution_binding_digest.is_some()
+    {
+        return Some(ControlRefusalCode::GrantScopeMismatch);
+    }
+
+    None
+}
+
+const fn action_phase_matches(
+    purpose: TurnPurpose,
+    phase: SessionPhase,
+    task_state: TaskState,
+) -> bool {
+    match purpose {
+        TurnPurpose::Ordinary => {
+            matches!(phase, SessionPhase::TurnOpen) && matches!(task_state, TaskState::Active)
+        }
+        TurnPurpose::Recovery => {
+            matches!(phase, SessionPhase::RecoveryOpen)
+                && matches!(
+                    task_state,
+                    TaskState::Active | TaskState::Quiescing | TaskState::FinalizationPending
+                )
+        }
+        TurnPurpose::Finalizer => {
+            matches!(phase, SessionPhase::FinalizerOpen)
+                && matches!(task_state, TaskState::FinalizationPending)
+        }
+    }
+}
+
+fn same_unique_strings(left: &[String], right: &[String]) -> bool {
+    let left_set: BTreeSet<_> = left.iter().collect();
+    let right_set: BTreeSet<_> = right.iter().collect();
+    left_set.len() == left.len() && right_set.len() == right.len() && left_set == right_set
+}
+
+fn effects_are_unique(effects: &[EffectClass]) -> bool {
+    let unique: HashSet<_> = effects.iter().collect();
+    unique.len() == effects.len()
+}
+
+fn lease_map(leases: &[LeaseBasis]) -> Option<BTreeMap<&str, &LeaseBasis>> {
+    let mut mapped = BTreeMap::new();
+    for lease in leases {
+        if mapped.insert(lease.lease_id.as_str(), lease).is_some() {
+            return None;
+        }
+    }
+    Some(mapped)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the pure evaluator keeps fail-closed admission order visible in one function"
+)]
+fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
+    if input.control_schema_version != CONTROL_SCHEMA_VERSION {
+        return refusal(input, ControlRefusalCode::UnknownControlSchema);
+    }
+    if let Some(code) = health_refusal(input.health) {
+        return refusal(input, code);
+    }
+    if !input.active_policy_known {
+        return refusal(input, ControlRefusalCode::ControlPolicyMissing);
+    }
+    if !input.host_assurance.covers(input.required_assurance) {
+        return refusal(input, ControlRefusalCode::ControlAssuranceInsufficient);
+    }
+    if !requested_effects_are_covered(input, &input.mediated_effects) {
+        return refusal(input, ControlRefusalCode::ControlAssuranceInsufficient);
+    }
+    if !requested_effects_are_covered(input, &input.policy_effects) {
+        return refusal(input, ControlRefusalCode::CapabilityNotPermitted);
+    }
+
+    let Some(task_id) = input.task_id else {
+        return refusal(input, ControlRefusalCode::TaskUnbound);
+    };
+    let Some(task_state) = input.task_state else {
+        return refusal(input, ControlRefusalCode::TaskUnbound);
+    };
+    if !matches!(input.participant_membership, ParticipantMembership::Member) {
+        return refusal(input, ControlRefusalCode::TaskAccessDenied);
+    }
+    if let Some(code) = phase_refusal(
+        input.phase,
+        input.intent.purpose,
+        task_state,
+        input.pending_delivery.is_some(),
+    ) {
+        return refusal(input, code);
+    }
+    if input.current_epochs.project_policy != input.session_epochs.project_policy {
+        return refusal(input, ControlRefusalCode::PolicyEpochChanged);
+    }
+    if input.current_epochs.task_admission != input.session_epochs.task_admission {
+        return refusal(input, ControlRefusalCode::TaskAdmissionEpochChanged);
+    }
+    if let Some(code) = packet_refusal(input.packet_safety) {
+        return refusal(input, code);
+    }
+    if input.has_unknown_action_outcome {
+        return refusal(input, ControlRefusalCode::ActionOutcomeUnknown);
+    }
+    if !input.authority_satisfied {
+        return refusal(input, ControlRefusalCode::MissingAuthority);
+    }
+    if turn_input_has_invalid_shape(input) {
+        return refusal(input, ControlRefusalCode::GrantScopeMismatch);
+    }
+    if !effects_fit_purpose(input) {
+        return refusal(input, ControlRefusalCode::GrantScopeMismatch);
+    }
+    if !turn_leases_cover_resources(input) {
+        return refusal(input, ControlRefusalCode::LeaseRequired);
+    }
+
+    let (delivery_cursor, inline_delivery) = match evaluate_delivery(input) {
+        Ok(delivery) => delivery,
+        Err(code) => return refusal(input, code),
+    };
+    if inline_delivery.as_ref().is_some_and(|page| page.has_more)
+        && !matches!(input.intent.purpose, TurnPurpose::Recovery)
+    {
+        return refusal(input, ControlRefusalCode::RecoveryRequired);
+    }
+    let delivered_watermark = input.acknowledged_blocking_watermark.max(delivery_cursor);
+    let partial_recovery = inline_delivery.as_ref().is_some_and(|page| page.has_more)
+        && matches!(input.intent.purpose, TurnPurpose::Recovery);
+    if partial_recovery
+        && input
+            .intent
+            .requested_effects
+            .iter()
+            .any(|effect| !matches!(effect, EffectClass::Observe))
+    {
+        return refusal(input, ControlRefusalCode::GrantScopeMismatch);
+    }
+    if delivered_watermark < input.blocking_watermark && !partial_recovery {
+        return refusal(input, ControlRefusalCode::DeltaRequired);
+    }
+    if matches!(input.phase, SessionPhase::SyncRequired)
+        && matches!(input.intent.purpose, TurnPurpose::Ordinary)
+        && inline_delivery.is_none()
+    {
+        return refusal(input, ControlRefusalCode::RecoveryRequired);
+    }
+
+    let Some(expires_at) = input
+        .evaluated_at
+        .checked_add_signed(TimeDelta::seconds(input.grant_ttl_seconds))
+    else {
+        return refusal(input, ControlRefusalCode::GrantScopeMismatch);
+    };
+
+    TurnDecision::Grant {
+        basis: Box::new(TurnGrantBasis {
+            session_id: input.session_id.clone(),
+            task_id,
+            purpose: input.intent.purpose,
+            intent_fingerprint: input.intent.intent_fingerprint.clone(),
+            project_policy_epoch: input.current_epochs.project_policy,
+            task_admission_epoch: input.current_epochs.task_admission,
+            confirmed_cursor: input.confirmed_cursor,
+            delivery_cursor,
+            blocking_watermark: input.blocking_watermark,
+            inline_delivery,
+            capability_map_revision: input.capability_map_revision,
+            requested_effects: input.intent.requested_effects.clone(),
+            resource_intents: input.intent.resource_intents.clone(),
+            leases: input.leases.clone(),
+            expires_at,
+        }),
+    }
+}
+
+fn turn_input_has_invalid_shape(input: &TurnEvaluationInput) -> bool {
+    input.grant_ttl_seconds <= 0
+        || input.grant_ttl_seconds > MAX_SHADOW_GRANT_TTL_SECONDS
+        || input.capability_map_revision < 0
+        || input.current_epochs.project_policy.0 < 0
+        || input.current_epochs.task_admission.0 < 0
+        || input.session_epochs.project_policy.0 < 0
+        || input.session_epochs.task_admission.0 < 0
+        || input.confirmed_cursor.0 < 0
+        || input.head_cursor.0 < 0
+        || input.blocking_watermark.0 < 0
+        || input.acknowledged_blocking_watermark.0 < 0
+        || input.session_id.0.trim().is_empty()
+        || input.intent.idempotency_key.trim().is_empty()
+        || input.intent.requested_effects.is_empty()
+        || !effects_are_unique(&input.intent.requested_effects)
+        || input
+            .intent
+            .resource_intents
+            .iter()
+            .any(|resource| !resource.has_valid_shape())
+        || input
+            .intent
+            .resource_intents
+            .iter()
+            .enumerate()
+            .any(|(index, resource)| input.intent.resource_intents[..index].contains(resource))
+        || !effects_are_unique(&input.policy_effects)
+        || !effects_are_unique(&input.mediated_effects)
+        || lease_map(&input.leases).is_none()
+        || input.leases.iter().any(|lease| {
+            lease.fence < 0
+                || lease.lease_id.trim().is_empty()
+                || lease.holder.0.trim().is_empty()
+                || lease.holder != input.session_id
+                || lease.expires_at <= input.evaluated_at
+                || !lease.subject.has_valid_shape()
+        })
+}
+
+fn turn_leases_cover_resources(input: &TurnEvaluationInput) -> bool {
+    let requires_execution = input
+        .intent
+        .requested_effects
+        .iter()
+        .any(|effect| matches!(effect, EffectClass::MutateLocal | EffectClass::MutateShared));
+    let requires_coordination = input
+        .intent
+        .requested_effects
+        .contains(&EffectClass::Lifecycle);
+    if !requires_execution && !requires_coordination {
+        return true;
+    }
+    if input.intent.resource_intents.is_empty() {
+        return false;
+    }
+
+    let resources_have = |kind| {
+        input.intent.resource_intents.iter().all(|resource| {
+            input.leases.iter().any(|lease| {
+                lease.kind == kind
+                    && matches!(lease.mode, LeaseMode::Exclusive)
+                    && lease.subject.covers(resource)
+            })
+        })
+    };
+    (!requires_execution || resources_have(LeaseKind::Execution))
+        && (!requires_coordination || resources_have(LeaseKind::Coordination))
+}
+
+fn requested_effects_are_covered(input: &TurnEvaluationInput, allowed: &[EffectClass]) -> bool {
+    input
+        .intent
+        .requested_effects
+        .iter()
+        .all(|effect| allowed.contains(effect))
+}
+
+const fn health_refusal(health: ControlHealth) -> Option<ControlRefusalCode> {
+    match health {
+        ControlHealth::Healthy => None,
+        ControlHealth::Unavailable => Some(ControlRefusalCode::ControlUnavailable),
+        ControlHealth::Corrupt => Some(ControlRefusalCode::StoreCorrupt),
+        ControlHealth::UnknownSchema => Some(ControlRefusalCode::UnknownControlSchema),
+    }
+}
+
+const fn packet_refusal(safety: PacketSafety) -> Option<ControlRefusalCode> {
+    match safety {
+        PacketSafety::Safe => None,
+        PacketSafety::PinnedContradiction => Some(ControlRefusalCode::PinnedContradiction),
+        PacketSafety::PinnedBudgetExceeded => Some(ControlRefusalCode::PinnedBudgetExceeded),
+        PacketSafety::DeliveryBudgetExceeded => Some(ControlRefusalCode::DeliveryInvalid),
+    }
+}
+
+fn evaluate_delivery(
+    input: &TurnEvaluationInput,
+) -> Result<(ChangeCursor, Option<crate::domain::DeliveryPage>), ControlRefusalCode> {
+    if input.confirmed_cursor > input.head_cursor {
+        return Err(ControlRefusalCode::DeliveryInvalid);
+    }
+
+    let Some(page) = &input.pending_delivery else {
+        if input.confirmed_cursor < input.head_cursor {
+            return Err(if input.confirmed_cursor == ChangeCursor::default() {
+                ControlRefusalCode::ContextRequired
+            } else {
+                ControlRefusalCode::DeltaRequired
+            });
+        }
+        return Ok((input.confirmed_cursor, None));
+    };
+
+    let advances_task_feed =
+        page.to_cursor > page.from_cursor && input.confirmed_cursor < input.head_cursor;
+    let context_only = page.to_cursor == page.from_cursor
+        && page.to_cursor == page.head_cursor
+        && input.confirmed_cursor == input.head_cursor
+        && !page.has_more;
+    let valid = page.from_cursor == input.confirmed_cursor
+        && page.head_cursor == input.head_cursor
+        && page.to_cursor <= page.head_cursor
+        && page.has_more == (page.to_cursor < page.head_cursor)
+        && (advances_task_feed || context_only)
+        && !page.delivery_token.trim().is_empty();
+    if !valid {
+        return Err(ControlRefusalCode::DeliveryInvalid);
+    }
+
+    Ok((page.to_cursor, Some(page.clone())))
+}
+
+const fn phase_refusal(
+    phase: SessionPhase,
+    purpose: TurnPurpose,
+    task_state: TaskState,
+    has_inline_delivery: bool,
+) -> Option<ControlRefusalCode> {
+    match phase {
+        SessionPhase::Unbound => return Some(ControlRefusalCode::TaskUnbound),
+        SessionPhase::Exited => return Some(ControlRefusalCode::SessionExited),
+        SessionPhase::TurnOpen => return Some(ControlRefusalCode::TurnAlreadyOpen),
+        SessionPhase::CheckpointRequired => {
+            return Some(ControlRefusalCode::CheckpointRequired);
+        }
+        SessionPhase::HandoffPending => return Some(ControlRefusalCode::LifecycleHold),
+        SessionPhase::ContributionRequired | SessionPhase::ParticipantReady => {
+            return Some(ControlRefusalCode::ParticipantNotReady);
+        }
+        SessionPhase::Ready
+        | SessionPhase::SyncRequired
+        | SessionPhase::RecoveryOpen
+        | SessionPhase::FinalizerOpen => {}
+    }
+
+    match purpose {
+        TurnPurpose::Ordinary => {
+            if !matches!(task_state, TaskState::Active) {
+                return Some(ControlRefusalCode::LifecycleHold);
+            }
+            match phase {
+                SessionPhase::Ready => None,
+                SessionPhase::SyncRequired if has_inline_delivery => None,
+                SessionPhase::SyncRequired | SessionPhase::RecoveryOpen => {
+                    Some(ControlRefusalCode::RecoveryRequired)
+                }
+                SessionPhase::FinalizerOpen => Some(ControlRefusalCode::LifecycleHold),
+                _ => Some(ControlRefusalCode::TurnPurposeMismatch),
+            }
+        }
+        TurnPurpose::Recovery => {
+            if (matches!(phase, SessionPhase::RecoveryOpen)
+                || (matches!(phase, SessionPhase::SyncRequired) && has_inline_delivery))
+                && matches!(
+                    task_state,
+                    TaskState::Active | TaskState::Quiescing | TaskState::FinalizationPending
+                )
+            {
+                None
+            } else {
+                Some(ControlRefusalCode::TurnPurposeMismatch)
+            }
+        }
+        TurnPurpose::Finalizer => {
+            if matches!(phase, SessionPhase::FinalizerOpen)
+                && matches!(task_state, TaskState::FinalizationPending)
+            {
+                None
+            } else {
+                Some(ControlRefusalCode::TurnPurposeMismatch)
+            }
+        }
+    }
+}
+
+fn effects_fit_purpose(input: &TurnEvaluationInput) -> bool {
+    input
+        .intent
+        .requested_effects
+        .iter()
+        .all(|effect| effect_fits_purpose(input.intent.purpose, *effect))
+}
+
+const fn effect_fits_purpose(purpose: TurnPurpose, effect: EffectClass) -> bool {
+    match purpose {
+        TurnPurpose::Ordinary => true,
+        TurnPurpose::Recovery => {
+            matches!(effect, EffectClass::Observe | EffectClass::Communicate)
+        }
+        TurnPurpose::Finalizer => matches!(
+            effect,
+            EffectClass::Observe | EffectClass::Communicate | EffectClass::Lifecycle
+        ),
+    }
+}
+
+fn refusal(input: &TurnEvaluationInput, code: ControlRefusalCode) -> TurnDecision {
+    let (target, satisfaction, recovery_effects) = directive_shape(code);
+    TurnDecision::Refuse {
+        directive: ControlDirective {
+            directive_id: format!("{}:{}", input.intent.idempotency_key, code.as_str()),
+            code,
+            target,
+            satisfaction,
+            recovery_effects,
+        },
+    }
+}
+
+fn directive_shape(
+    code: ControlRefusalCode,
+) -> (DirectiveTarget, DirectiveSatisfaction, Vec<EffectClass>) {
+    match code {
+        ControlRefusalCode::MissingAuthority => (
+            DirectiveTarget::Human,
+            DirectiveSatisfaction::HumanAuthority,
+            vec![EffectClass::Observe],
+        ),
+        ControlRefusalCode::PinnedContradiction
+        | ControlRefusalCode::PinnedBudgetExceeded
+        | ControlRefusalCode::RecoveryRequired
+        | ControlRefusalCode::ActionOutcomeUnknown => (
+            DirectiveTarget::Agent,
+            DirectiveSatisfaction::RecoveryCheckpoint,
+            vec![EffectClass::Observe, EffectClass::Communicate],
+        ),
+        ControlRefusalCode::ControlUnavailable
+        | ControlRefusalCode::StoreCorrupt
+        | ControlRefusalCode::UnknownControlSchema
+        | ControlRefusalCode::ControlPolicyMissing
+        | ControlRefusalCode::ControlAssuranceInsufficient
+        | ControlRefusalCode::CapabilityNotPermitted
+        | ControlRefusalCode::TaskUnbound
+        | ControlRefusalCode::TaskAccessDenied
+        | ControlRefusalCode::PolicyEpochChanged
+        | ControlRefusalCode::TaskAdmissionEpochChanged
+        | ControlRefusalCode::LeaseRequired
+        | ControlRefusalCode::ContextRequired
+        | ControlRefusalCode::DeltaRequired
+        | ControlRefusalCode::DeliveryInvalid
+        | ControlRefusalCode::CheckpointRequired
+        | ControlRefusalCode::TurnAlreadyOpen
+        | ControlRefusalCode::TurnPurposeMismatch
+        | ControlRefusalCode::LifecycleHold
+        | ControlRefusalCode::ParticipantNotReady
+        | ControlRefusalCode::GrantExpired
+        | ControlRefusalCode::GrantScopeMismatch
+        | ControlRefusalCode::StaleFence
+        | ControlRefusalCode::ResourceRemapped
+        | ControlRefusalCode::SessionExited => (
+            DirectiveTarget::Host,
+            DirectiveSatisfaction::HostTransition,
+            vec![EffectClass::Observe],
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeZone, Utc};
+
+    use super::*;
+    use crate::{
+        ObjectHash,
+        domain::{
+            ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, ActionGrantState,
+            AuthorityState, ControlAssurance, ControlEpochs, DeliveryPage, ParentTurnState,
+            ParticipantMembership, ProjectId, ProjectPolicyEpoch, ResolutionAssurance,
+            ResourceCoverage, ResourceSubject, SessionId, TaskAdmissionEpoch, TaskId, TurnIntent,
+        },
+    };
+
+    fn hash(seed: &str) -> ObjectHash {
+        ObjectHash::from_canonical_bytes(seed.as_bytes())
+    }
+
+    fn input() -> TurnEvaluationInput {
+        TurnEvaluationInput {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            session_id: SessionId("session-a".into()),
+            task_id: Some(TaskId::new()),
+            participant_membership: ParticipantMembership::Member,
+            task_state: Some(TaskState::Active),
+            phase: SessionPhase::Ready,
+            health: ControlHealth::Healthy,
+            active_policy_known: true,
+            host_assurance: ControlAssurance::Advisory,
+            required_assurance: ControlAssurance::Advisory,
+            policy_effects: all_effects(),
+            mediated_effects: all_effects(),
+            current_epochs: ControlEpochs {
+                project_policy: ProjectPolicyEpoch(4),
+                task_admission: TaskAdmissionEpoch(9),
+            },
+            session_epochs: ControlEpochs {
+                project_policy: ProjectPolicyEpoch(4),
+                task_admission: TaskAdmissionEpoch(9),
+            },
+            confirmed_cursor: ChangeCursor(12),
+            head_cursor: ChangeCursor(12),
+            pending_delivery: None,
+            packet_safety: PacketSafety::Safe,
+            blocking_watermark: ChangeCursor(12),
+            acknowledged_blocking_watermark: ChangeCursor(12),
+            has_unknown_action_outcome: false,
+            authority_satisfied: true,
+            capability_map_revision: 3,
+            leases: Vec::new(),
+            intent: TurnIntent {
+                idempotency_key: "turn-a".into(),
+                intent_fingerprint: hash("turn intent"),
+                purpose: TurnPurpose::Ordinary,
+                requested_effects: vec![EffectClass::Observe],
+                resource_intents: Vec::new(),
+            },
+            evaluated_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            grant_ttl_seconds: 30,
+        }
+    }
+
+    fn all_effects() -> Vec<EffectClass> {
+        vec![
+            EffectClass::Observe,
+            EffectClass::Communicate,
+            EffectClass::MutateLocal,
+            EffectClass::MutateShared,
+            EffectClass::ExternalSideEffect,
+            EffectClass::Lifecycle,
+        ]
+    }
+
+    fn refusal_code(observation: &ObservedTurnDecision) -> Option<ControlRefusalCode> {
+        match &observation.decision {
+            TurnDecision::Refuse { directive } => Some(directive.code),
+            TurnDecision::Grant { .. } | TurnDecision::Defer { .. } => None,
+        }
+    }
+
+    fn action() -> (ActionGrantBasis, ActionBeginSnapshot) {
+        let task_id = TaskId::new();
+        let session_id = SessionId("session-a".into());
+        let epochs = ControlEpochs {
+            project_policy: ProjectPolicyEpoch(4),
+            task_admission: TaskAdmissionEpoch(9),
+        };
+        let subjects = vec![ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into(), "control.rs".into()],
+            coverage: ResourceCoverage::Exact,
+        }];
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let leases = vec![LeaseBasis {
+            lease_id: "lease-a".into(),
+            holder: session_id.clone(),
+            kind: LeaseKind::Execution,
+            mode: LeaseMode::Exclusive,
+            subject: subjects[0].clone(),
+            fence: 7,
+            expires_at: now + TimeDelta::seconds(60),
+        }];
+        let binding = Some(hash("resolution binding"));
+        let grant = ActionGrantBasis {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            grant_id: "action-grant-a".into(),
+            parent_turn_id: "turn-grant-a".into(),
+            session_id: session_id.clone(),
+            task_id,
+            turn_purpose: TurnPurpose::Ordinary,
+            effect: EffectClass::MutateShared,
+            resource_subjects: subjects.clone(),
+            request_fingerprint: hash("write request"),
+            authority_references: vec!["host-policy:workspace-write".into()],
+            epochs,
+            blocking_watermark: ChangeCursor(12),
+            capability_map_revision: 3,
+            leases: leases.clone(),
+            resolution_binding_digest: binding.clone(),
+            expires_at: now + TimeDelta::seconds(30),
+        };
+        let snapshot = ActionBeginSnapshot {
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            parent_turn_id: "turn-grant-a".into(),
+            parent_turn_state: ParentTurnState::Open,
+            grant_state: ActionGrantState::Available,
+            session_id,
+            task_id,
+            phase: SessionPhase::TurnOpen,
+            task_state: TaskState::Active,
+            turn_purpose: TurnPurpose::Ordinary,
+            effect: EffectClass::MutateShared,
+            resource_subjects: subjects,
+            request_fingerprint: hash("write request"),
+            authority_references: vec!["host-policy:workspace-write".into()],
+            authority_state: AuthorityState::Valid,
+            current_epochs: epochs,
+            acknowledged_blocking_watermark: ChangeCursor(12),
+            capability_map_revision: 3,
+            leases,
+            resolution_binding_digest: binding,
+            resolution_assurance: ResolutionAssurance::PinnedThroughInvocation,
+            observed_at: now,
+        };
+        (grant, snapshot)
+    }
+
+    fn action_refusal_code(
+        grant: &ActionGrantBasis,
+        snapshot: &ActionBeginSnapshot,
+    ) -> Option<ControlRefusalCode> {
+        match observe_action_begin(grant, snapshot).decision {
+            ActionBeginDecision::Begin { .. } => None,
+            ActionBeginDecision::Refuse { code } => Some(code),
+        }
+    }
+
+    #[test]
+    fn synchronized_turn_observation_is_deterministic() {
+        let input = input();
+        let first = observe_turn(&input);
+        let replay = observe_turn(&input);
+
+        assert_eq!(first, replay);
+        assert_eq!(
+            serde_json::to_vec(&first).unwrap(),
+            serde_json::to_vec(&replay).unwrap()
+        );
+        assert!(matches!(first.decision, TurnDecision::Grant { .. }));
+    }
+
+    #[test]
+    fn fresh_delivery_is_inlined_instead_of_refused() {
+        let mut input = input();
+        input.phase = SessionPhase::SyncRequired;
+        input.head_cursor = ChangeCursor(15);
+        input.blocking_watermark = ChangeCursor(14);
+        input.pending_delivery = Some(DeliveryPage {
+            from_cursor: ChangeCursor(12),
+            to_cursor: ChangeCursor(15),
+            head_cursor: ChangeCursor(15),
+            has_more: false,
+            content_digest: hash("delta page"),
+            delivery_token: "delivery-a".into(),
+        });
+
+        let observation = observe_turn(&input);
+        match observation.decision {
+            TurnDecision::Grant { basis } => {
+                assert_eq!(basis.confirmed_cursor, ChangeCursor(12));
+                assert_eq!(basis.delivery_cursor, ChangeCursor(15));
+                assert!(basis.inline_delivery.is_some());
+            }
+            TurnDecision::Refuse { directive } => {
+                panic!("expected inline grant, got {:?}", directive.code);
+            }
+            TurnDecision::Defer { deferral } => {
+                panic!("expected inline grant, got defer {:?}", deferral.code);
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_delivery_page_refuses() {
+        let mut input = input();
+        input.phase = SessionPhase::SyncRequired;
+        input.head_cursor = ChangeCursor(15);
+        input.pending_delivery = Some(DeliveryPage {
+            from_cursor: ChangeCursor(11),
+            to_cursor: ChangeCursor(15),
+            head_cursor: ChangeCursor(15),
+            has_more: false,
+            content_digest: hash("bad page"),
+            delivery_token: "delivery-a".into(),
+        });
+
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::DeliveryInvalid)
+        );
+    }
+
+    #[test]
+    fn oversized_delivery_refuses_with_a_typed_delivery_error() {
+        let mut input = input();
+        input.packet_safety = PacketSafety::DeliveryBudgetExceeded;
+
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::DeliveryInvalid)
+        );
+    }
+
+    #[test]
+    fn partial_delivery_page_requires_a_recovery_turn() {
+        let mut input = input();
+        input.phase = SessionPhase::SyncRequired;
+        input.head_cursor = ChangeCursor(15);
+        input.blocking_watermark = ChangeCursor(14);
+        input.pending_delivery = Some(DeliveryPage {
+            from_cursor: ChangeCursor(12),
+            to_cursor: ChangeCursor(14),
+            head_cursor: ChangeCursor(15),
+            has_more: true,
+            content_digest: hash("partial page"),
+            delivery_token: "delivery-partial".into(),
+        });
+
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::RecoveryRequired)
+        );
+        input.intent.purpose = TurnPurpose::Recovery;
+        assert!(matches!(
+            observe_turn(&input).decision,
+            TurnDecision::Grant { .. }
+        ));
+        input.intent.requested_effects = vec![EffectClass::Observe, EffectClass::Communicate];
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::GrantScopeMismatch)
+        );
+    }
+
+    #[test]
+    fn stale_policy_epoch_precedes_a_would_be_grant() {
+        let mut input = input();
+        input.current_epochs.project_policy = ProjectPolicyEpoch(5);
+
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::PolicyEpochChanged)
+        );
+    }
+
+    #[test]
+    fn checkpoint_and_unknown_outcome_are_fail_closed_observations() {
+        let mut checkpoint = input();
+        checkpoint.phase = SessionPhase::CheckpointRequired;
+        assert_eq!(
+            refusal_code(&observe_turn(&checkpoint)),
+            Some(ControlRefusalCode::CheckpointRequired)
+        );
+
+        let mut unknown = input();
+        unknown.has_unknown_action_outcome = true;
+        assert_eq!(
+            refusal_code(&observe_turn(&unknown)),
+            Some(ControlRefusalCode::ActionOutcomeUnknown)
+        );
+    }
+
+    #[test]
+    fn recovery_turn_cannot_request_mutation() {
+        let mut input = input();
+        input.phase = SessionPhase::RecoveryOpen;
+        input.intent.purpose = TurnPurpose::Recovery;
+        input.intent.requested_effects = vec![EffectClass::MutateShared];
+
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::GrantScopeMismatch)
+        );
+    }
+
+    #[test]
+    fn lifecycle_phase_precedes_packet_safety() {
+        let mut input = input();
+        input.phase = SessionPhase::CheckpointRequired;
+        input.packet_safety = PacketSafety::PinnedContradiction;
+
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::CheckpointRequired)
+        );
+    }
+
+    #[test]
+    fn exact_action_basis_would_begin_deterministically() {
+        let (grant, snapshot) = action();
+        let first = observe_action_begin(&grant, &snapshot);
+        let replay = observe_action_begin(&grant, &snapshot);
+
+        assert_eq!(first, replay);
+        assert!(matches!(
+            first.decision,
+            ActionBeginDecision::Begin { grant_id } if grant_id == grant.grant_id
+        ));
+    }
+
+    #[test]
+    fn action_begin_rechecks_epochs_watermark_and_fences() {
+        let (grant, snapshot) = action();
+
+        let mut stale_epoch = snapshot.clone();
+        stale_epoch.current_epochs.task_admission = TaskAdmissionEpoch(10);
+        assert_eq!(
+            action_refusal_code(&grant, &stale_epoch),
+            Some(ControlRefusalCode::TaskAdmissionEpochChanged)
+        );
+
+        let mut stale_delivery = snapshot.clone();
+        stale_delivery.acknowledged_blocking_watermark = ChangeCursor(11);
+        assert_eq!(
+            action_refusal_code(&grant, &stale_delivery),
+            Some(ControlRefusalCode::DeltaRequired)
+        );
+
+        let mut stale_fence = snapshot;
+        stale_fence.leases[0].fence += 1;
+        assert_eq!(
+            action_refusal_code(&grant, &stale_fence),
+            Some(ControlRefusalCode::StaleFence)
+        );
+    }
+
+    #[test]
+    fn filesystem_action_requires_pinned_unchanged_resolution() {
+        let (grant, snapshot) = action();
+
+        let mut unpinned = snapshot.clone();
+        unpinned.resolution_assurance = ResolutionAssurance::DetectionOnly;
+        assert_eq!(
+            action_refusal_code(&grant, &unpinned),
+            Some(ControlRefusalCode::ControlAssuranceInsufficient)
+        );
+
+        let mut remapped = snapshot;
+        remapped.resolution_binding_digest = Some(hash("different target"));
+        assert_eq!(
+            action_refusal_code(&grant, &remapped),
+            Some(ControlRefusalCode::ResourceRemapped)
+        );
+    }
+
+    #[test]
+    fn mutation_requires_live_holder_owned_covering_lease() {
+        let (grant, snapshot) = action();
+
+        let mut missing_grant = grant.clone();
+        missing_grant.leases.clear();
+        let mut missing_snapshot = snapshot.clone();
+        missing_snapshot.leases.clear();
+        assert_eq!(
+            action_refusal_code(&missing_grant, &missing_snapshot),
+            Some(ControlRefusalCode::LeaseRequired)
+        );
+
+        let mut expired = snapshot.clone();
+        expired.leases[0].expires_at = expired.observed_at;
+        assert_eq!(
+            action_refusal_code(&grant, &expired),
+            Some(ControlRefusalCode::StaleFence)
+        );
+
+        let mut wrong_holder_grant = grant.clone();
+        wrong_holder_grant.leases[0].holder = SessionId("other-session".into());
+        let mut wrong_holder_snapshot = snapshot;
+        wrong_holder_snapshot.leases[0].holder = SessionId("other-session".into());
+        assert_eq!(
+            action_refusal_code(&wrong_holder_grant, &wrong_holder_snapshot),
+            Some(ControlRefusalCode::StaleFence)
+        );
+    }
+}

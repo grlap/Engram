@@ -90,6 +90,10 @@ pub(crate) fn activation_policy(scope: &Scope, kind: MemoryKind) -> (MemoryStatu
             MemoryStatus::Active,
             "task execution memory activates for participants; publication remains gated".into(),
         ),
+        Scope::Work { .. } => (
+            MemoryStatus::Active,
+            "local-work execution memory activates for participants; external publication remains optional and gated".into(),
+        ),
         Scope::Agent { .. } => (
             MemoryStatus::Active,
             "private scratch activates only for its owning agent".into(),
