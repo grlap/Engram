@@ -15,13 +15,14 @@ use crate::{
     CheckpointWorkRequest, ChildRequirement, ChildWorkDraft, ChildWorkPrerequisite,
     ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionDrainAttestation,
     CompletionSeal, ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest,
-    DevelopmentNoopRedactor, DisposeWorkRequest, ExecutionObservation, FeedId,
+    DevelopmentNoopRedactor, DisposeWorkRequest, EnvironmentEvidence, ExecutionObservation, FeedId,
     LifecycleAuthorityDecision, MemorySummary, MemoryVersion, ObjectHash, OfferWorkHandoffRequest,
     ProjectId, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
-    ReviseWorkRequest, SessionId, SqliteStore, TaskId, WaiveRequiredChildRequest,
-    WorkAuthorityOperation, WorkAvailability, WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint,
-    WorkClaim, WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
-    WorkEvidence, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
+    ReviseWorkRequest, SessionId, SqliteStore, TaskId, VerificationEvidence, VerificationKind,
+    VerificationResult, WaiveRequiredChildRequest, WorkAuthorityOperation, WorkAvailability,
+    WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState,
+    WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence,
+    WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
     WorkItemKind, WorkLifecycle, WorkOrigin, WorkPlanningAuthority, WorkRevisionPatch, WorkRun,
     WorkRunId, WorkRunState, WorkSessionState, WorkTransition,
     domain::{
@@ -352,6 +353,8 @@ pub struct WorkFocusView {
     pub handoffs: Vec<WorkHandoffSummary>,
     pub blockers: Vec<WorkBlockerSummary>,
     pub evidence: Vec<ObjectHash>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence_items: Vec<WorkEvidenceSummary>,
     #[serde(default)]
     pub memories: Vec<WorkMemoryIndexEntry>,
     pub history: WorkHistoryView,
@@ -362,6 +365,29 @@ pub struct WorkFocusView {
     pub allowed_next: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omissions: Vec<WorkSectionOmission>,
+}
+
+/// Compact agent-facing summary of one canonical run evidence object.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkEvidenceSummary {
+    pub evidence: ObjectHash,
+    pub evidence_kind: WorkEvidenceKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_revision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer_session_id: Option<SessionId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_kind: Option<VerificationKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_fingerprint: Option<ObjectHash>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_result: Option<VerificationResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment_fingerprint: Option<ObjectHash>,
+    pub summary: String,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Bounded actionable input for one required-child completion waiver.
@@ -511,9 +537,12 @@ pub enum WorkUpdateInput {
         idempotency_key: String,
     },
     Evidence {
+        #[serde(default)]
         summary: String,
         #[serde(default)]
         refs: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        attach: Option<WorkEvidenceAttachInput>,
         idempotency_key: String,
     },
     Block {
@@ -556,6 +585,14 @@ pub enum WorkUpdateInput {
         reason: String,
         idempotency_key: String,
     },
+}
+
+/// Attach-only reference to typed evidence already minted by the host-private
+/// checkpoint path.
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkEvidenceAttachInput {
+    pub evidence: String,
 }
 
 /// Terse update receipt and the obligations/next actions that matter now.
@@ -1287,26 +1324,52 @@ impl LocalWorkService {
             WorkUpdateInput::Evidence {
                 summary,
                 refs,
+                attach,
                 idempotency_key: _,
             } => {
                 let claim = self.live_protocol_claim(&basis, &work, now)?;
-                let evidence = store.record_work_evidence(
-                    &RecordWorkEvidenceRequest {
-                        work_id: work.work_id,
-                        run_id: claim.run_id,
-                        expected_work_revision: work.revision,
-                        holder: self.session_id.clone(),
-                        claim_id: claim.claim_id,
-                        claim_fence: claim.fence,
-                        summary,
-                        refs,
-                        actor: self.actor("work_update", "record evidence for ambient work"),
-                        idempotency_key: scoped_key,
-                        recorded_at: now,
-                    },
-                    &DevelopmentNoopRedactor,
-                )?;
-                ("evidence", serde_json::to_value(evidence)?)
+                if let Some(attach) = attach {
+                    if !summary.trim().is_empty() || !refs.is_empty() {
+                        return Err(StoreError::InvalidWork(
+                            "typed evidence attach cannot also supply generic summary or refs"
+                                .into(),
+                        ));
+                    }
+                    let evidence = parse_hash(&attach.evidence)?;
+                    let evidence_kind = store.work_evidence_kind(claim.run_id, &evidence)?;
+                    if evidence_kind == WorkEvidenceKind::Generic {
+                        return Err(StoreError::InvalidWork(
+                            "typed evidence attach requires verification or environment evidence"
+                                .into(),
+                        ));
+                    }
+                    (
+                        "evidence",
+                        serde_json::json!({
+                            "attached": true,
+                            "evidence": evidence,
+                            "evidence_kind": evidence_kind,
+                        }),
+                    )
+                } else {
+                    let evidence = store.record_work_evidence(
+                        &RecordWorkEvidenceRequest {
+                            work_id: work.work_id,
+                            run_id: claim.run_id,
+                            expected_work_revision: work.revision,
+                            holder: self.session_id.clone(),
+                            claim_id: claim.claim_id,
+                            claim_fence: claim.fence,
+                            summary,
+                            refs,
+                            actor: self.actor("work_update", "record evidence for ambient work"),
+                            idempotency_key: scoped_key,
+                            recorded_at: now,
+                        },
+                        &DevelopmentNoopRedactor,
+                    )?;
+                    ("evidence", serde_json::to_value(evidence)?)
+                }
             }
             WorkUpdateInput::Block {
                 blocker_kind,
@@ -2177,6 +2240,16 @@ impl LocalWorkService {
         if evidence.len() > MAX_FOCUS_RELATIONS {
             evidence = evidence.split_off(evidence.len() - MAX_FOCUS_RELATIONS);
         }
+        let evidence_items = run
+            .as_ref()
+            .map(|run| {
+                evidence
+                    .iter()
+                    .map(|hash| work_evidence_summary(store, run.run_id, hash))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {
@@ -2281,6 +2354,7 @@ impl LocalWorkService {
                 })
                 .collect(),
             evidence,
+            evidence_items,
             memories: memories
                 .into_iter()
                 .take(usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX))
@@ -2579,10 +2653,13 @@ fn compact_mutation_receipt(
     let result = match receipt {
         serde_json::Value::Object(object) => {
             let allowed = [
+                "attached",
                 "blocker_id",
                 "checkpoint",
                 "claim_id",
                 "completion_seal",
+                "evidence",
+                "evidence_kind",
                 "expires_at",
                 "fence",
                 "generation",
@@ -2674,6 +2751,67 @@ fn count_omission(section: WorkNextSection, omitted_count: usize) -> WorkSection
     }
 }
 
+fn work_evidence_summary(
+    store: &SqliteStore,
+    run_id: WorkRunId,
+    hash: &ObjectHash,
+) -> Result<WorkEvidenceSummary, StoreError> {
+    match store.work_evidence_kind(run_id, hash)? {
+        WorkEvidenceKind::Generic => {
+            let evidence = store.get::<WorkEvidence>(hash)?.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "generic evidence object {hash} is missing"
+                ))
+            })?;
+            Ok(WorkEvidenceSummary {
+                evidence: hash.clone(),
+                evidence_kind: WorkEvidenceKind::Generic,
+                workspace_id: None,
+                source_revision: None,
+                producer_session_id: evidence.actor.session_id,
+                check_kind: None,
+                check_fingerprint: None,
+                verification_result: None,
+                environment_fingerprint: None,
+                summary: compact_text(&evidence.summary),
+                created_at: evidence.created_at,
+            })
+        }
+        WorkEvidenceKind::Verification => {
+            let evidence = store.load_verification_evidence(hash)?;
+            Ok(WorkEvidenceSummary {
+                evidence: hash.clone(),
+                evidence_kind: WorkEvidenceKind::Verification,
+                workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
+                source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
+                producer_session_id: Some(evidence.session_id),
+                check_kind: Some(evidence.check_kind),
+                check_fingerprint: Some(evidence.check_fingerprint),
+                verification_result: Some(evidence.result),
+                environment_fingerprint: None,
+                summary: compact_text(&evidence.summary),
+                created_at: evidence.completed_at,
+            })
+        }
+        WorkEvidenceKind::Environment => {
+            let evidence = store.load_environment_evidence(hash)?;
+            Ok(WorkEvidenceSummary {
+                evidence: hash.clone(),
+                evidence_kind: WorkEvidenceKind::Environment,
+                workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
+                source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
+                producer_session_id: Some(evidence.session_id),
+                check_kind: None,
+                check_fingerprint: None,
+                verification_result: None,
+                environment_fingerprint: Some(evidence.environment_fingerprint),
+                summary: "host-recorded environment identity".into(),
+                created_at: evidence.observed_at,
+            })
+        }
+    }
+}
+
 fn record_byte_omission(response: &mut WorkNextView, section: WorkNextSection) {
     if let Some(existing) = response.omissions.iter_mut().find(|entry| {
         entry.section == section && entry.reason == WorkSectionOmissionReason::ByteBudget
@@ -2757,6 +2895,7 @@ fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
         || focus.children.pop().is_some()
         || focus.prerequisites.pop().is_some()
         || focus.handoffs.pop().is_some()
+        || focus.evidence_items.pop().is_some()
         || focus.evidence.pop().is_some()
 }
 
@@ -2885,6 +3024,10 @@ fn parse_hashes(values: &[String]) -> Result<Vec<ObjectHash>, StoreError> {
                 .map_err(|message| StoreError::InvalidWork(message.to_owned()))
         })
         .collect()
+}
+
+fn parse_hash(value: &str) -> Result<ObjectHash, StoreError> {
+    ObjectHash::from_str(value).map_err(|message| StoreError::InvalidWork(message.to_owned()))
 }
 
 fn work_delivery_boundary(
@@ -3091,6 +3234,52 @@ fn agent_change_object(
                 )),
                 actor_id: Some(compact_text(&observation.actor.actor_id)),
                 created_at: observation.observed_at.unwrap_or(observation.recorded_at),
+            }))
+        }
+        "verification_evidence" => {
+            let evidence = serde_json::from_value::<VerificationEvidence>(object)?;
+            let item = store.get_work_item(evidence.binding.work_id)?;
+            if &evidence.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "verification evidence is bound outside its project work item".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: evidence.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(evidence.binding.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(evidence.binding.work_revision),
+                change_kind: "verification_evidence".into(),
+                summary: compact_text(&format!(
+                    "{:?} {:?}; source_revision={}",
+                    evidence.check_kind, evidence.result, evidence.source_basis.source_revision
+                )),
+                actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                created_at: evidence.completed_at,
+            }))
+        }
+        "environment_evidence" => {
+            let evidence = serde_json::from_value::<EnvironmentEvidence>(object)?;
+            let item = store.get_work_item(evidence.binding.work_id)?;
+            if &evidence.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "environment evidence is bound outside its project work item".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: evidence.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(evidence.binding.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(evidence.binding.work_revision),
+                change_kind: "environment_evidence".into(),
+                summary: compact_text(&format!(
+                    "environment {}; source_revision={}",
+                    evidence.environment_fingerprint, evidence.source_basis.source_revision
+                )),
+                actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                created_at: evidence.observed_at,
             }))
         }
         "memory_version" => {
@@ -3359,6 +3548,7 @@ fn work_transition_kind(transition: &WorkTransition) -> &'static str {
         WorkTransition::HandoffCancelled { .. } => "handoff_cancelled",
         WorkTransition::HandedOff { .. } => "handed_off",
         WorkTransition::EvidenceAdded { .. } => "evidence_added",
+        WorkTransition::TypedEvidenceAdded { .. } => "typed_evidence_added",
         WorkTransition::Completed { .. } => "completed",
         WorkTransition::Disposed { .. } => "disposed",
         WorkTransition::RequiredChildWaived { .. } => "required_child_waived",
@@ -3820,6 +4010,10 @@ mod tests {
             },
             WorkTransition::EvidenceAdded {
                 evidence: ObjectHash::from_canonical_bytes(b"evidence"),
+            },
+            WorkTransition::TypedEvidenceAdded {
+                evidence: ObjectHash::from_canonical_bytes(b"typed-evidence"),
+                evidence_kind: WorkEvidenceKind::Verification,
             },
             WorkTransition::Completed {
                 seal: ObjectHash::from_canonical_bytes(b"seal"),
@@ -5904,6 +6098,7 @@ mod tests {
                 WorkUpdateInput::Evidence {
                     summary: "protocol lifecycle test passed".into(),
                     refs: vec!["test:ambient-protocol".into()],
+                    attach: None,
                     idempotency_key: "evidence-a".into(),
                 },
                 at(42),

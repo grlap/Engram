@@ -401,7 +401,7 @@ mutation response.
 
 `work_complete` accepts either previously recorded evidence and checkpoint
 state or an optional `capture { summary, refs }`. The capture form records one
-evidence object, checkpoints the exact completion evidence set, and attempts
+generic evidence object, checkpoints the exact completion evidence set, and attempts
 the seal as one model-level operation while retaining each durable lifecycle
 event and fence check. All caller-controlled acceptance shape, satisfaction,
 and evidence references are validated before either capture substep commits;
@@ -410,6 +410,21 @@ run state. If the process stops after evidence or checkpoint
 commit, retry loads that canonical substep's original timestamp so its core
 idempotency hash replays exactly; any still-uncommitted substep uses the retry's
 current time and therefore cannot bypass an expired claim.
+
+Typed `verification_evidence` and `environment_evidence` are different from
+that generic capture. Only the host-private control checkpoint may mint them,
+and each is bound to the exact root/work/run/claim fence and source revision.
+Verification derives its result, check fingerprint, producer session, and
+timestamps from a canonical execution observation; agent prose cannot promote
+itself into verification. The agent protocol can only attach an existing typed
+hash through
+`work_update { kind: "evidence", attach: { evidence: <hash> }, ... }`.
+Attach is a validated reference operation and never duplicates the canonical
+object or its project/root/run feed entries. Focus and delta summaries expose
+the typed kind and compact binding fields without granting the agent a minting
+surface. A later mutation at the evaluated run-feed cut makes older
+verification stale even when it came from another workspace with the same
+previous content fingerprint.
 
 The operator-only `engram authority grant|revoke` commands are the current
 host boundary for local use. They are deliberately absent from agent-facing

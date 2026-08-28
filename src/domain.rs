@@ -455,9 +455,10 @@ pub struct ExecutionObservationInput {
 
 /// Immutable host-captured execution fact routed to the exact bound run feed.
 ///
-/// Phase A0 preserves optional workspace and source-state basis without
-/// validating it. Such observations may trigger later obligations, but cannot
-/// satisfy verification requirements by themselves.
+/// The host may preserve workspace and full-content source-state basis on the
+/// observation. Observations may trigger obligations and may be referenced by
+/// host-minted typed evidence, but cannot satisfy verification requirements by
+/// themselves.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ExecutionObservation {
     pub schema_version: u16,
@@ -476,6 +477,119 @@ pub struct ExecutionObservation {
     pub observed_at: Option<DateTime<Utc>>,
     pub actor: ActorContext,
     pub recorded_at: DateTime<Utc>,
+}
+
+/// Stable host-private reference to a previously recorded execution
+/// observation or to one observation in the same checkpoint request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExecutionObservationReference {
+    ObjectHash { object_hash: ObjectHash },
+    ObservationId { observation_id: String },
+}
+
+/// Host-declared class of one verification command or check.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationKind {
+    Test,
+    Build,
+    Lint,
+    Review,
+    Acceptance,
+}
+
+/// Host-observed result of one verification command or check.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationResult {
+    Passed,
+    Failed,
+    Indeterminate,
+}
+
+/// Host-private request to mint typed verification evidence from an exact
+/// host-captured execution observation.
+///
+/// The caller supplies classification and presentation only. Storage derives
+/// the run, workspace/source basis, command fingerprint, result, producer
+/// session, and timestamps from `producer_observation`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct VerificationEvidenceInput {
+    pub producer_observation: ExecutionObservationReference,
+    pub check_kind: VerificationKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+}
+
+/// Host-private request to capture the opaque environment identity used for
+/// one exact run and content state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct EnvironmentEvidenceInput {
+    pub source_basis: ExecutionSourceBasis,
+    pub environment_fingerprint: ObjectHash,
+    pub observed_at: DateTime<Utc>,
+}
+
+/// Immutable host-minted evidence that one check ran against an exact content
+/// state. It is the only evidence kind that may satisfy a verification
+/// requirement.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct VerificationEvidence {
+    pub schema_version: u16,
+    pub project_id: ProjectId,
+    pub binding: ControlWorkBinding,
+    pub session_id: SessionId,
+    pub producer_observation: ObjectHash,
+    pub source_basis: ExecutionSourceBasis,
+    pub check_kind: VerificationKind,
+    pub check_fingerprint: ObjectHash,
+    pub result: VerificationResult,
+    pub completed_at: DateTime<Utc>,
+    pub summary: String,
+    pub refs: Vec<String>,
+    pub actor: ActorContext,
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Immutable host-minted identity of the environment used for one exact run
+/// and source-content fingerprint.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct EnvironmentEvidence {
+    pub schema_version: u16,
+    pub project_id: ProjectId,
+    pub binding: ControlWorkBinding,
+    pub session_id: SessionId,
+    pub source_basis: ExecutionSourceBasis,
+    pub environment_fingerprint: ObjectHash,
+    pub observed_at: DateTime<Utc>,
+    pub actor: ActorContext,
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Typed evidence category retained by the run-evidence projection.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkEvidenceKind {
+    Generic,
+    Verification,
+    Environment,
+}
+
+/// Why one evidence object cannot satisfy an exact verification requirement.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationEvidenceMismatch {
+    WrongKind,
+    WrongRun,
+    StaleSourceRevision,
+    CheckFingerprintMismatch,
+    ResultNotPassed,
+    InvalidTime,
+    InvalidProducer,
+    NotAfterMutation,
 }
 
 const fn default_work_binding_current() -> bool {
@@ -791,6 +905,10 @@ pub struct TurnCheckpointEvent {
     pub next_intent: TurnNextIntent,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_observations: Vec<ObjectHash>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verification_evidence: Vec<ObjectHash>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment_evidence: Vec<ObjectHash>,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
 }
@@ -805,6 +923,10 @@ pub struct TurnCheckpointReceipt {
     pub phase: SessionPhase,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_observations: Vec<ObjectHash>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verification_evidence: Vec<ObjectHash>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment_evidence: Vec<ObjectHash>,
     pub session_revision: i64,
     pub checkpointed_at: DateTime<Utc>,
 }
@@ -1857,6 +1979,10 @@ pub enum WorkTransition {
     },
     EvidenceAdded {
         evidence: ObjectHash,
+    },
+    TypedEvidenceAdded {
+        evidence: ObjectHash,
+        evidence_kind: WorkEvidenceKind,
     },
     Completed {
         seal: ObjectHash,

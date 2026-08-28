@@ -22,15 +22,16 @@ use crate::{
         CancelWorkHandoffRequest, ChangeWorkPrerequisiteRequest, ChildRequirement,
         ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionSeal,
         CompletionWaiver, ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest,
-        DisposeWorkRequest, ExecutionObservation, FeedId, FeedPosition, LifecycleAuthorityDecision,
-        MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest, ReadyWork,
-        RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest, RequiredChildWaiver,
-        ReviseWorkRequest, RootContribution, RootExecution, RootExecutionId, RootExecutionState,
-        SCHEMA_VERSION, SessionId, TaskId, WaiveRequiredChildRequest, WorkAuthorityGrant,
-        WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability,
-        WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId,
-        WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
-        WorkEvidence, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
+        DisposeWorkRequest, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
+        LifecycleAuthorityDecision, MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest,
+        ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
+        RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution, RootExecutionId,
+        RootExecutionState, SCHEMA_VERSION, SessionId, TaskId, VerificationEvidence,
+        WaiveRequiredChildRequest, WorkAuthorityGrant, WorkAuthorityOperation,
+        WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability, WorkBlocker,
+        WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState,
+        WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence,
+        WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
         WorkId, WorkItem, WorkLifecycle, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
         WorkReadinessReason, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
         WorkSourceSnapshot, WorkTransition,
@@ -40,7 +41,7 @@ use crate::{
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
-const CURRENT_WORK_SCHEMA_VERSION: i64 = 5;
+const CURRENT_WORK_SCHEMA_VERSION: i64 = 6;
 const REQUIRED_WORK_TABLES: &[&str] = &[
     "work_authority_grants",
     "work_authority_revocations",
@@ -86,6 +87,21 @@ pub(crate) struct StageWorkSessionDelivery<'a> {
     pub delivered_entries: &'a [WorkFeedEntry],
     pub delivery_payload: &'a CanonicalObject,
     pub now: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EvidenceProjectionRow {
+    work_id: String,
+    run_id: String,
+    evidence_kind: String,
+    workspace_id: Option<String>,
+    source_revision: Option<String>,
+    producer_session_id: Option<String>,
+    producer_observation_hash: Option<String>,
+    check_fingerprint: Option<String>,
+    verification_result: Option<String>,
+    observed_at_ms: Option<i64>,
+    environment_fingerprint: Option<String>,
 }
 
 #[cfg(test)]
@@ -314,7 +330,16 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
          CREATE TABLE IF NOT EXISTS work_run_evidence (
              evidence_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
-             run_id TEXT NOT NULL REFERENCES work_runs(run_id)
+             run_id TEXT NOT NULL REFERENCES work_runs(run_id),
+             evidence_kind TEXT NOT NULL DEFAULT 'generic',
+             workspace_id TEXT,
+             source_revision TEXT,
+             producer_session_id TEXT,
+             producer_observation_hash TEXT REFERENCES objects(object_hash),
+             check_fingerprint TEXT,
+             verification_result TEXT,
+             observed_at_ms INTEGER,
+             environment_fingerprint TEXT
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_run_evidence_run
              ON work_run_evidence(run_id, evidence_hash);
@@ -570,6 +595,36 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
             [],
         )?;
     }
+    for (column, definition) in [
+        ("evidence_kind", "TEXT NOT NULL DEFAULT 'generic'"),
+        ("workspace_id", "TEXT"),
+        ("source_revision", "TEXT"),
+        ("producer_session_id", "TEXT"),
+        (
+            "producer_observation_hash",
+            "TEXT REFERENCES objects(object_hash)",
+        ),
+        ("check_fingerprint", "TEXT"),
+        ("verification_result", "TEXT"),
+        ("observed_at_ms", "INTEGER"),
+        ("environment_fingerprint", "TEXT"),
+    ] {
+        let exists = transaction.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM pragma_table_info('work_run_evidence')
+                 WHERE name = ?1
+             )",
+            [column],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !exists {
+            require_legacy_work_schema(starting_version, &format!("work_run_evidence.{column}"))?;
+            transaction.execute(
+                &format!("ALTER TABLE work_run_evidence ADD COLUMN {column} {definition}"),
+                [],
+            )?;
+        }
+    }
     let upgrading = starting_version != Some(CURRENT_WORK_SCHEMA_VERSION);
     if upgrading {
         let handoff_rows = {
@@ -746,6 +801,15 @@ fn current_work_schema_is_complete(connection: &Connection) -> Result<bool, Stor
         ("work_protocol_attempts", "basis_hash"),
         ("work_protocol_attempts", "basis_json"),
         ("work_protocol_attempts", "result_hash"),
+        ("work_run_evidence", "evidence_kind"),
+        ("work_run_evidence", "workspace_id"),
+        ("work_run_evidence", "source_revision"),
+        ("work_run_evidence", "producer_session_id"),
+        ("work_run_evidence", "producer_observation_hash"),
+        ("work_run_evidence", "check_fingerprint"),
+        ("work_run_evidence", "verification_result"),
+        ("work_run_evidence", "observed_at_ms"),
+        ("work_run_evidence", "environment_fingerprint"),
     ] {
         let exists = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
@@ -1930,6 +1994,36 @@ impl SqliteStore {
             .collect()
     }
 
+    /// Resolves and validates the typed category of one run evidence object.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the hash is absent, belongs to another run,
+    /// or its canonical object disagrees with the redundant projection.
+    pub fn work_evidence_kind(
+        &self,
+        run_id: WorkRunId,
+        evidence_hash: &ObjectHash,
+    ) -> Result<WorkEvidenceKind, StoreError> {
+        work_evidence_kind_on(&self.connection, run_id, evidence_hash)
+    }
+
+    pub(crate) fn load_verification_evidence(
+        &self,
+        evidence_hash: &ObjectHash,
+    ) -> Result<VerificationEvidence, StoreError> {
+        expected_verification_projection(&self.connection, evidence_hash)?;
+        load_typed_work_object(&self.connection, evidence_hash, "verification_evidence")
+    }
+
+    pub(crate) fn load_environment_evidence(
+        &self,
+        evidence_hash: &ObjectHash,
+    ) -> Result<EnvironmentEvidence, StoreError> {
+        expected_environment_projection(&self.connection, evidence_hash)?;
+        load_typed_work_object(&self.connection, evidence_hash, "environment_evidence")
+    }
+
     /// Reads the current head for an exact work feed.
     ///
     /// # Errors
@@ -2748,10 +2842,46 @@ impl SqliteStore {
                         {
                             evidence_rows.insert(
                                 evidence.as_str().to_owned(),
-                                (value.work_id.0.to_string(), value.run_id.0.to_string()),
+                                EvidenceProjectionRow {
+                                    work_id: value.work_id.0.to_string(),
+                                    run_id: value.run_id.0.to_string(),
+                                    evidence_kind: "generic".into(),
+                                    workspace_id: None,
+                                    source_revision: None,
+                                    producer_session_id: None,
+                                    producer_observation_hash: None,
+                                    check_fingerprint: None,
+                                    verification_result: None,
+                                    observed_at_ms: None,
+                                    environment_fingerprint: None,
+                                },
                             );
                         }
                         _ => invalid.push(format!("{label}:invalid_evidence_binding")),
+                    }
+                }
+                WorkTransition::TypedEvidenceAdded {
+                    evidence,
+                    evidence_kind,
+                } => {
+                    let expected = match evidence_kind {
+                        WorkEvidenceKind::Generic => None,
+                        WorkEvidenceKind::Verification => {
+                            expected_verification_projection(connection, evidence).ok()
+                        }
+                        WorkEvidenceKind::Environment => {
+                            expected_environment_projection(connection, evidence).ok()
+                        }
+                    };
+                    if let Some(expected) = expected.filter(|expected| {
+                        expected.work_id == event.work_id.0.to_string()
+                            && event
+                                .run_id
+                                .is_some_and(|run_id| expected.run_id == run_id.0.to_string())
+                    }) {
+                        evidence_rows.insert(evidence.as_str().to_owned(), expected);
+                    } else {
+                        invalid.push(format!("{label}:invalid_typed_evidence_binding"));
                     }
                 }
                 WorkTransition::Completed { seal } => {
@@ -6785,6 +6915,192 @@ pub(super) fn append_context_object_to_work_feeds(
     )
 }
 
+pub(super) fn load_control_execution_observation_on(
+    connection: &Connection,
+    hash: &ObjectHash,
+) -> Result<Option<ExecutionObservation>, StoreError> {
+    let stored = connection
+        .query_row(
+            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            [hash.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .optional()?;
+    let Some((kind, bytes)) = stored else {
+        return Ok(None);
+    };
+    if kind != "execution_observation" {
+        return Ok(None);
+    }
+    Ok(Some(CanonicalObject::verify(hash, bytes)?.decode()?))
+}
+
+struct TypedEvidenceProjection<'a> {
+    kind: WorkEvidenceKind,
+    workspace_id: &'a str,
+    source_revision: &'a str,
+    producer_session_id: &'a SessionId,
+    producer_observation: Option<&'a ObjectHash>,
+    check_fingerprint: Option<&'a ObjectHash>,
+    verification_result: Option<String>,
+    observed_at: DateTime<Utc>,
+    environment_fingerprint: Option<&'a ObjectHash>,
+}
+
+pub(super) fn append_control_verification_evidence_on(
+    transaction: &Transaction<'_>,
+    evidence: &VerificationEvidence,
+) -> Result<ObjectHash, StoreError> {
+    let object = CanonicalObject::freeze(evidence)?;
+    let result = encode_state(evidence.result)?;
+    append_control_typed_evidence_on(
+        transaction,
+        &evidence.project_id,
+        &evidence.binding,
+        &evidence.session_id,
+        &evidence.actor,
+        evidence.recorded_at,
+        &object,
+        &TypedEvidenceProjection {
+            kind: WorkEvidenceKind::Verification,
+            workspace_id: &evidence.source_basis.workspace_id,
+            source_revision: &evidence.source_basis.source_revision,
+            producer_session_id: &evidence.session_id,
+            producer_observation: Some(&evidence.producer_observation),
+            check_fingerprint: Some(&evidence.check_fingerprint),
+            verification_result: Some(result),
+            observed_at: evidence.completed_at,
+            environment_fingerprint: None,
+        },
+    )
+}
+
+pub(super) fn append_control_environment_evidence_on(
+    transaction: &Transaction<'_>,
+    evidence: &EnvironmentEvidence,
+) -> Result<ObjectHash, StoreError> {
+    let object = CanonicalObject::freeze(evidence)?;
+    append_control_typed_evidence_on(
+        transaction,
+        &evidence.project_id,
+        &evidence.binding,
+        &evidence.session_id,
+        &evidence.actor,
+        evidence.recorded_at,
+        &object,
+        &TypedEvidenceProjection {
+            kind: WorkEvidenceKind::Environment,
+            workspace_id: &evidence.source_basis.workspace_id,
+            source_revision: &evidence.source_basis.source_revision,
+            producer_session_id: &evidence.session_id,
+            producer_observation: None,
+            check_fingerprint: None,
+            verification_result: None,
+            observed_at: evidence.observed_at,
+            environment_fingerprint: Some(&evidence.environment_fingerprint),
+        },
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "typed evidence persistence keeps every redundant binding explicit"
+)]
+fn append_control_typed_evidence_on(
+    transaction: &Transaction<'_>,
+    project_id: &crate::domain::ProjectId,
+    binding: &ControlWorkBinding,
+    session_id: &SessionId,
+    actor: &crate::domain::ActorContext,
+    recorded_at: DateTime<Utc>,
+    object: &CanonicalObject,
+    projection: &TypedEvidenceProjection<'_>,
+) -> Result<ObjectHash, StoreError> {
+    let item = load_work_item(transaction, binding.work_id)?;
+    let run = load_work_run(transaction, binding.run_id)?;
+    let mut root_execution = load_root_execution(transaction, binding.root_execution_id)?;
+    if &item.project_id != project_id
+        || item.root_id != root_execution.root_id
+        || run.work_id != item.work_id
+        || run.root_execution_id != root_execution.root_execution_id
+        || binding.root_execution_id != run.root_execution_id
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "typed evidence binding does not match canonical work state".into(),
+        ));
+    }
+    let object_kind = match projection.kind {
+        WorkEvidenceKind::Generic => {
+            return Err(StoreError::InvalidWorkProjection(
+                "generic evidence cannot use the typed evidence writer".into(),
+            ));
+        }
+        WorkEvidenceKind::Verification => "verification_evidence",
+        WorkEvidenceKind::Environment => "environment_evidence",
+    };
+    SqliteStore::insert_object(transaction, object_kind, object)?;
+    transaction.execute(
+        "INSERT INTO work_run_evidence (
+             evidence_hash, work_id, run_id, evidence_kind,
+             workspace_id, source_revision, producer_session_id,
+             producer_observation_hash, check_fingerprint,
+             verification_result, observed_at_ms, environment_fingerprint
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            object.hash().as_str(),
+            item.work_id.0.to_string(),
+            run.run_id.0.to_string(),
+            encode_state(projection.kind)?,
+            projection.workspace_id,
+            projection.source_revision,
+            projection.producer_session_id.0,
+            projection.producer_observation.map(ObjectHash::as_str),
+            projection.check_fingerprint.map(ObjectHash::as_str),
+            projection.verification_result.as_deref(),
+            projection.observed_at.timestamp_millis(),
+            projection.environment_fingerprint.map(ObjectHash::as_str),
+        ],
+    )?;
+    append_to_work_feeds(
+        transaction,
+        &item.project_id,
+        item.root_id,
+        Some(run.run_id),
+        object_kind,
+        object,
+    )?;
+    let root_changed = expect_root_contributor(&mut root_execution, session_id)
+        | add_root_contribution(&mut root_execution, session_id, object.hash());
+    if root_changed {
+        root_execution.revision += 1;
+        root_execution.updated_at = recorded_at;
+        persist_root_execution(transaction, &root_execution)?;
+    }
+    let claim = load_work_claim_optional(transaction, run.run_id)?;
+    let event = WorkEvent {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id: Some(run.run_id),
+        revision: item.revision,
+        work: item,
+        run: Some(run),
+        root_execution: Some(root_execution),
+        claim,
+        handoff_offer: None,
+        blocker: None,
+        transition: WorkTransition::TypedEvidenceAdded {
+            evidence: object.hash().clone(),
+            evidence_kind: projection.kind,
+        },
+        actor: actor.clone(),
+        created_at: recorded_at,
+    };
+    append_work_event(transaction, &event)?;
+    Ok(object.hash().clone())
+}
+
 pub(super) fn append_control_execution_observation_on(
     transaction: &Transaction<'_>,
     observation: &ExecutionObservation,
@@ -7889,25 +8205,97 @@ fn root_participant_is_accounted(execution: &RootExecution, participant: &Sessio
             .any(|waiver| &waiver.participant == participant)
 }
 
+fn work_evidence_kind_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    evidence_hash: &ObjectHash,
+) -> Result<WorkEvidenceKind, StoreError> {
+    let projected = connection
+        .query_row(
+            "SELECT work_id, run_id, evidence_kind,
+                    workspace_id, source_revision, producer_session_id,
+                    producer_observation_hash, check_fingerprint,
+                    verification_result, observed_at_ms, environment_fingerprint
+             FROM work_run_evidence
+             WHERE run_id = ?1 AND evidence_hash = ?2",
+            params![run_id.0.to_string(), evidence_hash.as_str()],
+            |row| {
+                Ok(EvidenceProjectionRow {
+                    work_id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    evidence_kind: row.get(2)?,
+                    workspace_id: row.get(3)?,
+                    source_revision: row.get(4)?,
+                    producer_session_id: row.get(5)?,
+                    producer_observation_hash: row.get(6)?,
+                    check_fingerprint: row.get(7)?,
+                    verification_result: row.get(8)?,
+                    observed_at_ms: row.get(9)?,
+                    environment_fingerprint: row.get(10)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::InvalidWork(format!(
+                "evidence object {evidence_hash} does not belong to run {run_id:?}"
+            ))
+        })?;
+    let (kind, expected) = match projected.evidence_kind.as_str() {
+        "generic" => {
+            let evidence =
+                load_typed_work_object::<WorkEvidence>(connection, evidence_hash, "work_evidence")?;
+            if evidence.schema_version != SCHEMA_VERSION {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "generic evidence {evidence_hash} has an unsupported schema"
+                )));
+            }
+            (
+                WorkEvidenceKind::Generic,
+                EvidenceProjectionRow {
+                    work_id: evidence.work_id.0.to_string(),
+                    run_id: evidence.run_id.0.to_string(),
+                    evidence_kind: "generic".into(),
+                    workspace_id: None,
+                    source_revision: None,
+                    producer_session_id: None,
+                    producer_observation_hash: None,
+                    check_fingerprint: None,
+                    verification_result: None,
+                    observed_at_ms: None,
+                    environment_fingerprint: None,
+                },
+            )
+        }
+        "verification" => (
+            WorkEvidenceKind::Verification,
+            expected_verification_projection(connection, evidence_hash)?,
+        ),
+        "environment" => (
+            WorkEvidenceKind::Environment,
+            expected_environment_projection(connection, evidence_hash)?,
+        ),
+        kind => {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "evidence object {evidence_hash} has unknown kind {kind:?}"
+            )));
+        }
+    };
+    if projected != expected {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "evidence object {evidence_hash} disagrees with its redundant run projection"
+        )));
+    }
+    Ok(kind)
+}
+
 fn ensure_run_evidence(
     connection: &Connection,
     run_id: WorkRunId,
     evidence: &[ObjectHash],
 ) -> Result<(), StoreError> {
     for hash in unique_hashes(evidence) {
-        let exists: Option<i64> = connection
-            .query_row(
-                "SELECT 1 FROM work_run_evidence
-                 WHERE run_id = ?1 AND evidence_hash = ?2",
-                params![run_id.0.to_string(), hash.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if exists.is_none() {
-            return Err(StoreError::InvalidWork(format!(
-                "evidence object {hash} does not belong to run {run_id:?}"
-            )));
-        }
+        work_evidence_kind_on(connection, run_id, &hash)?;
     }
     Ok(())
 }
@@ -8595,29 +8983,137 @@ fn verify_blocker_rows(
     Ok(())
 }
 
+fn expected_verification_projection(
+    connection: &Connection,
+    evidence_hash: &ObjectHash,
+) -> Result<EvidenceProjectionRow, StoreError> {
+    let evidence = load_typed_work_object::<VerificationEvidence>(
+        connection,
+        evidence_hash,
+        "verification_evidence",
+    )?;
+    let producer = load_typed_work_object::<ExecutionObservation>(
+        connection,
+        &evidence.producer_observation,
+        "execution_observation",
+    )?;
+    let run_id = evidence.binding.run_id.0.to_string();
+    let result_matches = matches!(
+        (producer.outcome, evidence.result),
+        (
+            crate::domain::ExecutionOutcome::Succeeded,
+            crate::domain::VerificationResult::Passed
+        ) | (
+            crate::domain::ExecutionOutcome::Failed,
+            crate::domain::VerificationResult::Failed
+        ) | (
+            crate::domain::ExecutionOutcome::Unknown,
+            crate::domain::VerificationResult::Indeterminate
+        )
+    );
+    let bound = evidence.schema_version == SCHEMA_VERSION
+        && producer.project_id == evidence.project_id
+        && producer.binding == evidence.binding
+        && producer.session_id == evidence.session_id
+        && producer.source_basis.as_ref() == Some(&evidence.source_basis)
+        && producer.observed_at == Some(evidence.completed_at)
+        && producer.action_fingerprint == evidence.check_fingerprint
+        && result_matches
+        && evidence.completed_at <= evidence.recorded_at
+        && producer.recorded_at <= evidence.recorded_at
+        && evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
+        && evidence.actor.run_id.as_deref() == Some(run_id.as_str());
+    if !bound {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "verification evidence {evidence_hash} is not bound to its producer observation"
+        )));
+    }
+    Ok(EvidenceProjectionRow {
+        work_id: evidence.binding.work_id.0.to_string(),
+        run_id,
+        evidence_kind: "verification".into(),
+        workspace_id: Some(evidence.source_basis.workspace_id),
+        source_revision: Some(evidence.source_basis.source_revision),
+        producer_session_id: Some(evidence.session_id.0),
+        producer_observation_hash: Some(evidence.producer_observation.to_string()),
+        check_fingerprint: Some(evidence.check_fingerprint.to_string()),
+        verification_result: Some(encode_state(evidence.result)?),
+        observed_at_ms: Some(evidence.completed_at.timestamp_millis()),
+        environment_fingerprint: None,
+    })
+}
+
+fn expected_environment_projection(
+    connection: &Connection,
+    evidence_hash: &ObjectHash,
+) -> Result<EvidenceProjectionRow, StoreError> {
+    let evidence = load_typed_work_object::<EnvironmentEvidence>(
+        connection,
+        evidence_hash,
+        "environment_evidence",
+    )?;
+    let run_id = evidence.binding.run_id.0.to_string();
+    let bound = evidence.schema_version == SCHEMA_VERSION
+        && evidence.observed_at <= evidence.recorded_at
+        && evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
+        && evidence.actor.run_id.as_deref() == Some(run_id.as_str());
+    if !bound {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "environment evidence {evidence_hash} has an invalid run/session binding"
+        )));
+    }
+    Ok(EvidenceProjectionRow {
+        work_id: evidence.binding.work_id.0.to_string(),
+        run_id,
+        evidence_kind: "environment".into(),
+        workspace_id: Some(evidence.source_basis.workspace_id),
+        source_revision: Some(evidence.source_basis.source_revision),
+        producer_session_id: Some(evidence.session_id.0),
+        producer_observation_hash: None,
+        check_fingerprint: None,
+        verification_result: None,
+        observed_at_ms: Some(evidence.observed_at.timestamp_millis()),
+        environment_fingerprint: Some(evidence.environment_fingerprint.to_string()),
+    })
+}
+
 fn verify_evidence_rows(
     connection: &Connection,
-    expected: &HashMap<String, (String, String)>,
+    expected: &HashMap<String, EvidenceProjectionRow>,
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
     let mut seen = HashSet::new();
     let mut statement = connection.prepare(
-        "SELECT evidence_hash, work_id, run_id
+        "SELECT evidence_hash, work_id, run_id, evidence_kind,
+                workspace_id, source_revision, producer_session_id,
+                producer_observation_hash, check_fingerprint,
+                verification_result, observed_at_ms, environment_fingerprint
          FROM work_run_evidence ORDER BY evidence_hash",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
+            EvidenceProjectionRow {
+                work_id: row.get(1)?,
+                run_id: row.get(2)?,
+                evidence_kind: row.get(3)?,
+                workspace_id: row.get(4)?,
+                source_revision: row.get(5)?,
+                producer_session_id: row.get(6)?,
+                producer_observation_hash: row.get(7)?,
+                check_fingerprint: row.get(8)?,
+                verification_result: row.get(9)?,
+                observed_at_ms: row.get(10)?,
+                environment_fingerprint: row.get(11)?,
+            },
         ))
     })?;
     for row in rows {
-        let (evidence_hash, work_id, run_id) = row?;
+        let (evidence_hash, projected) = row?;
         *checked += 1;
         seen.insert(evidence_hash.clone());
-        if expected.get(&evidence_hash) != Some(&(work_id, run_id)) {
+        if expected.get(&evidence_hash) != Some(&projected) {
             invalid.push(format!("work_evidence:{evidence_hash}:run_binding"));
         }
     }
@@ -8750,6 +9246,36 @@ fn verify_work_feed_integrity(
                 })
                 .transpose()?
                 .flatten(),
+            "verification_evidence" => object
+                .decode::<VerificationEvidence>()
+                .ok()
+                .and_then(|evidence| {
+                    expected_verification_projection(connection, &hash)
+                        .ok()
+                        .map(|_| evidence)
+                })
+                .and_then(|evidence| {
+                    expected_feeds_for_work(
+                        work_items,
+                        evidence.binding.work_id,
+                        Some(evidence.binding.run_id),
+                    )
+                }),
+            "environment_evidence" => object
+                .decode::<EnvironmentEvidence>()
+                .ok()
+                .and_then(|evidence| {
+                    expected_environment_projection(connection, &hash)
+                        .ok()
+                        .map(|_| evidence)
+                })
+                .and_then(|evidence| {
+                    expected_feeds_for_work(
+                        work_items,
+                        evidence.binding.work_id,
+                        Some(evidence.binding.run_id),
+                    )
+                }),
             "memory_version" => object
                 .decode::<MemoryVersion>()
                 .ok()
@@ -8864,7 +9390,10 @@ fn verify_work_feed_integrity(
         "SELECT object.object_kind, object.object_hash FROM objects object
          LEFT JOIN work_feed_entries entry
            ON entry.object_hash = object.object_hash
-         WHERE object.object_kind IN ('work_event', 'work_checkpoint', 'work_evidence')
+         WHERE object.object_kind IN (
+             'work_event', 'work_checkpoint', 'work_evidence',
+             'verification_evidence', 'environment_evidence'
+         )
            AND entry.object_hash IS NULL
          ORDER BY object.object_hash",
     )?;
@@ -9552,14 +10081,17 @@ mod tests {
         ActorContext, AssuranceLevel, CheckpointWorkRequest, ChildWorkDraft, ChildWorkPrerequisite,
         CompleteWorkRequest, ControlAssurance, ControlRefusalCode, ControlTurnBeginDecision,
         ControlTurnCheckpointDecision, ControlTurnDecision, CreateWorkRequest,
-        DecomposeWorkRequest, DisposeWorkRequest, EffectClass, ExecutionObservationInput,
-        ExecutionOutcome, ExecutionSourceBasis, LifecycleAuthorityDecision, NoteRequest,
-        NoteVisibility, ProvenanceLink, RecordWorkEvidenceRequest, ReopenWorkRequest, Scope,
-        Sensitivity, TurnIntent, TurnNextIntent, TurnPurpose, WaiveRequiredChildRequest,
+        DecomposeWorkRequest, DisposeWorkRequest, EffectClass, EnvironmentEvidenceInput,
+        ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome,
+        ExecutionSourceBasis, LifecycleAuthorityDecision, NoteRequest, NoteVisibility,
+        ProvenanceLink, RecordWorkEvidenceRequest, ReopenWorkRequest, Scope, Sensitivity,
+        TurnIntent, TurnNextIntent, TurnPurpose, VerificationEvidenceInput,
+        VerificationEvidenceMismatch, VerificationKind, WaiveRequiredChildRequest,
         WorkDependencyRef, WorkItemKind, WorkPlanningAuthority, WorkPlanningBudget,
         WorkRevisionPatch,
     };
     use crate::memory::DevelopmentNoopRedactor;
+    use crate::{VerificationEvidenceMatchInput, match_verification_evidence};
 
     fn at(second: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 8, 27, 1, 0, 0)
@@ -12156,8 +12688,8 @@ mod tests {
     }
 
     #[test]
-    fn v1_v2_v3_and_v4_work_schemas_upgrade_atomically_and_reopen_idempotently() {
-        for version in [1_i64, 2_i64, 3_i64, 4_i64] {
+    fn v1_through_v5_work_schemas_upgrade_atomically_and_reopen_idempotently() {
+        for version in [1_i64, 2_i64, 3_i64, 4_i64, 5_i64] {
             let directory = tempfile::tempdir().expect("temp directory");
             let database = directory
                 .path()
@@ -12203,12 +12735,27 @@ mod tests {
             };
             drop(initialized);
             let connection = Connection::open(&database).expect("migration fixture");
-            connection
-                .execute_batch(
+            if version <= 4 {
+                connection
+                    .execute_batch(
                     "ALTER TABLE work_session_state DROP COLUMN tentative_delivery_payload_hash;
                      ALTER TABLE work_session_state DROP COLUMN tentative_delivery_payload;",
+                    )
+                    .expect("remove v5 delivery payload");
+            }
+            connection
+                .execute_batch(
+                    "ALTER TABLE work_run_evidence DROP COLUMN evidence_kind;
+                     ALTER TABLE work_run_evidence DROP COLUMN workspace_id;
+                     ALTER TABLE work_run_evidence DROP COLUMN source_revision;
+                     ALTER TABLE work_run_evidence DROP COLUMN producer_session_id;
+                     ALTER TABLE work_run_evidence DROP COLUMN producer_observation_hash;
+                     ALTER TABLE work_run_evidence DROP COLUMN check_fingerprint;
+                     ALTER TABLE work_run_evidence DROP COLUMN verification_result;
+                     ALTER TABLE work_run_evidence DROP COLUMN observed_at_ms;
+                     ALTER TABLE work_run_evidence DROP COLUMN environment_fingerprint;",
                 )
-                .expect("remove v5 delivery payload");
+                .expect("remove v6 typed-evidence projection columns");
             if version == 1 {
                 connection
                     .execute_batch(
@@ -12272,6 +12819,15 @@ mod tests {
                 ("work_protocol_attempts", "basis_hash"),
                 ("work_protocol_attempts", "basis_json"),
                 ("work_protocol_attempts", "result_hash"),
+                ("work_run_evidence", "evidence_kind"),
+                ("work_run_evidence", "workspace_id"),
+                ("work_run_evidence", "source_revision"),
+                ("work_run_evidence", "producer_session_id"),
+                ("work_run_evidence", "producer_observation_hash"),
+                ("work_run_evidence", "check_fingerprint"),
+                ("work_run_evidence", "verification_result"),
+                ("work_run_evidence", "observed_at_ms"),
+                ("work_run_evidence", "environment_fingerprint"),
             ] {
                 assert!(
                     connection
@@ -14035,7 +14591,9 @@ mod tests {
 
     #[test]
     fn work_bound_control_checkpoint_records_execution_observation_once() {
-        let mut store = SqliteStore::open_in_memory().expect("store");
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let mut store = SqliteStore::open(&database).expect("store");
         install_grant(&mut store, "project-control-work", "planner");
         let work = store
             .create_work(
@@ -14246,20 +14804,74 @@ mod tests {
             Err(StoreError::ControlGrantScopeMismatch { observation_id })
                 if observation_id == "outside-grant-scope"
         ));
-        let observations = vec![ExecutionObservationInput {
-            observation_id: "source-mutation-1".into(),
-            action_fingerprint: ObjectHash::from_canonical_bytes(b"write src/lib.rs"),
-            effect: EffectClass::MutateLocal,
-            outcome: ExecutionOutcome::Succeeded,
-            source_changed: true,
-            source_basis: Some(ExecutionSourceBasis {
-                workspace_id: "workspace-a".into(),
-                source_revision: "revision-1".into(),
-            }),
-            observed_at: Some(at(9)),
+        let observations = vec![
+            ExecutionObservationInput {
+                observation_id: "source-mutation-1".into(),
+                action_fingerprint: ObjectHash::from_canonical_bytes(b"write src/lib.rs"),
+                effect: EffectClass::MutateLocal,
+                outcome: ExecutionOutcome::Succeeded,
+                source_changed: true,
+                source_basis: Some(ExecutionSourceBasis {
+                    workspace_id: "workspace-a".into(),
+                    source_revision: "content-revision-1".into(),
+                }),
+                observed_at: Some(at(9)),
+            },
+            ExecutionObservationInput {
+                observation_id: "verification-command-1".into(),
+                action_fingerprint: ObjectHash::from_canonical_bytes(b"cargo test --workspace"),
+                effect: EffectClass::MutateLocal,
+                outcome: ExecutionOutcome::Succeeded,
+                source_changed: false,
+                source_basis: Some(ExecutionSourceBasis {
+                    workspace_id: "workspace-b".into(),
+                    source_revision: "content-revision-1".into(),
+                }),
+                observed_at: Some(at(9)),
+            },
+        ];
+        let verification_inputs = vec![VerificationEvidenceInput {
+            producer_observation: ExecutionObservationReference::ObservationId {
+                observation_id: "verification-command-1".into(),
+            },
+            check_kind: VerificationKind::Test,
+            summary: Some("host observed the workspace test suite".into()),
+            refs: vec!["command:cargo-test-workspace".into()],
         }];
+        let environment_inputs = vec![EnvironmentEvidenceInput {
+            source_basis: ExecutionSourceBasis {
+                workspace_id: "workspace-b".into(),
+                source_revision: "content-revision-1".into(),
+            },
+            environment_fingerprint: ObjectHash::from_canonical_bytes(b"rust-toolchain-host"),
+            observed_at: at(9),
+        }];
+        let missing_producer = VerificationEvidenceInput {
+            producer_observation: ExecutionObservationReference::ObjectHash {
+                object_hash: ObjectHash::from_canonical_bytes(b"missing producer"),
+            },
+            check_kind: VerificationKind::Test,
+            summary: None,
+            refs: Vec::new(),
+        };
+        assert!(matches!(
+            store.checkpoint_control_turn_with_evidence(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &[],
+                &[missing_producer],
+                &[],
+                "checkpoint-missing-verification-producer",
+                at(10),
+            ),
+            Err(StoreError::VerificationProducerObservationNotFound(_))
+        ));
         let checkpointed = store
-            .checkpoint_control_turn_with_observations(
+            .checkpoint_control_turn_with_evidence(
                 &work.project_id,
                 &session_id,
                 &connection_token,
@@ -14267,6 +14879,8 @@ mod tests {
                 &grant.grant_id,
                 TurnNextIntent::Continue,
                 &observations,
+                &verification_inputs,
+                &environment_inputs,
                 "checkpoint-control-work",
                 at(10),
             )
@@ -14274,7 +14888,9 @@ mod tests {
         let ControlTurnCheckpointDecision::Checkpointed { receipt } = &checkpointed else {
             panic!("bound work turn must checkpoint");
         };
-        assert_eq!(receipt.execution_observations.len(), 1);
+        assert_eq!(receipt.execution_observations.len(), 2);
+        assert_eq!(receipt.verification_evidence.len(), 1);
+        assert_eq!(receipt.environment_evidence.len(), 1);
         let observation_hash = &receipt.execution_observations[0];
         let observation = load_typed_work_object::<ExecutionObservation>(
             &store.connection,
@@ -14298,8 +14914,158 @@ mod tests {
             .expect("count observation feed entries");
         assert_eq!(feed_count, 3);
 
+        let verification_hash = &receipt.verification_evidence[0];
+        let verification = store
+            .load_verification_evidence(verification_hash)
+            .expect("load typed verification evidence");
+        let producer_hash = &receipt.execution_observations[1];
+        let producer = load_control_execution_observation_on(&store.connection, producer_hash)
+            .expect("load verification producer")
+            .expect("verification producer exists");
+        assert_eq!(verification.producer_observation, *producer_hash);
+        assert_eq!(verification.source_basis.workspace_id, "workspace-b");
+        assert_eq!(
+            verification.source_basis.source_revision,
+            "content-revision-1"
+        );
+        assert_eq!(verification.check_fingerprint, producer.action_fingerprint);
+        assert_eq!(
+            verification.result,
+            crate::domain::VerificationResult::Passed
+        );
+        assert_eq!(
+            store
+                .work_evidence_kind(run.run_id, verification_hash)
+                .expect("verification projection kind"),
+            WorkEvidenceKind::Verification
+        );
+        let environment_hash = &receipt.environment_evidence[0];
+        let environment = store
+            .load_environment_evidence(environment_hash)
+            .expect("load typed environment evidence");
+        assert_eq!(environment.source_basis.workspace_id, "workspace-b");
+        assert_eq!(
+            store
+                .work_evidence_kind(run.run_id, environment_hash)
+                .expect("environment projection kind"),
+            WorkEvidenceKind::Environment
+        );
+        for evidence_hash in [verification_hash, environment_hash] {
+            let typed_feed_count = store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+                    [evidence_hash.as_str()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("count typed evidence feed entries");
+            assert_eq!(typed_feed_count, 3);
+        }
+        let run_positions = |hash: &ObjectHash| {
+            store
+                .connection
+                .query_row(
+                    "SELECT position FROM work_feed_entries
+                     WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_hash = ?2",
+                    params![run.run_id.0.to_string(), hash.as_str()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("typed run-feed position")
+        };
+        let verification_match = VerificationEvidenceMatchInput {
+            candidate_kind: WorkEvidenceKind::Verification,
+            evidence: Some(&verification),
+            producer: Some(&producer),
+            latest_mutation: &observation,
+            evidence_position: run_positions(verification_hash),
+            latest_mutation_position: run_positions(observation_hash),
+            required_check_fingerprint: &producer.action_fingerprint,
+        };
+        assert_eq!(match_verification_evidence(&verification_match), Ok(()));
+        let mut later_mutation = observation.clone();
+        later_mutation
+            .source_basis
+            .as_mut()
+            .expect("mutation source basis")
+            .source_revision = "content-revision-2".into();
+        let stale_match = VerificationEvidenceMatchInput {
+            latest_mutation: &later_mutation,
+            latest_mutation_position: run_positions(verification_hash) + 1,
+            evidence_position: run_positions(verification_hash),
+            ..verification_match
+        };
+        assert_eq!(
+            match_verification_evidence(&stale_match),
+            Err(VerificationEvidenceMismatch::StaleSourceRevision)
+        );
+
+        let objects_before_attach = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM objects WHERE object_hash = ?1",
+                [verification_hash.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count verification objects before attach");
+        let feeds_before_attach = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+                [verification_hash.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count verification feeds before attach");
+        let work_protocol = crate::LocalWorkService::new(
+            database.clone(),
+            work.project_id.clone(),
+            "runner".into(),
+            session_id.clone(),
+            Some("typed-evidence-attach-test".into()),
+            None,
+        );
+        work_protocol
+            .work_focus(&work.short_ref, at(10))
+            .expect("focus claimed work before attach");
+        let attached = work_protocol
+            .work_update(
+                crate::WorkUpdateInput::Evidence {
+                    summary: String::new(),
+                    refs: Vec::new(),
+                    attach: Some(crate::WorkEvidenceAttachInput {
+                        evidence: verification_hash.to_string(),
+                    }),
+                    idempotency_key: "attach-verification-evidence".into(),
+                },
+                at(10),
+            )
+            .expect("attach host-minted verification evidence");
+        assert_eq!(attached.receipt.result["attached"], true);
+        assert_eq!(
+            attached.receipt.result["evidence"],
+            verification_hash.as_str()
+        );
+        assert_eq!(attached.receipt.result["evidence_kind"], "verification");
+        let objects_after_attach = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM objects WHERE object_hash = ?1",
+                [verification_hash.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count verification objects after attach");
+        let feeds_after_attach = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+                [verification_hash.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count verification feeds after attach");
+        assert_eq!(objects_after_attach, objects_before_attach);
+        assert_eq!(feeds_after_attach, feeds_before_attach);
+
         let replay = store
-            .checkpoint_control_turn_with_observations(
+            .checkpoint_control_turn_with_evidence(
                 &work.project_id,
                 &session_id,
                 &connection_token,
@@ -14307,6 +15073,8 @@ mod tests {
                 &grant.grant_id,
                 TurnNextIntent::Continue,
                 &observations,
+                &verification_inputs,
+                &environment_inputs,
                 "checkpoint-control-work",
                 at(11),
             )
@@ -14381,6 +15149,173 @@ mod tests {
             ),
             Err(StoreError::ControlWorkBindingStale { .. })
         ));
+        let projection_corruptions = [
+            (
+                verification_hash,
+                "verification-kind",
+                "UPDATE work_run_evidence SET evidence_kind = 'environment'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                verification_hash,
+                "verification-workspace",
+                "UPDATE work_run_evidence SET workspace_id = 'forged-workspace'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                verification_hash,
+                "verification-revision",
+                "UPDATE work_run_evidence SET source_revision = 'forged-revision'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                verification_hash,
+                "verification-session",
+                "UPDATE work_run_evidence SET producer_session_id = 'forged-session'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                verification_hash,
+                "verification-producer",
+                "UPDATE work_run_evidence SET producer_observation_hash = ?2
+                 WHERE evidence_hash = ?1",
+                Some(observation_hash.as_str()),
+            ),
+            (
+                verification_hash,
+                "verification-check",
+                "UPDATE work_run_evidence SET check_fingerprint = ?2
+                 WHERE evidence_hash = ?1",
+                Some(environment_hash.as_str()),
+            ),
+            (
+                verification_hash,
+                "verification-result",
+                "UPDATE work_run_evidence SET verification_result = 'failed'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                verification_hash,
+                "verification-time",
+                "UPDATE work_run_evidence SET observed_at_ms = observed_at_ms + 1
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                verification_hash,
+                "verification-environment",
+                "UPDATE work_run_evidence SET environment_fingerprint = ?2
+                 WHERE evidence_hash = ?1",
+                Some(environment_hash.as_str()),
+            ),
+            (
+                environment_hash,
+                "environment-kind",
+                "UPDATE work_run_evidence SET evidence_kind = 'verification'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                environment_hash,
+                "environment-workspace",
+                "UPDATE work_run_evidence SET workspace_id = 'forged-workspace'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                environment_hash,
+                "environment-revision",
+                "UPDATE work_run_evidence SET source_revision = 'forged-revision'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                environment_hash,
+                "environment-session",
+                "UPDATE work_run_evidence SET producer_session_id = 'forged-session'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                environment_hash,
+                "environment-producer",
+                "UPDATE work_run_evidence SET producer_observation_hash = ?2
+                 WHERE evidence_hash = ?1",
+                Some(producer_hash.as_str()),
+            ),
+            (
+                environment_hash,
+                "environment-check",
+                "UPDATE work_run_evidence SET check_fingerprint = ?2
+                 WHERE evidence_hash = ?1",
+                Some(verification_hash.as_str()),
+            ),
+            (
+                environment_hash,
+                "environment-result",
+                "UPDATE work_run_evidence SET verification_result = 'passed'
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                environment_hash,
+                "environment-time",
+                "UPDATE work_run_evidence SET observed_at_ms = observed_at_ms + 1
+                 WHERE evidence_hash = ?1",
+                None,
+            ),
+            (
+                environment_hash,
+                "environment-fingerprint",
+                "UPDATE work_run_evidence SET environment_fingerprint = ?2
+                 WHERE evidence_hash = ?1",
+                Some(verification_hash.as_str()),
+            ),
+        ];
+        for (evidence_hash, label, sql, second_value) in projection_corruptions {
+            store
+                .connection
+                .execute_batch("SAVEPOINT corrupt_typed_evidence")
+                .expect("start typed-evidence corruption savepoint");
+            match second_value {
+                Some(value) => store
+                    .connection
+                    .execute(sql, params![evidence_hash.as_str(), value]),
+                None => store.connection.execute(sql, [evidence_hash.as_str()]),
+            }
+            .unwrap_or_else(|error| panic!("corrupt {label}: {error}"));
+            assert!(
+                work_evidence_kind_on(&store.connection, run.run_id, evidence_hash).is_err(),
+                "{label} remained readable through the lifecycle path"
+            );
+            assert!(
+                ensure_run_evidence(
+                    &store.connection,
+                    run.run_id,
+                    std::slice::from_ref(evidence_hash),
+                )
+                .is_err(),
+                "{label} remained checkpointable"
+            );
+            let corrupt_report = store
+                .verify_all()
+                .unwrap_or_else(|error| panic!("verify {label}: {error}"));
+            assert!(
+                corrupt_report.invalid_work_records.iter().any(|record| {
+                    record == &format!("work_evidence:{evidence_hash}:run_binding")
+                }),
+                "{label} was not reported: {corrupt_report:?}"
+            );
+            store
+                .connection
+                .execute_batch("ROLLBACK TO corrupt_typed_evidence; RELEASE corrupt_typed_evidence")
+                .unwrap_or_else(|error| panic!("restore {label}: {error}"));
+        }
         assert!(store.verify_all().expect("integrity report").is_healthy());
     }
 }

@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, ExecutionObservationInput,
-    LeaseKind, LeaseMode, ObjectHash, ProjectId, ResourceSubject, SessionId, SqliteStore,
-    TurnIntent, TurnPurpose,
+    ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, EnvironmentEvidenceInput,
+    ExecutionObservationInput, LeaseKind, LeaseMode, ObjectHash, ProjectId, ResourceSubject,
+    SessionId, SqliteStore, TurnIntent, TurnPurpose, VerificationEvidenceInput,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
 };
@@ -77,6 +77,10 @@ pub enum HostControlRequest {
         next_intent: TurnNextIntent,
         #[serde(default)]
         observations: Vec<ExecutionObservationInput>,
+        #[serde(default)]
+        verification_evidence: Vec<VerificationEvidenceInput>,
+        #[serde(default)]
+        environment_evidence: Vec<EnvironmentEvidenceInput>,
         idempotency_key: String,
     },
 }
@@ -267,8 +271,10 @@ impl HostControlServer {
                 grant_id,
                 next_intent,
                 observations,
+                verification_evidence,
+                environment_evidence,
                 idempotency_key,
-            } => serde_json::to_value(self.store.checkpoint_control_turn_with_observations(
+            } => serde_json::to_value(self.store.checkpoint_control_turn_with_evidence(
                 &self.project_id,
                 &self.session_id,
                 &self.connection_token,
@@ -276,6 +282,8 @@ impl HostControlServer {
                 &grant_id,
                 next_intent,
                 &observations,
+                &verification_evidence,
+                &environment_evidence,
                 &idempotency_key,
                 now,
             )?)
@@ -408,6 +416,7 @@ const fn store_error_code(error: &StoreError) -> &'static str {
         }
         StoreError::ControlWorkBindingStale { .. } => "stale_fence",
         StoreError::ControlGrantScopeMismatch { .. } => "grant_scope_mismatch",
+        StoreError::VerificationProducerObservationNotFound(_) => "verification_producer_not_found",
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
         StoreError::WorkLeaseNotFound(_) => "work_lease_not_found",
         StoreError::WorkLeaseNotHeld { .. } => "work_lease_not_held",

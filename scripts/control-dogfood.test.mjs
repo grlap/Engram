@@ -1035,11 +1035,34 @@ test("work-bound control records observations and rebinds after a stale fence", 
       grant_id: observedTurn.grant.grant_id,
       next_intent: "continue",
       observations,
+      verification_evidence: [
+        {
+          producer_observation: {
+            kind: "observation_id",
+            observation_id: "bound-observation-1",
+          },
+          check_kind: "test",
+          summary: "host observed the bound verification check",
+          refs: ["command:control-dogfood-bound-check"],
+        },
+      ],
+      environment_evidence: [
+        {
+          source_basis: {
+            workspace_id: "control-dogfood-peer-workspace",
+            source_revision: "revision-1",
+          },
+          environment_fingerprint: fingerprint("control-dogfood-environment"),
+          observed_at: "2026-08-28T20:00:00Z",
+        },
+      ],
       idempotency_key: "checkpoint-bound-observations",
     };
     const checkpointed = ok(await client.request(checkpointRequest));
     assert.equal(checkpointed.decision, "checkpointed");
     assert.equal(checkpointed.receipt.execution_observations.length, 2);
+    assert.equal(checkpointed.receipt.verification_evidence.length, 1);
+    assert.equal(checkpointed.receipt.environment_evidence.length, 1);
     assert.deepEqual(ok(await client.request(checkpointRequest)), checkpointed);
     const conflictingCheckpoint = await client.request({
       ...checkpointRequest,
@@ -1051,22 +1074,25 @@ test("work-bound control records observations and rebinds after a stale fence", 
       "control_operation_idempotency_conflict",
     );
 
-    const contributionEvidence = cliWork(
+    const verificationEvidence = checkpointed.receipt.verification_evidence[0];
+    const attachedEvidence = cliWork(
       engramHome,
       actor,
       authorityGrant,
       "update",
       {
         kind: "evidence",
-        summary: "bound control observations were recorded",
-        refs: ["test:control-dogfood-bound-observations"],
-        idempotency_key: "bound-contribution-evidence",
+        attach: { evidence: verificationEvidence },
+        idempotency_key: "bound-attach-verification-evidence",
       },
     ).receipt.result;
+    assert.equal(attachedEvidence.attached, true);
+    assert.equal(attachedEvidence.evidence, verificationEvidence);
+    assert.equal(attachedEvidence.evidence_kind, "verification");
     cliWork(engramHome, actor, authorityGrant, "update", {
       kind: "checkpoint",
       summary: "record a contribution before releasing the claim",
-      evidence: [contributionEvidence],
+      evidence: [verificationEvidence],
       idempotency_key: "bound-contribution-checkpoint",
     });
     cliWork(engramHome, actor, authorityGrant, "update", {

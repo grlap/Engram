@@ -14,17 +14,102 @@ use crate::{
     domain::{
         ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, CONTROL_SCHEMA_VERSION,
         ChangeCursor, ContextPacket, ControlAssurance, ControlDirective, ControlHealth,
-        ControlRefusalCode, DirectiveSatisfaction, DirectiveTarget, EffectClass, IssuedTurnGrant,
-        LeaseBasis, LeaseKind, LeaseMode, ObservedActionBeginDecision, ObservedTurnDecision,
-        PacketSafety, ParticipantMembership, ProjectPolicyEpoch, SessionPhase, TaskDelta,
-        TaskState, TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision,
-        TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState,
-        TurnPurpose,
+        ControlRefusalCode, DirectiveSatisfaction, DirectiveTarget, EffectClass,
+        ExecutionObservation, IssuedTurnGrant, LeaseBasis, LeaseKind, LeaseMode,
+        ObservedActionBeginDecision, ObservedTurnDecision, PacketSafety, ParticipantMembership,
+        ProjectPolicyEpoch, SessionPhase, TaskDelta, TaskState, TurnBeginDecision,
+        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision,
+        TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnPurpose, VerificationEvidence,
+        VerificationEvidenceMismatch, VerificationResult, WorkEvidenceKind,
     },
     storage::StoreError,
 };
 
 const MAX_SHADOW_GRANT_TTL_SECONDS: i64 = 300;
+
+/// Immutable inputs for matching typed verification evidence at one exact
+/// dense run-feed cut.
+pub struct VerificationEvidenceMatchInput<'a> {
+    pub candidate_kind: WorkEvidenceKind,
+    pub evidence: Option<&'a VerificationEvidence>,
+    pub producer: Option<&'a ExecutionObservation>,
+    pub latest_mutation: &'a ExecutionObservation,
+    pub evidence_position: i64,
+    pub latest_mutation_position: i64,
+    pub required_check_fingerprint: &'a ObjectHash,
+}
+
+/// Applies the anti-stale verification rule without performing I/O.
+///
+/// `source_revision` is a host-computed fingerprint of complete workspace
+/// content (committed state plus dirty-tree content). Workspace identity is
+/// retained for audit but deliberately does not participate in equality: a
+/// peer worktree may verify the same exact content fingerprint.
+///
+/// # Errors
+///
+/// Returns the first typed mismatch that prevents the candidate from
+/// satisfying the exact verification requirement at this run-feed cut.
+pub fn match_verification_evidence(
+    input: &VerificationEvidenceMatchInput<'_>,
+) -> Result<(), VerificationEvidenceMismatch> {
+    if input.candidate_kind != WorkEvidenceKind::Verification {
+        return Err(VerificationEvidenceMismatch::WrongKind);
+    }
+    let evidence = input
+        .evidence
+        .ok_or(VerificationEvidenceMismatch::WrongKind)?;
+    let producer = input
+        .producer
+        .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+    let latest_basis = input
+        .latest_mutation
+        .source_basis
+        .as_ref()
+        .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+    let latest_observed_at = input
+        .latest_mutation
+        .observed_at
+        .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+    let same_run = evidence.project_id == input.latest_mutation.project_id
+        && evidence.binding.root_execution_id == input.latest_mutation.binding.root_execution_id
+        && evidence.binding.work_id == input.latest_mutation.binding.work_id
+        && evidence.binding.run_id == input.latest_mutation.binding.run_id
+        && producer.project_id == evidence.project_id
+        && producer.binding == evidence.binding
+        && producer.session_id == evidence.session_id;
+    if !same_run {
+        return Err(VerificationEvidenceMismatch::WrongRun);
+    }
+    if !input.latest_mutation.source_changed
+        || evidence.source_basis.source_revision != latest_basis.source_revision
+    {
+        return Err(VerificationEvidenceMismatch::StaleSourceRevision);
+    }
+    if evidence.check_fingerprint != producer.action_fingerprint
+        || &evidence.check_fingerprint != input.required_check_fingerprint
+    {
+        return Err(VerificationEvidenceMismatch::CheckFingerprintMismatch);
+    }
+    if evidence.result != VerificationResult::Passed {
+        return Err(VerificationEvidenceMismatch::ResultNotPassed);
+    }
+    if input.evidence_position <= input.latest_mutation_position {
+        return Err(VerificationEvidenceMismatch::NotAfterMutation);
+    }
+    let actor_matches = evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
+        && evidence.actor.run_id.as_deref() == Some(evidence.binding.run_id.0.to_string().as_str())
+        && producer.actor.session_id.as_ref() == Some(&producer.session_id)
+        && producer.actor.run_id.as_deref() == Some(producer.binding.run_id.0.to_string().as_str());
+    let times_are_monotone = evidence.completed_at >= latest_observed_at
+        && evidence.completed_at <= evidence.recorded_at
+        && producer.observed_at == Some(evidence.completed_at)
+        && producer.recorded_at >= evidence.completed_at;
+    if !actor_matches || !times_are_monotone {
+        return Err(VerificationEvidenceMismatch::InvalidTime);
+    }
+    Ok(())
+}
 
 /// Minimum host assurance that may mediate one material effect class.
 ///
@@ -1754,6 +1839,138 @@ mod tests {
         assert_eq!(
             action_refusal_code(&wrong_holder_grant, &wrong_holder_snapshot),
             Some(ControlRefusalCode::StaleFence)
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the matcher regression keeps every binding and stale-cut assertion together"
+    )]
+    fn verification_match_is_kind_safe_cross_workspace_and_stale_at_the_cut() {
+        use crate::domain::{
+            ActorContext, AssuranceLevel, ControlWorkBinding, ExecutionObservation,
+            ExecutionSourceBasis, RootExecutionId, VerificationEvidence, VerificationKind,
+            VerificationResult, WorkClaimId, WorkEvidenceKind, WorkId, WorkRunId,
+        };
+
+        let run_id = WorkRunId::new();
+        let session_id = SessionId("verification-host".into());
+        let binding = ControlWorkBinding {
+            root_execution_id: RootExecutionId::new(),
+            work_id: WorkId::new(),
+            run_id,
+            work_revision: 3,
+            claim_id: WorkClaimId::new(),
+            claim_fence: 2,
+        };
+        let actor = ActorContext {
+            actor_id: "host-adapter".into(),
+            actor_kind: "system".into(),
+            assurance: AssuranceLevel::Asserted,
+            run_id: Some(run_id.0.to_string()),
+            session_id: Some(session_id.clone()),
+            source_tool: Some("host-control:turn_checkpoint".into()),
+            source_skill: None,
+            provenance_chain: Vec::new(),
+            reason: "record host fact".into(),
+        };
+        let project_id = ProjectId("verification-project".into());
+        let mutation_time = Utc.timestamp_millis_opt(10_000).unwrap();
+        let verification_time = Utc.timestamp_millis_opt(20_000).unwrap();
+        let latest_mutation = ExecutionObservation {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            project_id: project_id.clone(),
+            binding: binding.clone(),
+            session_id: session_id.clone(),
+            grant_id: "mutation-grant".into(),
+            observation_id: "source-mutation".into(),
+            action_fingerprint: hash("mutate source"),
+            effect: EffectClass::MutateLocal,
+            outcome: crate::domain::ExecutionOutcome::Succeeded,
+            source_changed: true,
+            source_basis: Some(ExecutionSourceBasis {
+                workspace_id: "workspace-a".into(),
+                source_revision: "content-revision-1".into(),
+            }),
+            observed_at: Some(mutation_time),
+            actor: actor.clone(),
+            recorded_at: mutation_time,
+        };
+        let producer = ExecutionObservation {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            project_id: project_id.clone(),
+            binding: binding.clone(),
+            session_id: session_id.clone(),
+            grant_id: "verification-grant".into(),
+            observation_id: "test-command".into(),
+            action_fingerprint: hash("cargo test command"),
+            effect: EffectClass::Observe,
+            outcome: crate::domain::ExecutionOutcome::Succeeded,
+            source_changed: false,
+            source_basis: Some(ExecutionSourceBasis {
+                workspace_id: "workspace-b".into(),
+                source_revision: "content-revision-1".into(),
+            }),
+            observed_at: Some(verification_time),
+            actor: actor.clone(),
+            recorded_at: verification_time,
+        };
+        let evidence = VerificationEvidence {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            project_id,
+            binding,
+            session_id,
+            producer_observation: hash("producer observation"),
+            source_basis: producer.source_basis.clone().unwrap(),
+            check_kind: VerificationKind::Test,
+            check_fingerprint: producer.action_fingerprint.clone(),
+            result: VerificationResult::Passed,
+            completed_at: verification_time,
+            summary: "host recorded tests".into(),
+            refs: Vec::new(),
+            actor,
+            recorded_at: verification_time,
+        };
+        let required = evidence.check_fingerprint.clone();
+        let exact = VerificationEvidenceMatchInput {
+            candidate_kind: WorkEvidenceKind::Verification,
+            evidence: Some(&evidence),
+            producer: Some(&producer),
+            latest_mutation: &latest_mutation,
+            evidence_position: 4,
+            latest_mutation_position: 1,
+            required_check_fingerprint: &required,
+        };
+        assert_eq!(match_verification_evidence(&exact), Ok(()));
+
+        let wrong_kind = VerificationEvidenceMatchInput {
+            candidate_kind: WorkEvidenceKind::Generic,
+            ..exact
+        };
+        assert_eq!(
+            match_verification_evidence(&wrong_kind),
+            Err(VerificationEvidenceMismatch::WrongKind)
+        );
+
+        let mut later_mutation = latest_mutation;
+        later_mutation
+            .source_basis
+            .as_mut()
+            .unwrap()
+            .source_revision = "content-revision-2".into();
+        let stale = VerificationEvidenceMatchInput {
+            candidate_kind: WorkEvidenceKind::Verification,
+            evidence: Some(&evidence),
+            producer: Some(&producer),
+            latest_mutation: &later_mutation,
+            evidence_position: 4,
+            latest_mutation_position: 3,
+            required_check_fingerprint: &required,
+        };
+        assert_eq!(
+            match_verification_evidence(&stale),
+            Err(VerificationEvidenceMismatch::StaleSourceRevision)
         );
     }
 }

@@ -17,7 +17,8 @@ pub mod work_service;
 
 pub use canonical::{CanonicalObject, ObjectHash};
 pub use control::{
-    evaluate_turn_begin, evaluate_turn_checkpoint, observe_action_begin, observe_turn,
+    VerificationEvidenceMatchInput, evaluate_turn_begin, evaluate_turn_checkpoint,
+    match_verification_evidence, observe_action_begin, observe_turn,
 };
 pub use domain::{
     AcceptWorkHandoffRequest, AcceptanceResult, ActionBeginDecision, ActionBeginSnapshot,
@@ -32,7 +33,8 @@ pub use domain::{
     ControlSessionStatus, ControlTurnBeginDecision, ControlTurnCheckpointDecision,
     ControlTurnDecision, ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest, Delivery,
     DeliveryPage, DeltaItem, DirectiveSatisfaction, DirectiveTarget, DisposeWorkRequest,
-    EffectClass, ExecutionObservation, ExecutionObservationInput, ExecutionOutcome,
+    EffectClass, EnvironmentEvidence, EnvironmentEvidenceInput, ExecutionObservation,
+    ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome,
     ExecutionSourceBasis, FeedId, FeedPosition, FinalizationBarrier, FrozenReport, HostPathPolicy,
     IssuedTurnGrant, LeaseBasis, LeaseKind, LeaseMode, LifecycleAuthorityDecision, LocalTask,
     MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryKind, MemoryRecord,
@@ -47,15 +49,16 @@ pub use domain::{
     TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
     TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
     TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnIntent, TurnNextIntent, TurnPurpose,
-    WaiveRequiredChildRequest, WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityRevocation,
-    WorkAuthorityScope, WorkAvailability, WorkBlocker, WorkBlockerKind, WorkCatalogPage,
-    WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState, WorkDecomposition,
-    WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence, WorkFeedEntry, WorkHandoffOffer,
-    WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLease,
-    WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkLifecycle,
-    WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason, WorkRevisionPatch,
-    WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot,
-    WorkTransition,
+    VerificationEvidence, VerificationEvidenceInput, VerificationEvidenceMismatch,
+    VerificationKind, VerificationResult, WaiveRequiredChildRequest, WorkAuthorityGrant,
+    WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability,
+    WorkBlocker, WorkBlockerKind, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim,
+    WorkClaimId, WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
+    WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId,
+    WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLease, WorkLeaseDecision, WorkLeaseEvent,
+    WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkLifecycle, WorkOrigin, WorkPlanningAuthority,
+    WorkPlanningBudget, WorkReadinessReason, WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState,
+    WorkSessionState, WorkSourceProjection, WorkSourceSnapshot, WorkTransition,
 };
 pub use host::{HostControlRequest, HostControlServer};
 pub use mcp::McpServer;
@@ -68,7 +71,8 @@ pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use work_service::{
     LocalWorkService, WorkAcceptanceInput, WorkChange, WorkChangeOmission,
     WorkChangeOmissionReason, WorkChangeProjection, WorkChildInput, WorkCompleteInput,
-    WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput,
-    WorkHandoffResult, WorkNextQuery, WorkNextSection, WorkNextView, WorkPrerequisiteInput,
-    WorkProposeInput, WorkProposeResult, WorkUpdateInput, WorkUpdateResult,
+    WorkCompleteResult, WorkCompletionCaptureInput, WorkEvidenceAttachInput, WorkEvidenceSummary,
+    WorkFocusView, WorkHandoffInput, WorkHandoffResult, WorkNextQuery, WorkNextSection,
+    WorkNextView, WorkPrerequisiteInput, WorkProposeInput, WorkProposeResult, WorkUpdateInput,
+    WorkUpdateResult,
 };

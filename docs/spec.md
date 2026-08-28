@@ -1067,6 +1067,17 @@ and cross-task rebind is rejected while active leases remain. The remaining oper
 action/shared/external/lifecycle authority are not yet shipped;
 `action_gated` declarations are rejected.
 
+For a work-bound begun turn, the private checkpoint may atomically append up to
+64 host execution observations, mint up to 16 typed verification objects, and
+mint up to four opaque environment identities. Verification derives its
+source/run/session/check/result/time binding from a producer observation and
+is evaluated against the latest mutation at the current run-feed cut.
+`source_revision` fingerprints committed plus dirty content; workspace identity
+is audit context rather than an anti-stale equality constraint. A later source
+revision reopens the requirement. Agent-authored generic evidence never
+satisfies verification; the work protocol may only attach an existing typed
+hash to the focused run.
+
 The transport may be an in-process API, native host integration, wrapper, or
 local gateway. It is never exposed as an agent-callable way to mint grants.
 The host must bind a local work item/run before delivering a task prompt, obtain a `TurnGrant`

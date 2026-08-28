@@ -556,6 +556,8 @@ TurnCheckpoint {
   source_feed_positions[]                   # resulting FeedPosition vector
   action_outcome_hashes[]
   execution_observations[]               # bounded host facts for the bound run
+  verification_evidence[]                # <= 16 host-minted checks
+  environment_evidence[]                 # <= 4 opaque environment identities
   capture_hashes[]
   blocker_refs[]
   next_intent: continue | wait | handoff | contribute | exit
@@ -563,20 +565,38 @@ TurnCheckpoint {
 }
 ```
 
-The shipped A0 path accepts execution observations directly on the host-private
+The shipped path accepts execution observations directly on the host-private
 `turn_checkpoint` request. Each observation names an action fingerprint,
-effect, outcome, and whether source state changed. It may also carry the paired
-anti-stale fields `source_basis { workspace_id, source_revision }` and
-`observed_at`; A0 preserves them as asserted context, and A1 will require and
-validate them. Storage supplies and freezes the exact grant/session/work
-binding plus the recording time, then appends the object to the project, root,
-and run feeds atomically with the checkpoint receipt. An effect outside the
-frozen grant is rejected as `grant_scope_mismatch`. An exact retry replays the
-same observation hashes, while a different ordered observation list under the
-same checkpoint key is an idempotency conflict. Task-only sessions cannot
-append run observations, and another session cannot bind or reuse a peer's
-claim: the claim holder must equal the control `session_id`, never merely the
-asserted `actor_id`. A historically owned tuple that moved before bind reports
+effect, outcome, and whether source state changed. It may also carry
+`source_basis { workspace_id, source_revision }` and `observed_at`.
+`source_revision` is a host-computed fingerprint of the complete relevant
+content state, including committed and dirty content; `workspace_id` is audit
+context and is not an equality requirement, so equal revisions in different
+workspaces remain comparable. Storage supplies and freezes the exact
+grant/session/work binding plus the recording time, then appends the object to
+the project, root, and run feeds atomically with the checkpoint receipt.
+
+The same private checkpoint may mint up to 16 `verification_evidence` objects
+and four `environment_evidence` objects. Verification cites its producer by
+canonical observation hash or by an `observation_id` in the same request.
+Storage derives the run/source binding, command fingerprint, result, producer
+session, and times from that observation; a missing producer is a named
+`verification_producer_not_found` request fault. Environment fingerprints are
+opaque host-produced identities. Only a typed, passed verification for the
+required check, exact run, and latest source revision may satisfy a
+verification obligation. The matcher ignores workspace identity, requires the
+evidence to follow the latest mutation at the evaluated run-feed cut, and
+therefore makes a later source mutation reopen the requirement. Generic
+agent-recorded `work_evidence` remains useful context but never verifies a
+check.
+
+An effect outside the frozen grant is rejected as `grant_scope_mismatch`. An
+exact retry replays the same observation and typed-evidence hashes, while a
+different ordered input under the same checkpoint key is an idempotency
+conflict. Task-only sessions cannot append run observations or typed run
+evidence, and another session cannot bind or reuse a peer's claim: the claim
+holder must equal the control `session_id`, never merely the asserted
+`actor_id`. A historically owned tuple that moved before bind reports
 `stale_fence`; a malformed or peer-owned tuple reports `work_claim_mismatch`.
 After begin, checkpoint compares the frozen session/grant tuple without
 regranting or rechecking live claim expiry, because its job is to record the

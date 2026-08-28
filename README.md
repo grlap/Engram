@@ -113,9 +113,11 @@ assembly before an agent acts.
 A host-private JSON-lines service now provides a working `session_bind →
 turn_evaluate → turn_begin → turn_checkpoint` loop. It can bind the session to
 an exact live `WorkRun` claim and atomically record host execution observations
-on that run at the control checkpoint. Claim ownership is the exact control
-session id, and optional source revision/timestamp context is preserved for the
-next obligation phase. The claim receipt and focus view expose a paste-ready
+and host-minted verification/environment evidence on that run at the control
+checkpoint. Verification is bound to the exact check, run, and full-content
+source revision; a later mutation makes it stale, while workspace identity is
+audit context only. Claim ownership is the exact control session id. The claim
+receipt and focus view expose a paste-ready
 root/work/run/claim/fence tuple, so the host never needs to query SQLite to
 construct the binding. It persists routing,
 session phases, exact context delivery, short-lived grants, idempotent

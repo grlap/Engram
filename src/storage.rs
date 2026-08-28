@@ -33,18 +33,20 @@ use crate::{
         ContextPacketPayload, ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth,
         ControlPolicy, ControlSessionBinding, ControlSessionStatus, ControlTurnBeginDecision,
         ControlTurnCheckpointDecision, ControlTurnDecision, ControlWorkBinding, Delivery,
-        DeliveryPage, DeltaItem, EffectClass, ExecutionObservation, ExecutionObservationInput,
-        HostPathPolicy, IssuedTurnGrant, LocalTask, MemoryAssertionEvent, MemoryContradictionEvent,
-        MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus, MemorySummary,
-        MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, ObservedTurnDecision,
-        PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
-        ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId, SessionPhase,
-        TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId, TaskJoinedEvent,
-        TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision, TurnBeginReceipt,
-        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent, TurnCheckpointReceipt,
-        TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantState, TurnIntent,
-        TurnNextIntent, WorkLease, WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt,
-        WorkLeaseTransition,
+        DeliveryPage, DeltaItem, EffectClass, EnvironmentEvidence, EnvironmentEvidenceInput,
+        ExecutionObservation, ExecutionObservationInput, ExecutionObservationReference,
+        ExecutionOutcome, HostPathPolicy, IssuedTurnGrant, LocalTask, MemoryAssertionEvent,
+        MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus,
+        MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
+        ObservedTurnDecision, PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision,
+        ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId,
+        SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId,
+        TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision,
+        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
+        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+        TurnGrantState, TurnIntent, TurnNextIntent, VerificationEvidence,
+        VerificationEvidenceInput, VerificationKind, VerificationResult, WorkLease,
+        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
     },
     memory::{Redactor, activation_policy, classify_note},
 };
@@ -137,10 +139,22 @@ struct ControlTurnCheckpointFingerprint<'a> {
     next_intent: TurnNextIntent,
     #[serde(skip_serializing_if = "execution_observations_are_empty")]
     observations: &'a [ExecutionObservationInput],
+    #[serde(skip_serializing_if = "verification_evidence_inputs_are_empty")]
+    verification_evidence: &'a [VerificationEvidenceInput],
+    #[serde(skip_serializing_if = "environment_evidence_inputs_are_empty")]
+    environment_evidence: &'a [EnvironmentEvidenceInput],
     idempotency_key: &'a str,
 }
 
 fn execution_observations_are_empty(value: &&[ExecutionObservationInput]) -> bool {
+    value.is_empty()
+}
+
+fn verification_evidence_inputs_are_empty(value: &&[VerificationEvidenceInput]) -> bool {
+    value.is_empty()
+}
+
+fn environment_evidence_inputs_are_empty(value: &&[EnvironmentEvidenceInput]) -> bool {
     value.is_empty()
 }
 
@@ -254,6 +268,8 @@ pub enum StoreError {
     ControlWorkBindingStale { work: crate::domain::WorkId },
     #[error("execution observation {observation_id:?} is outside the turn grant scope")]
     ControlGrantScopeMismatch { observation_id: String },
+    #[error("verification producer observation {0:?} cannot be resolved for this checkpoint")]
+    VerificationProducerObservationNotFound(String),
     #[error("turn grant {0:?} does not exist")]
     ControlTurnGrantNotFound(String),
     #[error("work lease {0:?} does not exist")]
@@ -396,6 +412,11 @@ const MAX_CONTROL_DELIVERY_EVENTS: i64 = 128;
 const MAX_CONTROL_DELIVERY_OBJECT_BYTES: i64 = 128 * 1_024;
 const MAX_CONTROL_DELIVERY_BYTES: usize = 256 * 1_024;
 const MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT: usize = 64;
+const MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT: usize = 16;
+const MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT: usize = 4;
+const MAX_TYPED_EVIDENCE_SUMMARY_BYTES: usize = 4 * 1_024;
+const MAX_TYPED_EVIDENCE_REFS: usize = 64;
+const MAX_TYPED_EVIDENCE_REF_BYTES: usize = 1_024;
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
 const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
 const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 2;
@@ -3737,13 +3758,15 @@ impl SqliteStore {
         idempotency_key: &str,
         now: DateTime<Utc>,
     ) -> Result<ControlTurnCheckpointDecision, StoreError> {
-        self.checkpoint_control_turn_with_observations(
+        self.checkpoint_control_turn_with_evidence(
             project_id,
             session_id,
             connection_token,
             routing_token,
             grant_id,
             next_intent,
+            &[],
+            &[],
             &[],
             idempotency_key,
             now,
@@ -3774,13 +3797,57 @@ impl SqliteStore {
         idempotency_key: &str,
         now: DateTime<Utc>,
     ) -> Result<ControlTurnCheckpointDecision, StoreError> {
+        self.checkpoint_control_turn_with_evidence(
+            project_id,
+            session_id,
+            connection_token,
+            routing_token,
+            grant_id,
+            next_intent,
+            observations,
+            &[],
+            &[],
+            idempotency_key,
+            now,
+        )
+    }
+
+    /// Checkpoints a begun turn and atomically records host-captured execution,
+    /// verification, and environment evidence against its frozen work basis.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when evidence is malformed, its producer cannot
+    /// be resolved, or any fact falls outside the grant's exact run binding.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "checkpoint closes the grant and emits all host evidence atomically"
+    )]
+    pub fn checkpoint_control_turn_with_evidence(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        grant_id: &str,
+        next_intent: TurnNextIntent,
+        observations: &[ExecutionObservationInput],
+        verification_evidence: &[VerificationEvidenceInput],
+        environment_evidence: &[EnvironmentEvidenceInput],
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ControlTurnCheckpointDecision, StoreError> {
         validate_execution_observation_inputs(observations)?;
+        validate_typed_evidence_inputs(verification_evidence, environment_evidence, now)?;
         let intent_object = CanonicalObject::freeze(&ControlTurnCheckpointFingerprint {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id,
             grant_id,
             next_intent,
             observations,
+            verification_evidence,
+            environment_evidence,
             idempotency_key,
         })?;
         let transaction = self
@@ -3812,12 +3879,13 @@ impl SqliteStore {
         };
         let decision = match crate::control::evaluate_turn_checkpoint(&grant.grant, &snapshot) {
             TurnCheckpointDecision::Checkpoint => {
-                let execution_observations = if observations.is_empty() {
-                    Vec::new()
-                } else {
+                let records_work_evidence = !observations.is_empty()
+                    || !verification_evidence.is_empty()
+                    || !environment_evidence.is_empty();
+                let binding = if records_work_evidence {
                     let binding = session.work_binding.clone().ok_or_else(|| {
                         StoreError::InvalidControlSession(
-                            "execution observations require an exact local-work binding".into(),
+                            "host evidence requires an exact local-work binding".into(),
                         )
                     })?;
                     if grant.grant.basis.work_binding.as_ref() != Some(&binding) {
@@ -3825,36 +3893,132 @@ impl SqliteStore {
                             work: binding.work_id,
                         });
                     }
-                    let mut hashes = Vec::with_capacity(observations.len());
-                    for input in observations {
-                        if !grant.grant.basis.requested_effects.contains(&input.effect) {
-                            return Err(StoreError::ControlGrantScopeMismatch {
-                                observation_id: input.observation_id.clone(),
-                            });
-                        }
-                        let observation = ExecutionObservation {
-                            schema_version: SCHEMA_VERSION,
-                            project_id: project_id.clone(),
-                            binding: binding.clone(),
-                            session_id: session_id.clone(),
-                            grant_id: grant_id.into(),
-                            observation_id: input.observation_id.trim().into(),
-                            action_fingerprint: input.action_fingerprint.clone(),
-                            effect: input.effect,
-                            outcome: input.outcome,
-                            source_changed: input.source_changed,
-                            source_basis: input.source_basis.clone(),
-                            observed_at: input.observed_at,
-                            actor: session.actor.clone(),
-                            recorded_at: now,
-                        };
-                        hashes.push(work::append_control_execution_observation_on(
-                            &transaction,
-                            &observation,
-                        )?);
-                    }
-                    hashes
+                    Some(binding)
+                } else {
+                    None
                 };
+                let mut observation_records = HashMap::new();
+                let mut execution_observations = Vec::with_capacity(observations.len());
+                for input in observations {
+                    if !grant.grant.basis.requested_effects.contains(&input.effect) {
+                        return Err(StoreError::ControlGrantScopeMismatch {
+                            observation_id: input.observation_id.clone(),
+                        });
+                    }
+                    let observation = ExecutionObservation {
+                        schema_version: SCHEMA_VERSION,
+                        project_id: project_id.clone(),
+                        binding: binding.clone().ok_or_else(|| {
+                            StoreError::InvalidControlSession(
+                                "execution observation lost its work binding".into(),
+                            )
+                        })?,
+                        session_id: session_id.clone(),
+                        grant_id: grant_id.into(),
+                        observation_id: input.observation_id.trim().into(),
+                        action_fingerprint: input.action_fingerprint.clone(),
+                        effect: input.effect,
+                        outcome: input.outcome,
+                        source_changed: input.source_changed,
+                        source_basis: input.source_basis.clone(),
+                        observed_at: input.observed_at,
+                        actor: session.actor.clone(),
+                        recorded_at: now,
+                    };
+                    let hash =
+                        work::append_control_execution_observation_on(&transaction, &observation)?;
+                    observation_records.insert(
+                        observation.observation_id.clone(),
+                        (hash.clone(), observation),
+                    );
+                    execution_observations.push(hash);
+                }
+                let binding = binding.as_ref();
+                let mut verification_hashes = Vec::with_capacity(verification_evidence.len());
+                for input in verification_evidence {
+                    let (producer_hash, producer) = match &input.producer_observation {
+                        ExecutionObservationReference::ObjectHash { object_hash } => (
+                            object_hash.clone(),
+                            work::load_control_execution_observation_on(&transaction, object_hash)?
+                                .ok_or_else(|| {
+                                    StoreError::VerificationProducerObservationNotFound(
+                                        object_hash.to_string(),
+                                    )
+                                })?,
+                        ),
+                        ExecutionObservationReference::ObservationId { observation_id } => {
+                            observation_records
+                                .get(observation_id)
+                                .cloned()
+                                .ok_or_else(|| {
+                                    StoreError::VerificationProducerObservationNotFound(
+                                        observation_id.clone(),
+                                    )
+                                })?
+                        }
+                    };
+                    let binding = binding.ok_or_else(|| {
+                        StoreError::InvalidControlSession(
+                            "verification evidence lost its work binding".into(),
+                        )
+                    })?;
+                    validate_verification_producer(
+                        &producer, project_id, session_id, binding, now,
+                    )?;
+                    let completed_at = producer.observed_at.ok_or_else(|| {
+                        StoreError::InvalidControlSession(
+                            "verification producer has no observed_at timestamp".into(),
+                        )
+                    })?;
+                    let source_basis = producer.source_basis.clone().ok_or_else(|| {
+                        StoreError::InvalidControlSession(
+                            "verification producer has no source content basis".into(),
+                        )
+                    })?;
+                    let evidence = VerificationEvidence {
+                        schema_version: SCHEMA_VERSION,
+                        project_id: project_id.clone(),
+                        binding: binding.clone(),
+                        session_id: session_id.clone(),
+                        producer_observation: producer_hash,
+                        source_basis,
+                        check_kind: input.check_kind,
+                        check_fingerprint: producer.action_fingerprint.clone(),
+                        result: verification_result(producer.outcome),
+                        completed_at,
+                        summary: normalize_verification_summary(input),
+                        refs: normalize_typed_evidence_refs(&input.refs),
+                        actor: session.actor.clone(),
+                        recorded_at: now,
+                    };
+                    verification_hashes.push(work::append_control_verification_evidence_on(
+                        &transaction,
+                        &evidence,
+                    )?);
+                }
+                let mut environment_hashes = Vec::with_capacity(environment_evidence.len());
+                for input in environment_evidence {
+                    let binding = binding.ok_or_else(|| {
+                        StoreError::InvalidControlSession(
+                            "environment evidence lost its work binding".into(),
+                        )
+                    })?;
+                    let evidence = EnvironmentEvidence {
+                        schema_version: SCHEMA_VERSION,
+                        project_id: project_id.clone(),
+                        binding: binding.clone(),
+                        session_id: session_id.clone(),
+                        source_basis: input.source_basis.clone(),
+                        environment_fingerprint: input.environment_fingerprint.clone(),
+                        observed_at: input.observed_at,
+                        actor: session.actor.clone(),
+                        recorded_at: now,
+                    };
+                    environment_hashes.push(work::append_control_environment_evidence_on(
+                        &transaction,
+                        &evidence,
+                    )?);
+                }
                 if matches!(next_intent, TurnNextIntent::Exit) {
                     Self::terminalize_session_work_leases(&transaction, &session, now, false)?;
                 }
@@ -3866,6 +4030,8 @@ impl SqliteStore {
                     delivered_cursor: grant.grant.basis.delivery_cursor,
                     next_intent,
                     execution_observations: execution_observations.clone(),
+                    verification_evidence: verification_hashes.clone(),
+                    environment_evidence: environment_hashes.clone(),
                     actor: session.actor.clone(),
                     created_at: now,
                 };
@@ -3924,6 +4090,8 @@ impl SqliteStore {
                         grant_id: grant_id.into(),
                         checkpoint: event_object.hash().clone(),
                         execution_observations,
+                        verification_evidence: verification_hashes,
+                        environment_evidence: environment_hashes,
                         cursor,
                         confirmed_cursor,
                         phase,
@@ -8052,19 +8220,7 @@ fn validate_execution_observation_inputs(
         match (&observation.source_basis, observation.observed_at) {
             (None, None) => {}
             (Some(source_basis), Some(_)) => {
-                let workspace_id = source_basis.workspace_id.trim();
-                let source_revision = source_basis.source_revision.trim();
-                if workspace_id.is_empty()
-                    || source_revision.is_empty()
-                    || workspace_id != source_basis.workspace_id
-                    || source_revision != source_basis.source_revision
-                    || workspace_id.len() > 512
-                    || source_revision.len() > 512
-                {
-                    return Err(StoreError::InvalidControlProjection(format!(
-                        "execution observation {id:?} source basis fields must be trimmed, nonempty, and at most 512 bytes"
-                    )));
-                }
+                validate_execution_source_basis(source_basis, id)?;
             }
             _ => {
                 return Err(StoreError::InvalidControlProjection(format!(
@@ -8074,6 +8230,165 @@ fn validate_execution_observation_inputs(
         }
     }
     Ok(())
+}
+
+fn validate_typed_evidence_inputs(
+    verification: &[VerificationEvidenceInput],
+    environment: &[EnvironmentEvidenceInput],
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    if verification.len() > MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT {
+        return Err(StoreError::InvalidControlSession(format!(
+            "turn checkpoint accepts at most {MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT} verification evidence records"
+        )));
+    }
+    if environment.len() > MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT {
+        return Err(StoreError::InvalidControlSession(format!(
+            "turn checkpoint accepts at most {MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT} environment evidence records"
+        )));
+    }
+    for input in verification {
+        match &input.producer_observation {
+            ExecutionObservationReference::ObjectHash { .. } => {}
+            ExecutionObservationReference::ObservationId { observation_id } => {
+                let trimmed = observation_id.trim();
+                if trimmed.is_empty() || trimmed != observation_id || observation_id.len() > 256 {
+                    return Err(StoreError::InvalidControlSession(
+                        "verification observation ids must be trimmed, nonempty, and at most 256 bytes"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        if input.summary.as_ref().is_some_and(|summary| {
+            let trimmed = summary.trim();
+            trimmed.is_empty()
+                || trimmed != summary
+                || summary.len() > MAX_TYPED_EVIDENCE_SUMMARY_BYTES
+        }) {
+            return Err(StoreError::InvalidControlSession(format!(
+                "verification summaries must be trimmed, nonempty, and at most {MAX_TYPED_EVIDENCE_SUMMARY_BYTES} bytes"
+            )));
+        }
+        validate_typed_evidence_refs(&input.refs)?;
+    }
+    for (index, input) in environment.iter().enumerate() {
+        validate_execution_source_basis(&input.source_basis, &format!("environment-{index}"))?;
+        if input.observed_at > now {
+            return Err(StoreError::InvalidControlSession(format!(
+                "environment evidence {index} is timestamped after its checkpoint"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_execution_source_basis(
+    source_basis: &crate::domain::ExecutionSourceBasis,
+    label: &str,
+) -> Result<(), StoreError> {
+    let workspace_id = source_basis.workspace_id.trim();
+    let source_revision = source_basis.source_revision.trim();
+    if workspace_id.is_empty()
+        || source_revision.is_empty()
+        || workspace_id != source_basis.workspace_id
+        || source_revision != source_basis.source_revision
+        || workspace_id.len() > 512
+        || source_revision.len() > 512
+    {
+        return Err(StoreError::InvalidControlSession(format!(
+            "evidence {label:?} source basis fields must be trimmed, nonempty, and at most 512 bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_typed_evidence_refs(refs: &[String]) -> Result<(), StoreError> {
+    if refs.len() > MAX_TYPED_EVIDENCE_REFS {
+        return Err(StoreError::InvalidControlSession(format!(
+            "typed evidence accepts at most {MAX_TYPED_EVIDENCE_REFS} references"
+        )));
+    }
+    if refs.iter().any(|reference| {
+        let trimmed = reference.trim();
+        trimmed.is_empty() || trimmed != reference || reference.len() > MAX_TYPED_EVIDENCE_REF_BYTES
+    }) {
+        return Err(StoreError::InvalidControlSession(format!(
+            "typed evidence references must be trimmed, nonempty, and at most {MAX_TYPED_EVIDENCE_REF_BYTES} bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_verification_producer(
+    producer: &ExecutionObservation,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    binding: &ControlWorkBinding,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let actor_run_id = binding.run_id.0.to_string();
+    let consistent = &producer.project_id == project_id
+        && &producer.session_id == session_id
+        && &producer.binding == binding
+        && producer.actor.session_id.as_ref() == Some(session_id)
+        && producer.actor.run_id.as_deref() == Some(actor_run_id.as_str());
+    if !consistent {
+        return Err(StoreError::InvalidControlSession(
+            "verification producer does not match the checkpoint work/session binding".into(),
+        ));
+    }
+    let source_basis = producer.source_basis.as_ref().ok_or_else(|| {
+        StoreError::InvalidControlSession(
+            "verification producer must carry a source content basis".into(),
+        )
+    })?;
+    validate_execution_source_basis(source_basis, &producer.observation_id)?;
+    let observed_at = producer.observed_at.ok_or_else(|| {
+        StoreError::InvalidControlSession(
+            "verification producer must carry observed_at with its source basis".into(),
+        )
+    })?;
+    if observed_at > producer.recorded_at || producer.recorded_at > now {
+        return Err(StoreError::InvalidControlSession(
+            "verification producer timestamps are not monotone".into(),
+        ));
+    }
+    Ok(())
+}
+
+const fn verification_result(outcome: ExecutionOutcome) -> VerificationResult {
+    match outcome {
+        ExecutionOutcome::Succeeded => VerificationResult::Passed,
+        ExecutionOutcome::Failed => VerificationResult::Failed,
+        ExecutionOutcome::Unknown => VerificationResult::Indeterminate,
+    }
+}
+
+fn normalize_verification_summary(input: &VerificationEvidenceInput) -> String {
+    input.summary.clone().unwrap_or_else(|| {
+        format!(
+            "host-recorded {} verification",
+            verification_kind_name(input.check_kind)
+        )
+    })
+}
+
+const fn verification_kind_name(kind: VerificationKind) -> &'static str {
+    match kind {
+        VerificationKind::Test => "test",
+        VerificationKind::Build => "build",
+        VerificationKind::Lint => "lint",
+        VerificationKind::Review => "review",
+        VerificationKind::Acceptance => "acceptance",
+    }
+}
+
+fn normalize_typed_evidence_refs(refs: &[String]) -> Vec<String> {
+    let mut refs = refs.to_vec();
+    refs.sort();
+    refs.dedup();
+    refs
 }
 
 fn note_fingerprint(request: &NoteRequest) -> Result<CanonicalObject, StoreError> {

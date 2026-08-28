@@ -300,19 +300,40 @@ and rebind. The same movement after bind refuses evaluation or begin with
 `stale_fence`. Omitting `work_binding` retains the compatibility task-only
 channel, but that session cannot append run execution observations.
 
-`turn_checkpoint.observations` accepts bounded host facts containing
+`turn_checkpoint.observations` accepts at most 64 host facts containing
 `observation_id`, `action_fingerprint`, `effect`, `outcome`, and
-`source_changed`. An observation may also carry the pair
-`source_basis { workspace_id, source_revision }` and `observed_at`; A0 stores
-that pair as asserted anti-stale context, while A1 will require and validate it
-before it can satisfy an obligation. Engram supplies the authoritative project,
-frozen work binding, session, grant, actor, and recording timestamp, then
-appends each canonical observation to the project, root-work, and run-execution
-feeds in the same transaction as the control checkpoint. An effect absent from
-the frozen grant is a request error with code `grant_scope_mismatch`. The
-receipt returns observation hashes. An exact retry with the same ordered list
-returns those hashes without another feed append; changing that list under the
-same checkpoint key fails with `control_operation_idempotency_conflict`.
+`source_changed`. An observation may also carry
+`source_basis { workspace_id, source_revision }` and `observed_at`.
+`source_revision` is the host's fingerprint of the full relevant content,
+including committed and dirty bytes. `workspace_id` is retained for audit but
+does not participate in anti-stale equality. Engram supplies the authoritative
+project, frozen work binding, session, grant, actor, and recording timestamp,
+then appends each canonical observation to the project, root-work, and
+run-execution feeds in the same transaction as the control checkpoint.
+
+`turn_checkpoint.verification_evidence` accepts at most 16 host-minted checks.
+Each entry supplies `producer_observation` as either
+`{ kind: "object_hash", object_hash }` or
+`{ kind: "observation_id", observation_id }`, plus `check_kind`, optional
+`summary`, and bounded `refs`. Storage derives the check fingerprint, outcome,
+source/run/session binding, and timestamps from the producer; an unknown
+producer returns `verification_producer_not_found`. Up to four
+`environment_evidence` entries bind an opaque host-produced environment
+fingerprint to an exact source basis. The receipt returns all three typed hash
+lists. An exact retry returns those hashes without another feed append;
+changing any ordered list under the same checkpoint key fails with
+`control_operation_idempotency_conflict`.
+
+Agent-facing `work_update:evidence` retains its legacy generic form. It also
+accepts the attach-only form
+`{ kind: "evidence", attach: { evidence: <typed-hash> }, idempotency_key }`.
+Attach validates that the hash is verification/environment evidence on the
+focused run and does not mint another canonical object or feed entry. Generic
+evidence can be cited for context and completion, but cannot satisfy a typed
+verification requirement.
+
+An effect absent from the frozen grant is a request error with code
+`grant_scope_mismatch`.
 Checkpointing an already-begun grant compares its frozen session/grant binding
 but deliberately does not recheck claim expiry or live ownership: begin already
 consumed authority, and checkpoint records what happened rather than granting a
