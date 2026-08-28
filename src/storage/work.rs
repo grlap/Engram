@@ -21,18 +21,19 @@ use crate::{
         AcceptWorkHandoffRequest, AcceptanceResult, AddWorkBlockerRequest,
         CancelWorkHandoffRequest, ChangeWorkPrerequisiteRequest, ChildRequirement,
         ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionSeal,
-        CompletionWaiver, CreateWorkRequest, DecomposeWorkRequest, DisposeWorkRequest, FeedId,
-        FeedPosition, LifecycleAuthorityDecision, MemoryAssertionEvent, MemoryVersion,
-        OfferWorkHandoffRequest, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
-        ReopenWorkRequest, RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution,
-        RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId, TaskId,
-        WaiveRequiredChildRequest, WorkAuthorityGrant, WorkAuthorityOperation,
-        WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability, WorkBlocker,
-        WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState,
-        WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence,
-        WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem,
-        WorkLifecycle, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason,
-        WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkSourceSnapshot, WorkTransition,
+        CompletionWaiver, ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest,
+        DisposeWorkRequest, ExecutionObservation, FeedId, FeedPosition, LifecycleAuthorityDecision,
+        MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest, ReadyWork,
+        RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest, RequiredChildWaiver,
+        ReviseWorkRequest, RootContribution, RootExecution, RootExecutionId, RootExecutionState,
+        SCHEMA_VERSION, SessionId, TaskId, WaiveRequiredChildRequest, WorkAuthorityGrant,
+        WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability,
+        WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId,
+        WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
+        WorkEvidence, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
+        WorkId, WorkItem, WorkLifecycle, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
+        WorkReadinessReason, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
+        WorkSourceSnapshot, WorkTransition,
     },
     memory::Redactor,
 };
@@ -6784,6 +6785,36 @@ pub(super) fn append_context_object_to_work_feeds(
     )
 }
 
+pub(super) fn append_control_execution_observation_on(
+    transaction: &Transaction<'_>,
+    observation: &ExecutionObservation,
+) -> Result<ObjectHash, StoreError> {
+    let item = load_work_item(transaction, observation.binding.work_id)?;
+    let run = load_work_run(transaction, observation.binding.run_id)?;
+    let root_execution = load_root_execution(transaction, observation.binding.root_execution_id)?;
+    if item.project_id != observation.project_id
+        || item.root_id != root_execution.root_id
+        || run.work_id != item.work_id
+        || run.root_execution_id != root_execution.root_execution_id
+        || observation.binding.root_execution_id != run.root_execution_id
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "execution observation binding does not match canonical work state".into(),
+        ));
+    }
+    let object = CanonicalObject::freeze(observation)?;
+    SqliteStore::insert_object(transaction, "execution_observation", &object)?;
+    append_to_work_feeds(
+        transaction,
+        &item.project_id,
+        item.root_id,
+        Some(run.run_id),
+        "execution_observation",
+        &object,
+    )?;
+    Ok(object.hash().clone())
+}
+
 fn append_work_event(
     transaction: &Transaction<'_>,
     event: &WorkEvent,
@@ -7687,6 +7718,85 @@ fn validate_live_claim_on(
         }
     }
     Ok((item, run, claim))
+}
+
+pub(super) fn validate_control_work_binding_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    binding: &ControlWorkBinding,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let item = match load_work_item(connection, binding.work_id) {
+        Ok(item) => item,
+        Err(StoreError::WorkNotFound(_)) => {
+            return Err(StoreError::WorkClaimMismatch {
+                work: binding.work_id,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    if &item.project_id != project_id
+        || !control_work_binding_was_valid_on(connection, project_id, session_id, binding)?
+    {
+        return Err(StoreError::WorkClaimMismatch {
+            work: binding.work_id,
+        });
+    }
+    match validate_live_claim_on(
+        connection,
+        binding.work_id,
+        binding.run_id,
+        binding.work_revision,
+        session_id,
+        binding.claim_id,
+        binding.claim_fence,
+        now,
+        false,
+    ) {
+        Ok(_) => Ok(()),
+        Err(
+            StoreError::WorkRevisionConflict { .. }
+            | StoreError::WorkClaimMismatch { .. }
+            | StoreError::InvalidWork(_),
+        ) => Err(StoreError::ControlWorkBindingStale {
+            work: binding.work_id,
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+fn control_work_binding_was_valid_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    session_id: &SessionId,
+    binding: &ControlWorkBinding,
+) -> Result<bool, StoreError> {
+    Ok(canonical_work_events_for_item(connection, binding.work_id)?
+        .iter()
+        .any(|event| {
+            event.project_id == *project_id
+                && event.work_id == binding.work_id
+                && event.work.lifecycle == WorkLifecycle::Open
+                && event.work.revision == binding.work_revision
+                && event.work.active_run_id == Some(binding.run_id)
+                && event.run.as_ref().is_some_and(|run| {
+                    run.run_id == binding.run_id
+                        && run.work_id == binding.work_id
+                        && run.root_execution_id == binding.root_execution_id
+                        && matches!(run.state, WorkRunState::Claimed | WorkRunState::Active)
+                })
+                && event.claim.as_ref().is_some_and(|claim| {
+                    claim.work_id == binding.work_id
+                        && claim.run_id == binding.run_id
+                        && claim.claim_id == binding.claim_id
+                        && claim.accepted_work_revision == binding.work_revision
+                        && claim.fence == binding.claim_fence
+                        && claim.holder == *session_id
+                        && claim.state == WorkClaimState::Active
+                        && claim.expires_at > event.created_at
+                })
+        }))
 }
 
 fn unique_hashes(values: &[ObjectHash]) -> Vec<ObjectHash> {
@@ -8632,6 +8742,14 @@ fn verify_work_feed_integrity(
             "work_evidence" => object.decode::<WorkEvidence>().ok().and_then(|evidence| {
                 expected_feeds_for_work(work_items, evidence.work_id, Some(evidence.run_id))
             }),
+            "execution_observation" => object
+                .decode::<ExecutionObservation>()
+                .ok()
+                .map(|observation| {
+                    expected_execution_observation_feeds(connection, work_items, &observation)
+                })
+                .transpose()?
+                .flatten(),
             "memory_version" => object
                 .decode::<MemoryVersion>()
                 .ok()
@@ -8903,6 +9021,61 @@ fn expected_feeds_for_work(
         .ok()
         .map(WorkId)?;
     Some(expected_work_feeds(project_id, root_id, run_id))
+}
+
+fn expected_execution_observation_feeds(
+    connection: &Connection,
+    work_items: &HashMap<String, serde_json::Value>,
+    observation: &ExecutionObservation,
+) -> Result<Option<HashSet<String>>, StoreError> {
+    if observation.actor.session_id.as_ref() != Some(&observation.session_id)
+        || observation.actor.run_id.as_deref()
+            != Some(observation.binding.run_id.0.to_string().as_str())
+        || observation.binding.work_revision <= 0
+        || observation.binding.claim_fence <= 0
+    {
+        return Ok(None);
+    }
+    let Some(item) = work_items.get(&observation.binding.work_id.0.to_string()) else {
+        return Ok(None);
+    };
+    if item.get("project_id").and_then(serde_json::Value::as_str)
+        != Some(observation.project_id.0.as_str())
+    {
+        return Ok(None);
+    }
+    let Some(root_id) = item
+        .get("root_id")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| uuid::Uuid::parse_str(value).ok())
+        .map(WorkId)
+    else {
+        return Ok(None);
+    };
+    let relation_matches = connection
+        .query_row(
+            "SELECT 1 FROM work_runs run
+             JOIN work_root_executions execution
+               ON execution.root_execution_id = run.root_execution_id
+             WHERE run.run_id = ?1 AND run.work_id = ?2
+               AND run.root_execution_id = ?3 AND execution.root_id = ?4",
+            params![
+                observation.binding.run_id.0.to_string(),
+                observation.binding.work_id.0.to_string(),
+                observation.binding.root_execution_id.0.to_string(),
+                root_id.0.to_string()
+            ],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    Ok(relation_matches.then(|| {
+        expected_work_feeds(
+            &observation.project_id.0,
+            root_id,
+            Some(observation.binding.run_id),
+        )
+    }))
 }
 
 fn verify_cross_feed_order(
@@ -9379,9 +9552,10 @@ mod tests {
         ActorContext, AssuranceLevel, CheckpointWorkRequest, ChildWorkDraft, ChildWorkPrerequisite,
         CompleteWorkRequest, ControlAssurance, ControlRefusalCode, ControlTurnBeginDecision,
         ControlTurnCheckpointDecision, ControlTurnDecision, CreateWorkRequest,
-        DecomposeWorkRequest, DisposeWorkRequest, EffectClass, LifecycleAuthorityDecision,
-        NoteRequest, NoteVisibility, ProvenanceLink, RecordWorkEvidenceRequest, ReopenWorkRequest,
-        Scope, Sensitivity, TurnIntent, TurnNextIntent, TurnPurpose, WaiveRequiredChildRequest,
+        DecomposeWorkRequest, DisposeWorkRequest, EffectClass, ExecutionObservationInput,
+        ExecutionOutcome, ExecutionSourceBasis, LifecycleAuthorityDecision, NoteRequest,
+        NoteVisibility, ProvenanceLink, RecordWorkEvidenceRequest, ReopenWorkRequest, Scope,
+        Sensitivity, TurnIntent, TurnNextIntent, TurnPurpose, WaiveRequiredChildRequest,
         WorkDependencyRef, WorkItemKind, WorkPlanningAuthority, WorkPlanningBudget,
         WorkRevisionPatch,
     };
@@ -13856,6 +14030,357 @@ mod tests {
                 .lifecycle,
             WorkLifecycle::Cancelled
         );
+        assert!(store.verify_all().expect("integrity report").is_healthy());
+    }
+
+    #[test]
+    fn work_bound_control_checkpoint_records_execution_observation_once() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-control-work", "planner");
+        let work = store
+            .create_work(
+                &root_request("project-control-work", "create-control-work", 1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("create local work");
+        let claim = claim(&mut store, &work, "runner", "claim-control-work", 2, 120);
+        let run = load_work_run(&store.connection, claim.run_id).expect("load claimed run");
+        let work_binding = ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        };
+        let session_id = SessionId("runner".into());
+        let connection_token = store
+            .resume_control_connection(&session_id, at(3))
+            .expect("resume host control connection");
+        let mut host_actor = actor("runner");
+        host_actor.run_id = Some(run.run_id.0.to_string());
+        let control_binding = store
+            .bind_control_session_with_work(
+                &work.project_id,
+                "local-work:control-observation",
+                "Record one bound execution observation",
+                &session_id,
+                &connection_token,
+                &host_actor,
+                Some(&work_binding),
+                ControlAssurance::TurnGated,
+                &[EffectClass::Observe, EffectClass::MutateLocal],
+                1,
+                "bind-control-work",
+                at(3),
+            )
+            .expect("bind control session to live claim");
+        assert_eq!(
+            control_binding.status.work_binding.as_ref(),
+            Some(&work_binding)
+        );
+        let peer_session = SessionId("peer-runner".into());
+        let peer_connection = store
+            .resume_control_connection(&peer_session, at(3))
+            .expect("resume peer host control connection");
+        let mut peer_actor = actor("peer-runner");
+        peer_actor.run_id = Some(run.run_id.0.to_string());
+        assert!(matches!(
+            store.bind_control_session_with_work(
+                &work.project_id,
+                "local-work:peer-observation",
+                "Peer must not inherit another claim",
+                &peer_session,
+                &peer_connection,
+                &peer_actor,
+                Some(&work_binding),
+                ControlAssurance::TurnGated,
+                &[EffectClass::Observe],
+                1,
+                "bind-peer-control-work",
+                at(3),
+            ),
+            Err(StoreError::WorkClaimMismatch { .. })
+        ));
+
+        let synchronize = store
+            .evaluate_control_turn(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "synchronize-control-work".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"sync bound work"),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                at(4),
+            )
+            .expect("evaluate synchronization turn");
+        let ControlTurnDecision::Grant { grant: synchronize } = synchronize else {
+            panic!("bound work synchronization must grant: {synchronize:?}");
+        };
+        assert_eq!(synchronize.basis.work_binding.as_ref(), Some(&work_binding));
+        let sync_tokens = synchronize
+            .delivery
+            .as_ref()
+            .map(|delivery| vec![delivery.page.delivery_token.clone()])
+            .unwrap_or_default();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &work.project_id,
+                    &session_id,
+                    &connection_token,
+                    &control_binding.routing_token,
+                    &synchronize.grant_id,
+                    &sync_tokens,
+                    "begin-control-work-sync",
+                    at(5),
+                )
+                .expect("begin bound work synchronization"),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        assert!(matches!(
+            store
+                .checkpoint_control_turn(
+                    &work.project_id,
+                    &session_id,
+                    &connection_token,
+                    &control_binding.routing_token,
+                    &synchronize.grant_id,
+                    TurnNextIntent::Continue,
+                    "checkpoint-control-work-sync",
+                    at(6),
+                )
+                .expect("checkpoint bound work synchronization"),
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ));
+
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: work.project_id.clone(),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let lease = store
+            .acquire_work_lease(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                60,
+                "lease-control-work",
+                at(7),
+            )
+            .expect("acquire bound execution lease");
+        assert!(matches!(
+            lease,
+            crate::domain::WorkLeaseDecision::Granted { .. }
+        ));
+        let decision = store
+            .evaluate_control_turn(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "evaluate-control-work".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"mutate bound work"),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::MutateLocal],
+                    resource_intents: vec![subject],
+                },
+                at(8),
+            )
+            .expect("evaluate bound work mutation");
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("live bound work mutation must grant: {decision:?}");
+        };
+        assert_eq!(grant.basis.work_binding.as_ref(), Some(&work_binding));
+        let delivery_tokens = grant
+            .delivery
+            .as_ref()
+            .map(|delivery| vec![delivery.page.delivery_token.clone()])
+            .unwrap_or_default();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &work.project_id,
+                    &session_id,
+                    &connection_token,
+                    &control_binding.routing_token,
+                    &grant.grant_id,
+                    &delivery_tokens,
+                    "begin-control-work",
+                    at(9),
+                )
+                .expect("begin bound work turn"),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        let out_of_scope = ExecutionObservationInput {
+            observation_id: "outside-grant-scope".into(),
+            action_fingerprint: ObjectHash::from_canonical_bytes(b"observe after mutation grant"),
+            effect: EffectClass::Observe,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: false,
+            source_basis: None,
+            observed_at: None,
+        };
+        assert!(matches!(
+            store.checkpoint_control_turn_with_observations(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &[out_of_scope],
+                "checkpoint-control-work-scope",
+                at(10),
+            ),
+            Err(StoreError::ControlGrantScopeMismatch { observation_id })
+                if observation_id == "outside-grant-scope"
+        ));
+        let observations = vec![ExecutionObservationInput {
+            observation_id: "source-mutation-1".into(),
+            action_fingerprint: ObjectHash::from_canonical_bytes(b"write src/lib.rs"),
+            effect: EffectClass::MutateLocal,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: true,
+            source_basis: Some(ExecutionSourceBasis {
+                workspace_id: "workspace-a".into(),
+                source_revision: "revision-1".into(),
+            }),
+            observed_at: Some(at(9)),
+        }];
+        let checkpointed = store
+            .checkpoint_control_turn_with_observations(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &observations,
+                "checkpoint-control-work",
+                at(10),
+            )
+            .expect("checkpoint bound work turn");
+        let ControlTurnCheckpointDecision::Checkpointed { receipt } = &checkpointed else {
+            panic!("bound work turn must checkpoint");
+        };
+        assert_eq!(receipt.execution_observations.len(), 1);
+        let observation_hash = &receipt.execution_observations[0];
+        let observation = load_typed_work_object::<ExecutionObservation>(
+            &store.connection,
+            observation_hash,
+            "execution_observation",
+        )
+        .expect("load canonical execution observation");
+        assert_eq!(observation.binding, work_binding);
+        assert_eq!(observation.session_id, session_id);
+        assert!(observation.source_changed);
+        assert_eq!(observation.source_basis, observations[0].source_basis);
+        assert_eq!(observation.observed_at, observations[0].observed_at);
+        assert_eq!(observation.recorded_at, at(10));
+        let feed_count = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+                [observation_hash.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count observation feed entries");
+        assert_eq!(feed_count, 3);
+
+        let replay = store
+            .checkpoint_control_turn_with_observations(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &observations,
+                "checkpoint-control-work",
+                at(11),
+            )
+            .expect("replay checkpoint exactly");
+        assert_eq!(replay, checkpointed);
+        let replay_feed_count = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+                [observation_hash.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count replayed observation feed entries");
+        assert_eq!(replay_feed_count, 3);
+
+        let mut changed_observations = observations.clone();
+        changed_observations[0].source_changed = false;
+        assert!(matches!(
+            store.checkpoint_control_turn_with_observations(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &changed_observations,
+                "checkpoint-control-work",
+                at(12),
+            ),
+            Err(StoreError::ControlOperationIdempotencyConflict { operation, key })
+                if operation == "turn_checkpoint" && key == "checkpoint-control-work"
+        ));
+
+        let stale = store
+            .evaluate_control_turn(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "evaluate-expired-control-work".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"expired bound work"),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                at(123),
+            )
+            .expect("expired bound work is a typed refusal");
+        assert!(matches!(
+            stale,
+            ControlTurnDecision::Refuse { directive }
+                if directive.code == ControlRefusalCode::StaleFence
+        ));
+        let stale_connection = store
+            .resume_control_connection(&session_id, at(124))
+            .expect("resume stale binding connection");
+        assert!(matches!(
+            store.bind_control_session_with_work(
+                &work.project_id,
+                "local-work:stale-observation",
+                "Stale binding must require a reread",
+                &session_id,
+                &stale_connection,
+                &host_actor,
+                Some(&work_binding),
+                ControlAssurance::TurnGated,
+                &[EffectClass::Observe],
+                1,
+                "bind-stale-control-work",
+                at(124),
+            ),
+            Err(StoreError::ControlWorkBindingStale { .. })
+        ));
         assert!(store.verify_all().expect("integrity report").is_healthy());
     }
 }

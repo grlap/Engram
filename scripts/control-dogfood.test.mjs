@@ -118,6 +118,71 @@ function ok(response) {
   return response.result;
 }
 
+function installWorkGrant(engramHome, actorId) {
+  const granted = spawnSync(
+    binary,
+    [
+      "--home",
+      engramHome,
+      "authority",
+      "grant",
+      "--subject-actor-id",
+      actorId,
+      "--issued-by",
+      "control-dogfood-host",
+      "--reason",
+      "work-bound host-control dogfood",
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(granted.status, 0, granted.stderr);
+  return JSON.parse(granted.stdout).grant;
+}
+
+function cliWork(engramHome, actorId, grant, operation, input) {
+  const args = [
+    "--home",
+    engramHome,
+    "work",
+    "--actor-id",
+    actorId,
+    "--session-id",
+    actorId,
+    "--authority-grant",
+    grant,
+    operation,
+  ];
+  if (input !== undefined) args.push("--input", JSON.stringify(input));
+  const executed = spawnSync(binary, args, {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(executed.status, 0, executed.stderr);
+  return JSON.parse(executed.stdout);
+}
+
+function cliWorkFocus(engramHome, actorId, grant, workRef) {
+  const focused = spawnSync(
+    binary,
+    [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      actorId,
+      "--session-id",
+      actorId,
+      "--authority-grant",
+      grant,
+      "focus",
+      workRef,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(focused.status, 0, focused.stderr);
+  return JSON.parse(focused.stdout);
+}
+
 test("host control survives restart and gates turn dispatch", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-control-dogfood-"));
   const actionGatedHome = mkdtempSync(
@@ -815,5 +880,265 @@ test("host control survives restart and gates turn dispatch", async () => {
     await client?.close();
     rmSync(engramHome, { recursive: true, force: true });
     rmSync(actionGatedHome, { recursive: true, force: true });
+  }
+});
+
+test("work-bound control records observations and rebinds after a stale fence", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-control-work-bound-"));
+  const actor = "bound-runner";
+  let client;
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(built.status, 0, built.stderr);
+    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const authorityGrant = installWorkGrant(engramHome, actor);
+    const proposed = cliWork(engramHome, actor, authorityGrant, "propose", {
+      kind: "root",
+      title: "Exercise work-bound control",
+      outcome: "Host observations follow the exact live run claim",
+      acceptance: ["The control binding survives only its exact fence"],
+      work_kind: "chore",
+      idempotency_key: "bound-root",
+    });
+    const claimed = cliWork(engramHome, actor, authorityGrant, "update", {
+      kind: "claim",
+      ttl_seconds: 300,
+      idempotency_key: "bound-claim-1",
+    });
+    const originalBinding = claimed.receipt.control_binding;
+    assert.ok(originalBinding, JSON.stringify(claimed));
+    assert.equal(originalBinding.work_id, proposed.work.work_id);
+    assert.equal(originalBinding.work_revision, claimed.receipt.revision);
+    const focused = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      proposed.work.short_ref,
+    );
+    assert.deepEqual(focused.control_binding, originalBinding);
+    assert.equal(focused.run.root_execution_id, originalBinding.root_execution_id);
+    assert.equal(focused.run.work_id, originalBinding.work_id);
+    assert.equal(focused.claim.claim_id, originalBinding.claim_id);
+
+    client = new ControlClient(engramHome, actor);
+    const bound = ok(
+      await client.request({
+        operation: "session_bind",
+        external_ref: "local-work:bound-control-dogfood",
+        title: "Work-bound host control",
+        assurance: "turn_gated",
+        mediated_effects: ["observe", "communicate", "mutate_local"],
+        work_binding: originalBinding,
+        capability_map_revision: 1,
+        idempotency_key: "bind-bound-run-1",
+      }),
+    );
+    assert.deepEqual(bound.status.work_binding, originalBinding);
+
+    const sync = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: bound.routing_token,
+        idempotency_key: "bound-sync",
+        intent_fingerprint: fingerprint("bound-sync"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(sync.decision, "grant");
+    assert.deepEqual(sync.grant.basis.work_binding, originalBinding);
+    const syncTokens = sync.grant.delivery
+      ? [sync.grant.delivery.page.delivery_token]
+      : [];
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: bound.routing_token,
+          grant_id: sync.grant.grant_id,
+          delivery_tokens: syncTokens,
+          idempotency_key: "begin-bound-sync",
+        }),
+      ).decision,
+      "begin",
+    );
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_checkpoint",
+          routing_token: bound.routing_token,
+          grant_id: sync.grant.grant_id,
+          next_intent: "continue",
+          idempotency_key: "checkpoint-bound-sync",
+        }),
+      ).decision,
+      "checkpointed",
+    );
+
+    const observedTurn = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: bound.routing_token,
+        idempotency_key: "bound-observed-turn",
+        intent_fingerprint: fingerprint("bound-observed-turn"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(observedTurn.decision, "grant");
+    const observedTokens = observedTurn.grant.delivery
+      ? [observedTurn.grant.delivery.page.delivery_token]
+      : [];
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: bound.routing_token,
+          grant_id: observedTurn.grant.grant_id,
+          delivery_tokens: observedTokens,
+          idempotency_key: "begin-bound-observed-turn",
+        }),
+      ).decision,
+      "begin",
+    );
+    const observations = [
+      {
+        observation_id: "bound-observation-1",
+        action_fingerprint: fingerprint("bound-observation-1"),
+        effect: "observe",
+        outcome: "succeeded",
+        source_changed: false,
+        source_basis: {
+          workspace_id: "control-dogfood-workspace",
+          source_revision: "revision-1",
+        },
+        observed_at: "2026-08-28T20:00:00Z",
+      },
+      {
+        observation_id: "bound-observation-2",
+        action_fingerprint: fingerprint("bound-observation-2"),
+        effect: "observe",
+        outcome: "failed",
+        source_changed: false,
+      },
+    ];
+    const checkpointRequest = {
+      operation: "turn_checkpoint",
+      routing_token: bound.routing_token,
+      grant_id: observedTurn.grant.grant_id,
+      next_intent: "continue",
+      observations,
+      idempotency_key: "checkpoint-bound-observations",
+    };
+    const checkpointed = ok(await client.request(checkpointRequest));
+    assert.equal(checkpointed.decision, "checkpointed");
+    assert.equal(checkpointed.receipt.execution_observations.length, 2);
+    assert.deepEqual(ok(await client.request(checkpointRequest)), checkpointed);
+    const conflictingCheckpoint = await client.request({
+      ...checkpointRequest,
+      observations: observations.slice(0, 1),
+    });
+    assert.equal(conflictingCheckpoint.status, "error");
+    assert.equal(
+      conflictingCheckpoint.error.code,
+      "control_operation_idempotency_conflict",
+    );
+
+    const contributionEvidence = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "update",
+      {
+        kind: "evidence",
+        summary: "bound control observations were recorded",
+        refs: ["test:control-dogfood-bound-observations"],
+        idempotency_key: "bound-contribution-evidence",
+      },
+    ).receipt.result;
+    cliWork(engramHome, actor, authorityGrant, "update", {
+      kind: "checkpoint",
+      summary: "record a contribution before releasing the claim",
+      evidence: [contributionEvidence],
+      idempotency_key: "bound-contribution-checkpoint",
+    });
+    cliWork(engramHome, actor, authorityGrant, "update", {
+      kind: "release",
+      reason: "exercise stale control binding",
+      idempotency_key: "bound-release-1",
+    });
+    const stale = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: bound.routing_token,
+        idempotency_key: "bound-stale-turn",
+        intent_fingerprint: fingerprint("bound-stale-turn"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(stale.decision, "refuse");
+    assert.equal(stale.directive.code, "stale_fence");
+
+    const reclaimed = cliWork(engramHome, actor, authorityGrant, "update", {
+      kind: "claim",
+      ttl_seconds: 300,
+      idempotency_key: "bound-claim-2",
+    });
+    const replacementBinding = reclaimed.receipt.control_binding;
+    assert.ok(replacementBinding, JSON.stringify(reclaimed));
+    assert.ok(replacementBinding.claim_fence > originalBinding.claim_fence);
+    const staleBind = await client.request({
+      operation: "session_bind",
+      external_ref: "local-work:bound-control-dogfood",
+      title: "Work-bound host control",
+      assurance: "turn_gated",
+      mediated_effects: ["observe"],
+      work_binding: originalBinding,
+      capability_map_revision: 1,
+      idempotency_key: "bind-stale-run",
+    });
+    assert.equal(staleBind.status, "error");
+    assert.equal(staleBind.error.code, "stale_fence");
+    const rebound = ok(
+      await client.request({
+        operation: "session_bind",
+        external_ref: "local-work:bound-control-dogfood",
+        title: "Work-bound host control",
+        assurance: "turn_gated",
+        mediated_effects: ["observe"],
+        work_binding: replacementBinding,
+        capability_map_revision: 1,
+        idempotency_key: "bind-bound-run-2",
+      }),
+    );
+    assert.deepEqual(rebound.status.work_binding, replacementBinding);
+    const reboundTurn = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: rebound.routing_token,
+        idempotency_key: "bound-rebound-turn",
+        intent_fingerprint: fingerprint("bound-rebound-turn"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(reboundTurn.decision, "grant");
+
+    const doctor = spawnSync(binary, ["--home", engramHome, "doctor"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(doctor.status, 0, doctor.stderr);
+  } finally {
+    await client?.close();
+    rmSync(engramHome, { recursive: true, force: true });
   }
 });

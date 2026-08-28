@@ -186,8 +186,14 @@ batch operations, but may not weaken their semantics.
 ### 1. Register and bind
 
 `session_bind` records the asserted actor, host session, control-assurance
-level, declared mediated capabilities, `root_execution_id`, contributor role,
-expected-contribution flag, and optional focused `work_id`/`run_id`. A host
+level, declared mediated capabilities, and an optional exact work binding:
+`root_execution_id`, `work_id`, `run_id`, `work_revision`, `claim_id`, and
+`claim_fence`. Storage verifies that tuple against the session's live claim and
+copies it into each grant. The six-operation work protocol supplies this tuple
+directly as `work_update:claim.receipt.control_binding` and
+`work_focus.control_binding`; the focus run section also names its root
+execution and work item. Here `work_revision` is the work item's revision
+returned at the top of the claim receipt, not the claim object's revision. A host
 may first seed a local root from a user request or an optional external
 snapshot. Binding never requires an external reference. V1 has one ordinary
 executor per `WorkRun`; an ordinary turn additionally requires that session's
@@ -549,12 +555,34 @@ TurnCheckpoint {
   promote_through_delivery_position         # DeliveryPosition
   source_feed_positions[]                   # resulting FeedPosition vector
   action_outcome_hashes[]
+  execution_observations[]               # bounded host facts for the bound run
   capture_hashes[]
   blocker_refs[]
   next_intent: continue | wait | handoff | contribute | exit
   lease_disposition
 }
 ```
+
+The shipped A0 path accepts execution observations directly on the host-private
+`turn_checkpoint` request. Each observation names an action fingerprint,
+effect, outcome, and whether source state changed. It may also carry the paired
+anti-stale fields `source_basis { workspace_id, source_revision }` and
+`observed_at`; A0 preserves them as asserted context, and A1 will require and
+validate them. Storage supplies and freezes the exact grant/session/work
+binding plus the recording time, then appends the object to the project, root,
+and run feeds atomically with the checkpoint receipt. An effect outside the
+frozen grant is rejected as `grant_scope_mismatch`. An exact retry replays the
+same observation hashes, while a different ordered observation list under the
+same checkpoint key is an idempotency conflict. Task-only sessions cannot
+append run observations, and another session cannot bind or reuse a peer's
+claim: the claim holder must equal the control `session_id`, never merely the
+asserted `actor_id`. A historically owned tuple that moved before bind reports
+`stale_fence`; a malformed or peer-owned tuple reports `work_claim_mismatch`.
+After begin, checkpoint compares the frozen session/grant tuple without
+regranting or rechecking live claim expiry, because its job is to record the
+already-consumed turn. `turn_checkpoint` closes control authority;
+`checkpoint_work` is the distinct local-work lifecycle operation that records
+run progress and evidence.
 
 Coordination transitions and structured action evidence are captured
 automatically. Decisions, constraints, facts, and promotion candidates enter
@@ -1039,9 +1067,10 @@ remain outside the supported policy envelope. Lease contention is a typed
 
 The Phase 0 shadow evaluator and integrity-checked observation log remain.
 The current host-control alpha additionally ships a built-in safe policy,
-durable control sessions, transactional context snapshots, persisted turn
-decisions and short-lived grants, begin-time freshness/delivery rechecks, and
-canonical checkpoint events. A separate `engram control` JSON-lines process
+durable control sessions, optional exact `WorkRun` claim bindings,
+transactional context snapshots, persisted turn decisions and short-lived
+grants, begin-time freshness/delivery rechecks, canonical execution
+observations, and canonical checkpoint events. A separate `engram control` JSON-lines process
 implements `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
 `turn_checkpoint`, plus scoped `lease_acquire` and `lease_release`; none is
 exposed through agent-facing MCP. Exact retry

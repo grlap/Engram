@@ -32,18 +32,19 @@ use crate::{
         ContextOmission, ContextOmissionSummary, ContextPacket, ContextPacketHeader,
         ContextPacketPayload, ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth,
         ControlPolicy, ControlSessionBinding, ControlSessionStatus, ControlTurnBeginDecision,
-        ControlTurnCheckpointDecision, ControlTurnDecision, Delivery, DeliveryPage, DeltaItem,
-        EffectClass, HostPathPolicy, IssuedTurnGrant, LocalTask, MemoryAssertionEvent,
-        MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus,
-        MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
-        ObservedTurnDecision, PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision,
-        ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId,
-        SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId,
-        TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision,
-        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
-        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-        TurnGrantState, TurnIntent, TurnNextIntent, WorkLease, WorkLeaseDecision, WorkLeaseEvent,
-        WorkLeaseReleaseReceipt, WorkLeaseTransition,
+        ControlTurnCheckpointDecision, ControlTurnDecision, ControlWorkBinding, Delivery,
+        DeliveryPage, DeltaItem, EffectClass, ExecutionObservation, ExecutionObservationInput,
+        HostPathPolicy, IssuedTurnGrant, LocalTask, MemoryAssertionEvent, MemoryContradictionEvent,
+        MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus, MemorySummary,
+        MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, ObservedTurnDecision,
+        PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
+        ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId, SessionPhase,
+        TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId, TaskJoinedEvent,
+        TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision, TurnBeginReceipt,
+        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent, TurnCheckpointReceipt,
+        TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantState, TurnIntent,
+        TurnNextIntent, WorkLease, WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt,
+        WorkLeaseTransition,
     },
     memory::{Redactor, activation_policy, classify_note},
 };
@@ -113,6 +114,8 @@ struct ControlSessionBindFingerprint<'a> {
     actor: &'a ActorContext,
     assurance: ControlAssurance,
     mediated_effects: &'a [EffectClass],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    work_binding: Option<&'a ControlWorkBinding>,
     capability_map_revision: i64,
     idempotency_key: &'a str,
 }
@@ -132,7 +135,13 @@ struct ControlTurnCheckpointFingerprint<'a> {
     session_id: &'a SessionId,
     grant_id: &'a str,
     next_intent: TurnNextIntent,
+    #[serde(skip_serializing_if = "execution_observations_are_empty")]
+    observations: &'a [ExecutionObservationInput],
     idempotency_key: &'a str,
+}
+
+fn execution_observations_are_empty(value: &&[ExecutionObservationInput]) -> bool {
+    value.is_empty()
 }
 
 #[derive(Serialize)]
@@ -241,6 +250,10 @@ pub enum StoreError {
     ControlTurnIdempotencyConflict(String),
     #[error("control operation {operation} key {key:?} was reused for a different intent")]
     ControlOperationIdempotencyConflict { operation: String, key: String },
+    #[error("control work binding for {work:?} is stale; reread the live claim and rebind")]
+    ControlWorkBindingStale { work: crate::domain::WorkId },
+    #[error("execution observation {observation_id:?} is outside the turn grant scope")]
+    ControlGrantScopeMismatch { observation_id: String },
     #[error("turn grant {0:?} does not exist")]
     ControlTurnGrantNotFound(String),
     #[error("work lease {0:?} does not exist")]
@@ -382,6 +395,7 @@ const INDEX_CONTEXT_BUDGET: usize = 8 * 1_024;
 const MAX_CONTROL_DELIVERY_EVENTS: i64 = 128;
 const MAX_CONTROL_DELIVERY_OBJECT_BYTES: i64 = 128 * 1_024;
 const MAX_CONTROL_DELIVERY_BYTES: usize = 256 * 1_024;
+const MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT: usize = 64;
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
 const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
 const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 2;
@@ -442,6 +456,7 @@ struct StoredControlObservation {
 struct StoredControlSession {
     project_id: crate::domain::ProjectId,
     task_id: TaskId,
+    work_binding: Option<ControlWorkBinding>,
     session_id: SessionId,
     routing_token: String,
     actor: ActorContext,
@@ -462,6 +477,12 @@ struct StoredControlSession {
 struct RawControlSession {
     project_id: String,
     task_id: String,
+    root_execution_id: Option<String>,
+    work_id: Option<String>,
+    run_id: Option<String>,
+    work_revision: Option<i64>,
+    claim_id: Option<String>,
+    claim_fence: Option<i64>,
     routing_token: String,
     actor_json: Vec<u8>,
     bind_key: String,
@@ -880,6 +901,12 @@ impl SqliteStore {
                  session_id TEXT PRIMARY KEY,
                  project_id TEXT NOT NULL,
                  task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 root_execution_id TEXT,
+                 work_id TEXT,
+                 run_id TEXT,
+                 work_revision INTEGER,
+                 claim_id TEXT,
+                 claim_fence INTEGER,
                  routing_token TEXT NOT NULL,
                  actor_json BLOB NOT NULL,
                  bind_key TEXT NOT NULL,
@@ -897,6 +924,8 @@ impl SqliteStore {
                  revision INTEGER NOT NULL,
                  updated_at_ms INTEGER NOT NULL
              ) STRICT;
+             CREATE INDEX IF NOT EXISTS control_sessions_work_run
+                 ON control_sessions(project_id, run_id, session_id);
              CREATE TABLE IF NOT EXISTS control_turn_results (
                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                  session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
@@ -1018,6 +1047,7 @@ impl SqliteStore {
             connection.execute_batch("COMMIT;")?;
         }
         work::migrate(&mut connection)?;
+        Self::migrate_control_work_bindings(&mut connection)?;
         Self::migrate_memory_contradiction_edges(&mut connection)?;
         Ok(Self {
             connection,
@@ -1771,6 +1801,65 @@ impl SqliteStore {
         Ok(())
     }
 
+    fn migrate_control_work_bindings(connection: &mut Connection) -> Result<(), StoreError> {
+        const COLUMNS: [&str; 6] = [
+            "root_execution_id",
+            "work_id",
+            "run_id",
+            "work_revision",
+            "claim_id",
+            "claim_fence",
+        ];
+        let column_count = connection.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('control_sessions')
+             WHERE name IN (
+                 'root_execution_id', 'work_id', 'run_id', 'work_revision',
+                 'claim_id', 'claim_fence'
+             )",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let index_exists = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'control_sessions_work_run'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        let column_count = usize::try_from(column_count).map_err(|_| {
+            StoreError::InvalidControlProjection(
+                "control session work-binding column count overflowed".into(),
+            )
+        })?;
+        if column_count == COLUMNS.len() && index_exists {
+            return Ok(());
+        }
+        if column_count != 0 && column_count != COLUMNS.len() {
+            return Err(StoreError::InvalidControlProjection(
+                "control session work-binding columns are only partially installed".into(),
+            ));
+        }
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if column_count == 0 {
+            transaction.execute_batch(
+                "ALTER TABLE control_sessions ADD COLUMN root_execution_id TEXT;
+                 ALTER TABLE control_sessions ADD COLUMN work_id TEXT;
+                 ALTER TABLE control_sessions ADD COLUMN run_id TEXT;
+                 ALTER TABLE control_sessions ADD COLUMN work_revision INTEGER;
+                 ALTER TABLE control_sessions ADD COLUMN claim_id TEXT;
+                 ALTER TABLE control_sessions ADD COLUMN claim_fence INTEGER;",
+            )?;
+        }
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS control_sessions_work_run
+             ON control_sessions(project_id, run_id, session_id)",
+            [],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     fn supported_legacy_contradiction_rows_on(
         connection: &Connection,
     ) -> Result<Vec<LegacyContradictionRow>, StoreError> {
@@ -2217,11 +2306,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when the bind is invalid, conflicts with an
     /// earlier request key, or cannot be persisted safely.
-    #[allow(
-        clippy::too_many_arguments,
-        clippy::too_many_lines,
-        reason = "the bind validates and rotates one auditable session projection transaction"
-    )]
+    #[allow(clippy::too_many_arguments)]
     pub fn bind_control_session(
         &mut self,
         project_id: &crate::domain::ProjectId,
@@ -2230,6 +2315,49 @@ impl SqliteStore {
         session_id: &SessionId,
         connection_token: &str,
         actor: &ActorContext,
+        assurance: ControlAssurance,
+        mediated_effects: &[EffectClass],
+        capability_map_revision: i64,
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ControlSessionBinding, StoreError> {
+        self.bind_control_session_with_work(
+            project_id,
+            external_ref,
+            title,
+            session_id,
+            connection_token,
+            actor,
+            None,
+            assurance,
+            mediated_effects,
+            capability_map_revision,
+            idempotency_key,
+            now,
+        )
+    }
+
+    /// Binds a host-private control session to both its compatibility task and
+    /// an exact live local-work claim basis.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the work/run/root/claim basis is stale,
+    /// belongs to another session or project, or the bind cannot be persisted.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "the bind validates and rotates one auditable session projection transaction"
+    )]
+    pub fn bind_control_session_with_work(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        external_ref: &str,
+        title: &str,
+        session_id: &SessionId,
+        connection_token: &str,
+        actor: &ActorContext,
+        work_binding: Option<&ControlWorkBinding>,
         assurance: ControlAssurance,
         mediated_effects: &[EffectClass],
         capability_map_revision: i64,
@@ -2249,6 +2377,10 @@ impl SqliteStore {
             || idempotency_key.is_empty()
             || session_id.0.trim().is_empty()
             || actor.session_id.as_ref() != Some(session_id)
+            || actor.run_id.as_deref()
+                != work_binding
+                    .map(|binding| binding.run_id.0.to_string())
+                    .as_deref()
             || capability_map_revision < 0
             || mediated_effects.is_empty()
             || !effects_are_unique
@@ -2268,6 +2400,7 @@ impl SqliteStore {
             actor,
             assurance,
             mediated_effects,
+            work_binding,
             capability_map_revision,
             idempotency_key,
         })?;
@@ -2277,24 +2410,35 @@ impl SqliteStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         Self::verify_control_connection(&transaction, session_id, connection_token)?;
         let existing = Self::load_control_session_on(&transaction, session_id)?;
-        if let Some(existing) = &existing {
-            if existing.bind_key == idempotency_key {
-                if existing.bind_intent_hash != bind_intent.hash().as_str() {
-                    return Err(StoreError::ControlSessionBindConflict(
-                        idempotency_key.into(),
-                    ));
-                }
-                let binding = ControlSessionBinding {
-                    routing_token: existing.routing_token.clone(),
-                    effective_mediated_effects: effective_mediated_effects(
-                        existing.assurance,
-                        &existing.mediated_effects,
-                    ),
-                    status: Self::control_session_status_on(&transaction, existing)?,
-                };
-                transaction.commit()?;
-                return Ok(binding);
+        if let Some(existing) = &existing
+            && existing.bind_key == idempotency_key
+        {
+            if existing.bind_intent_hash != bind_intent.hash().as_str() {
+                return Err(StoreError::ControlSessionBindConflict(
+                    idempotency_key.into(),
+                ));
             }
+            let binding = ControlSessionBinding {
+                routing_token: existing.routing_token.clone(),
+                effective_mediated_effects: effective_mediated_effects(
+                    existing.assurance,
+                    &existing.mediated_effects,
+                ),
+                status: Self::control_session_status_on(&transaction, existing)?,
+            };
+            transaction.commit()?;
+            return Ok(binding);
+        }
+        if let Some(work_binding) = work_binding {
+            work::validate_control_work_binding_on(
+                &transaction,
+                project_id,
+                session_id,
+                work_binding,
+                now,
+            )?;
+        }
+        if let Some(existing) = &existing {
             if matches!(existing.phase, SessionPhase::TurnOpen)
                 && Self::session_has_begun_turn(&transaction, session_id)?
             {
@@ -2360,18 +2504,26 @@ impl SqliteStore {
         )?;
         transaction.execute(
             "INSERT INTO control_sessions (
-                 session_id, project_id, task_id, routing_token, actor_json,
-                 bind_key, bind_intent_hash, bind_intent_json, phase, assurance,
-                 mediated_effects_json, confirmed_cursor, tentative_cursor,
-                 project_policy_epoch, task_admission_epoch, blocking_watermark,
-                 capability_map_revision, revision, updated_at_ms
+                 session_id, project_id, task_id, root_execution_id, work_id,
+                 run_id, work_revision, claim_id, claim_fence, routing_token,
+                 actor_json, bind_key, bind_intent_hash, bind_intent_json, phase,
+                 assurance, mediated_effects_json, confirmed_cursor,
+                 tentative_cursor, project_policy_epoch, task_admission_epoch,
+                 blocking_watermark, capability_map_revision, revision, updated_at_ms
              ) VALUES (
-                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'sync_required', ?9, ?10,
-                 0, NULL, ?11, ?12, ?13, ?14, ?15, ?16
+                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                 ?14, 'sync_required', ?15, ?16, 0, NULL, ?17, ?18, ?19, ?20,
+                 ?21, ?22
              )
              ON CONFLICT(session_id) DO UPDATE SET
                  project_id = excluded.project_id,
                  task_id = excluded.task_id,
+                 root_execution_id = excluded.root_execution_id,
+                 work_id = excluded.work_id,
+                 run_id = excluded.run_id,
+                 work_revision = excluded.work_revision,
+                 claim_id = excluded.claim_id,
+                 claim_fence = excluded.claim_fence,
                  routing_token = excluded.routing_token,
                  actor_json = excluded.actor_json,
                  bind_key = excluded.bind_key,
@@ -2392,6 +2544,12 @@ impl SqliteStore {
                 session_id.0,
                 project_id.0,
                 task.task.task_id.0.to_string(),
+                work_binding.map(|binding| binding.root_execution_id.0.to_string()),
+                work_binding.map(|binding| binding.work_id.0.to_string()),
+                work_binding.map(|binding| binding.run_id.0.to_string()),
+                work_binding.map(|binding| binding.work_revision),
+                work_binding.map(|binding| binding.claim_id.0.to_string()),
+                work_binding.map(|binding| binding.claim_fence),
                 routing_token,
                 serde_json::to_vec(actor)?,
                 idempotency_key,
@@ -3208,10 +3366,19 @@ impl SqliteStore {
                     .any(|resource| lease.subject.covers(resource))
             })
             .collect();
+        let work_binding_current = Self::control_work_binding_is_current(
+            &transaction,
+            project_id,
+            session_id,
+            session.work_binding.as_ref(),
+            now,
+        )?;
         let input = TurnEvaluationInput {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id: session_id.clone(),
             task_id: Some(session.task_id),
+            work_binding: session.work_binding.clone(),
+            work_binding_current,
             participant_membership: if membership == 1 {
                 ParticipantMembership::Member
             } else {
@@ -3422,10 +3589,19 @@ impl SqliteStore {
         } else {
             true
         };
+        let work_binding_current = Self::control_work_binding_is_current(
+            &transaction,
+            project_id,
+            session_id,
+            session.work_binding.as_ref(),
+            now,
+        )?;
         let snapshot = TurnBeginSnapshot {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id: session_id.clone(),
             task_id: session.task_id,
+            work_binding: session.work_binding.clone(),
+            work_binding_current,
             phase: session.phase,
             participant_membership: if membership == 1 {
                 ParticipantMembership::Member
@@ -3561,11 +3737,50 @@ impl SqliteStore {
         idempotency_key: &str,
         now: DateTime<Utc>,
     ) -> Result<ControlTurnCheckpointDecision, StoreError> {
+        self.checkpoint_control_turn_with_observations(
+            project_id,
+            session_id,
+            connection_token,
+            routing_token,
+            grant_id,
+            next_intent,
+            &[],
+            idempotency_key,
+            now,
+        )
+    }
+
+    /// Checkpoints a begun turn and atomically records asserted host execution
+    /// observations against its frozen local-work binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when any observation is malformed, outside the
+    /// grant effect envelope, or cannot be routed to the grant's exact run.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "checkpoint closes the grant and emits its canonical transition atomically"
+    )]
+    pub fn checkpoint_control_turn_with_observations(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        grant_id: &str,
+        next_intent: TurnNextIntent,
+        observations: &[ExecutionObservationInput],
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<ControlTurnCheckpointDecision, StoreError> {
+        validate_execution_observation_inputs(observations)?;
         let intent_object = CanonicalObject::freeze(&ControlTurnCheckpointFingerprint {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id,
             grant_id,
             next_intent,
+            observations,
             idempotency_key,
         })?;
         let transaction = self
@@ -3591,11 +3806,55 @@ impl SqliteStore {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id: session_id.clone(),
             task_id: session.task_id,
+            work_binding: session.work_binding.clone(),
             phase: session.phase,
             grant_state: grant.state,
         };
         let decision = match crate::control::evaluate_turn_checkpoint(&grant.grant, &snapshot) {
             TurnCheckpointDecision::Checkpoint => {
+                let execution_observations = if observations.is_empty() {
+                    Vec::new()
+                } else {
+                    let binding = session.work_binding.clone().ok_or_else(|| {
+                        StoreError::InvalidControlSession(
+                            "execution observations require an exact local-work binding".into(),
+                        )
+                    })?;
+                    if grant.grant.basis.work_binding.as_ref() != Some(&binding) {
+                        return Err(StoreError::WorkClaimMismatch {
+                            work: binding.work_id,
+                        });
+                    }
+                    let mut hashes = Vec::with_capacity(observations.len());
+                    for input in observations {
+                        if !grant.grant.basis.requested_effects.contains(&input.effect) {
+                            return Err(StoreError::ControlGrantScopeMismatch {
+                                observation_id: input.observation_id.clone(),
+                            });
+                        }
+                        let observation = ExecutionObservation {
+                            schema_version: SCHEMA_VERSION,
+                            project_id: project_id.clone(),
+                            binding: binding.clone(),
+                            session_id: session_id.clone(),
+                            grant_id: grant_id.into(),
+                            observation_id: input.observation_id.trim().into(),
+                            action_fingerprint: input.action_fingerprint.clone(),
+                            effect: input.effect,
+                            outcome: input.outcome,
+                            source_changed: input.source_changed,
+                            source_basis: input.source_basis.clone(),
+                            observed_at: input.observed_at,
+                            actor: session.actor.clone(),
+                            recorded_at: now,
+                        };
+                        hashes.push(work::append_control_execution_observation_on(
+                            &transaction,
+                            &observation,
+                        )?);
+                    }
+                    hashes
+                };
                 if matches!(next_intent, TurnNextIntent::Exit) {
                     Self::terminalize_session_work_leases(&transaction, &session, now, false)?;
                 }
@@ -3606,6 +3865,7 @@ impl SqliteStore {
                     grant_id: grant_id.into(),
                     delivered_cursor: grant.grant.basis.delivery_cursor,
                     next_intent,
+                    execution_observations: execution_observations.clone(),
                     actor: session.actor.clone(),
                     created_at: now,
                 };
@@ -3663,6 +3923,7 @@ impl SqliteStore {
                     receipt: TurnCheckpointReceipt {
                         grant_id: grant_id.into(),
                         checkpoint: event_object.hash().clone(),
+                        execution_observations,
                         cursor,
                         confirmed_cursor,
                         phase,
@@ -6794,17 +7055,22 @@ impl SqliteStore {
             .map_err(|_| StoreError::InvalidControlProjection(format!("{label} count overflowed")))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the loader verifies every redundant scalar and canonical work-binding field together"
+    )]
     fn load_control_session_on(
         connection: &Connection,
         session_id: &SessionId,
     ) -> Result<Option<StoredControlSession>, StoreError> {
         let raw = connection
             .query_row(
-                "SELECT project_id, task_id, routing_token, actor_json,
+                "SELECT project_id, task_id, root_execution_id, work_id, run_id,
+                        work_revision, claim_id, claim_fence, routing_token, actor_json,
                         bind_key, bind_intent_hash, bind_intent_json, phase, assurance,
                         mediated_effects_json, confirmed_cursor, tentative_cursor,
-                        project_policy_epoch, task_admission_epoch,
-                        blocking_watermark, capability_map_revision, revision,
+                        project_policy_epoch, task_admission_epoch, blocking_watermark,
+                        capability_map_revision, revision,
                         (SELECT grant_id FROM control_turn_grants g
                          WHERE g.session_id = control_sessions.session_id
                            AND g.state IN ('issued', 'begun')
@@ -6815,22 +7081,28 @@ impl SqliteStore {
                     Ok(RawControlSession {
                         project_id: row.get(0)?,
                         task_id: row.get(1)?,
-                        routing_token: row.get(2)?,
-                        actor_json: row.get(3)?,
-                        bind_key: row.get(4)?,
-                        bind_intent_hash: row.get(5)?,
-                        bind_intent_json: row.get(6)?,
-                        phase: row.get(7)?,
-                        assurance: row.get(8)?,
-                        mediated_effects_json: row.get(9)?,
-                        confirmed_cursor: row.get(10)?,
-                        tentative_cursor: row.get(11)?,
-                        project_policy_epoch: row.get(12)?,
-                        task_admission_epoch: row.get(13)?,
-                        blocking_watermark: row.get(14)?,
-                        capability_map_revision: row.get(15)?,
-                        revision: row.get(16)?,
-                        open_grant_id: row.get(17)?,
+                        root_execution_id: row.get(2)?,
+                        work_id: row.get(3)?,
+                        run_id: row.get(4)?,
+                        work_revision: row.get(5)?,
+                        claim_id: row.get(6)?,
+                        claim_fence: row.get(7)?,
+                        routing_token: row.get(8)?,
+                        actor_json: row.get(9)?,
+                        bind_key: row.get(10)?,
+                        bind_intent_hash: row.get(11)?,
+                        bind_intent_json: row.get(12)?,
+                        phase: row.get(13)?,
+                        assurance: row.get(14)?,
+                        mediated_effects_json: row.get(15)?,
+                        confirmed_cursor: row.get(16)?,
+                        tentative_cursor: row.get(17)?,
+                        project_policy_epoch: row.get(18)?,
+                        task_admission_epoch: row.get(19)?,
+                        blocking_watermark: row.get(20)?,
+                        capability_map_revision: row.get(21)?,
+                        revision: row.get(22)?,
+                        open_grant_id: row.get(23)?,
                     })
                 },
             )
@@ -6846,6 +7118,54 @@ impl SqliteStore {
                 .ok_or_else(|| StoreError::InvalidStoredHash(raw.bind_intent_hash.clone()))?;
             let bind_value: serde_json::Value =
                 CanonicalObject::verify(&bind_hash, raw.bind_intent_json.clone())?.decode()?;
+            let work_binding = match (
+                raw.root_execution_id,
+                raw.work_id,
+                raw.run_id,
+                raw.work_revision,
+                raw.claim_id,
+                raw.claim_fence,
+            ) {
+                (None, None, None, None, None, None) => None,
+                (
+                    Some(root_execution_id),
+                    Some(work_id),
+                    Some(run_id),
+                    Some(work_revision),
+                    Some(claim_id),
+                    Some(claim_fence),
+                ) => Some(ControlWorkBinding {
+                    root_execution_id: crate::domain::RootExecutionId(
+                        uuid::Uuid::parse_str(&root_execution_id).map_err(|error| {
+                            StoreError::InvalidControlProjection(error.to_string())
+                        })?,
+                    ),
+                    work_id: crate::domain::WorkId(uuid::Uuid::parse_str(&work_id).map_err(
+                        |error| StoreError::InvalidControlProjection(error.to_string()),
+                    )?),
+                    run_id: crate::domain::WorkRunId(uuid::Uuid::parse_str(&run_id).map_err(
+                        |error| StoreError::InvalidControlProjection(error.to_string()),
+                    )?),
+                    work_revision,
+                    claim_id: crate::domain::WorkClaimId(
+                        uuid::Uuid::parse_str(&claim_id).map_err(|error| {
+                            StoreError::InvalidControlProjection(error.to_string())
+                        })?,
+                    ),
+                    claim_fence,
+                }),
+                _ => {
+                    return Err(StoreError::InvalidControlProjection(format!(
+                        "control session {:?} has a partial work binding",
+                        session_id.0
+                    )));
+                }
+            };
+            let canonical_work_binding = bind_value
+                .get("work_binding")
+                .cloned()
+                .map(serde_json::from_value::<ControlWorkBinding>)
+                .transpose()?;
             if raw.confirmed_cursor < 0
                 || raw.tentative_cursor.is_some_and(|cursor| cursor < 0)
                 || raw.project_policy_epoch < 0
@@ -6853,8 +7173,17 @@ impl SqliteStore {
                 || raw.blocking_watermark < 0
                 || raw.capability_map_revision < 0
                 || raw.revision <= 0
+                || work_binding
+                    .as_ref()
+                    .is_some_and(|binding| binding.work_revision <= 0 || binding.claim_fence <= 0)
                 || mediated_effects.is_empty()
                 || actor.session_id.as_ref() != Some(session_id)
+                || actor.run_id.as_deref()
+                    != work_binding
+                        .as_ref()
+                        .map(|binding| binding.run_id.0.to_string())
+                        .as_deref()
+                || canonical_work_binding != work_binding
                 || bind_value
                     .get("project_id")
                     .and_then(serde_json::Value::as_str)
@@ -6876,6 +7205,7 @@ impl SqliteStore {
             Ok(StoredControlSession {
                 project_id: crate::domain::ProjectId(raw.project_id),
                 task_id,
+                work_binding,
                 session_id: session_id.clone(),
                 routing_token: raw.routing_token,
                 actor,
@@ -6918,6 +7248,7 @@ impl SqliteStore {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             project_id: session.project_id.clone(),
             task_id: session.task_id,
+            work_binding: session.work_binding.clone(),
             session_id: session.session_id.clone(),
             phase: session.phase,
             assurance: session.assurance,
@@ -6969,6 +7300,31 @@ impl SqliteStore {
             ));
         }
         Ok(())
+    }
+
+    fn control_work_binding_is_current(
+        connection: &Connection,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        binding: Option<&ControlWorkBinding>,
+        now: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let Some(binding) = binding else {
+            return Ok(true);
+        };
+        match work::validate_control_work_binding_on(
+            connection, project_id, session_id, binding, now,
+        ) {
+            Ok(()) => Ok(true),
+            Err(
+                StoreError::ControlWorkBindingStale { .. }
+                | StoreError::WorkClaimMismatch { .. }
+                | StoreError::WorkRevisionConflict { .. }
+                | StoreError::WorkNotFound(_)
+                | StoreError::InvalidWork(_),
+            ) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     fn session_has_begun_turn(
@@ -7664,6 +8020,60 @@ impl SqliteStore {
         )?;
         Ok(ChangeCursor(cursor))
     }
+}
+
+fn validate_execution_observation_inputs(
+    observations: &[ExecutionObservationInput],
+) -> Result<(), StoreError> {
+    if observations.len() > MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT {
+        return Err(StoreError::InvalidControlProjection(format!(
+            "turn checkpoint accepts at most {MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT} execution observations"
+        )));
+    }
+    let mut ids = HashSet::new();
+    for observation in observations {
+        let id = observation.observation_id.trim();
+        if id.is_empty() || id.len() > 256 || id != observation.observation_id || !ids.insert(id) {
+            return Err(StoreError::InvalidControlProjection(
+                "execution observation ids must be unique, trimmed, nonempty, and at most 256 bytes"
+                    .into(),
+            ));
+        }
+        if observation.source_changed
+            && !matches!(
+                observation.effect,
+                EffectClass::MutateLocal | EffectClass::MutateShared
+            )
+        {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "execution observation {id:?} reports a source mutation for a non-mutation effect"
+            )));
+        }
+        match (&observation.source_basis, observation.observed_at) {
+            (None, None) => {}
+            (Some(source_basis), Some(_)) => {
+                let workspace_id = source_basis.workspace_id.trim();
+                let source_revision = source_basis.source_revision.trim();
+                if workspace_id.is_empty()
+                    || source_revision.is_empty()
+                    || workspace_id != source_basis.workspace_id
+                    || source_revision != source_basis.source_revision
+                    || workspace_id.len() > 512
+                    || source_revision.len() > 512
+                {
+                    return Err(StoreError::InvalidControlProjection(format!(
+                        "execution observation {id:?} source basis fields must be trimmed, nonempty, and at most 512 bytes"
+                    )));
+                }
+            }
+            _ => {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "execution observation {id:?} must supply source_basis and observed_at together"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn note_fingerprint(request: &NoteRequest) -> Result<CanonicalObject, StoreError> {
@@ -10609,6 +11019,8 @@ mod tests {
             control_schema_version: crate::domain::CONTROL_SCHEMA_VERSION,
             session_id: SessionId("control-session".into()),
             task_id: Some(task_id),
+            work_binding: None,
+            work_binding_current: true,
             participant_membership: crate::domain::ParticipantMembership::Member,
             task_state: Some(TaskState::Active),
             phase: SessionPhase::Ready,
@@ -10796,6 +11208,95 @@ mod tests {
             ControlTurnCheckpointDecision::Checkpointed { .. }
         ));
         *grant
+    }
+
+    #[test]
+    fn task_only_control_checkpoint_cannot_append_execution_observations() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let binding = bind_control(&mut store, now);
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "task-only-sync",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "task-only-observation-turn".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"task-only observation turn",
+                    ),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(2),
+            )
+            .expect("evaluate task-only observation turn");
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("task-only observation turn should otherwise grant");
+        };
+        let delivery_tokens = grant
+            .delivery
+            .iter()
+            .map(|delivery| delivery.page.delivery_token.clone())
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    &delivery_tokens,
+                    "begin-task-only-observation",
+                    now + TimeDelta::seconds(3),
+                )
+                .expect("begin task-only observation turn"),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        let rejected = store.checkpoint_control_turn_with_observations(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            &grant.grant_id,
+            TurnNextIntent::Continue,
+            &[ExecutionObservationInput {
+                observation_id: "task-only-observation".into(),
+                action_fingerprint: ObjectHash::from_canonical_bytes(b"read task context"),
+                effect: EffectClass::Observe,
+                outcome: crate::domain::ExecutionOutcome::Succeeded,
+                source_changed: false,
+                source_basis: None,
+                observed_at: None,
+            }],
+            "checkpoint-task-only-observation",
+            now + TimeDelta::seconds(4),
+        );
+        assert!(matches!(
+            rejected,
+            Err(StoreError::InvalidControlSession(message))
+                if message.contains("local-work binding")
+        ));
+        let observations = store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM objects WHERE object_kind = 'execution_observation'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count task-only observations");
+        assert_eq!(observations, 0);
     }
 
     #[test]

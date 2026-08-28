@@ -213,7 +213,14 @@ names the exact tool and tagged operation. For example,
 `allowed_next: ["work_update:claim(recovery_reason_required)"]` directs the
 agent to submit the `work_update` claim variant with an attributed
 `recovery_reason` and a host grant that includes `claim_recovery`; ordinary
-claiming is `work_update:claim`.
+claiming is `work_update:claim`. A successful claim receipt includes
+`control_binding { root_execution_id, work_id, run_id, work_revision,
+claim_id, claim_fence }`, ready to pass unchanged to host-private
+`session_bind`. The same live tuple appears as `focus.control_binding`;
+`focus.run` also exposes `root_execution_id` and `work_id`, while
+`focus.claim` exposes the claim and fence components. `work_revision` is the
+focused work item's revision—the claim receipt's top-level `revision`—not the
+claim projection's own revision counter.
 
 `work_complete` can consume evidence/checkpoint state created through explicit
 `work_update` calls, or accept `capture { summary, refs }` to record evidence,
@@ -249,13 +256,13 @@ shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
-| `session_bind` | Start/join the referenced task, rotate a routing token, reset to `sync_required` |
-| `session_status` | Read current phase, cursors, epochs, mediation declaration, revision, and any safely redeliverable partial recovery grant |
+| `session_bind` | Start/join the compatibility task, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `sync_required` |
+| `session_status` | Read current phase, cursors, epochs, mediation declaration, optional work binding, revision, and any safely redeliverable partial recovery grant |
 | `lease_acquire` | Atomically grant or defer a normalized resource lease and append its fenced task event |
 | `lease_release` | Release a lease held by this session and append its fenced task event |
 | `turn_evaluate` | Derive membership/context/head/policy from SQLite and persist a decision plus optional grant |
 | `turn_begin` | Recheck freshness and exact delivery token, then consume the issued grant |
-| `turn_checkpoint` | Promote tentative delivery, complete the grant, and append a canonical checkpoint event |
+| `turn_checkpoint` | Promote tentative delivery, atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
 
 The bind response supplies the `routing_token` used on later calls. A granted
 turn carries an exact dense task delta under `grant.delivery.delta`. The final
@@ -278,6 +285,41 @@ grant and delivery bytes; the replacement host redelivers that payload and
 then checkpoints the already-begun grant. The confirmed cursor does not move
 until that checkpoint. Other begun turns expose no replayable prompt because
 their outcome may be uncertain. Reusing a key for a different intent fails.
+
+A native local-work bind supplies `work_binding` with
+`root_execution_id`, `work_id`, `run_id`, `work_revision`, `claim_id`, and
+`claim_fence`. Storage verifies that exact tuple against the session's live
+claim and copies it into every turn-grant basis. Ownership means
+`claim.holder == session_id` for the MCP actor session that claimed the run;
+the asserted `actor_id` is audit context and never substitutes for that holder
+check. A malformed, cross-project, or currently peer-owned bind fails as
+`work_claim_mismatch`. A tuple that canonical history proves belonged to this
+session but whose revision, fence, claim, handoff, run, root execution, or
+expiry moved before bind fails as `stale_fence`, telling the adapter to reread
+and rebind. The same movement after bind refuses evaluation or begin with
+`stale_fence`. Omitting `work_binding` retains the compatibility task-only
+channel, but that session cannot append run execution observations.
+
+`turn_checkpoint.observations` accepts bounded host facts containing
+`observation_id`, `action_fingerprint`, `effect`, `outcome`, and
+`source_changed`. An observation may also carry the pair
+`source_basis { workspace_id, source_revision }` and `observed_at`; A0 stores
+that pair as asserted anti-stale context, while A1 will require and validate it
+before it can satisfy an obligation. Engram supplies the authoritative project,
+frozen work binding, session, grant, actor, and recording timestamp, then
+appends each canonical observation to the project, root-work, and run-execution
+feeds in the same transaction as the control checkpoint. An effect absent from
+the frozen grant is a request error with code `grant_scope_mismatch`. The
+receipt returns observation hashes. An exact retry with the same ordered list
+returns those hashes without another feed append; changing that list under the
+same checkpoint key fails with `control_operation_idempotency_conflict`.
+Checkpointing an already-begun grant compares its frozen session/grant binding
+but deliberately does not recheck claim expiry or live ownership: begin already
+consumed authority, and checkpoint records what happened rather than granting a
+new action.
+This control operation is deliberately named `turn_checkpoint`; the local-work
+lifecycle operation `checkpoint_work` remains the separate run-progress and
+evidence checkpoint.
 
 The built-in alpha policy grants `observe`, `communicate`, Engram-internal
 `coordinate` leases, and lease-backed `mutate_local` to a session whose

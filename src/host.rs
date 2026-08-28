@@ -15,8 +15,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    ActorContext, ControlAssurance, EffectClass, LeaseKind, LeaseMode, ObjectHash, ProjectId,
-    ResourceSubject, SessionId, SqliteStore, TurnIntent, TurnPurpose,
+    ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, ExecutionObservationInput,
+    LeaseKind, LeaseMode, ObjectHash, ProjectId, ResourceSubject, SessionId, SqliteStore,
+    TurnIntent, TurnPurpose,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
 };
@@ -34,6 +35,8 @@ pub enum HostControlRequest {
         title: String,
         assurance: ControlAssurance,
         mediated_effects: Vec<EffectClass>,
+        #[serde(default)]
+        work_binding: Option<ControlWorkBinding>,
         capability_map_revision: i64,
         idempotency_key: String,
     },
@@ -72,6 +75,8 @@ pub enum HostControlRequest {
         routing_token: String,
         grant_id: String,
         next_intent: TurnNextIntent,
+        #[serde(default)]
+        observations: Vec<ExecutionObservationInput>,
         idempotency_key: String,
     },
 }
@@ -143,22 +148,30 @@ impl HostControlServer {
                 title,
                 assurance,
                 mediated_effects,
+                work_binding,
                 capability_map_revision,
                 idempotency_key,
-            } => serde_json::to_value(self.store.bind_control_session(
-                &self.project_id,
-                &external_ref,
-                &title,
-                &self.session_id,
-                &self.connection_token,
-                &self.actor("session_bind", "bind the host control session"),
-                assurance,
-                &mediated_effects,
-                capability_map_revision,
-                &idempotency_key,
-                now,
-            )?)
-            .map_err(StoreError::Json),
+            } => {
+                let mut actor = self.actor("session_bind", "bind the host control session");
+                actor.run_id = work_binding
+                    .as_ref()
+                    .map(|binding| binding.run_id.0.to_string());
+                serde_json::to_value(self.store.bind_control_session_with_work(
+                    &self.project_id,
+                    &external_ref,
+                    &title,
+                    &self.session_id,
+                    &self.connection_token,
+                    &actor,
+                    work_binding.as_ref(),
+                    assurance,
+                    &mediated_effects,
+                    capability_map_revision,
+                    &idempotency_key,
+                    now,
+                )?)
+                .map_err(StoreError::Json)
+            }
             HostControlRequest::SessionStatus { routing_token } => {
                 serde_json::to_value(self.store.control_status(
                     &self.project_id,
@@ -253,14 +266,16 @@ impl HostControlServer {
                 routing_token,
                 grant_id,
                 next_intent,
+                observations,
                 idempotency_key,
-            } => serde_json::to_value(self.store.checkpoint_control_turn(
+            } => serde_json::to_value(self.store.checkpoint_control_turn_with_observations(
                 &self.project_id,
                 &self.session_id,
                 &self.connection_token,
                 &routing_token,
                 &grant_id,
                 next_intent,
+                &observations,
                 &idempotency_key,
                 now,
             )?)
@@ -391,6 +406,8 @@ const fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::ControlOperationIdempotencyConflict { .. } => {
             "control_operation_idempotency_conflict"
         }
+        StoreError::ControlWorkBindingStale { .. } => "stale_fence",
+        StoreError::ControlGrantScopeMismatch { .. } => "grant_scope_mismatch",
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
         StoreError::WorkLeaseNotFound(_) => "work_lease_not_found",
         StoreError::WorkLeaseNotHeld { .. } => "work_lease_not_held",
@@ -401,6 +418,7 @@ const fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::PinnedContradiction { .. } => "pinned_contradiction",
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
+        StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         _ => "storage_error",
     }
 }

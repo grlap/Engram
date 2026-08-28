@@ -14,16 +14,16 @@ use crate::{
     CancelWorkHandoffRequest, CanonicalObject, ChangeWorkPrerequisiteRequest,
     CheckpointWorkRequest, ChildRequirement, ChildWorkDraft, ChildWorkPrerequisite,
     ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionDrainAttestation,
-    CompletionSeal, CreateWorkRequest, DecomposeWorkRequest, DevelopmentNoopRedactor,
-    DisposeWorkRequest, FeedId, LifecycleAuthorityDecision, MemorySummary, MemoryVersion,
-    ObjectHash, OfferWorkHandoffRequest, ProjectId, ReadyWork, RecordWorkEvidenceRequest,
-    ReleaseWorkRequest, ReopenWorkRequest, ReviseWorkRequest, SessionId, SqliteStore, TaskId,
-    WaiveRequiredChildRequest, WorkAuthorityOperation, WorkAvailability, WorkBlockerKind,
-    WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState, WorkDecomposition,
-    WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence, WorkFeedEntry, WorkHandoffOffer,
-    WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLifecycle, WorkOrigin,
-    WorkPlanningAuthority, WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
-    WorkTransition,
+    CompletionSeal, ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest,
+    DevelopmentNoopRedactor, DisposeWorkRequest, ExecutionObservation, FeedId,
+    LifecycleAuthorityDecision, MemorySummary, MemoryVersion, ObjectHash, OfferWorkHandoffRequest,
+    ProjectId, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
+    ReviseWorkRequest, SessionId, SqliteStore, TaskId, WaiveRequiredChildRequest,
+    WorkAuthorityOperation, WorkAvailability, WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint,
+    WorkClaim, WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
+    WorkEvidence, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
+    WorkItemKind, WorkLifecycle, WorkOrigin, WorkPlanningAuthority, WorkRevisionPatch, WorkRun,
+    WorkRunId, WorkRunState, WorkSessionState, WorkTransition,
     domain::{
         AssuranceLevel, MemoryAssertionEvent, MemoryContradictionEvent, ProvenanceLink,
         ProvenanceRelation, SCHEMA_VERSION, Scope, Sensitivity,
@@ -344,6 +344,9 @@ pub struct WorkFocusView {
     pub status: ReadyWorkSummary,
     pub run: Option<WorkRunSummary>,
     pub claim: Option<WorkClaim>,
+    /// Paste-ready native control binding for this session's live claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_binding: Option<ControlWorkBinding>,
     pub children: Vec<WorkItemSummary>,
     pub prerequisites: Vec<WorkItemSummary>,
     pub handoffs: Vec<WorkHandoffSummary>,
@@ -372,6 +375,8 @@ pub struct RequiredChildWaiverCandidate {
 /// Compact execution-generation state for focus packets.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkRunSummary {
+    pub root_execution_id: crate::RootExecutionId,
+    pub work_id: WorkId,
     pub run_id: WorkRunId,
     pub generation: i64,
     pub executor: Option<SessionId>,
@@ -568,6 +573,9 @@ pub struct WorkMutationReceipt {
     pub work_id: WorkId,
     pub work_ref: String,
     pub revision: i64,
+    /// Paste-ready native control binding produced by a successful live claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_binding: Option<ControlWorkBinding>,
     pub result: serde_json::Value,
 }
 
@@ -1515,9 +1523,28 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
         let guidance = self.work_guidance(store, work_id, now)?;
+        let control_binding = if operation == "claim" {
+            guidance
+                .claim
+                .as_ref()
+                .map(|claim| store.get_work_run(claim.run_id))
+                .transpose()?
+                .as_ref()
+                .and_then(|run| {
+                    owned_control_work_binding(
+                        &guidance.status.work,
+                        run,
+                        guidance.claim.as_ref(),
+                        &self.session_id,
+                        now,
+                    )
+                })
+        } else {
+            None
+        };
         let result = WorkUpdateResult {
             operation: operation.to_owned(),
-            receipt: compact_mutation_receipt(&guidance.status.work, receipt),
+            receipt: compact_mutation_receipt(&guidance.status.work, control_binding, receipt),
             obligations: compact_obligations(&guidance.status),
             allowed_next: guidance.allowed_next,
         };
@@ -1862,7 +1889,7 @@ impl LocalWorkService {
         let guidance = self.work_guidance(store, work_id, now)?;
         let result = WorkHandoffResult {
             operation: operation.to_owned(),
-            receipt: compact_mutation_receipt(&guidance.status.work, receipt),
+            receipt: compact_mutation_receipt(&guidance.status.work, None, receipt),
             obligations: compact_obligations(&guidance.status),
             allowed_next: guidance.allowed_next,
         };
@@ -2220,11 +2247,15 @@ impl LocalWorkService {
                 memories.len() - usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX),
             ));
         }
+        let control_binding = run.as_ref().and_then(|run| {
+            owned_control_work_binding(&status.work, run, claim.as_ref(), &self.session_id, now)
+        });
         let mut view = WorkFocusView {
             session: agent_work_session(&session),
             status: ready_work_summary(status),
             run: run.as_ref().map(work_run_summary),
             claim,
+            control_binding,
             children: children
                 .into_iter()
                 .take(MAX_FOCUS_RELATIONS)
@@ -2432,6 +2463,8 @@ fn ready_work_summary(status: ReadyWork) -> ReadyWorkSummary {
 
 fn work_run_summary(run: &WorkRun) -> WorkRunSummary {
     WorkRunSummary {
+        root_execution_id: run.root_execution_id,
+        work_id: run.work_id,
         run_id: run.run_id,
         generation: run.generation,
         executor: run.executor.clone(),
@@ -2440,6 +2473,34 @@ fn work_run_summary(run: &WorkRun) -> WorkRunSummary {
         last_checkpoint: run.last_checkpoint.clone(),
         completion_seal: run.completion_seal.clone(),
     }
+}
+
+fn owned_control_work_binding(
+    work: &WorkItem,
+    run: &WorkRun,
+    claim: Option<&WorkClaim>,
+    session_id: &SessionId,
+    now: DateTime<Utc>,
+) -> Option<ControlWorkBinding> {
+    let claim = claim?;
+    (work.lifecycle == WorkLifecycle::Open
+        && work.active_run_id == Some(run.run_id)
+        && run.work_id == work.work_id
+        && matches!(run.state, WorkRunState::Claimed | WorkRunState::Active)
+        && claim.work_id == work.work_id
+        && claim.run_id == run.run_id
+        && claim.accepted_work_revision == work.revision
+        && claim.holder == *session_id
+        && claim.state == WorkClaimState::Active
+        && claim.expires_at > now)
+        .then_some(ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: work.revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        })
 }
 
 fn work_handoff_summary(offer: &WorkHandoffOffer) -> WorkHandoffSummary {
@@ -2507,7 +2568,11 @@ fn compact_obligations(status: &ReadyWork) -> Vec<String> {
         .collect()
 }
 
-fn compact_mutation_receipt(work: &WorkItem, receipt: serde_json::Value) -> WorkMutationReceipt {
+fn compact_mutation_receipt(
+    work: &WorkItem,
+    control_binding: Option<ControlWorkBinding>,
+    receipt: serde_json::Value,
+) -> WorkMutationReceipt {
     if let Ok(existing) = serde_json::from_value::<WorkMutationReceipt>(receipt.clone()) {
         return existing;
     }
@@ -2568,6 +2633,7 @@ fn compact_mutation_receipt(work: &WorkItem, receipt: serde_json::Value) -> Work
         work_id: work.work_id,
         work_ref: work.short_ref.clone(),
         revision: work.revision,
+        control_binding,
         result,
     }
 }
@@ -3002,6 +3068,29 @@ fn agent_change_object(
                 summary: compact_text(&evidence.summary),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 created_at: evidence.created_at,
+            }))
+        }
+        "execution_observation" => {
+            let observation = serde_json::from_value::<ExecutionObservation>(object)?;
+            let item = store.get_work_item(observation.binding.work_id)?;
+            if &observation.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "execution observation is bound outside its project work item".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: observation.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(observation.binding.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(observation.binding.work_revision),
+                change_kind: "execution_observation".into(),
+                summary: compact_text(&format!(
+                    "{:?} {:?}; source_changed={}",
+                    observation.effect, observation.outcome, observation.source_changed
+                )),
+                actor_id: Some(compact_text(&observation.actor.actor_id)),
+                created_at: observation.observed_at.unwrap_or(observation.recorded_at),
             }))
         }
         "memory_version" => {
@@ -3561,6 +3650,83 @@ mod tests {
         assert_ne!(capture, checkpoint);
         assert_ne!(checkpoint, complete);
         assert_ne!(capture, complete);
+    }
+
+    #[test]
+    fn execution_observation_has_a_compact_agent_work_projection() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("execution-observation-projection".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            SessionId("session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(root_input("Observe execution", "root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let run_id = work.active_run_id.expect("active run");
+        let observation = ExecutionObservation {
+            schema_version: SCHEMA_VERSION,
+            project_id: project.clone(),
+            binding: crate::ControlWorkBinding {
+                root_execution_id: crate::RootExecutionId::new(),
+                work_id: work.work_id,
+                run_id,
+                work_revision: work.revision,
+                claim_id: crate::WorkClaimId::new(),
+                claim_fence: 1,
+            },
+            session_id: SessionId("session".into()),
+            grant_id: "grant".into(),
+            observation_id: "observation".into(),
+            action_fingerprint: ObjectHash::from_canonical_bytes(b"write source"),
+            effect: crate::EffectClass::MutateLocal,
+            outcome: crate::ExecutionOutcome::Succeeded,
+            source_changed: true,
+            source_basis: Some(crate::ExecutionSourceBasis {
+                workspace_id: "workspace-a".into(),
+                source_revision: "revision-a".into(),
+            }),
+            observed_at: Some(at(1)),
+            actor: ActorContext {
+                actor_id: "host".into(),
+                actor_kind: "host".into(),
+                assurance: AssuranceLevel::Asserted,
+                run_id: Some(run_id.0.to_string()),
+                session_id: Some(SessionId("session".into())),
+                source_tool: Some("host-control:turn_checkpoint".into()),
+                source_skill: None,
+                provenance_chain: Vec::new(),
+                reason: "record execution fact".into(),
+            },
+            recorded_at: at(2),
+        };
+        let store = SqliteStore::open(database).expect("store");
+        let projection = agent_change_object(
+            &store,
+            &project,
+            Some(work.root_id),
+            None,
+            "execution_observation",
+            serde_json::to_value(observation).expect("observation json"),
+        )
+        .expect("agent projection");
+        let WorkChangeProjection::Visible(summary) = projection else {
+            panic!("execution observation must remain visible");
+        };
+        assert_eq!(summary.work_id, Some(work.work_id));
+        assert_eq!(summary.change_kind, "execution_observation");
+        assert!(summary.summary.contains("MutateLocal Succeeded"));
+        assert!(!summary.summary.contains("write source"));
     }
 
     #[test]
@@ -5639,6 +5805,36 @@ mod tests {
             idempotency_key: "claim-a".into(),
         };
         let claimed = a.work_update(claim_input.clone(), at(4)).expect("claim");
+        let control_binding = claimed
+            .receipt
+            .control_binding
+            .as_ref()
+            .expect("claim receipt exposes a paste-ready control binding");
+        assert_eq!(control_binding.work_id, root.work_id);
+        assert_eq!(control_binding.work_revision, claimed.receipt.revision);
+        let claimed_focus = a
+            .work_focus(&root.short_ref, at(4))
+            .expect("claimed focus exposes the same control binding");
+        assert_eq!(
+            claimed_focus.control_binding.as_ref(),
+            Some(control_binding)
+        );
+        assert_eq!(
+            claimed_focus
+                .run
+                .as_ref()
+                .expect("claimed run")
+                .root_execution_id,
+            control_binding.root_execution_id
+        );
+        assert_eq!(
+            claimed_focus
+                .claim
+                .as_ref()
+                .expect("claimed focus claim")
+                .claim_id,
+            control_binding.claim_id
+        );
         a.work_next_with_delivery_token(
             20,
             Some(acknowledged_delivered),

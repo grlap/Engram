@@ -111,7 +111,13 @@ Natural rule cues become pinned constraints, claim retries preserve their
 original lease, and explicitly declared pinned contradictions stop context
 assembly before an agent acts.
 A host-private JSON-lines service now provides a working `session_bind →
-turn_evaluate → turn_begin → turn_checkpoint` loop. It persists routing,
+turn_evaluate → turn_begin → turn_checkpoint` loop. It can bind the session to
+an exact live `WorkRun` claim and atomically record host execution observations
+on that run at the control checkpoint. Claim ownership is the exact control
+session id, and optional source revision/timestamp context is preserved for the
+next obligation phase. The claim receipt and focus view expose a paste-ready
+root/work/run/claim/fence tuple, so the host never needs to query SQLite to
+construct the binding. It persists routing,
 session phases, exact context delivery, short-lived grants, idempotent
 operation results, and canonical checkpoint events. A control-process restart
 invalidates every unbegun grant and resumes at `sync_required`; retry evidence

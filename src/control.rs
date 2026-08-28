@@ -227,6 +227,11 @@ pub fn evaluate_turn_begin(
             code: ControlRefusalCode::GrantScopeMismatch,
         };
     }
+    if basis.work_binding != snapshot.work_binding || !snapshot.work_binding_current {
+        return TurnBeginDecision::Refuse {
+            code: ControlRefusalCode::StaleFence,
+        };
+    }
     if !matches!(
         snapshot.participant_membership,
         ParticipantMembership::Member
@@ -348,6 +353,7 @@ pub fn evaluate_turn_checkpoint(
     if grant.grant_id.trim().is_empty()
         || grant.basis.session_id != snapshot.session_id
         || grant.basis.task_id != snapshot.task_id
+        || grant.basis.work_binding != snapshot.work_binding
         || !matches!(snapshot.phase, SessionPhase::TurnOpen)
         || !matches!(snapshot.grant_state, TurnGrantState::Begun)
     {
@@ -647,6 +653,9 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     if !input.active_policy_known {
         return refusal(input, ControlRefusalCode::ControlPolicyMissing);
     }
+    if input.work_binding.is_some() && !input.work_binding_current {
+        return refusal(input, ControlRefusalCode::StaleFence);
+    }
     if !input.host_assurance.covers(input.required_assurance) {
         return assurance_refusal(input, None, input.required_assurance);
     }
@@ -773,6 +782,7 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
         basis: Box::new(TurnGrantBasis {
             session_id: input.session_id.clone(),
             task_id,
+            work_binding: input.work_binding.clone(),
             purpose: input.intent.purpose,
             intent_fingerprint: input.intent.intent_fingerprint.clone(),
             project_policy_epoch: input.current_epochs.project_policy,
@@ -805,6 +815,11 @@ fn turn_input_has_invalid_shape(input: &TurnEvaluationInput) -> bool {
         || input.session_id.0.trim().is_empty()
         || input.intent.idempotency_key.trim().is_empty()
         || input.intent.requested_effects.is_empty()
+        || (input.work_binding.is_none() && !input.work_binding_current)
+        || input
+            .work_binding
+            .as_ref()
+            .is_some_and(|binding| !control_work_binding_has_valid_shape(binding))
         || !effects_are_unique(&input.intent.requested_effects)
         || input
             .intent
@@ -828,6 +843,10 @@ fn turn_input_has_invalid_shape(input: &TurnEvaluationInput) -> bool {
                 || lease.expires_at <= input.evaluated_at
                 || !lease.subject.has_valid_shape()
         })
+}
+
+fn control_work_binding_has_valid_shape(binding: &crate::domain::ControlWorkBinding) -> bool {
+    binding.work_revision > 0 && binding.claim_fence > 0
 }
 
 fn turn_leases_cover_resources(input: &TurnEvaluationInput) -> bool {
@@ -1153,6 +1172,8 @@ mod tests {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id: SessionId("session-a".into()),
             task_id: Some(TaskId::new()),
+            work_binding: None,
+            work_binding_current: true,
             participant_membership: ParticipantMembership::Member,
             task_state: Some(TaskState::Active),
             phase: SessionPhase::Ready,

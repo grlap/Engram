@@ -401,14 +401,116 @@ pub struct TurnIntent {
     pub resource_intents: Vec<ResourceSubject>,
 }
 
+/// Exact local-work authority basis selected by the embedding host for one
+/// control session.
+///
+/// The binding is a frozen reference to a live claim. Storage revalidates it
+/// before granting or beginning ordinary work and never derives it from a
+/// legacy task id or ambient focus.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ControlWorkBinding {
+    pub root_execution_id: RootExecutionId,
+    pub work_id: WorkId,
+    pub run_id: WorkRunId,
+    pub work_revision: i64,
+    pub claim_id: WorkClaimId,
+    pub claim_fence: i64,
+}
+
+/// Host-observed outcome for one material action performed during a begun
+/// turn. This is asserted execution evidence, never execution authority.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionOutcome {
+    Succeeded,
+    Failed,
+    Unknown,
+}
+
+/// Host-selected source identity carried by an execution observation.
+///
+/// A0 preserves this optional basis without treating it as verification. A1
+/// requires and validates it against the verification evidence state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExecutionSourceBasis {
+    pub workspace_id: String,
+    pub source_revision: String,
+}
+
+/// Host-supplied portion of one execution observation recorded at turn
+/// checkpoint. Storage supplies the bound run, claim, session, grant, actor,
+/// and recording timestamp.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExecutionObservationInput {
+    pub observation_id: String,
+    pub action_fingerprint: ObjectHash,
+    pub effect: EffectClass,
+    pub outcome: ExecutionOutcome,
+    pub source_changed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_basis: Option<ExecutionSourceBasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<DateTime<Utc>>,
+}
+
+/// Immutable host-captured execution fact routed to the exact bound run feed.
+///
+/// Phase A0 preserves optional workspace and source-state basis without
+/// validating it. Such observations may trigger later obligations, but cannot
+/// satisfy verification requirements by themselves.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExecutionObservation {
+    pub schema_version: u16,
+    pub project_id: ProjectId,
+    pub binding: ControlWorkBinding,
+    pub session_id: SessionId,
+    pub grant_id: String,
+    pub observation_id: String,
+    pub action_fingerprint: ObjectHash,
+    pub effect: EffectClass,
+    pub outcome: ExecutionOutcome,
+    pub source_changed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_basis: Option<ExecutionSourceBasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_at: Option<DateTime<Utc>>,
+    pub actor: ActorContext,
+    pub recorded_at: DateTime<Utc>,
+}
+
+const fn default_work_binding_current() -> bool {
+    true
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if callbacks receive a reference to the field"
+)]
+const fn work_binding_is_current(value: &bool) -> bool {
+    *value
+}
+
 /// Complete explicitly supplied state used to evaluate one turn.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the evaluator input records independent fail-closed facts rather than interchangeable flags"
+)]
 pub struct TurnEvaluationInput {
     pub control_schema_version: u16,
     pub session_id: SessionId,
     pub task_id: Option<TaskId>,
     pub participant_membership: ParticipantMembership,
     pub task_state: Option<TaskState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_binding: Option<ControlWorkBinding>,
+    /// Whether storage revalidated `work_binding` against the current work,
+    /// run, claim, holder, fence, root execution, and expiry in this snapshot.
+    #[serde(
+        default = "default_work_binding_current",
+        skip_serializing_if = "work_binding_is_current"
+    )]
+    pub work_binding_current: bool,
     pub phase: SessionPhase,
     pub health: ControlHealth,
     pub active_policy_known: bool,
@@ -464,6 +566,8 @@ pub struct ControlDirective {
 pub struct TurnGrantBasis {
     pub session_id: SessionId,
     pub task_id: TaskId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_binding: Option<ControlWorkBinding>,
     pub purpose: TurnPurpose,
     pub intent_fingerprint: ObjectHash,
     pub project_policy_epoch: ProjectPolicyEpoch,
@@ -520,6 +624,8 @@ pub struct ControlSessionStatus {
     pub control_schema_version: u16,
     pub project_id: ProjectId,
     pub task_id: TaskId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_binding: Option<ControlWorkBinding>,
     pub session_id: SessionId,
     pub phase: SessionPhase,
     pub assurance: ControlAssurance,
@@ -597,6 +703,13 @@ pub struct TurnBeginSnapshot {
     pub control_schema_version: u16,
     pub session_id: SessionId,
     pub task_id: TaskId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_binding: Option<ControlWorkBinding>,
+    #[serde(
+        default = "default_work_binding_current",
+        skip_serializing_if = "work_binding_is_current"
+    )]
+    pub work_binding_current: bool,
     pub phase: SessionPhase,
     pub participant_membership: ParticipantMembership,
     pub task_state: Option<TaskState>,
@@ -653,6 +766,8 @@ pub struct TurnCheckpointSnapshot {
     pub control_schema_version: u16,
     pub session_id: SessionId,
     pub task_id: TaskId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_binding: Option<ControlWorkBinding>,
     pub phase: SessionPhase,
     pub grant_state: TurnGrantState,
 }
@@ -674,6 +789,8 @@ pub struct TurnCheckpointEvent {
     pub grant_id: String,
     pub delivered_cursor: ChangeCursor,
     pub next_intent: TurnNextIntent,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub execution_observations: Vec<ObjectHash>,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
 }
@@ -686,6 +803,8 @@ pub struct TurnCheckpointReceipt {
     pub cursor: ChangeCursor,
     pub confirmed_cursor: ChangeCursor,
     pub phase: SessionPhase,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub execution_observations: Vec<ObjectHash>,
     pub session_revision: i64,
     pub checkpointed_at: DateTime<Utc>,
 }
