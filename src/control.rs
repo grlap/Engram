@@ -13,17 +13,130 @@ use crate::{
     CanonicalObject, ObjectHash,
     domain::{
         ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, CONTROL_SCHEMA_VERSION,
-        ChangeCursor, ContextPacket, ControlDirective, ControlHealth, ControlRefusalCode,
-        DirectiveSatisfaction, DirectiveTarget, EffectClass, IssuedTurnGrant, LeaseBasis,
-        LeaseKind, LeaseMode, ObservedActionBeginDecision, ObservedTurnDecision, PacketSafety,
-        ParticipantMembership, SessionPhase, TaskDelta, TaskState, TurnBeginDecision,
-        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision,
-        TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnPurpose,
+        ChangeCursor, ContextPacket, ControlAssurance, ControlDirective, ControlHealth,
+        ControlRefusalCode, DirectiveSatisfaction, DirectiveTarget, EffectClass, IssuedTurnGrant,
+        LeaseBasis, LeaseKind, LeaseMode, ObservedActionBeginDecision, ObservedTurnDecision,
+        PacketSafety, ParticipantMembership, ProjectPolicyEpoch, SessionPhase, TaskDelta,
+        TaskState, TurnBeginDecision, TurnBeginSnapshot, TurnCheckpointDecision,
+        TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantBasis, TurnGrantState,
+        TurnPurpose,
     },
     storage::StoreError,
 };
 
 const MAX_SHADOW_GRANT_TTL_SECONDS: i64 = 300;
+
+/// Minimum host assurance that may mediate one material effect class.
+///
+/// Project policy may raise this floor, but cannot lower it. V1 keeps
+/// observation and communication available to advisory hosts while every
+/// mutation, external side effect, and lifecycle transition requires a host
+/// that actually gates turns.
+#[must_use]
+pub(crate) const fn minimum_assurance_for_effect(effect: EffectClass) -> ControlAssurance {
+    match effect {
+        EffectClass::Observe | EffectClass::Communicate => ControlAssurance::Advisory,
+        EffectClass::Coordinate
+        | EffectClass::MutateLocal
+        | EffectClass::MutateShared
+        | EffectClass::ExternalSideEffect
+        | EffectClass::Lifecycle => ControlAssurance::TurnGated,
+    }
+}
+
+/// Declared host effects capped by what its assurance can honestly mediate.
+#[must_use]
+pub(crate) fn effective_mediated_effects(
+    assurance: ControlAssurance,
+    declared: &[EffectClass],
+) -> Vec<EffectClass> {
+    declared
+        .iter()
+        .copied()
+        .filter(|effect| assurance.covers(minimum_assurance_for_effect(*effect)))
+        .collect()
+}
+
+/// Immutable inputs for one lease-boundary policy decision.
+pub(crate) struct LeasePolicyInput<'a> {
+    pub request_key: &'a str,
+    pub host_assurance: ControlAssurance,
+    pub declared_mediated_effects: &'a [EffectClass],
+    pub project_required_assurance: ControlAssurance,
+    pub policy_effects: &'a [EffectClass],
+    pub session_policy_epoch: ProjectPolicyEpoch,
+    pub active_policy_epoch: ProjectPolicyEpoch,
+    pub effect: EffectClass,
+}
+
+/// Pure lease-boundary refusal plus whether the persisted session may adopt
+/// the current project-policy epoch after recording that refusal.
+pub(crate) struct LeasePolicyRefusal {
+    pub directive: ControlDirective,
+    pub adopt_project_policy_epoch: bool,
+}
+
+/// Applies the same project, intrinsic-effect, mediation, capability, and
+/// epoch ladder used by turn admission without performing I/O.
+pub(crate) fn evaluate_lease_policy(
+    input: &LeasePolicyInput<'_>,
+) -> Result<Vec<EffectClass>, LeasePolicyRefusal> {
+    let effective =
+        effective_mediated_effects(input.host_assurance, input.declared_mediated_effects);
+    let refuse = |code, effect, required_assurance, adopt_project_policy_epoch| {
+        Err(LeasePolicyRefusal {
+            directive: control_directive(
+                input.request_key,
+                code,
+                effect,
+                required_assurance,
+                Some(input.declared_mediated_effects),
+                Some(&effective),
+            ),
+            adopt_project_policy_epoch,
+        })
+    };
+    if !input
+        .host_assurance
+        .covers(input.project_required_assurance)
+    {
+        return refuse(
+            ControlRefusalCode::ControlAssuranceInsufficient,
+            None,
+            Some(input.project_required_assurance),
+            false,
+        );
+    }
+    let effect_required = minimum_assurance_for_effect(input.effect);
+    if !input.host_assurance.covers(effect_required) {
+        return refuse(
+            ControlRefusalCode::ControlAssuranceInsufficient,
+            Some(input.effect),
+            Some(effect_required),
+            false,
+        );
+    }
+    if !effective.contains(&input.effect) {
+        return refuse(
+            ControlRefusalCode::ControlAssuranceInsufficient,
+            Some(input.effect),
+            Some(effect_required),
+            false,
+        );
+    }
+    if !input.policy_effects.contains(&input.effect) {
+        return refuse(
+            ControlRefusalCode::CapabilityNotPermitted,
+            Some(input.effect),
+            None,
+            false,
+        );
+    }
+    if input.session_policy_epoch != input.active_policy_epoch {
+        return refuse(ControlRefusalCode::PolicyEpochChanged, None, None, true);
+    }
+    Ok(effective)
+}
 
 #[derive(Serialize)]
 struct ControlDeliveryContent<'a> {
@@ -425,7 +538,10 @@ fn leases_cover_action(grant: &ActionGrantBasis, snapshot: &ActionBeginSnapshot)
     let required_kind = match grant.effect {
         EffectClass::MutateLocal | EffectClass::MutateShared => Some(LeaseKind::Execution),
         EffectClass::Lifecycle => Some(LeaseKind::Coordination),
-        EffectClass::Observe | EffectClass::Communicate | EffectClass::ExternalSideEffect => None,
+        EffectClass::Observe
+        | EffectClass::Communicate
+        | EffectClass::Coordinate
+        | EffectClass::ExternalSideEffect => None,
     };
     let Some(required_kind) = required_kind else {
         return true;
@@ -532,13 +648,32 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
         return refusal(input, ControlRefusalCode::ControlPolicyMissing);
     }
     if !input.host_assurance.covers(input.required_assurance) {
-        return refusal(input, ControlRefusalCode::ControlAssuranceInsufficient);
+        return assurance_refusal(input, None, input.required_assurance);
     }
-    if !requested_effects_are_covered(input, &input.mediated_effects) {
-        return refusal(input, ControlRefusalCode::ControlAssuranceInsufficient);
+    if let Some((effect, required_assurance)) = effect_assurance_refusal(input) {
+        return assurance_refusal(input, Some(effect), required_assurance);
     }
-    if !requested_effects_are_covered(input, &input.policy_effects) {
-        return refusal(input, ControlRefusalCode::CapabilityNotPermitted);
+    let effective_mediation =
+        effective_mediated_effects(input.host_assurance, &input.mediated_effects);
+    if let Some(effect) = first_uncovered_effect(input, &effective_mediation) {
+        return detailed_refusal(
+            input,
+            ControlRefusalCode::ControlAssuranceInsufficient,
+            Some(effect),
+            Some(minimum_assurance_for_effect(effect)),
+            Some(&input.mediated_effects),
+            Some(&effective_mediation),
+        );
+    }
+    if let Some(effect) = first_uncovered_effect(input, &input.policy_effects) {
+        return detailed_refusal(
+            input,
+            ControlRefusalCode::CapabilityNotPermitted,
+            Some(effect),
+            None,
+            Some(&input.mediated_effects),
+            Some(&effective_mediation),
+        );
     }
 
     let Some(task_id) = input.task_id else {
@@ -576,8 +711,21 @@ fn evaluate_turn(input: &TurnEvaluationInput) -> TurnDecision {
     if turn_input_has_invalid_shape(input) {
         return refusal(input, ControlRefusalCode::GrantScopeMismatch);
     }
-    if !effects_fit_purpose(input) {
-        return refusal(input, ControlRefusalCode::GrantScopeMismatch);
+    if let Some(effect) = input
+        .intent
+        .requested_effects
+        .iter()
+        .copied()
+        .find(|effect| !effect_fits_purpose(input.intent.purpose, *effect))
+    {
+        return detailed_refusal(
+            input,
+            ControlRefusalCode::GrantScopeMismatch,
+            Some(effect),
+            None,
+            Some(&input.mediated_effects),
+            Some(&effective_mediation),
+        );
     }
     if !turn_leases_cover_resources(input) {
         return refusal(input, ControlRefusalCode::LeaseRequired);
@@ -712,12 +860,28 @@ fn turn_leases_cover_resources(input: &TurnEvaluationInput) -> bool {
         && (!requires_coordination || resources_have(LeaseKind::Coordination))
 }
 
-fn requested_effects_are_covered(input: &TurnEvaluationInput, allowed: &[EffectClass]) -> bool {
+fn first_uncovered_effect(
+    input: &TurnEvaluationInput,
+    allowed: &[EffectClass],
+) -> Option<EffectClass> {
     input
         .intent
         .requested_effects
         .iter()
-        .all(|effect| allowed.contains(effect))
+        .copied()
+        .find(|effect| !allowed.contains(effect))
+}
+
+fn effect_assurance_refusal(
+    input: &TurnEvaluationInput,
+) -> Option<(EffectClass, ControlAssurance)> {
+    for effect in &input.intent.requested_effects {
+        let required = minimum_assurance_for_effect(*effect);
+        if !input.host_assurance.covers(required) {
+            return Some((*effect, required));
+        }
+    }
+    None
 }
 
 const fn health_refusal(health: ControlHealth) -> Option<ControlRefusalCode> {
@@ -838,17 +1002,9 @@ const fn phase_refusal(
     }
 }
 
-fn effects_fit_purpose(input: &TurnEvaluationInput) -> bool {
-    input
-        .intent
-        .requested_effects
-        .iter()
-        .all(|effect| effect_fits_purpose(input.intent.purpose, *effect))
-}
-
 const fn effect_fits_purpose(purpose: TurnPurpose, effect: EffectClass) -> bool {
     match purpose {
-        TurnPurpose::Ordinary => true,
+        TurnPurpose::Ordinary => !matches!(effect, EffectClass::Coordinate),
         TurnPurpose::Recovery => {
             matches!(effect, EffectClass::Observe | EffectClass::Communicate)
         }
@@ -860,15 +1016,68 @@ const fn effect_fits_purpose(purpose: TurnPurpose, effect: EffectClass) -> bool 
 }
 
 fn refusal(input: &TurnEvaluationInput, code: ControlRefusalCode) -> TurnDecision {
-    let (target, satisfaction, recovery_effects) = directive_shape(code);
+    detailed_refusal(input, code, None, None, None, None)
+}
+
+fn detailed_refusal(
+    input: &TurnEvaluationInput,
+    code: ControlRefusalCode,
+    effect: Option<EffectClass>,
+    required_assurance: Option<ControlAssurance>,
+    declared_mediated_effects: Option<&[EffectClass]>,
+    effective_mediated_effects: Option<&[EffectClass]>,
+) -> TurnDecision {
     TurnDecision::Refuse {
-        directive: ControlDirective {
-            directive_id: format!("{}:{}", input.intent.idempotency_key, code.as_str()),
+        directive: control_directive(
+            &input.intent.idempotency_key,
             code,
-            target,
-            satisfaction,
-            recovery_effects,
-        },
+            effect,
+            required_assurance,
+            declared_mediated_effects,
+            effective_mediated_effects,
+        ),
+    }
+}
+
+fn assurance_refusal(
+    input: &TurnEvaluationInput,
+    effect: Option<EffectClass>,
+    required_assurance: ControlAssurance,
+) -> TurnDecision {
+    let effective = effective_mediated_effects(input.host_assurance, &input.mediated_effects);
+    TurnDecision::Refuse {
+        directive: control_directive(
+            &input.intent.idempotency_key,
+            ControlRefusalCode::ControlAssuranceInsufficient,
+            effect,
+            Some(required_assurance),
+            Some(&input.mediated_effects),
+            Some(&effective),
+        ),
+    }
+}
+
+/// Builds the common policy-decision directive used by turn and lease gates.
+#[must_use]
+pub(crate) fn control_directive(
+    request_key: &str,
+    code: ControlRefusalCode,
+    effect: Option<EffectClass>,
+    required_assurance: Option<ControlAssurance>,
+    declared_mediated_effects: Option<&[EffectClass]>,
+    effective_mediated_effects: Option<&[EffectClass]>,
+) -> ControlDirective {
+    let (target, satisfaction, recovery_effects) = directive_shape(code);
+    ControlDirective {
+        directive_id: format!("{}:{}", request_key, code.as_str()),
+        code,
+        effect,
+        required_assurance,
+        declared_mediated_effects: declared_mediated_effects.map(<[_]>::to_vec),
+        effective_mediated_effects: effective_mediated_effects.map(<[_]>::to_vec),
+        target,
+        satisfaction,
+        recovery_effects,
     }
 }
 
@@ -987,6 +1196,7 @@ mod tests {
         vec![
             EffectClass::Observe,
             EffectClass::Communicate,
+            EffectClass::Coordinate,
             EffectClass::MutateLocal,
             EffectClass::MutateShared,
             EffectClass::ExternalSideEffect,
@@ -1090,6 +1300,205 @@ mod tests {
             serde_json::to_vec(&replay).unwrap()
         );
         assert!(matches!(first.decision, TurnDecision::Grant { .. }));
+    }
+
+    #[test]
+    fn effect_assurance_floors_cap_declared_host_mediation() {
+        for effect in [EffectClass::Observe, EffectClass::Communicate] {
+            assert_eq!(
+                minimum_assurance_for_effect(effect),
+                ControlAssurance::Advisory
+            );
+        }
+        for effect in [
+            EffectClass::Coordinate,
+            EffectClass::MutateLocal,
+            EffectClass::MutateShared,
+            EffectClass::ExternalSideEffect,
+            EffectClass::Lifecycle,
+        ] {
+            assert_eq!(
+                minimum_assurance_for_effect(effect),
+                ControlAssurance::TurnGated
+            );
+        }
+        assert_eq!(
+            effective_mediated_effects(ControlAssurance::Advisory, &all_effects()),
+            vec![EffectClass::Observe, EffectClass::Communicate]
+        );
+        assert_eq!(
+            effective_mediated_effects(ControlAssurance::TurnGated, &all_effects()),
+            all_effects()
+        );
+    }
+
+    #[test]
+    fn advisory_mutation_refuses_even_with_declared_effect_and_live_lease() {
+        let mut input = input();
+        let subject = ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: ResourceCoverage::Tree,
+        };
+        input.intent.requested_effects = vec![EffectClass::MutateLocal];
+        input.intent.resource_intents = vec![subject.clone()];
+        input.leases = vec![LeaseBasis {
+            lease_id: "lease-effect-floor".into(),
+            holder: input.session_id.clone(),
+            kind: LeaseKind::Execution,
+            mode: LeaseMode::Exclusive,
+            subject,
+            fence: 1,
+            expires_at: input.evaluated_at + TimeDelta::seconds(60),
+        }];
+
+        let observation = observe_turn(&input);
+        let TurnDecision::Refuse { directive } = observation.decision else {
+            panic!("advisory mutation must refuse");
+        };
+        assert_eq!(
+            directive.code,
+            ControlRefusalCode::ControlAssuranceInsufficient
+        );
+        assert_eq!(directive.effect, Some(EffectClass::MutateLocal));
+        assert_eq!(
+            directive.required_assurance,
+            Some(ControlAssurance::TurnGated)
+        );
+        assert_eq!(directive.declared_mediated_effects, Some(all_effects()));
+        assert_eq!(
+            directive.effective_mediated_effects,
+            Some(vec![EffectClass::Observe, EffectClass::Communicate])
+        );
+
+        input.host_assurance = ControlAssurance::TurnGated;
+        assert!(matches!(
+            observe_turn(&input).decision,
+            TurnDecision::Grant { .. }
+        ));
+    }
+
+    #[test]
+    fn project_assurance_refusal_is_not_misattributed_to_an_effect() {
+        let mut input = input();
+        input.required_assurance = ControlAssurance::TurnGated;
+
+        let TurnDecision::Refuse { directive } = observe_turn(&input).decision else {
+            panic!("advisory host must not satisfy a turn-gated project policy");
+        };
+        assert_eq!(
+            directive.code,
+            ControlRefusalCode::ControlAssuranceInsufficient
+        );
+        assert_eq!(directive.effect, None);
+        assert_eq!(
+            directive.required_assurance,
+            Some(ControlAssurance::TurnGated)
+        );
+    }
+
+    #[test]
+    fn internal_coordinate_effect_is_not_a_model_turn_capability() {
+        let mut input = input();
+        input.host_assurance = ControlAssurance::TurnGated;
+        input.intent.requested_effects = vec![EffectClass::Coordinate];
+
+        assert_eq!(
+            refusal_code(&observe_turn(&input)),
+            Some(ControlRefusalCode::GrantScopeMismatch)
+        );
+        let TurnDecision::Refuse { directive } = observe_turn(&input).decision else {
+            panic!("coordinate must remain lease-boundary only");
+        };
+        assert_eq!(directive.effect, Some(EffectClass::Coordinate));
+    }
+
+    #[test]
+    fn undeclared_effect_refusal_names_the_complete_mediation_envelope() {
+        let mut input = input();
+        input.host_assurance = ControlAssurance::TurnGated;
+        input.mediated_effects = vec![EffectClass::Observe];
+        input.intent.requested_effects = vec![EffectClass::MutateLocal];
+
+        let TurnDecision::Refuse { directive } = observe_turn(&input).decision else {
+            panic!("an observe-only host must not mediate mutation");
+        };
+        assert_eq!(
+            directive.code,
+            ControlRefusalCode::ControlAssuranceInsufficient
+        );
+        assert_eq!(directive.effect, Some(EffectClass::MutateLocal));
+        assert_eq!(
+            directive.required_assurance,
+            Some(ControlAssurance::TurnGated)
+        );
+        assert_eq!(
+            directive.declared_mediated_effects,
+            Some(vec![EffectClass::Observe])
+        );
+        assert_eq!(
+            directive.effective_mediated_effects,
+            Some(vec![EffectClass::Observe])
+        );
+    }
+
+    #[test]
+    fn unsupported_effect_refusal_names_the_policy_exclusion() {
+        let mut input = input();
+        input.host_assurance = ControlAssurance::TurnGated;
+        input.policy_effects = vec![EffectClass::Observe, EffectClass::Communicate];
+        input.intent.requested_effects = vec![EffectClass::MutateLocal];
+
+        let TurnDecision::Refuse { directive } = observe_turn(&input).decision else {
+            panic!("an effect outside the active policy must refuse");
+        };
+        assert_eq!(directive.code, ControlRefusalCode::CapabilityNotPermitted);
+        assert_eq!(directive.effect, Some(EffectClass::MutateLocal));
+        assert_eq!(directive.required_assurance, None);
+        assert_eq!(directive.declared_mediated_effects, Some(all_effects()));
+        assert_eq!(directive.effective_mediated_effects, Some(all_effects()));
+    }
+
+    #[test]
+    fn lease_policy_uses_the_same_assurance_capability_and_epoch_ladder() {
+        let declared = vec![EffectClass::Observe, EffectClass::MutateLocal];
+        let policy_effects = vec![EffectClass::Observe];
+        let refusal = evaluate_lease_policy(&LeasePolicyInput {
+            request_key: "lease_acquire:lease-a",
+            host_assurance: ControlAssurance::TurnGated,
+            declared_mediated_effects: &declared,
+            project_required_assurance: ControlAssurance::TurnGated,
+            policy_effects: &policy_effects,
+            session_policy_epoch: ProjectPolicyEpoch(2),
+            active_policy_epoch: ProjectPolicyEpoch(2),
+            effect: EffectClass::MutateLocal,
+        })
+        .expect_err("unsupported lease effect must refuse");
+        assert_eq!(
+            refusal.directive.code,
+            ControlRefusalCode::CapabilityNotPermitted
+        );
+        assert_eq!(refusal.directive.effect, Some(EffectClass::MutateLocal));
+        assert_eq!(refusal.directive.required_assurance, None);
+        assert!(!refusal.adopt_project_policy_epoch);
+
+        let policy_effects = vec![EffectClass::Observe, EffectClass::MutateLocal];
+        let refusal = evaluate_lease_policy(&LeasePolicyInput {
+            request_key: "lease_acquire:lease-b",
+            host_assurance: ControlAssurance::TurnGated,
+            declared_mediated_effects: &declared,
+            project_required_assurance: ControlAssurance::TurnGated,
+            policy_effects: &policy_effects,
+            session_policy_epoch: ProjectPolicyEpoch(1),
+            active_policy_epoch: ProjectPolicyEpoch(2),
+            effect: EffectClass::MutateLocal,
+        })
+        .expect_err("stale lease epoch must refuse");
+        assert_eq!(
+            refusal.directive.code,
+            ControlRefusalCode::PolicyEpochChanged
+        );
+        assert!(refusal.adopt_project_policy_epoch);
     }
 
     #[test]
@@ -1216,6 +1625,7 @@ mod tests {
     #[test]
     fn recovery_turn_cannot_request_mutation() {
         let mut input = input();
+        input.host_assurance = ControlAssurance::TurnGated;
         input.phase = SessionPhase::RecoveryOpen;
         input.intent.purpose = TurnPurpose::Recovery;
         input.intent.requested_effects = vec![EffectClass::MutateShared];

@@ -30,11 +30,10 @@ Specified but not yet shipped: a `WorkSourceAdapter` intake port; native
 host-control binding to `root_execution_id` / `work_id` / `run_id` (the host
 actor context carries `run_id: None` today); fenced report assembly
 (`ReportAssemblyClaim`, `report_ready`) and durable publication intents; real
-external adapters; per-project configurable required assurance (the stock
-policy requires `turn_gated`, so an honest `advisory` shadow host cannot be
-granted today); capability requirements on work; an environment fingerprint
-on the seal. Table rows and diagram nodes marked **planned** are exactly
-these.
+external adapters; capability requirements on work; an environment
+fingerprint on the seal. Per-project required assurance is now selectable at
+bootstrap and through an attributed, immutable policy update. Table rows and
+diagram nodes marked **planned** are exactly the remaining items.
 
 The upstream layers — intake/enrichment, planning, capability and context
 assignment — belong to an external, separately named intake system that is
@@ -202,9 +201,9 @@ packets.
    from a real ticket.
 2. Execution through TermAl under the shipped control channel, with
    decomposition admitted under the agent's claim. Prerequisites for this
-   step to be honest rather than shadowed: native `WorkRun` control binding,
-   and per-project configurable required assurance so an `advisory` host can
-   be granted.
+   step to be honest rather than shadowed: native `WorkRun` control binding.
+   The project policy can already require `advisory` for a shadow host and
+   later advance to `turn_gated` without rewriting prior policy history.
 3. `CompletionSeal`, then the report path. Until fenced report assembly and
    a real side-effecting adapter exist, this step exercises the dummy receipt
    and does not claim the ticket was updated.
@@ -221,8 +220,6 @@ packets.
 - **Fenced report assembly and durable publication intents**
   (`ReportAssemblyClaim`, `report_ready`). Only `CompletionSeal` and the
   dummy adapter's idempotency contract exist.
-- **Per-project configurable required assurance.** The stock policy requires
-  `turn_gated`; an `advisory` host is refused on every evaluate.
 - **Capability requirements on work items** matched against the host's
   capability map at bind. Today `session_bind` carries only
   `capability_map_revision`; work items have no requirement field and no

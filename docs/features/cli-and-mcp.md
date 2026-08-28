@@ -20,8 +20,19 @@ authorize itself.
 
 ```bash
 export ENGRAM_HOME=/absolute/host-local/path
-engram init
+engram init --required-assurance advisory \
+  --authorized-by host-operator \
+  --reason "bootstrap this project for an advisory host"
 engram doctor
+
+# Host/operator boundary: activate a new immutable policy version. The
+# optional expected hash is the `id=` reported by doctor and prevents a stale
+# operator from overwriting a concurrent policy update.
+engram control-policy set-required-assurance turn_gated \
+  --authorized-by host-operator \
+  --reason "enable mandatory host turn mediation" \
+  --expected-policy-hash <active-policy-hash>
+
 engram mcp \
   --actor-id codex \
   --session-id session-unique-id \
@@ -47,10 +58,33 @@ engram mcp --actor-id codex --session-id session-unique-id \
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and
 session on the host. `doctor` verifies every canonical object plus
-hash-bound control record, reports the built-in policy envelope and live
+hash-bound control record, reports the active immutable policy hash, epoch,
+required assurance, built-in effect envelope, and live
 issued/begun turns, and visibly warns that action gating, organizational
 authority mediation, and action-outcome reconciliation are unavailable. V1's
 development no-op redactor provides no secret or PII protection.
+
+On a fresh store, plain `engram init` defaults to `turn_gated`;
+`--required-assurance` may instead select `advisory`, `turn_gated`, or
+`action_gated` for that first policy and requires `--authorized-by` plus
+`--reason`; the resulting epoch-one authority object records that operator
+choice as asserted context. Plain `engram init` remains an
+idempotent create-or-migrate operation and preserves any existing active
+policy. Explicitly passing a different bootstrap value for an existing store
+fails instead of silently changing policy.
+`engram control-policy set-required-assurance` is the only shipped
+reconfiguration path: it records asserted operator attribution and a
+reason, creates immutable authority and policy objects, atomically advances
+the active policy hash and epoch, and supports an optional compare-and-swap
+hash. Reapplying the active level is idempotent. Issued grants from the prior
+epoch fail begin with `policy_epoch_changed` and require one fresh evaluation;
+if the new requirement exceeds the host's declaration, that fresh evaluation
+instead fails `control_assurance_insufficient` because assurance is checked
+before epoch adoption. Already-begun grants remain checkpointable under their
+frozen basis. Selecting `action_gated` through either initialization or the
+setter prints a warning that no V1 host can bind at that level plus the
+`set-required-assurance turn_gated` recovery command. The operator identity is
+asserted host context, not authenticated administration.
 
 `engram work` exposes `next`, `focus`, `propose`, `update`, `complete`, and
 `handoff`. Mutation payloads accept an inline JSON object or `@path` to a JSON
@@ -245,9 +279,27 @@ then checkpoints the already-begun grant. The confirmed cursor does not move
 until that checkpoint. Other begun turns expose no replayable prompt because
 their outcome may be uncertain. Reusing a key for a different intent fails.
 
-The built-in alpha policy grants `observe`, `communicate`, and turn-gated
-`mutate_local` to a session declaring at least `turn_gated` assurance and the
-corresponding mediated effects. A local-mutation intent must name one or more
+The built-in alpha policy grants `observe`, `communicate`, Engram-internal
+`coordinate` leases, and lease-backed `mutate_local` to a session whose
+declared assurance first meets the active project requirement, whose
+effect-specific assurance floor is then met, and whose mediated effects cover
+the request. `coordinate` is accepted only at the lease boundary and is not a
+model-turn capability. The bind receipt exposes
+`effective_mediated_effects`: the declared set capped by the host's assurance.
+`observe` and `communicate` may remain effective for an advisory host;
+`coordinate` and `mutate_local` require at least `turn_gated` even when the
+project floor is advisory. Before reserving anything, `lease_acquire` applies
+that same policy ladder: the project floor, then the effect floor, the declared
+and assurance-capped mediation sets, the active policy's supported effects,
+and the session policy epoch. A project-floor refusal carries no effect; an
+effect-floor refusal names the first failing effect and its intrinsic floor. A
+stale epoch returns `policy_epoch_changed` and is adopted atomically; retrying
+that exact key still returns the stored refusal, while a fresh key re-evaluates
+and may proceed. Acquisition fingerprints have their own schema version and
+include the current bind generation, so a pre-upgrade retry or reuse after
+`session_bind` is an explicit idempotency conflict. Within one bind, do not
+reuse a successful acquisition key after release; mint a new key for a new
+reservation. A local-mutation intent must name one or more
 normalized resources, all covered by a live exclusive `execution` lease held
 by that session. The grant freezes the lease fence and `turn_begin` rechecks
 it. Shared mutation, external, and lifecycle requests fail closed, and an
@@ -361,10 +413,12 @@ completion without shuttling lifecycle ids, and drives the same lifecycle
 through the CLI translation. It is part of `scripts/check.sh`.
 
 `scripts/control-dogfood.test.mjs` launches the real bounded JSON-lines service,
-binds, evaluates, restarts before begin, proves the old grant cannot begin,
+bootstraps an advisory policy, activates a turn-gated successor through the
+operator CLI, verifies both versions through `doctor`, binds, evaluates,
+restarts before begin, proves the old grant cannot begin,
 resynchronizes, checkpoints, checks mutation denial, and probes a wrong
 routing token. Host action control,
 report finalization/publication, scoped lease renewal/handoff/release, review
-actions, history, explicit contradiction resolution, and the complete
+actions, history, explicit contradiction resolution, and the remaining
 administrative CLI remain planned surfaces. They must reuse this core rather
 than fork its semantics.

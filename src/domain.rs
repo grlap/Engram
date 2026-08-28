@@ -67,6 +67,47 @@ impl ControlAssurance {
     }
 }
 
+/// Project-scoped administrative operation attributed to one immutable
+/// control-policy authority decision.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectPolicyOperation {
+    SetRequiredAssurance,
+    UpgradeBuiltinEnvelope,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Immutable operator/host attribution authorizing one project policy change.
+///
+/// V1 records asserted host context honestly; this object is durable audit
+/// evidence, not cryptographic authentication.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectPolicyAuthorityDecision {
+    pub schema_version: u16,
+    pub operation: ProjectPolicyOperation,
+    pub policy_epoch: ProjectPolicyEpoch,
+    pub previous_policy: Option<ObjectHash>,
+    pub required_assurance: ControlAssurance,
+    pub authorized_by: ActorContext,
+    pub reason: String,
+    pub decided_at: DateTime<Utc>,
+}
+
+/// Immutable version of the project-scoped behavioral-control policy.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ControlPolicy {
+    pub schema_version: u16,
+    pub control_schema_version: u16,
+    pub policy_epoch: ProjectPolicyEpoch,
+    pub previous_policy: Option<ObjectHash>,
+    pub required_assurance: ControlAssurance,
+    pub supported_effects: Vec<EffectClass>,
+    pub grant_ttl_seconds: i64,
+    pub authority: ObjectHash,
+    pub activated_at: DateTime<Utc>,
+}
+
 /// Durable execution phase for a task-bound host session.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -99,6 +140,8 @@ pub enum TurnPurpose {
 pub enum EffectClass {
     Observe,
     Communicate,
+    /// Engram-internal coordination such as fenced task-level leases.
+    Coordinate,
     MutateLocal,
     MutateShared,
     ExternalSideEffect,
@@ -302,6 +345,9 @@ pub enum WorkLeaseDecision {
     Granted {
         lease: WorkLease,
     },
+    Refuse {
+        directive: ControlDirective,
+    },
     Defer {
         holder: SessionId,
         conflicting_lease_id: String,
@@ -394,6 +440,20 @@ pub struct TurnEvaluationInput {
 pub struct ControlDirective {
     pub directive_id: String,
     pub code: ControlRefusalCode,
+    /// Effect whose intrinsic assurance or mediation rule caused this refusal.
+    /// Project-wide assurance refusals leave this unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<EffectClass>,
+    /// Assurance required by the failed project-wide or effect-specific rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_assurance: Option<ControlAssurance>,
+    /// Effects the host declared it mediates for this session, when the
+    /// refusal is tied to the mediation envelope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_mediated_effects: Option<Vec<EffectClass>>,
+    /// Declared effects that remain credible after the host assurance cap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_mediated_effects: Option<Vec<EffectClass>>,
     pub target: DirectiveTarget,
     pub satisfaction: DirectiveSatisfaction,
     pub recovery_effects: Vec<EffectClass>,
@@ -484,6 +544,8 @@ pub struct ControlSessionStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlSessionBinding {
     pub routing_token: String,
+    /// Declared effects capped to those this session's assurance may mediate.
+    pub effective_mediated_effects: Vec<EffectClass>,
     pub status: ControlSessionStatus,
 }
 

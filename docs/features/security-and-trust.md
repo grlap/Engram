@@ -49,12 +49,16 @@ sync with the data.
 
 Control decisions and transitions also use immutable intent fingerprints and
 receipts, while current sessions, grants, leases, and action state remain
-rebuildable projections. Unknown safety-relevant policy/event schemas and
-corrupt control storage fail closed for mutations and external effects. Clean
-service unavailability may allow only policy-designated reversible local work
-with durably spooled reconciliation debt; shared, external, and lifecycle
-effects remain closed. Read-only diagnostics remain available where
-disclosure policy allows.
+rebuildable projections. A database with no control-plane table family or
+canonical policy objects is treated as a pre-control migration and receives
+the stock policy atomically; partial/missing or corrupt established control
+storage and unknown safety-relevant policy/event schemas fail closed for every
+shipped store-open surface. The current `doctor` command therefore cannot
+inspect an otherwise unopenable
+control-policy chain; a separately constrained diagnostics-only recovery mode
+is tracked but not shipped. Clean service unavailability may allow only
+policy-designated reversible local work with durably spooled reconciliation
+debt; shared, external, and lifecycle effects remain closed.
 
 ## Sensitivity labels
 

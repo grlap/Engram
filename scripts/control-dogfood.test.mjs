@@ -120,19 +120,386 @@ function ok(response) {
 
 test("host control survives restart and gates turn dispatch", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-control-dogfood-"));
+  const actionGatedHome = mkdtempSync(
+    join(tmpdir(), "engram-control-action-gated-"),
+  );
   let client;
   let peer;
+  let advisory;
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
       cwd: root,
       encoding: "utf8",
     });
     assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
+    const unattributedBootstrap = spawnSync(
+      binary,
+      [
+        "--home",
+        actionGatedHome,
+        "init",
+        "--required-assurance",
+        "advisory",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.notEqual(unattributedBootstrap.status, 0);
+    assert.match(unattributedBootstrap.stderr, /--authorized-by/);
+    const actionGatedInit = spawnSync(
+      binary,
+      [
+        "--home",
+        actionGatedHome,
+        "init",
+        "--required-assurance",
+        "action_gated",
+        "--authorized-by",
+        "dogfood-bootstrap-operator",
+        "--reason",
+        "exercise an attributed fail-closed bootstrap",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(actionGatedInit.status, 0, actionGatedInit.stderr);
+    assert.match(actionGatedInit.stdout, /epoch 1, required action_gated/);
+    assert.match(
+      actionGatedInit.stderr,
+      /no current V1 host can bind at action_gated/,
+    );
+    const actionGatedSetter = spawnSync(
+      binary,
+      [
+        "--home",
+        actionGatedHome,
+        "control-policy",
+        "set-required-assurance",
+        "action_gated",
+        "--authorized-by",
+        "dogfood-operator",
+        "--reason",
+        "exercise the fail-closed warning",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(actionGatedSetter.status, 0, actionGatedSetter.stderr);
+    assert.match(
+      actionGatedSetter.stderr,
+      /no current V1 host can bind at action_gated/,
+    );
+    const actionGatedRecovery = spawnSync(
+      binary,
+      [
+        "--home",
+        actionGatedHome,
+        "control-policy",
+        "set-required-assurance",
+        "turn_gated",
+        "--authorized-by",
+        "dogfood-operator",
+        "--reason",
+        "restore a bindable V1 requirement",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(actionGatedRecovery.status, 0, actionGatedRecovery.stderr);
+    assert.equal(
+      JSON.parse(actionGatedRecovery.stdout).required_assurance,
+      "turn_gated",
+    );
+    assert.equal(
+      JSON.parse(actionGatedRecovery.stdout).previous_required_assurance,
+      "action_gated",
+    );
+    assert.match(
+      actionGatedRecovery.stderr,
+      /required assurance was lowered from action_gated to turn_gated/,
+    );
+    const initialized = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "init",
+        "--required-assurance",
+        "advisory",
+        "--authorized-by",
+        "dogfood-bootstrap-operator",
+        "--reason",
+        "exercise an attributed advisory bootstrap",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(initialized.status, 0, initialized.stderr);
+    assert.match(initialized.stdout, /epoch 1, required advisory/);
+    const advisoryDoctor = spawnSync(
+      binary,
+      ["--home", engramHome, "doctor"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(advisoryDoctor.status, 0, advisoryDoctor.stderr);
+    const initialPolicy = advisoryDoctor.stdout.match(
+      /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=advisory/,
+    );
+    assert.ok(initialPolicy, advisoryDoctor.stdout);
+    const plainReinit = spawnSync(binary, ["--home", engramHome, "init"], {
       cwd: root,
       encoding: "utf8",
     });
-    assert.equal(initialized.status, 0, initialized.stderr);
+    assert.equal(plainReinit.status, 0, plainReinit.stderr);
+    assert.match(plainReinit.stdout, /epoch 1, required advisory/);
+
+    advisory = new ControlClient(engramHome, "host-advisory");
+    const advisoryBinding = ok(
+      await advisory.request({
+        operation: "session_bind",
+        external_ref: "dummy:HOST-ADVISORY",
+        title: "Honest advisory host",
+        assurance: "advisory",
+        mediated_effects: ["observe", "communicate", "mutate_local"],
+        capability_map_revision: 1,
+        idempotency_key: "bind-host-advisory",
+      }),
+    );
+    assert.deepEqual(advisoryBinding.effective_mediated_effects, [
+      "observe",
+      "communicate",
+    ]);
+    const advisorySync = ok(
+      await advisory.request({
+        operation: "turn_evaluate",
+        routing_token: advisoryBinding.routing_token,
+        idempotency_key: "turn-advisory-sync",
+        intent_fingerprint: fingerprint("turn-advisory-sync"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(advisorySync.decision, "grant");
+    const advisorySyncTokens = advisorySync.grant.delivery
+      ? [advisorySync.grant.delivery.page.delivery_token]
+      : [];
+    assert.equal(
+      ok(
+        await advisory.request({
+          operation: "turn_begin",
+          routing_token: advisoryBinding.routing_token,
+          grant_id: advisorySync.grant.grant_id,
+          delivery_tokens: advisorySyncTokens,
+          idempotency_key: "begin-advisory-sync",
+        }),
+      ).decision,
+      "begin",
+    );
+    assert.equal(
+      ok(
+        await advisory.request({
+          operation: "turn_checkpoint",
+          routing_token: advisoryBinding.routing_token,
+          grant_id: advisorySync.grant.grant_id,
+          next_intent: "continue",
+          idempotency_key: "checkpoint-advisory-sync",
+        }),
+      ).decision,
+      "checkpointed",
+    );
+    const advisoryLease = ok(
+      await advisory.request({
+        operation: "lease_acquire",
+        routing_token: advisoryBinding.routing_token,
+        kind: "execution",
+        mode: "exclusive",
+        subject: sourceTree,
+        ttl_seconds: 60,
+        idempotency_key: "lease-advisory-src",
+      }),
+    );
+    assert.equal(advisoryLease.decision, "refuse");
+    assert.equal(
+      advisoryLease.directive.code,
+      "control_assurance_insufficient",
+    );
+    assert.equal(advisoryLease.directive.effect, "mutate_local");
+    assert.equal(advisoryLease.directive.required_assurance, "turn_gated");
+    assert.deepEqual(advisoryLease.directive.declared_mediated_effects, [
+      "observe",
+      "communicate",
+      "mutate_local",
+    ]);
+    assert.deepEqual(advisoryLease.directive.effective_mediated_effects, [
+      "observe",
+      "communicate",
+    ]);
+    assert.deepEqual(
+      ok(
+        await advisory.request({
+          operation: "lease_acquire",
+          routing_token: advisoryBinding.routing_token,
+          kind: "execution",
+          mode: "exclusive",
+          subject: sourceTree,
+          ttl_seconds: 60,
+          idempotency_key: "lease-advisory-src",
+        }),
+      ),
+      advisoryLease,
+    );
+    const advisoryMutation = ok(
+      await advisory.request({
+        operation: "turn_evaluate",
+        routing_token: advisoryBinding.routing_token,
+        idempotency_key: "turn-advisory-mutation",
+        intent_fingerprint: fingerprint("turn-advisory-mutation"),
+        purpose: "ordinary",
+        requested_effects: ["mutate_local"],
+        resource_intents: [sourceTree],
+      }),
+    );
+    assert.equal(advisoryMutation.decision, "refuse");
+    assert.equal(
+      advisoryMutation.directive.code,
+      "control_assurance_insufficient",
+    );
+    assert.equal(advisoryMutation.directive.effect, "mutate_local");
+    assert.equal(
+      advisoryMutation.directive.required_assurance,
+      "turn_gated",
+    );
+    assert.deepEqual(advisoryMutation.directive.declared_mediated_effects, [
+      "observe",
+      "communicate",
+      "mutate_local",
+    ]);
+    assert.deepEqual(advisoryMutation.directive.effective_mediated_effects, [
+      "observe",
+      "communicate",
+    ]);
+    const advisoryIssued = ok(
+      await advisory.request({
+        operation: "turn_evaluate",
+        routing_token: advisoryBinding.routing_token,
+        idempotency_key: "turn-advisory-before-policy-change",
+        intent_fingerprint: fingerprint("turn-advisory-before-policy-change"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(advisoryIssued.decision, "grant");
+
+    for (const [authorizedBy, reason] of [
+      ["", "missing administrator"],
+      ["dogfood-operator", ""],
+    ]) {
+      const invalidAttribution = spawnSync(
+        binary,
+        [
+          "--home",
+          engramHome,
+          "control-policy",
+          "set-required-assurance",
+          "advisory",
+          "--authorized-by",
+          authorizedBy,
+          "--reason",
+          reason,
+        ],
+        { cwd: root, encoding: "utf8" },
+      );
+      assert.notEqual(invalidAttribution.status, 0);
+      assert.match(invalidAttribution.stderr, /must contain from 1 through 4096 bytes/);
+    }
+    const badExpectedPolicy = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "control-policy",
+        "set-required-assurance",
+        "turn_gated",
+        "--authorized-by",
+        "dogfood-operator",
+        "--reason",
+        "reject a stale operator",
+        "--expected-policy-hash",
+        "0".repeat(64),
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.notEqual(badExpectedPolicy.status, 0);
+    assert.match(badExpectedPolicy.stderr, /active control policy changed/);
+
+    const configured = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "control-policy",
+        "set-required-assurance",
+        "turn_gated",
+        "--authorized-by",
+        "dogfood-operator",
+        "--reason",
+        "exercise attributed policy activation",
+        "--expected-policy-hash",
+        initialPolicy[1],
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(configured.status, 0, configured.stderr);
+    const configuredPolicy = JSON.parse(configured.stdout);
+    assert.equal(configuredPolicy.policy_epoch, 2);
+    assert.equal(configuredPolicy.required_assurance, "turn_gated");
+    assert.equal(configuredPolicy.previous_required_assurance, "advisory");
+    assert.equal(configuredPolicy.changed, true);
+    assert.equal(configuredPolicy.previous_policy, initialPolicy[1]);
+    assert.match(configured.stderr, /asserted host context, not an authenticated identity/);
+    const configuredDoctor = spawnSync(
+      binary,
+      ["--home", engramHome, "doctor"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(configuredDoctor.status, 0, configuredDoctor.stderr);
+    assert.match(
+      configuredDoctor.stdout,
+      /Control policy schema=1 id=[0-9a-f]{64} epoch=2 required=turn_gated/,
+    );
+    const advisoryTokens = advisoryIssued.grant.delivery
+      ? [advisoryIssued.grant.delivery.page.delivery_token]
+      : [];
+    const advisoryBeginAfterPolicyChange = ok(
+      await advisory.request({
+        operation: "turn_begin",
+        routing_token: advisoryBinding.routing_token,
+        grant_id: advisoryIssued.grant.grant_id,
+        delivery_tokens: advisoryTokens,
+        idempotency_key: "begin-advisory-after-policy-change",
+      }),
+    );
+    assert.equal(advisoryBeginAfterPolicyChange.decision, "refuse");
+    assert.equal(advisoryBeginAfterPolicyChange.code, "policy_epoch_changed");
+    const advisoryStatus = ok(
+      await advisory.request({
+        operation: "session_status",
+        routing_token: advisoryBinding.routing_token,
+      }),
+    );
+    assert.equal(advisoryStatus.epochs.project_policy, 2);
+    const advisoryAfterPolicyChange = ok(
+      await advisory.request({
+        operation: "turn_evaluate",
+        routing_token: advisoryBinding.routing_token,
+        idempotency_key: "turn-advisory-after-policy-change",
+        intent_fingerprint: fingerprint("turn-advisory-after-policy-change"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(advisoryAfterPolicyChange.decision, "refuse");
+    assert.equal(
+      advisoryAfterPolicyChange.directive.code,
+      "control_assurance_insufficient",
+    );
+    await advisory.close();
+    advisory = undefined;
 
     client = new ControlClient(engramHome, "host-a");
     const binding = ok(
@@ -443,8 +810,10 @@ test("host control survives restart and gates turn dispatch", async () => {
     });
     assert.equal(doctor.status, 0, doctor.stderr);
   } finally {
+    await advisory?.close();
     await peer?.close();
     await client?.close();
     rmSync(engramHome, { recursive: true, force: true });
+    rmSync(actionGatedHome, { recursive: true, force: true });
   }
 });

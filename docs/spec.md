@@ -492,10 +492,18 @@ behavior enters the work/run delta feed, so control does not become a second
 status ledger.
 
 Initialization installs and selects a versioned safe project-scoped
-`ControlPolicy`. Missing, unknown, or ambiguous active policy blocks grants
-while leaving disclosure-authorized diagnostics and advisory memory
-available. A new immutable version requires `project_policy_admin` user/host
-authority; selecting it and advancing the project epoch is one transaction.
+`ControlPolicy`. A pre-control-plane database is recognized only when the
+entire policy/session/turn-grant table family and canonical policy objects are
+absent; its ordinary objects are preserved while the stock epoch-one policy is
+installed atomically. After any control artifact exists, a missing, unknown,
+corrupt, or ambiguous active policy fails the current store-open path for every
+surface; a diagnostics-only recovery mode is deferred. A new immutable version records a canonical
+`project_policy_admin`-shaped host/operator authority decision. V1 honestly
+records that attribution as asserted context, not authenticated identity;
+authenticated policy administration is deferred. The implicit bootstrap
+default uses synthetic system attribution; an explicit initial assurance
+requires and records an asserted operator plus reason. Selecting the new policy
+and advancing the project epoch is one transaction.
 Every active run rechecks that shared epoch at turn/action boundaries—no
 single work claim or resource lease controls project policy. Host/user
 authority is the ceiling; control policy and work-applicable pinned rules may
@@ -522,6 +530,14 @@ Control assurance is recorded honestly:
 - `advisory`: Engram tools can be bypassed;
 - `turn_gated`: the host mediates every model turn;
 - `action_gated`: the host also mediates every declared material capability.
+
+The project policy is a floor, not the only assurance check. `observe` and
+`communicate` require `advisory`; internal `coordinate`, mutation,
+external-side-effect, and lifecycle effects require at least `turn_gated`. A
+bind records the declared mediated set and returns its assurance-capped
+effective subset; evaluation and lease acquisition refuse effects above that
+subset. Policy epochs, not wall-clock timestamps, order immutable policy
+history; activation and decision timestamps are attribution only.
 
 The full protocol, effect classes, failure semantics, and host conformance
 contract are specified in the
@@ -1028,8 +1044,15 @@ turn_checkpoint     session_heartbeat   session_exit
 Current implementation status: `engram control` ships the JSON-lines subset
 `session_bind`, `session_status`, `turn_evaluate`, `turn_begin`, and
 `turn_checkpoint`, plus `lease_acquire` and `lease_release`, for the built-in
-`observe`/`communicate`/lease-backed-`mutate_local` policy. It persists
-exact retry evidence across restart, invalidates unbegun grants when a new
+`observe`/`communicate`/internal-`coordinate`/lease-backed-`mutate_local`
+policy. `coordinate` is a lease-boundary effect, not a model-turn capability.
+It persists exact retry evidence across restart. Lease acquisition applies the
+active project floor first, then the per-effect floor, declared/effective
+mediation, supported-effect set, and policy epoch before any reservation event;
+policy refusals are sticky under their bind-scoped idempotency key, an
+older-bind key conflicts, and an epoch refusal atomically adopts the new epoch
+for a fresh-key retry. A successful acquisition key is not reused after
+terminal release within the same bind. It invalidates unbegun grants when a new
 control connection opens, fails stale begin-time rechecks closed, and binds a
 local-mutation turn to the live exclusive execution lease and overlap fence
 covering each declared resource. A begun mutation turn pins its bound leases:

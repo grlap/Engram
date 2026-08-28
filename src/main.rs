@@ -8,14 +8,14 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use engram::domain::{AssuranceLevel, SCHEMA_VERSION};
 use engram::{
-    ActorContext, DevelopmentNoopRedactor, HostControlServer, LocalWorkService, McpServer,
-    ObjectHash, ProjectId, SessionId, SqliteStore, WorkAuthorityGrant, WorkAuthorityOperation,
-    WorkAuthorityScope, WorkAvailability, WorkCompleteInput, WorkHandoffInput, WorkLifecycle,
-    WorkNextQuery, WorkNextSection, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput,
-    project_database_path,
+    ActorContext, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, HostControlServer,
+    LocalWorkService, McpServer, ObjectHash, ProjectId, ProjectPolicyAuthorityDecision, SessionId,
+    SqliteStore, WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability,
+    WorkCompleteInput, WorkHandoffInput, WorkLifecycle, WorkNextQuery, WorkNextSection,
+    WorkPlanningBudget, WorkProposeInput, WorkUpdateInput, project_database_path,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -35,7 +35,27 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Create or migrate the local Engram database.
-    Init,
+    Init {
+        /// Minimum host-control assurance required by the bootstrap policy.
+        ///
+        /// A fresh store defaults to `turn_gated` when this flag is omitted.
+        /// Plain `engram init` preserves an existing store's active policy.
+        /// Changing this on an existing store requires `control-policy
+        /// set-required-assurance`, which records attribution and bumps the
+        /// policy epoch.
+        #[arg(
+            long,
+            value_enum,
+            requires_all = ["authorized_by", "reason"]
+        )]
+        required_assurance: Option<ControlAssuranceArg>,
+        /// Host/operator actor id attributed to an explicit bootstrap choice.
+        #[arg(long, requires = "required_assurance")]
+        authorized_by: Option<String>,
+        /// Auditable reason for an explicit bootstrap policy choice.
+        #[arg(long, requires = "required_assurance")]
+        reason: Option<String>,
+    },
     /// Verify every immutable object in the local database.
     Doctor,
     /// Serve the coding-agent memory tools over MCP stdio.
@@ -86,6 +106,81 @@ enum Command {
     Authority {
         #[command(subcommand)]
         operation: AuthorityCommand,
+    },
+    /// Host-operator behavioral-control policy administration.
+    ControlPolicy {
+        #[command(subcommand)]
+        operation: ControlPolicyCommand,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ControlAssuranceArg {
+    #[value(name = "advisory")]
+    Advisory,
+    #[value(name = "turn_gated")]
+    TurnGated,
+    #[value(name = "action_gated")]
+    ActionGated,
+}
+
+impl From<ControlAssuranceArg> for ControlAssurance {
+    fn from(value: ControlAssuranceArg) -> Self {
+        match value {
+            ControlAssuranceArg::Advisory => Self::Advisory,
+            ControlAssuranceArg::TurnGated => Self::TurnGated,
+            ControlAssuranceArg::ActionGated => Self::ActionGated,
+        }
+    }
+}
+
+fn control_assurance_name(value: ControlAssurance) -> &'static str {
+    match value {
+        ControlAssurance::Advisory => "advisory",
+        ControlAssurance::TurnGated => "turn_gated",
+        ControlAssurance::ActionGated => "action_gated",
+    }
+}
+
+fn warn_if_action_gated(value: ControlAssurance) {
+    if value == ControlAssurance::ActionGated {
+        eprintln!(
+            "CONTROL WARNING: no current V1 host can bind at action_gated; recover with `engram control-policy set-required-assurance turn_gated --authorized-by <actor> --reason <reason>`"
+        );
+    }
+}
+
+fn warn_if_assurance_weakened(previous: ControlAssurance, current: ControlAssurance) {
+    if current < previous {
+        eprintln!(
+            "CONTROL WARNING: project required assurance was lowered from {} to {}; future sessions may mediate less of the agent execution path",
+            control_assurance_name(previous),
+            control_assurance_name(current)
+        );
+    }
+}
+
+#[derive(Debug, Subcommand)]
+enum ControlPolicyCommand {
+    /// Activate a new immutable policy version with a different requirement.
+    ///
+    /// Activation bumps the project policy epoch. Issued grants then fail
+    /// begin with `policy_epoch_changed` and must be re-evaluated; if the new
+    /// requirement exceeds the host declaration, fresh evaluation instead
+    /// fails `control_assurance_insufficient`. Begun grants remain
+    /// checkpointable under their frozen prior basis.
+    SetRequiredAssurance {
+        #[arg(value_enum)]
+        level: ControlAssuranceArg,
+        /// Host/operator actor id attributed to the policy decision.
+        #[arg(long)]
+        authorized_by: String,
+        /// Auditable reason for changing the project-wide requirement.
+        #[arg(long)]
+        reason: String,
+        /// Optional compare-and-swap guard from `engram doctor`.
+        #[arg(long)]
+        expected_policy_hash: Option<String>,
     },
 }
 
@@ -207,7 +302,16 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let (project_id, database) = resolve_project(&cli.project_file, cli.home)?;
     match cli.command {
-        Command::Init => initialize(&database),
+        Command::Init {
+            required_assurance,
+            authorized_by,
+            reason,
+        } => initialize(
+            &database,
+            required_assurance.map(Into::into),
+            authorized_by,
+            reason,
+        ),
         Command::Doctor => doctor(&database),
         Command::Mcp {
             actor_id,
@@ -247,7 +351,67 @@ async fn main() -> Result<()> {
             operation,
         ),
         Command::Authority { operation } => run_authority(&database, project_id, operation),
+        Command::ControlPolicy { operation } => {
+            run_control_policy(&database, project_id, operation)
+        }
     }
+}
+
+fn run_control_policy(
+    database: &Path,
+    _project_id: ProjectId,
+    operation: ControlPolicyCommand,
+) -> Result<()> {
+    let mut store = SqliteStore::open(database)
+        .with_context(|| format!("failed to open {}", database.display()))?;
+    let value = match operation {
+        ControlPolicyCommand::SetRequiredAssurance {
+            level,
+            authorized_by,
+            reason,
+            expected_policy_hash,
+        } => {
+            let level = ControlAssurance::from(level);
+            let expected_policy = expected_policy_hash
+                .map(|value| {
+                    ObjectHash::from_str(&value).map_err(|message| {
+                        anyhow::anyhow!("invalid expected policy hash: {message}")
+                    })
+                })
+                .transpose()?;
+            let receipt = store.set_required_control_assurance(
+                level,
+                &ActorContext {
+                    actor_id: authorized_by,
+                    actor_kind: "host_operator".into(),
+                    assurance: AssuranceLevel::Asserted,
+                    run_id: None,
+                    session_id: None,
+                    source_tool: Some("cli:control_policy".into()),
+                    source_skill: None,
+                    provenance_chain: Vec::new(),
+                    reason: "authorize a project-scoped behavioral-control policy change".into(),
+                },
+                &reason,
+                expected_policy.as_ref(),
+                chrono::Utc::now(),
+                &DevelopmentNoopRedactor,
+            )?;
+            if receipt.changed {
+                eprintln!(
+                    "WARNING: policy administrator identity is asserted host context, not an authenticated identity"
+                );
+            }
+            warn_if_assurance_weakened(
+                receipt.previous_required_assurance,
+                receipt.required_assurance,
+            );
+            warn_if_action_gated(receipt.required_assurance);
+            serde_json::to_value(receipt)?
+        }
+    };
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
 }
 
 #[allow(
@@ -504,14 +668,69 @@ fn resolve_project(project_file: &Path, home: Option<PathBuf>) -> Result<(Projec
     Ok((project_id, database))
 }
 
-fn initialize(database: &Path) -> Result<()> {
+fn initialize(
+    database: &Path,
+    required_assurance: Option<ControlAssurance>,
+    authorized_by: Option<String>,
+    reason: Option<String>,
+) -> Result<()> {
     if let Some(parent) = database.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    SqliteStore::open(database)
-        .with_context(|| format!("failed to initialize {}", database.display()))?;
-    println!("Initialized local Engram store at {}", database.display());
+    let requested_attribution = authorized_by
+        .as_deref()
+        .zip(reason.as_deref())
+        .map(|(actor_id, reason)| (actor_id.trim().to_owned(), reason.trim().to_owned()));
+    let store = match (required_assurance, authorized_by, reason) {
+        (None, None, None) => SqliteStore::open(database),
+        (Some(required_assurance), Some(authorized_by), Some(reason)) => {
+            SqliteStore::open_with_initial_control_assurance(
+                database,
+                required_assurance,
+                &ActorContext {
+                    actor_id: authorized_by,
+                    actor_kind: "host_operator".into(),
+                    assurance: AssuranceLevel::Asserted,
+                    run_id: None,
+                    session_id: None,
+                    source_tool: Some("cli:init".into()),
+                    source_skill: None,
+                    provenance_chain: Vec::new(),
+                    reason: "authorize an explicit project bootstrap control policy".into(),
+                },
+                &reason,
+                &DevelopmentNoopRedactor,
+            )
+        }
+        _ => bail!("--required-assurance, --authorized-by, and --reason must be supplied together"),
+    }
+    .with_context(|| format!("failed to initialize {}", database.display()))?;
+    let control = store.control_diagnostics()?;
+    let bootstrap_attribution_recorded = if let Some((actor_id, reason)) = requested_attribution {
+        let policy: ControlPolicy = store
+            .get(&control.active_policy)?
+            .context("active bootstrap policy object is missing")?;
+        let authority: ProjectPolicyAuthorityDecision = store
+            .get(&policy.authority)?
+            .context("active bootstrap policy authority object is missing")?;
+        authority.authorized_by.actor_id == actor_id && authority.reason == reason
+    } else {
+        false
+    };
+    if bootstrap_attribution_recorded {
+        eprintln!(
+            "WARNING: bootstrap policy administrator identity is asserted host context, not an authenticated identity"
+        );
+    }
+    warn_if_action_gated(control.required_assurance);
+    println!(
+        "Initialized local Engram store at {} with policy {} (epoch {}, required {})",
+        database.display(),
+        control.active_policy,
+        control.policy_epoch.0,
+        control_assurance_name(control.required_assurance),
+    );
     Ok(())
 }
 
@@ -533,15 +752,17 @@ fn doctor(database: &Path) -> Result<()> {
     );
     let control = store.control_diagnostics()?;
     println!(
-        "Control policy schema={} epoch={} required={:?} supported={:?}; sessions={} issued={} begun={}",
+        "Control policy schema={} id={} epoch={} required={} supported={:?}; sessions={} issued={} begun={}",
         control.control_schema_version,
+        control.active_policy,
         control.policy_epoch.0,
-        control.required_assurance,
+        control_assurance_name(control.required_assurance),
         control.supported_effects,
         control.active_sessions,
         control.issued_turns,
         control.begun_turns,
     );
+    warn_if_action_gated(control.required_assurance);
     if !control.action_gating_available {
         eprintln!(
             "CONTROL LIMITATION: action gating is unavailable; unsupported effects fail closed: {:?}",

@@ -67,6 +67,23 @@ identity-assurance context. A deployment may not describe itself as
 write-capable tool. A future trusted gateway or signer can add stronger
 assurance without changing the protocol.
 
+Effect classes also carry a non-configurable minimum assurance. `observe` and
+`communicate` require `advisory`; internal `coordinate`, `mutate_local`,
+`mutate_shared`, `external_side_effect`, and `lifecycle` require at least
+`turn_gated`. The effective requirement for a turn is the stronger of the
+project policy floor and every requested effect floor. Binding remains
+observable in shadow mode:
+the bind receipt reports `effective_mediated_effects`, the declared set capped
+by host assurance, while evaluation and lease acquisition refuse effects above
+that cap with `control_assurance_insufficient`. Assurance refusals at both
+boundaries are policy decisions carrying an effect-naming `ControlDirective`,
+never transport error envelopes. Mediation-envelope refusals also return the
+declared and assurance-capped effective effect sets so one host renderer can
+explain the same decision at turn and lease boundaries. A
+`capability_not_permitted` directive names the excluded effect but omits
+`required_assurance`: raising assurance cannot add an effect that the active
+policy does not support.
+
 The target `engram doctor` reports a versioned mediation map: every host tool
 surface, its effect classification, whether it is intercepted, and any unmediated
 write-capable path. Unmapped tools default to `external_side_effect` in
@@ -426,6 +443,7 @@ Effect classes are deliberately small and host-neutral:
 | --- | --- | --- |
 | `observe` | Read files, search memory, inspect status | Allowed after required policy context is loaded |
 | `communicate` | Root-work-shared capture, contributor message | Requires root-execution membership; becomes an ordered event |
+| `coordinate` | Acquire an Engram-internal coordination lease | Requires `turn_gated` assurance and is not a model-turn capability |
 | `mutate_local` | Write a mediated workspace or run a mutating local tool | Requires a compatible execution lease on the supplied resource subject |
 | `mutate_shared` | Change shared work/run coordination state | Requires membership plus the appropriate scoped lease |
 | `external_side_effect` | Publish a report or invoke an external write adapter | Requires an explicit durable intent, user/policy authority, and idempotency key |
@@ -677,19 +695,68 @@ any external adapter.
 ### Policy bootstrap and precedence
 
 `ControlPolicy` and its `policy_epoch` are project-scoped in V1; task-specific
-policy languages are out of scope. `engram init` installs a versioned built-in
-safe policy and atomically selects its hash on the project record. A migrated
-store with no recognized active policy may serve disclosure-authorized
-diagnostics and the advisory memory surface, but issues no turn or action
-grants.
+policy languages are out of scope. The per-project SQLite store is the V1
+selection scope. `engram init --required-assurance advisory|turn_gated|action_gated`
+with `--authorized-by <actor> --reason <text>` installs a versioned built-in
+safe policy, records the explicit operator choice as asserted attribution, and
+atomically selects its hash. `turn_gated` is the default; plain `engram init`
+uses synthetic system attribution because no operator choice was made. Plain
+`engram init` preserves the selected policy
+on an existing store. A recognized pre-control-plane store—none of the policy,
+session, or turn-grant tables and no canonical policy objects—retains its
+ordinary objects while atomically installing the stock epoch-one policy. Once
+any control table or canonical policy object exists, a missing, unknown, or
+corrupt active policy fails store open for every surface; it never falls back
+to advisory memory or issues a grant. A future diagnostics-only repair mode may
+inspect such a store without enabling mutation, but is not shipped.
+On a cold store, core/control DDL, host path-policy binding, and the canonical
+policy selector/history commit in the same immediate transaction, so a crash
+cannot leave an empty policy table that later resembles established state.
 
-A policy update creates a new immutable version and requires a durable
-`project_policy_admin` user/host authority reference—not one arbitrary task's
-coordination lease. Selecting the hash and incrementing the project epoch is
-one SQLite transaction. Every `turn_begin` and `action_authorize` reads that
+A shipped assurance update runs through
+`engram control-policy set-required-assurance`. It creates a new immutable
+policy version plus an
+attributed canonical authority-decision object—not one arbitrary task's
+coordination lease. V1 records the operator identity as asserted host context;
+authenticated `project_policy_admin` mediation remains unavailable and is
+reported as an unavailable authority-mediation capability by `doctor`; the
+setter also warns that the specific supplied identity is asserted rather than
+authenticated. Selecting the hash and incrementing the project epoch is one
+SQLite transaction with an optional expected-policy-hash compare and swap.
+Reapplying the active assurance is an idempotent no-op. Every
+`turn_begin` and future `action_authorize` reads that
 project epoch plus the bound task's `admission_epoch`, so a project mismatch
-invalidates grants across all active tasks
-without a non-atomic row-by-row update; notifications are only doorbells.
+invalidates issued grants across all active tasks without a non-atomic
+row-by-row update; the refused session adopts the new epoch and must evaluate
+once again. When the new requirement exceeds the host's declared assurance,
+the assurance check runs first and fresh evaluation refuses with
+`control_assurance_insufficient` instead of `policy_epoch_changed`. Selecting
+`action_gated` warns immediately that no current V1 host can bind at that
+level and prints the `set-required-assurance turn_gated` recovery command. A
+begun grant remains checkpointable under its frozen basis so durable progress
+is not lost. Notifications are only doorbells.
+
+Policy history is ordered exclusively by `policy_epoch`. `activated_at` and
+authority `decided_at` are attribution timestamps; clock skew does not reorder
+the immutable chain or block activation.
+
+The bind/evaluate/begin/lease hot path verifies the selected version's
+canonical hash and projection bytes, matches its selector scalars, and uses an
+indexed successor probe to refuse a rolled-back head. It deliberately does not
+walk predecessor objects because historical versions do not participate in a
+live decision. Store open, policy activation, `doctor`, and integrity
+verification additionally traverse and verify the complete authority-bound
+predecessor chain. Historical objects are checked against the structural
+contract declared by their own schema; only the active head must match the
+running binary's supported policy and control schemas. V1 keeps a static list
+of recognized built-in envelopes. Epoch one must use one of them, and the
+`set_required_assurance` operation may change only `required_assurance`,
+preserving the predecessor's supported effects and grant TTL. When a running
+binary widens the built-in envelope, store open appends a separate,
+system-attributed `upgrade_builtin_envelope` epoch that preserves assurance and
+moves only between recognized envelopes. A legacy selector is first preserved
+as canonical epoch one, so adding `coordinate` is visible as epoch two and
+invalidates earlier session policy epochs exactly once.
 Host and user authority is the ceiling; `ControlPolicy` configures mediation,
 synchronization, TTL, and conflict behavior below that ceiling; task-applicable
 hard/firm pinned rules may further restrict execution but never grant a denied
@@ -826,9 +893,16 @@ pass.
 
 - Host or Engram restart invalidates unexpired in-memory delivery assumptions;
   the durable session resumes at `sync_required`.
-- Turn, delivery, action, and checkpoint requests use independent
+- Turn, lease, delivery, action, and checkpoint requests use independent
   idempotency keys bound to canonical intent fingerprints.
 - Exact decision retries while the result is retained return that result.
+  A refused `lease_acquire` is therefore sticky under its key even after an
+  assurance or policy-epoch change; a fresh key re-evaluates current policy,
+  while changing intent under the old key is a conflict. Acquisition intent
+  includes the current session-bind generation, so an old key conflicts after
+  rebind instead of replaying obsolete authority. Within one bind generation,
+  a host must not reuse a successful acquisition key after terminal release;
+  it mints a fresh key for a new reservation.
   After grant/result pruning, the durable request-key tombstone returns
   `expired_request`; it never treats the old key as fresh. Reuse with a
   different intent is always a conflict until the task's explicit retention
@@ -1004,10 +1078,13 @@ turn effects are rejected. The decision service becomes a real `turn_gated`
 deployment only when an embedding host makes it mandatory and injects the
 attached context before prompt dispatch; this repository does not yet ship
 that runtime hook.
-`engram doctor` reports the built-in effect envelope, live turn counts, and
-explicitly discloses that action gating, organizational authority mediation,
-and action-outcome reconciliation are unavailable. The required per-host-tool
-mediation map is still outstanding.
+`engram doctor` verifies the immutable active-policy chain and reports its
+hash, epoch, required assurance, built-in effect envelope, live turn counts,
+and explicitly discloses that action gating, organizational authority
+mediation, and action-outcome reconciliation are unavailable. Selecting an
+`action_gated` requirement is therefore a deliberate fail-closed
+configuration: no current host may bind at that level. The required
+per-host-tool mediation map is still outstanding.
 
 Broader enforcement must remain disabled until Phase 1 makes these invariants
 true in the core, not only in wrappers:

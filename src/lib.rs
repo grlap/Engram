@@ -28,20 +28,21 @@ pub use domain::{
     CompletionDrainAttestation, CompletionSeal, CompletionWaiver, ContextItem, ContextOmission,
     ContextOmissionSummary, ContextPacket, ContextPacketHeader, ContextPacketPayload,
     ControlAssurance, ControlDeferCode, ControlDeferral, ControlDelivery, ControlDirective,
-    ControlEpochs, ControlHealth, ControlRefusalCode, ControlSessionBinding, ControlSessionStatus,
-    ControlTurnBeginDecision, ControlTurnCheckpointDecision, ControlTurnDecision,
-    CreateWorkRequest, DecomposeWorkRequest, Delivery, DeliveryPage, DeltaItem,
-    DirectiveSatisfaction, DirectiveTarget, DisposeWorkRequest, EffectClass, FeedId, FeedPosition,
-    FinalizationBarrier, FrozenReport, HostPathPolicy, IssuedTurnGrant, LeaseBasis, LeaseKind,
-    LeaseMode, LifecycleAuthorityDecision, LocalTask, MemoryContradictionEvent,
+    ControlEpochs, ControlHealth, ControlPolicy, ControlRefusalCode, ControlSessionBinding,
+    ControlSessionStatus, ControlTurnBeginDecision, ControlTurnCheckpointDecision,
+    ControlTurnDecision, CreateWorkRequest, DecomposeWorkRequest, Delivery, DeliveryPage,
+    DeltaItem, DirectiveSatisfaction, DirectiveTarget, DisposeWorkRequest, EffectClass, FeedId,
+    FeedPosition, FinalizationBarrier, FrozenReport, HostPathPolicy, IssuedTurnGrant, LeaseBasis,
+    LeaseKind, LeaseMode, LifecycleAuthorityDecision, LocalTask, MemoryContradictionEvent,
     MemoryContradictionReceipt, MemoryId, MemoryKind, MemoryRecord, MemoryStatus, MemorySummary,
     MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, ObservedActionBeginDecision,
     ObservedTurnDecision, OfferWorkHandoffRequest, PacketSafety, ParentTurnState,
-    ParticipantMembership, ParticipantReadiness, ProjectId, ProjectPolicyEpoch, ReadyWork,
-    RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest, RequiredChildWaiver,
-    ResolutionAssurance, ResourceCoverage, ResourceSubject, ReviseWorkRequest, RootContribution,
-    RootExecution, RootExecutionId, RootExecutionState, Scope, Sensitivity, SessionId,
-    SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskLease, TaskState,
+    ParticipantMembership, ParticipantReadiness, ProjectId, ProjectPolicyAuthorityDecision,
+    ProjectPolicyEpoch, ProjectPolicyOperation, ReadyWork, RecordWorkEvidenceRequest,
+    ReleaseWorkRequest, ReopenWorkRequest, RequiredChildWaiver, ResolutionAssurance,
+    ResourceCoverage, ResourceSubject, ReviseWorkRequest, RootContribution, RootExecution,
+    RootExecutionId, RootExecutionState, Scope, Sensitivity, SessionId, SessionPhase,
+    TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskLease, TaskState,
     TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
     TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
     TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnIntent, TurnNextIntent, TurnPurpose,
@@ -59,7 +60,9 @@ pub use host::{HostControlRequest, HostControlServer};
 pub use mcp::McpServer;
 pub use memory::{DevelopmentNoopRedactor, Redactor};
 pub use project::project_database_path;
-pub use storage::{ControlDiagnostics, IntegrityReport, SqliteStore, TaskChange};
+pub use storage::{
+    ControlDiagnostics, ControlPolicyUpdateReceipt, IntegrityReport, SqliteStore, TaskChange,
+};
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use work_service::{
     LocalWorkService, WorkAcceptanceInput, WorkChange, WorkChangeOmission,

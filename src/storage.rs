@@ -7,7 +7,17 @@ pub(crate) use work::{StageWorkSessionDelivery, normalize_completion_acceptance_
 #[cfg(test)]
 pub(crate) use work::{reset_work_event_decode_count, work_event_decode_count};
 
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    time::Duration,
+};
+
+#[cfg(test)]
+use std::cell::Cell;
+
+#[cfg(test)]
+use crate::domain::ControlRefusalCode;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -16,22 +26,24 @@ use thiserror::Error;
 
 use crate::{
     CanonicalObject, ObjectHash,
+    control::{LeasePolicyInput, effective_mediated_effects, evaluate_lease_policy},
     domain::{
-        ActorContext, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextItem, ContextOmission,
-        ContextOmissionSummary, ContextPacket, ContextPacketHeader, ContextPacketPayload,
-        ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth, ControlSessionBinding,
-        ControlSessionStatus, ControlTurnBeginDecision, ControlTurnCheckpointDecision,
-        ControlTurnDecision, Delivery, DeliveryPage, DeltaItem, EffectClass, HostPathPolicy,
-        IssuedTurnGrant, LocalTask, MemoryAssertionEvent, MemoryContradictionEvent,
-        MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus, MemorySummary,
-        MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, ObservedTurnDecision,
-        PacketSafety, ParticipantMembership, ProjectPolicyEpoch, SCHEMA_VERSION, Scope,
-        Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent,
-        TaskDelta, TaskId, TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState,
-        TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
-        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
-        TurnEvaluationInput, TurnGrantState, TurnIntent, TurnNextIntent, WorkLease,
-        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
+        ActorContext, AssuranceLevel, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextItem,
+        ContextOmission, ContextOmissionSummary, ContextPacket, ContextPacketHeader,
+        ContextPacketPayload, ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth,
+        ControlPolicy, ControlSessionBinding, ControlSessionStatus, ControlTurnBeginDecision,
+        ControlTurnCheckpointDecision, ControlTurnDecision, Delivery, DeliveryPage, DeltaItem,
+        EffectClass, HostPathPolicy, IssuedTurnGrant, LocalTask, MemoryAssertionEvent,
+        MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus,
+        MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
+        ObservedTurnDecision, PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision,
+        ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId,
+        SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId,
+        TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision,
+        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
+        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+        TurnGrantState, TurnIntent, TurnNextIntent, WorkLease, WorkLeaseDecision, WorkLeaseEvent,
+        WorkLeaseReleaseReceipt, WorkLeaseTransition,
     },
     memory::{Redactor, activation_policy, classify_note},
 };
@@ -125,8 +137,9 @@ struct ControlTurnCheckpointFingerprint<'a> {
 
 #[derive(Serialize)]
 struct WorkLeaseAcquireFingerprint<'a> {
-    control_schema_version: u16,
+    fingerprint_schema_version: u16,
     session_id: &'a SessionId,
+    bind_intent_hash: &'a str,
     kind: crate::domain::LeaseKind,
     mode: crate::domain::LeaseMode,
     subject: &'a crate::domain::ResourceSubject,
@@ -241,6 +254,11 @@ pub enum StoreError {
     },
     #[error("control projection contains invalid data: {0}")]
     InvalidControlProjection(String),
+    #[error("active control policy changed: expected {expected}, current policy is {current}")]
+    ControlPolicyConflict {
+        expected: ObjectHash,
+        current: ObjectHash,
+    },
     #[error("pinned context requires {required} bytes, exceeding the {budget}-byte budget")]
     PinnedBudgetExceeded { required: usize, budget: usize },
     #[error("local work item {0:?} does not exist")]
@@ -297,6 +315,7 @@ pub struct IntegrityReport {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ControlDiagnostics {
     pub control_schema_version: u16,
+    pub active_policy: ObjectHash,
     pub policy_epoch: ProjectPolicyEpoch,
     pub required_assurance: ControlAssurance,
     pub supported_effects: Vec<EffectClass>,
@@ -307,6 +326,19 @@ pub struct ControlDiagnostics {
     pub action_gating_available: bool,
     pub authority_mediation_available: bool,
     pub action_outcome_tracking_available: bool,
+}
+
+/// Operator-facing receipt for one idempotent project control-policy update.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ControlPolicyUpdateReceipt {
+    pub changed: bool,
+    pub active_policy: ObjectHash,
+    pub previous_policy: Option<ObjectHash>,
+    pub authority: ObjectHash,
+    pub policy_epoch: ProjectPolicyEpoch,
+    pub previous_required_assurance: ControlAssurance,
+    pub required_assurance: ControlAssurance,
+    pub activated_at: DateTime<Utc>,
 }
 
 /// One ordered entry in a task's authoritative local change feed.
@@ -352,6 +384,38 @@ const MAX_CONTROL_DELIVERY_OBJECT_BYTES: i64 = 128 * 1_024;
 const MAX_CONTROL_DELIVERY_BYTES: usize = 256 * 1_024;
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
 const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
+const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 2;
+const CONTROL_POLICY_SCHEMA_VERSION_V1: u16 = 1;
+const CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1: u16 = 1;
+const CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1: u16 = 1;
+const BUILTIN_CONTROL_GRANT_TTL_SECONDS: i64 = 30;
+const CONTROL_POLICY_V1_MAX_GRANT_TTL_SECONDS: i64 = 300;
+const MAX_CONTROL_GRANT_TTL_SECONDS: i64 = CONTROL_POLICY_V1_MAX_GRANT_TTL_SECONDS;
+const MAX_CONTROL_POLICY_PROVENANCE_LINKS: usize = 32;
+const MAX_CONTROL_POLICY_ATTRIBUTION_BYTES: usize = 64 * 1_024;
+const MAX_CONTROL_POLICY_AUTHORITY_BYTES: usize = 72 * 1_024;
+const WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION: u16 = 2;
+
+#[cfg(test)]
+thread_local! {
+    static CONTROL_POLICY_VERSION_LOAD_COUNT: Cell<usize> = const { Cell::new(0) };
+    static FAIL_COLD_SCHEMA_AFTER_DDL: Cell<bool> = const { Cell::new(false) };
+}
+
+#[cfg(test)]
+fn reset_control_policy_version_load_count() {
+    CONTROL_POLICY_VERSION_LOAD_COUNT.set(0);
+}
+
+#[cfg(test)]
+fn control_policy_version_load_count() -> usize {
+    CONTROL_POLICY_VERSION_LOAD_COUNT.get()
+}
+
+#[cfg(test)]
+fn fail_cold_schema_after_ddl() -> bool {
+    FAIL_COLD_SCHEMA_AFTER_DDL.replace(false)
+}
 
 struct ContextAssembly {
     pinned: Vec<ContextItem>,
@@ -417,10 +481,19 @@ struct RawControlSession {
 }
 
 struct ControlPolicyProjection {
+    policy_hash: ObjectHash,
+    authority_hash: ObjectHash,
     epoch: ProjectPolicyEpoch,
     required_assurance: ControlAssurance,
     supported_effects: Vec<EffectClass>,
     grant_ttl_seconds: i64,
+    activated_at: DateTime<Utc>,
+}
+
+struct InitialControlPolicy {
+    required_assurance: ControlAssurance,
+    authorized_by: ActorContext,
+    reason: String,
 }
 
 struct StoredTurnGrant {
@@ -527,7 +600,46 @@ impl SqliteStore {
     /// Returns [`StoreError`] when SQLite cannot open or initialize the store.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         let connection = Connection::open(path)?;
-        Self::from_connection(connection, HostPathPolicy::host_default())
+        Self::from_connection(connection, HostPathPolicy::host_default(), None)
+    }
+
+    /// Creates a store with an explicit bootstrap control-assurance requirement.
+    ///
+    /// The requested value and asserted operator context apply only while
+    /// installing the first policy. Reconfiguring an existing store requires
+    /// an attributed policy update.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when initialization fails or an existing policy
+    /// has a different assurance requirement.
+    pub fn open_with_initial_control_assurance<R: Redactor>(
+        path: impl AsRef<Path>,
+        required_assurance: ControlAssurance,
+        authorized_by: &ActorContext,
+        reason: &str,
+        redactor: &R,
+    ) -> Result<Self, StoreError> {
+        if authorized_by.assurance != AssuranceLevel::Asserted {
+            return Err(StoreError::InvalidControlProjection(
+                "V1 control-policy bootstrap records asserted host context only".into(),
+            ));
+        }
+        let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
+        let reason = normalize_control_text(reason, "control policy bootstrap reason")?;
+        redactor
+            .inspect(&reason)
+            .map_err(StoreError::RedactionRefused)?;
+        let connection = Connection::open(path)?;
+        Self::from_connection(
+            connection,
+            HostPathPolicy::host_default(),
+            Some(InitialControlPolicy {
+                required_assurance,
+                authorized_by,
+                reason,
+            }),
+        )
     }
 
     /// Opens a store with an explicit embedding-host filesystem identity policy.
@@ -543,7 +655,7 @@ impl SqliteStore {
         policy: HostPathPolicy,
     ) -> Result<Self, StoreError> {
         let connection = Connection::open(path)?;
-        Self::from_connection(connection, policy)
+        Self::from_connection(connection, policy, None)
     }
 
     /// Creates an isolated store for tests or ephemeral runs.
@@ -555,6 +667,7 @@ impl SqliteStore {
         Self::from_connection(
             Connection::open_in_memory()?,
             HostPathPolicy::host_default(),
+            None,
         )
     }
 
@@ -566,17 +679,37 @@ impl SqliteStore {
     fn from_connection(
         mut connection: Connection,
         host_path_policy: HostPathPolicy,
+        initial_control_policy: Option<InitialControlPolicy>,
     ) -> Result<Self, StoreError> {
         connection.busy_timeout(Duration::from_secs(5))?;
         work::preflight_schema(&connection)?;
+        if Self::sqlite_table_exists(&connection, "task_changes")? {
+            Self::verify_task_change_cursor_schema(&connection)?;
+        }
         Self::preflight_host_path_policy(&connection, host_path_policy)?;
+        Self::preflight_control_policy_schema(&connection)?;
+        let control_policy_preexisted = Self::control_policy_preexisted(&connection)?;
+        Self::preflight_legacy_initial_control_assurance(
+            &connection,
+            control_policy_preexisted,
+            initial_control_policy
+                .as_ref()
+                .map(|policy| policy.required_assurance),
+        )?;
         let core_schema_complete = Self::current_core_schema_is_complete(&connection)?;
+        connection.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA synchronous = NORMAL;",
+        )?;
+        let journal_mode =
+            connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
+        if !matches!(journal_mode.as_str(), "wal" | "memory") {
+            connection.execute_batch("PRAGMA journal_mode = WAL;")?;
+        }
         if !core_schema_complete {
+            connection.execute_batch("BEGIN IMMEDIATE;")?;
             connection.execute_batch(
-                "PRAGMA foreign_keys = ON;
-             PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;
-             CREATE TABLE IF NOT EXISTS objects (
+                "CREATE TABLE IF NOT EXISTS objects (
                  object_hash TEXT PRIMARY KEY,
                  object_kind TEXT NOT NULL,
                  canonical_json BLOB NOT NULL,
@@ -725,15 +858,15 @@ impl SqliteStore {
                  policy_epoch INTEGER NOT NULL,
                  required_assurance TEXT NOT NULL,
                  supported_effects_json TEXT NOT NULL,
-                 grant_ttl_seconds INTEGER NOT NULL
+                 grant_ttl_seconds INTEGER NOT NULL,
+                 policy_hash TEXT REFERENCES objects(object_hash)
              ) STRICT;
-             INSERT OR IGNORE INTO control_policy_state (
-                 singleton, schema_version, policy_epoch, required_assurance,
-                 supported_effects_json, grant_ttl_seconds
-             ) VALUES (
-                 1, 1, 1, 'turn_gated',
-                 '[\"observe\",\"communicate\",\"mutate_local\"]', 30
-             );
+             CREATE TABLE IF NOT EXISTS control_policy_versions (
+                 policy_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+                 policy_epoch INTEGER NOT NULL UNIQUE CHECK(policy_epoch > 0),
+                 authority_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                 policy_json BLOB NOT NULL
+             ) STRICT;
              CREATE TABLE IF NOT EXISTS task_control_state (
                  task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                  admission_epoch INTEGER NOT NULL
@@ -815,18 +948,18 @@ impl SqliteStore {
                  UNIQUE(session_id, operation, idempotency_key)
              ) STRICT;",
             )?;
-        } else {
-            connection.execute_batch(
-                "PRAGMA foreign_keys = ON;
-                 PRAGMA synchronous = NORMAL;",
-            )?;
-            let journal_mode =
-                connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
-            if !matches!(journal_mode.as_str(), "wal" | "memory") {
-                connection.execute_batch("PRAGMA journal_mode = WAL;")?;
+            #[cfg(test)]
+            if fail_cold_schema_after_ddl() {
+                return Err(StoreError::InvalidControlProjection(
+                    "injected cold-schema failure after DDL".into(),
+                ));
             }
         }
-        Self::bind_host_path_policy(&mut connection, host_path_policy)?;
+        if core_schema_complete {
+            Self::bind_host_path_policy(&mut connection, host_path_policy)?;
+        } else {
+            Self::bind_host_path_policy_on(&connection, host_path_policy)?;
+        }
         if !core_schema_complete {
             let has_memory_work_id = connection.query_row(
                 "SELECT EXISTS(
@@ -870,12 +1003,661 @@ impl SqliteStore {
                 [],
             )?;
         }
+        if core_schema_complete {
+            Self::migrate_control_policy(
+                &mut connection,
+                control_policy_preexisted,
+                initial_control_policy,
+            )?;
+        } else {
+            Self::migrate_control_policy_on(
+                &connection,
+                control_policy_preexisted,
+                initial_control_policy,
+            )?;
+            connection.execute_batch("COMMIT;")?;
+        }
         work::migrate(&mut connection)?;
         Self::migrate_memory_contradiction_edges(&mut connection)?;
         Ok(Self {
             connection,
             host_path_policy,
         })
+    }
+
+    fn control_policy_row_exists(connection: &Connection) -> Result<bool, StoreError> {
+        if !Self::sqlite_table_exists(connection, "control_policy_state")? {
+            return Ok(false);
+        }
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM control_policy_state WHERE singleton = 1
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(StoreError::from)
+    }
+
+    fn sqlite_table_exists(connection: &Connection, table: &str) -> Result<bool, StoreError> {
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE type = 'table' AND name = ?1
+             )",
+                [table],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(StoreError::from)
+    }
+
+    fn control_policy_family_exists(connection: &Connection) -> Result<bool, StoreError> {
+        for table in [
+            "control_policy_state",
+            "control_policy_versions",
+            "control_sessions",
+            "control_turn_grants",
+        ] {
+            if Self::sqlite_table_exists(connection, table)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn canonical_control_policy_objects_exist(connection: &Connection) -> Result<bool, StoreError> {
+        if !Self::sqlite_table_exists(connection, "objects")? {
+            return Ok(false);
+        }
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM objects
+                     WHERE object_kind IN (
+                         'control_policy', 'project_policy_authority_decision'
+                     )
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(StoreError::from)
+    }
+
+    fn control_policy_preexisted(connection: &Connection) -> Result<bool, StoreError> {
+        // A recognized legacy singleton is already an established policy,
+        // even when the store has never recorded any other object. A pre-fix
+        // interrupted bootstrap is byte-identical to that valid legacy state,
+        // so guessing from data presence could silently replace turn_gated at
+        // epoch one. New bootstrap inserts this selector in the same migration
+        // transaction, eliminating the crash window without a heuristic.
+        Self::control_policy_row_exists(connection)
+    }
+
+    fn control_policy_state_columns(
+        connection: &Connection,
+    ) -> Result<HashSet<String>, StoreError> {
+        let mut statement = connection.prepare("PRAGMA table_info('control_policy_state')")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+        Ok(rows.collect::<Result<HashSet<_>, _>>()?)
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the fail-before-DDL validation stays together so every accepted legacy/current shape is auditable"
+    )]
+    fn preflight_control_policy_schema(connection: &Connection) -> Result<(), StoreError> {
+        if !Self::sqlite_table_exists(connection, "control_policy_state")? {
+            if Self::control_policy_family_exists(connection)?
+                || Self::canonical_control_policy_objects_exist(connection)?
+            {
+                return Err(StoreError::InvalidControlProjection(
+                    "control policy state is missing from an established store".into(),
+                ));
+            }
+            return Ok(());
+        }
+        if !Self::control_policy_row_exists(connection)? {
+            return Err(StoreError::InvalidControlProjection(
+                "control policy singleton is missing from an established store".into(),
+            ));
+        }
+        let columns = Self::control_policy_state_columns(connection)?;
+        for required in [
+            "singleton",
+            "schema_version",
+            "policy_epoch",
+            "required_assurance",
+            "supported_effects_json",
+            "grant_ttl_seconds",
+        ] {
+            if !columns.contains(required) {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "control policy state is missing required column {required:?}"
+                )));
+            }
+        }
+        let (schema_version, epoch, required_assurance, supported_effects_json, grant_ttl): (
+            i64,
+            i64,
+            String,
+            String,
+            i64,
+        ) = connection.query_row(
+            "SELECT schema_version, policy_epoch, required_assurance,
+                    supported_effects_json, grant_ttl_seconds
+             FROM control_policy_state WHERE singleton = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )?;
+        match schema_version {
+            1 => {
+                let effects: Vec<EffectClass> = serde_json::from_str(&supported_effects_json)?;
+                if epoch != 1
+                    || required_assurance != "turn_gated"
+                    || !Self::is_recognized_builtin_envelope(&effects, grant_ttl)
+                    || (columns.contains("policy_hash")
+                        && connection.query_row(
+                            "SELECT policy_hash IS NOT NULL FROM control_policy_state
+                             WHERE singleton = 1",
+                            [],
+                            |row| row.get::<_, bool>(0),
+                        )?)
+                {
+                    return Err(StoreError::InvalidControlProjection(
+                        "legacy control policy is not the recognized stock V1 row".into(),
+                    ));
+                }
+            }
+            CONTROL_POLICY_STATE_SCHEMA_VERSION => {
+                if !columns.contains("policy_hash") {
+                    return Err(StoreError::InvalidControlProjection(
+                        "current control policy state has no active policy hash".into(),
+                    ));
+                }
+                let versions_exist = connection.query_row(
+                    "SELECT EXISTS(
+                         SELECT 1 FROM sqlite_master
+                         WHERE type = 'table' AND name = 'control_policy_versions'
+                     )",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )?;
+                if !versions_exist {
+                    return Err(StoreError::InvalidControlProjection(
+                        "current control policy version table is missing".into(),
+                    ));
+                }
+                // Validate the entire immutable chain before any schema setup
+                // can mutate a partially corrupt current store.
+                let snapshot = connection.unchecked_transaction()?;
+                Self::verify_control_policy_history(&snapshot)?;
+                snapshot.commit()?;
+            }
+            other => {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "control policy state schema {other} is not supported"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn preflight_legacy_initial_control_assurance(
+        connection: &Connection,
+        policy_preexisted: bool,
+        initial_required_assurance: Option<ControlAssurance>,
+    ) -> Result<(), StoreError> {
+        let Some(requested) = initial_required_assurance else {
+            return Ok(());
+        };
+        if !policy_preexisted {
+            return Ok(());
+        }
+        let required_assurance: String = connection.query_row(
+            "SELECT required_assurance
+             FROM control_policy_state WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        let projected_assurance: ControlAssurance = parse_enum(&required_assurance)?;
+        if projected_assurance != requested {
+            return Err(StoreError::InvalidControlProjection(
+                "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the version preflight, canonical bootstrap, and active-policy CAS stay adjacent for migration auditability"
+    )]
+    fn migrate_control_policy(
+        connection: &mut Connection,
+        policy_preexisted: bool,
+        initial_control_policy: Option<InitialControlPolicy>,
+    ) -> Result<(), StoreError> {
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::migrate_control_policy_on(&transaction, policy_preexisted, initial_control_policy)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "legacy projection capture, canonical epoch-one binding, and envelope upgrade remain adjacent for migration auditability"
+    )]
+    fn migrate_control_policy_on(
+        connection: &Connection,
+        policy_preexisted: bool,
+        initial_control_policy: Option<InitialControlPolicy>,
+    ) -> Result<(), StoreError> {
+        let initial_required_assurance = initial_control_policy
+            .as_ref()
+            .map(|policy| policy.required_assurance);
+        let schema_version: Option<i64> = connection
+            .query_row(
+                "SELECT schema_version FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if schema_version == Some(CONTROL_POLICY_STATE_SCHEMA_VERSION) {
+            let (policy, _, _) = Self::load_control_policy_head(connection)?;
+            if initial_required_assurance
+                .is_some_and(|requested| requested != policy.required_assurance)
+            {
+                return Err(StoreError::InvalidControlProjection(
+                    "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                        .into(),
+                ));
+            }
+            Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
+            return Ok(());
+        }
+        let projected_state: Option<(i64, String, String, i64)> = connection
+            .query_row(
+                "SELECT schema_version, required_assurance,
+                        supported_effects_json, grant_ttl_seconds
+                 FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        if projected_state
+            .as_ref()
+            .is_some_and(|(schema_version, _, _, _)| {
+                *schema_version == CONTROL_POLICY_STATE_SCHEMA_VERSION
+            })
+        {
+            let (policy, _, _) = Self::load_control_policy_head(connection)?;
+            if initial_required_assurance
+                .is_some_and(|requested| requested != policy.required_assurance)
+            {
+                return Err(StoreError::InvalidControlProjection(
+                    "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                        .into(),
+                ));
+            }
+            Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
+            return Ok(());
+        }
+        let (schema_version, projected_assurance, projected_effects_json, projected_grant_ttl) =
+            if let Some(projected_state) = projected_state {
+                projected_state
+            } else {
+                if policy_preexisted {
+                    return Err(StoreError::InvalidControlProjection(
+                        "control policy singleton disappeared from an established store".into(),
+                    ));
+                }
+                let assurance = initial_required_assurance.unwrap_or(ControlAssurance::TurnGated);
+                let assurance_name = enum_name(assurance)?;
+                let effects_json = serde_json::to_string(&Self::builtin_control_effects())?;
+                connection.execute(
+                    "INSERT INTO control_policy_state (
+                         singleton, schema_version, policy_epoch, required_assurance,
+                         supported_effects_json, grant_ttl_seconds
+                     ) VALUES (1, 1, 1, ?1, ?2, ?3)",
+                    params![
+                        assurance_name,
+                        effects_json,
+                        BUILTIN_CONTROL_GRANT_TTL_SECONDS,
+                    ],
+                )?;
+                (
+                    1,
+                    assurance_name,
+                    serde_json::to_string(&Self::builtin_control_effects())?,
+                    BUILTIN_CONTROL_GRANT_TTL_SECONDS,
+                )
+            };
+        if schema_version != 1 {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy state schema {schema_version} is not supported"
+            )));
+        }
+        let projected_assurance = parse_enum(&projected_assurance)?;
+        let projected_effects: Vec<EffectClass> = serde_json::from_str(&projected_effects_json)?;
+        if policy_preexisted
+            && initial_required_assurance.is_some_and(|requested| requested != projected_assurance)
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                    .into(),
+                ));
+        }
+        let has_policy_hash = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM pragma_table_info('control_policy_state')
+                 WHERE name = 'policy_hash'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !has_policy_hash {
+            connection.execute(
+                "ALTER TABLE control_policy_state
+                 ADD COLUMN policy_hash TEXT REFERENCES objects(object_hash)",
+                [],
+            )?;
+        }
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS control_policy_versions (
+                 policy_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+                 policy_epoch INTEGER NOT NULL UNIQUE CHECK(policy_epoch > 0),
+                 authority_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                 policy_json BLOB NOT NULL
+             ) STRICT",
+            [],
+        )?;
+        let now = Utc::now();
+        let (required_assurance, authorized_by, reason) =
+            match (policy_preexisted, initial_control_policy) {
+                (_, Some(initial)) => (
+                    initial.required_assurance,
+                    initial.authorized_by,
+                    initial.reason,
+                ),
+                (true, None) => {
+                    let source = "engram:migration";
+                    let reason = "bind the recognized stock V1 control policy to canonical history";
+                    (
+                        projected_assurance,
+                        ActorContext {
+                            actor_id: source.into(),
+                            actor_kind: "system".into(),
+                            assurance: AssuranceLevel::Asserted,
+                            run_id: None,
+                            session_id: None,
+                            source_tool: Some(source.into()),
+                            source_skill: None,
+                            provenance_chain: Vec::new(),
+                            reason: reason.into(),
+                        },
+                        reason.to_owned(),
+                    )
+                }
+                (false, None) => {
+                    let source = "engram:init";
+                    let reason = "install the default project bootstrap control policy";
+                    (
+                        ControlAssurance::TurnGated,
+                        ActorContext {
+                            actor_id: source.into(),
+                            actor_kind: "system".into(),
+                            assurance: AssuranceLevel::Asserted,
+                            run_id: None,
+                            session_id: None,
+                            source_tool: Some(source.into()),
+                            source_skill: None,
+                            provenance_chain: Vec::new(),
+                            reason: reason.into(),
+                        },
+                        reason.to_owned(),
+                    )
+                }
+            };
+        let authority = ProjectPolicyAuthorityDecision {
+            schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1,
+            operation: ProjectPolicyOperation::SetRequiredAssurance,
+            policy_epoch: ProjectPolicyEpoch(1),
+            previous_policy: None,
+            required_assurance,
+            authorized_by,
+            reason,
+            decided_at: now,
+        };
+        let authority_object = CanonicalObject::freeze(&authority)?;
+        if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
+            )));
+        }
+        Self::insert_object(
+            connection,
+            "project_policy_authority_decision",
+            &authority_object,
+        )?;
+        let policy = ControlPolicy {
+            schema_version: CONTROL_POLICY_SCHEMA_VERSION_V1,
+            control_schema_version: CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1,
+            policy_epoch: ProjectPolicyEpoch(1),
+            previous_policy: None,
+            required_assurance,
+            supported_effects: projected_effects,
+            grant_ttl_seconds: projected_grant_ttl,
+            authority: authority_object.hash().clone(),
+            activated_at: now,
+        };
+        let policy_object = CanonicalObject::freeze(&policy)?;
+        Self::insert_object(connection, "control_policy", &policy_object)?;
+        connection.execute(
+            "INSERT INTO control_policy_versions (
+                     policy_hash, policy_epoch, authority_hash, policy_json
+                 ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                policy_object.hash().as_str(),
+                policy.policy_epoch.0,
+                authority_object.hash().as_str(),
+                policy_object.bytes(),
+            ],
+        )?;
+        connection.execute(
+            "UPDATE control_policy_state SET
+                     schema_version = ?1, policy_epoch = ?2,
+                     required_assurance = ?3, supported_effects_json = ?4,
+                     grant_ttl_seconds = ?5, policy_hash = ?6
+                 WHERE singleton = 1",
+            params![
+                CONTROL_POLICY_STATE_SCHEMA_VERSION,
+                policy.policy_epoch.0,
+                enum_name(policy.required_assurance)?,
+                serde_json::to_string(&policy.supported_effects)?,
+                policy.grant_ttl_seconds,
+                policy_object.hash().as_str(),
+            ],
+        )?;
+        let policy = Self::verify_control_policy_history(connection)?;
+        if initial_required_assurance
+            .is_some_and(|requested| requested != policy.required_assurance)
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                    .into(),
+                ));
+        }
+        Self::upgrade_builtin_control_envelope_on(connection, policy, now)?;
+        Ok(())
+    }
+
+    fn builtin_control_effects() -> Vec<EffectClass> {
+        vec![
+            EffectClass::Observe,
+            EffectClass::Communicate,
+            EffectClass::Coordinate,
+            EffectClass::MutateLocal,
+        ]
+    }
+
+    fn legacy_v1_control_effects() -> Vec<EffectClass> {
+        vec![
+            EffectClass::Observe,
+            EffectClass::Communicate,
+            EffectClass::MutateLocal,
+        ]
+    }
+
+    fn recognized_builtin_envelopes() -> Vec<(Vec<EffectClass>, i64)> {
+        vec![
+            (
+                Self::legacy_v1_control_effects(),
+                BUILTIN_CONTROL_GRANT_TTL_SECONDS,
+            ),
+            (
+                Self::builtin_control_effects(),
+                BUILTIN_CONTROL_GRANT_TTL_SECONDS,
+            ),
+        ]
+    }
+
+    fn is_recognized_builtin_envelope(effects: &[EffectClass], grant_ttl: i64) -> bool {
+        Self::recognized_builtin_envelopes()
+            .iter()
+            .any(|(recognized_effects, recognized_ttl)| {
+                effects == recognized_effects && grant_ttl == *recognized_ttl
+            })
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the attributed authority, immutable successor, selector CAS, and post-CAS verification form one auditable operation"
+    )]
+    fn upgrade_builtin_control_envelope_on(
+        connection: &Connection,
+        current: ControlPolicyProjection,
+        now: DateTime<Utc>,
+    ) -> Result<ControlPolicyProjection, StoreError> {
+        if current.supported_effects == Self::builtin_control_effects()
+            && current.grant_ttl_seconds == BUILTIN_CONTROL_GRANT_TTL_SECONDS
+        {
+            return Ok(current);
+        }
+        if !Self::is_recognized_builtin_envelope(
+            &current.supported_effects,
+            current.grant_ttl_seconds,
+        ) {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy uses an unrecognized built-in envelope".into(),
+            ));
+        }
+        let next_epoch = current.epoch.0.checked_add(1).ok_or_else(|| {
+            StoreError::InvalidControlProjection("control policy epoch overflowed".into())
+        })?;
+        let old_envelope = serde_json::to_string(&current.supported_effects)?;
+        let new_effects = Self::builtin_control_effects();
+        let new_envelope = serde_json::to_string(&new_effects)?;
+        let source = "engram:migration";
+        let reason = format!(
+            "upgrade the recognized built-in control envelope from {old_envelope} to {new_envelope}"
+        );
+        let authority = ProjectPolicyAuthorityDecision {
+            schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1,
+            operation: ProjectPolicyOperation::UpgradeBuiltinEnvelope,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            authorized_by: ActorContext {
+                actor_id: source.into(),
+                actor_kind: "system".into(),
+                assurance: AssuranceLevel::Asserted,
+                run_id: None,
+                session_id: None,
+                source_tool: Some(source.into()),
+                source_skill: None,
+                provenance_chain: Vec::new(),
+                reason: reason.clone(),
+            },
+            reason,
+            decided_at: now,
+        };
+        let authority_object = CanonicalObject::freeze(&authority)?;
+        if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
+            )));
+        }
+        Self::insert_object(
+            connection,
+            "project_policy_authority_decision",
+            &authority_object,
+        )?;
+        let policy = ControlPolicy {
+            schema_version: CONTROL_POLICY_SCHEMA_VERSION_V1,
+            control_schema_version: CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            supported_effects: new_effects,
+            grant_ttl_seconds: BUILTIN_CONTROL_GRANT_TTL_SECONDS,
+            authority: authority_object.hash().clone(),
+            activated_at: now,
+        };
+        Self::validate_active_control_policy(&policy)?;
+        let policy_object = CanonicalObject::freeze(&policy)?;
+        Self::insert_object(connection, "control_policy", &policy_object)?;
+        connection.execute(
+            "INSERT INTO control_policy_versions (
+                 policy_hash, policy_epoch, authority_hash, policy_json
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                policy_object.hash().as_str(),
+                policy.policy_epoch.0,
+                authority_object.hash().as_str(),
+                policy_object.bytes(),
+            ],
+        )?;
+        let changed = connection.execute(
+            "UPDATE control_policy_state SET
+                 schema_version = ?1, policy_epoch = ?2,
+                 required_assurance = ?3, supported_effects_json = ?4,
+                 grant_ttl_seconds = ?5, policy_hash = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+            params![
+                CONTROL_POLICY_STATE_SCHEMA_VERSION,
+                policy.policy_epoch.0,
+                enum_name(policy.required_assurance)?,
+                serde_json::to_string(&policy.supported_effects)?,
+                policy.grant_ttl_seconds,
+                policy_object.hash().as_str(),
+                current.epoch.0,
+                current.policy_hash.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidControlProjection(
+                "built-in control envelope compare-and-swap matched no row".into(),
+            ));
+        }
+        let activated = Self::verify_control_policy_history(connection)?;
+        if activated.policy_hash != *policy_object.hash() || activated.epoch != policy.policy_epoch
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "built-in control envelope upgrade failed integrity validation".into(),
+            ));
+        }
+        Ok(activated)
     }
 
     fn current_core_schema_is_complete(connection: &Connection) -> Result<bool, StoreError> {
@@ -931,6 +1713,34 @@ impl SqliteStore {
         )?;
         if !has_work_id {
             return Ok(false);
+        }
+        let policy_schema: Option<i64> = connection
+            .query_row(
+                "SELECT schema_version FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if policy_schema == Some(CONTROL_POLICY_STATE_SCHEMA_VERSION) {
+            let has_control_policy_hash = connection.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM pragma_table_info('control_policy_state')
+                     WHERE name = 'policy_hash'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )?;
+            let has_versions = connection.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM sqlite_master
+                     WHERE type = 'table' AND name = 'control_policy_versions'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )?;
+            if !has_control_policy_hash || !has_versions {
+                return Ok(false);
+            }
         }
         connection
             .query_row(
@@ -1084,6 +1894,16 @@ impl SqliteStore {
         connection: &mut Connection,
         expected: HostPathPolicy,
     ) -> Result<(), StoreError> {
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::bind_host_path_policy_on(&transaction, expected)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    fn bind_host_path_policy_on(
+        connection: &Connection,
+        expected: HostPathPolicy,
+    ) -> Result<(), StoreError> {
         let table_exists = connection.query_row(
             "SELECT EXISTS(
                  SELECT 1 FROM sqlite_master
@@ -1107,26 +1927,23 @@ impl SqliteStore {
         if stored == Some((expected.case_fold_paths, expected.windows_alias_rules)) {
             return Ok(());
         }
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        transaction.execute_batch(
+        connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS control_host_path_policy (
                  singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
                  case_fold_paths INTEGER NOT NULL CHECK(case_fold_paths IN (0, 1)),
                  windows_alias_rules INTEGER NOT NULL CHECK(windows_alias_rules IN (0, 1))
              ) STRICT;",
         )?;
-        if Self::has_path_bearing_control_state(&transaction)?
-            && transaction.query_row(
-                "SELECT COUNT(*) FROM control_host_path_policy",
-                [],
-                |row| row.get::<_, i64>(0),
-            )? == 0
+        if Self::has_path_bearing_control_state(connection)?
+            && connection.query_row("SELECT COUNT(*) FROM control_host_path_policy", [], |row| {
+                row.get::<_, i64>(0)
+            })? == 0
         {
             return Err(StoreError::InvalidControlSession(
                 "path-bearing control state exists without a bound host path policy".into(),
             ));
         }
-        transaction.execute(
+        connection.execute(
             "INSERT OR IGNORE INTO control_host_path_policy (
                  singleton, case_fold_paths, windows_alias_rules
              ) VALUES (1, ?1, ?2)",
@@ -1135,8 +1952,7 @@ impl SqliteStore {
                 i64::from(expected.windows_alias_rules)
             ],
         )?;
-        Self::preflight_host_path_policy(&transaction, expected)?;
-        transaction.commit()?;
+        Self::preflight_host_path_policy(connection, expected)?;
         Ok(())
     }
 
@@ -1470,6 +2286,10 @@ impl SqliteStore {
                 }
                 let binding = ControlSessionBinding {
                     routing_token: existing.routing_token.clone(),
+                    effective_mediated_effects: effective_mediated_effects(
+                        existing.assurance,
+                        &existing.mediated_effects,
+                    ),
                     status: Self::control_session_status_on(&transaction, existing)?,
                 };
                 transaction.commit()?;
@@ -1519,7 +2339,7 @@ impl SqliteStore {
             actor.clone(),
             now,
         )?;
-        let policy = Self::load_control_policy(&transaction)?;
+        let policy = Self::load_active_control_policy(&transaction)?;
         transaction.execute(
             "INSERT OR IGNORE INTO task_control_state (task_id, admission_epoch)
              VALUES (?1, 1)",
@@ -1591,6 +2411,10 @@ impl SqliteStore {
             .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         let binding = ControlSessionBinding {
             routing_token: stored.routing_token.clone(),
+            effective_mediated_effects: effective_mediated_effects(
+                stored.assurance,
+                &stored.mediated_effects,
+            ),
             status: Self::control_session_status_on(&transaction, &stored)?,
         };
         transaction.commit()?;
@@ -1714,15 +2538,6 @@ impl SqliteStore {
                     "lease subject is invalid or belongs to another project".into(),
                 )
             })?;
-        let intent = CanonicalObject::freeze(&WorkLeaseAcquireFingerprint {
-            control_schema_version: CONTROL_SCHEMA_VERSION,
-            session_id,
-            kind,
-            mode,
-            subject: &subject,
-            ttl_seconds,
-            idempotency_key,
-        })?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -1730,6 +2545,16 @@ impl SqliteStore {
         let session = Self::load_control_session_on(&transaction, session_id)?
             .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         Self::verify_control_session(&session, project_id, routing_token)?;
+        let intent = CanonicalObject::freeze(&WorkLeaseAcquireFingerprint {
+            fingerprint_schema_version: WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION,
+            session_id,
+            bind_intent_hash: &session.bind_intent_hash,
+            kind,
+            mode,
+            subject: &subject,
+            ttl_seconds,
+            idempotency_key,
+        })?;
         if let Some(replay) = Self::replay_control_operation(
             &transaction,
             session_id,
@@ -1739,6 +2564,42 @@ impl SqliteStore {
         )? {
             transaction.commit()?;
             return Ok(replay);
+        }
+        let policy = Self::load_active_control_policy(&transaction)?;
+        let lease_effect = match kind {
+            crate::domain::LeaseKind::Execution => EffectClass::MutateLocal,
+            crate::domain::LeaseKind::Coordination => EffectClass::Coordinate,
+        };
+        let directive_key = format!("lease_acquire:{idempotency_key}");
+        if let Err(refusal) = evaluate_lease_policy(&LeasePolicyInput {
+            request_key: &directive_key,
+            host_assurance: session.assurance,
+            declared_mediated_effects: &session.mediated_effects,
+            project_required_assurance: policy.required_assurance,
+            policy_effects: &policy.supported_effects,
+            session_policy_epoch: session.epochs.project_policy,
+            active_policy_epoch: policy.epoch,
+            effect: lease_effect,
+        }) {
+            let decision = Self::refuse_work_lease(
+                &transaction,
+                session_id,
+                idempotency_key,
+                &intent,
+                refusal.directive,
+                now,
+            )?;
+            if refusal.adopt_project_policy_epoch {
+                transaction.execute(
+                    "UPDATE control_sessions SET
+                         project_policy_epoch = ?2,
+                         revision = revision + 1, updated_at_ms = ?3
+                     WHERE session_id = ?1",
+                    params![session_id.0, policy.epoch.0, now.timestamp_millis()],
+                )?;
+            }
+            transaction.commit()?;
+            return Ok(decision);
         }
         let head = Self::latest_task_cursor(&transaction, session.task_id)?;
         if !matches!(session.phase, SessionPhase::Ready)
@@ -2244,7 +3105,7 @@ impl SqliteStore {
             session = Self::load_control_session_on(&transaction, session_id)?
                 .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         }
-        let policy = Self::load_control_policy(&transaction)?;
+        let policy = Self::load_active_control_policy(&transaction)?;
         let task_state = transaction
             .query_row(
                 "SELECT state FROM tasks WHERE task_id = ?1 AND project_id = ?2",
@@ -2422,7 +3283,18 @@ impl SqliteStore {
                     grant: Box::new(grant),
                 }
             }
-            TurnDecision::Refuse { directive } => ControlTurnDecision::Refuse { directive },
+            TurnDecision::Refuse { directive } => {
+                if directive.code == crate::domain::ControlRefusalCode::PolicyEpochChanged {
+                    transaction.execute(
+                        "UPDATE control_sessions SET
+                             project_policy_epoch = ?2,
+                             revision = revision + 1, updated_at_ms = ?3
+                         WHERE session_id = ?1",
+                        params![session_id.0, policy.epoch.0, now.timestamp_millis()],
+                    )?;
+                }
+                ControlTurnDecision::Refuse { directive }
+            }
             TurnDecision::Defer { deferral } => ControlTurnDecision::Defer { deferral },
         };
         let decision_object = CanonicalObject::freeze(&decision)?;
@@ -2494,7 +3366,7 @@ impl SqliteStore {
         }
         let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
             .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
-        let policy = Self::load_control_policy(&transaction)?;
+        let policy = Self::load_active_control_policy(&transaction)?;
         let task_admission_epoch = transaction.query_row(
             "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
             [session.task_id.0.to_string()],
@@ -2625,14 +3497,16 @@ impl SqliteStore {
                          WHERE grant_id = ?1 AND state = 'issued'",
                         [grant_id],
                     )?;
-                    let next_phase =
-                        if matches!(code, crate::domain::ControlRefusalCode::StaleFence)
-                            && session.confirmed_cursor == head
-                        {
-                            "ready"
-                        } else {
-                            "sync_required"
-                        };
+                    let next_phase = if matches!(
+                        code,
+                        crate::domain::ControlRefusalCode::StaleFence
+                            | crate::domain::ControlRefusalCode::PolicyEpochChanged
+                    ) && session.confirmed_cursor == head
+                    {
+                        "ready"
+                    } else {
+                        "sync_required"
+                    };
                     transaction.execute(
                         "UPDATE control_sessions SET
                              phase = ?2, tentative_cursor = NULL,
@@ -2640,6 +3514,13 @@ impl SqliteStore {
                          WHERE session_id = ?1",
                         params![session_id.0, next_phase, now.timestamp_millis()],
                     )?;
+                    if matches!(code, crate::domain::ControlRefusalCode::PolicyEpochChanged) {
+                        transaction.execute(
+                            "UPDATE control_sessions SET project_policy_epoch = ?2
+                             WHERE session_id = ?1",
+                            params![session_id.0, policy.epoch.0],
+                        )?;
+                    }
                 }
                 ControlTurnBeginDecision::Refuse { code }
             }
@@ -4756,13 +5637,176 @@ impl SqliteStore {
             .transpose()
     }
 
+    /// Activates a new immutable project control-policy version.
+    ///
+    /// Reapplying the active assurance is an idempotent no-op. Callers may
+    /// provide the policy hash they observed to prevent a concurrent operator
+    /// update from being overwritten.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when attribution/redaction is invalid, the
+    /// expected policy is stale, canonical history is corrupt, or persistence
+    /// cannot complete atomically.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the attributed authority decision and immutable policy activation form one auditable transaction"
+    )]
+    pub fn set_required_control_assurance<R: Redactor>(
+        &mut self,
+        required_assurance: ControlAssurance,
+        authorized_by: &ActorContext,
+        reason: &str,
+        expected_policy: Option<&ObjectHash>,
+        now: DateTime<Utc>,
+        redactor: &R,
+    ) -> Result<ControlPolicyUpdateReceipt, StoreError> {
+        if authorized_by.assurance != AssuranceLevel::Asserted {
+            return Err(StoreError::InvalidControlProjection(
+                "V1 control-policy administration records asserted host context only".into(),
+            ));
+        }
+        let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
+        let reason = normalize_control_text(reason, "control policy update reason")?;
+        redactor
+            .inspect(&reason)
+            .map_err(StoreError::RedactionRefused)?;
+
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current = Self::verify_control_policy_history(&transaction)?;
+        if let Some(expected) = expected_policy
+            && expected != &current.policy_hash
+        {
+            return Err(StoreError::ControlPolicyConflict {
+                expected: expected.clone(),
+                current: current.policy_hash,
+            });
+        }
+        if required_assurance == current.required_assurance {
+            let (policy, _) =
+                Self::load_control_policy_version(&transaction, &current.policy_hash)?;
+            let receipt = ControlPolicyUpdateReceipt {
+                changed: false,
+                active_policy: current.policy_hash,
+                previous_policy: policy.previous_policy,
+                authority: current.authority_hash,
+                policy_epoch: current.epoch,
+                previous_required_assurance: current.required_assurance,
+                required_assurance: current.required_assurance,
+                activated_at: current.activated_at,
+            };
+            transaction.commit()?;
+            return Ok(receipt);
+        }
+
+        let next_epoch = current.epoch.0.checked_add(1).ok_or_else(|| {
+            StoreError::InvalidControlProjection("control policy epoch overflowed".into())
+        })?;
+        let authority = ProjectPolicyAuthorityDecision {
+            schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1,
+            operation: ProjectPolicyOperation::SetRequiredAssurance,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance,
+            authorized_by,
+            reason,
+            decided_at: now,
+        };
+        let authority_object = CanonicalObject::freeze(&authority)?;
+        if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
+            )));
+        }
+        Self::insert_object(
+            &transaction,
+            "project_policy_authority_decision",
+            &authority_object,
+        )?;
+        let policy = ControlPolicy {
+            schema_version: CONTROL_POLICY_SCHEMA_VERSION_V1,
+            control_schema_version: CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance,
+            supported_effects: current.supported_effects,
+            grant_ttl_seconds: current.grant_ttl_seconds,
+            authority: authority_object.hash().clone(),
+            activated_at: now,
+        };
+        Self::validate_active_control_policy(&policy)?;
+        let policy_object = CanonicalObject::freeze(&policy)?;
+        Self::insert_object(&transaction, "control_policy", &policy_object)?;
+        transaction.execute(
+            "INSERT INTO control_policy_versions (
+                 policy_hash, policy_epoch, authority_hash, policy_json
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                policy_object.hash().as_str(),
+                policy.policy_epoch.0,
+                authority_object.hash().as_str(),
+                policy_object.bytes(),
+            ],
+        )?;
+        let changed = transaction.execute(
+            "UPDATE control_policy_state SET
+                 schema_version = ?1, policy_epoch = ?2,
+                 required_assurance = ?3, supported_effects_json = ?4,
+                 grant_ttl_seconds = ?5, policy_hash = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+            params![
+                CONTROL_POLICY_STATE_SCHEMA_VERSION,
+                policy.policy_epoch.0,
+                enum_name(policy.required_assurance)?,
+                serde_json::to_string(&policy.supported_effects)?,
+                policy.grant_ttl_seconds,
+                policy_object.hash().as_str(),
+                current.epoch.0,
+                current.policy_hash.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy compare-and-swap matched no row".into(),
+            ));
+        }
+        let activated = Self::verify_control_policy_history(&transaction)?;
+        if activated.policy_hash != *policy_object.hash() || activated.epoch != policy.policy_epoch
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "activated control policy failed post-CAS integrity validation".into(),
+            ));
+        }
+        let receipt = ControlPolicyUpdateReceipt {
+            changed: true,
+            active_policy: policy_object.hash().clone(),
+            previous_policy: policy.previous_policy,
+            authority: authority_object.hash().clone(),
+            policy_epoch: policy.policy_epoch,
+            previous_required_assurance: current.required_assurance,
+            required_assurance: policy.required_assurance,
+            activated_at: policy.activated_at,
+        };
+        transaction.commit()?;
+        Ok(receipt)
+    }
+
     /// Summarizes the built-in control policy and live operational envelope.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when policy or control projections are invalid.
     pub fn control_diagnostics(&self) -> Result<ControlDiagnostics, StoreError> {
-        let policy = Self::load_control_policy(&self.connection)?;
+        let policy = if self.connection.is_autocommit() {
+            let snapshot = self.connection.unchecked_transaction()?;
+            let policy = Self::verify_control_policy_history(&snapshot)?;
+            snapshot.commit()?;
+            policy
+        } else {
+            Self::verify_control_policy_history(&self.connection)?
+        };
         let active_sessions = self.connection.query_row(
             "SELECT COUNT(*) FROM control_sessions WHERE phase != 'exited'",
             [],
@@ -4783,6 +5827,7 @@ impl SqliteStore {
         let all_effects = [
             EffectClass::Observe,
             EffectClass::Communicate,
+            EffectClass::Coordinate,
             EffectClass::MutateLocal,
             EffectClass::MutateShared,
             EffectClass::ExternalSideEffect,
@@ -4794,6 +5839,7 @@ impl SqliteStore {
             .collect();
         Ok(ControlDiagnostics {
             control_schema_version: CONTROL_SCHEMA_VERSION,
+            active_policy: policy.policy_hash,
             policy_epoch: policy.epoch,
             required_assurance: policy.required_assurance,
             supported_effects: policy.supported_effects,
@@ -4835,6 +5881,16 @@ impl SqliteStore {
             if !valid {
                 report.invalid_objects.push(stored_hash);
             }
+        }
+
+        if self.connection.is_autocommit() {
+            let policy_snapshot = self.connection.unchecked_transaction()?;
+            Self::verify_control_policy_records_on(&policy_snapshot, &mut report)?;
+            policy_snapshot.commit()?;
+        } else {
+            // Corruption fixtures and embedders may already own a transaction
+            // or savepoint. Reuse that snapshot instead of nesting BEGIN.
+            Self::verify_control_policy_records_on(&self.connection, &mut report)?;
         }
 
         let mut control_statement = self.connection.prepare(
@@ -4993,6 +6049,57 @@ impl SqliteStore {
         report.checked_work_records = checked_work_records;
         report.invalid_work_records = invalid_work_records;
         Ok(report)
+    }
+
+    fn verify_control_policy_records_on(
+        connection: &Connection,
+        report: &mut IntegrityReport,
+    ) -> Result<(), StoreError> {
+        report.checked_control_records += 1;
+        match Self::verify_control_policy_history(connection) {
+            Ok(_) => {}
+            Err(error @ StoreError::Sqlite(_)) => return Err(error),
+            Err(_) => report
+                .invalid_control_records
+                .push("control_policy_state:active".into()),
+        }
+        let active_policy_epoch = connection
+            .query_row(
+                "SELECT policy_epoch FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        let policy_rows = {
+            let mut statement = connection.prepare(
+                "SELECT policy_hash, policy_epoch
+                 FROM control_policy_versions ORDER BY policy_epoch",
+            )?;
+            statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for (stored_hash, projected_epoch) in policy_rows {
+            report.checked_control_records += 1;
+            let valid = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
+                .and_then(|hash| Self::load_control_policy_version(connection, &hash));
+            let is_orphaned_successor =
+                active_policy_epoch.is_none_or(|active_epoch| projected_epoch > active_epoch);
+            let is_invalid = match valid {
+                Ok(_) => false,
+                Err(error @ StoreError::Sqlite(_)) => return Err(error),
+                Err(_) => true,
+            };
+            if is_orphaned_successor || is_invalid {
+                report
+                    .invalid_control_records
+                    .push(format!("control_policy_version:{stored_hash}"));
+            }
+        }
+        Ok(())
     }
 
     fn decode_control_observation(
@@ -5266,51 +6373,420 @@ impl SqliteStore {
         Ok(ChangeCursor(cursor))
     }
 
-    fn load_control_policy(connection: &Connection) -> Result<ControlPolicyProjection, StoreError> {
-        let (schema_version, epoch, required_assurance, supported_effects, grant_ttl): (
-            i64,
-            i64,
-            String,
-            String,
-            i64,
-        ) = connection.query_row(
-            "SELECT schema_version, policy_epoch, required_assurance,
-                    supported_effects_json, grant_ttl_seconds
-             FROM control_policy_state WHERE singleton = 1",
-            [],
-            |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            },
+    /// Loads the active policy used by one control decision without walking
+    /// predecessor objects. The selected version is hash- and byte-verified,
+    /// its scalar projection must match, and one aggregate must prove that it
+    /// is the unique maximal contiguous head. Open, activation, and doctor use
+    /// [`Self::verify_control_policy_history`] to additionally walk the audit
+    /// chain; no historical version participates in a live grant decision.
+    fn load_active_control_policy(
+        connection: &Connection,
+    ) -> Result<ControlPolicyProjection, StoreError> {
+        let (projection, policy, _) = Self::load_control_policy_head(connection)?;
+        Self::validate_active_control_policy(&policy)?;
+        Ok(projection)
+    }
+
+    fn verify_control_policy_history(
+        connection: &Connection,
+    ) -> Result<ControlPolicyProjection, StoreError> {
+        let (projection, active_policy, active_authority) =
+            Self::load_control_policy_head(connection)?;
+        Self::verify_control_policy_chain(
+            connection,
+            &projection.policy_hash,
+            &active_policy,
+            active_authority,
         )?;
-        if schema_version != i64::from(CONTROL_SCHEMA_VERSION) || epoch < 0 || grant_ttl <= 0 {
+        Ok(projection)
+    }
+
+    fn load_control_policy_head(
+        connection: &Connection,
+    ) -> Result<
+        (
+            ControlPolicyProjection,
+            ControlPolicy,
+            ProjectPolicyAuthorityDecision,
+        ),
+        StoreError,
+    > {
+        let (
+            schema_version,
+            epoch,
+            required_assurance,
+            supported_effects,
+            grant_ttl,
+            policy_hash,
+        ): (i64, i64, String, String, i64, Option<String>) = connection
+            .query_row(
+                "SELECT schema_version, policy_epoch, required_assurance,
+                        supported_effects_json, grant_ttl_seconds, policy_hash
+                 FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::InvalidControlProjection(
+                    "control policy singleton is missing from an established store".into(),
+                )
+            })?;
+        if schema_version != CONTROL_POLICY_STATE_SCHEMA_VERSION || epoch <= 0 || grant_ttl <= 0 {
             return Err(StoreError::InvalidControlProjection(
-                "active control policy has an unknown schema or invalid bounds".into(),
+                "active control policy has an unknown state schema or invalid bounds".into(),
             ));
         }
-        let supported_effects: Vec<EffectClass> = serde_json::from_str(&supported_effects)?;
-        if supported_effects.is_empty()
-            || supported_effects
-                .iter()
-                .collect::<std::collections::HashSet<_>>()
-                .len()
-                != supported_effects.len()
+        let policy_hash = policy_hash.ok_or_else(|| {
+            StoreError::InvalidControlProjection(
+                "active control policy has no selected version".into(),
+            )
+        })?;
+        let active_hash = ObjectHash::from_stored(policy_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(policy_hash))?;
+        let (policy, authority) = Self::load_control_policy_version(connection, &active_hash)?;
+        Self::validate_migratable_active_control_policy(&policy)?;
+        if authority.schema_version != CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1 {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy authority uses an unsupported schema".into(),
+            ));
+        }
+        let projected_effects: Vec<EffectClass> = serde_json::from_str(&supported_effects)?;
+        let projected_assurance: ControlAssurance = parse_enum(&required_assurance)?;
+        if policy.policy_epoch.0 != epoch
+            || policy.required_assurance != projected_assurance
+            || policy.supported_effects != projected_effects
+            || policy.grant_ttl_seconds != grant_ttl
         {
             return Err(StoreError::InvalidControlProjection(
-                "active control policy effect set is empty or duplicated".into(),
+                "active control policy scalars do not match its canonical version".into(),
             ));
         }
-        Ok(ControlPolicyProjection {
-            epoch: ProjectPolicyEpoch(epoch),
-            required_assurance: parse_enum(&required_assurance)?,
-            supported_effects,
-            grant_ttl_seconds: grant_ttl,
-        })
+        let successor_exists = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM control_policy_versions WHERE policy_epoch > ?1
+             )",
+            [epoch],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if successor_exists {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy is not the maximal history head".into(),
+            ));
+        }
+        let projection = ControlPolicyProjection {
+            policy_hash: active_hash,
+            authority_hash: policy.authority.clone(),
+            epoch: policy.policy_epoch,
+            required_assurance: policy.required_assurance,
+            supported_effects: policy.supported_effects.clone(),
+            grant_ttl_seconds: policy.grant_ttl_seconds,
+            activated_at: policy.activated_at,
+        };
+        Ok((projection, policy, authority))
+    }
+
+    fn load_control_policy_version(
+        connection: &Connection,
+        policy_hash: &ObjectHash,
+    ) -> Result<(ControlPolicy, ProjectPolicyAuthorityDecision), StoreError> {
+        #[cfg(test)]
+        CONTROL_POLICY_VERSION_LOAD_COUNT.set(CONTROL_POLICY_VERSION_LOAD_COUNT.get() + 1);
+        let (projected_epoch, authority_hash, projected_json): (i64, String, Vec<u8>) = connection
+            .query_row(
+                "SELECT policy_epoch, authority_hash, policy_json
+                 FROM control_policy_versions WHERE policy_hash = ?1",
+                [policy_hash.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::InvalidControlProjection(format!(
+                    "control policy version {policy_hash} is missing"
+                ))
+            })?;
+        let policy_bytes =
+            Self::load_control_object_bytes(connection, policy_hash, "control_policy")?;
+        if policy_bytes != projected_json {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy {policy_hash} projection bytes do not match the canonical object"
+            )));
+        }
+        let policy: ControlPolicy = CanonicalObject::verify(policy_hash, policy_bytes)?.decode()?;
+        let stored_authority = ObjectHash::from_stored(authority_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(authority_hash))?;
+        if policy.policy_epoch.0 != projected_epoch || policy.authority != stored_authority {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy {policy_hash} is not bound to its version row"
+            )));
+        }
+        Self::validate_control_policy_shape(&policy)?;
+        let authority_bytes = Self::load_control_object_bytes(
+            connection,
+            &policy.authority,
+            "project_policy_authority_decision",
+        )?;
+        let authority: ProjectPolicyAuthorityDecision =
+            CanonicalObject::verify(&policy.authority, authority_bytes.clone())?.decode()?;
+        if authority.schema_version == CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1
+            && authority_bytes.len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES
+        {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy {policy_hash} authority exceeds its canonical byte limit"
+            )));
+        }
+        // Historical authority schemas are checked against the common binding
+        // envelope they record. V1 additionally pins its only known operation;
+        // future schema-specific validators can extend this dispatch without
+        // judging immutable predecessors by current active-policy constants.
+        let authority_is_v1 =
+            authority.schema_version == CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1;
+        if authority.schema_version == 0
+            || authority.policy_epoch != policy.policy_epoch
+            || authority.previous_policy != policy.previous_policy
+            || authority.required_assurance != policy.required_assurance
+            || authority.decided_at != policy.activated_at
+            || (authority_is_v1
+                && (matches!(authority.operation, ProjectPolicyOperation::Unknown)
+                    || authority.authorized_by.assurance != AssuranceLevel::Asserted))
+        {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy {policy_hash} authority is invalid"
+            )));
+        }
+        if authority_is_v1 {
+            validate_control_policy_actor_shape(&authority.authorized_by)?;
+            if normalize_control_text(&authority.reason, "control policy authority reason")?
+                != authority.reason
+            {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "control policy {policy_hash} authority reason is not normalized"
+                )));
+            }
+        }
+        Ok((policy, authority))
+    }
+
+    fn load_control_object_bytes(
+        connection: &Connection,
+        hash: &ObjectHash,
+        expected_kind: &str,
+    ) -> Result<Vec<u8>, StoreError> {
+        let (stored_kind, bytes): (String, Vec<u8>) = connection
+            .query_row(
+                "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+                [hash.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::InvalidControlProjection(format!(
+                    "canonical {expected_kind} object {hash} is missing"
+                ))
+            })?;
+        if stored_kind != expected_kind {
+            return Err(StoreError::ObjectKindMismatch {
+                hash: hash.clone(),
+                stored: stored_kind,
+                requested: expected_kind.into(),
+            });
+        }
+        CanonicalObject::verify(hash, bytes.clone())?;
+        Ok(bytes)
+    }
+
+    fn validate_control_policy_shape(policy: &ControlPolicy) -> Result<(), StoreError> {
+        // Every decodable historical schema shares these linkage and bounds
+        // invariants. V1 has an additional schema-specific wire constraint;
+        // active compatibility remains strict in validate_active_control_policy.
+        let unique_effects: HashSet<_> = policy.supported_effects.iter().collect();
+        if policy.schema_version == 0
+            || policy.control_schema_version == 0
+            || policy.policy_epoch.0 <= 0
+            || policy.grant_ttl_seconds <= 0
+            || policy.supported_effects.is_empty()
+            || unique_effects.len() != policy.supported_effects.len()
+            || (policy.policy_epoch.0 == 1) != policy.previous_policy.is_none()
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "canonical control policy has an invalid structural shape".into(),
+            ));
+        }
+        if policy.schema_version == CONTROL_POLICY_SCHEMA_VERSION_V1
+            && (policy.control_schema_version != CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1
+                || policy.grant_ttl_seconds > CONTROL_POLICY_V1_MAX_GRANT_TTL_SECONDS)
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "canonical V1 control policy declares an incompatible control schema".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_active_control_policy(policy: &ControlPolicy) -> Result<(), StoreError> {
+        Self::validate_migratable_active_control_policy(policy)?;
+        if policy.schema_version != CONTROL_POLICY_SCHEMA_VERSION_V1
+            || policy.control_schema_version != CONTROL_SCHEMA_VERSION
+            || policy.grant_ttl_seconds > MAX_CONTROL_GRANT_TTL_SECONDS
+            || policy.supported_effects != Self::builtin_control_effects()
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy has an unsupported schema or effect envelope".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_migratable_active_control_policy(policy: &ControlPolicy) -> Result<(), StoreError> {
+        Self::validate_control_policy_shape(policy)?;
+        if policy.schema_version != CONTROL_POLICY_SCHEMA_VERSION_V1
+            || policy.control_schema_version != CONTROL_SCHEMA_VERSION
+            || !Self::is_recognized_builtin_envelope(
+                &policy.supported_effects,
+                policy.grant_ttl_seconds,
+            )
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy has an unsupported schema or effect envelope".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_control_policy_transition(
+        previous: Option<&ControlPolicy>,
+        current: &ControlPolicy,
+        authority: &ProjectPolicyAuthorityDecision,
+    ) -> Result<(), StoreError> {
+        if current.schema_version != CONTROL_POLICY_SCHEMA_VERSION_V1
+            || authority.schema_version != CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1
+        {
+            return Ok(());
+        }
+        match authority.operation {
+            ProjectPolicyOperation::SetRequiredAssurance => {
+                let envelope_changed = previous.is_some_and(|previous| {
+                    previous.schema_version == CONTROL_POLICY_SCHEMA_VERSION_V1
+                        && (current.supported_effects != previous.supported_effects
+                            || current.grant_ttl_seconds != previous.grant_ttl_seconds)
+                });
+                let invalid_epoch_one = previous.is_none()
+                    && !Self::is_recognized_builtin_envelope(
+                        &current.supported_effects,
+                        current.grant_ttl_seconds,
+                    );
+                if envelope_changed || invalid_epoch_one {
+                    return Err(StoreError::InvalidControlProjection(
+                        "a V1 SetRequiredAssurance policy transition changed the effect envelope or grant TTL"
+                            .into(),
+                    ));
+                }
+            }
+            ProjectPolicyOperation::UpgradeBuiltinEnvelope => {
+                let Some(previous) = previous else {
+                    return Err(StoreError::InvalidControlProjection(
+                        "a V1 UpgradeBuiltinEnvelope policy transition cannot create epoch one"
+                            .into(),
+                    ));
+                };
+                let previous_is_recognized = Self::is_recognized_builtin_envelope(
+                    &previous.supported_effects,
+                    previous.grant_ttl_seconds,
+                );
+                let current_is_recognized = Self::is_recognized_builtin_envelope(
+                    &current.supported_effects,
+                    current.grant_ttl_seconds,
+                );
+                let envelope_changed = current.supported_effects != previous.supported_effects
+                    || current.grant_ttl_seconds != previous.grant_ttl_seconds;
+                if current.required_assurance != previous.required_assurance
+                    || !previous_is_recognized
+                    || !current_is_recognized
+                    || !envelope_changed
+                {
+                    return Err(StoreError::InvalidControlProjection(
+                        "a V1 UpgradeBuiltinEnvelope transition must preserve assurance and move between recognized built-in envelopes"
+                            .into(),
+                    ));
+                }
+            }
+            ProjectPolicyOperation::Unknown => {
+                return Err(StoreError::InvalidControlProjection(
+                    "a V1 control policy authority uses an unknown operation".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn verify_control_policy_chain(
+        connection: &Connection,
+        active_hash: &ObjectHash,
+        active_policy: &ControlPolicy,
+        active_authority: ProjectPolicyAuthorityDecision,
+    ) -> Result<(), StoreError> {
+        let mut seen = HashSet::new();
+        let mut current_hash = active_hash.clone();
+        let mut current_policy = active_policy.clone();
+        let mut current_authority = active_authority;
+        loop {
+            if !seen.insert(current_hash.clone()) {
+                return Err(StoreError::InvalidControlProjection(
+                    "control policy history contains a cycle".into(),
+                ));
+            }
+            match current_policy.previous_policy.clone() {
+                Some(previous_hash) => {
+                    let (previous, previous_authority) =
+                        Self::load_control_policy_version(connection, &previous_hash)?;
+                    if previous.policy_epoch.0.checked_add(1) != Some(current_policy.policy_epoch.0)
+                    {
+                        return Err(StoreError::InvalidControlProjection(
+                            "control policy history has a non-contiguous epoch".into(),
+                        ));
+                    }
+                    Self::validate_control_policy_transition(
+                        Some(&previous),
+                        &current_policy,
+                        &current_authority,
+                    )?;
+                    current_hash = previous_hash;
+                    current_policy = previous;
+                    current_authority = previous_authority;
+                }
+                None if current_policy.policy_epoch.0 == 1 => {
+                    Self::validate_control_policy_transition(
+                        None,
+                        &current_policy,
+                        &current_authority,
+                    )?;
+                    break;
+                }
+                None => {
+                    return Err(StoreError::InvalidControlProjection(
+                        "control policy history ends before epoch one".into(),
+                    ));
+                }
+            }
+        }
+        let expected_versions = usize::try_from(active_policy.policy_epoch.0).map_err(|_| {
+            StoreError::InvalidControlProjection("control policy history count overflowed".into())
+        })?;
+        if seen.len() != expected_versions {
+            return Err(StoreError::InvalidControlProjection(
+                "control policy history contains unreachable version rows".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn control_count(value: i64, label: &str) -> Result<usize, StoreError> {
@@ -5808,6 +7284,27 @@ impl SqliteStore {
         Self::decode_canonical_projection(&result_hash, result_json).map(Some)
     }
 
+    fn refuse_work_lease(
+        transaction: &Transaction<'_>,
+        session_id: &SessionId,
+        idempotency_key: &str,
+        intent: &CanonicalObject,
+        directive: crate::domain::ControlDirective,
+        now: DateTime<Utc>,
+    ) -> Result<WorkLeaseDecision, StoreError> {
+        let decision = WorkLeaseDecision::Refuse { directive };
+        Self::persist_control_operation(
+            transaction,
+            session_id,
+            "lease_acquire",
+            idempotency_key,
+            intent,
+            &decision,
+            now,
+        )?;
+        Ok(decision)
+    }
+
     #[allow(
         clippy::too_many_arguments,
         reason = "operation idempotency rows bind every independent key component"
@@ -6104,11 +7601,11 @@ impl SqliteStore {
     }
 
     fn insert_object(
-        transaction: &Transaction<'_>,
+        connection: &Connection,
         object_kind: &str,
         object: &CanonicalObject,
     ) -> Result<(), StoreError> {
-        let existing: Option<(String, Vec<u8>)> = transaction
+        let existing: Option<(String, Vec<u8>)> = connection
             .query_row(
                 "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
                 [object.hash().as_str()],
@@ -6128,7 +7625,7 @@ impl SqliteStore {
             }
             Some(_) => Err(StoreError::ImmutableCollision(object.hash().clone())),
             None => {
-                transaction.execute(
+                connection.execute(
                     "INSERT INTO objects (object_hash, object_kind, canonical_json)
                      VALUES (?1, ?2, ?3)",
                     params![object.hash().as_str(), object_kind, object.bytes()],
@@ -6477,6 +7974,126 @@ fn parse_enum<T: DeserializeOwned>(value: &str) -> Result<T, StoreError> {
     serde_json::from_value(serde_json::Value::String(value.to_owned())).map_err(StoreError::Json)
 }
 
+fn normalize_control_text(value: &str, label: &str) -> Result<String, StoreError> {
+    let normalized = value.trim();
+    if normalized.is_empty() || normalized.len() > 4_096 {
+        return Err(StoreError::InvalidControlProjection(format!(
+            "{label} must contain from 1 through 4096 bytes"
+        )));
+    }
+    Ok(normalized.to_owned())
+}
+
+fn normalize_optional_control_text(
+    value: Option<&str>,
+    label: &str,
+) -> Result<Option<String>, StoreError> {
+    value
+        .map(|value| normalize_control_text(value, label))
+        .transpose()
+}
+
+fn normalized_control_policy_actor(actor: &ActorContext) -> Result<ActorContext, StoreError> {
+    if actor.provenance_chain.len() > MAX_CONTROL_POLICY_PROVENANCE_LINKS {
+        return Err(StoreError::InvalidControlProjection(format!(
+            "control policy administrator provenance must contain at most {MAX_CONTROL_POLICY_PROVENANCE_LINKS} links"
+        )));
+    }
+    let mut normalized = actor.clone();
+    normalized.actor_id =
+        normalize_control_text(&normalized.actor_id, "control policy administrator actor")?;
+    normalized.actor_kind =
+        normalize_control_text(&normalized.actor_kind, "control policy administrator kind")?;
+    normalized.reason = normalize_control_text(
+        &normalized.reason,
+        "control policy administrator attribution",
+    )?;
+    normalized.run_id = normalize_optional_control_text(
+        normalized.run_id.as_deref(),
+        "control policy administrator run",
+    )?;
+    normalized.session_id = normalized
+        .session_id
+        .as_ref()
+        .map(|session| {
+            normalize_control_text(&session.0, "control policy administrator session")
+                .map(SessionId)
+        })
+        .transpose()?;
+    normalized.source_tool = normalize_optional_control_text(
+        normalized.source_tool.as_deref(),
+        "control policy administrator source tool",
+    )?;
+    normalized.source_skill = normalize_optional_control_text(
+        normalized.source_skill.as_deref(),
+        "control policy administrator source skill",
+    )?;
+    for (index, link) in normalized.provenance_chain.iter_mut().enumerate() {
+        link.source = normalize_control_text(
+            &link.source,
+            &format!("control policy administrator provenance source {index}"),
+        )?;
+        link.reference = normalize_optional_control_text(
+            link.reference.as_deref(),
+            &format!("control policy administrator provenance reference {index}"),
+        )?;
+    }
+
+    let canonical_candidate = CanonicalObject::freeze(&normalized)?;
+    if canonical_candidate.bytes().len() > MAX_CONTROL_POLICY_ATTRIBUTION_BYTES {
+        return Err(StoreError::InvalidControlProjection(format!(
+            "control policy administrator attribution exceeds the {MAX_CONTROL_POLICY_ATTRIBUTION_BYTES}-byte canonical limit"
+        )));
+    }
+    Ok(normalized)
+}
+
+fn normalize_control_policy_actor<R: Redactor>(
+    actor: &ActorContext,
+    redactor: &R,
+) -> Result<ActorContext, StoreError> {
+    let normalized = normalized_control_policy_actor(actor)?;
+    for prose in [
+        Some(normalized.actor_id.as_str()),
+        Some(normalized.actor_kind.as_str()),
+        Some(normalized.reason.as_str()),
+        normalized.run_id.as_deref(),
+        normalized
+            .session_id
+            .as_ref()
+            .map(|session| session.0.as_str()),
+        normalized.source_tool.as_deref(),
+        normalized.source_skill.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        redactor
+            .inspect(prose)
+            .map_err(StoreError::RedactionRefused)?;
+    }
+    for link in &normalized.provenance_chain {
+        redactor
+            .inspect(&link.source)
+            .map_err(StoreError::RedactionRefused)?;
+        if let Some(reference) = link.reference.as_deref() {
+            redactor
+                .inspect(reference)
+                .map_err(StoreError::RedactionRefused)?;
+        }
+    }
+    Ok(normalized)
+}
+
+fn validate_control_policy_actor_shape(actor: &ActorContext) -> Result<(), StoreError> {
+    if normalized_control_policy_actor(actor)? != *actor {
+        return Err(StoreError::InvalidControlProjection(
+            "control policy administrator attribution is not normalized".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn fts_query(query: &str) -> String {
     let tokens: Vec<_> = query
         .split(|character: char| !character.is_alphanumeric() && character != '_')
@@ -6521,8 +8138,8 @@ mod tests {
         domain::{
             AssuranceLevel, ControlAssurance, ControlEpochs, ControlHealth, EffectClass,
             MemoryStatus, NoteRequest, NoteVisibility, PacketSafety, ProjectId, ProjectPolicyEpoch,
-            SessionPhase, TaskAdmissionEpoch, TurnDecision, TurnEvaluationInput, TurnIntent,
-            TurnPurpose,
+            ProvenanceLink, ProvenanceRelation, SessionPhase, TaskAdmissionEpoch, TurnDecision,
+            TurnEvaluationInput, TurnIntent, TurnPurpose,
         },
     };
 
@@ -6530,6 +8147,22 @@ mod tests {
     struct Example {
         title: String,
         body: String,
+    }
+
+    struct SentinelRedactor;
+
+    impl Redactor for SentinelRedactor {
+        fn inspect(&self, prose: &str) -> Result<(), String> {
+            if prose.contains("reject-me") {
+                Err("test sentinel was rejected".into())
+            } else {
+                Ok(())
+            }
+        }
+
+        fn description(&self) -> &'static str {
+            "test sentinel redactor"
+        }
     }
 
     #[test]
@@ -6698,8 +8331,2082 @@ mod tests {
         let connection =
             Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .expect("open read-only SQLite connection");
-        SqliteStore::from_connection(connection, HostPathPolicy::host_default())
+        SqliteStore::from_connection(connection, HostPathPolicy::host_default(), None)
             .expect("current schema opens without a write transaction");
+    }
+
+    #[test]
+    fn cold_schema_failure_after_ddl_rolls_back_every_control_table() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("interrupted-cold-schema.db");
+        FAIL_COLD_SCHEMA_AFTER_DDL.set(true);
+        assert!(matches!(
+            SqliteStore::open(&database),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("injected cold-schema failure")
+        ));
+
+        let raw = Connection::open(&database).expect("inspect rolled-back cold schema");
+        for table in ["objects", "control_policy_state", "control_policy_versions"] {
+            assert!(
+                !SqliteStore::sqlite_table_exists(&raw, table).expect("inspect rolled-back table")
+            );
+        }
+        drop(raw);
+        drop(SqliteStore::open(&database).expect("retry cold bootstrap"));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the legacy fixture proves both canonical epochs, their distinct authorities, and the next explicit operator change"
+    )]
+    fn unused_legacy_policy_is_preserved_then_builtin_envelope_upgrade_is_attributed() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("unused-legacy.db");
+        let legacy = Connection::open(&database).expect("open unused legacy fixture");
+        legacy
+            .execute_batch(
+                "CREATE TABLE control_policy_state (
+                     singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                     schema_version INTEGER NOT NULL,
+                     policy_epoch INTEGER NOT NULL,
+                     required_assurance TEXT NOT NULL,
+                     supported_effects_json TEXT NOT NULL,
+                     grant_ttl_seconds INTEGER NOT NULL,
+                     policy_hash TEXT
+                 ) STRICT;
+                 INSERT INTO control_policy_state (
+                     singleton, schema_version, policy_epoch,
+                     required_assurance, supported_effects_json,
+                     grant_ttl_seconds, policy_hash
+                 ) VALUES (
+                     1, 1, 1, 'turn_gated',
+                     '[\"observe\",\"communicate\",\"mutate_local\"]',
+                     30, NULL
+                 );",
+            )
+            .expect("seed valid unused legacy policy");
+        drop(legacy);
+
+        assert!(matches!(
+            open_with_assurance(&database, ControlAssurance::Advisory),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("initial assurance cannot replace")
+        ));
+        let refused = Connection::open(&database).expect("inspect refused legacy");
+        assert_eq!(
+            refused
+                .query_row(
+                    "SELECT schema_version FROM control_policy_state WHERE singleton = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("legacy selector remains unchanged"),
+            1
+        );
+        assert!(
+            !SqliteStore::sqlite_table_exists(&refused, "control_policy_versions")
+                .expect("mismatching init ran no DDL")
+        );
+        drop(refused);
+
+        let mut migrated = SqliteStore::open(&database).expect("migrate unused legacy policy");
+        let upgraded = migrated
+            .control_diagnostics()
+            .expect("migrated diagnostics");
+        assert_eq!(upgraded.policy_epoch, ProjectPolicyEpoch(2));
+        assert_eq!(upgraded.required_assurance, ControlAssurance::TurnGated);
+        let policy_hashes = {
+            let mut statement = migrated
+                .connection
+                .prepare("SELECT policy_hash FROM control_policy_versions ORDER BY policy_epoch")
+                .expect("prepare policy history query");
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query policy history")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect policy history")
+        };
+        assert_eq!(policy_hashes.len(), 2);
+        let epoch_one_hash = ObjectHash::from_stored(policy_hashes[0].clone()).expect("epoch one");
+        let epoch_two_hash = ObjectHash::from_stored(policy_hashes[1].clone()).expect("epoch two");
+        let epoch_one_policy: ControlPolicy = migrated
+            .get(&epoch_one_hash)
+            .expect("read epoch-one policy")
+            .expect("epoch-one policy object");
+        let epoch_two_policy: ControlPolicy = migrated
+            .get(&epoch_two_hash)
+            .expect("read epoch-two policy")
+            .expect("epoch-two policy object");
+        assert_eq!(
+            epoch_one_policy.supported_effects,
+            SqliteStore::legacy_v1_control_effects()
+        );
+        assert_eq!(
+            epoch_two_policy.supported_effects,
+            SqliteStore::builtin_control_effects()
+        );
+        let epoch_one_authority: ProjectPolicyAuthorityDecision = migrated
+            .get(&epoch_one_policy.authority)
+            .expect("read epoch-one authority")
+            .expect("epoch-one authority object");
+        let epoch_two_authority: ProjectPolicyAuthorityDecision = migrated
+            .get(&epoch_two_policy.authority)
+            .expect("read epoch-two authority")
+            .expect("epoch-two authority object");
+        assert_eq!(
+            epoch_one_authority.operation,
+            ProjectPolicyOperation::SetRequiredAssurance
+        );
+        assert_eq!(
+            epoch_two_authority.operation,
+            ProjectPolicyOperation::UpgradeBuiltinEnvelope
+        );
+        assert_eq!(
+            epoch_two_authority.authorized_by.actor_id,
+            "engram:migration"
+        );
+        let changed = migrated
+            .set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &actor("legacy-policy-admin"),
+                "explicitly lower the migrated requirement",
+                Some(&upgraded.active_policy),
+                Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate attributed epoch three");
+        assert_eq!(changed.policy_epoch, ProjectPolicyEpoch(3));
+        assert_eq!(changed.required_assurance, ControlAssurance::Advisory);
+        let authority: ProjectPolicyAuthorityDecision = migrated
+            .get(&changed.authority)
+            .expect("read epoch-three authority")
+            .expect("epoch-three authority object");
+        assert_eq!(authority.authorized_by.actor_id, "legacy-policy-admin");
+        assert_eq!(
+            authority.reason,
+            "explicitly lower the migrated requirement"
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the schema-two fixture must install a recognized historical envelope, reopen it, and exercise the persisted session fence"
+    )]
+    fn schema_two_legacy_envelope_upgrades_and_fences_a_bound_session_once() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("schema-two-legacy-envelope.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open(&database).expect("initialize current store");
+        let binding = bind_control_for(
+            &mut store,
+            "legacy-envelope-session",
+            "bind-legacy-envelope",
+            &[EffectClass::Observe],
+            now,
+        );
+        let initial = store.control_diagnostics().expect("initial diagnostics");
+        let mut legacy_policy: ControlPolicy = store
+            .get(&initial.active_policy)
+            .expect("read current policy")
+            .expect("current policy object");
+        legacy_policy.supported_effects = SqliteStore::legacy_v1_control_effects();
+        let legacy_object = CanonicalObject::freeze(&legacy_policy).expect("freeze legacy policy");
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("begin legacy-envelope replacement");
+        SqliteStore::insert_object(&transaction, "control_policy", &legacy_object)
+            .expect("insert legacy-envelope policy");
+        transaction
+            .execute("DELETE FROM control_policy_versions", [])
+            .expect("replace current version row");
+        transaction
+            .execute(
+                "INSERT INTO control_policy_versions (
+                     policy_hash, policy_epoch, authority_hash, policy_json
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    legacy_object.hash().as_str(),
+                    legacy_policy.policy_epoch.0,
+                    legacy_policy.authority.as_str(),
+                    legacy_object.bytes(),
+                ],
+            )
+            .expect("install legacy-envelope version row");
+        transaction
+            .execute(
+                "UPDATE control_policy_state SET
+                     supported_effects_json = ?1, policy_hash = ?2
+                 WHERE singleton = 1",
+                params![
+                    serde_json::to_string(&legacy_policy.supported_effects)
+                        .expect("serialize legacy envelope"),
+                    legacy_object.hash().as_str(),
+                ],
+            )
+            .expect("select legacy-envelope head");
+        transaction
+            .commit()
+            .expect("commit legacy-envelope fixture");
+        drop(store);
+
+        let mut reopened = SqliteStore::open(&database).expect("upgrade recognized envelope");
+        let upgraded = reopened
+            .control_diagnostics()
+            .expect("upgraded diagnostics");
+        assert_eq!(upgraded.policy_epoch, ProjectPolicyEpoch(2));
+        assert_eq!(
+            upgraded.supported_effects,
+            SqliteStore::builtin_control_effects()
+        );
+        let upgraded_policy: ControlPolicy = reopened
+            .get(&upgraded.active_policy)
+            .expect("read upgraded policy")
+            .expect("upgraded policy object");
+        let authority: ProjectPolicyAuthorityDecision = reopened
+            .get(&upgraded_policy.authority)
+            .expect("read upgrade authority")
+            .expect("upgrade authority object");
+        assert_eq!(
+            authority.operation,
+            ProjectPolicyOperation::UpgradeBuiltinEnvelope
+        );
+
+        let refused = reopened
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "legacy-envelope-stale-epoch".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"legacy-envelope-stale-epoch",
+                    ),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(1),
+            )
+            .expect("evaluate stale policy epoch");
+        assert!(matches!(
+            refused,
+            ControlTurnDecision::Refuse { directive }
+                if directive.code == ControlRefusalCode::PolicyEpochChanged
+        ));
+        assert!(matches!(
+            reopened
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &TurnIntent {
+                        idempotency_key: "legacy-envelope-adopted-epoch".into(),
+                        intent_fingerprint: ObjectHash::from_canonical_bytes(
+                            b"legacy-envelope-adopted-epoch",
+                        ),
+                        purpose: TurnPurpose::Ordinary,
+                        requested_effects: vec![EffectClass::Observe],
+                        resource_intents: Vec::new(),
+                    },
+                    now + TimeDelta::seconds(2),
+                )
+                .expect("evaluate adopted policy epoch"),
+            ControlTurnDecision::Grant { .. }
+        ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one restart fixture keeps bootstrap attribution, CAS, corruption, and reopen behavior on the same immutable chain"
+    )]
+    fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("engram.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
+            .expect("initialize advisory policy");
+        let initial = store.control_diagnostics().expect("initial diagnostics");
+        assert_eq!(initial.required_assurance, ControlAssurance::Advisory);
+        assert_eq!(initial.policy_epoch, ProjectPolicyEpoch(1));
+
+        let initial_policy: ControlPolicy = store
+            .get(&initial.active_policy)
+            .expect("read initial policy")
+            .expect("initial policy object");
+        assert_eq!(initial_policy.previous_policy, None);
+        let initial_authority: ProjectPolicyAuthorityDecision = store
+            .get(&initial_policy.authority)
+            .expect("read initial authority")
+            .expect("initial authority object");
+        assert_eq!(
+            initial_authority.authorized_by.actor_id,
+            "bootstrap-policy-admin"
+        );
+        assert_eq!(initial_authority.reason, "select the test bootstrap policy");
+
+        let changed = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("policy-admin"),
+                "require host turn mediation",
+                Some(&initial.active_policy),
+                now,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate turn-gated policy");
+        assert!(changed.changed);
+        assert_eq!(changed.previous_policy, Some(initial.active_policy.clone()));
+        assert_eq!(changed.policy_epoch, ProjectPolicyEpoch(2));
+        assert_eq!(changed.required_assurance, ControlAssurance::TurnGated);
+
+        let replay = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("policy-admin"),
+                "idempotent replay",
+                Some(&changed.active_policy),
+                now + TimeDelta::seconds(1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("reapply active policy");
+        assert!(!replay.changed);
+        assert_eq!(replay.active_policy, changed.active_policy);
+        assert_eq!(replay.policy_epoch, changed.policy_epoch);
+        assert!(matches!(
+            store.set_required_control_assurance(
+                ControlAssurance::ActionGated,
+                &actor("policy-admin"),
+                "stale compare and swap",
+                Some(&initial.active_policy),
+                now + TimeDelta::seconds(2),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::ControlPolicyConflict { .. })
+        ));
+        assert!(
+            store
+                .verify_all()
+                .expect("verify policy history")
+                .is_healthy()
+        );
+        drop(store);
+
+        let reopened = SqliteStore::open(&database).expect("reopen configured store");
+        let diagnostics = reopened
+            .control_diagnostics()
+            .expect("reopened diagnostics");
+        assert_eq!(diagnostics.active_policy, changed.active_policy);
+        assert_eq!(diagnostics.policy_epoch, ProjectPolicyEpoch(2));
+        assert_eq!(diagnostics.required_assurance, ControlAssurance::TurnGated);
+        drop(reopened);
+        assert!(matches!(
+            open_with_assurance(&database, ControlAssurance::Advisory),
+            Err(StoreError::InvalidControlProjection(_))
+        ));
+
+        let corrupted_store = SqliteStore::open(&database).expect("reopen corruption fixture");
+        corrupted_store
+            .connection
+            .execute(
+                "UPDATE control_policy_versions SET policy_json = ?1
+                 WHERE policy_hash = ?2",
+                params![b"{}".as_slice(), changed.active_policy.as_str()],
+            )
+            .expect("corrupt active policy projection");
+        let corrupted = corrupted_store.verify_all().expect("scan corrupt policy");
+        assert!(
+            corrupted
+                .invalid_control_records
+                .contains(&"control_policy_state:active".into())
+        );
+        assert!(
+            corrupted
+                .invalid_control_records
+                .contains(&format!("control_policy_version:{}", changed.active_policy))
+        );
+        drop(corrupted_store);
+        assert!(SqliteStore::open(&database).is_err());
+    }
+
+    #[test]
+    fn live_control_policy_load_is_bounded_independently_of_history_depth() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let mut active = store
+            .control_diagnostics()
+            .expect("initial diagnostics")
+            .active_policy;
+        for epoch in 2_i64..=51 {
+            let required_assurance = if epoch % 2 == 0 {
+                ControlAssurance::Advisory
+            } else {
+                ControlAssurance::TurnGated
+            };
+            let receipt = store
+                .set_required_control_assurance(
+                    required_assurance,
+                    &actor("policy-load-admin"),
+                    &format!("install policy epoch {epoch}"),
+                    Some(&active),
+                    now + TimeDelta::milliseconds(epoch),
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("extend policy history");
+            assert_eq!(receipt.policy_epoch, ProjectPolicyEpoch(epoch));
+            active = receipt.active_policy;
+        }
+
+        reset_control_policy_version_load_count();
+        let binding = bind_control_for(
+            &mut store,
+            "bounded-policy-session",
+            "bind-bounded-policy",
+            &[EffectClass::Observe],
+            now + TimeDelta::seconds(1),
+        );
+        assert_eq!(control_policy_version_load_count(), 1);
+
+        reset_control_policy_version_load_count();
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "bounded-policy-turn".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"bounded-policy-turn"),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(2),
+            )
+            .expect("evaluate through bounded policy loader");
+        assert_eq!(control_policy_version_load_count(), 1);
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("bounded policy fixture must grant");
+        };
+        let delivery_tokens = grant
+            .delivery
+            .iter()
+            .map(|delivery| delivery.page.delivery_token.clone())
+            .collect::<Vec<_>>();
+
+        reset_control_policy_version_load_count();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &grant.grant_id,
+                    &delivery_tokens,
+                    "begin-bounded-policy-turn",
+                    now + TimeDelta::seconds(3),
+                )
+                .expect("begin through bounded policy loader"),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        assert_eq!(control_policy_version_load_count(), 1);
+    }
+
+    #[test]
+    fn established_store_missing_policy_state_refuses_without_bootstrap() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+
+        let missing_row_database = directory.path().join("missing-policy-row.db");
+        let missing_row =
+            SqliteStore::open(&missing_row_database).expect("initialize missing-row fixture");
+        let missing_row_objects = missing_row
+            .connection
+            .query_row("SELECT COUNT(*) FROM objects", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count missing-row objects");
+        missing_row
+            .connection
+            .execute("DELETE FROM control_policy_state", [])
+            .expect("remove policy singleton");
+        drop(missing_row);
+        assert!(matches!(
+            SqliteStore::open(&missing_row_database),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("singleton")
+        ));
+        let missing_row_raw =
+            Connection::open(&missing_row_database).expect("inspect missing-row refusal");
+        assert_eq!(
+            missing_row_raw
+                .query_row("SELECT COUNT(*) FROM control_policy_state", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("singleton remains absent"),
+            0
+        );
+        assert_eq!(
+            missing_row_raw
+                .query_row("SELECT COUNT(*) FROM objects", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("objects remain unchanged"),
+            missing_row_objects
+        );
+
+        let missing_table_database = directory.path().join("missing-policy-table.db");
+        let missing_table =
+            SqliteStore::open(&missing_table_database).expect("initialize missing-table fixture");
+        let missing_table_objects = missing_table
+            .connection
+            .query_row("SELECT COUNT(*) FROM objects", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count missing-table objects");
+        missing_table
+            .connection
+            .execute("DROP TABLE control_policy_state", [])
+            .expect("remove policy state table");
+        drop(missing_table);
+        assert!(matches!(
+            SqliteStore::open(&missing_table_database),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("missing from an established store")
+        ));
+        let missing_table_raw =
+            Connection::open(&missing_table_database).expect("inspect missing-table refusal");
+        assert!(
+            !missing_table_raw
+                .query_row(
+                    "SELECT EXISTS(
+                         SELECT 1 FROM sqlite_master
+                         WHERE type = 'table' AND name = 'control_policy_state'
+                     )",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("policy state table remains absent")
+        );
+        assert_eq!(
+            missing_table_raw
+                .query_row("SELECT COUNT(*) FROM objects", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("objects remain unchanged"),
+            missing_table_objects
+        );
+    }
+
+    #[test]
+    fn current_policy_with_null_selector_returns_a_typed_projection_error() {
+        let store = SqliteStore::open_in_memory().expect("store");
+        store
+            .connection
+            .execute(
+                "UPDATE control_policy_state SET policy_hash = NULL WHERE singleton = 1",
+                [],
+            )
+            .expect("clear active selector");
+
+        assert!(matches!(
+            SqliteStore::load_control_policy_head(&store.connection),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("no selected version")
+        ));
+    }
+
+    #[test]
+    fn partial_control_table_family_prevents_policy_rebootstrap() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("ordinary-data.db");
+        let mut store = SqliteStore::open(&database).expect("initialize established store");
+        let ordinary = store
+            .append(
+                "example",
+                &Example {
+                    title: "ordinary durable object".into(),
+                    body: "not control-policy evidence".into(),
+                },
+            )
+            .expect("append ordinary canonical data");
+        store
+            .connection
+            .execute_batch(
+                "DROP TABLE control_policy_state;
+                 DROP TABLE control_policy_versions;
+                 DELETE FROM objects
+                 WHERE object_kind IN (
+                     'control_policy', 'project_policy_authority_decision'
+                 );",
+            )
+            .expect("remove every control-policy artifact");
+        drop(store);
+
+        assert!(matches!(
+            SqliteStore::open(&database),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("missing from an established store")
+        ));
+        let raw = Connection::open(&database).expect("inspect refused established store");
+        assert_eq!(
+            raw.query_row("SELECT COUNT(*) FROM objects", [], |row| row
+                .get::<_, i64>(0))
+                .expect("ordinary object remains"),
+            1
+        );
+        assert_eq!(
+            raw.query_row(
+                "SELECT object_kind FROM objects WHERE object_hash = ?1",
+                [ordinary.hash().as_str()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("ordinary object identity remains"),
+            "example"
+        );
+        for table in ["control_policy_state", "control_policy_versions"] {
+            assert!(
+                !raw.query_row(
+                    "SELECT EXISTS(
+                         SELECT 1 FROM sqlite_master
+                         WHERE type = 'table' AND name = ?1
+                     )",
+                    [table],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("policy table remains absent")
+            );
+        }
+    }
+
+    #[test]
+    fn pre_control_plane_store_bootstraps_without_discarding_ordinary_objects() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("pre-control-plane.db");
+        let mut store = SqliteStore::open(&database).expect("initialize migration fixture");
+        let ordinary = store
+            .append(
+                "example",
+                &Example {
+                    title: "pre-control durable object".into(),
+                    body: "survives control-plane bootstrap".into(),
+                },
+            )
+            .expect("append ordinary canonical data");
+        store
+            .connection
+            .execute_batch(
+                "DROP TABLE control_turn_grants;
+                 DROP TABLE control_sessions;
+                 DROP TABLE control_policy_versions;
+                 DROP TABLE control_policy_state;
+                 DELETE FROM objects
+                 WHERE object_kind IN (
+                     'control_policy', 'project_policy_authority_decision'
+                 );",
+            )
+            .expect("simulate a pre-control-plane store");
+        drop(store);
+
+        let migrated = SqliteStore::open(&database).expect("bootstrap control plane");
+        let diagnostics = migrated.control_diagnostics().expect("control diagnostics");
+        assert_eq!(diagnostics.policy_epoch, ProjectPolicyEpoch(1));
+        assert_eq!(diagnostics.required_assurance, ControlAssurance::TurnGated);
+        let retained: Example = migrated
+            .get(ordinary.hash())
+            .expect("read ordinary object")
+            .expect("ordinary object remains");
+        assert_eq!(retained.title, "pre-control durable object");
+    }
+
+    #[test]
+    fn active_policy_must_be_the_unique_maximal_history_head() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("engram.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
+            .expect("initialize policy history");
+        let initial = store.control_diagnostics().expect("initial diagnostics");
+        let initial_policy: ControlPolicy = store
+            .get(&initial.active_policy)
+            .expect("read initial policy")
+            .expect("initial policy object");
+        let changed = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("policy-admin"),
+                "create a successor",
+                Some(&initial.active_policy),
+                now,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate successor policy");
+        let projected_assurance =
+            enum_name(initial_policy.required_assurance).expect("serialize assurance");
+        let projected_effects =
+            serde_json::to_string(&initial_policy.supported_effects).expect("serialize effects");
+        store
+            .connection
+            .execute(
+                "UPDATE control_policy_state SET
+                     policy_epoch = ?1, required_assurance = ?2,
+                     supported_effects_json = ?3, grant_ttl_seconds = ?4,
+                     policy_hash = ?5
+                 WHERE singleton = 1",
+                params![
+                    initial_policy.policy_epoch.0,
+                    projected_assurance,
+                    projected_effects,
+                    initial_policy.grant_ttl_seconds,
+                    initial.active_policy.as_str(),
+                ],
+            )
+            .expect("simulate selector rollback");
+
+        let integrity = store.verify_all().expect("scan rolled-back selector");
+        assert!(
+            integrity
+                .invalid_control_records
+                .contains(&"control_policy_state:active".into())
+        );
+        assert!(
+            integrity
+                .invalid_control_records
+                .contains(&format!("control_policy_version:{}", changed.active_policy))
+        );
+        drop(store);
+        assert!(matches!(
+            SqliteStore::open(&database),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("maximal history head")
+        ));
+    }
+
+    #[test]
+    fn missing_policy_rows_are_reported_as_integrity_records() {
+        let version_store = SqliteStore::open_in_memory().expect("version fixture");
+        let active = version_store
+            .control_diagnostics()
+            .expect("version diagnostics")
+            .active_policy;
+        version_store
+            .connection
+            .execute(
+                "DELETE FROM control_policy_versions WHERE policy_hash = ?1",
+                [active.as_str()],
+            )
+            .expect("delete projected version row");
+        let report = version_store
+            .verify_all()
+            .expect("scan missing version row");
+        assert!(
+            report
+                .invalid_control_records
+                .contains(&"control_policy_state:active".into())
+        );
+
+        let object_store = SqliteStore::open_in_memory().expect("object fixture");
+        let active = object_store
+            .control_diagnostics()
+            .expect("object diagnostics")
+            .active_policy;
+        object_store
+            .connection
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable fixture foreign keys");
+        object_store
+            .connection
+            .execute(
+                "DELETE FROM objects WHERE object_hash = ?1",
+                [active.as_str()],
+            )
+            .expect("delete canonical policy object");
+        let report = object_store.verify_all().expect("scan missing object row");
+        assert!(
+            report
+                .invalid_control_records
+                .contains(&"control_policy_state:active".into())
+        );
+        assert!(
+            report
+                .invalid_control_records
+                .contains(&format!("control_policy_version:{active}"))
+        );
+    }
+
+    #[test]
+    fn control_diagnostics_reuses_an_embedder_owned_snapshot() {
+        let store = SqliteStore::open_in_memory().expect("store");
+        let snapshot = store
+            .connection
+            .unchecked_transaction()
+            .expect("open caller snapshot");
+        let diagnostics = store
+            .control_diagnostics()
+            .expect("diagnostics reuse caller snapshot");
+        assert_eq!(diagnostics.policy_epoch, ProjectPolicyEpoch(1));
+        snapshot.rollback().expect("rollback caller snapshot");
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one mixed-schema fixture must rebind both historical authority and policy objects plus the active successor atomically"
+    )]
+    fn historical_policy_schema_is_decoupled_from_active_compatibility() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("engram.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
+            .expect("initialize policy history");
+        let initial = store.control_diagnostics().expect("initial diagnostics");
+        let mut historical_policy: ControlPolicy = store
+            .get(&initial.active_policy)
+            .expect("read initial policy")
+            .expect("initial policy object");
+        let mut historical_authority: ProjectPolicyAuthorityDecision = store
+            .get(&historical_policy.authority)
+            .expect("read initial authority")
+            .expect("initial authority object");
+        let changed = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("policy-admin"),
+                "create current policy",
+                Some(&initial.active_policy),
+                now,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate current policy");
+        let mut active_policy: ControlPolicy = store
+            .get(&changed.active_policy)
+            .expect("read active policy")
+            .expect("active policy object");
+        let mut unsupported_active = active_policy.clone();
+        unsupported_active.schema_version = 2;
+        assert!(SqliteStore::validate_active_control_policy(&unsupported_active).is_err());
+        let mut active_authority: ProjectPolicyAuthorityDecision = store
+            .get(&changed.authority)
+            .expect("read active authority")
+            .expect("active authority object");
+
+        historical_authority.schema_version = 2;
+        historical_authority.authorized_by.assurance = AssuranceLevel::Authenticated;
+        let historical_authority_object = CanonicalObject::freeze(&historical_authority)
+            .expect("freeze future-schema historical authority");
+        historical_policy.schema_version = 2;
+        historical_policy.supported_effects = vec![EffectClass::Observe];
+        historical_policy.grant_ttl_seconds = CONTROL_POLICY_V1_MAX_GRANT_TTL_SECONDS + 1;
+        historical_policy.authority = historical_authority_object.hash().clone();
+        let historical_object =
+            CanonicalObject::freeze(&historical_policy).expect("freeze historical policy");
+        active_authority.previous_policy = Some(historical_object.hash().clone());
+        let active_authority_object =
+            CanonicalObject::freeze(&active_authority).expect("freeze rebound authority");
+        active_policy.previous_policy = Some(historical_object.hash().clone());
+        active_policy.authority = active_authority_object.hash().clone();
+        let active_policy_object =
+            CanonicalObject::freeze(&active_policy).expect("freeze rebound active policy");
+
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("begin history replacement");
+        SqliteStore::insert_object(&transaction, "control_policy", &historical_object)
+            .expect("insert historical policy");
+        SqliteStore::insert_object(
+            &transaction,
+            "project_policy_authority_decision",
+            &historical_authority_object,
+        )
+        .expect("insert future-schema historical authority");
+        SqliteStore::insert_object(
+            &transaction,
+            "project_policy_authority_decision",
+            &active_authority_object,
+        )
+        .expect("insert rebound authority");
+        SqliteStore::insert_object(&transaction, "control_policy", &active_policy_object)
+            .expect("insert rebound active policy");
+        transaction
+            .execute("DELETE FROM control_policy_versions", [])
+            .expect("replace projected history");
+        transaction
+            .execute(
+                "INSERT INTO control_policy_versions (
+                     policy_hash, policy_epoch, authority_hash, policy_json
+                 ) VALUES (?1, ?2, ?3, ?4), (?5, ?6, ?7, ?8)",
+                params![
+                    historical_object.hash().as_str(),
+                    historical_policy.policy_epoch.0,
+                    historical_policy.authority.as_str(),
+                    historical_object.bytes(),
+                    active_policy_object.hash().as_str(),
+                    active_policy.policy_epoch.0,
+                    active_authority_object.hash().as_str(),
+                    active_policy_object.bytes(),
+                ],
+            )
+            .expect("install replacement history");
+        transaction
+            .execute(
+                "UPDATE control_policy_state SET policy_hash = ?1 WHERE singleton = 1",
+                [active_policy_object.hash().as_str()],
+            )
+            .expect("select replacement active head");
+        transaction.commit().expect("commit replacement history");
+        drop(store);
+
+        let reopened = SqliteStore::open(&database).expect("reopen compatible history");
+        let diagnostics = reopened.control_diagnostics().expect("diagnostics");
+        assert_eq!(diagnostics.active_policy, *active_policy_object.hash());
+        assert_eq!(diagnostics.policy_epoch, ProjectPolicyEpoch(2));
+        assert!(reopened.verify_all().expect("verify history").is_healthy());
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the corruption fixture must rebind both policy versions and the successor authority"
+    )]
+    fn set_required_assurance_history_cannot_change_effects_or_ttl() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("engram.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
+            .expect("initialize policy history");
+        let initial = store.control_diagnostics().expect("initial diagnostics");
+        let mut historical_policy: ControlPolicy = store
+            .get(&initial.active_policy)
+            .expect("read initial policy")
+            .expect("initial policy object");
+        let changed = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("policy-admin"),
+                "create current policy",
+                Some(&initial.active_policy),
+                now,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate current policy");
+        let mut active_policy: ControlPolicy = store
+            .get(&changed.active_policy)
+            .expect("read active policy")
+            .expect("active policy object");
+        let mut active_authority: ProjectPolicyAuthorityDecision = store
+            .get(&changed.authority)
+            .expect("read active authority")
+            .expect("active authority object");
+
+        historical_policy.supported_effects = SqliteStore::legacy_v1_control_effects();
+        historical_policy.grant_ttl_seconds -= 1;
+        let historical_object =
+            CanonicalObject::freeze(&historical_policy).expect("freeze corrupted history");
+        active_authority.previous_policy = Some(historical_object.hash().clone());
+        let active_authority_object =
+            CanonicalObject::freeze(&active_authority).expect("freeze rebound authority");
+        active_policy.previous_policy = Some(historical_object.hash().clone());
+        active_policy.authority = active_authority_object.hash().clone();
+        let active_policy_object =
+            CanonicalObject::freeze(&active_policy).expect("freeze rebound active policy");
+
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("begin corrupt history replacement");
+        SqliteStore::insert_object(&transaction, "control_policy", &historical_object)
+            .expect("insert corrupted historical policy");
+        SqliteStore::insert_object(
+            &transaction,
+            "project_policy_authority_decision",
+            &active_authority_object,
+        )
+        .expect("insert rebound authority");
+        SqliteStore::insert_object(&transaction, "control_policy", &active_policy_object)
+            .expect("insert rebound active policy");
+        transaction
+            .execute("DELETE FROM control_policy_versions", [])
+            .expect("replace projected history");
+        transaction
+            .execute(
+                "INSERT INTO control_policy_versions (
+                     policy_hash, policy_epoch, authority_hash, policy_json
+                 ) VALUES (?1, ?2, ?3, ?4), (?5, ?6, ?7, ?8)",
+                params![
+                    historical_object.hash().as_str(),
+                    historical_policy.policy_epoch.0,
+                    historical_policy.authority.as_str(),
+                    historical_object.bytes(),
+                    active_policy_object.hash().as_str(),
+                    active_policy.policy_epoch.0,
+                    active_authority_object.hash().as_str(),
+                    active_policy_object.bytes(),
+                ],
+            )
+            .expect("install corrupt history");
+        transaction
+            .execute(
+                "UPDATE control_policy_state SET policy_hash = ?1 WHERE singleton = 1",
+                [active_policy_object.hash().as_str()],
+            )
+            .expect("select corrupt active head");
+        transaction.commit().expect("commit corrupt history");
+
+        let integrity = store.verify_all().expect("scan corrupt history");
+        assert!(
+            integrity
+                .invalid_control_records
+                .contains(&"control_policy_state:active".into())
+        );
+        drop(store);
+        assert!(matches!(
+            SqliteStore::open(&database),
+            Err(StoreError::InvalidControlProjection(reason))
+                if reason.contains("SetRequiredAssurance")
+        ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one table-driven boundary test keeps every nested attribution leaf and both size limits visibly covered"
+    )]
+    fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let mut actors = Vec::new();
+        for field in ["run", "session", "tool", "skill", "source", "reference"] {
+            let mut candidate = actor("policy-admin");
+            match field {
+                "run" => candidate.run_id = Some("reject-me".into()),
+                "session" => candidate.session_id = Some(SessionId("reject-me".into())),
+                "tool" => candidate.source_tool = Some("reject-me".into()),
+                "skill" => candidate.source_skill = Some("reject-me".into()),
+                "source" => candidate.provenance_chain.push(ProvenanceLink {
+                    relation: ProvenanceRelation::AssertedBy,
+                    source: "reject-me".into(),
+                    reference: None,
+                }),
+                "reference" => candidate.provenance_chain.push(ProvenanceLink {
+                    relation: ProvenanceRelation::AssertedBy,
+                    source: "test-source".into(),
+                    reference: Some("reject-me".into()),
+                }),
+                _ => unreachable!("enumerated attribution field"),
+            }
+            actors.push(candidate);
+        }
+        for candidate in actors {
+            assert!(matches!(
+                store.set_required_control_assurance(
+                    ControlAssurance::Advisory,
+                    &candidate,
+                    "inspect every attribution leaf",
+                    None,
+                    now,
+                    &SentinelRedactor,
+                ),
+                Err(StoreError::RedactionRefused(_))
+            ));
+        }
+
+        let mut oversized_field = actor("policy-admin");
+        oversized_field.source_skill = Some("x".repeat(4_097));
+        assert!(matches!(
+            store.set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &oversized_field,
+                "bound optional fields",
+                None,
+                now,
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidControlProjection(_))
+        ));
+
+        let mut too_many_links = actor("policy-admin");
+        too_many_links.provenance_chain = (0..=MAX_CONTROL_POLICY_PROVENANCE_LINKS)
+            .map(|index| ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: format!("source-{index}"),
+                reference: None,
+            })
+            .collect();
+        assert!(matches!(
+            store.set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &too_many_links,
+                "bound provenance count",
+                None,
+                now,
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidControlProjection(_))
+        ));
+
+        let mut oversized_attribution = actor("policy-admin");
+        oversized_attribution.provenance_chain = (0..MAX_CONTROL_POLICY_PROVENANCE_LINKS)
+            .map(|index| ProvenanceLink {
+                relation: ProvenanceRelation::RelayedBy,
+                source: format!("source-{index}-{}", "s".repeat(2_000)),
+                reference: Some(format!("reference-{index}-{}", "r".repeat(2_000))),
+            })
+            .collect();
+        assert!(matches!(
+            store.set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &oversized_attribution,
+                "bound aggregate attribution",
+                None,
+                now,
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidControlProjection(_))
+        ));
+
+        let mut normalized = actor(" policy-admin ");
+        normalized.run_id = Some(" run-1 ".into());
+        normalized.session_id = Some(SessionId(" session-1 ".into()));
+        normalized.source_tool = Some(" host-tool ".into());
+        normalized.source_skill = Some(" control-skill ".into());
+        normalized.provenance_chain = vec![ProvenanceLink {
+            relation: ProvenanceRelation::AssertedBy,
+            source: " host-observation ".into(),
+            reference: Some(" receipt-1 ".into()),
+        }];
+        let receipt = store
+            .set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &normalized,
+                " normalize persisted attribution ",
+                None,
+                now,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("persist normalized attribution");
+        let authority: ProjectPolicyAuthorityDecision = store
+            .get(&receipt.authority)
+            .expect("read authority")
+            .expect("authority object");
+        assert_eq!(authority.authorized_by.actor_id, "policy-admin");
+        assert_eq!(authority.authorized_by.run_id.as_deref(), Some("run-1"));
+        assert_eq!(
+            authority.authorized_by.session_id,
+            Some(SessionId("session-1".into()))
+        );
+        assert_eq!(
+            authority.authorized_by.provenance_chain[0]
+                .reference
+                .as_deref(),
+            Some("receipt-1")
+        );
+        assert_eq!(authority.reason, "normalize persisted attribution");
+    }
+
+    #[test]
+    fn stock_v1_policy_migrates_once_and_future_policy_schema_refuses_before_ddl() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let legacy_database = directory.path().join("legacy.db");
+        let legacy = SqliteStore::open(&legacy_database).expect("initialize migration fixture");
+        legacy
+            .connection
+            .execute(
+                "UPDATE control_policy_state SET
+                     schema_version = 1, policy_epoch = 1,
+                     required_assurance = 'turn_gated',
+                     supported_effects_json = '[\"observe\",\"communicate\",\"mutate_local\"]',
+                     grant_ttl_seconds = 30, policy_hash = NULL
+                 WHERE singleton = 1",
+                [],
+            )
+            .expect("restore stock V1 state");
+        legacy
+            .connection
+            .execute("DELETE FROM control_policy_versions", [])
+            .expect("remove newer history projection");
+        legacy
+            .connection
+            .execute(
+                "DELETE FROM objects WHERE object_kind IN (
+                     'control_policy', 'project_policy_authority_decision'
+                 )",
+                [],
+            )
+            .expect("remove newer canonical history");
+        drop(legacy);
+
+        let migrated = SqliteStore::open(&legacy_database).expect("migrate stock V1 policy");
+        let diagnostics = migrated
+            .control_diagnostics()
+            .expect("migrated diagnostics");
+        assert_eq!(diagnostics.policy_epoch, ProjectPolicyEpoch(2));
+        assert_eq!(diagnostics.required_assurance, ControlAssurance::TurnGated);
+        assert_eq!(
+            migrated
+                .connection
+                .query_row("SELECT COUNT(*) FROM control_policy_versions", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("count migrated versions"),
+            2
+        );
+        assert!(
+            migrated
+                .verify_all()
+                .expect("verify migration")
+                .is_healthy()
+        );
+        drop(migrated);
+        drop(SqliteStore::open(&legacy_database).expect("idempotent migration reopen"));
+
+        let future_database = directory.path().join("future.db");
+        let future = SqliteStore::open(&future_database).expect("initialize future fixture");
+        future
+            .connection
+            .execute("DROP INDEX control_observations_session_sequence", [])
+            .expect("create observable missing DDL");
+        future
+            .connection
+            .execute(
+                "UPDATE control_policy_state SET schema_version = 999 WHERE singleton = 1",
+                [],
+            )
+            .expect("install future policy schema marker");
+        drop(future);
+        assert!(matches!(
+            SqliteStore::open(&future_database),
+            Err(StoreError::InvalidControlProjection(_))
+        ));
+        let raw = Connection::open(&future_database).expect("inspect refused future store");
+        assert!(
+            !raw.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM sqlite_master
+                     WHERE type = 'index'
+                       AND name = 'control_observations_session_sequence'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("future store remains unmodified")
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one lifecycle fixture keeps issued and begun grant behavior visibly comparable across the same policy transition"
+    )]
+    fn policy_epoch_change_expires_issued_grants_but_not_begun_checkpoints() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let begun = bind_control_for(
+            &mut store,
+            "policy-begun",
+            "bind-policy-begun",
+            &[EffectClass::Observe],
+            now,
+        );
+        let issued = bind_control_for(
+            &mut store,
+            "policy-issued",
+            "bind-policy-issued",
+            &[EffectClass::Observe],
+            now,
+        );
+        let evaluate = |store: &mut SqliteStore,
+                        binding: &TestControlBinding,
+                        key: &str,
+                        at: DateTime<Utc>| {
+            store
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &TurnIntent {
+                        idempotency_key: key.into(),
+                        intent_fingerprint: ObjectHash::from_canonical_bytes(key.as_bytes()),
+                        purpose: TurnPurpose::Ordinary,
+                        requested_effects: vec![EffectClass::Observe],
+                        resource_intents: Vec::new(),
+                    },
+                    at,
+                )
+                .expect("evaluate controlled turn")
+        };
+        let ControlTurnDecision::Grant { grant: begun_grant } =
+            evaluate(&mut store, &begun, "policy-begun-turn", now)
+        else {
+            panic!("begun fixture must grant");
+        };
+        let begun_tokens = begun_grant
+            .delivery
+            .iter()
+            .map(|delivery| delivery.page.delivery_token.clone())
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &begun.status.session_id,
+                    &begun.connection_token,
+                    &begun.routing_token,
+                    &begun_grant.grant_id,
+                    &begun_tokens,
+                    "begin-before-policy-change",
+                    now + TimeDelta::milliseconds(1),
+                )
+                .expect("begin pre-change grant"),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        let ControlTurnDecision::Grant {
+            grant: issued_grant,
+        } = evaluate(
+            &mut store,
+            &issued,
+            "policy-issued-turn",
+            now + TimeDelta::milliseconds(2),
+        )
+        else {
+            panic!("issued fixture must grant");
+        };
+
+        let changed = store
+            .set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &actor("policy-admin"),
+                "exercise policy epoch transition",
+                None,
+                now + TimeDelta::seconds(1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate new policy");
+        assert_eq!(changed.policy_epoch, ProjectPolicyEpoch(2));
+        assert!(matches!(
+            store
+                .checkpoint_control_turn(
+                    &ProjectId("project-a".into()),
+                    &begun.status.session_id,
+                    &begun.connection_token,
+                    &begun.routing_token,
+                    &begun_grant.grant_id,
+                    TurnNextIntent::Continue,
+                    "checkpoint-after-policy-change",
+                    now + TimeDelta::seconds(2),
+                )
+                .expect("checkpoint begun grant"),
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ));
+        assert!(matches!(
+            evaluate(
+                &mut store,
+                &begun,
+                "policy-refresh-after-checkpoint",
+                now + TimeDelta::milliseconds(2_100),
+            ),
+            ControlTurnDecision::Refuse {
+                directive: crate::domain::ControlDirective {
+                    code: crate::domain::ControlRefusalCode::PolicyEpochChanged,
+                    ..
+                }
+            }
+        ));
+        assert_eq!(
+            store
+                .control_status(
+                    &ProjectId("project-a".into()),
+                    &begun.status.session_id,
+                    &begun.connection_token,
+                    &begun.routing_token,
+                    now + TimeDelta::milliseconds(2_100),
+                )
+                .expect("status after evaluation epoch refresh")
+                .epochs
+                .project_policy,
+            ProjectPolicyEpoch(2)
+        );
+        assert!(matches!(
+            evaluate(
+                &mut store,
+                &begun,
+                "policy-turn-after-refresh",
+                now + TimeDelta::milliseconds(2_200),
+            ),
+            ControlTurnDecision::Grant { .. }
+        ));
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &issued.status.session_id,
+                    &issued.connection_token,
+                    &issued.routing_token,
+                    &issued_grant.grant_id,
+                    &[],
+                    "begin-issued-after-policy-change",
+                    now + TimeDelta::seconds(2),
+                )
+                .expect("refuse stale issued grant"),
+            ControlTurnBeginDecision::Refuse {
+                code: crate::domain::ControlRefusalCode::PolicyEpochChanged
+            }
+        ));
+        assert_eq!(
+            store
+                .control_status(
+                    &ProjectId("project-a".into()),
+                    &issued.status.session_id,
+                    &issued.connection_token,
+                    &issued.routing_token,
+                    now + TimeDelta::seconds(2),
+                )
+                .expect("status after epoch refusal")
+                .epochs
+                .project_policy,
+            ProjectPolicyEpoch(2)
+        );
+        assert!(matches!(
+            evaluate(
+                &mut store,
+                &issued,
+                "policy-issued-re-evaluated",
+                now + TimeDelta::seconds(3),
+            ),
+            ControlTurnDecision::Grant { .. }
+        ));
+    }
+
+    #[test]
+    fn action_gated_requirement_refuses_every_v1_host_fail_closed() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let turn_gated = bind_control_for(
+            &mut store,
+            "turn-gated-under-action-policy",
+            "bind-before-action-policy",
+            &[EffectClass::Observe],
+            now,
+        );
+        let current = store.control_diagnostics().expect("current policy");
+        store
+            .set_required_control_assurance(
+                ControlAssurance::ActionGated,
+                &actor("action-policy-admin"),
+                "prove the unavailable assurance fails closed",
+                Some(&current.active_policy),
+                now + TimeDelta::seconds(1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate action-gated requirement");
+
+        let action_floor_lease = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &turn_gated.status.session_id,
+                &turn_gated.connection_token,
+                &turn_gated.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &crate::domain::ResourceSubject::Path {
+                    project_id: ProjectId("project-a".into()),
+                    segments: vec!["src".into()],
+                    coverage: crate::domain::ResourceCoverage::Tree,
+                },
+                60,
+                "lease-under-action-policy",
+                now + TimeDelta::seconds(2),
+            )
+            .expect("action-gated project floor is a lease decision");
+        assert!(matches!(
+            action_floor_lease,
+            WorkLeaseDecision::Refuse { directive }
+                if directive.code == ControlRefusalCode::ControlAssuranceInsufficient
+                    && directive.effect.is_none()
+                    && directive.required_assurance == Some(ControlAssurance::ActionGated)
+        ));
+
+        assert!(matches!(
+            store
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &turn_gated.status.session_id,
+                    &turn_gated.connection_token,
+                    &turn_gated.routing_token,
+                    &TurnIntent {
+                        idempotency_key: "turn-under-action-policy".into(),
+                        intent_fingerprint: ObjectHash::from_canonical_bytes(
+                            b"turn-under-action-policy",
+                        ),
+                        purpose: TurnPurpose::Ordinary,
+                        requested_effects: vec![EffectClass::Observe],
+                        resource_intents: Vec::new(),
+                    },
+                    now + TimeDelta::seconds(2),
+                )
+                .expect("evaluate turn-gated host"),
+            ControlTurnDecision::Refuse {
+                directive: crate::domain::ControlDirective {
+                    code: crate::domain::ControlRefusalCode::ControlAssuranceInsufficient,
+                    ..
+                }
+            }
+        ));
+
+        let action_session = SessionId("action-gated-host".into());
+        let connection_token = store
+            .resume_control_connection(&action_session, now + TimeDelta::seconds(3))
+            .expect("resume action-gated host connection");
+        assert!(matches!(
+            store.bind_control_session(
+                &ProjectId("project-a".into()),
+                "dummy:ACTION-GATED-HOST",
+                "V1 must reject an action-gated declaration",
+                &action_session,
+                &connection_token,
+                &actor("action-gated-host"),
+                ControlAssurance::ActionGated,
+                &[EffectClass::Observe],
+                1,
+                "bind-action-gated-host",
+                now + TimeDelta::seconds(3),
+            ),
+            Err(StoreError::InvalidControlSession(reason))
+                if reason.contains("bind fields")
+        ));
+    }
+
+    #[test]
+    fn turn_gated_observe_only_session_cannot_reserve_undeclared_effects() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control_for(
+            &mut store,
+            "observe-only-host",
+            "bind-observe-only-host",
+            &[EffectClass::Observe],
+            now,
+        );
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "sync-observe-only-host",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+
+        for (kind, effect, key) in [
+            (
+                crate::domain::LeaseKind::Execution,
+                EffectClass::MutateLocal,
+                "observe-only-execution-lease",
+            ),
+            (
+                crate::domain::LeaseKind::Coordination,
+                EffectClass::Coordinate,
+                "observe-only-coordination-lease",
+            ),
+        ] {
+            let decision = store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    kind,
+                    crate::domain::LeaseMode::Exclusive,
+                    &subject,
+                    60,
+                    key,
+                    now + TimeDelta::seconds(2),
+                )
+                .expect("mediation refusal is a lease decision");
+            let WorkLeaseDecision::Refuse { directive } = decision else {
+                panic!("observe-only host must not reserve {effect:?}");
+            };
+            assert_eq!(
+                directive.code,
+                ControlRefusalCode::ControlAssuranceInsufficient
+            );
+            assert_eq!(directive.effect, Some(effect));
+            assert_eq!(
+                directive.required_assurance,
+                Some(ControlAssurance::TurnGated)
+            );
+            assert_eq!(
+                directive.declared_mediated_effects,
+                Some(vec![EffectClass::Observe])
+            );
+            assert_eq!(
+                directive.effective_mediated_effects,
+                Some(vec![EffectClass::Observe])
+            );
+        }
+
+        let turn = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "observe-only-mutation-turn".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"observe-only-mutation-turn",
+                    ),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::MutateLocal],
+                    resource_intents: vec![subject],
+                },
+                now + TimeDelta::seconds(3),
+            )
+            .expect("turn mediation refusal");
+        let ControlTurnDecision::Refuse { directive } = turn else {
+            panic!("observe-only host must not receive a mutation turn");
+        };
+        assert_eq!(directive.effect, Some(EffectClass::MutateLocal));
+        assert_eq!(
+            directive.declared_mediated_effects,
+            Some(vec![EffectClass::Observe])
+        );
+        assert_eq!(
+            directive.effective_mediated_effects,
+            Some(vec![EffectClass::Observe])
+        );
+    }
+
+    #[test]
+    fn turn_gated_coordinate_session_can_acquire_a_coordination_lease() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control_for(
+            &mut store,
+            "coordinate-host",
+            "bind-coordinate-host",
+            &[EffectClass::Observe, EffectClass::Coordinate],
+            now,
+        );
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "sync-coordinate-host",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+
+        let decision = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                crate::domain::LeaseKind::Coordination,
+                crate::domain::LeaseMode::Exclusive,
+                &crate::domain::ResourceSubject::Path {
+                    project_id: ProjectId("project-a".into()),
+                    segments: vec!["coordination".into()],
+                    coverage: crate::domain::ResourceCoverage::Tree,
+                },
+                60,
+                "coordinate-lease",
+                now + TimeDelta::seconds(2),
+            )
+            .expect("coordination lease decision");
+        assert!(matches!(
+            decision,
+            WorkLeaseDecision::Granted { lease }
+                if lease.kind == crate::domain::LeaseKind::Coordination
+        ));
+    }
+
+    #[test]
+    fn lease_acquire_replay_is_scoped_to_the_current_bind_generation() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control_for(
+            &mut store,
+            "lease-rebind-host",
+            "bind-lease-rebind-host",
+            &[EffectClass::Observe, EffectClass::MutateLocal],
+            now,
+        );
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "sync-lease-rebind-host",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let WorkLeaseDecision::Granted { lease } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                60,
+                "bind-scoped-acquire",
+                now + TimeDelta::seconds(2),
+            )
+            .expect("initial lease")
+        else {
+            panic!("initial lease must grant");
+        };
+        store
+            .release_work_lease(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &lease.lease_id,
+                "release-before-rebind",
+                now + TimeDelta::seconds(3),
+            )
+            .expect("release initial lease");
+        let rebound = store
+            .bind_control_session(
+                &ProjectId("project-a".into()),
+                "dummy:CONTROL-HOST-1",
+                "Exercise the host control lifecycle",
+                &binding.status.session_id,
+                &binding.connection_token,
+                &actor("lease-rebind-host"),
+                ControlAssurance::TurnGated,
+                &[EffectClass::Observe],
+                2,
+                "rebind-lease-rebind-host",
+                now + TimeDelta::seconds(4),
+            )
+            .expect("rebind session");
+
+        assert!(matches!(
+            store.acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &rebound.status.session_id,
+                &binding.connection_token,
+                &rebound.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                60,
+                "bind-scoped-acquire",
+                now + TimeDelta::seconds(5),
+            ),
+            Err(StoreError::ControlOperationIdempotencyConflict { operation, key })
+                if operation == "lease_acquire" && key == "bind-scoped-acquire"
+        ));
+    }
+
+    #[test]
+    fn lease_epoch_refusal_is_sticky_and_adopts_for_a_fresh_key() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control_for(
+            &mut store,
+            "lease-epoch-host",
+            "bind-lease-epoch-host",
+            &[EffectClass::Observe, EffectClass::MutateLocal],
+            now,
+        );
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "sync-lease-epoch-host",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let current = store.control_diagnostics().expect("current policy");
+        store
+            .set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &actor("lease-epoch-admin"),
+                "exercise lease epoch adoption",
+                Some(&current.active_policy),
+                now + TimeDelta::seconds(2),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate epoch two");
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+
+        let stale = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                60,
+                "stale-epoch-lease",
+                now + TimeDelta::seconds(3),
+            )
+            .expect("stale epoch is a lease decision");
+        assert!(matches!(
+            &stale,
+            WorkLeaseDecision::Refuse { directive }
+                if directive.code == ControlRefusalCode::PolicyEpochChanged
+        ));
+        assert_eq!(
+            store
+                .control_status(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    now + TimeDelta::seconds(3),
+                )
+                .expect("status after lease epoch refusal")
+                .epochs
+                .project_policy,
+            ProjectPolicyEpoch(2)
+        );
+        assert_eq!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &subject,
+                    60,
+                    "stale-epoch-lease",
+                    now + TimeDelta::seconds(4),
+                )
+                .expect("sticky stale-epoch replay"),
+            stale
+        );
+        assert!(matches!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &subject,
+                    60,
+                    "fresh-epoch-lease",
+                    now + TimeDelta::seconds(5),
+                )
+                .expect("fresh key re-evaluates after epoch adoption"),
+            WorkLeaseDecision::Granted { .. }
+        ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one persisted lifecycle test pins bind caps, replayable lease refusal, and turn admission together"
+    )]
+    fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store =
+            open_with_assurance(&database, ControlAssurance::Advisory).expect("advisory store");
+        let session_id = SessionId("advisory-effect-host".into());
+        let connection_token = store
+            .resume_control_connection(&session_id, now)
+            .expect("resume advisory connection");
+        let binding = store
+            .bind_control_session(
+                &ProjectId("project-a".into()),
+                "dummy:ADVISORY-EFFECT-HOST",
+                "Prove effect-specific assurance floors",
+                &session_id,
+                &connection_token,
+                &actor("advisory-effect-host"),
+                ControlAssurance::Advisory,
+                &[
+                    EffectClass::Observe,
+                    EffectClass::Communicate,
+                    EffectClass::MutateLocal,
+                ],
+                1,
+                "bind-advisory-effect-host",
+                now,
+            )
+            .expect("bind advisory host");
+        assert_eq!(
+            binding.effective_mediated_effects,
+            vec![EffectClass::Observe, EffectClass::Communicate]
+        );
+        assert!(
+            binding
+                .status
+                .mediated_effects
+                .contains(&EffectClass::MutateLocal)
+        );
+        let advisory = TestControlBinding {
+            binding,
+            connection_token,
+        };
+        complete_control_turn(
+            &mut store,
+            &advisory,
+            "sync-advisory-effect-host",
+            vec![EffectClass::Observe, EffectClass::Communicate],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let lease_refusal = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &advisory.status.session_id,
+                &advisory.connection_token,
+                &advisory.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                60,
+                "lease-advisory-effect-host",
+                now + TimeDelta::seconds(2),
+            )
+            .expect("policy refusal is a lease decision");
+        assert!(matches!(
+            &lease_refusal,
+            WorkLeaseDecision::Refuse { directive }
+                if directive.code
+                    == crate::domain::ControlRefusalCode::ControlAssuranceInsufficient
+                    && directive.effect == Some(EffectClass::MutateLocal)
+                    && directive.required_assurance == Some(ControlAssurance::TurnGated)
+        ));
+        assert_eq!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &advisory.status.session_id,
+                    &advisory.connection_token,
+                    &advisory.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &subject,
+                    60,
+                    "lease-advisory-effect-host",
+                    now + TimeDelta::seconds(3),
+                )
+                .expect("replay policy refusal"),
+            lease_refusal
+        );
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &advisory.status.session_id,
+                &advisory.connection_token,
+                &advisory.routing_token,
+                &TurnIntent {
+                    idempotency_key: "mutate-under-advisory-assurance".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"mutate-under-advisory-assurance",
+                    ),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::MutateLocal],
+                    resource_intents: vec![subject.clone()],
+                },
+                now + TimeDelta::seconds(4),
+            )
+            .expect("evaluate advisory mutation");
+        let ControlTurnDecision::Refuse { directive } = decision else {
+            panic!("advisory mutation must refuse");
+        };
+        assert_eq!(
+            directive.code,
+            crate::domain::ControlRefusalCode::ControlAssuranceInsufficient
+        );
+        assert_eq!(directive.effect, Some(EffectClass::MutateLocal));
+        assert_eq!(
+            directive.required_assurance,
+            Some(ControlAssurance::TurnGated)
+        );
+
+        let turn_gated = bind_control_for_task(
+            &mut store,
+            "turn-gated-effect-host",
+            "bind-turn-gated-effect-host",
+            "dummy:ADVISORY-EFFECT-HOST",
+            &[EffectClass::Observe, EffectClass::MutateLocal],
+            now + TimeDelta::seconds(5),
+        );
+        complete_control_turn(
+            &mut store,
+            &turn_gated,
+            "sync-turn-gated-effect-host",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(6),
+        );
+        let WorkLeaseDecision::Granted { .. } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &turn_gated.status.session_id,
+                &turn_gated.connection_token,
+                &turn_gated.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                60,
+                "lease-turn-gated-effect-host",
+                now + TimeDelta::seconds(7),
+            )
+            .expect("turn-gated execution lease")
+        else {
+            panic!("turn-gated host must acquire an execution lease");
+        };
+        assert!(matches!(
+            store
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &turn_gated.status.session_id,
+                    &turn_gated.connection_token,
+                    &turn_gated.routing_token,
+                    &TurnIntent {
+                        idempotency_key: "mutate-under-turn-gated-assurance".into(),
+                        intent_fingerprint: ObjectHash::from_canonical_bytes(
+                            b"mutate-under-turn-gated-assurance",
+                        ),
+                        purpose: TurnPurpose::Ordinary,
+                        requested_effects: vec![EffectClass::MutateLocal],
+                        resource_intents: vec![subject],
+                    },
+                    now + TimeDelta::seconds(8),
+                )
+                .expect("evaluate turn-gated mutation"),
+            ControlTurnDecision::Grant { .. }
+        ));
     }
 
     fn actor(session: &str) -> ActorContext {
@@ -6714,6 +10421,19 @@ mod tests {
             provenance_chain: Vec::new(),
             reason: "exercise coordination semantics".into(),
         }
+    }
+
+    fn open_with_assurance(
+        path: &Path,
+        required_assurance: ControlAssurance,
+    ) -> Result<SqliteStore, StoreError> {
+        SqliteStore::open_with_initial_control_assurance(
+            path,
+            required_assurance,
+            &actor("bootstrap-policy-admin"),
+            "select the test bootstrap policy",
+            &DevelopmentNoopRedactor,
+        )
     }
 
     fn note_request(
@@ -7095,9 +10815,9 @@ mod tests {
         assert_eq!(
             store.verify_all().unwrap(),
             IntegrityReport {
-                checked_objects: 1,
+                checked_objects: 3,
                 invalid_objects: Vec::new(),
-                checked_control_records: 0,
+                checked_control_records: 2,
                 invalid_control_records: Vec::new(),
                 checked_work_records: 1,
                 invalid_work_records: Vec::new(),
@@ -8395,7 +12115,7 @@ mod tests {
             Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .expect("open migrated store read-only");
         drop(
-            SqliteStore::from_connection(read_only, HostPathPolicy::host_default())
+            SqliteStore::from_connection(read_only, HostPathPolicy::host_default(), None)
                 .expect("unsupported legacy projection does not require later write locks"),
         );
 
@@ -8619,7 +12339,7 @@ mod tests {
         assert_eq!(first, replay);
         let healthy = reopened.verify_all().unwrap();
         assert!(healthy.is_healthy());
-        assert_eq!(healthy.checked_control_records, 1);
+        assert_eq!(healthy.checked_control_records, 3);
 
         let mut unknown_schema = input.clone();
         unknown_schema.control_schema_version = CONTROL_SCHEMA_VERSION + 1;
@@ -8638,7 +12358,7 @@ mod tests {
         );
         let healthy_with_unknown_schema = reopened.verify_all().unwrap();
         assert!(healthy_with_unknown_schema.is_healthy());
-        assert_eq!(healthy_with_unknown_schema.checked_control_records, 2);
+        assert_eq!(healthy_with_unknown_schema.checked_control_records, 4);
 
         let mut conflicting = input.clone();
         conflicting
@@ -8890,7 +12610,7 @@ mod tests {
         };
         let healthy = store.verify_all().unwrap();
         assert!(healthy.is_healthy());
-        assert_eq!(healthy.checked_control_records, 3);
+        assert_eq!(healthy.checked_control_records, 5);
 
         store
             .connection
@@ -8914,7 +12634,7 @@ mod tests {
             )
             .unwrap();
         let corrupted = store.verify_all().unwrap();
-        assert_eq!(corrupted.checked_control_records, 3);
+        assert_eq!(corrupted.checked_control_records, 5);
         assert_eq!(corrupted.invalid_control_records.len(), 3);
         assert!(
             corrupted

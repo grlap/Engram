@@ -123,15 +123,20 @@ every uncertain turn; for an observe-only partial recovery page,
 `session_status.recoverable_grant` also returns the exact frozen payload so a
 replacement host can redeliver it without advancing the confirmed cursor.
 The same channel now provides resource-scoped `lease_acquire` and
-`lease_release`. The alpha policy permits a `mutate_local` turn only when the
-host declared that effect mediated and every requested resource is covered by
-a live exclusive execution lease held by the session. Grants capture the
-lease id, subject, expiry, and monotonically increasing fence and recheck that
+`lease_release`. Before it reserves a resource, lease acquisition enforces the
+project floor first, then the effect floor, declared and effective mediation,
+supported effects, and the session policy epoch. Policy refusals are durable
+decisions under the request's bind-scoped idempotency key. A key from an older
+bind conflicts instead of replaying obsolete authority. The alpha policy
+permits a `mutate_local` turn only when the host declared that effect mediated
+and every requested resource is covered by a live exclusive execution lease
+held by the session. Grants capture the lease id, subject, expiry, and
+monotonically increasing fence and recheck that
 basis at `turn_begin`. A begun mutation turn pins those leases across release,
 nominal expiry, and host restart until its checkpoint closes the uncertain
 authority; conflicting acquisition reports that checkpoint obligation. Path
-subjects are bound to the session project and
-Unicode-normalized. The first opener atomically persists the host filesystem
+subjects are bound to the session project and Unicode-normalized. The first
+opener atomically persists the host filesystem
 identity policy: Windows and macOS defaults case-fold, Linux defaults
 case-sensitive, and Windows also rejects reserved names and filename aliases.
 Later openers must match it.
@@ -142,14 +147,18 @@ hash-verifies both the earlier shadow observations and the enforced session,
 grant, decision, and operation records.
 
 The built-in enforced policy is deliberately limited to `observe`,
-`communicate`, and lease-backed, turn-gated `mutate_local`. Shared mutation,
-external effects, and lifecycle requests fail closed. The agent-facing MCP
-loop remains **advisory**, and shipping the decision service alone does not
+`communicate`, turn-gated Engram-internal `coordinate` leases, and lease-backed,
+turn-gated `mutate_local`. `coordinate` is not a model-turn capability. Shared
+mutation, external effects, and lifecycle requests fail closed. The
+agent-facing MCP loop remains **advisory**, and shipping the decision service
+alone does not
 make a deployment `turn_gated`: the embedding host must actually withhold
 prompts unless it receives and begins a grant. Per-tool action mediation,
 lease renewal/handoff/recovery, report assembly/publication, and the broader
-administrative CLI remain under development. `action_gated` declarations are
-rejected.
+administrative CLI remain under development. The shipped policy CLI can
+select `advisory`, `turn_gated`, or fail-closed `action_gated` as the project
+requirement; a host declaration of `action_gated` is still rejected because
+per-tool action mediation is not shipped.
 
 The first-class local work graph and six-operation ambient protocol are now
 shipped through one service core with CLI and MCP translations. It includes
@@ -177,11 +186,15 @@ and fences.
 
 The CLI requires `ENGRAM_HOME` (or `--home`) and resolves this repository's
 tracked `.engram-project` identity to one database shared across worktrees.
-Initialize with `engram init`, verify with `engram doctor`, run the MCP server
+Initialize with `engram init` or make an attributed bootstrap choice with
+`engram init --required-assurance <level> --authorized-by <actor> --reason
+<text>`, verify with `engram doctor`, change the immutable policy through
+`engram control-policy set-required-assurance`, run the MCP server
 with `engram mcp --actor-id <agent> --session-id <session>`, or run the
 host-private service with `engram control --actor-id <agent> --session-id
 <session>`, or issue a bounded local work grant with `engram authority grant
---subject-actor-id <agent> --issued-by <host-actor>` and use it with `engram work` or MCP's
+--subject-actor-id <agent> --issued-by <host-actor>` and use it with
+`engram work` or MCP's
 `--work-authority-grant`. See the
 [CLI and MCP guide](docs/features/cli-and-mcp.md) for host configuration and
 the exact shipped tool set.
