@@ -1393,9 +1393,16 @@ fn obligation_reminders(page: &WorkObligationPage) -> Vec<String> {
     out
 }
 
-/// Fixed table from `allowed_next` tags to literal commands. Entries the agent
-/// cannot run through the eight words (reopen, supersede, prerequisite edits,
-/// required-child waivers) are omitted.
+/// How many lifecycle moves a receipt suggests before deferring to `show`.
+const NEXT_LIFECYCLE_LIMIT: usize = 3;
+
+/// Fixed table from `allowed_next` tags to literal commands. Only the moves
+/// that change who holds the item or whether it is finished are suggested
+/// (accept, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
+/// priority order — followed by `engram work show REF` for the rest. Planning
+/// edits (block, release, handoff offers, decomposition, revision, cancel) and
+/// entries the agent cannot run through the eight words stay in `allowed_next`
+/// on the structured receipt only.
 fn next_commands(
     allowed_next: &[String],
     work_ref: &str,
@@ -1406,62 +1413,36 @@ fn next_commands(
     let has = |tag: &str| allowed_next.iter().any(|entry| entry == tag);
     let mut out: Vec<String> = Vec::new();
     let mut push = |command: String| {
-        if !out.contains(&command) {
+        if out.len() < NEXT_LIFECYCLE_LIMIT && !out.contains(&command) {
             out.push(command);
         }
     };
-    let mut lifecycle = false;
     if has("work_handoff:accept") {
         push(format!("engram work handoff {work_ref} --accept"));
-        lifecycle = true;
     }
     if has("work_update:claim") {
         push(format!("engram work claim {work_ref}"));
-        lifecycle = true;
     }
     if has("work_update:claim(recovery_reason_required)") {
         push(format!("engram work claim {work_ref} --recover \"…\""));
-        lifecycle = true;
     }
     if has("work_update:checkpoint") || has("work_update:evidence") {
         push(format!("engram work note {work_ref} \"…\""));
-        lifecycle = true;
     }
     if has("work_complete") {
         push(format!("engram work done {work_ref} \"…\""));
-        lifecycle = true;
     }
     if blocked && has("work_update:unblock") {
         push(format!("engram work update {work_ref} --unblock"));
     }
-    if has("work_update:block") {
-        push(format!("engram work update {work_ref} --blocked \"…\""));
-    }
-    if has("work_update:release") {
-        push(format!("engram work update {work_ref} --release"));
-    }
-    if has("work_handoff:offer") {
-        push(format!("engram work handoff {work_ref} --to <actor>"));
-    }
-    if has("work_handoff:cancel") {
-        push(format!("engram work handoff {work_ref} --cancel \"…\""));
-    }
-    if has("work_propose:decompose") {
-        push(format!("engram work add \"…\" --under {work_ref}"));
-    }
-    if has("work_update:revise") {
-        push(format!("engram work update {work_ref} --title \"…\""));
-    }
-    if has("work_update:cancel") {
-        push(format!("engram work update {work_ref} --cancel \"…\""));
-    }
+    let lifecycle = !out.is_empty();
     // Looking at a closed item again or calling `next` from `next` changes
     // nothing, so neither is suggested.
     if open && has("work_focus") && word != "show" {
-        push(format!("engram work show {work_ref}"));
+        out.push(format!("engram work show {work_ref}"));
     }
     if !lifecycle && word != "next" {
-        push("engram work next".into());
+        out.push("engram work next".into());
     }
     out
 }
@@ -1900,10 +1881,12 @@ mod tests {
             next_commands(&tags, "w-0123456789ab", "add", false, true),
             vec![
                 "engram work claim w-0123456789ab",
-                "engram work add \"…\" --under w-0123456789ab",
                 "engram work show w-0123456789ab",
             ]
         );
+        // Planning edits the holder could make (release, offer, block,
+        // decompose, revise, cancel) stay behind `show`; only the moves that
+        // change who holds the item or whether it is finished are suggested.
         let held = [
             "work_focus",
             "work_update:checkpoint",
@@ -1911,7 +1894,11 @@ mod tests {
             "work_update:release",
             "work_complete",
             "work_handoff:offer",
+            "work_update:block",
             "work_update:unblock",
+            "work_propose:decompose",
+            "work_update:revise",
+            "work_update:cancel",
         ]
         .map(String::from);
         assert_eq!(
@@ -1919,8 +1906,35 @@ mod tests {
             vec![
                 "engram work note w-0123456789ab \"…\"",
                 "engram work done w-0123456789ab \"…\"",
-                "engram work update w-0123456789ab --release",
-                "engram work handoff w-0123456789ab --to <actor>",
+            ]
+        );
+        assert_eq!(
+            next_commands(&held, "w-0123456789ab", "claim", true, true),
+            vec![
+                "engram work note w-0123456789ab \"…\"",
+                "engram work done w-0123456789ab \"…\"",
+                "engram work update w-0123456789ab --unblock",
+                "engram work show w-0123456789ab",
+            ]
+        );
+        // Lifecycle moves are capped at three in priority order; `show` is
+        // still the one trailing entry, so no receipt lists more than four.
+        let crowded = [
+            "work_focus",
+            "work_handoff:accept",
+            "work_update:claim",
+            "work_update:checkpoint",
+            "work_complete",
+            "work_update:unblock",
+        ]
+        .map(String::from);
+        assert_eq!(
+            next_commands(&crowded, "w-0123456789ab", "next", true, true),
+            vec![
+                "engram work handoff w-0123456789ab --accept",
+                "engram work claim w-0123456789ab",
+                "engram work note w-0123456789ab \"…\"",
+                "engram work show w-0123456789ab",
             ]
         );
         assert_eq!(

@@ -258,8 +258,13 @@ Every agent tool result keeps its structured shape and adds two fields.
 `reminders` holds words only, derived by a fixed table from the readiness
 `obligations` strings, open `obligation_page` items, active blockers, and the
 claim holder. `next` holds literal `engram work …` commands derived by a fixed
-table from `allowed_next`; entries the agent cannot run through the words
-(reopen, supersede, prerequisite edits, required-child waivers) are omitted.
+table from `allowed_next`: at most three lifecycle moves in priority order
+(`handoff --accept`, `claim`, `note`, `done`, `update --unblock`) and one
+trailing `show REF`, so no receipt lists more than four. Planning edits
+(`--blocked`, `--release`, `handoff --to`, `add --under`, `--title`,
+`--cancel`) and entries the agent cannot run through the words (reopen,
+supersede, prerequisite edits, required-child waivers) stay in `allowed_next`
+on the structured receipt only.
 Errors keep their stable code and details and add the same two fields. The
 shell prints a one-line receipt followed by `reminders:` and `next:`; `--json`
 prints the exact structured receipt. Text output never contains a 64-hex
