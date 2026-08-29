@@ -115,6 +115,8 @@ engram control \
   --source-skill engram-repo
 
 # Host/operator boundary: mint a bounded, expiring grant for one exact actor.
+# Grants expire after one hour by default (--valid-seconds, at most one day);
+# a word run under an expired grant answers with the expiry time.
 GRANT=$(engram authority grant \
   --subject-actor-id codex \
   --issued-by host-operator | jq -r .grant)

@@ -286,6 +286,32 @@ impl VerbError {
                 vec!["no item is selected; name one or claim one first".into()],
                 vec!["engram work next".into()],
             ),
+            StoreError::InvalidWork(reason)
+                if reason.starts_with("work authority grant expired at") =>
+            {
+                (
+                    vec![format!(
+                        "your host grant {}; ask the host for a new one",
+                        reason.trim_start_matches("work authority grant ")
+                    )],
+                    Vec::new(),
+                )
+            }
+            StoreError::InvalidWork(reason)
+                if reason.starts_with("work authority grant was revoked") =>
+            {
+                (
+                    vec!["your host grant was revoked; ask the host for a new one".into()],
+                    Vec::new(),
+                )
+            }
+            StoreError::InvalidWork(reason) if reason.starts_with("work authority grant") => (
+                vec![format!(
+                    "your host grant does not cover this ({}); ask the host for one that does",
+                    reason.trim_start_matches("work authority grant ")
+                )],
+                Vec::new(),
+            ),
             StoreError::InvalidWork(reason) if reason.contains("work-authority grant") => (
                 vec!["the host has not granted this session work authority".into()],
                 Vec::new(),

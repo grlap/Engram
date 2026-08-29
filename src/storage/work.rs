@@ -9186,20 +9186,44 @@ fn resolve_work_authority(
     })?;
     let grant: WorkAuthorityGrant = CanonicalObject::verify(&decision.grant, bytes)?.decode()?;
     require_authority_revocation_integrity(connection, &decision.grant, revoked_at_ms)?;
-    let scope_matches = authority_scope_matches(&grant.scope, target);
-    if revoked_at_ms.is_some()
-        || grant.project_id != *target.project_id
-        || grant.policy_ref != target.policy_ref
-        || grant.subject_actor_id != actor.actor_id
-        || !assurance_covers(actor.assurance, grant.assurance)
-        || !grant.operations.contains(&operation)
-        || grant.issued_at > at
-        || grant.valid_until <= at
-        || !scope_matches
-    {
+    // Each refusal names its own cause, so an agent can tell an expired grant
+    // from one that never covered the operation.
+    if revoked_at_ms.is_some() {
+        return Err(StoreError::InvalidWork(
+            "work authority grant was revoked by the host".into(),
+        ));
+    }
+    if grant.valid_until <= at {
         return Err(StoreError::InvalidWork(format!(
-            "work authority grant does not admit {operation:?} for this actor, scope, policy, and time"
+            "work authority grant expired at {}",
+            grant.valid_until.format("%Y-%m-%d %H:%M:%S UTC")
         )));
+    }
+    if grant.issued_at > at {
+        return Err(StoreError::InvalidWork(format!(
+            "work authority grant is not valid before {}",
+            grant.issued_at.format("%Y-%m-%d %H:%M:%S UTC")
+        )));
+    }
+    if grant.subject_actor_id != actor.actor_id
+        || !assurance_covers(actor.assurance, grant.assurance)
+    {
+        return Err(StoreError::InvalidWork(
+            "work authority grant was issued to another actor or assurance".into(),
+        ));
+    }
+    if !grant.operations.contains(&operation) {
+        return Err(StoreError::InvalidWork(format!(
+            "work authority grant does not admit {operation:?}"
+        )));
+    }
+    if grant.project_id != *target.project_id
+        || grant.policy_ref != target.policy_ref
+        || !authority_scope_matches(&grant.scope, target)
+    {
+        return Err(StoreError::InvalidWork(
+            "work authority grant does not cover this project, policy, or work scope".into(),
+        ));
     }
     Ok(grant)
 }
