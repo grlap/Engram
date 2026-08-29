@@ -326,10 +326,6 @@ pub enum StoreError {
     WorkNotFound(crate::domain::WorkId),
     #[error("local work input is invalid: {0}")]
     InvalidWork(String),
-    #[error(
-        "work delivery is still pending; call work_next with changes selected and no acknowledgement to replay it, then acknowledge the returned delivered_through and delivery_token with sections excluding changes before retrying the focus-changing operation with the same idempotency key"
-    )]
-    PendingWorkDelivery,
     #[error("work projection contains invalid data: {0}")]
     InvalidWorkProjection(String),
     #[error(

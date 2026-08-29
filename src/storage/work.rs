@@ -171,6 +171,7 @@ pub(crate) struct WorkObligationRecord {
     pub state: WorkObligationState,
     pub resolution_hash: Option<ObjectHash>,
     pub resolution: Option<WorkObligationResolutionEvent>,
+    pub resolution_position: Option<FeedPosition>,
 }
 
 #[cfg(test)]
@@ -1716,20 +1717,6 @@ impl SqliteStore {
                 "focused work must belong to the bound project".into(),
             ));
         }
-        let current: Option<(Option<String>, Option<i64>)> = transaction
-            .query_row(
-                "SELECT focused_work_id, tentative_project_cursor
-                 FROM work_session_state
-                 WHERE project_id = ?1 AND session_id = ?2",
-                params![project_id.0, session_id.0],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        if let Some((focused, Some(_))) = current.as_ref()
-            && focused.as_deref() != Some(&work_id.0.to_string())
-        {
-            return Err(StoreError::PendingWorkDelivery);
-        }
         transaction.execute(
             "INSERT INTO work_session_state (
                  project_id, session_id, focused_work_id, project_cursor, updated_at_ms
@@ -2104,17 +2091,7 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when a stored hash is invalid.
     pub fn work_run_evidence(&self, run_id: WorkRunId) -> Result<Vec<ObjectHash>, StoreError> {
-        let mut statement = self.connection.prepare(
-            "SELECT evidence_hash FROM work_run_evidence
-             WHERE run_id = ?1 ORDER BY evidence_hash",
-        )?;
-        statement
-            .query_map([run_id.0.to_string()], |row| row.get::<_, String>(0))?
-            .map(|row| {
-                let value = row?;
-                ObjectHash::from_stored(value.clone()).ok_or(StoreError::InvalidStoredHash(value))
-            })
-            .collect()
+        work_run_evidence_on(&self.connection, run_id)
     }
 
     /// Returns hash-verified obligation definitions and terminal resolutions
@@ -4829,7 +4806,11 @@ impl SqliteStore {
             request.checkpointed_at,
             false,
         )?;
-        ensure_run_evidence(&transaction, run.run_id, &request.evidence)?;
+        let evidence = match request.evidence.as_ref() {
+            Some(evidence) => unique_hashes(evidence),
+            None => work_run_evidence_on(&transaction, run.run_id)?,
+        };
+        ensure_run_evidence(&transaction, run.run_id, &evidence)?;
         let acknowledged_run_position = FeedPosition {
             feed: FeedId::RunExecution(run.run_id),
             position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
@@ -4842,7 +4823,7 @@ impl SqliteStore {
             claim_fence: claim.fence,
             acknowledged_run_position,
             summary,
-            evidence: unique_hashes(&request.evidence),
+            evidence,
             actor: request.actor.clone(),
             created_at: request.checkpointed_at,
         };
@@ -7997,7 +7978,7 @@ fn load_work_obligation_record_on(
             )
         })
         .transpose()?;
-    validate_obligation_resolution_projection(
+    let resolution_position = validate_obligation_resolution_projection(
         connection,
         &definition_hash,
         &obligation,
@@ -8014,6 +7995,7 @@ fn load_work_obligation_record_on(
         state,
         resolution_hash,
         resolution,
+        resolution_position,
     })
 }
 
@@ -8031,7 +8013,7 @@ fn validate_obligation_resolution_projection(
     projected_kind: Option<&str>,
     projected_evidence: Option<&str>,
     resolved_at_ms: Option<i64>,
-) -> Result<(), StoreError> {
+) -> Result<Option<FeedPosition>, StoreError> {
     if state == WorkObligationState::Open {
         if resolution_hash.is_some()
             || event.is_some()
@@ -8044,7 +8026,7 @@ fn validate_obligation_resolution_projection(
                 obligation.obligation_id.0
             )));
         }
-        return Ok(());
+        return Ok(None);
     }
     let (resolution_hash, event, resolved_at_ms) = resolution_hash
         .zip(event)
@@ -8149,7 +8131,7 @@ fn validate_obligation_resolution_projection(
             )?;
         }
     }
-    Ok(())
+    Ok(Some(resolution_position))
 }
 
 fn validate_obligation_waiver_authority(
@@ -9762,6 +9744,23 @@ fn root_participant_is_accounted(execution: &RootExecution, participant: &Sessio
             .waivers
             .iter()
             .any(|waiver| &waiver.participant == participant)
+}
+
+fn work_run_evidence_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+) -> Result<Vec<ObjectHash>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT evidence_hash FROM work_run_evidence
+         WHERE run_id = ?1 ORDER BY evidence_hash",
+    )?;
+    statement
+        .query_map([run_id.0.to_string()], |row| row.get::<_, String>(0))?
+        .map(|row| {
+            let value = row?;
+            ObjectHash::from_stored(value.clone()).ok_or(StoreError::InvalidStoredHash(value))
+        })
+        .collect()
 }
 
 fn work_evidence_kind_on(
@@ -12206,7 +12205,7 @@ mod tests {
                     claim_id: claim.claim_id,
                     claim_fence: claim.fence,
                     summary: "checkpointed implementation progress".into(),
-                    evidence: evidence.to_vec(),
+                    evidence: Some(evidence.to_vec()),
                     actor: actor(holder),
                     idempotency_key: key.into(),
                     checkpointed_at: at(second),
@@ -12554,15 +12553,16 @@ mod tests {
             )
             .expect("stage from a second connection");
         let staged = staged.expect("delivery wins exact compare-and-swap");
-        assert!(matches!(
-            writer.focus_work_session(&first.project_id, &session, second.work_id, at(4)),
-            Err(StoreError::PendingWorkDelivery)
-        ));
         let pending = writer
-            .work_session_state(&first.project_id, &session, at(4))
-            .expect("pending state");
-        assert_eq!(pending.focused_work_id, Some(first.work_id));
+            .focus_work_session(&first.project_id, &session, second.work_id, at(4))
+            .expect("focus changes while a page is still staged");
+        assert_eq!(pending.focused_work_id, Some(second.work_id));
         assert_eq!(pending.tentative_project_cursor, Some(head));
+        assert_eq!(
+            pending.tentative_delivery_token,
+            staged.tentative_delivery_token
+        );
+        assert_eq!(pending.project_cursor, 0);
 
         delivery
             .acknowledge_work_session_delivery(
@@ -12572,13 +12572,13 @@ mod tests {
                 staged.tentative_delivery_token.as_deref(),
                 at(5),
             )
-            .expect("acknowledge staged page");
-        let changed = writer
-            .focus_work_session(&first.project_id, &session, second.work_id, at(6))
-            .expect("focus after acknowledgement");
-        assert_eq!(changed.focused_work_id, Some(second.work_id));
-        assert_eq!(changed.tentative_project_cursor, None);
-        assert_eq!(changed.project_cursor, head);
+            .expect("acknowledge staged page after the focus change");
+        let acknowledged = writer
+            .work_session_state(&first.project_id, &session, at(6))
+            .expect("acknowledged state");
+        assert_eq!(acknowledged.focused_work_id, Some(second.work_id));
+        assert_eq!(acknowledged.tentative_project_cursor, None);
+        assert_eq!(acknowledged.project_cursor, head);
     }
 
     #[test]
@@ -15451,7 +15451,7 @@ mod tests {
                 claim_id: initial.claim_id,
                 claim_fence: initial.fence,
                 summary: "stale".into(),
-                evidence: Vec::new(),
+                evidence: Some(Vec::new()),
                 actor: actor("agent-a"),
                 idempotency_key: "stale-checkpoint".into(),
                 checkpointed_at: at(13),
@@ -16655,7 +16655,7 @@ mod tests {
                 claim_id: optional_claim.claim_id,
                 claim_fence: optional_claim.fence,
                 summary: "must remain fenced after root completion".into(),
-                evidence: vec![optional_evidence],
+                evidence: Some(vec![optional_evidence]),
                 actor: actor("optional-agent"),
                 idempotency_key: "stale-post-root-checkpoint".into(),
                 checkpointed_at: at(11),
@@ -17370,12 +17370,13 @@ mod tests {
         let input = WorkCompleteInput {
             capture: None,
             evidence: vec![evidence_hash.to_string()],
-            acceptance: vec![WorkAcceptanceInput {
+            acceptance: Some(vec![WorkAcceptanceInput {
                 criterion: None,
                 satisfied: true,
                 evidence: vec![evidence_hash.to_string()],
                 note: "completion evidence is present".into(),
-            }],
+            }]),
+            note: None,
             idempotency_key: "typed-open-obligation-result".into(),
         };
         let first = service

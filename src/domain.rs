@@ -2395,7 +2395,11 @@ pub struct CheckpointWorkRequest {
     pub claim_id: WorkClaimId,
     pub claim_fence: i64,
     pub summary: String,
-    pub evidence: Vec<ObjectHash>,
+    /// Explicit evidence selection. `None` snapshots every evidence object
+    /// already attached to the run inside the checkpoint transaction, while
+    /// `Some([])` deliberately acknowledges none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<Vec<ObjectHash>>,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub checkpointed_at: DateTime<Utc>,

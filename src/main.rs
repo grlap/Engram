@@ -309,24 +309,36 @@ enum WorkCommand {
     },
     /// Create a root or atomically decompose ambient work.
     Propose {
+        /// Short ref or UUID of the parent to decompose; selects focus first.
+        #[arg(long)]
+        work_ref: Option<String>,
         /// JSON object or @path to a JSON file.
         #[arg(long)]
         input: String,
     },
     /// Apply a typed update to ambient work.
     Update {
+        /// Short ref or UUID to act on; selects focus first.
+        #[arg(long)]
+        work_ref: Option<String>,
         /// JSON object or @path to a JSON file.
         #[arg(long)]
         input: String,
     },
     /// Complete ambient work with evidence and acceptance results.
     Complete {
+        /// Short ref or UUID to complete; selects focus first.
+        #[arg(long)]
+        work_ref: Option<String>,
         /// JSON object or @path to a JSON file.
         #[arg(long)]
         input: String,
     },
     /// Offer, accept, or cancel an ambient claim handoff.
     Handoff {
+        /// Short ref or UUID to hand off; selects focus first.
+        #[arg(long)]
+        work_ref: Option<String>,
         /// JSON object or @path to a JSON file.
         #[arg(long)]
         input: String,
@@ -775,20 +787,39 @@ fn run_work(
         WorkCommand::Focus { work_ref } => {
             serde_json::to_value(service.work_focus(&work_ref, now)?)?
         }
-        WorkCommand::Propose { input } => serde_json::to_value(
-            service.work_propose(parse_json_input::<WorkProposeInput>(&input)?, now)?,
-        )?,
-        WorkCommand::Update { input } => serde_json::to_value(
-            service.work_update(parse_json_input::<WorkUpdateInput>(&input)?, now)?,
-        )?,
-        WorkCommand::Complete { input } => serde_json::to_value(
-            service.work_complete(parse_json_input::<WorkCompleteInput>(&input)?, now)?,
-        )?,
-        WorkCommand::Handoff { input } => serde_json::to_value(
-            service.work_handoff(parse_json_input::<WorkHandoffInput>(&input)?, now)?,
-        )?,
+        WorkCommand::Propose { work_ref, input } => {
+            let input = parse_json_input::<WorkProposeInput>(&input)?;
+            select_work(&service, work_ref.as_deref(), now)?;
+            serde_json::to_value(service.work_propose(input, now)?)?
+        }
+        WorkCommand::Update { work_ref, input } => {
+            let input = parse_json_input::<WorkUpdateInput>(&input)?;
+            select_work(&service, work_ref.as_deref(), now)?;
+            serde_json::to_value(service.work_update(input, now)?)?
+        }
+        WorkCommand::Complete { work_ref, input } => {
+            let input = parse_json_input::<WorkCompleteInput>(&input)?;
+            select_work(&service, work_ref.as_deref(), now)?;
+            serde_json::to_value(service.work_complete(input, now)?)?
+        }
+        WorkCommand::Handoff { work_ref, input } => {
+            let input = parse_json_input::<WorkHandoffInput>(&input)?;
+            select_work(&service, work_ref.as_deref(), now)?;
+            serde_json::to_value(service.work_handoff(input, now)?)?
+        }
     };
     println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+fn select_work(
+    service: &LocalWorkService,
+    work_ref: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    if let Some(work_ref) = work_ref {
+        service.select_work(work_ref, now)?;
+    }
     Ok(())
 }
 

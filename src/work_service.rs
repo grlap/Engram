@@ -114,6 +114,18 @@ struct WorkCoreOperationKey<'a> {
     core_operation: &'a str,
 }
 
+/// Server-derived idempotency identity for a call that supplied no key: the
+/// same session repeating the same operation with the same canonical intent
+/// against the same focused work replays instead of duplicating.
+#[derive(Serialize)]
+struct WorkDerivedKey<'a> {
+    project_id: &'a ProjectId,
+    session_id: &'a SessionId,
+    protocol_operation: &'a str,
+    focused_work_id: Option<WorkId>,
+    intent: &'a ObjectHash,
+}
+
 /// Bounded `work_next` response using an ambient per-session project cursor.
 /// `changes` is one exact dense staged range. The refreshed focus, readiness,
 /// and catalog sections are advisory views assembled afterward and may observe
@@ -496,12 +508,14 @@ pub enum WorkProposeInput {
         assigned_to: Option<String>,
         deferred_until: Option<DateTime<Utc>>,
         authority_policy_ref: Option<String>,
+        #[serde(default)]
         idempotency_key: String,
     },
     Decompose {
         children: Vec<WorkChildInput>,
         #[serde(default)]
         prerequisites: Vec<WorkPrerequisiteInput>,
+        #[serde(default)]
         idempotency_key: String,
     },
 }
@@ -572,6 +586,7 @@ pub enum WorkUpdateInput {
         /// Explicit host-authorized reason for recovering an unaccounted prior
         /// claimant. Omit for an ordinary claim.
         recovery_reason: Option<String>,
+        #[serde(default)]
         idempotency_key: String,
     },
     Release {
@@ -579,12 +594,16 @@ pub enum WorkUpdateInput {
         /// Explicit host-authorized reason for waiving a missing contribution.
         /// Omit when the current holder has already contributed.
         waiver_reason: Option<String>,
+        #[serde(default)]
         idempotency_key: String,
     },
     Checkpoint {
         summary: String,
+        /// Omit to acknowledge every evidence object already attached to the
+        /// live run. An explicit empty list still acknowledges none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        evidence: Option<Vec<String>>,
         #[serde(default)]
-        evidence: Vec<String>,
         idempotency_key: String,
     },
     Evidence {
@@ -594,46 +613,56 @@ pub enum WorkUpdateInput {
         refs: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         attach: Option<WorkEvidenceAttachInput>,
+        #[serde(default)]
         idempotency_key: String,
     },
     Block {
         blocker_kind: WorkBlockerKind,
         detail: String,
+        #[serde(default)]
         idempotency_key: String,
     },
     Unblock {
         /// Omit when exactly one blocker is active on the focused item.
         blocker_id: Option<String>,
+        #[serde(default)]
         idempotency_key: String,
     },
     Revise {
         patch: WorkRevisionPatch,
+        #[serde(default)]
         idempotency_key: String,
     },
     AddPrerequisite {
         prerequisite: String,
+        #[serde(default)]
         idempotency_key: String,
     },
     RemovePrerequisite {
         prerequisite: String,
+        #[serde(default)]
         idempotency_key: String,
     },
     Reopen {
         reason: String,
+        #[serde(default)]
         idempotency_key: String,
     },
     Cancel {
         reason: String,
+        #[serde(default)]
         idempotency_key: String,
     },
     Supersede {
         replacement: String,
         reason: String,
+        #[serde(default)]
         idempotency_key: String,
     },
     WaiveRequiredChild {
         child: String,
         reason: String,
+        #[serde(default)]
         idempotency_key: String,
     },
 }
@@ -689,7 +718,14 @@ pub struct WorkCompleteInput {
     pub capture: Option<WorkCompletionCaptureInput>,
     #[serde(default)]
     pub evidence: Vec<String>,
-    pub acceptance: Vec<WorkAcceptanceInput>,
+    /// Omit to assert every current criterion with one server-attributed note.
+    /// An explicit empty list retains the strict existing behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance: Option<Vec<WorkAcceptanceInput>>,
+    /// Shared note used only when `acceptance` is omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default)]
     pub idempotency_key: String,
 }
 
@@ -710,13 +746,16 @@ pub enum WorkHandoffInput {
         to: String,
         ttl_seconds: Option<i64>,
         checkpoint_summary: String,
+        #[serde(default)]
         idempotency_key: String,
     },
     Accept {
+        #[serde(default)]
         idempotency_key: String,
     },
     Cancel {
         reason: String,
+        #[serde(default)]
         idempotency_key: String,
     },
 }
@@ -838,6 +877,20 @@ impl LocalWorkService {
         let wants_catalog = sections.contains(&WorkNextSection::Catalog);
         let wants_changes = sections.contains(&WorkNextSection::Changes);
         let project_feed = FeedId::Project(self.project_id.clone());
+        if acknowledge_through.is_none() && wants_changes {
+            // The page returned by the previous call counts as delivered once
+            // this session asks for the next one; an agent never acknowledges.
+            let previous = store.work_session_state(&self.project_id, &self.session_id, now)?;
+            if let Some(through) = previous.tentative_project_cursor {
+                store.acknowledge_work_session_delivery(
+                    &self.project_id,
+                    &self.session_id,
+                    through,
+                    previous.tentative_delivery_token.as_deref(),
+                    now,
+                )?;
+            }
+        }
         let initial_session = store.work_session_state(&self.project_id, &self.session_id, now)?;
         let mut omissions = Vec::new();
         let (session, changes, delivered_through) = if wants_changes {
@@ -1032,6 +1085,19 @@ impl LocalWorkService {
         Ok(response)
     }
 
+    /// Makes `work_ref` the session's ambient focus without inspecting it, so a
+    /// mutation can name its target in the same call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the reference is absent or outside the project.
+    pub fn select_work(&self, work_ref: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
+        let mut store = self.store()?;
+        let work = store.resolve_work_ref(&self.project_id, work_ref)?;
+        store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
+        Ok(())
+    }
+
     /// Selects and inspects ambient work without implicitly changing its claim.
     ///
     /// # Errors
@@ -1072,7 +1138,8 @@ impl LocalWorkService {
         )?;
         let intent = self.protocol_intent(&input);
         let (protocol_operation, core_operation, raw_key) = propose_metadata(&input);
-        let raw_key = raw_key.to_owned();
+        let raw_key =
+            self.effective_idempotency_key(raw_key, protocol_operation, &basis, &intent)?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -1263,8 +1330,9 @@ impl LocalWorkService {
         let basis = self.protocol_basis(&store, true, false, now)?;
         let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = update_metadata(&input);
-        let raw_key = raw_key.to_owned();
         let protocol_operation = format!("work_update:{operation}");
+        let raw_key =
+            self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent)?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -1384,7 +1452,7 @@ impl LocalWorkService {
                         claim_id: claim.claim_id,
                         claim_fence: claim.fence,
                         summary,
-                        evidence: parse_hashes(&evidence)?,
+                        evidence: evidence.as_deref().map(parse_hashes).transpose()?,
                         actor: self.actor("work_update", "checkpoint ambient local work"),
                         idempotency_key: scoped_key,
                         checkpointed_at: now,
@@ -1702,7 +1770,12 @@ impl LocalWorkService {
         let mut store = self.store()?;
         let basis = self.protocol_basis(&store, true, false, now)?;
         let intent = self.protocol_intent(&input);
-        let raw_key = input.idempotency_key.clone();
+        let raw_key = self.effective_idempotency_key(
+            &input.idempotency_key,
+            "work_complete",
+            &basis,
+            &intent,
+        )?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -1733,6 +1806,7 @@ impl LocalWorkService {
             capture,
             evidence: supplied_evidence,
             acceptance: supplied_acceptance,
+            note,
             idempotency_key: _,
         } = input;
         let work = basis.focused_work.clone().ok_or_else(|| {
@@ -1743,9 +1817,11 @@ impl LocalWorkService {
         let evidence_basis = Self::completion_evidence_basis(&store, &claim, &supplied_evidence)?;
         let acceptance = Self::prevalidate_completion_acceptance(
             &work,
-            &supplied_acceptance,
+            supplied_acceptance.as_deref(),
+            note.as_deref(),
             &evidence_basis,
             actor.assurance,
+            &actor.actor_id,
         )?;
         let evidence = self.prepare_completion_evidence(
             &mut store,
@@ -1858,7 +1934,7 @@ impl LocalWorkService {
                 claim_id: claim.claim_id,
                 claim_fence: claim.fence,
                 summary: capture.summary.clone(),
-                evidence: evidence.clone(),
+                evidence: Some(evidence.clone()),
                 actor: self.actor(
                     "work_complete",
                     "checkpoint the exact completion evidence cut",
@@ -1894,32 +1970,59 @@ impl LocalWorkService {
 
     fn prevalidate_completion_acceptance(
         work: &WorkItem,
-        supplied: &[WorkAcceptanceInput],
+        supplied: Option<&[WorkAcceptanceInput]>,
+        note: Option<&str>,
         evidence_basis: &[ObjectHash],
         assurance: AssuranceLevel,
+        actor_id: &str,
     ) -> Result<Vec<AcceptanceResult>, StoreError> {
-        let translated = supplied
-            .iter()
-            .map(|result| {
-                let criterion = match result.criterion.as_deref() {
-                    Some(value) => value.trim().to_owned(),
-                    None if work.acceptance.len() == 1 => work.acceptance[0].clone(),
-                    None => {
-                        return Err(StoreError::InvalidWork(
-                            "criterion is required when work has multiple acceptance criteria"
-                                .into(),
-                        ));
-                    }
-                };
-                Ok(AcceptanceResult {
-                    criterion,
-                    satisfied: result.satisfied,
-                    evidence: parse_hashes(&result.evidence)?,
-                    assurance,
-                    note: result.note.clone(),
+        let translated = if let Some(supplied) = supplied {
+            if note.is_some() {
+                return Err(StoreError::InvalidWork(
+                    "completion note may be supplied only when acceptance is omitted".into(),
+                ));
+            }
+            supplied
+                .iter()
+                .map(|result| {
+                    let criterion = match result.criterion.as_deref() {
+                        Some(value) => value.trim().to_owned(),
+                        None if work.acceptance.len() == 1 => work.acceptance[0].clone(),
+                        None => {
+                            return Err(StoreError::InvalidWork(
+                                "criterion is required when work has multiple acceptance criteria"
+                                    .into(),
+                            ));
+                        }
+                    };
+                    Ok(AcceptanceResult {
+                        criterion,
+                        satisfied: result.satisfied,
+                        evidence: parse_hashes(&result.evidence)?,
+                        assurance,
+                        note: result.note.clone(),
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>, StoreError>>()?;
+                .collect::<Result<Vec<_>, StoreError>>()?
+        } else {
+            let note = note
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map_or_else(
+                    || format!("accepted by {actor_id} via work done"),
+                    str::to_owned,
+                );
+            work.acceptance
+                .iter()
+                .map(|criterion| AcceptanceResult {
+                    criterion: criterion.clone(),
+                    satisfied: true,
+                    evidence: Vec::new(),
+                    assurance,
+                    note: note.clone(),
+                })
+                .collect()
+        };
         let normalized = normalize_completion_acceptance_shape(work, &translated, assurance)?;
         let evidence_basis = evidence_basis
             .iter()
@@ -1957,8 +2060,9 @@ impl LocalWorkService {
         let basis = self.protocol_basis(&store, true, true, now)?;
         let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = handoff_metadata(&input);
-        let raw_key = raw_key.to_owned();
         let protocol_operation = format!("work_handoff:{operation}");
+        let raw_key =
+            self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent)?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -2189,6 +2293,31 @@ impl LocalWorkService {
             core_operation,
         })?;
         Ok(format!("work:{}", object.hash().as_str()))
+    }
+
+    /// Uses the caller's key when one was supplied; otherwise derives one from
+    /// the session, operation, focused work, and canonical intent, so an
+    /// identical call replays and a different call is a new attempt.
+    fn effective_idempotency_key<T: Serialize>(
+        &self,
+        caller_key: &str,
+        protocol_operation: &str,
+        basis: &WorkProtocolBasis,
+        intent: &WorkProtocolIntent<'_, T>,
+    ) -> Result<String, StoreError> {
+        let caller_key = caller_key.trim();
+        if !caller_key.is_empty() {
+            return Ok(caller_key.to_owned());
+        }
+        let intent = CanonicalObject::freeze(intent)?;
+        let object = CanonicalObject::freeze(&WorkDerivedKey {
+            project_id: &self.project_id,
+            session_id: &self.session_id,
+            protocol_operation,
+            focused_work_id: basis.focused_work.as_ref().map(|work| work.work_id),
+            intent: intent.hash(),
+        })?;
+        Ok(format!("auto:{}", object.hash().as_str()))
     }
 
     fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {
@@ -2999,9 +3128,47 @@ fn sealed_work_obligation_page(
 fn work_obligation_page_from_records(
     mut records: Vec<crate::storage::WorkObligationRecord>,
 ) -> Result<WorkObligationPage, StoreError> {
+    records.sort_by(|left, right| {
+        match (
+            left.state == WorkObligationState::Open,
+            right.state == WorkObligationState::Open,
+        ) {
+            (true, true) => left
+                .obligation
+                .trigger_position
+                .position
+                .cmp(&right.obligation.trigger_position.position)
+                .then_with(|| {
+                    left.obligation
+                        .obligation_id
+                        .0
+                        .as_bytes()
+                        .cmp(right.obligation.obligation_id.0.as_bytes())
+                }),
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            (false, false) => right
+                .resolution_position
+                .as_ref()
+                .map(|position| position.position)
+                .cmp(
+                    &left
+                        .resolution_position
+                        .as_ref()
+                        .map(|position| position.position),
+                )
+                .then_with(|| {
+                    left.obligation
+                        .obligation_id
+                        .0
+                        .as_bytes()
+                        .cmp(right.obligation.obligation_id.0.as_bytes())
+                }),
+        }
+    });
     let omitted_count = records.len().saturating_sub(MAX_FOCUS_RELATIONS);
     if omitted_count > 0 {
-        records.drain(..omitted_count);
+        records.truncate(MAX_FOCUS_RELATIONS);
     }
     let mut page = WorkObligationPage {
         items: records.iter().map(work_obligation_summary).collect(),
@@ -3017,7 +3184,7 @@ fn trim_obligation_page_once(page: &mut WorkObligationPage) -> bool {
     if page.items.is_empty() {
         return false;
     }
-    page.items.remove(0);
+    page.items.pop();
     page.omitted_count = page.omitted_count.saturating_add(1);
     true
 }
@@ -4952,16 +5119,12 @@ mod tests {
     }
 
     #[test]
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the lost-response regression keeps guessed acknowledgement, replay, and exact-token recovery in one auditable scenario"
-    )]
-    fn unseen_staged_delivery_must_be_replayed_before_focus_can_change() {
+    fn staged_page_never_blocks_focus_and_is_delivered_by_the_next_call() {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
-        let project = ProjectId("lost-delivery-focus".into());
+        let project = ProjectId("implicit-delivery".into());
         let grant = install_protocol_grant(&database, &project, "agent");
-        let session = SessionId("lost-delivery-session".into());
+        let session = SessionId("implicit-delivery-session".into());
         let service = LocalWorkService::new(
             database.clone(),
             project.clone(),
@@ -4974,175 +5137,432 @@ mod tests {
             database.clone(),
             project.clone(),
             "agent".into(),
-            SessionId("lost-delivery-peer".into()),
+            SessionId("implicit-delivery-peer".into()),
             Some("protocol-test".into()),
             Some(grant),
         );
         service
-            .work_propose(root_input("Original delivery focus", "lost-first"), at(0))
-            .expect("original root");
+            .work_propose(root_input("First root", "implicit-first"), at(0))
+            .expect("first root");
         let target = match peer
-            .work_propose(root_input("Later focus target", "lost-second"), at(1))
-            .expect("target root")
+            .work_propose(root_input("Second root", "implicit-second"), at(1))
+            .expect("second root")
         {
             WorkProposeResult::Root { work, .. } => work,
             WorkProposeResult::Decomposition(_) => panic!("expected root"),
         };
+        let changes_only = || WorkNextQuery {
+            sections: vec![WorkNextSection::Changes],
+            ..WorkNextQuery::default()
+        };
+        let first = service
+            .work_next(20, changes_only(), at(2))
+            .expect("first page");
+        let first_head = first.delivered_through.expect("first boundary");
+        assert!(first_head > 0);
+        assert_eq!(first.session.confirmed_project_cursor, 0);
 
-        let unseen = service
-            .work_next(
-                20,
-                WorkNextQuery {
-                    sections: vec![WorkNextSection::Changes],
-                    ..WorkNextQuery::default()
-                },
-                at(2),
-            )
-            .expect("stage page whose response is lost");
-        let head = unseen.delivered_through.expect("staged page boundary");
-        let expected_changes =
-            serde_json::to_value(&unseen.changes).expect("serialize staged changes");
-        let expected_token = unseen
-            .delivery_token
-            .clone()
-            .expect("staged delivery token");
-        drop(unseen);
+        // Focus changes while the page is still staged.
+        let focused = service
+            .work_focus(&target.short_ref, at(3))
+            .expect("focus while a page is pending");
+        assert_eq!(focused.status.work.work_id, target.work_id);
+        let pending = SqliteStore::open(&database)
+            .expect("store")
+            .work_session_state(&project, &session, at(3))
+            .expect("session state");
+        assert_eq!(pending.tentative_project_cursor, Some(first_head));
+        assert_eq!(pending.focused_work_id, Some(target.work_id));
 
-        let mut rebound = SqliteStore::open(&database).expect("legacy task binding store");
-        rebound
-            .start_task(
-                &project,
-                "dummy:REBOUND-AFTER-STAGE",
-                "Rebind after exact page staging",
-                &session,
-                service.actor("task_start", "exercise exact staged page replay"),
-                at(3),
-            )
-            .expect("bind a legacy task after staging");
-        drop(rebound);
-
-        assert!(matches!(
-            service.work_focus(&target.short_ref, at(3)),
-            Err(StoreError::PendingWorkDelivery)
-        ));
-        let restarted = LocalWorkService::new(
-            database.clone(),
-            project.clone(),
-            "agent".into(),
-            session.clone(),
-            Some("protocol-test".into()),
-            Some(install_protocol_grant(&database, &project, "agent")),
-        );
-        let replayed = restarted
-            .work_next(
-                20,
-                WorkNextQuery {
-                    sections: vec![WorkNextSection::Changes],
-                    ..WorkNextQuery::default()
-                },
-                at(4),
-            )
-            .expect("replay the unseen staged page");
-        assert_eq!(replayed.delivered_through, Some(head));
-        assert_eq!(
-            serde_json::to_value(&replayed.changes).expect("serialize replayed changes"),
-            expected_changes
-        );
-        let delivery_token = replayed
-            .delivery_token
-            .clone()
-            .expect("replayed delivery token");
-        assert_eq!(delivery_token, expected_token);
-        assert_eq!(replayed.session.confirmed_project_cursor, 0);
-        let positions = replayed
+        peer.work_propose(root_input("Third root", "implicit-third"), at(4))
+            .expect("append after the first page was staged");
+        // The next call delivers the first page implicitly and continues
+        // densely from its boundary.
+        let second = service
+            .work_next(20, changes_only(), at(5))
+            .expect("second page");
+        assert_eq!(second.session.confirmed_project_cursor, first_head);
+        let second_head = second.delivered_through.expect("second boundary");
+        assert!(second_head > first_head);
+        let positions = second
             .changes
             .as_ref()
-            .expect("replayed changes")
+            .expect("second changes")
             .iter()
             .map(|change| change.entry.position.position)
             .collect::<Vec<_>>();
-        assert_eq!(positions, (1..=head).collect::<Vec<_>>());
-
-        let wrong_cursor = service
-            .work_next_with_delivery_token(
-                20,
-                Some(head + 1_000),
-                Some("wrong-token"),
-                WorkNextQuery {
-                    sections: vec![WorkNextSection::Focus],
-                    ..WorkNextQuery::default()
-                },
-                at(5),
-            )
-            .expect_err("a guessed cursor and token cannot acknowledge a page");
-        let wrong_cursor_message = wrong_cursor.to_string();
-        assert!(!wrong_cursor_message.contains(&delivery_token));
-        assert!(!wrong_cursor_message.contains(&(head + 1_000).to_string()));
-
-        let wrong_token = service
-            .work_next_with_delivery_token(
-                20,
-                Some(head),
-                Some("wrong-token"),
-                WorkNextQuery {
-                    sections: vec![WorkNextSection::Focus],
-                    ..WorkNextQuery::default()
-                },
-                at(5),
-            )
-            .expect_err("the staged cursor alone cannot acknowledge a page");
-        assert!(!wrong_token.to_string().contains(&delivery_token));
-        let still_pending = SqliteStore::open(&database)
-            .expect("store after rejected acknowledgements")
-            .work_session_state(&project, &session, at(5))
-            .expect("pending state");
-        assert_eq!(still_pending.project_cursor, 0);
-        assert_eq!(still_pending.tentative_project_cursor, Some(head));
         assert_eq!(
-            still_pending.tentative_delivery_token.as_deref(),
-            Some(delivery_token.as_str())
+            positions,
+            (first_head + 1..=second_head).collect::<Vec<_>>()
         );
-
-        let replayed_again = restarted
+        // Sections without changes neither deliver nor stage.
+        let focus_only = service
             .work_next(
                 20,
-                WorkNextQuery {
-                    sections: vec![WorkNextSection::Changes],
-                    ..WorkNextQuery::default()
-                },
-                at(5),
-            )
-            .expect("replay after rejected acknowledgement");
-        assert_eq!(replayed_again.delivered_through, Some(head));
-        assert_eq!(
-            replayed_again.delivery_token.as_deref(),
-            Some(delivery_token.as_str())
-        );
-
-        let cleared = service
-            .work_next_with_delivery_token(
-                20,
-                Some(head),
-                Some(delivery_token.as_str()),
                 WorkNextQuery {
                     sections: vec![WorkNextSection::Focus],
                     ..WorkNextQuery::default()
                 },
                 at(6),
             )
-            .expect("acknowledge only with the replayed cursor and token");
-        assert_eq!(cleared.delivered_through, None);
-        assert_eq!(cleared.session.confirmed_project_cursor, head);
-        assert!(!cleared.session.pending_delivery);
-        assert_eq!(
-            service
-                .work_focus(&target.short_ref, at(7))
-                .expect("focus after safe acknowledgement")
-                .status
-                .work
-                .work_id,
-            target.work_id
+            .expect("focus-only view");
+        assert_eq!(focus_only.session.confirmed_project_cursor, first_head);
+        assert_eq!(focus_only.delivered_through, None);
+        let idle = service
+            .work_next(20, changes_only(), at(7))
+            .expect("third page");
+        assert_eq!(idle.session.confirmed_project_cursor, second_head);
+        assert!(idle.changes.as_ref().expect("no new changes").is_empty());
+    }
+
+    #[test]
+    fn omitted_idempotency_key_replays_identical_calls_and_separates_different_ones() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("derived-keys".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("derived-keys-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
         );
+        let root_of = |result: WorkProposeResult| match result {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let first = root_of(
+            service
+                .work_propose(root_input("Keyless root", ""), at(0))
+                .expect("keyless root"),
+        );
+        let replayed = root_of(
+            service
+                .work_propose(root_input("Keyless root", ""), at(1))
+                .expect("identical keyless call replays"),
+        );
+        assert_eq!(replayed.work_id, first.work_id);
+        let other = root_of(
+            service
+                .work_propose(root_input("Different keyless root", ""), at(2))
+                .expect("different keyless call creates"),
+        );
+        assert_ne!(other.work_id, first.work_id);
+
+        service
+            .select_work(&first.short_ref, at(3))
+            .expect("select the first root");
+        let claim = WorkUpdateInput::Claim {
+            ttl_seconds: Some(300),
+            recovery_reason: None,
+            idempotency_key: String::new(),
+        };
+        let claimed = service.work_update(claim.clone(), at(3)).expect("claim");
+        let claimed_again = service
+            .work_update(claim, at(4))
+            .expect("identical keyless claim replays");
+        assert_eq!(claimed.receipt.work_id, first.work_id);
+        assert_eq!(
+            serde_json::to_value(&claimed_again.receipt).expect("receipt"),
+            serde_json::to_value(&claimed.receipt).expect("receipt")
+        );
+        let checkpoint = |summary: &str| WorkUpdateInput::Checkpoint {
+            summary: summary.into(),
+            evidence: None,
+            idempotency_key: String::new(),
+        };
+        let noted = service
+            .work_update(checkpoint("found the cause"), at(5))
+            .expect("first checkpoint");
+        let noted_again = service
+            .work_update(checkpoint("found the cause"), at(6))
+            .expect("identical checkpoint replays");
+        assert_eq!(
+            serde_json::to_value(&noted_again.receipt).expect("receipt"),
+            serde_json::to_value(&noted.receipt).expect("receipt")
+        );
+        let different = service
+            .work_update(checkpoint("fixed it"), at(7))
+            .expect("different checkpoint records");
+        assert_ne!(
+            serde_json::to_value(&different.receipt).expect("receipt"),
+            serde_json::to_value(&noted.receipt).expect("receipt")
+        );
+    }
+
+    #[test]
+    fn select_work_sets_focus_for_the_next_mutation() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("select-work".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("select-work-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let first = match service
+            .work_propose(root_input("Select first", "select-first"), at(0))
+            .expect("first root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_propose(root_input("Select second", "select-second"), at(1))
+            .expect("second root becomes focus");
+        service
+            .select_work(&first.short_ref, at(2))
+            .expect("select the first root by short ref");
+        let claimed = service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "select-claim".into(),
+                },
+                at(3),
+            )
+            .expect("claim the selected root");
+        assert_eq!(claimed.receipt.work_id, first.work_id);
+        assert!(matches!(
+            service.select_work("no-such-ref", at(4)),
+            Err(StoreError::WorkNotFound(_) | StoreError::InvalidWork(_))
+        ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one scenario shows the omitted, explicit-empty, and synthesized defaults side by side"
+    )]
+    fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("safe-defaults".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database.clone(),
+            project,
+            "agent".into(),
+            SessionId("safe-defaults-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        service
+            .work_propose(
+                WorkProposeInput::Root {
+                    title: "Safe defaults".into(),
+                    outcome: "omitted fields do the safe thing".into(),
+                    acceptance: vec!["first criterion".into(), "second criterion".into()],
+                    work_kind: None,
+                    priority: None,
+                    labels: Vec::new(),
+                    assigned_to: None,
+                    deferred_until: None,
+                    authority_policy_ref: None,
+                    idempotency_key: "defaults-root".into(),
+                },
+                at(0),
+            )
+            .expect("root");
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "defaults-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+        let evidence = |summary: &str, key: &str| WorkUpdateInput::Evidence {
+            summary: summary.into(),
+            refs: vec![format!("test:{key}")],
+            attach: None,
+            idempotency_key: key.into(),
+        };
+        let first_evidence: ObjectHash = serde_json::from_value(
+            service
+                .work_update(evidence("first finding", "defaults-evidence-1"), at(2))
+                .expect("first evidence")
+                .receipt
+                .result,
+        )
+        .expect("evidence hash");
+        let second_evidence: ObjectHash = serde_json::from_value(
+            service
+                .work_update(evidence("second finding", "defaults-evidence-2"), at(3))
+                .expect("second evidence")
+                .receipt
+                .result,
+        )
+        .expect("evidence hash");
+
+        // Omitted evidence snapshots everything already on the run.
+        let checkpoint: ObjectHash = serde_json::from_value(
+            service
+                .work_update(
+                    WorkUpdateInput::Checkpoint {
+                        summary: "progress".into(),
+                        evidence: None,
+                        idempotency_key: "defaults-checkpoint".into(),
+                    },
+                    at(4),
+                )
+                .expect("checkpoint")
+                .receipt
+                .result,
+        )
+        .expect("checkpoint hash");
+        let stored_checkpoint = SqliteStore::open(&database)
+            .expect("store")
+            .get::<WorkCheckpoint>(&checkpoint)
+            .expect("read checkpoint")
+            .expect("canonical checkpoint");
+        let mut expected = vec![first_evidence.clone(), second_evidence.clone()];
+        expected.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        assert_eq!(stored_checkpoint.evidence, expected);
+
+        // Explicit empty still acknowledges none.
+        let empty: ObjectHash = serde_json::from_value(
+            service
+                .work_update(
+                    WorkUpdateInput::Checkpoint {
+                        summary: "explicitly none".into(),
+                        evidence: Some(Vec::new()),
+                        idempotency_key: "defaults-checkpoint-empty".into(),
+                    },
+                    at(5),
+                )
+                .expect("empty checkpoint")
+                .receipt
+                .result,
+        )
+        .expect("checkpoint hash");
+        assert!(
+            SqliteStore::open(&database)
+                .expect("store")
+                .get::<WorkCheckpoint>(&empty)
+                .expect("read checkpoint")
+                .expect("canonical checkpoint")
+                .evidence
+                .is_empty()
+        );
+
+        // Omitted acceptance asserts every criterion with the server note.
+        let completed = service
+            .work_complete(
+                WorkCompleteInput {
+                    capture: Some(WorkCompletionCaptureInput {
+                        summary: "delivered".into(),
+                        refs: Vec::new(),
+                    }),
+                    evidence: Vec::new(),
+                    acceptance: None,
+                    note: None,
+                    idempotency_key: "defaults-complete".into(),
+                },
+                at(6),
+            )
+            .expect("complete");
+        let WorkCompleteResult::Completed(receipt) = completed else {
+            panic!("completion must seal");
+        };
+        let seal = SqliteStore::open(&database)
+            .expect("store")
+            .get::<CompletionSeal>(&receipt.seal)
+            .expect("read seal")
+            .expect("canonical seal");
+        assert_eq!(
+            seal.acceptance
+                .iter()
+                .map(|result| (
+                    result.criterion.as_str(),
+                    result.satisfied,
+                    result.note.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("first criterion", true, "accepted by agent via work done"),
+                ("second criterion", true, "accepted by agent via work done"),
+            ]
+        );
+    }
+
+    #[test]
+    fn explicit_empty_acceptance_still_fails_and_note_needs_omitted_acceptance() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("strict-acceptance".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("strict-acceptance-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        service
+            .work_propose(root_input("Strict acceptance", "strict-root"), at(0))
+            .expect("root");
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "strict-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+        let complete =
+            |acceptance: Option<Vec<WorkAcceptanceInput>>, note: Option<&str>, key: &str| {
+                WorkCompleteInput {
+                    capture: Some(WorkCompletionCaptureInput {
+                        summary: "delivered".into(),
+                        refs: Vec::new(),
+                    }),
+                    evidence: Vec::new(),
+                    acceptance,
+                    note: note.map(str::to_owned),
+                    idempotency_key: key.into(),
+                }
+            };
+        assert!(
+            service
+                .work_complete(complete(Some(Vec::new()), None, "strict-empty"), at(2))
+                .is_err(),
+            "explicit empty acceptance must not complete work with criteria"
+        );
+        assert!(matches!(
+            service.work_complete(
+                complete(
+                    Some(vec![WorkAcceptanceInput {
+                        criterion: None,
+                        satisfied: true,
+                        evidence: Vec::new(),
+                        note: "explicit".into(),
+                    }]),
+                    Some("stray note"),
+                    "strict-note-conflict",
+                ),
+                at(3),
+            ),
+            Err(StoreError::InvalidWork(_))
+        ));
+        let WorkCompleteResult::Completed(_) = service
+            .work_complete(complete(None, Some("reviewed by hand"), "strict-ok"), at(4))
+            .expect("omitted acceptance with a note completes")
+        else {
+            panic!("completion must seal");
+        };
     }
 
     #[test]
@@ -5518,7 +5938,8 @@ mod tests {
                     refs: vec![format!("test:{name}")],
                 }),
                 evidence: Vec::new(),
-                acceptance,
+                acceptance: Some(acceptance),
+                note: None,
                 idempotency_key: key.clone(),
             };
             assert!(
@@ -5612,12 +6033,13 @@ mod tests {
                     refs: vec!["test:completion-replay".into()],
                 }),
                 evidence: Vec::new(),
-                acceptance: vec![WorkAcceptanceInput {
+                acceptance: Some(vec![WorkAcceptanceInput {
                     criterion: None,
                     satisfied: true,
                     evidence: Vec::new(),
                     note: "the crash-replay path was verified".into(),
-                }],
+                }]),
+                note: None,
                 idempotency_key: "crash-safe-completion".into(),
             };
 
@@ -5681,7 +6103,7 @@ mod tests {
                             claim_id: claim.claim_id,
                             claim_fence: claim.fence,
                             summary: capture.summary.clone(),
-                            evidence: vec![evidence],
+                            evidence: Some(vec![evidence]),
                             actor: service.actor(
                                 "work_complete",
                                 "checkpoint the exact completion evidence cut",
@@ -6264,52 +6686,38 @@ mod tests {
             WorkProposeResult::Root { work, .. } => work,
             WorkProposeResult::Decomposition(_) => panic!("expected concurrent root"),
         };
-        let blocked_focus_switch = a.work_focus(&concurrent.short_ref, at(3));
-        assert!(matches!(
-            blocked_focus_switch,
-            Err(StoreError::PendingWorkDelivery)
-        ));
-        let replayed = a
-            .work_next(20, WorkNextQuery::default(), at(3))
-            .expect("unacknowledged page replays");
-        assert_eq!(replayed.delivered_through, first.delivered_through);
-        assert_eq!(replayed.delivery_token, first.delivery_token);
+        // A staged page never blocks a focus change.
+        let switched = a
+            .work_focus(&concurrent.short_ref, at(3))
+            .expect("focus changes while a page is staged");
+        assert_eq!(switched.status.work.work_id, concurrent.work_id);
+        a.work_focus(&root.short_ref, at(3))
+            .expect("focus returns to the root");
+        // The next call delivers the previous page implicitly and continues
+        // densely from its boundary with the concurrent append.
+        let second = a
+            .work_next(20, WorkNextQuery::default(), at(4))
+            .expect("second page after implicit delivery");
+        assert_eq!(second.session.confirmed_project_cursor, first_delivered);
+        let second_delivered = second.delivered_through.expect("second delivered cursor");
+        assert!(second_delivered > first_delivered);
+        assert!(second.session.pending_delivery);
+        let second_positions = second
+            .changes
+            .as_ref()
+            .expect("second changes")
+            .iter()
+            .map(|change| change.entry.position.position)
+            .collect::<Vec<_>>();
         assert_eq!(
-            replayed
-                .changes
-                .as_ref()
-                .expect("replayed changes")
-                .iter()
-                .map(|change| &change.entry.object_hash)
-                .collect::<Vec<_>>(),
-            first
-                .changes
-                .as_ref()
-                .expect("first changes")
-                .iter()
-                .map(|change| &change.entry.object_hash)
-                .collect::<Vec<_>>()
+            second_positions,
+            (first_delivered + 1..=second_delivered).collect::<Vec<_>>()
         );
-        let acknowledged = a
-            .work_next_with_delivery_token(
-                20,
-                Some(first_delivered),
-                Some(first_delivery_token.as_str()),
-                WorkNextQuery::default(),
-                at(4),
-            )
-            .expect("delivery acknowledgement");
-        assert_eq!(
-            acknowledged.session.confirmed_project_cursor,
-            first_delivered
-        );
-        let acknowledged_delivered = acknowledged
-            .delivered_through
-            .expect("acknowledged delivered cursor");
-        assert!(acknowledged.session.pending_delivery);
-        assert!(acknowledged_delivered > first_delivered);
-        assert!(!acknowledged.changes.as_ref().expect("changes").is_empty());
-        let acknowledgement_replay = a
+        assert_ne!(second.delivery_token, Some(first_delivery_token.clone()));
+        // A host may still acknowledge explicitly. The first page's pair is
+        // already confirmed, so repeating it is a harmless no-op that replays
+        // the current staged page instead of moving anything backwards.
+        let stale = a
             .work_next_with_delivery_token(
                 20,
                 Some(first_delivered),
@@ -6317,30 +6725,26 @@ mod tests {
                 WorkNextQuery::default(),
                 at(5),
             )
-            .expect("lost ack-and-fetch response replays the newer staged page");
-        assert_eq!(
-            acknowledgement_replay.delivered_through,
-            acknowledged.delivered_through
-        );
-        assert_eq!(
-            acknowledgement_replay.delivery_token,
-            acknowledged.delivery_token
-        );
-        assert_eq!(
-            acknowledgement_replay
+            .expect("an already-confirmed pair is idempotent");
+        assert_eq!(stale.session.confirmed_project_cursor, first_delivered);
+        assert_eq!(stale.delivered_through, Some(second_delivered));
+        assert_eq!(stale.delivery_token, second.delivery_token);
+        let explicit = a
+            .work_next_with_delivery_token(
+                20,
+                Some(second_delivered),
+                second.delivery_token.as_deref(),
+                WorkNextQuery::default(),
+                at(5),
+            )
+            .expect("explicit acknowledgement of the current page");
+        assert_eq!(explicit.session.confirmed_project_cursor, second_delivered);
+        assert!(
+            explicit
                 .changes
                 .as_ref()
-                .expect("ack replay changes")
-                .iter()
-                .map(|change| &change.entry.object_hash)
-                .collect::<Vec<_>>(),
-            acknowledged
-                .changes
-                .as_ref()
-                .expect("acknowledged changes")
-                .iter()
-                .map(|change| &change.entry.object_hash)
-                .collect::<Vec<_>>()
+                .expect("no new changes")
+                .is_empty()
         );
         assert!(
             first
@@ -6386,19 +6790,8 @@ mod tests {
                 .claim_id,
             control_binding.claim_id
         );
-        a.work_next_with_delivery_token(
-            20,
-            Some(acknowledged_delivered),
-            acknowledged.delivery_token.as_deref(),
-            WorkNextQuery {
-                sections: vec![WorkNextSection::Focus],
-                ..WorkNextQuery::default()
-            },
-            at(6),
-        )
-        .expect("acknowledge pending delivery without staging another page");
         a.work_focus(&concurrent.short_ref, at(7))
-            .expect("focus may change after delivery acknowledgement");
+            .expect("focus changes freely between calls");
         let claim_replay = a
             .work_update(claim_input, at(40))
             .expect("lost-response claim replay");
@@ -6491,7 +6884,7 @@ mod tests {
         b.work_update(
             WorkUpdateInput::Checkpoint {
                 summary: "recipient validated evidence and acceptance".into(),
-                evidence: vec![evidence],
+                evidence: Some(vec![evidence]),
                 idempotency_key: "checkpoint-b".into(),
             },
             at(46),
@@ -6502,12 +6895,13 @@ mod tests {
                 WorkCompleteInput {
                     capture: None,
                     evidence: Vec::new(),
-                    acceptance: vec![WorkAcceptanceInput {
+                    acceptance: Some(vec![WorkAcceptanceInput {
                         criterion: None,
                         satisfied: true,
                         evidence: Vec::new(),
                         note: "verified by the receiving session".into(),
-                    }],
+                    }]),
+                    note: None,
                     idempotency_key: "complete-b".into(),
                 },
                 at(47),
@@ -7232,7 +7626,9 @@ mod tests {
                 <= MAX_AGENT_WORK_RESPONSE_BYTES
         );
 
-        let replay = reader
+        // The next changes call delivers the first page implicitly and
+        // continues densely from its boundary.
+        let following = reader
             .work_next(
                 1_000,
                 WorkNextQuery {
@@ -7241,20 +7637,28 @@ mod tests {
                 },
                 at(602),
             )
-            .expect("replay staged changes");
-        assert_eq!(replay.delivered_through, Some(first_cursor));
-        assert_eq!(
-            replay
-                .changes
-                .as_ref()
-                .expect("replayed changes")
+            .expect("following staged changes");
+        assert_eq!(following.session.confirmed_project_cursor, first_cursor);
+        let following_cursor = following
+            .delivered_through
+            .expect("following delivery cursor");
+        assert!(following_cursor > first_cursor);
+        let following_changes = following.changes.as_ref().expect("following changes");
+        assert_ne!(
+            following_changes
                 .iter()
                 .map(|change| change.entry.object_hash.clone())
                 .collect::<Vec<_>>(),
             first_hashes
         );
+        for (offset, change) in following_changes.iter().enumerate() {
+            assert_eq!(
+                change.entry.position.position,
+                first_cursor + 1 + i64::try_from(offset).expect("offset")
+            );
+        }
 
-        let mut expected_position = 1_i64;
+        let mut expected_position = following_cursor + 1;
         let mut acknowledge = None;
         let mut acknowledge_token = None;
         loop {

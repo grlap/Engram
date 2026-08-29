@@ -656,29 +656,32 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.ok(next.delivered_through > 0);
     assert.match(next.delivery_token, /^[0-9a-f-]{36}$/u);
     assert.equal(next.session.confirmed_project_cursor, 0);
-    const replayed = structured(await a.call("work_next", { limit: 20 }));
-    assert.equal(replayed.delivered_through, next.delivered_through);
-    assert.equal(replayed.delivery_token, next.delivery_token);
-    const pendingRootInput = {
+    // The previous page counts as delivered once the session asks again; no
+    // agent-side acknowledgement exists.
+    const following = structured(await a.call("work_next", { limit: 20 }));
+    assert.equal(following.session.confirmed_project_cursor, next.delivered_through);
+    assert.equal(following.delivered_through, next.delivered_through);
+    assert.deepEqual(following.changes, []);
+    // A staged page never blocks a mutation, and a mutation without an
+    // idempotency key replays when repeated exactly.
+    const keylessRootInput = {
       kind: "root",
-      title: "Pending-delivery recovery root",
-      outcome: "The refusal teaches a one-call recovery",
-      acceptance: ["the same idempotency key completes after acknowledgement"],
-      idempotency_key: "pending-delivery-root",
+      title: "Keyless root",
+      outcome: "An identical call without a key replays instead of duplicating",
+      acceptance: ["one item exists after two identical calls"],
     };
-    const pendingDelivery = structuredError(
-      await a.call("work_propose", { input: pendingRootInput }),
-      "work_delivery_pending",
+    const keyless = structured(await a.call("work_propose", { input: keylessRootInput }));
+    assert.equal(keyless.kind, "root");
+    const keylessReplay = structured(
+      await a.call("work_propose", { input: keylessRootInput }),
     );
-    assert.equal("delivered_through" in pendingDelivery.details, false);
-    assert.equal("delivery_token" in pendingDelivery.details, false);
-    assert.equal(JSON.stringify(pendingDelivery.details).includes(next.delivery_token), false);
-    assert.match(pendingDelivery.details.remedy, /replay the pending page/u);
-    assert.match(pendingDelivery.details.remedy, /sections excluding changes/u);
-    assert.match(pendingDelivery.details.remedy, /same idempotency key/u);
-    const recoveryReplay = structured(await a.call("work_next", { limit: 20 }));
-    assert.equal(recoveryReplay.delivered_through, next.delivered_through);
-    assert.equal(recoveryReplay.delivery_token, next.delivery_token);
+    assert.equal(keylessReplay.work.work_id, keyless.work.work_id);
+    const keylessCatalog = structured(
+      await a.call("work_next", { limit: 20, sections: ["catalog"], search: "keyless root" }),
+    );
+    assert.equal(keylessCatalog.catalog.items.length, 1);
+    // Explicit host acknowledgement still validates the exact cursor and token
+    // without disclosing either.
     const wrongCursor = structuredError(
       await a.call("work_next", {
         limit: 20,
@@ -690,46 +693,13 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assert.equal(wrongCursor.details.reason.includes(next.delivery_token), false);
     assert.equal(/\d/u.test(wrongCursor.details.reason), false);
-    const wrongToken = structuredError(
-      await a.call("work_next", {
-        limit: 20,
-        acknowledge_through: recoveryReplay.delivered_through,
-        acknowledge_token: "wrong-token",
-        sections: ["focus"],
-      }),
-      "work_invalid",
-    );
-    assert.equal(wrongToken.details.reason.includes(next.delivery_token), false);
-    const recoveryReplayAfterRefusal = structured(
-      await a.call("work_next", { limit: 20 }),
-    );
-    assert.equal(
-      recoveryReplayAfterRefusal.delivered_through,
-      recoveryReplay.delivered_through,
-    );
-    assert.equal(
-      recoveryReplayAfterRefusal.delivery_token,
-      recoveryReplay.delivery_token,
-    );
-    const acknowledged = structured(
-      await a.call("work_next", {
-        limit: 20,
-        acknowledge_through: recoveryReplay.delivered_through,
-        acknowledge_token: recoveryReplay.delivery_token,
-        sections: ["focus"],
-      }),
-    );
-    assert.equal(
-      acknowledged.session.confirmed_project_cursor,
-      next.delivered_through,
-    );
-    assert.equal("delivered_through" in acknowledged, false);
-    structured(await a.call("work_propose", { input: pendingRootInput }));
-    structured(await a.call("work_focus", { work_ref: workRef }));
     assert.ok(next.focus.allowed_next.includes("work_update:claim"));
 
-    structured(
+    // work_ref selects the target in the same call: focus is still the keyless
+    // root here, and the claim lands on the first root.
+    const claimed = structured(
       await a.call("work_update", {
+        work_ref: workRef,
         input: {
           kind: "claim",
           ttl_seconds: 300,
@@ -737,6 +707,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
         },
       }),
     );
+    assert.equal(claimed.receipt.work_id, proposed.work.work_id);
     const replayedClaim = structured(
       await a.call("work_update", {
         input: {
@@ -1101,17 +1072,21 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
             summary: "validated compact completion through the MCP lifecycle",
             refs: ["test:mcp-work-dogfood"],
           },
-          acceptance: [
-            {
-              satisfied: true,
-              note: "the evidence and checkpoint were captured with this call",
-            },
-          ],
-          idempotency_key: "work-compact-complete",
         },
       }),
     );
     assert.equal(compactSeal.work_id, compact.work_id);
+    const compactSealReplay = structured(
+      await b.call("work_complete", {
+        input: {
+          capture: {
+            summary: "validated compact completion through the MCP lifecycle",
+            refs: ["test:mcp-work-dogfood"],
+          },
+        },
+      }),
+    );
+    assert.equal(compactSealReplay.seal, compactSeal.seal);
     const compactFocus = structured(
       await b.call("work_focus", { work_ref: compact.short_ref }),
     );

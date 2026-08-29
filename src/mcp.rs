@@ -221,6 +221,8 @@ struct WorkFocusArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct WorkProposeArgs {
+    /// Short ref or UUID of the parent to decompose; selects focus in the same call.
+    work_ref: Option<String>,
     /// Root creation or atomic decomposition operation.
     #[schemars(with = "WorkProposeInput")]
     input: Value,
@@ -228,6 +230,8 @@ struct WorkProposeArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct WorkUpdateArgs {
+    /// Short ref or UUID to act on; selects focus in the same call.
+    work_ref: Option<String>,
     /// Typed mutation against ambient focused work.
     #[schemars(with = "WorkUpdateInput")]
     input: Value,
@@ -235,6 +239,8 @@ struct WorkUpdateArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct WorkCompleteArgs {
+    /// Short ref or UUID to complete; selects focus in the same call.
+    work_ref: Option<String>,
     /// Evidence-backed acceptance against ambient focused work.
     #[schemars(with = "WorkCompleteInput")]
     input: Value,
@@ -242,6 +248,8 @@ struct WorkCompleteArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct WorkHandoffArgs {
+    /// Short ref or UUID to hand off; selects focus in the same call.
+    work_ref: Option<String>,
     /// Checkpoint-coupled offer, accept, or cancellation.
     #[schemars(with = "WorkHandoffInput")]
     input: Value,
@@ -624,7 +632,7 @@ impl McpServer {
     /// Return ambient focus, obligations, ready candidates, and project changes.
     #[tool(
         name = "work_next",
-        description = "Return selected bounded focus, ready, catalog, and project-change sections. A change page replays until acknowledged. Before changing focus, first replay any pending changes without acknowledging, then acknowledge the delivered_through and delivery_token actually received while selecting sections excluding changes"
+        description = "Return selected bounded focus, ready, catalog, and project-change sections. Each call returns the changes since this session's previous call; the previous page counts as delivered"
     )]
     fn work_next(&self, Parameters(args): Parameters<WorkNextArgs>) -> CallToolResult {
         let sections = match parse_enum_values::<WorkNextSection>(&args.sections) {
@@ -675,13 +683,18 @@ impl McpServer {
     /// Create a root or atomically decompose ambient work.
     #[tool(
         name = "work_propose",
-        description = "Create a local root or atomically decompose ambient work. Every mutation requires a caller-stable idempotency_key; the input schema enumerates all variants and fields"
+        description = "Create a local root or atomically decompose work. Optional work_ref selects the parent in the same call; idempotency_key may be omitted, in which case an identical call replays"
     )]
     fn work_propose(&self, Parameters(args): Parameters<WorkProposeArgs>) -> CallToolResult {
         let input = match serde_json::from_value::<WorkProposeInput>(args.input) {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
+        if let Some(work_ref) = args.work_ref.as_deref()
+            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
+        {
+            return store_error(&error);
+        }
         result(
             self.work_service().work_propose(input, Utc::now()),
             "work_propose",
@@ -691,13 +704,18 @@ impl McpServer {
     /// Apply a typed mutation to ambient focused work.
     #[tool(
         name = "work_update",
-        description = "Apply one typed mutation against ambient focused work. Current work revision, run, claim, and fence are inferred; the input schema enumerates every variant"
+        description = "Apply one typed mutation to work. Optional work_ref selects the item in the same call; revision, run, claim, and fence are inferred; idempotency_key may be omitted, in which case an identical call replays"
     )]
     fn work_update(&self, Parameters(args): Parameters<WorkUpdateArgs>) -> CallToolResult {
         let input = match serde_json::from_value::<WorkUpdateInput>(args.input) {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
+        if let Some(work_ref) = args.work_ref.as_deref()
+            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
+        {
+            return store_error(&error);
+        }
         result(
             self.work_service().work_update(input, Utc::now()),
             "work_update",
@@ -707,13 +725,18 @@ impl McpServer {
     /// Complete ambient work under inferred fences and explicit acceptance.
     #[tool(
         name = "work_complete",
-        description = "Complete ambient focused work with explicit evidence and acceptance. Current work/run/claim fences, actor assurance, and host grant are inferred; idempotency_key is required"
+        description = "Complete work. Optional work_ref selects the item in the same call; omitted acceptance asserts every current criterion; fences, assurance, and host grant are inferred; idempotency_key may be omitted, in which case an identical call replays"
     )]
     fn work_complete(&self, Parameters(args): Parameters<WorkCompleteArgs>) -> CallToolResult {
         let input = match serde_json::from_value::<WorkCompleteInput>(args.input) {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
+        if let Some(work_ref) = args.work_ref.as_deref()
+            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
+        {
+            return store_error(&error);
+        }
         result(
             self.work_service().work_complete(input, Utc::now()),
             "work_complete",
@@ -723,13 +746,18 @@ impl McpServer {
     /// Offer, accept, or cancel a checkpoint-coupled ambient claim handoff.
     #[tool(
         name = "work_handoff",
-        description = "Manage ambient handoff without lifecycle ids. The unique matching offer and current claim fence are inferred; every variant requires idempotency_key"
+        description = "Offer, accept, or cancel a handoff without lifecycle ids. Optional work_ref selects the item in the same call; the unique matching offer and claim fence are inferred; idempotency_key may be omitted, in which case an identical call replays"
     )]
     fn work_handoff(&self, Parameters(args): Parameters<WorkHandoffArgs>) -> CallToolResult {
         let input = match serde_json::from_value::<WorkHandoffInput>(args.input) {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
+        if let Some(work_ref) = args.work_ref.as_deref()
+            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
+        {
+            return store_error(&error);
+        }
         result(
             self.work_service().work_handoff(input, Utc::now()),
             "work_handoff",
@@ -799,9 +827,6 @@ fn store_error(error: &StoreError) -> CallToolResult {
         StoreError::WorkNotFound(work) => json!({
             "work_id": work,
             "remedy": "call work_next to search/list work, then work_focus using a returned short_ref",
-        }),
-        StoreError::PendingWorkDelivery => json!({
-            "remedy": "first call work_next with changes selected and no acknowledgement to replay the pending page; then call work_next with the returned delivered_through and delivery_token as acknowledge_through and acknowledge_token while selecting sections excluding changes; finally retry the focus-changing operation with the same idempotency key",
         }),
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
             "reason": message,
@@ -880,7 +905,6 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::EmptyNote => "empty_note",
         StoreError::RedactionRefused(_) => "redaction_refused",
         StoreError::WorkNotFound(_) => "work_not_found",
-        StoreError::PendingWorkDelivery => "work_delivery_pending",
         StoreError::InvalidWork(_) => "work_invalid",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",

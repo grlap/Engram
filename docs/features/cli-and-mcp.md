@@ -176,7 +176,7 @@ reason.
 | `memory_show` | Verify and inspect an authorized memory by the receipt's version hash |
 | `context_explain` | Reproduce the inclusion and omission reasons for a packet |
 | `task_claim` | Acquire an expiring, safely retryable task lease with typed conflict details |
-| `work_next` | Return selected compact focus/catalog/ready/change sections under a 12 KiB wire ceiling; an exact staged summary page replays until acknowledged |
+| `work_next` | Return selected compact focus/catalog/ready/change sections under a 12 KiB wire ceiling; each call returns the changes since the session's previous call |
 | `work_focus` | Select by short ref/UUID and inspect bounded acceptance, graph, claim, blocker ids, evidence, handoff, memory index, history count/tail, exact waivable-child candidates, and allowed-next state without claiming |
 | `work_propose` | Create a root or atomically add bounded children/prerequisites to focused work; decomposition receipts return the complete compact child identity set under the 12 KiB ceiling |
 | `work_update` | Apply claim/release, checkpoint, evidence, blocker, revision/assignment/deferral, dependency, or reopen updates under inferred fences; unblock may omit its id when exactly one blocker is active |
@@ -250,28 +250,20 @@ a hash of its summary. Restricted
 work memory, and work memory outside the session's currently focused verified
 root, is replaced by a typed `omission` marker at its original dense position;
 the protected body and structured fields never cross the agent boundary. The
-largest dense prefix fitting the fixed change budget is staged durably and
-replayed until
-the caller returns its exact `delivered_through` value and opaque
-`delivery_token` as `acknowledge_through` and `acknowledge_token`; agent-facing
-change projections are stored canonically with that pair and replay byte-for-
-byte even if focus or legacy-task binding changes. Concurrent appends wait for
-the next page. Both acknowledgement fields
-are absent when changes were not delivered, so an undisclosed or guessed cursor
-cannot be acknowledged. Every
+largest dense prefix fitting the fixed change budget is staged durably; each
+call returns the changes since the session's previous call, and the previous
+page counts as delivered when the session asks again. A host may instead
+acknowledge explicitly by returning the exact `delivered_through` value and
+opaque `delivery_token` as `acknowledge_through` and `acknowledge_token`; both
+fields are absent when changes were not delivered, and a guessed pair is
+refused without disclosure. Concurrent appends wait for the next page. Every
 successful work response is at most 12,288 serialized JSON bytes; typed
-`omissions` report advisory sections shortened by count or byte budget. A repeated
-acknowledge-and-fetch request safely replays any newer staged page after a lost
-response. `work_focus` is navigation only and never claims/releases as a side
+`omissions` report advisory sections shortened by count or byte budget.
+`work_focus` is navigation only and never claims/releases as a side
 effect. It returns an exact history count with a bounded newest-event summary
 tail, the latest run even after completion, and a body-free actor-filtered
-memory index whose version hash is the key for authorized `memory_show`.
-Before changing ambient focus, callers first replay any pending page by calling
-`work_next` with `changes` selected and no acknowledgement. They then pass the
-`delivered_through` and `delivery_token` actually received as
-`acknowledge_through` and `acknowledge_token` while selecting sections that
-exclude `changes`. The typed `work_delivery_pending` response explains this
-sequence without exposing the host-only tentative cursor or token.
+memory index whose version hash is the key for authorized `memory_show`. A
+staged page never blocks a focus change or a mutation.
 `work_propose`
 atomically handles roots and bounded decomposition. `work_update` carries a
 typed transition such as claim/release, checkpoint, blocker, cancel,
@@ -316,10 +308,18 @@ time and recheck the live claim.
 
 The MCP schemas for `work_propose`, `work_update`, `work_complete`, and
 `work_handoff` expose their typed discriminated inputs rather than opaque JSON.
-Every mutating branch requires a caller-stable `idempotency_key`. Durable
+Each accepts an optional `work_ref` that selects ambient focus in the same
+call. `idempotency_key` is optional on every mutating branch: when omitted, the
+server derives one from the session, operation, focused work, and canonical
+intent, so an identical repeated call replays its receipt and a different call
+is a new attempt; a supplied key keeps the explicit contract. Durable
 attempts bind caller intent separately from the current focused work/claim/
 handoff basis, so committed retries replay while interrupted attempts
-revalidate authority and cannot mutate a newly focused item.
+revalidate authority and cannot mutate a newly focused item. Omitting
+`work_complete.acceptance` asserts every current criterion with the note
+`accepted by <actor_id> via work done` (or the supplied `note`); omitting
+`work_update:checkpoint.evidence` acknowledges every evidence object already on
+the live run.
 
 Work search/lifecycle filters, paged catalog results, and item history ship in
 the ambient query/focus views. Stats, stale/orphan diagnostics, approval
