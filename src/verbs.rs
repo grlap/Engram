@@ -395,21 +395,28 @@ impl AgentVerbs {
         for item in &ready {
             lines.push(format!("  {}", ready_line(item)));
         }
-        let changes = collapse_changes(view.changes.as_deref().unwrap_or_default());
+        let changes = collapse_changes(view.changes.as_deref().unwrap_or_default(), &self.actor_id);
         let not_delivered: usize = view
             .omissions
             .iter()
             .filter(|omission| omission.section == WorkNextSection::Changes)
             .map(|omission| omission.omitted_count)
             .sum();
-        if not_delivered > 0 {
+        if not_delivered > 0 && changes.is_empty() {
             lines.push(format!(
-                "changes ({} of {} since your last call; the rest arrive with your next call):",
+                "changes by others (none on this page; {not_delivered} more arrive with your next call):"
+            ));
+        } else if not_delivered > 0 {
+            lines.push(format!(
+                "changes by others ({} shown, {} more arrive with your next call):",
                 changes.len(),
-                changes.len() + not_delivered
+                not_delivered
             ));
         } else {
-            lines.push(format!("changes ({} since your last call):", changes.len()));
+            lines.push(format!(
+                "changes by others ({} since your last call):",
+                changes.len()
+            ));
         }
         for change in &changes {
             lines.push(format!("  {change}"));
@@ -1554,11 +1561,12 @@ fn catalog_line(item: &ReadyWorkSummary) -> String {
     line
 }
 
-/// One line per change an agent cares about. A single `note` appends an
+/// One line per change by another actor. Your own actions are already in
+/// your receipts and are skipped. A single `note` appends an
 /// evidence object, an evidence-added event, and a checkpoint; they collapse
 /// into one `noted` line. Summaries that repeat their change kind as a prefix
 /// lose the prefix.
-fn collapse_changes(changes: &[WorkChange]) -> Vec<String> {
+fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
     let visible = changes
         .iter()
         .map(|change| match &change.delivery {
@@ -1587,6 +1595,11 @@ fn collapse_changes(changes: &[WorkChange]) -> Vec<String> {
             }
             continue;
         };
+        // Your own actions are already in your receipts.
+        if actor_id.as_deref() == Some(own_actor) {
+            last_note = None;
+            continue;
+        }
         if kind == "evidence_added" {
             continue;
         }

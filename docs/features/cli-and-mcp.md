@@ -20,7 +20,7 @@ else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
 you type only the word.
 
 ```bash
-engram work next                  # what is ready, what you hold, what changed
+engram work next                  # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
