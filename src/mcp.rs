@@ -690,13 +690,9 @@ impl McpServer {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
-        if let Some(work_ref) = args.work_ref.as_deref()
-            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
-        {
-            return store_error(&error);
-        }
         result(
-            self.work_service().work_propose(input, Utc::now()),
+            self.work_service()
+                .work_propose_on(args.work_ref.as_deref(), input, Utc::now()),
             "work_propose",
         )
     }
@@ -711,13 +707,9 @@ impl McpServer {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
-        if let Some(work_ref) = args.work_ref.as_deref()
-            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
-        {
-            return store_error(&error);
-        }
         result(
-            self.work_service().work_update(input, Utc::now()),
+            self.work_service()
+                .work_update_on(args.work_ref.as_deref(), input, Utc::now()),
             "work_update",
         )
     }
@@ -732,13 +724,9 @@ impl McpServer {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
-        if let Some(work_ref) = args.work_ref.as_deref()
-            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
-        {
-            return store_error(&error);
-        }
         result(
-            self.work_service().work_complete(input, Utc::now()),
+            self.work_service()
+                .work_complete_on(args.work_ref.as_deref(), input, Utc::now()),
             "work_complete",
         )
     }
@@ -753,13 +741,9 @@ impl McpServer {
             Ok(input) => input,
             Err(error) => return invalid_argument("input", &error.to_string()),
         };
-        if let Some(work_ref) = args.work_ref.as_deref()
-            && let Err(error) = self.work_service().select_work(work_ref, Utc::now())
-        {
-            return store_error(&error);
-        }
         result(
-            self.work_service().work_handoff(input, Utc::now()),
+            self.work_service()
+                .work_handoff_on(args.work_ref.as_deref(), input, Utc::now()),
             "work_handoff",
         )
     }

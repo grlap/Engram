@@ -1717,6 +1717,19 @@ impl SqliteStore {
                 "focused work must belong to the bound project".into(),
             ));
         }
+        // A staged change page was projected under the previous focus. A
+        // different focus discards it so the next call recomputes the same
+        // interval under the new visibility basis; nothing is confirmed here.
+        transaction.execute(
+            "UPDATE work_session_state SET
+                 tentative_project_cursor = NULL,
+                 tentative_delivery_token = NULL,
+                 tentative_delivery_payload_hash = NULL,
+                 tentative_delivery_payload = NULL
+             WHERE project_id = ?1 AND session_id = ?2
+               AND focused_work_id IS NOT ?3",
+            params![project_id.0, session_id.0, work_id.0.to_string()],
+        )?;
         transaction.execute(
             "INSERT INTO work_session_state (
                  project_id, session_id, focused_work_id, project_cursor, updated_at_ms
@@ -4502,6 +4515,15 @@ impl SqliteStore {
             ) && let Some(run_id) = item.active_run_id
                 && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
             {
+                // Claiming work this session already holds is a no-op that
+                // returns the live claim; only another holder is a conflict.
+                if claim.holder == request.holder
+                    && claim.state == WorkClaimState::Active
+                    && claim.expires_at > request.claimed_at
+                {
+                    transaction.commit()?;
+                    return Ok(claim);
+                }
                 return Err(StoreError::WorkClaimHeld {
                     work: item.work_id,
                     holder: claim.holder.0,
@@ -12553,28 +12575,61 @@ mod tests {
             )
             .expect("stage from a second connection");
         let staged = staged.expect("delivery wins exact compare-and-swap");
-        let pending = writer
+        // Re-focusing the same item keeps the staged page.
+        let same = writer
+            .focus_work_session(&first.project_id, &session, first.work_id, at(4))
+            .expect("same focus");
+        assert_eq!(same.tentative_project_cursor, Some(head));
+        // A different focus discards the page projected under the old focus
+        // without confirming anything.
+        let discarded = writer
             .focus_work_session(&first.project_id, &session, second.work_id, at(4))
             .expect("focus changes while a page is still staged");
-        assert_eq!(pending.focused_work_id, Some(second.work_id));
-        assert_eq!(pending.tentative_project_cursor, Some(head));
-        assert_eq!(
-            pending.tentative_delivery_token,
-            staged.tentative_delivery_token
+        assert_eq!(discarded.focused_work_id, Some(second.work_id));
+        assert_eq!(discarded.tentative_project_cursor, None);
+        assert_eq!(discarded.tentative_delivery_token, None);
+        assert_eq!(discarded.project_cursor, 0);
+        assert!(
+            delivery
+                .acknowledge_work_session_delivery(
+                    &first.project_id,
+                    &session,
+                    head,
+                    staged.tentative_delivery_token.as_deref(),
+                    at(5),
+                )
+                .is_err(),
+            "a discarded page cannot be acknowledged"
         );
-        assert_eq!(pending.project_cursor, 0);
 
+        // The next staging recomputes the interval under the new focus.
+        let restaged = delivery
+            .stage_work_session_delivery(
+                &first.project_id,
+                &session,
+                StageWorkSessionDelivery {
+                    expected_confirmed_through: 0,
+                    expected_focused_work_id: Some(second.work_id),
+                    expected_bound_task_id: None,
+                    delivered_through: head,
+                    delivered_entries: &entries,
+                    delivery_payload: &payload,
+                    now: at(6),
+                },
+            )
+            .expect("restage under the new focus")
+            .expect("exact staging CAS");
         delivery
             .acknowledge_work_session_delivery(
                 &first.project_id,
                 &session,
                 head,
-                staged.tentative_delivery_token.as_deref(),
-                at(5),
+                restaged.tentative_delivery_token.as_deref(),
+                at(7),
             )
-            .expect("acknowledge staged page after the focus change");
+            .expect("acknowledge the restaged page");
         let acknowledged = writer
-            .work_session_state(&first.project_id, &session, at(6))
+            .work_session_state(&first.project_id, &session, at(8))
             .expect("acknowledged state");
         assert_eq!(acknowledged.focused_work_id, Some(second.work_id));
         assert_eq!(acknowledged.tentative_project_cursor, None);

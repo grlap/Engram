@@ -252,18 +252,22 @@ root, is replaced by a typed `omission` marker at its original dense position;
 the protected body and structured fields never cross the agent boundary. The
 largest dense prefix fitting the fixed change budget is staged durably; each
 call returns the changes since the session's previous call, and the previous
-page counts as delivered when the session asks again. A host may instead
-acknowledge explicitly by returning the exact `delivered_through` value and
-opaque `delivery_token` as `acknowledge_through` and `acknowledge_token`; both
-fields are absent when changes were not delivered, and a guessed pair is
-refused without disclosure. Concurrent appends wait for the next page. Every
-successful work response is at most 12,288 serialized JSON bytes; typed
-`omissions` report advisory sections shortened by count or byte budget.
-`work_focus` is navigation only and never claims/releases as a side
-effect. It returns an exact history count with a bounded newest-event summary
-tail, the latest run even after completion, and a body-free actor-filtered
-memory index whose version hash is the key for authorized `memory_show`. A
-staged page never blocks a focus change or a mutation.
+page counts as delivered when the session asks again. A response lost between
+Engram and the agent is therefore not redelivered; the section is advisory and
+canonical state stays readable through focus and catalog views. A host that
+needs exact delivery acknowledges explicitly by returning the exact
+`delivered_through` value and opaque `delivery_token` as `acknowledge_through`
+and `acknowledge_token`; both fields are absent when changes were not
+delivered, and a guessed pair is refused without disclosure. Concurrent appends
+wait for the next page. Every successful work response is at most 12,288
+serialized JSON bytes; typed `omissions` report advisory sections shortened by
+count or byte budget. `work_focus` is navigation only and never
+claims/releases as a side effect. It returns an exact history count with a
+bounded newest-event summary tail, the latest run even after completion, and a
+body-free actor-filtered memory index whose version hash is the key for
+authorized `memory_show`. A staged page never blocks a focus change or a
+mutation; changing focus discards the un-delivered page and the next call
+recomputes the same interval under the new focus.
 `work_propose`
 atomically handles roots and bounded decomposition. `work_update` carries a
 typed transition such as claim/release, checkpoint, blocker, cancel,
@@ -308,11 +312,14 @@ time and recheck the live claim.
 
 The MCP schemas for `work_propose`, `work_update`, `work_complete`, and
 `work_handoff` expose their typed discriminated inputs rather than opaque JSON.
-Each accepts an optional `work_ref` that selects ambient focus in the same
-call. `idempotency_key` is optional on every mutating branch: when omitted, the
-server derives one from the session, operation, focused work, and canonical
-intent, so an identical repeated call replays its receipt and a different call
-is a new attempt; a supplied key keeps the explicit contract. Durable
+Each accepts an optional `work_ref`; the target is resolved and bound inside
+the mutation, so a concurrent focus change by the same session cannot redirect
+it, and it becomes the ambient focus as a side effect. `idempotency_key` is
+optional on every mutating branch: when omitted, the server derives one from
+the session, operation, focused work, the item's current claim/handoff basis,
+and canonical intent, so an identical repeated call replays its receipt while
+nothing about the item changed and is a new attempt once it moved; a supplied
+key keeps the explicit contract. Durable
 attempts bind caller intent separately from the current focused work/claim/
 handoff basis, so committed retries replay while interrupted attempts
 revalidate authority and cannot mutate a newly focused item. Omitting

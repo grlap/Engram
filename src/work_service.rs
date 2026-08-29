@@ -123,6 +123,13 @@ struct WorkDerivedKey<'a> {
     session_id: &'a SessionId,
     protocol_operation: &'a str,
     focused_work_id: Option<WorkId>,
+    /// Hash of the focused work/claim/handoff basis, so an identical call
+    /// replays only while nothing about the item changed in between.
+    basis: &'a ObjectHash,
+    /// Whether the basis claim is still live at call time, so a repeated
+    /// call after expiry is a new attempt even though the projection bytes
+    /// did not change.
+    claim_live: Option<bool>,
     intent: &'a ObjectHash,
 }
 
@@ -1093,8 +1100,7 @@ impl LocalWorkService {
     /// Returns [`StoreError`] when the reference is absent or outside the project.
     pub fn select_work(&self, work_ref: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
         let mut store = self.store()?;
-        let work = store.resolve_work_ref(&self.project_id, work_ref)?;
-        store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
+        self.bind_target(&mut store, Some(work_ref), now)?;
         Ok(())
     }
 
@@ -1120,26 +1126,44 @@ impl LocalWorkService {
     ///
     /// Returns [`StoreError`] when host authority is absent/stale, input is
     /// invalid, or the underlying lifecycle transaction refuses admission.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "root and decomposition translations remain together so the six-operation boundary is auditable"
-    )]
     pub fn work_propose(
         &self,
         input: WorkProposeInput,
         now: DateTime<Utc>,
     ) -> Result<WorkProposeResult, StoreError> {
+        self.work_propose_on(None, input, now)
+    }
+
+    /// Like [`Self::work_propose`], but first binds `work_ref` as the ambient
+    /// focus and the decomposition target inside the same call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] under the same conditions as [`Self::work_propose`],
+    /// or when `work_ref` does not resolve inside the project.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "root and decomposition translations remain together so the six-operation boundary is auditable"
+    )]
+    pub fn work_propose_on(
+        &self,
+        work_ref: Option<&str>,
+        input: WorkProposeInput,
+        now: DateTime<Utc>,
+    ) -> Result<WorkProposeResult, StoreError> {
         let mut store = self.store()?;
+        let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(
             &store,
             matches!(input, WorkProposeInput::Decompose { .. }),
             false,
+            target,
             now,
         )?;
         let intent = self.protocol_intent(&input);
         let (protocol_operation, core_operation, raw_key) = propose_metadata(&input);
         let raw_key =
-            self.effective_idempotency_key(raw_key, protocol_operation, &basis, &intent)?;
+            self.effective_idempotency_key(raw_key, protocol_operation, &basis, &intent, now)?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -1317,22 +1341,39 @@ impl LocalWorkService {
     /// # Errors
     ///
     /// Returns [`StoreError`] when focus/authority/fences are absent or stale.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the tagged update union is translated in one exhaustive match so new variants cannot bypass ambient fence inference"
-    )]
     pub fn work_update(
         &self,
         input: WorkUpdateInput,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
+        self.work_update_on(None, input, now)
+    }
+
+    /// Like [`Self::work_update`], but first binds `work_ref` as the ambient
+    /// focus and the mutation target inside the same call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] under the same conditions as [`Self::work_update`],
+    /// or when `work_ref` does not resolve inside the project.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the tagged update union is translated in one exhaustive match so new variants cannot bypass ambient fence inference"
+    )]
+    pub fn work_update_on(
+        &self,
+        work_ref: Option<&str>,
+        input: WorkUpdateInput,
+        now: DateTime<Utc>,
+    ) -> Result<WorkUpdateResult, StoreError> {
         let mut store = self.store()?;
-        let basis = self.protocol_basis(&store, true, false, now)?;
+        let target = self.bind_target(&mut store, work_ref, now)?;
+        let basis = self.protocol_basis(&store, true, false, target, now)?;
         let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = update_metadata(&input);
         let protocol_operation = format!("work_update:{operation}");
         let raw_key =
-            self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent)?;
+            self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent, now)?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -1767,14 +1808,51 @@ impl LocalWorkService {
         input: WorkCompleteInput,
         now: DateTime<Utc>,
     ) -> Result<WorkCompleteResult, StoreError> {
+        self.work_complete_on(None, input, now)
+    }
+
+    /// Like [`Self::work_complete`], but first binds `work_ref` as the ambient
+    /// focus and the completion target inside the same call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] under the same conditions as
+    /// [`Self::work_complete`], or when `work_ref` does not resolve inside the
+    /// project.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "capture, evidence closure, acceptance, checkpoint, and seal stay in one auditable completion path"
+    )]
+    pub fn work_complete_on(
+        &self,
+        work_ref: Option<&str>,
+        input: WorkCompleteInput,
+        now: DateTime<Utc>,
+    ) -> Result<WorkCompleteResult, StoreError> {
         let mut store = self.store()?;
-        let basis = self.protocol_basis(&store, true, false, now)?;
+        let target = self.bind_target(&mut store, work_ref, now)?;
+        let basis = self.protocol_basis(&store, true, false, target, now)?;
+        // Completing work that is already sealed returns its seal: a retry
+        // after a lost response, or a second `done`, is not a refusal.
+        if let Some(work) = basis.focused_work.as_ref()
+            && work.lifecycle == WorkLifecycle::Completed
+            && let Some(run) = store.latest_work_run(work.work_id)?
+            && let Some(seal_hash) = run.completion_seal
+        {
+            let seal: CompletionSeal = store.get(&seal_hash)?.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "completed work has no canonical completion seal".into(),
+                )
+            })?;
+            return completion_result(&store, &seal);
+        }
         let intent = self.protocol_intent(&input);
         let raw_key = self.effective_idempotency_key(
             &input.idempotency_key,
             "work_complete",
             &basis,
             &intent,
+            now,
         )?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
@@ -2056,13 +2134,31 @@ impl LocalWorkService {
         input: WorkHandoffInput,
         now: DateTime<Utc>,
     ) -> Result<WorkHandoffResult, StoreError> {
+        self.work_handoff_on(None, input, now)
+    }
+
+    /// Like [`Self::work_handoff`], but first binds `work_ref` as the ambient
+    /// focus and the handoff target inside the same call.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] under the same conditions as
+    /// [`Self::work_handoff`], or when `work_ref` does not resolve inside the
+    /// project.
+    pub fn work_handoff_on(
+        &self,
+        work_ref: Option<&str>,
+        input: WorkHandoffInput,
+        now: DateTime<Utc>,
+    ) -> Result<WorkHandoffResult, StoreError> {
         let mut store = self.store()?;
-        let basis = self.protocol_basis(&store, true, true, now)?;
+        let target = self.bind_target(&mut store, work_ref, now)?;
+        let basis = self.protocol_basis(&store, true, true, target, now)?;
         let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = handoff_metadata(&input);
         let protocol_operation = format!("work_handoff:{operation}");
         let raw_key =
-            self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent)?;
+            self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent, now)?;
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -2258,6 +2354,7 @@ impl LocalWorkService {
         store: &SqliteStore,
         bind_focus: bool,
         include_handoffs: bool,
+        target: Option<WorkId>,
         now: DateTime<Utc>,
     ) -> Result<WorkProtocolBasis, StoreError> {
         if !bind_focus {
@@ -2267,7 +2364,7 @@ impl LocalWorkService {
                 handoffs: Vec::new(),
             });
         }
-        let work = self.focused_item(store, now)?;
+        let work = self.focused_item(store, target, now)?;
         Ok(WorkProtocolBasis {
             claim: store.current_work_claim(work.work_id)?,
             handoffs: if include_handoffs {
@@ -2304,20 +2401,44 @@ impl LocalWorkService {
         protocol_operation: &str,
         basis: &WorkProtocolBasis,
         intent: &WorkProtocolIntent<'_, T>,
+        now: DateTime<Utc>,
     ) -> Result<String, StoreError> {
         let caller_key = caller_key.trim();
         if !caller_key.is_empty() {
             return Ok(caller_key.to_owned());
         }
         let intent = CanonicalObject::freeze(intent)?;
+        let basis_object = CanonicalObject::freeze(basis)?;
         let object = CanonicalObject::freeze(&WorkDerivedKey {
             project_id: &self.project_id,
             session_id: &self.session_id,
             protocol_operation,
             focused_work_id: basis.focused_work.as_ref().map(|work| work.work_id),
+            basis: basis_object.hash(),
+            claim_live: basis
+                .claim
+                .as_ref()
+                .map(|claim| claim.state == WorkClaimState::Active && claim.expires_at > now),
             intent: intent.hash(),
         })?;
         Ok(format!("auto:{}", object.hash().as_str()))
+    }
+
+    /// Resolves an optional caller-supplied target, makes it the ambient
+    /// focus on this connection, and returns its id so the mutation binds to
+    /// it regardless of any concurrent focus change by the same session.
+    fn bind_target(
+        &self,
+        store: &mut SqliteStore,
+        work_ref: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<Option<WorkId>, StoreError> {
+        let Some(work_ref) = work_ref else {
+            return Ok(None);
+        };
+        let work = store.resolve_work_ref(&self.project_id, work_ref)?;
+        store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
+        Ok(Some(work.work_id))
     }
 
     fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {
@@ -2352,11 +2473,18 @@ impl LocalWorkService {
     fn focused_item(
         &self,
         store: &SqliteStore,
+        target: Option<WorkId>,
         now: DateTime<Utc>,
     ) -> Result<WorkItem, StoreError> {
-        let state = store.work_session_state(&self.project_id, &self.session_id, now)?;
-        state
-            .focused_work_id
+        let focused = match target {
+            Some(work_id) => Some(work_id),
+            None => {
+                store
+                    .work_session_state(&self.project_id, &self.session_id, now)?
+                    .focused_work_id
+            }
+        };
+        focused
             .map(|work_id| store.get_work_item(work_id))
             .transpose()?
             .ok_or_else(|| {
@@ -4815,7 +4943,7 @@ mod tests {
         let never_executed = root_input("Never executed", "interrupted-root");
         let mut store = SqliteStore::open(&database).expect("store");
         let basis = revoked_service
-            .protocol_basis(&store, false, false, at(0))
+            .protocol_basis(&store, false, false, None, at(0))
             .expect("empty root basis");
         let intent = revoked_service.protocol_intent(&never_executed);
         store
@@ -4875,7 +5003,7 @@ mod tests {
         };
         let mut store = SqliteStore::open(&database).expect("store");
         let basis = focus_service
-            .protocol_basis(&store, true, false, at(4))
+            .protocol_basis(&store, true, false, None, at(4))
             .expect("bound first focus");
         assert_eq!(
             basis.focused_work.as_ref().map(|work| work.work_id),
@@ -4945,7 +5073,7 @@ mod tests {
 
         let mut store = SqliteStore::open(&database).expect("store");
         let basis = service
-            .protocol_basis(&store, true, false, at(1))
+            .protocol_basis(&store, true, false, None, at(1))
             .expect("original basis");
         let intent = service.protocol_intent(&input);
         store
@@ -5055,7 +5183,7 @@ mod tests {
 
         let mut store = SqliteStore::open(&database).expect("store");
         let basis = service
-            .protocol_basis(&store, true, true, at(2))
+            .protocol_basis(&store, true, true, None, at(2))
             .expect("original handoff basis");
         let intent = service.protocol_intent(&input);
         store
@@ -5119,6 +5247,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one scenario shows discard-on-focus-change, implicit delivery, and dense continuation in order"
+    )]
     fn staged_page_never_blocks_focus_and_is_delivered_by_the_next_call() {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
@@ -5162,26 +5294,28 @@ mod tests {
         assert!(first_head > 0);
         assert_eq!(first.session.confirmed_project_cursor, 0);
 
-        // Focus changes while the page is still staged.
+        // Focus changes while the page is still staged; the page projected
+        // under the old focus is discarded and nothing is confirmed.
         let focused = service
             .work_focus(&target.short_ref, at(3))
             .expect("focus while a page is pending");
         assert_eq!(focused.status.work.work_id, target.work_id);
-        let pending = SqliteStore::open(&database)
+        let discarded = SqliteStore::open(&database)
             .expect("store")
             .work_session_state(&project, &session, at(3))
             .expect("session state");
-        assert_eq!(pending.tentative_project_cursor, Some(first_head));
-        assert_eq!(pending.focused_work_id, Some(target.work_id));
+        assert_eq!(discarded.tentative_project_cursor, None);
+        assert_eq!(discarded.project_cursor, 0);
+        assert_eq!(discarded.focused_work_id, Some(target.work_id));
 
         peer.work_propose(root_input("Third root", "implicit-third"), at(4))
             .expect("append after the first page was staged");
-        // The next call delivers the first page implicitly and continues
-        // densely from its boundary.
+        // The next call recomputes the interval under the new focus from the
+        // confirmed cursor, densely through the new head.
         let second = service
             .work_next(20, changes_only(), at(5))
             .expect("second page");
-        assert_eq!(second.session.confirmed_project_cursor, first_head);
+        assert_eq!(second.session.confirmed_project_cursor, 0);
         let second_head = second.delivered_through.expect("second boundary");
         assert!(second_head > first_head);
         let positions = second
@@ -5191,10 +5325,7 @@ mod tests {
             .iter()
             .map(|change| change.entry.position.position)
             .collect::<Vec<_>>();
-        assert_eq!(
-            positions,
-            (first_head + 1..=second_head).collect::<Vec<_>>()
-        );
+        assert_eq!(positions, (1..=second_head).collect::<Vec<_>>());
         // Sections without changes neither deliver nor stage.
         let focus_only = service
             .work_next(
@@ -5206,12 +5337,33 @@ mod tests {
                 at(6),
             )
             .expect("focus-only view");
-        assert_eq!(focus_only.session.confirmed_project_cursor, first_head);
+        assert_eq!(focus_only.session.confirmed_project_cursor, 0);
         assert_eq!(focus_only.delivered_through, None);
-        let idle = service
+        // Without a focus change, the next call delivers the previous page
+        // implicitly and continues densely from its boundary.
+        peer.work_propose(root_input("Fourth root", "implicit-fourth"), at(6))
+            .expect("append after the second page was staged");
+        let third = service
             .work_next(20, changes_only(), at(7))
             .expect("third page");
-        assert_eq!(idle.session.confirmed_project_cursor, second_head);
+        assert_eq!(third.session.confirmed_project_cursor, second_head);
+        let third_head = third.delivered_through.expect("third boundary");
+        assert!(third_head > second_head);
+        let positions = third
+            .changes
+            .as_ref()
+            .expect("third changes")
+            .iter()
+            .map(|change| change.entry.position.position)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            positions,
+            (second_head + 1..=third_head).collect::<Vec<_>>()
+        );
+        let idle = service
+            .work_next(20, changes_only(), at(8))
+            .expect("idle page");
+        assert_eq!(idle.session.confirmed_project_cursor, third_head);
         assert!(idle.changes.as_ref().expect("no new changes").is_empty());
     }
 
@@ -5260,10 +5412,13 @@ mod tests {
             idempotency_key: String::new(),
         };
         let claimed = service.work_update(claim.clone(), at(3)).expect("claim");
+        assert_eq!(claimed.receipt.work_id, first.work_id);
+        // The item moved (it is now claimed), so the identical keyless call is
+        // a new attempt; claiming work this session already holds returns the
+        // same live claim instead of a refusal.
         let claimed_again = service
             .work_update(claim, at(4))
-            .expect("identical keyless claim replays");
-        assert_eq!(claimed.receipt.work_id, first.work_id);
+            .expect("re-claiming held work returns the live claim");
         assert_eq!(
             serde_json::to_value(&claimed_again.receipt).expect("receipt"),
             serde_json::to_value(&claimed.receipt).expect("receipt")
@@ -5276,6 +5431,8 @@ mod tests {
         let noted = service
             .work_update(checkpoint("found the cause"), at(5))
             .expect("first checkpoint");
+        // A checkpoint does not move the focused work/claim basis, so the
+        // identical keyless note replays instead of duplicating.
         let noted_again = service
             .work_update(checkpoint("found the cause"), at(6))
             .expect("identical checkpoint replays");
@@ -5283,13 +5440,20 @@ mod tests {
             serde_json::to_value(&noted_again.receipt).expect("receipt"),
             serde_json::to_value(&noted.receipt).expect("receipt")
         );
-        let different = service
-            .work_update(checkpoint("fixed it"), at(7))
-            .expect("different checkpoint records");
-        assert_ne!(
-            serde_json::to_value(&different.receipt).expect("receipt"),
-            serde_json::to_value(&noted.receipt).expect("receipt")
-        );
+        // A refused attempt leaves the basis unchanged, so its exact retry
+        // replays the refusal rather than inventing a new attempt.
+        let stale_release = WorkUpdateInput::Release {
+            reason: String::new(),
+            waiver_reason: None,
+            idempotency_key: String::new(),
+        };
+        let first_refusal = service
+            .work_update(stale_release.clone(), at(7))
+            .expect_err("an empty release reason is refused");
+        let second_refusal = service
+            .work_update(stale_release, at(8))
+            .expect_err("the identical retry is refused the same way");
+        assert_eq!(first_refusal.to_string(), second_refusal.to_string());
     }
 
     #[test]
@@ -6045,7 +6209,7 @@ mod tests {
 
             let mut store = SqliteStore::open(&database).expect("store");
             let basis = service
-                .protocol_basis(&store, true, false, at(2))
+                .protocol_basis(&store, true, false, None, at(2))
                 .expect("completion basis");
             let intent = service.protocol_intent(&input);
             store
@@ -6693,12 +6857,13 @@ mod tests {
         assert_eq!(switched.status.work.work_id, concurrent.work_id);
         a.work_focus(&root.short_ref, at(3))
             .expect("focus returns to the root");
-        // The next call delivers the previous page implicitly and continues
-        // densely from its boundary with the concurrent append.
+        // The focus change discarded the un-delivered page, so the next call
+        // recomputes the interval from the confirmed cursor through the
+        // concurrent append.
         let second = a
             .work_next(20, WorkNextQuery::default(), at(4))
-            .expect("second page after implicit delivery");
-        assert_eq!(second.session.confirmed_project_cursor, first_delivered);
+            .expect("second page after the focus change");
+        assert_eq!(second.session.confirmed_project_cursor, 0);
         let second_delivered = second.delivered_through.expect("second delivered cursor");
         assert!(second_delivered > first_delivered);
         assert!(second.session.pending_delivery);
@@ -6709,14 +6874,10 @@ mod tests {
             .iter()
             .map(|change| change.entry.position.position)
             .collect::<Vec<_>>();
-        assert_eq!(
-            second_positions,
-            (first_delivered + 1..=second_delivered).collect::<Vec<_>>()
-        );
+        assert_eq!(second_positions, (1..=second_delivered).collect::<Vec<_>>());
         assert_ne!(second.delivery_token, Some(first_delivery_token.clone()));
-        // A host may still acknowledge explicitly. The first page's pair is
-        // already confirmed, so repeating it is a harmless no-op that replays
-        // the current staged page instead of moving anything backwards.
+        // A host may still acknowledge explicitly, but only the exact current
+        // pair; the discarded page's pair is refused without disclosure.
         let stale = a
             .work_next_with_delivery_token(
                 20,
@@ -6725,10 +6886,8 @@ mod tests {
                 WorkNextQuery::default(),
                 at(5),
             )
-            .expect("an already-confirmed pair is idempotent");
-        assert_eq!(stale.session.confirmed_project_cursor, first_delivered);
-        assert_eq!(stale.delivered_through, Some(second_delivered));
-        assert_eq!(stale.delivery_token, second.delivery_token);
+            .expect_err("a discarded page cannot be acknowledged");
+        assert!(!stale.to_string().contains(&first_delivery_token));
         let explicit = a
             .work_next_with_delivery_token(
                 20,

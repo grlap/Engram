@@ -788,38 +788,33 @@ fn run_work(
             serde_json::to_value(service.work_focus(&work_ref, now)?)?
         }
         WorkCommand::Propose { work_ref, input } => {
-            let input = parse_json_input::<WorkProposeInput>(&input)?;
-            select_work(&service, work_ref.as_deref(), now)?;
-            serde_json::to_value(service.work_propose(input, now)?)?
+            serde_json::to_value(service.work_propose_on(
+                work_ref.as_deref(),
+                parse_json_input::<WorkProposeInput>(&input)?,
+                now,
+            )?)?
         }
-        WorkCommand::Update { work_ref, input } => {
-            let input = parse_json_input::<WorkUpdateInput>(&input)?;
-            select_work(&service, work_ref.as_deref(), now)?;
-            serde_json::to_value(service.work_update(input, now)?)?
-        }
+        WorkCommand::Update { work_ref, input } => serde_json::to_value(service.work_update_on(
+            work_ref.as_deref(),
+            parse_json_input::<WorkUpdateInput>(&input)?,
+            now,
+        )?)?,
         WorkCommand::Complete { work_ref, input } => {
-            let input = parse_json_input::<WorkCompleteInput>(&input)?;
-            select_work(&service, work_ref.as_deref(), now)?;
-            serde_json::to_value(service.work_complete(input, now)?)?
+            serde_json::to_value(service.work_complete_on(
+                work_ref.as_deref(),
+                parse_json_input::<WorkCompleteInput>(&input)?,
+                now,
+            )?)?
         }
         WorkCommand::Handoff { work_ref, input } => {
-            let input = parse_json_input::<WorkHandoffInput>(&input)?;
-            select_work(&service, work_ref.as_deref(), now)?;
-            serde_json::to_value(service.work_handoff(input, now)?)?
+            serde_json::to_value(service.work_handoff_on(
+                work_ref.as_deref(),
+                parse_json_input::<WorkHandoffInput>(&input)?,
+                now,
+            )?)?
         }
     };
     println!("{}", serde_json::to_string_pretty(&value)?);
-    Ok(())
-}
-
-fn select_work(
-    service: &LocalWorkService,
-    work_ref: Option<&str>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Result<()> {
-    if let Some(work_ref) = work_ref {
-        service.select_work(work_ref, now)?;
-    }
     Ok(())
 }
 

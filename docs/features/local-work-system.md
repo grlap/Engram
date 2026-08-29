@@ -369,38 +369,49 @@ positions as typed omission markers. Planning/lifecycle events, checkpoints,
 and evidence summaries are project-visible coordination state across roots;
 work-memory summaries are visible only within the focused root, and exact-item
 private scratch never enters the shared feed. Each call returns the dense
-interval after the session's confirmed cursor; the page returned by the
-previous call counts as delivered when the session asks again, so the confirmed
-cursor advances one page per call and an agent never acknowledges anything. A
-host may still acknowledge explicitly by returning the exact `delivered_through`
-value with the opaque `delivery_token`; a guessed cursor or token is refused
-without disclosing either. The tentative cursor and token are host-internal
-until a page is actually returned; a response with no change section has
-neither field. Every successful agent work response is at most 12,288
-serialized JSON bytes. Advisory truncation is declared through a typed omission
-manifest, and catalog continuation points at the last item actually emitted.
+interval after the session's confirmed cursor, and the page returned by the
+previous call counts as delivered when the same session asks again. An agent
+never acknowledges anything, and that is a deliberate trade: the change section
+is advisory, canonical state is always readable through focus and catalog
+views, and a response lost between Engram and the agent is not redelivered.
+Concurrent calls from one session return the same staged page rather than
+skipping one. A host that needs exact delivery acknowledges explicitly by
+returning the `delivered_through` value with the opaque `delivery_token`; a
+guessed cursor or token is refused without disclosing either. The tentative
+cursor and token are host-internal until a page is actually returned; a
+response with no change section has neither field. Every successful agent work
+response is at most 12,288 serialized JSON bytes. Advisory truncation is
+declared through a typed omission manifest, and catalog continuation points at
+the last item actually emitted.
 
-A staged page never blocks anything: focus changes, mutations, and legacy-task
-rebinds proceed while it is pending. The delta interval is the authoritative
+A staged page never blocks anything. Changing focus discards the un-delivered
+page, because its omission decisions were made under the previous focus; the
+next call recomputes the same interval under the new visibility basis and the
+confirmed cursor does not move. The delta interval is the authoritative
 delivery cut. Focus, ready, and catalog sections are advisory refreshed views
 and may observe a newer concurrent commit; lifecycle mutations always
 revalidate their revision, claim, lease, authority, and canonical projection
 basis under the write lock. The exact projected change page and its byte-budget
 omission count are stored canonically beside the tentative cursor and opaque
-token, so the delivery boundary is auditable. Staging compare-and-swaps the
-confirmed cursor, empty pending slot, focused work, and legacy-task binding
-under the SQLite write lock; a focus or task rebind that commits first forces
-projection to restart on the new read basis.
+token. Staging compare-and-swaps the confirmed cursor, empty pending slot,
+focused work, and legacy-task binding under the SQLite write lock; a focus or
+task rebind that commits first forces projection to restart on the new read
+basis.
 
-Model-originated mutations may supply a caller-stable idempotency key; when
+Model-originated mutations may supply a caller-stable idempotency key. When
 none is supplied the server derives one from the session, operation, focused
-work, and canonical intent, so repeating an identical call replays its receipt
-and a different call is a new attempt. Every mutation may also name its target
-by `work_ref`, which selects ambient focus in the same call. Durable attempts
-bind both caller intent and the exact focused work/claim/handoff basis. A
-lost-response retry may replay a committed result, but an interrupted attempt
-must revalidate live authority and cannot follow a changed ambient focus into
-another work item.
+work, the item's current claim/handoff basis, and the canonical intent: an
+identical call replays its receipt while nothing about the item changed, and
+becomes a new attempt once the item moved (so a repeated keyless claim after
+expiry claims again). Claiming work the session already holds returns the
+live claim, and completing work that is already sealed returns its seal, so
+the common retries are never refusals. Every mutation may also name its
+target by `work_ref`; the target is resolved and bound inside the mutation, so
+a concurrent focus change by the same session cannot redirect it, and it
+becomes the ambient focus as a side effect. Durable attempts bind both caller
+intent and the exact focused work/claim/handoff basis. A lost-response retry
+may replay a committed result, but an interrupted attempt must revalidate live
+authority and cannot follow a changed ambient focus into another work item.
 
 `work_focus` is the explicit drill-down surface. It carries an exact history
 event count and only the newest bounded event summaries, plus body-free memory
