@@ -1303,6 +1303,7 @@ impl AgentVerbs {
             &view.status.work.short_ref,
             word,
             !view.blockers.is_empty(),
+            view.status.work.lifecycle == WorkLifecycle::Open,
         );
         Guidance { reminders, next }
     }
@@ -1400,6 +1401,7 @@ fn next_commands(
     work_ref: &str,
     word: &str,
     blocked: bool,
+    open: bool,
 ) -> Vec<String> {
     let has = |tag: &str| allowed_next.iter().any(|entry| entry == tag);
     let mut out: Vec<String> = Vec::new();
@@ -1453,10 +1455,12 @@ fn next_commands(
     if has("work_update:cancel") {
         push(format!("engram work update {work_ref} --cancel \"…\""));
     }
-    if has("work_focus") && word != "show" {
+    // Looking at a closed item again or calling `next` from `next` changes
+    // nothing, so neither is suggested.
+    if open && has("work_focus") && word != "show" {
         push(format!("engram work show {work_ref}"));
     }
-    if !lifecycle {
+    if !lifecycle && word != "next" {
         push("engram work next".into());
     }
     out
@@ -1893,7 +1897,7 @@ mod tests {
         ]
         .map(String::from);
         assert_eq!(
-            next_commands(&tags, "w-0123456789ab", "add", false),
+            next_commands(&tags, "w-0123456789ab", "add", false, true),
             vec![
                 "engram work claim w-0123456789ab",
                 "engram work add \"…\" --under w-0123456789ab",
@@ -1911,7 +1915,7 @@ mod tests {
         ]
         .map(String::from);
         assert_eq!(
-            next_commands(&held, "w-0123456789ab", "show", false),
+            next_commands(&held, "w-0123456789ab", "show", false, true),
             vec![
                 "engram work note w-0123456789ab \"…\"",
                 "engram work done w-0123456789ab \"…\"",
@@ -1920,8 +1924,36 @@ mod tests {
             ]
         );
         assert_eq!(
-            next_commands(&["work_focus".into()], "w-0123456789ab", "done", false),
+            next_commands(
+                &["work_focus".into()],
+                "w-0123456789ab",
+                "done",
+                false,
+                true
+            ),
             vec!["engram work show w-0123456789ab", "engram work next",]
+        );
+        // A closed item is not worth showing again, and `next` never
+        // suggests itself.
+        assert_eq!(
+            next_commands(
+                &["work_focus".into()],
+                "w-0123456789ab",
+                "done",
+                false,
+                false
+            ),
+            vec!["engram work next"]
+        );
+        assert!(
+            next_commands(
+                &["work_focus".into()],
+                "w-0123456789ab",
+                "next",
+                false,
+                false
+            )
+            .is_empty()
         );
     }
 
