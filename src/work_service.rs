@@ -364,6 +364,10 @@ pub struct WorkHistoryView {
 pub struct WorkFocusView {
     pub session: AgentWorkSession,
     pub status: ReadyWorkSummary,
+    /// The item's full outcome text; `status.work.outcome` is the compact
+    /// summary used in lists.
+    #[serde(default)]
+    pub outcome: String,
     pub run: Option<WorkRunSummary>,
     pub claim: Option<WorkClaim>,
     /// Paste-ready native control binding for this session's live claim.
@@ -2682,9 +2686,11 @@ impl LocalWorkService {
         let control_binding = run.as_ref().and_then(|run| {
             owned_control_work_binding(&status.work, run, claim.as_ref(), &self.session_id, now)
         });
+        let outcome = status.work.outcome.clone();
         let mut view = WorkFocusView {
             session: agent_work_session(&session),
             status: ready_work_summary(status),
+            outcome,
             run: run.as_ref().map(work_run_summary),
             claim,
             control_binding,

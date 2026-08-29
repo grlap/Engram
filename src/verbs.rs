@@ -348,6 +348,10 @@ impl AgentVerbs {
     /// # Errors
     ///
     /// Returns [`VerbError`] when the core cannot read or stage the view.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "focus, held, ready, changes, and guidance are assembled in one readable pass"
+    )]
     pub fn next(&self, input: &NextInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
         let view = self.service.work_next(
@@ -392,11 +396,29 @@ impl AgentVerbs {
             lines.push(format!("  {}", ready_line(item)));
         }
         let changes = collapse_changes(view.changes.as_deref().unwrap_or_default());
-        lines.push(format!("changes ({} since your last call):", changes.len()));
+        let not_delivered: usize = view
+            .omissions
+            .iter()
+            .filter(|omission| omission.section == WorkNextSection::Changes)
+            .map(|omission| omission.omitted_count)
+            .sum();
+        if not_delivered > 0 {
+            lines.push(format!(
+                "changes ({} of {} since your last call; the rest arrive with your next call):",
+                changes.len(),
+                changes.len() + not_delivered
+            ));
+        } else {
+            lines.push(format!("changes ({} since your last call):", changes.len()));
+        }
         for change in &changes {
             lines.push(format!("  {change}"));
         }
-        for omission in &view.omissions {
+        for omission in view
+            .omissions
+            .iter()
+            .filter(|omission| omission.section != WorkNextSection::Changes)
+        {
             lines.push(format!(
                 "  ({} more {} not shown)",
                 omission.omitted_count,
@@ -604,7 +626,7 @@ impl AgentVerbs {
             facts.push(format!("assignee: {assignee}"));
         }
         lines.push(facts.join("  "));
-        lines.push(format!("outcome: {}", work.outcome));
+        lines.push(format!("outcome: {}", view.outcome));
         lines.push("acceptance:".into());
         for criterion in &work.acceptance {
             lines.push(format!("  - {criterion}"));
@@ -1085,12 +1107,16 @@ impl AgentVerbs {
                     && let Ok(parent) = self.service.inspect_work(&parent_id.0.to_string(), now)
                     && parent.status.work.lifecycle == WorkLifecycle::Open
                 {
+                    let parent_ref = parent.status.work.short_ref.clone();
                     guidance = self.guidance(&parent, "done", now);
+                    // Every reminder about the parent names the parent.
+                    for reminder in &mut guidance.reminders {
+                        *reminder = format!("{parent_ref}: {reminder}");
+                    }
                     guidance.reminders.insert(
                         0,
                         format!(
-                            "{} \"{}\" is still open",
-                            parent.status.work.short_ref,
+                            "{parent_ref} \"{}\" is still open",
                             short(&parent.status.work.title)
                         ),
                     );
