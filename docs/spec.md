@@ -1088,8 +1088,14 @@ open set waiver-only until a later basis-bearing mutation and passed test; that
 test may satisfy earlier definitions too. Focus and deltas expose bounded,
 authority-redacted summaries. Waiver is host/operator private, requires the
 dedicated `ObligationWaiver` authority operation, and is absent from MCP and
-`work_update`. A3 uses the cut-aware open set to gate completion seals; A2 does
-not yet claim that completion enforcement.
+`work_update`. Completion evaluates the cut-aware set at the exact pre-seal
+run-feed position. Open definitions return a bounded, durably replayable
+`open_work_obligations` protocol result. A new seal declares obligation schema
+V1 and binds every applicable definition to its satisfied/waived resolution;
+its final checkpoint acknowledges the matching typed verification evidence.
+Required child seals are decoded and checked recursively. Legacy terminal
+seals remain readable, but a new parent refuses a legacy child whose cut
+already contained obligation definitions.
 
 The transport may be an in-process API, native host integration, wrapper, or
 local gateway. It is never exposed as an agent-callable way to mint grants.
@@ -1197,7 +1203,9 @@ It consumes the run's immutable `CompletionSeal`; it never quiesces or drains
 execution again. The root seal already proves every expected contributor
 supplied a required child seal or authorized omission, reconciled every action
 outcome, released or transferred resource leases, contributed, and satisfied
-acceptance—or a human-authorized waiver records the omission. Reopening the root before report
+acceptance, and closed every obligation applicable at the exact completion cut
+with a bound terminal resolution—or a human-authorized waiver records the
+omission. Reopening the root before report
 freeze supersedes that run and aborts assembly; reopening after `report_ready`
 requires a superseding report rather than mutating frozen bytes.
 

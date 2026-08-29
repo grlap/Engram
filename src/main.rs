@@ -816,6 +816,12 @@ fn doctor(database: &Path) -> Result<()> {
         "Engram store is healthy ({} immutable object(s), {} control record(s), {} work record(s) checked)",
         report.checked_objects, report.checked_control_records, report.checked_work_records
     );
+    if !report.legacy_work_records.is_empty() {
+        println!(
+            "Legacy work records retained without reinterpretation: {}",
+            report.legacy_work_records.join(", ")
+        );
+    }
     let control = store.control_diagnostics()?;
     println!(
         "Control policy schema={} id={} epoch={} required={} supported={:?}; sessions={} issued={} begun={}",

@@ -608,9 +608,10 @@ definition, state, and evidence summaries. A waiver requires a dedicated
 `WorkAuthorityOperation::ObligationWaiver` grant and the host-private
 `engram authority waive-obligation` command. Its grant hash and reason never
 cross MCP or the six-operation work protocol, and there is deliberately no
-`work_update` waiver variant. Completion-seal enforcement consumes the
-cut-aware open-obligation query in the next slice; A2 records and resolves the
-canonical obligation state without claiming that final gate is already wired.
+`work_update` waiver variant. Completion now evaluates the cut-aware open set
+at the exact pre-seal run-feed cut. Open definitions return a bounded typed
+`open_work_obligations` result; terminal definitions are frozen into the seal
+as exact definition/resolution hash pairs under obligation schema V1.
 
 An observation effect outside the frozen grant is rejected as
 `observation_scope_mismatch`; `grant_scope_mismatch` remains reserved for a
@@ -1010,6 +1011,14 @@ attributed abort before the seal returns it to `open`. The shipped alpha only
 accepts the zero-linked-state path: it requires empty action-outcome and
 resource-lease drain sets and creates the seal atomically. It refuses nonempty
 drains until this control integration ships.
+
+Before any new seal is frozen, every obligation definition whose trigger is at
+or before the completion cut must have a satisfied or host-authorized waived
+resolution at or before that same cut. The final checkpoint must acknowledge
+the typed verification evidence. Required child seals are decoded and checked
+recursively; a new parent refuses a legacy child seal if that child run already
+had obligation definitions at its cut. Old terminal legacy seals stay readable
+and diagnostics label them as legacy rather than fabricating bindings.
 
 An executor may seal its run only after its last turn is checkpointed, all
 material outcomes are known, its host-confirmed source-feed progress reaches

@@ -696,14 +696,34 @@ pub struct WorkHandoffResult {
     pub allowed_next: Vec<String>,
 }
 
-/// Agent-visible completion receipt. The canonical seal remains queryable by
+/// Agent-visible completion outcome. Successful receipts retain their original
+/// flat JSON shape; policy refusals are typed success results rather than MCP
+/// error envelopes.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum WorkCompleteResult {
+    Completed(WorkCompletedReceipt),
+    Refused(WorkCompleteRefusal),
+}
+
+/// Successful completion receipt. The canonical seal remains queryable by
 /// hash, while host-bound grant references never cross the protocol boundary.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct WorkCompleteResult {
+pub struct WorkCompletedReceipt {
     pub seal: ObjectHash,
     pub work_id: WorkId,
     pub run_id: crate::WorkRunId,
     pub completed_at: DateTime<Utc>,
+}
+
+/// Bounded policy refusal returned when an exact completion cut remains open.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkCompleteRefusal {
+    pub code: String,
+    pub work_id: WorkId,
+    pub obligations: Vec<crate::OpenWorkObligation>,
+    pub omitted_count: usize,
+    pub remedy: String,
 }
 
 impl LocalWorkService {
@@ -1705,7 +1725,7 @@ impl LocalWorkService {
         )?;
         let acceptance = bind_completion_acceptance_evidence(acceptance, &evidence);
         let decision = self.authority_decision()?;
-        let seal = store.complete_work(
+        let completion = store.complete_work(
             &CompleteWorkRequest {
                 work_id: work.work_id,
                 run_id: claim.run_id,
@@ -1726,8 +1746,8 @@ impl LocalWorkService {
                 completed_at: now,
             },
             &DevelopmentNoopRedactor,
-        )?;
-        let result = completion_result(&seal)?;
+        );
+        let result = completion_protocol_result(completion)?;
         store.finish_work_protocol_attempt(
             &self.project_id,
             &self.session_id,
@@ -3056,12 +3076,33 @@ fn handoff_metadata(input: &WorkHandoffInput) -> (&'static str, &'static str, &s
 }
 
 fn completion_result(seal: &CompletionSeal) -> Result<WorkCompleteResult, StoreError> {
-    Ok(WorkCompleteResult {
+    Ok(WorkCompleteResult::Completed(WorkCompletedReceipt {
         seal: crate::CanonicalObject::freeze(seal)?.hash().clone(),
         work_id: seal.work_id,
         run_id: seal.run_id,
         completed_at: seal.completed_at,
-    })
+    }))
+}
+
+fn completion_protocol_result(
+    completion: Result<CompletionSeal, StoreError>,
+) -> Result<WorkCompleteResult, StoreError> {
+    match completion {
+        Ok(seal) => completion_result(&seal),
+        Err(StoreError::OpenWorkObligations {
+            work,
+            obligations,
+            omitted_count,
+        }) => Ok(WorkCompleteResult::Refused(WorkCompleteRefusal {
+            code: "open_work_obligations".into(),
+            work_id: work,
+            obligations,
+            omitted_count,
+            remedy: "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
+                .into(),
+        })),
+        Err(error) => Err(error),
+    }
 }
 
 fn bind_completion_acceptance_evidence(
@@ -5511,11 +5552,17 @@ mod tests {
             let completed = service
                 .work_complete(input.clone(), at(3))
                 .expect("retry resumes the durable attempt");
+            let WorkCompleteResult::Completed(completed) = completed else {
+                panic!("retry must complete work");
+            };
             assert_eq!(completed.work_id, root.work_id);
             assert_eq!(completed.completed_at, at(3));
             let replay = service
                 .work_complete(input.clone(), at(4))
                 .expect("completed outer attempt replays");
+            let WorkCompleteResult::Completed(replay) = replay else {
+                panic!("completed outer attempt must replay completion");
+            };
             assert_eq!(replay.seal, completed.seal);
             assert_eq!(replay.completed_at, at(3));
         }
@@ -6295,6 +6342,9 @@ mod tests {
                 at(47),
             )
             .expect("complete after handoff");
+        let WorkCompleteResult::Completed(seal) = seal else {
+            panic!("handoff completion must seal work");
+        };
         assert_eq!(seal.work_id, root.work_id);
         let stored_seal = SqliteStore::open(&database)
             .expect("store")

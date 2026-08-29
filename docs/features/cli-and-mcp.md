@@ -248,7 +248,13 @@ claim projection's own revision counter.
 `work_update` calls, or accept `capture { summary, refs }` to record evidence,
 checkpoint its exact evidence set, and seal in one model-level call. Completion
 is refused while blockers, prerequisites, required child seals or explicit
-completion waivers, live handoffs, or capture requirements remain unresolved.
+completion waivers, live handoffs, capture requirements, or run obligations
+remain unresolved. Open obligations are not an MCP error envelope:
+`work_complete` returns a typed `open_work_obligations` result containing at
+most 16 `{ obligation_id, definition, required_check }` entries, an
+`omitted_count`, and the exact remedy to record matching host verification,
+checkpoint it, then complete—or request a host/operator waiver. That result is
+durably replayable under the same idempotency key.
 An interrupted capture-backed completion recovers committed evidence or
 checkpoint timestamps for exact replay, while missing substeps use current
 time and recheck the live claim.
@@ -364,6 +370,13 @@ may satisfy both the earlier and newer definitions. `work_focus` exposes the
 bounded current obligation summaries and `work_next` deltas use
 `obligation_opened`, `obligation_satisfied`, or `obligation_waived` without
 leaking host authority.
+
+Every new completion seal declares obligation schema V1 and freezes the exact
+definition/resolution hash pairs applicable at its dense pre-seal cut. The
+final checkpoint must acknowledge the matching typed verification evidence.
+A new parent verifies required child seals transitively and refuses a legacy
+child seal whose run already had obligation definitions; existing legacy
+terminal seals remain readable and are surfaced as legacy by diagnostics.
 
 An observation effect absent from the frozen grant is a request error with
 code `observation_scope_mismatch`. `grant_scope_mismatch` instead identifies a

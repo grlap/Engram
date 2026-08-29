@@ -174,6 +174,14 @@ the run's `WorkClaim` and releases or transfers every dependent
 `ResourceLease`; completed execution authority is never kept alive for report
 work.
 
+Every new seal also declares completion-obligation schema V1 and records the
+exact `(definition, terminal resolution)` pairs applicable at its pre-seal
+dense run-feed cut. An open obligation refuses sealing before any terminal
+work mutation. A required child seal is decoded and checked recursively; a new
+parent cannot cite a legacy child seal when that child's cut already contained
+obligation definitions. Legacy terminal seals remain readable and are reported
+as legacy rather than treated as missing bindings.
+
 Optional report assembly therefore uses a distinct post-completion authority:
 
 ```text
@@ -240,7 +248,8 @@ again.
 Every completed run has a `CompletionSeal`: accepted work revision, run and
 claim fences, dense completion-cut position, executor checkpoint state,
 reconciled action outcomes, released/transferred resource leases, acceptance
-results, and evidence hashes. The shipped `work_complete` requires the linked
+results, evidence hashes, and the exact terminal obligation basis. The shipped
+`work_complete` requires the linked
 action-outcome and resource-lease drain sets to be empty, terminalizes the work
 claim, and seals atomically. A root seal also consumes each required child seal
 or explicit grant-backed disposed-child waiver and all root contributions.
@@ -440,9 +449,13 @@ state, and evidence. Agents cannot mint or waive them. Waiver is restricted to
 the host/operator `engram authority waive-obligation` CLI under a dedicated
 `ObligationWaiver` authority operation; neither MCP nor `work_update` accepts
 that operation, and agent projections redact its authority hash and reason.
-The cut-aware open-obligation query is intentionally prepared for the A3
-completion-seal gate rather than being presented as a shipped completion rule
-in A2.
+At the exact pre-seal cut, every applicable definition must have a satisfied or
+waived resolution at or before that cut. Otherwise `work_complete` returns the
+typed `open_work_obligations` result with at most 16 obligation ids,
+definition hashes, required check kinds, an omitted count, and the remedy:
+record matching host verification, checkpoint it, then complete; or request a
+host/operator waiver. A successful seal stores only canonical hashes and is
+reconstructible from the immutable feed.
 
 The operator-only `engram authority grant|revoke` commands are the current
 host boundary for local use. They are deliberately absent from agent-facing

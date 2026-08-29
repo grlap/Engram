@@ -14,6 +14,8 @@ use crate::ObjectHash;
 
 /// Schema version understood by this release.
 pub const SCHEMA_VERSION: u16 = 1;
+/// Completion-seal obligation basis emitted by A3 and later writers.
+pub const COMPLETION_OBLIGATION_SCHEMA_VERSION: u16 = 1;
 
 /// Behavioral-control protocol version understood by this release.
 pub const CONTROL_SCHEMA_VERSION: u16 = 1;
@@ -1807,6 +1809,14 @@ pub struct WorkObligation {
     pub opened_at: DateTime<Utc>,
 }
 
+/// Bounded identity returned when completion is blocked by an open obligation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OpenWorkObligation {
+    pub obligation_id: WorkObligationId,
+    pub definition: ObjectHash,
+    pub required_check: VerificationKind,
+}
+
 /// Append-only terminal result for one immutable work obligation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1922,6 +1932,14 @@ pub struct AcceptanceResult {
     pub note: String,
 }
 
+/// Exact immutable obligation definition and resolution admitted by one seal.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CompletionObligationBinding {
+    pub obligation_id: WorkObligationId,
+    pub definition: ObjectHash,
+    pub resolution: ObjectHash,
+}
+
 /// Immutable proof that one run completed under current work and claim fences.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionSeal {
@@ -1939,6 +1957,11 @@ pub struct CompletionSeal {
     pub checkpoint: Option<ObjectHash>,
     pub evidence: Vec<ObjectHash>,
     pub acceptance: Vec<AcceptanceResult>,
+    /// Absent only on immutable pre-A3 seals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obligation_schema_version: Option<u16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub obligations: Vec<CompletionObligationBinding>,
     pub required_child_seals: Vec<ObjectHash>,
     #[serde(default)]
     pub required_child_waivers: Vec<RequiredChildWaiver>,

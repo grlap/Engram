@@ -39,13 +39,13 @@ use crate::{
         ExecutionOutcome, HostPathPolicy, IssuedTurnGrant, LocalTask, MemoryAssertionEvent,
         MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus,
         MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
-        ObservedTurnDecision, PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision,
-        ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId,
-        SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId,
-        TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision,
-        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
-        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-        TurnGrantState, TurnIntent, TurnNextIntent, VerificationEvidence,
+        ObservedTurnDecision, OpenWorkObligation, PacketSafety, ParticipantMembership,
+        ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION,
+        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskBindReceipt,
+        TaskClaimEvent, TaskDelta, TaskId, TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState,
+        TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
+        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
+        TurnEvaluationInput, TurnGrantState, TurnIntent, TurnNextIntent, VerificationEvidence,
         VerificationEvidenceInput, VerificationKind, VerificationResult, WorkLease,
         WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
     },
@@ -330,6 +330,12 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         reason: String,
     },
+    #[error("completion for work {work:?} has open work obligations")]
+    OpenWorkObligations {
+        work: crate::domain::WorkId,
+        obligations: Vec<OpenWorkObligation>,
+        omitted_count: usize,
+    },
 }
 
 /// Result of scanning every immutable object in the store.
@@ -341,6 +347,8 @@ pub struct IntegrityReport {
     pub invalid_control_records: Vec<String>,
     pub checked_work_records: usize,
     pub invalid_work_records: Vec<String>,
+    /// Valid immutable records written before a currently enforceable schema.
+    pub legacy_work_records: Vec<String>,
 }
 
 /// Operator-facing summary of the currently enforceable control envelope.
@@ -6477,9 +6485,11 @@ impl SqliteStore {
                     .push(format!("control_operation:{}", stored.sequence));
             }
         }
-        let (checked_work_records, invalid_work_records) = self.verify_work_projections()?;
+        let (checked_work_records, invalid_work_records, legacy_work_records) =
+            self.verify_work_projections()?;
         report.checked_work_records = checked_work_records;
         report.invalid_work_records = invalid_work_records;
+        report.legacy_work_records = legacy_work_records;
         Ok(report)
     }
 
@@ -11640,6 +11650,7 @@ mod tests {
                 invalid_control_records: Vec::new(),
                 checked_work_records: 1,
                 invalid_work_records: Vec::new(),
+                legacy_work_records: Vec::new(),
             }
         );
     }

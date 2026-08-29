@@ -1195,7 +1195,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
         external_ref: "local-work:bound-control-dogfood",
         title: "Work-bound host control",
         assurance: "turn_gated",
-        mediated_effects: ["observe"],
+        mediated_effects: ["observe", "mutate_local"],
         work_binding: replacementBinding,
         capability_map_revision: 1,
         idempotency_key: "bind-bound-run-2",
@@ -1213,6 +1213,215 @@ test("work-bound control records observations and rebinds after a stale fence", 
       }),
     );
     assert.equal(reboundTurn.decision, "grant");
+    const reboundTokens = reboundTurn.grant.delivery
+      ? [reboundTurn.grant.delivery.page.delivery_token]
+      : [];
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: rebound.routing_token,
+          grant_id: reboundTurn.grant.grant_id,
+          delivery_tokens: reboundTokens,
+          idempotency_key: "begin-bound-rebound-turn",
+        }),
+      ).decision,
+      "begin",
+    );
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_checkpoint",
+          routing_token: rebound.routing_token,
+          grant_id: reboundTurn.grant.grant_id,
+          next_intent: "continue",
+          idempotency_key: "checkpoint-bound-rebound-turn",
+        }),
+      ).decision,
+      "checkpointed",
+    );
+
+    const completionLease = ok(
+      await client.request({
+        operation: "lease_acquire",
+        routing_token: rebound.routing_token,
+        kind: "execution",
+        mode: "exclusive",
+        subject: sourceTree,
+        ttl_seconds: 60,
+        idempotency_key: "lease-bound-completion-src",
+      }),
+    );
+    assert.equal(completionLease.decision, "granted");
+    const finalMutationTurn = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: rebound.routing_token,
+        idempotency_key: "bound-final-mutation-turn",
+        intent_fingerprint: fingerprint("bound-final-mutation-turn"),
+        purpose: "ordinary",
+        requested_effects: ["mutate_local"],
+        resource_intents: [libraryFile],
+      }),
+    );
+    assert.equal(finalMutationTurn.decision, "grant");
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: rebound.routing_token,
+          grant_id: finalMutationTurn.grant.grant_id,
+          delivery_tokens: finalMutationTurn.grant.delivery
+            ? [finalMutationTurn.grant.delivery.page.delivery_token]
+            : [],
+          idempotency_key: "begin-bound-final-mutation-turn",
+        }),
+      ).decision,
+      "begin",
+    );
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_checkpoint",
+          routing_token: rebound.routing_token,
+          grant_id: finalMutationTurn.grant.grant_id,
+          next_intent: "continue",
+          observations: [
+            {
+              observation_id: "bound-final-source-mutation",
+              action_fingerprint: fingerprint("bound-final-source-mutation"),
+              effect: "mutate_local",
+              outcome: "succeeded",
+              source_changed: true,
+              source_basis: {
+                workspace_id: "control-dogfood-workspace",
+                source_revision: "revision-2",
+              },
+              observed_at: "2026-08-28T20:01:00Z",
+            },
+          ],
+          idempotency_key: "checkpoint-bound-final-mutation-turn",
+        }),
+      ).decision,
+      "checkpointed",
+    );
+
+    const refusedCompletionInput = {
+      capture: {
+        summary: "capture the attempted completion cut",
+        refs: ["test:control-dogfood-open-obligation"],
+      },
+      acceptance: [
+        { satisfied: true, note: "the control binding behavior is verified" },
+      ],
+      idempotency_key: "bound-open-obligation-completion",
+    };
+    const refusedCompletion = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "complete",
+      refusedCompletionInput,
+    );
+    assert.equal(refusedCompletion.code, "open_work_obligations");
+    assert.equal(refusedCompletion.work_id, proposed.work.work_id);
+    assert.equal(refusedCompletion.obligations.length, 1);
+    assert.equal(refusedCompletion.obligations[0].required_check, "test");
+    assert.equal(refusedCompletion.omitted_count, 0);
+    assert.match(refusedCompletion.remedy, /checkpoint_work acknowledging it/);
+    assert.deepEqual(
+      cliWork(
+        engramHome,
+        actor,
+        authorityGrant,
+        "complete",
+        refusedCompletionInput,
+      ),
+      refusedCompletion,
+    );
+
+    const verificationTurn = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: rebound.routing_token,
+        idempotency_key: "bound-final-verification-turn",
+        intent_fingerprint: fingerprint("bound-final-verification-turn"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(verificationTurn.decision, "grant");
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: rebound.routing_token,
+          grant_id: verificationTurn.grant.grant_id,
+          delivery_tokens: verificationTurn.grant.delivery
+            ? [verificationTurn.grant.delivery.page.delivery_token]
+            : [],
+          idempotency_key: "begin-bound-final-verification-turn",
+        }),
+      ).decision,
+      "begin",
+    );
+    const finalVerificationCheckpoint = ok(
+      await client.request({
+        operation: "turn_checkpoint",
+        routing_token: rebound.routing_token,
+        grant_id: verificationTurn.grant.grant_id,
+        next_intent: "continue",
+        observations: [
+          {
+            observation_id: "bound-final-verification",
+            action_fingerprint: fingerprint("bound-final-verification"),
+            effect: "observe",
+            outcome: "succeeded",
+            source_changed: false,
+            source_basis: {
+              workspace_id: "control-dogfood-workspace",
+              source_revision: "revision-2",
+            },
+            observed_at: "2026-08-28T20:02:00Z",
+          },
+        ],
+        verification_evidence: [
+          {
+            producer_observation: {
+              kind: "observation_id",
+              observation_id: "bound-final-verification",
+            },
+            check_kind: "test",
+            summary: "host observed the final source verification",
+            refs: ["command:control-dogfood-final-check"],
+          },
+        ],
+        idempotency_key: "checkpoint-bound-final-verification-turn",
+      }),
+    );
+    const finalVerification =
+      finalVerificationCheckpoint.receipt.verification_evidence[0];
+    cliWork(engramHome, actor, authorityGrant, "update", {
+      kind: "checkpoint",
+      summary: "acknowledge the final typed verification",
+      evidence: [finalVerification],
+      idempotency_key: "bound-final-work-checkpoint",
+    });
+    const completed = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "complete",
+      {
+        evidence: [finalVerification],
+        acceptance: [
+          { satisfied: true, note: "the final typed verification passed" },
+        ],
+        idempotency_key: "bound-obligation-completion-sealed",
+      },
+    );
+    assert.equal(completed.work_id, proposed.work.work_id);
+    assert.ok(completed.seal);
 
     const doctor = spawnSync(binary, ["--home", engramHome, "doctor"], {
       cwd: root,

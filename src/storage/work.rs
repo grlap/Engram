@@ -19,23 +19,25 @@ use crate::{
     CanonicalObject, ObjectHash,
     domain::{
         AcceptWorkHandoffRequest, AcceptanceResult, AddWorkBlockerRequest,
-        CancelWorkHandoffRequest, ChangeWorkPrerequisiteRequest, ChildRequirement,
-        ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionSeal,
-        CompletionWaiver, ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest,
-        DisposeWorkRequest, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
+        COMPLETION_OBLIGATION_SCHEMA_VERSION, CancelWorkHandoffRequest,
+        ChangeWorkPrerequisiteRequest, ChildRequirement, ClaimWorkRequest, ClearWorkBlockerRequest,
+        CompleteWorkRequest, CompletionObligationBinding, CompletionSeal, CompletionWaiver,
+        ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest, DisposeWorkRequest,
+        EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
         LifecycleAuthorityDecision, MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest,
-        ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
-        RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution, RootExecutionId,
-        RootExecutionState, SCHEMA_VERSION, SessionId, TaskId, VerificationEvidence,
-        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkAuthorityGrant,
-        WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability,
-        WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId,
-        WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
-        WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId,
-        WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation, WorkObligationId,
-        WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkOrigin,
-        WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason, WorkRun, WorkRunId,
-        WorkRunState, WorkSessionState, WorkSourceSnapshot, WorkTransition,
+        OpenWorkObligation, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
+        ReopenWorkRequest, RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution,
+        RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId, TaskId,
+        VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest,
+        WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope,
+        WorkAvailability, WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint,
+        WorkClaim, WorkClaimId, WorkClaimState, WorkDecomposition, WorkDependencyRef,
+        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry,
+        WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
+        WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
+        WorkObligationState, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
+        WorkReadinessReason, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
+        WorkSourceSnapshot, WorkTransition,
     },
     memory::Redactor,
 };
@@ -80,6 +82,7 @@ const REBUILDABLE_WORK_INDEXES: &[&str] = &[
 // A checkpoint acknowledges the run feed immediately before its own object and
 // its matching checkpoint event are appended.
 const CHECKPOINT_APPEND_COUNT: i64 = 2;
+const MAX_OPEN_COMPLETION_OBLIGATIONS: usize = 16;
 
 #[derive(Clone, Copy)]
 pub(crate) struct StageWorkSessionDelivery<'a> {
@@ -2100,30 +2103,9 @@ impl SqliteStore {
         run_id: WorkRunId,
         cut: &FeedPosition,
     ) -> Result<Vec<WorkObligationId>, StoreError> {
-        if cut.feed != FeedId::RunExecution(run_id) {
-            return Err(StoreError::InvalidWorkProjection(
-                "obligation cut does not name the requested run feed".into(),
-            ));
-        }
-        if cut.position > feed_head(&self.connection, &cut.feed)? {
-            return Err(StoreError::InvalidWorkProjection(
-                "obligation cut exceeds the current run-feed head".into(),
-            ));
-        }
-        let records = self.work_run_obligations(run_id)?;
+        let records = applicable_work_obligations_at_cut_on(&self.connection, run_id, cut)?;
         let mut open = Vec::new();
         for record in records {
-            if record.obligation.trigger_position.position > cut.position {
-                continue;
-            }
-            let definition_position =
-                run_feed_position_for_object_on(&self.connection, run_id, &record.definition_hash)?;
-            if definition_position.position > cut.position {
-                return Err(StoreError::InvalidWorkProjection(format!(
-                    "run-feed cut {} splits mutation obligation {} from its trigger",
-                    cut.position, record.obligation.obligation_id.0
-                )));
-            }
             let terminal_at_cut = record
                 .resolution_hash
                 .as_ref()
@@ -2241,7 +2223,8 @@ impl SqliteStore {
         {
             return Ok((false, false));
         }
-        let required_child_seal_count = required_child_seals(&self.connection, work_id)?.len();
+        let required_child_seal_count =
+            required_child_seals(&self.connection, work_id, run.root_execution_id)?.len();
         let root_execution = load_root_execution(&self.connection, run.root_execution_id)?;
         let required_child_waiver_count =
             validated_required_child_waivers(&self.connection, work_id, &root_execution)?.len();
@@ -2655,15 +2638,18 @@ impl SqliteStore {
 }
 
 impl SqliteStore {
-    pub(super) fn verify_work_projections(&self) -> Result<(usize, Vec<String>), StoreError> {
+    pub(super) fn verify_work_projections(
+        &self,
+    ) -> Result<(usize, Vec<String>, Vec<String>), StoreError> {
         Self::verify_work_projections_on(&self.connection)
     }
 
     fn verify_work_projections_on(
         connection: &Connection,
-    ) -> Result<(usize, Vec<String>), StoreError> {
+    ) -> Result<(usize, Vec<String>, Vec<String>), StoreError> {
         let mut checked = 0_usize;
         let mut invalid = Vec::new();
+        let mut legacy = Vec::new();
         let mut seen_events = HashSet::new();
         let mut work_items = HashMap::new();
         let mut runs = HashMap::new();
@@ -3136,14 +3122,20 @@ impl SqliteStore {
         verify_blocker_rows(connection, &blocker_rows, &mut checked, &mut invalid)?;
         verify_evidence_rows(connection, &evidence_rows, &mut checked, &mut invalid)?;
         verify_obligation_rows(connection, &mut checked, &mut invalid)?;
-        verify_completion_rows(connection, &completion_rows, &mut checked, &mut invalid)?;
+        verify_completion_rows(
+            connection,
+            &completion_rows,
+            &mut checked,
+            &mut invalid,
+            &mut legacy,
+        )?;
         verify_work_feed_integrity(connection, &work_items, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
         verify_authority_revocation_bindings(connection, &mut checked, &mut invalid)?;
         verify_required_child_waiver_bindings(connection, &mut checked, &mut invalid)?;
         verify_work_protocol_attempts(connection, &mut checked, &mut invalid)?;
-        Ok((checked, invalid))
+        Ok((checked, invalid, legacy))
     }
 
     /// Completes one run only after acceptance, evidence, graph, and fence checks.
@@ -3287,7 +3279,8 @@ impl SqliteStore {
             });
         }
         let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
-        let required_child_seals = required_child_seals(&transaction, item.work_id)?;
+        let required_child_seals =
+            required_child_seals(&transaction, item.work_id, run.root_execution_id)?;
         let required_child_waivers =
             validated_required_child_waivers(&transaction, item.work_id, &root_execution)?;
         let unfinished_optional_children =
@@ -3321,6 +3314,12 @@ impl SqliteStore {
                     .into(),
             });
         }
+        let obligations = completion_obligation_basis_on(
+            &transaction,
+            item.work_id,
+            run.run_id,
+            &completion_cut,
+        )?;
         if live_descendant_execution_authority(&transaction, item.work_id, request.completed_at)? {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
@@ -3384,6 +3383,8 @@ impl SqliteStore {
             checkpoint: Some(checkpoint),
             evidence,
             acceptance,
+            obligation_schema_version: Some(COMPLETION_OBLIGATION_SCHEMA_VERSION),
+            obligations,
             required_child_seals,
             required_child_waivers,
             unfinished_optional_children,
@@ -3395,6 +3396,8 @@ impl SqliteStore {
             actor: request.actor.clone(),
             completed_at: request.completed_at,
         };
+        validate_completion_seal_obligation_basis_on(&transaction, &seal)?;
+        validate_completion_seal_children_on(&transaction, &seal, 0, true)?;
         let seal_object = CanonicalObject::freeze(&seal)?;
         SqliteStore::insert_object(&transaction, "completion_seal", &seal_object)?;
         transaction.execute(
@@ -3566,7 +3569,7 @@ impl SqliteStore {
                 state: RootExecutionState::Active,
                 revision: 1,
                 run_ids: Vec::new(),
-                required_child_seals: required_child_seals(&transaction, item.root_id)?,
+                required_child_seals: Vec::new(),
                 required_child_waivers: Vec::new(),
                 expected_contributors: Vec::new(),
                 contributions: Vec::new(),
@@ -7168,6 +7171,165 @@ pub(super) fn load_control_execution_observation_on(
     Ok(Some(CanonicalObject::verify(hash, bytes)?.decode()?))
 }
 
+fn applicable_work_obligations_at_cut_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    cut: &FeedPosition,
+) -> Result<Vec<WorkObligationRecord>, StoreError> {
+    if cut.feed != FeedId::RunExecution(run_id) {
+        return Err(StoreError::InvalidWorkProjection(
+            "obligation cut does not name the requested run feed".into(),
+        ));
+    }
+    if cut.position > feed_head(connection, &cut.feed)? {
+        return Err(StoreError::InvalidWorkProjection(
+            "obligation cut exceeds the current run-feed head".into(),
+        ));
+    }
+    let records = load_work_obligation_records_on(connection, run_id, None)?;
+    let mut applicable = Vec::new();
+    for record in records {
+        if record.obligation.trigger_position.position > cut.position {
+            continue;
+        }
+        let definition_position =
+            run_feed_position_for_object_on(connection, run_id, &record.definition_hash)?;
+        if definition_position.position > cut.position {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "run-feed cut {} splits mutation obligation {} from its trigger",
+                cut.position, record.obligation.obligation_id.0
+            )));
+        }
+        applicable.push(record);
+    }
+    Ok(applicable)
+}
+
+fn completion_obligation_basis_on(
+    connection: &Connection,
+    work_id: WorkId,
+    run_id: WorkRunId,
+    cut: &FeedPosition,
+) -> Result<Vec<CompletionObligationBinding>, StoreError> {
+    let records = applicable_work_obligations_at_cut_on(connection, run_id, cut)?;
+    let mut open = Vec::new();
+    let mut bindings = Vec::new();
+    for record in records {
+        let terminal_at_cut = record
+            .resolution_hash
+            .as_ref()
+            .map(|hash| run_feed_position_for_object_on(connection, run_id, hash))
+            .transpose()?
+            .filter(|position| position.position <= cut.position);
+        let Some(resolution_position) = terminal_at_cut else {
+            open.push(OpenWorkObligation {
+                obligation_id: record.obligation.obligation_id,
+                definition: record.definition_hash,
+                required_check: record.obligation.requirement.check_kind,
+            });
+            continue;
+        };
+        if resolution_position.feed != cut.feed {
+            return Err(StoreError::InvalidWorkProjection(
+                "obligation resolution position names another run feed".into(),
+            ));
+        }
+        bindings.push(CompletionObligationBinding {
+            obligation_id: record.obligation.obligation_id,
+            definition: record.definition_hash,
+            resolution: record.resolution_hash.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "terminal work obligation has no resolution hash".into(),
+                )
+            })?,
+        });
+    }
+    open.sort_by(|left, right| {
+        left.obligation_id
+            .0
+            .as_bytes()
+            .cmp(right.obligation_id.0.as_bytes())
+    });
+    if !open.is_empty() {
+        let omitted_count = open.len().saturating_sub(MAX_OPEN_COMPLETION_OBLIGATIONS);
+        open.truncate(MAX_OPEN_COMPLETION_OBLIGATIONS);
+        return Err(StoreError::OpenWorkObligations {
+            work: work_id,
+            obligations: open,
+            omitted_count,
+        });
+    }
+    bindings.sort_by(|left, right| {
+        left.obligation_id
+            .0
+            .as_bytes()
+            .cmp(right.obligation_id.0.as_bytes())
+            .then_with(|| left.definition.as_str().cmp(right.definition.as_str()))
+    });
+    Ok(bindings)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CompletionObligationBasisKind {
+    LegacyNoDefinitions,
+    LegacyWithDefinitions,
+    Current,
+}
+
+fn validate_completion_seal_obligation_basis_on(
+    connection: &Connection,
+    seal: &CompletionSeal,
+) -> Result<CompletionObligationBasisKind, StoreError> {
+    match seal.obligation_schema_version {
+        None => {
+            if !seal.obligations.is_empty() {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "legacy completion seal for run {} carries unversioned obligation bindings",
+                    seal.run_id.0
+                )));
+            }
+            let applicable = applicable_work_obligations_at_cut_on(
+                connection,
+                seal.run_id,
+                &seal.completion_cut,
+            )?;
+            Ok(if applicable.is_empty() {
+                CompletionObligationBasisKind::LegacyNoDefinitions
+            } else {
+                CompletionObligationBasisKind::LegacyWithDefinitions
+            })
+        }
+        Some(COMPLETION_OBLIGATION_SCHEMA_VERSION) => {
+            let expected = completion_obligation_basis_on(
+                connection,
+                seal.work_id,
+                seal.run_id,
+                &seal.completion_cut,
+            )
+            .map_err(|error| match error {
+                StoreError::OpenWorkObligations { .. } => {
+                    StoreError::InvalidWorkProjection(format!(
+                        "completion seal for run {} was frozen with open obligations",
+                        seal.run_id.0
+                    ))
+                }
+                other => other,
+            })?;
+            if seal.obligations != expected {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "completion seal for run {} does not bind the exact obligation cut",
+                    seal.run_id.0
+                )));
+            }
+            Ok(CompletionObligationBasisKind::Current)
+        }
+        Some(version) => Err(StoreError::InvalidWorkProjection(format!(
+            "completion seal for run {} has unsupported obligation schema {version}",
+            seal.run_id.0
+        ))),
+    }
+}
+
 fn load_work_obligation_records_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -8409,7 +8571,7 @@ fn replay_operation<T: DeserializeOwned>(
 }
 
 fn require_work_projection_integrity(connection: &Connection) -> Result<(), StoreError> {
-    let (_, invalid) = SqliteStore::verify_work_projections_on(connection)?;
+    let (_, invalid, _) = SqliteStore::verify_work_projections_on(connection)?;
     if invalid.is_empty() {
         Ok(())
     } else {
@@ -9324,16 +9486,68 @@ pub(crate) fn normalize_completion_acceptance_shape(
     Ok(normalized)
 }
 
+fn validate_completion_seal_children_on(
+    connection: &Connection,
+    seal: &CompletionSeal,
+    depth: usize,
+    enforce_legacy_child_binding: bool,
+) -> Result<(), StoreError> {
+    if depth > 1_024 {
+        return Err(StoreError::InvalidWorkProjection(
+            "completion-seal child graph exceeds the corruption guard".into(),
+        ));
+    }
+    let mut seen = HashSet::new();
+    for child_hash in &seal.required_child_seals {
+        if !seen.insert(child_hash.clone()) {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "completion seal for run {} repeats child seal {child_hash}",
+                seal.run_id.0
+            )));
+        }
+        let child_seal: CompletionSeal =
+            load_typed_work_object(connection, child_hash, "completion_seal")?;
+        let child = load_work_item(connection, child_seal.work_id)?;
+        if child.parent_id != Some(seal.work_id)
+            || child.child_requirement != ChildRequirement::Required
+            || child_seal.root_id != seal.root_id
+            || child_seal.root_execution_id != seal.root_execution_id
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "completion seal for run {} cites unrelated child seal {child_hash}",
+                seal.run_id.0
+            )));
+        }
+        let child_basis = validate_completion_seal_obligation_basis_on(connection, &child_seal)?;
+        if enforce_legacy_child_binding
+            && child_basis == CompletionObligationBasisKind::LegacyWithDefinitions
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "legacy child seal {child_hash} does not bind obligations present at its cut"
+            )));
+        }
+        validate_completion_seal_children_on(
+            connection,
+            &child_seal,
+            depth + 1,
+            child_basis == CompletionObligationBasisKind::Current,
+        )?;
+    }
+    Ok(())
+}
+
 fn required_child_seals(
     connection: &Connection,
     parent_id: WorkId,
+    root_execution_id: RootExecutionId,
 ) -> Result<Vec<ObjectHash>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT seals.seal_hash
+        "SELECT child.work_id, run.run_id, seals.seal_hash
          FROM work_items child
          JOIN work_runs run ON run.work_id = child.work_id
          JOIN work_completion_seals seals ON seals.run_id = run.run_id
          WHERE child.parent_id = ?1
+           AND run.root_execution_id = ?2
            AND child.child_requirement = 'required'
            AND child.lifecycle = 'completed'
            AND run.state = 'completed'
@@ -9343,13 +9557,50 @@ fn required_child_seals(
            )
          ORDER BY child.work_id",
     )?;
-    statement
-        .query_map([parent_id.0.to_string()], |row| row.get::<_, String>(0))?
-        .map(|row| {
-            let value = row?;
-            ObjectHash::from_stored(value.clone()).ok_or(StoreError::InvalidStoredHash(value))
-        })
-        .collect()
+    let rows = statement
+        .query_map(
+            params![parent_id.0.to_string(), root_execution_id.0.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    let mut hashes = Vec::with_capacity(rows.len());
+    for (child_work, child_run, stored_hash) in rows {
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let seal: CompletionSeal = load_typed_work_object(connection, &hash, "completion_seal")?;
+        if seal.work_id.0.to_string() != child_work
+            || seal.run_id.0.to_string() != child_run
+            || seal.root_execution_id != root_execution_id
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "required child seal {hash} does not match its child run"
+            )));
+        }
+        let child_basis = validate_completion_seal_obligation_basis_on(connection, &seal)?;
+        if child_basis == CompletionObligationBasisKind::LegacyWithDefinitions {
+            return Err(StoreError::WorkCompletionRefused {
+                work: parent_id,
+                reason: format!(
+                    "legacy required child seal {hash} predates obligation binding but its run had obligations"
+                ),
+            });
+        }
+        validate_completion_seal_children_on(
+            connection,
+            &seal,
+            0,
+            child_basis == CompletionObligationBasisKind::Current,
+        )?;
+        hashes.push(hash);
+    }
+    Ok(hashes)
 }
 
 fn validated_required_child_waivers(
@@ -10167,6 +10418,7 @@ fn verify_completion_rows(
     expected: &HashMap<String, (String, String, String, serde_json::Value)>,
     checked: &mut usize,
     invalid: &mut Vec<String>,
+    legacy: &mut Vec<String>,
 ) -> Result<(), StoreError> {
     let mut seen = HashSet::new();
     let mut statement = connection.prepare(
@@ -10195,6 +10447,33 @@ fn verify_completion_rows(
         });
         if !valid {
             invalid.push(format!("completion_seal:{seal_hash}:projection_binding"));
+            continue;
+        }
+        let Ok(seal) = serde_json::from_slice::<CompletionSeal>(&bytes) else {
+            invalid.push(format!("completion_seal:{seal_hash}:decode"));
+            continue;
+        };
+        let obligation_basis = match validate_completion_seal_obligation_basis_on(connection, &seal)
+        {
+            Ok(
+                CompletionObligationBasisKind::LegacyNoDefinitions
+                | CompletionObligationBasisKind::LegacyWithDefinitions,
+            ) => {
+                legacy.push(format!(
+                    "completion_seal:{seal_hash}:legacy_obligation_basis"
+                ));
+                false
+            }
+            Ok(CompletionObligationBasisKind::Current) => true,
+            Err(_) => {
+                invalid.push(format!("completion_seal:{seal_hash}:obligation_basis"));
+                continue;
+            }
+        };
+        if validate_completion_seal_children_on(connection, &seal, 0, obligation_basis).is_err() {
+            invalid.push(format!(
+                "completion_seal:{seal_hash}:child_obligation_basis"
+            ));
         }
     }
     for seal_hash in expected.keys().filter(|hash| !seen.contains(*hash)) {
@@ -11163,7 +11442,10 @@ mod tests {
         WorkPlanningBudget, WorkRevisionPatch,
     };
     use crate::memory::DevelopmentNoopRedactor;
-    use crate::{VerificationEvidenceMatchInput, match_verification_evidence};
+    use crate::work_service::{
+        LocalWorkService, WorkAcceptanceInput, WorkCompleteInput, WorkCompleteResult,
+    };
+    use crate::{ProjectId, VerificationEvidenceMatchInput, match_verification_evidence};
 
     fn at(second: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 8, 27, 1, 0, 0)
@@ -15236,6 +15518,96 @@ mod tests {
             ));
 
             let child_claim = claim(&mut store, &required, "child-agent", "child-claim", 6, 100);
+            let child_run =
+                load_work_run(&store.connection, child_claim.run_id).expect("required child run");
+            let child_binding = ControlWorkBinding {
+                root_execution_id: child_run.root_execution_id,
+                work_id: required.work_id,
+                run_id: child_run.run_id,
+                work_revision: child_claim.accepted_work_revision,
+                claim_id: child_claim.claim_id,
+                claim_fence: child_claim.fence,
+            };
+            let mut child_actor = actor("child-agent");
+            child_actor.run_id = Some(child_run.run_id.0.to_string());
+            let child_basis = ExecutionSourceBasis {
+                workspace_id: "workspace-child".into(),
+                source_revision: "required-child-revision".into(),
+            };
+            let child_verification = {
+                let transaction = store
+                    .connection
+                    .transaction_with_behavior(TransactionBehavior::Immediate)
+                    .expect("child obligation transaction");
+                append_control_execution_observation_on(
+                    &transaction,
+                    &ExecutionObservation {
+                        schema_version: SCHEMA_VERSION,
+                        project_id: required.project_id.clone(),
+                        binding: child_binding.clone(),
+                        session_id: SessionId("child-agent".into()),
+                        grant_id: "child-obligation-grant".into(),
+                        observation_id: "child-source-mutation".into(),
+                        action_fingerprint: ObjectHash::from_canonical_bytes(
+                            b"write required child",
+                        ),
+                        effect: EffectClass::MutateLocal,
+                        outcome: ExecutionOutcome::Succeeded,
+                        source_changed: true,
+                        source_basis: Some(child_basis.clone()),
+                        observed_at: Some(at(7)),
+                        actor: child_actor.clone(),
+                        recorded_at: at(7),
+                    },
+                )
+                .expect("append child mutation");
+                let producer = append_control_execution_observation_on(
+                    &transaction,
+                    &ExecutionObservation {
+                        schema_version: SCHEMA_VERSION,
+                        project_id: required.project_id.clone(),
+                        binding: child_binding.clone(),
+                        session_id: SessionId("child-agent".into()),
+                        grant_id: "child-obligation-grant".into(),
+                        observation_id: "child-verification".into(),
+                        action_fingerprint: ObjectHash::from_canonical_bytes(
+                            b"cargo test required child",
+                        ),
+                        effect: EffectClass::Observe,
+                        outcome: ExecutionOutcome::Succeeded,
+                        source_changed: false,
+                        source_basis: Some(child_basis.clone()),
+                        observed_at: Some(at(7)),
+                        actor: child_actor.clone(),
+                        recorded_at: at(7),
+                    },
+                )
+                .expect("append child verification producer");
+                let verification = append_control_verification_evidence_on(
+                    &transaction,
+                    &VerificationEvidence {
+                        schema_version: SCHEMA_VERSION,
+                        project_id: required.project_id.clone(),
+                        binding: child_binding,
+                        session_id: SessionId("child-agent".into()),
+                        producer_observation: producer,
+                        source_basis: child_basis,
+                        check_kind: VerificationKind::Test,
+                        check_fingerprint: ObjectHash::from_canonical_bytes(
+                            b"cargo test required child",
+                        ),
+                        result: VerificationResult::Passed,
+                        completed_at: at(7),
+                        summary: "required-child tests passed on the latest source basis".into(),
+                        refs: Vec::new(),
+                        actor: child_actor,
+                        recorded_at: at(7),
+                    },
+                )
+                .expect("append child verification evidence");
+                transaction.commit().expect("commit child obligation");
+                verification
+            };
             let child_evidence = evidence(
                 &mut store,
                 &required,
@@ -15251,9 +15623,9 @@ mod tests {
                 "child-agent",
                 "child-cp",
                 8,
-                std::slice::from_ref(&child_evidence),
+                &[child_evidence.clone(), child_verification],
             );
-            complete(
+            let child_seal = complete(
                 &mut store,
                 &required,
                 &child_claim,
@@ -15263,6 +15635,62 @@ mod tests {
                 9,
             )
             .expect("complete required child");
+            assert_eq!(
+                child_seal.obligation_schema_version,
+                Some(COMPLETION_OBLIGATION_SCHEMA_VERSION)
+            );
+            assert_eq!(child_seal.obligations.len(), 1);
+            let mut legacy_child_json =
+                serde_json::to_value(&child_seal).expect("serialize child seal");
+            let legacy_child_fields = legacy_child_json
+                .as_object_mut()
+                .expect("completion seal is an object");
+            legacy_child_fields.remove("obligation_schema_version");
+            legacy_child_fields.remove("obligations");
+            let legacy_child: CompletionSeal =
+                serde_json::from_value(legacy_child_json).expect("decode legacy child seal");
+            assert_eq!(legacy_child.obligation_schema_version, None);
+            assert!(legacy_child.obligations.is_empty());
+            assert_eq!(
+                validate_completion_seal_obligation_basis_on(&store.connection, &legacy_child,)
+                    .expect("classify legacy child seal"),
+                CompletionObligationBasisKind::LegacyWithDefinitions
+            );
+            let legacy_child_object =
+                CanonicalObject::freeze(&legacy_child).expect("freeze legacy child seal");
+            let current_child_object =
+                CanonicalObject::freeze(&child_seal).expect("freeze current child seal");
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("legacy child fixture transaction");
+            SqliteStore::insert_object(&transaction, "completion_seal", &legacy_child_object)
+                .expect("insert legacy child seal");
+            transaction
+                .execute(
+                    "UPDATE work_completion_seals
+                     SET seal_hash = ?2, seal_json = ?3
+                     WHERE seal_hash = ?1",
+                    params![
+                        current_child_object.hash().as_str(),
+                        legacy_child_object.hash().as_str(),
+                        legacy_child_object.bytes()
+                    ],
+                )
+                .expect("temporarily select legacy child seal");
+            let legacy_parent_result =
+                required_child_seals(&transaction, root.work_id, child_run.root_execution_id);
+            assert!(
+                matches!(
+                    &legacy_parent_result,
+                    Err(StoreError::WorkCompletionRefused { reason, .. })
+                        if reason.contains("legacy required child seal")
+                ),
+                "{legacy_parent_result:?}"
+            );
+            transaction
+                .rollback()
+                .expect("discard legacy child fixture");
             let root_seal = complete(
                 &mut store,
                 &root,
@@ -15274,6 +15702,45 @@ mod tests {
             )
             .expect("complete root");
             assert_eq!(root_seal.required_child_seals.len(), 1);
+            assert_eq!(
+                root_seal.required_child_seals[0],
+                CanonicalObject::freeze(&child_seal)
+                    .expect("freeze child seal")
+                    .hash()
+                    .clone()
+            );
+            assert_eq!(
+                root_seal.obligation_schema_version,
+                Some(COMPLETION_OBLIGATION_SCHEMA_VERSION)
+            );
+            assert!(root_seal.obligations.is_empty());
+            let mut legacy_root_json =
+                serde_json::to_value(&root_seal).expect("serialize root seal");
+            let legacy_root_fields = legacy_root_json
+                .as_object_mut()
+                .expect("completion seal is an object");
+            legacy_root_fields.remove("obligation_schema_version");
+            legacy_root_fields.remove("obligations");
+            let legacy_root: CompletionSeal =
+                serde_json::from_value(legacy_root_json).expect("decode legacy root seal");
+            assert_eq!(
+                validate_completion_seal_obligation_basis_on(&store.connection, &legacy_root)
+                    .expect("classify legacy root seal"),
+                CompletionObligationBasisKind::LegacyNoDefinitions
+            );
+            let mut legacy_parent = legacy_root;
+            legacy_parent.required_child_seals = vec![legacy_child_object.hash().clone()];
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("legacy terminal tree transaction");
+            SqliteStore::insert_object(&transaction, "completion_seal", &legacy_child_object)
+                .expect("insert legacy child for old parent validation");
+            validate_completion_seal_children_on(&transaction, &legacy_parent, 0, false)
+                .expect("an already-terminal legacy parent remains readable");
+            transaction
+                .rollback()
+                .expect("discard legacy terminal tree fixture");
             assert_eq!(
                 store
                     .get_work_item(optional.work_id)
@@ -15679,6 +16146,524 @@ mod tests {
         );
         let final_report = store.verify_all().expect("integrity report");
         assert!(final_report.is_healthy(), "{final_report:?}");
+    }
+
+    #[test]
+    fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let mut store = SqliteStore::open(&database).expect("store");
+        install_grant(&mut store, "project-completion-obligations", "planner");
+        let work = store
+            .create_work(
+                &root_request(
+                    "project-completion-obligations",
+                    "create-completion-obligation-work",
+                    1,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("create local work");
+        let claim = claim(
+            &mut store,
+            &work,
+            "runner",
+            "claim-completion-obligation-work",
+            2,
+            300,
+        );
+        let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
+        let binding = ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        };
+        let mut run_actor = actor("runner");
+        run_actor.run_id = Some(run.run_id.0.to_string());
+        let source_basis = ExecutionSourceBasis {
+            workspace_id: "workspace-completion".into(),
+            source_revision: "revision-after-mutation".into(),
+        };
+        let mutation = ExecutionObservation {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding: binding.clone(),
+            session_id: SessionId("runner".into()),
+            grant_id: "completion-obligation-grant".into(),
+            observation_id: "completion-source-mutation".into(),
+            action_fingerprint: ObjectHash::from_canonical_bytes(b"write src/lib.rs"),
+            effect: EffectClass::MutateLocal,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: true,
+            source_basis: Some(source_basis.clone()),
+            observed_at: Some(at(3)),
+            actor: run_actor.clone(),
+            recorded_at: at(3),
+        };
+        {
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("mutation transaction");
+            append_control_execution_observation_on(&transaction, &mutation)
+                .expect("append mutation and obligation");
+            transaction.commit().expect("commit mutation");
+        }
+        let opened = store
+            .work_run_obligations(run.run_id)
+            .expect("open obligation");
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].state, WorkObligationState::Open);
+
+        let generic_evidence = evidence(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "completion-generic-evidence",
+            4,
+        );
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "completion-before-verification",
+            5,
+            std::slice::from_ref(&generic_evidence),
+        );
+        let refused = complete(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &generic_evidence,
+            "completion-open-obligation",
+            6,
+        );
+        let Err(StoreError::OpenWorkObligations {
+            work: refused_work,
+            obligations,
+            omitted_count,
+        }) = refused
+        else {
+            panic!("completion must return the typed open-obligation refusal");
+        };
+        assert_eq!(refused_work, work.work_id);
+        assert_eq!(omitted_count, 0);
+        assert_eq!(obligations.len(), 1);
+        assert_eq!(
+            obligations[0].obligation_id,
+            opened[0].obligation.obligation_id
+        );
+        assert_eq!(obligations[0].definition, opened[0].definition_hash);
+        assert_eq!(obligations[0].required_check, VerificationKind::Test);
+
+        let verification_observation = ExecutionObservation {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding,
+            session_id: SessionId("runner".into()),
+            grant_id: "completion-obligation-grant".into(),
+            observation_id: "completion-verification".into(),
+            action_fingerprint: ObjectHash::from_canonical_bytes(b"cargo test --workspace"),
+            effect: EffectClass::Observe,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: false,
+            source_basis: Some(source_basis.clone()),
+            observed_at: Some(at(7)),
+            actor: run_actor.clone(),
+            recorded_at: at(7),
+        };
+        let verification_hash = {
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("verification transaction");
+            let producer =
+                append_control_execution_observation_on(&transaction, &verification_observation)
+                    .expect("append verification producer");
+            let hash = append_control_verification_evidence_on(
+                &transaction,
+                &VerificationEvidence {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: work.project_id.clone(),
+                    binding: verification_observation.binding.clone(),
+                    session_id: SessionId("runner".into()),
+                    producer_observation: producer,
+                    source_basis,
+                    check_kind: VerificationKind::Test,
+                    check_fingerprint: verification_observation.action_fingerprint.clone(),
+                    result: VerificationResult::Passed,
+                    completed_at: at(7),
+                    summary: "host observed tests on the latest source basis".into(),
+                    refs: vec!["command:cargo-test-workspace".into()],
+                    actor: run_actor,
+                    recorded_at: at(7),
+                },
+            )
+            .expect("append matching verification evidence");
+            transaction.commit().expect("commit verification");
+            hash
+        };
+        let terminal = store
+            .work_run_obligations(run.run_id)
+            .expect("terminal obligation");
+        assert_eq!(terminal.len(), 1);
+        assert_eq!(terminal[0].state, WorkObligationState::Satisfied);
+        assert!(matches!(
+            terminal[0]
+                .resolution
+                .as_ref()
+                .map(|resolution| &resolution.resolution),
+            Some(WorkObligationResolution::Satisfied { evidence, .. })
+                if evidence == &verification_hash
+        ));
+
+        let all_evidence = store
+            .work_run_evidence(run.run_id)
+            .expect("all completion evidence");
+        assert_eq!(all_evidence.len(), 2);
+        assert!(all_evidence.contains(&generic_evidence));
+        assert!(all_evidence.contains(&verification_hash));
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "completion-after-verification",
+            8,
+            &all_evidence,
+        );
+        let seal = complete(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &generic_evidence,
+            "completion-after-obligation",
+            9,
+        )
+        .expect("complete after terminal obligation and acknowledging checkpoint");
+        assert_eq!(
+            seal.obligation_schema_version,
+            Some(COMPLETION_OBLIGATION_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            seal.obligations,
+            vec![CompletionObligationBinding {
+                obligation_id: terminal[0].obligation.obligation_id,
+                definition: terminal[0].definition_hash.clone(),
+                resolution: terminal[0]
+                    .resolution_hash
+                    .clone()
+                    .expect("terminal resolution hash"),
+            }]
+        );
+        assert_eq!(
+            validate_completion_seal_obligation_basis_on(&store.connection, &seal)
+                .expect("reconstruct exact completion basis"),
+            CompletionObligationBasisKind::Current
+        );
+        let report = store.verify_all().expect("integrity report");
+        assert!(report.is_healthy(), "{report:?}");
+        assert!(report.legacy_work_records.is_empty());
+        let seal_hash = CanonicalObject::freeze(&seal)
+            .expect("freeze sealed obligation basis")
+            .hash()
+            .clone();
+        let mut forged_seal = seal.clone();
+        forged_seal.obligations.clear();
+        store
+            .connection
+            .execute_batch("SAVEPOINT corrupt_completion_obligations")
+            .expect("start completion-seal corruption fixture");
+        store
+            .connection
+            .execute(
+                "UPDATE work_completion_seals SET seal_json = ?2 WHERE seal_hash = ?1",
+                params![
+                    seal_hash.as_str(),
+                    serde_json::to_vec(&forged_seal).expect("forged seal JSON")
+                ],
+            )
+            .expect("corrupt completion obligation projection");
+        let corrupt_report = store.verify_all().expect("corrupt integrity report");
+        assert!(
+            corrupt_report
+                .invalid_work_records
+                .iter()
+                .any(|record| record.contains("completion_seal")),
+            "{corrupt_report:?}"
+        );
+        store
+            .connection
+            .execute_batch(
+                "ROLLBACK TO corrupt_completion_obligations; RELEASE corrupt_completion_obligations",
+            )
+            .expect("restore completion-seal projection");
+        assert!(
+            store
+                .verify_all()
+                .expect("restored integrity report")
+                .is_healthy()
+        );
+    }
+
+    #[test]
+    fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-bounded-obligations", "planner");
+        let work = store
+            .create_work(
+                &root_request(
+                    "project-bounded-obligations",
+                    "create-bounded-obligation-work",
+                    1,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("create local work");
+        let claim = claim(
+            &mut store,
+            &work,
+            "runner",
+            "claim-bounded-obligation-work",
+            2,
+            300,
+        );
+        let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
+        let binding = ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        };
+        let mut run_actor = actor("runner");
+        run_actor.run_id = Some(run.run_id.0.to_string());
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("bounded-obligation transaction");
+        for index in 0..=MAX_OPEN_COMPLETION_OBLIGATIONS {
+            append_control_execution_observation_on(
+                &transaction,
+                &ExecutionObservation {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: work.project_id.clone(),
+                    binding: binding.clone(),
+                    session_id: SessionId("runner".into()),
+                    grant_id: "bounded-obligation-grant".into(),
+                    observation_id: format!("bounded-source-mutation-{index}"),
+                    action_fingerprint: ObjectHash::from_canonical_bytes(
+                        format!("write source {index}").as_bytes(),
+                    ),
+                    effect: EffectClass::MutateLocal,
+                    outcome: ExecutionOutcome::Succeeded,
+                    source_changed: true,
+                    source_basis: Some(ExecutionSourceBasis {
+                        workspace_id: "workspace-bounded".into(),
+                        source_revision: format!("revision-{index}"),
+                    }),
+                    observed_at: Some(at(3)),
+                    actor: run_actor.clone(),
+                    recorded_at: at(3),
+                },
+            )
+            .expect("append bounded mutation obligation");
+        }
+        transaction.commit().expect("commit bounded obligations");
+        let cut = FeedPosition {
+            feed: FeedId::RunExecution(run.run_id),
+            position: feed_head(&store.connection, &FeedId::RunExecution(run.run_id))
+                .expect("run head"),
+        };
+        let Err(StoreError::OpenWorkObligations {
+            work: refused_work,
+            obligations,
+            omitted_count,
+        }) = completion_obligation_basis_on(&store.connection, work.work_id, run.run_id, &cut)
+        else {
+            panic!("the exact cut must refuse its open obligations");
+        };
+        assert_eq!(refused_work, work.work_id);
+        assert_eq!(obligations.len(), MAX_OPEN_COMPLETION_OBLIGATIONS);
+        assert_eq!(omitted_count, 1);
+        assert!(
+            obligations
+                .iter()
+                .all(|obligation| obligation.required_check == VerificationKind::Test)
+        );
+        assert!(obligations.windows(2).all(|window| {
+            window[0].obligation_id.0.as_bytes() < window[1].obligation_id.0.as_bytes()
+        }));
+    }
+
+    #[test]
+    fn ambient_completion_returns_and_replays_a_typed_open_obligation_result() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("project-protocol-obligations".into());
+        let session = SessionId("runner".into());
+        let (grant, work, evidence_hash, expected_obligation) = {
+            let mut store = SqliteStore::open(&database).expect("store");
+            install_grant(&mut store, &project.0, "planner");
+            let grant = install_grant(&mut store, &project.0, &session.0);
+            let work = store
+                .create_work(
+                    &root_request(&project.0, "create-protocol-obligation-work", 1),
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("create local work");
+            store
+                .focus_work_session(&project, &session, work.work_id, at(2))
+                .expect("focus work session");
+            let claim = claim(
+                &mut store,
+                &work,
+                &session.0,
+                "claim-protocol-obligation-work",
+                2,
+                300,
+            );
+            let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
+            let binding = ControlWorkBinding {
+                root_execution_id: run.root_execution_id,
+                work_id: work.work_id,
+                run_id: run.run_id,
+                work_revision: claim.accepted_work_revision,
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+            };
+            let mut run_actor = actor(&session.0);
+            run_actor.run_id = Some(run.run_id.0.to_string());
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("protocol-obligation transaction");
+            append_control_execution_observation_on(
+                &transaction,
+                &ExecutionObservation {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: project.clone(),
+                    binding,
+                    session_id: session.clone(),
+                    grant_id: "protocol-obligation-grant".into(),
+                    observation_id: "protocol-source-mutation".into(),
+                    action_fingerprint: ObjectHash::from_canonical_bytes(b"write protocol source"),
+                    effect: EffectClass::MutateLocal,
+                    outcome: ExecutionOutcome::Succeeded,
+                    source_changed: true,
+                    source_basis: Some(ExecutionSourceBasis {
+                        workspace_id: "workspace-protocol".into(),
+                        source_revision: "revision-protocol".into(),
+                    }),
+                    observed_at: Some(at(3)),
+                    actor: run_actor,
+                    recorded_at: at(3),
+                },
+            )
+            .expect("append protocol mutation obligation");
+            transaction.commit().expect("commit protocol obligation");
+            let obligation = store
+                .work_run_obligations(run.run_id)
+                .expect("protocol obligation")
+                .pop()
+                .expect("one protocol obligation");
+            let evidence_hash = evidence(
+                &mut store,
+                &work,
+                &claim,
+                &session.0,
+                "protocol-completion-evidence",
+                4,
+            );
+            checkpoint(
+                &mut store,
+                &work,
+                &claim,
+                &session.0,
+                "protocol-completion-checkpoint",
+                5,
+                std::slice::from_ref(&evidence_hash),
+            );
+            (grant, work, evidence_hash, obligation)
+        };
+        let service = LocalWorkService::new(
+            database.clone(),
+            project,
+            "runner".into(),
+            session,
+            Some("obligation-protocol-test".into()),
+            Some(grant),
+        );
+        let input = WorkCompleteInput {
+            capture: None,
+            evidence: vec![evidence_hash.to_string()],
+            acceptance: vec![WorkAcceptanceInput {
+                criterion: None,
+                satisfied: true,
+                evidence: vec![evidence_hash.to_string()],
+                note: "completion evidence is present".into(),
+            }],
+            idempotency_key: "typed-open-obligation-result".into(),
+        };
+        let first = service
+            .work_complete(input.clone(), at(6))
+            .expect("open obligation is a typed result");
+        let WorkCompleteResult::Refused(refusal) = &first else {
+            panic!("open obligation must not complete the work");
+        };
+        assert_eq!(refusal.code, "open_work_obligations");
+        assert_eq!(refusal.work_id, work.work_id);
+        assert_eq!(refusal.obligations.len(), 1);
+        assert_eq!(
+            refusal.obligations[0].obligation_id,
+            expected_obligation.obligation.obligation_id
+        );
+        assert_eq!(
+            refusal.obligations[0].definition,
+            expected_obligation.definition_hash
+        );
+        assert_eq!(
+            refusal.obligations[0].required_check,
+            VerificationKind::Test
+        );
+        assert_eq!(refusal.omitted_count, 0);
+        assert_eq!(
+            refusal.remedy,
+            "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
+        );
+        let replay = service
+            .work_complete(input, at(7))
+            .expect("typed refusal replays from the durable protocol attempt");
+        assert_eq!(
+            serde_json::to_value(replay).expect("replay JSON"),
+            serde_json::to_value(first).expect("first JSON")
+        );
+        let stored = SqliteStore::open(&database).expect("inspect store");
+        assert_eq!(
+            stored
+                .get_work_item(work.work_id)
+                .expect("refused work remains readable")
+                .lifecycle,
+            WorkLifecycle::Open
+        );
+        assert_eq!(
+            stored
+                .current_work_claim(work.work_id)
+                .expect("refused claim lookup")
+                .expect("refused claim remains live")
+                .state,
+            WorkClaimState::Active
+        );
+        let report = stored.verify_all().expect("typed refusal integrity report");
+        assert!(report.is_healthy(), "{report:?}");
     }
 
     #[test]

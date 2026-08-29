@@ -110,8 +110,7 @@ dogfood without an unmodeled workflow.
 | Capability requirements on work items matched against the host's bind-time capability map | More than one hosting environment can take the same item, or a host without a required skill claims work it cannot finish — [execution pipeline](features/execution-pipeline.md) |
 | Environment fingerprint as required seal evidence | Acceptance or report provenance must distinguish environments, or a result must be reproduced across hosts — [execution pipeline](features/execution-pipeline.md) |
 | External intake system (enrichment, planning, sufficiency check) | The manual import → execute → publish loop has closed several times and the manual steps are the bottleneck — [execution pipeline](features/execution-pipeline.md) |
-| First-class obligations (policy rule × verified observation → required evidence → satisfied/waived, immutable definition and resolution objects) | The first completion rule that must say "because the source changed, these checks must pass"; requires native `WorkRun` control binding — [execution pipeline](features/execution-pipeline.md) |
-| Typed evidence kinds with per-kind binding (`ExecutionObservation`, `VerificationEvidence`, `EnvironmentEvidence`) | An obligation must name what discharges it, or a seal is accepted over the wrong evidence or over a check that ran before the last mutation — [execution pipeline](features/execution-pipeline.md) |
+| Configurable obligation rules beyond the shipped built-in source-change/test rule | More projects need typed triggers, evidence kinds, blocking phases, and waiver authority that cannot be represented by the built-in rule — [execution pipeline](features/execution-pipeline.md) |
 
 ## Open decisions
 

@@ -65,8 +65,9 @@ Start with the [vision](docs/vision.md) for the short version.
   *contested* state, never last-writer-wins.
 - **Completion seal plus optional report pipeline** — the shipped zero-linked-
   state path validates evidence, required children, contributions, and the
-  accepted claim fence, refuses live descendant claims or handoffs, then
-  atomically freezes a `CompletionSeal`. Old child runs are fenced by the
+  accepted claim fence, refuses live descendant claims, handoffs, or open run
+  obligations, then atomically freezes a `CompletionSeal` with the exact
+  definition/resolution pairs at its dense cut. Old child runs are fenced by the
   closed ancestor/root-execution generation and cannot cross a root reopen. A
   durable
   `completion_pending` drain for linked actions and resource leases is the next
@@ -132,7 +133,9 @@ If the newest mutation has no basis, the open obligations remain waiver-only
 until another basis-bearing mutation and test arrive. Focus and dense deltas
 show definitions and terminal satisfaction/waiver events; waiver remains a
 host/operator-only authority command and is not exposed through MCP or
-`work_update`.
+`work_update`. `work_complete` returns a bounded, durably replayable
+`open_work_obligations` result until every applicable definition is satisfied
+or waived and its typed evidence is acknowledged by the final checkpoint.
 Opening a replacement process rotates an internal connection generation, so a
 still-running predecessor fails with `control_connection_superseded`. Begun
 turns remain checkpoint-required. `session_status.open_grant_id` identifies
