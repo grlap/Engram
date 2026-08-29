@@ -342,6 +342,15 @@ rechecks that grant and revocation state. `work_next` returns only the selected
 selects all four. CLI callers use `--sections focus,ready,catalog,changes` and
 MCP callers pass a string array. Selecting no `changes` section never stages or
 advances project delivery, including when a prior page remains pending.
+Ready and catalog candidates are filtered and limited by maintained SQLite
+projections before their compact item rows are decoded. Assignment and label
+filters use NFC plus full Unicode case folding, and catalog text search uses a
+trigram index over the short reference, title, outcome, labels, and active
+blocker detail. These views remain advisory; lifecycle mutations revalidate
+their canonical work-event basis under the write lock.
+The `--blocked`/`blocked_only` filter is independent of derived availability:
+it returns work with an active blocker or incomplete prerequisite even when
+the item is deferred or its lifecycle is closed.
 Hash-verified source changes retain dense positions and explicit compact
 summaries instead of canonical work snapshots or memory bodies. A change's
 `object_hash` identifies the verified canonical source and intentionally is not

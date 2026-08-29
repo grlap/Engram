@@ -246,9 +246,14 @@ Availability is a derived projection over the open item:
   responsibility; unlike `blocked`, it is not advertised for reassignment.
 
 Operational indexes cover open/closed/proposed work, assignments, labels,
-blocked/stale/orphaned items, statistics, and preflight integrity. Deferral
-has an explicit time or event wake condition; reaching it only recomputes
-readiness and does not auto-claim or start a process.
+blocked/stale/orphaned items, statistics, and preflight integrity. The ambient
+ready view ranks admitted work by priority, the number of open dependants it
+can unblock, age, and stable id. Its candidate limit is applied in SQLite before
+item projections are decoded. Catalog assignment and label keys use NFC plus
+full Unicode case folding; trigram FTS covers title, outcome, labels, short
+reference, and active-blocker detail. Deferral has an explicit time or event
+wake condition; reaching it only recomputes readiness and does not auto-claim
+or start a process.
 
 Completion is local and final for that run. Report readiness and external
 publication are separate projections; a work item can be completed with no
@@ -359,9 +364,14 @@ inside the lifecycle transaction. `work_focus` accepts a short ref or UUID,
 while update, completion, and handoff infer the current revision, run, claim,
 fence, evidence set, and unique matching offer. `work_next` exposes an optional
 section selector over `focus`, `ready`, `catalog`, and `changes`; excluding
-`changes` performs no delivery staging. For change delivery it verifies the
-canonical source objects, projects explicit compact summaries, and stages only
-the largest dense prefix that fits the change byte budget. Full canonical
+`changes` performs no delivery staging. Ready and catalog candidate selection
+uses bounded, maintained SQLite projections and decodes only the rows selected
+by the requested limit and filters. Those two sections are advisory: lifecycle
+mutations still re-read hash-verified canonical history under their write
+transaction, while `engram doctor` verifies the derived catalog indexes
+against retained item and blocker projections. For change delivery it verifies
+the canonical source objects, projects explicit compact summaries, and stages
+only the largest dense prefix that fits the change byte budget. Full canonical
 snapshots and memory bodies are not ambient protocol payloads. Each summary
 retains its source position and hash, but the source hash intentionally does
 not bind the summary bytes. Restricted and out-of-focus entries retain their

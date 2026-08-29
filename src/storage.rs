@@ -6,7 +6,10 @@ pub(crate) use work::WorkObligationRecord;
 pub(crate) use work::{StageWorkSessionDelivery, normalize_completion_acceptance_shape};
 
 #[cfg(test)]
-pub(crate) use work::{reset_work_event_decode_count, work_event_decode_count};
+pub(crate) use work::{
+    reset_work_event_decode_count, reset_work_item_projection_decode_count,
+    work_event_decode_count, work_item_projection_decode_count,
+};
 
 use std::{
     collections::{HashMap, HashSet},
@@ -860,6 +863,10 @@ fn immutable_uri(path: &Path) -> Result<String, StoreError> {
 /// V1's canonical local persistence backend.
 pub struct SqliteStore {
     connection: Connection,
+    /// Local-work schema generation this connection opened and understands.
+    /// Every work mutation compares it with durable metadata inside the write
+    /// transaction so a long-lived older process cannot write after migration.
+    work_schema_version: i64,
     /// The project root's filesystem identity for this opener. `None` means
     /// unresolved: reads and work proceed, path leases fail closed.
     host_path_policy: Option<HostPathPolicy>,
@@ -1545,10 +1552,12 @@ impl SqliteStore {
             connection.execute_batch("COMMIT;")?;
         }
         work::migrate(&mut connection)?;
+        let work_schema_version = work::schema_version(&connection)?;
         Self::migrate_control_work_bindings(&mut connection)?;
         Self::migrate_memory_contradiction_edges(&mut connection)?;
         Ok(Self {
             connection,
+            work_schema_version,
             host_path_policy,
         })
     }
@@ -16645,7 +16654,11 @@ mod tests {
     )]
     fn resource_aliases_and_active_leases_remain_task_isolated() {
         let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-        let mut store = SqliteStore::open_in_memory().unwrap();
+        let mut store = SqliteStore::open_in_memory_with_host_path_identity(Some(HostPathPolicy {
+            case_fold_paths: true,
+            windows_alias_rules: false,
+        }))
+        .unwrap();
         let effects = [EffectClass::Observe, EffectClass::MutateLocal];
         let session_a = bind_control_for(&mut store, "alias-a", "bind-alias-a", &effects, now);
         let session_b = bind_control_for(&mut store, "alias-b", "bind-alias-b", &effects, now);

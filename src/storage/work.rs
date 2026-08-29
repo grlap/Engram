@@ -11,8 +11,12 @@ use std::collections::{HashMap, HashSet};
 use std::cell::Cell;
 
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{
+    Connection, OptionalExtension, Transaction, TransactionBehavior, params, types::Value,
+};
 use serde::{Serialize, de::DeserializeOwned};
+use unicode_casefold::UnicodeCaseFold;
+use unicode_normalization::UnicodeNormalization;
 
 use super::{BeginWorkProtocolAttempt, SqliteStore, StoreError};
 use crate::{
@@ -45,17 +49,19 @@ use crate::{
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
-const CURRENT_WORK_SCHEMA_VERSION: i64 = 9;
+const CURRENT_WORK_SCHEMA_VERSION: i64 = 10;
 const REQUIRED_WORK_TABLES: &[&str] = &[
     "work_authority_grants",
     "work_authority_revocations",
     "work_blockers",
+    "work_catalog_fts",
     "work_claims",
     "work_completion_seals",
     "work_feed_entries",
     "work_feed_heads",
     "work_handoff_offers",
     "work_items",
+    "work_item_labels",
     "work_operation_results",
     "work_prerequisites",
     "work_protocol_attempts",
@@ -72,8 +78,11 @@ const REBUILDABLE_WORK_INDEXES: &[&str] = &[
     "work_claims_live",
     "work_handoff_offer_active",
     "work_items_parent",
+    "work_items_assigned",
+    "work_items_catalog_after",
     "work_items_ready",
     "work_items_root",
+    "work_item_labels_lookup",
     "work_prerequisites_reverse",
     "work_root_execution_active",
     "work_run_active",
@@ -85,6 +94,92 @@ const REBUILDABLE_WORK_INDEXES: &[&str] = &[
 const CHECKPOINT_APPEND_COUNT: i64 = 2;
 const MAX_OPEN_COMPLETION_OBLIGATIONS: usize = 16;
 const MAX_COMPLETION_ENVIRONMENT_EVIDENCE: usize = 64;
+const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
+    CASE
+        WHEN candidate.lifecycle != 'open' THEN 'closed'
+        WHEN NOT EXISTS (
+            SELECT 1
+            FROM work_runs run
+            JOIN work_root_executions execution
+              ON execution.root_execution_id = run.root_execution_id
+            WHERE run.run_id = candidate.active_run_id
+              AND run.work_id = candidate.work_id
+              AND execution.project_id = candidate.project_id
+              AND execution.root_id = candidate.root_id
+              AND execution.state = 'active'
+        ) OR EXISTS (
+            WITH RECURSIVE ancestors(work_id, parent_id, lifecycle) AS (
+                SELECT parent.work_id, parent.parent_id, parent.lifecycle
+                FROM work_items parent
+                WHERE parent.work_id = candidate.parent_id
+                UNION ALL
+                SELECT parent.work_id, parent.parent_id, parent.lifecycle
+                FROM work_items parent
+                JOIN ancestors ON parent.work_id = ancestors.parent_id
+            )
+            SELECT 1 FROM ancestors WHERE lifecycle != 'open'
+        ) THEN 'blocked'
+        WHEN candidate.deferred_until_ms IS NOT NULL
+          AND candidate.deferred_until_ms > ?2 THEN 'deferred'
+        WHEN EXISTS (
+            SELECT 1 FROM work_blockers blocker
+            WHERE blocker.work_id = candidate.work_id AND blocker.state = 'active'
+        ) OR EXISTS (
+            SELECT 1
+            FROM work_prerequisites edge
+            LEFT JOIN work_items prerequisite
+              ON prerequisite.work_id = edge.prerequisite_id
+            LEFT JOIN work_items replacement
+              ON replacement.work_id = prerequisite.superseded_by
+            WHERE edge.work_id = candidate.work_id
+              AND (
+                  prerequisite.work_id IS NULL
+                  OR NOT (
+                      prerequisite.lifecycle = 'completed'
+                      OR (
+                          prerequisite.lifecycle = 'superseded'
+                          AND replacement.lifecycle = 'completed'
+                      )
+                  )
+              )
+        ) THEN 'blocked'
+        WHEN EXISTS (
+            SELECT 1 FROM work_claims claim
+            WHERE claim.run_id = candidate.active_run_id
+              AND claim.state = 'active'
+              AND claim.expires_at_ms > ?2
+        ) THEN CASE WHEN EXISTS (
+            SELECT 1 FROM work_runs run
+            WHERE run.run_id = candidate.active_run_id
+              AND run.last_checkpoint_hash IS NOT NULL
+        ) THEN 'active' ELSE 'claimed' END
+        ELSE 'ready'
+    END
+";
+const PROJECTED_WORK_HAS_BLOCKER_SQL: &str = r"
+    EXISTS (
+        SELECT 1 FROM work_blockers blocker
+        WHERE blocker.work_id = candidate.work_id AND blocker.state = 'active'
+    ) OR EXISTS (
+        SELECT 1
+        FROM work_prerequisites edge
+        LEFT JOIN work_items prerequisite
+          ON prerequisite.work_id = edge.prerequisite_id
+        LEFT JOIN work_items replacement
+          ON replacement.work_id = prerequisite.superseded_by
+        WHERE edge.work_id = candidate.work_id
+          AND (
+              prerequisite.work_id IS NULL
+              OR NOT (
+                  prerequisite.lifecycle = 'completed'
+                  OR (
+                      prerequisite.lifecycle = 'superseded'
+                      AND replacement.lifecycle = 'completed'
+                  )
+              )
+          )
+    )
+";
 
 #[derive(Clone, Copy)]
 pub(crate) struct StageWorkSessionDelivery<'a> {
@@ -177,6 +272,7 @@ pub(crate) struct WorkObligationRecord {
 #[cfg(test)]
 thread_local! {
     static WORK_EVENT_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
+    static WORK_ITEM_PROJECTION_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -187,6 +283,16 @@ pub(crate) fn reset_work_event_decode_count() {
 #[cfg(test)]
 pub(crate) fn work_event_decode_count() -> usize {
     WORK_EVENT_DECODE_COUNT.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_work_item_projection_decode_count() {
+    WORK_ITEM_PROJECTION_DECODE_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn work_item_projection_decode_count() -> usize {
+    WORK_ITEM_PROJECTION_DECODE_COUNT.with(Cell::get)
 }
 
 pub(super) fn preflight_schema(connection: &Connection) -> Result<(), StoreError> {
@@ -237,6 +343,34 @@ pub(super) fn preflight_schema(connection: &Connection) -> Result<(), StoreError
                 )));
             }
         }
+    }
+    Ok(())
+}
+
+pub(super) fn schema_version(connection: &Connection) -> Result<i64, StoreError> {
+    connection
+        .query_row(
+            "SELECT schema_version FROM work_schema_metadata WHERE singleton = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "local-work schema metadata has no singleton row".into(),
+            )
+        })
+}
+
+fn require_work_schema_version(
+    connection: &Connection,
+    expected_version: i64,
+) -> Result<(), StoreError> {
+    let version = schema_version(connection)?;
+    if version != expected_version {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "unsupported local-work schema version {version}"
+        )));
     }
     Ok(())
 }
@@ -300,6 +434,8 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
              lifecycle TEXT NOT NULL,
              priority INTEGER NOT NULL,
              assigned_to TEXT,
+             assigned_to_key TEXT,
+             search_text_key TEXT NOT NULL DEFAULT '',
              deferred_until_ms INTEGER,
              revision INTEGER NOT NULL,
              active_run_id TEXT,
@@ -318,6 +454,18 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
              ON work_items(parent_id, lifecycle);
          CREATE INDEX IF NOT EXISTS work_items_root
              ON work_items(project_id, root_id, work_id);
+         CREATE TABLE IF NOT EXISTS work_item_labels (
+             work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
+             label_key TEXT NOT NULL,
+             PRIMARY KEY(work_id, label_key)
+         ) STRICT;
+         CREATE INDEX IF NOT EXISTS work_item_labels_lookup
+             ON work_item_labels(label_key, work_id);
+         CREATE VIRTUAL TABLE IF NOT EXISTS work_catalog_fts USING fts5(
+             work_id UNINDEXED,
+             search_text,
+             tokenize='trigram'
+         );
          CREATE TABLE IF NOT EXISTS work_root_executions (
              root_execution_id TEXT PRIMARY KEY,
              project_id TEXT NOT NULL,
@@ -634,6 +782,40 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
             [],
         )?;
     }
+    let has_assigned_to_key = transaction.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM pragma_table_info('work_items')
+             WHERE name = 'assigned_to_key'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_assigned_to_key {
+        require_legacy_work_schema(starting_version, "work_items.assigned_to_key")?;
+        transaction.execute("ALTER TABLE work_items ADD COLUMN assigned_to_key TEXT", [])?;
+    }
+    let has_search_text_key = transaction.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM pragma_table_info('work_items')
+             WHERE name = 'search_text_key'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_search_text_key {
+        require_legacy_work_schema(starting_version, "work_items.search_text_key")?;
+        transaction.execute(
+            "ALTER TABLE work_items
+             ADD COLUMN search_text_key TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    transaction.execute_batch(
+        "CREATE INDEX IF NOT EXISTS work_items_assigned
+             ON work_items(project_id, assigned_to_key, work_id);
+         CREATE INDEX IF NOT EXISTS work_items_catalog_after
+             ON work_items(project_id, work_id);",
+    )?;
     let has_offer_hash = transaction.query_row(
         "SELECT EXISTS(
              SELECT 1 FROM pragma_table_info('work_handoff_offers')
@@ -749,6 +931,14 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
     }
     let upgrading = starting_version != Some(CURRENT_WORK_SCHEMA_VERSION);
     if upgrading {
+        let catalog_items = transaction
+            .prepare("SELECT item_json FROM work_items ORDER BY work_id")?
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))?
+            .map(|row| serde_json::from_slice::<WorkItem>(&row?).map_err(StoreError::from))
+            .collect::<Result<Vec<_>, _>>()?;
+        for item in catalog_items {
+            refresh_work_catalog_projection(&transaction, &item)?;
+        }
         let handoff_rows = {
             let mut statement = transaction.prepare(
                 "SELECT offer_id, run_id, work_id, state, expires_at_ms, offer_hash, offer_json
@@ -919,6 +1109,8 @@ fn current_work_schema_is_complete(connection: &Connection) -> Result<bool, Stor
         ("work_session_state", "tentative_delivery_payload_hash"),
         ("work_session_state", "tentative_delivery_payload"),
         ("work_items", "superseded_by"),
+        ("work_items", "assigned_to_key"),
+        ("work_items", "search_text_key"),
         ("work_handoff_offers", "offer_hash"),
         ("work_protocol_attempts", "basis_hash"),
         ("work_protocol_attempts", "basis_json"),
@@ -1023,6 +1215,15 @@ struct WorkProtocolAttemptRow {
 }
 
 impl SqliteStore {
+    fn begin_work_mutation(&mut self) -> Result<Transaction<'_>, StoreError> {
+        let expected_version = self.work_schema_version;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_work_schema_version(&transaction, expected_version)?;
+        Ok(transaction)
+    }
+
     /// Installs one canonical host-resolved work authority grant.
     ///
     /// This host-SDK boundary is intentionally not exposed through the agent
@@ -1074,9 +1275,7 @@ impl SqliteStore {
             ));
         }
         let object = CanonicalObject::freeze(&grant)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         SqliteStore::insert_object(&transaction, "work_authority_grant", &object)?;
         transaction.execute(
             "INSERT INTO work_authority_grants (
@@ -1120,9 +1319,7 @@ impl SqliteStore {
                 "authority revocation time cannot be in the future".into(),
             ));
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         let existing: Option<String> = transaction
             .query_row(
                 "SELECT revocation_hash FROM work_authority_revocations WHERE grant_hash = ?1",
@@ -1490,9 +1687,7 @@ impl SqliteStore {
         let idempotency_key = normalize_text(idempotency_key, "work idempotency key")?;
         let request_object = CanonicalObject::freeze(intent)?;
         let basis_object = CanonicalObject::freeze(basis)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         transaction.execute(
             "INSERT INTO work_protocol_attempts (
                  project_id, session_id, operation, idempotency_key,
@@ -1598,9 +1793,7 @@ impl SqliteStore {
     ) -> Result<(), StoreError> {
         let compact_result =
             compact_work_protocol_result(operation, serde_json::to_value(result)?)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         validate_work_protocol_result_binding(
             &transaction,
             &project_id.0,
@@ -1708,9 +1901,7 @@ impl SqliteStore {
         work_id: WorkId,
         now: DateTime<Utc>,
     ) -> Result<WorkSessionState, StoreError> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         let item = load_work_item(&transaction, work_id)?;
         if item.project_id != *project_id {
             return Err(StoreError::InvalidWork(
@@ -1773,9 +1964,7 @@ impl SqliteStore {
                 "work delivery cursor must not be negative".into(),
             ));
         }
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         transaction.execute(
             "INSERT INTO work_session_state (
                  project_id, session_id, focused_work_id, project_cursor,
@@ -1972,7 +2161,8 @@ impl SqliteStore {
                 "work acknowledgement cursor must not be negative".into(),
             ));
         }
-        let changed = self.connection.execute(
+        let transaction = self.begin_work_mutation()?;
+        let changed = transaction.execute(
             "UPDATE work_session_state SET
                  project_cursor = ?3,
                  tentative_project_cursor = NULL,
@@ -1991,8 +2181,9 @@ impl SqliteStore {
                 now.timestamp_millis()
             ],
         )?;
+        transaction.commit()?;
+        let state = self.work_session_state(project_id, session_id, now)?;
         if changed == 0 {
-            let state = self.work_session_state(project_id, session_id, now)?;
             if state.project_cursor == through {
                 return Ok(state);
             }
@@ -2001,7 +2192,7 @@ impl SqliteStore {
                     .into(),
             ));
         }
-        self.work_session_state(project_id, session_id, now)
+        Ok(state)
     }
 
     /// Lists direct children in stable creation order.
@@ -2334,7 +2525,7 @@ impl SqliteStore {
         ))
     }
 
-    /// Returns ready work ordered by priority, age, and stable id.
+    /// Returns ready work ordered by priority, unblocking value, age, and stable id.
     ///
     /// # Errors
     ///
@@ -2345,26 +2536,46 @@ impl SqliteStore {
         now: DateTime<Utc>,
         limit: u32,
     ) -> Result<Vec<ReadyWork>, StoreError> {
-        let mut statement = self.connection.prepare(
-            "SELECT candidate.work_id FROM work_items candidate
-             WHERE candidate.project_id = ?1 AND candidate.lifecycle = 'open'
-             ORDER BY candidate.priority,
-                      (SELECT COUNT(*) FROM work_prerequisites dependency
-                       WHERE dependency.prerequisite_id = candidate.work_id) DESC,
-                      candidate.created_at_ms, candidate.work_id",
-        )?;
+        let sql = format!(
+            "WITH classified AS (
+                 SELECT candidate.work_id, candidate.priority,
+                        candidate.created_at_ms,
+                        ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability
+                 FROM work_items candidate
+                 WHERE candidate.project_id = ?1
+                   AND candidate.lifecycle = 'open'
+             )
+             SELECT work_id FROM classified
+             WHERE availability = 'ready'
+             ORDER BY priority,
+                      (SELECT COUNT(*)
+                       FROM work_prerequisites dependency
+                       JOIN work_items dependant
+                         ON dependant.work_id = dependency.work_id
+                       WHERE dependency.prerequisite_id = classified.work_id
+                         AND dependant.lifecycle = 'open') DESC,
+                      created_at_ms, work_id
+             LIMIT ?3"
+        );
+        let mut statement = self.connection.prepare(&sql)?;
         let ids = statement
-            .query_map([project_id.0.as_str()], |row| row.get::<_, String>(0))?
+            .query_map(
+                params![
+                    project_id.0.as_str(),
+                    now.timestamp_millis(),
+                    i64::from(limit.clamp(1, 1_000))
+                ],
+                |row| row.get::<_, String>(0),
+            )?
             .map(|row| parse_work_id(&row?))
             .collect::<Result<Vec<_>, _>>()?;
         ids.into_iter()
-            .map(|id| inspect_work_on(&self.connection, id, now))
+            .map(|id| inspect_work_catalog_on(&self.connection, id, now))
             .filter_map(|result| match result {
                 Ok(view) if view.availability == WorkAvailability::Ready => Some(Ok(view)),
                 Ok(_) => None,
                 Err(error) => Some(Err(error)),
             })
-            .take(limit.clamp(1, 1_000) as usize)
             .collect()
     }
 
@@ -2379,89 +2590,11 @@ impl SqliteStore {
         now: DateTime<Utc>,
         query: &WorkCatalogQuery,
     ) -> Result<WorkCatalogPage, StoreError> {
-        let after = query.after.map(|work_id| work_id.0.to_string());
-        let mut statement = self.connection.prepare(
-            "SELECT work_id FROM work_items
-             WHERE project_id = ?1 AND (?2 IS NULL OR work_id > ?2)
-             ORDER BY work_id",
-        )?;
-        let ids = statement
-            .query_map(params![project_id.0, after], |row| row.get::<_, String>(0))?
-            .map(|row| parse_work_id(&row?))
-            .collect::<Result<Vec<_>, _>>()?;
-        let search = query
-            .search
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_lowercase);
-        let assigned_to = query
-            .assigned_to
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let label = query
-            .label
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
+        let ids = query_work_catalog_ids(&self.connection, project_id, now, query)?;
         let limit = query.limit.clamp(1, 1_000) as usize;
         let mut items = Vec::with_capacity(limit.saturating_add(1));
         for work_id in ids {
-            let view = inspect_work_on(&self.connection, work_id, now)?;
-            if !query.lifecycles.is_empty() && !query.lifecycles.contains(&view.work.lifecycle) {
-                continue;
-            }
-            if !query.availabilities.is_empty()
-                && !query.availabilities.contains(&view.availability)
-            {
-                continue;
-            }
-            if query.blocked_only
-                && view.availability != WorkAvailability::Blocked
-                && view.blockers.is_empty()
-                && view.blocked_by.is_empty()
-            {
-                continue;
-            }
-            if assigned_to.is_some_and(|expected| {
-                view.work
-                    .assigned_to
-                    .as_deref()
-                    .is_none_or(|actual| !actual.eq_ignore_ascii_case(expected))
-            }) {
-                continue;
-            }
-            if label.is_some_and(|expected| {
-                !view
-                    .work
-                    .labels
-                    .iter()
-                    .any(|actual| actual.eq_ignore_ascii_case(expected))
-            }) {
-                continue;
-            }
-            if search.as_ref().is_some_and(|needle| {
-                let mut searchable = format!(
-                    "{}\n{}\n{}\n{}",
-                    view.work.short_ref,
-                    view.work.title,
-                    view.work.outcome,
-                    view.work.labels.join("\n")
-                )
-                .to_lowercase();
-                for blocker in &view.blockers {
-                    searchable.push('\n');
-                    searchable.push_str(&blocker.detail.to_lowercase());
-                }
-                !searchable.contains(needle)
-            }) {
-                continue;
-            }
-            items.push(view);
-            if items.len() > limit {
-                break;
-            }
+            items.push(inspect_work_catalog_on(&self.connection, work_id, now)?);
         }
         let next_after = (items.len() > limit).then(|| items[limit - 1].work.work_id);
         items.truncate(limit);
@@ -2697,9 +2830,7 @@ impl SqliteStore {
 
     #[cfg(test)]
     pub(crate) fn append_test_work_event(&mut self, event: &WorkEvent) -> Result<(), StoreError> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         append_work_event(&transaction, event)?;
         transaction.commit()?;
         Ok(())
@@ -3201,6 +3332,7 @@ impl SqliteStore {
             &mut legacy,
         )?;
         verify_work_feed_integrity(connection, &work_items, &mut checked, &mut invalid)?;
+        verify_work_catalog_projections(connection, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
         verify_authority_revocation_bindings(connection, &mut checked, &mut invalid)?;
@@ -3224,9 +3356,7 @@ impl SqliteStore {
         inspect_work_request(redactor, request)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(seal) = replay_operation::<CompletionSeal>(
             &transaction,
             "complete_work",
@@ -3579,9 +3709,7 @@ impl SqliteStore {
         inspect_work_request(redactor, request)?;
         let reason = normalize_text(&request.reason, "reopen reason")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(run) = replay_operation::<WorkRun>(
             &transaction,
             "reopen_work",
@@ -3794,9 +3922,7 @@ impl SqliteStore {
         inspect_work_request(redactor, request)?;
         let reason = normalize_text(&request.reason, "work disposal reason")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
             &transaction,
             "dispose_work",
@@ -4032,9 +4158,7 @@ impl SqliteStore {
         inspect_work_request(redactor, request)?;
         let reason = normalize_text(&request.reason, "required-child waiver reason")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(waiver) = replay_operation::<RequiredChildWaiver>(
             &transaction,
             "waive_required_child",
@@ -4178,9 +4302,7 @@ impl SqliteStore {
         inspect_work_request(redactor, &request)?;
         let waived_by = normalize_text(&request.waived_by, "obligation waiver actor")?;
         let reason = normalize_text(&request.reason, "obligation waiver reason")?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         Self::verify_control_connection(&transaction, session_id, connection_token)?;
         let session = Self::load_control_session_on(&transaction, session_id)?
             .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
@@ -4415,9 +4537,7 @@ impl SqliteStore {
             actor: &request.actor,
             idempotency_key: &request.idempotency_key,
         })?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(event) = replay_operation::<WorkObligationResolutionEvent>(
             &transaction,
             "waive_work_obligation",
@@ -4500,9 +4620,7 @@ impl SqliteStore {
         assert_actor_session(&request.actor, &request.holder)?;
         let expires_at = claim_expiry(request.claimed_at, request.ttl_seconds)?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(claim) = replay_operation::<WorkClaim>(
             &transaction,
             "claim_work",
@@ -4708,9 +4826,7 @@ impl SqliteStore {
         assert_actor_session(&request.actor, &request.holder)?;
         let reason = normalize_text(&request.reason, "release reason")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(claim) = replay_operation::<WorkClaim>(
             &transaction,
             "release_work",
@@ -4834,9 +4950,7 @@ impl SqliteStore {
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = normalize_text(&request.summary, "checkpoint summary")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(hash) = replay_operation::<ObjectHash>(
             &transaction,
             "checkpoint_work",
@@ -4953,9 +5067,7 @@ impl SqliteStore {
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = normalize_text(&request.summary, "evidence summary")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(hash) = replay_operation::<ObjectHash>(
             &transaction,
             "record_work_evidence",
@@ -5072,9 +5184,7 @@ impl SqliteStore {
         let summary = normalize_text(&request.checkpoint_summary, "checkpoint summary")?;
         let requested_expiry = claim_expiry(request.offered_at, request.ttl_seconds)?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(offer) = replay_operation::<WorkHandoffOffer>(
             &transaction,
             "offer_work_handoff",
@@ -5219,9 +5329,7 @@ impl SqliteStore {
         inspect_work_request(redactor, request)?;
         assert_actor_session(&request.actor, &request.to)?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(claim) = replay_operation::<WorkClaim>(
             &transaction,
             "accept_work_handoff",
@@ -5370,9 +5478,7 @@ impl SqliteStore {
         assert_actor_session(&request.actor, &request.holder)?;
         let reason = normalize_text(&request.reason, "handoff cancellation reason")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(offer) = replay_operation::<WorkHandoffOffer>(
             &transaction,
             "cancel_work_handoff",
@@ -5511,9 +5617,7 @@ impl SqliteStore {
             }
         }
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
             &transaction,
             "create_work",
@@ -5631,6 +5735,7 @@ impl SqliteStore {
                 serde_json::to_vec(&item)?
             ],
         )?;
+        refresh_work_catalog_projection(&transaction, &item)?;
         transaction.execute(
             "INSERT INTO work_root_executions (
                  root_execution_id, project_id, root_id, generation, state,
@@ -5748,9 +5853,7 @@ impl SqliteStore {
             }
         }
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(decomposition) = replay_operation::<WorkDecomposition>(
             &transaction,
             "decompose_work",
@@ -5885,6 +5988,7 @@ impl SqliteStore {
                     serde_json::to_vec(&item)?
                 ],
             )?;
+            refresh_work_catalog_projection(&transaction, &item)?;
             let run = WorkRun {
                 schema_version: SCHEMA_VERSION,
                 run_id,
@@ -6061,9 +6165,7 @@ impl SqliteStore {
             return Err(StoreError::InvalidWork("revision patch is empty".into()));
         }
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
             &transaction,
             "revise_work",
@@ -6196,9 +6298,7 @@ impl SqliteStore {
             "remove_work_prerequisite"
         };
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
             &transaction,
             operation,
@@ -6333,9 +6433,7 @@ impl SqliteStore {
         inspect_work_request(redactor, request)?;
         let detail = normalize_text(&request.detail, "blocker detail")?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(blocker) = replay_operation::<WorkBlocker>(
             &transaction,
             "add_work_blocker",
@@ -6407,6 +6505,7 @@ impl SqliteStore {
                 event_hash.as_str()
             ],
         )?;
+        refresh_work_catalog_projection(&transaction, &item)?;
         persist_operation_result(
             &transaction,
             "add_work_blocker",
@@ -6431,9 +6530,7 @@ impl SqliteStore {
     ) -> Result<WorkItem, StoreError> {
         inspect_work_request(redactor, request)?;
         let request_object = request_object(request)?;
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
             &transaction,
             "clear_work_blocker",
@@ -6502,6 +6599,7 @@ impl SqliteStore {
              WHERE blocker_id = ?1",
             params![request.blocker_id, event_hash.as_str()],
         )?;
+        refresh_work_catalog_projection(&transaction, &item)?;
         persist_operation_result(
             &transaction,
             "clear_work_blocker",
@@ -6514,6 +6612,149 @@ impl SqliteStore {
     }
 }
 
+fn push_catalog_parameter(parameters: &mut Vec<Value>, value: Value) -> String {
+    parameters.push(value);
+    format!("?{}", parameters.len())
+}
+
+fn catalog_literal_fts_query(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn query_work_catalog_ids(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    now: DateTime<Utc>,
+    query: &WorkCatalogQuery,
+) -> Result<Vec<WorkId>, StoreError> {
+    let mut parameters = vec![
+        Value::Text(project_id.0.clone()),
+        Value::Integer(now.timestamp_millis()),
+    ];
+    let mut candidate_filters = vec!["candidate.project_id = ?1".to_owned()];
+    if let Some(after) = query.after {
+        let parameter = push_catalog_parameter(&mut parameters, Value::Text(after.0.to_string()));
+        candidate_filters.push(format!("candidate.work_id > {parameter}"));
+    }
+    if !query.lifecycles.is_empty() {
+        let placeholders = query
+            .lifecycles
+            .iter()
+            .map(|lifecycle| {
+                Ok(push_catalog_parameter(
+                    &mut parameters,
+                    Value::Text(encode_state(*lifecycle)?),
+                ))
+            })
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        candidate_filters.push(format!(
+            "candidate.lifecycle IN ({})",
+            placeholders.join(", ")
+        ));
+    }
+    if let Some(assigned_to) = query
+        .assigned_to
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let parameter = push_catalog_parameter(
+            &mut parameters,
+            Value::Text(normalize_work_catalog_key(assigned_to)),
+        );
+        candidate_filters.push(format!("candidate.assigned_to_key = {parameter}"));
+    }
+    if let Some(label) = query
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let parameter = push_catalog_parameter(
+            &mut parameters,
+            Value::Text(normalize_work_catalog_key(label)),
+        );
+        candidate_filters.push(format!(
+            "EXISTS (
+                 SELECT 1 FROM work_item_labels label
+                 WHERE label.work_id = candidate.work_id
+                   AND label.label_key = {parameter}
+             )"
+        ));
+    }
+    if let Some(search) = query
+        .search
+        .as_deref()
+        .map(normalize_work_catalog_key)
+        .filter(|value| !value.is_empty())
+    {
+        let search_characters = search.chars().count();
+        let parameter = push_catalog_parameter(
+            &mut parameters,
+            Value::Text(if search_characters >= 3 {
+                catalog_literal_fts_query(&search)
+            } else {
+                search
+            }),
+        );
+        if search_characters >= 3 {
+            candidate_filters.push(format!(
+                "candidate.work_id IN (
+                     SELECT work_id FROM work_catalog_fts
+                     WHERE work_catalog_fts MATCH {parameter}
+                 )"
+            ));
+        } else {
+            candidate_filters.push(format!("instr(candidate.search_text_key, {parameter}) > 0"));
+        }
+    }
+
+    let mut classified_filters = Vec::new();
+    if !query.availabilities.is_empty() {
+        let placeholders = query
+            .availabilities
+            .iter()
+            .map(|availability| {
+                Ok(push_catalog_parameter(
+                    &mut parameters,
+                    Value::Text(encode_state(*availability)?),
+                ))
+            })
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        classified_filters.push(format!("availability IN ({})", placeholders.join(", ")));
+    }
+    if query.blocked_only {
+        candidate_filters.push(format!("({PROJECTED_WORK_HAS_BLOCKER_SQL})"));
+    }
+    let limit = i64::from(query.limit.clamp(1, 1_000)).saturating_add(1);
+    let limit_parameter = push_catalog_parameter(&mut parameters, Value::Integer(limit));
+    let classified_where = if classified_filters.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", classified_filters.join(" AND "))
+    };
+    let sql = format!(
+        "WITH classified AS (
+             SELECT candidate.work_id,
+                    ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability
+             FROM work_items candidate
+             WHERE {}
+         )
+         SELECT work_id FROM classified
+         {classified_where}
+         ORDER BY work_id
+         LIMIT {limit_parameter}",
+        candidate_filters.join(" AND ")
+    );
+    let mut statement = connection.prepare(&sql)?;
+    statement
+        .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+            row.get::<_, String>(0)
+        })?
+        .map(|row| parse_work_id(&row?))
+        .collect()
+}
+
 fn inspect_work_on(
     connection: &Connection,
     work_id: WorkId,
@@ -6522,6 +6763,27 @@ fn inspect_work_on(
     let work = load_work_item(connection, work_id)?;
     let blockers = load_active_blocker_projections(connection, work_id)?;
     let blocked_by = incomplete_prerequisite_projections(connection, work_id)?;
+    derive_projected_work_availability(connection, work, blockers, blocked_by, now)
+}
+
+fn inspect_work_catalog_on(
+    connection: &Connection,
+    work_id: WorkId,
+    now: DateTime<Utc>,
+) -> Result<ReadyWork, StoreError> {
+    let work = load_work_item_projection(connection, work_id)?;
+    let blockers = load_active_blocker_catalog_rows(connection, work_id)?;
+    let blocked_by = incomplete_prerequisite_catalog_rows(connection, work_id)?;
+    derive_projected_work_availability(connection, work, blockers, blocked_by, now)
+}
+
+fn derive_projected_work_availability(
+    connection: &Connection,
+    work: WorkItem,
+    blockers: Vec<WorkBlocker>,
+    blocked_by: Vec<WorkId>,
+    now: DateTime<Utc>,
+) -> Result<ReadyWork, StoreError> {
     let mut why = Vec::new();
     let mut reason_codes = Vec::new();
     let availability = if !matches!(work.lifecycle, WorkLifecycle::Open) {
@@ -6858,7 +7120,10 @@ fn decode_canonical_work_event(stored: (String, Vec<u8>)) -> Result<WorkEvent, S
     CanonicalObject::verify(&hash, bytes)?.decode()
 }
 
-fn load_work_item(connection: &Connection, work_id: WorkId) -> Result<WorkItem, StoreError> {
+fn load_work_item_projection(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<WorkItem, StoreError> {
     let row: Option<(Vec<u8>, bool)> = connection
         .query_row(
             "SELECT item_json,
@@ -6915,11 +7180,23 @@ fn load_work_item(connection: &Connection, work_id: WorkId) -> Result<WorkItem, 
         )
         .optional()?;
     let (bytes, scalar_bound) = row.ok_or(StoreError::WorkNotFound(work_id))?;
+    #[cfg(test)]
+    WORK_ITEM_PROJECTION_DECODE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
     let item: WorkItem = serde_json::from_slice(&bytes)?;
-    let event = latest_canonical_work_event_for_item(connection, work_id)?;
-    if !scalar_bound || item.work_id != work_id || event.work != item {
+    if !scalar_bound || item.work_id != work_id {
         return Err(StoreError::InvalidWorkProjection(format!(
-            "work item {work_id:?} differs from its scalar or canonical event binding"
+            "work item {work_id:?} differs from its scalar projection binding"
+        )));
+    }
+    Ok(item)
+}
+
+fn load_work_item(connection: &Connection, work_id: WorkId) -> Result<WorkItem, StoreError> {
+    let item = load_work_item_projection(connection, work_id)?;
+    let event = latest_canonical_work_event_for_item(connection, work_id)?;
+    if event.work != item {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "work item {work_id:?} differs from its latest canonical event"
         )));
     }
     Ok(item)
@@ -7254,6 +7531,36 @@ fn load_active_blocker_projections(
         .collect()
 }
 
+fn load_active_blocker_catalog_rows(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<WorkBlocker>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT blocker_json,
+                blocker_id = json_extract(blocker_json, '$.blocker_id') AND
+                work_id = json_extract(blocker_json, '$.work_id')
+         FROM work_blockers
+         WHERE work_id = ?1 AND state = 'active'
+         ORDER BY blocker_id",
+    )?;
+    statement
+        .query_map([work_id.0.to_string()], |row| {
+            Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, bool>(1)?))
+        })?
+        .map(|row| {
+            let (bytes, scalar_bound) = row?;
+            let blocker: WorkBlocker = serde_json::from_slice(&bytes)?;
+            if !scalar_bound || blocker.work_id != work_id {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "active blocker {} differs from its scalar binding",
+                    blocker.blocker_id
+                )));
+            }
+            Ok(blocker)
+        })
+        .collect()
+}
+
 fn incomplete_prerequisite_projections(
     connection: &Connection,
     work_id: WorkId,
@@ -7309,6 +7616,49 @@ fn incomplete_prerequisite_projections(
         }
     }
     Ok(incomplete)
+}
+
+fn incomplete_prerequisite_catalog_rows(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<WorkId>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT edge.prerequisite_id, prerequisite.lifecycle, replacement.lifecycle
+         FROM work_prerequisites edge
+         LEFT JOIN work_items prerequisite
+           ON prerequisite.work_id = edge.prerequisite_id
+         LEFT JOIN work_items replacement
+           ON replacement.work_id = prerequisite.superseded_by
+         WHERE edge.work_id = ?1
+         ORDER BY edge.prerequisite_id",
+    )?;
+    statement
+        .query_map([work_id.0.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .map(|row| {
+            let (prerequisite_id, lifecycle, replacement_lifecycle) = row?;
+            let prerequisite_id = parse_work_id(&prerequisite_id)?;
+            let lifecycle = lifecycle.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "prerequisite {prerequisite_id:?} is missing"
+                ))
+            })?;
+            let satisfied = lifecycle == "completed"
+                || (lifecycle == "superseded"
+                    && replacement_lifecycle.as_deref() == Some("completed"));
+            Ok((!satisfied).then_some(prerequisite_id))
+        })
+        .filter_map(|result| match result {
+            Ok(Some(work_id)) => Some(Ok(work_id)),
+            Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect()
 }
 
 fn incomplete_prerequisites(
@@ -9590,6 +9940,83 @@ fn rebase_planning_claim(
     Ok((Some(claim), Some(run)))
 }
 
+fn normalize_work_catalog_key(value: &str) -> String {
+    let nfc = value.trim().nfc().collect::<String>();
+    nfc.as_str().case_fold().collect::<String>().nfc().collect()
+}
+
+fn work_catalog_search_text(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<String, StoreError> {
+    let mut parts = vec![
+        item.short_ref.clone(),
+        item.title.clone(),
+        item.outcome.clone(),
+    ];
+    parts.extend(item.labels.iter().cloned());
+    let mut statement = connection.prepare(
+        "SELECT blocker_json FROM work_blockers
+         WHERE work_id = ?1 AND state = 'active' ORDER BY blocker_id",
+    )?;
+    let blocker_details = statement
+        .query_map([item.work_id.0.to_string()], |row| row.get::<_, Vec<u8>>(0))?
+        .map(|row| {
+            serde_json::from_slice::<WorkBlocker>(&row?)
+                .map(|blocker| blocker.detail)
+                .map_err(StoreError::from)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    parts.extend(blocker_details);
+    Ok(normalize_work_catalog_key(&parts.join("\n")))
+}
+
+fn refresh_work_catalog_projection(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<(), StoreError> {
+    let assigned_to_key = item.assigned_to.as_deref().map(normalize_work_catalog_key);
+    let search_text_key = work_catalog_search_text(connection, item)?;
+    let changed = connection.execute(
+        "UPDATE work_items
+         SET assigned_to_key = ?2, search_text_key = ?3
+         WHERE work_id = ?1",
+        params![item.work_id.0.to_string(), assigned_to_key, search_text_key],
+    )?;
+    if changed != 1 {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "work catalog refresh lost item {:?}",
+            item.work_id
+        )));
+    }
+    connection.execute(
+        "DELETE FROM work_item_labels WHERE work_id = ?1",
+        [item.work_id.0.to_string()],
+    )?;
+    let mut label_keys = item
+        .labels
+        .iter()
+        .map(|label| normalize_work_catalog_key(label))
+        .collect::<Vec<_>>();
+    label_keys.sort();
+    label_keys.dedup();
+    for label_key in label_keys {
+        connection.execute(
+            "INSERT INTO work_item_labels (work_id, label_key) VALUES (?1, ?2)",
+            params![item.work_id.0.to_string(), label_key],
+        )?;
+    }
+    connection.execute(
+        "DELETE FROM work_catalog_fts WHERE work_id = ?1",
+        [item.work_id.0.to_string()],
+    )?;
+    connection.execute(
+        "INSERT INTO work_catalog_fts (work_id, search_text) VALUES (?1, ?2)",
+        params![item.work_id.0.to_string(), search_text_key],
+    )?;
+    Ok(())
+}
+
 fn persist_work_item(transaction: &Transaction<'_>, item: &WorkItem) -> Result<(), StoreError> {
     transaction.execute(
         "UPDATE work_items SET
@@ -9610,7 +10037,7 @@ fn persist_work_item(transaction: &Transaction<'_>, item: &WorkItem) -> Result<(
             serde_json::to_vec(item)?
         ],
     )?;
-    Ok(())
+    refresh_work_catalog_projection(transaction, item)
 }
 
 fn persist_work_run(
@@ -11708,6 +12135,92 @@ fn verify_cross_feed_order(
     }
 }
 
+fn verify_work_catalog_projections(
+    connection: &Connection,
+    checked: &mut usize,
+    invalid: &mut Vec<String>,
+) -> Result<(), StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT work_id, item_json, assigned_to_key, search_text_key
+         FROM work_items ORDER BY work_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Vec<u8>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (work_id, item_json, assigned_to_key, search_text_key) = row?;
+        *checked += 1;
+        let Ok(item) = serde_json::from_slice::<WorkItem>(&item_json) else {
+            invalid.push(format!("work_catalog:{work_id}:item_decode"));
+            continue;
+        };
+        let expected_assigned = item.assigned_to.as_deref().map(normalize_work_catalog_key);
+        let expected_search = work_catalog_search_text(connection, &item)?;
+        let mut expected_labels = item
+            .labels
+            .iter()
+            .map(|label| normalize_work_catalog_key(label))
+            .collect::<Vec<_>>();
+        expected_labels.sort();
+        expected_labels.dedup();
+        let mut label_statement = connection.prepare(
+            "SELECT label_key FROM work_item_labels
+             WHERE work_id = ?1 ORDER BY label_key",
+        )?;
+        let actual_labels = label_statement
+            .query_map([work_id.as_str()], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut fts_statement =
+            connection.prepare("SELECT search_text FROM work_catalog_fts WHERE work_id = ?1")?;
+        let fts_rows = fts_statement
+            .query_map([work_id.as_str()], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let fts_index_valid = connection
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM work_catalog_fts
+                     WHERE work_id = ?1 AND work_catalog_fts MATCH ?2
+                 )",
+                params![
+                    work_id.as_str(),
+                    catalog_literal_fts_query(&expected_search)
+                ],
+                |row| row.get::<_, bool>(0),
+            )
+            .unwrap_or(false);
+        if item.work_id.0.to_string() != work_id
+            || assigned_to_key != expected_assigned
+            || search_text_key != expected_search
+            || actual_labels != expected_labels
+            || fts_rows.len() != 1
+            || fts_rows.first() != Some(&expected_search)
+        {
+            invalid.push(format!("work_catalog:{work_id}:projection_binding"));
+        }
+        if !fts_index_valid {
+            invalid.push(format!("work_catalog:{work_id}:fts_index"));
+        }
+    }
+    drop(statement);
+    let orphaned_fts = connection.query_row(
+        "SELECT COUNT(*) FROM work_catalog_fts catalog
+         WHERE NOT EXISTS (
+             SELECT 1 FROM work_items item WHERE item.work_id = catalog.work_id
+         )",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    if orphaned_fts != 0 {
+        invalid.push("work_catalog:orphaned_fts_rows".into());
+    }
+    Ok(())
+}
+
 fn verify_work_scalar_bindings(
     connection: &Connection,
     checked: &mut usize,
@@ -12466,6 +12979,230 @@ mod tests {
             &completion_request(work, claim, holder, evidence, key, second),
             &DevelopmentNoopRedactor,
         )
+    }
+
+    #[test]
+    fn catalog_uses_unicode_keys_and_ready_ranking_is_deterministic() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let project = "project-catalog-index";
+        install_grant(&mut store, project, "planner");
+
+        let mut oldest_request = root_request(project, "catalog-oldest", 0);
+        oldest_request.title = "Maße der Größe".into();
+        oldest_request.labels = vec!["Größe".into()];
+        oldest_request.assigned_to = Some("Straße".into());
+        let oldest = store
+            .create_work(&oldest_request, &DevelopmentNoopRedactor)
+            .expect("oldest root");
+
+        let mut unblocks_request = root_request(project, "catalog-unblocks", 1);
+        unblocks_request.title = "Dependency provider".into();
+        let unblocks = store
+            .create_work(&unblocks_request, &DevelopmentNoopRedactor)
+            .expect("dependency provider");
+
+        let mut dependent_request = root_request(project, "catalog-dependent", 2);
+        dependent_request.title = "Dependent work".into();
+        let dependent = store
+            .create_work(&dependent_request, &DevelopmentNoopRedactor)
+            .expect("dependent root");
+        store
+            .add_work_prerequisite(
+                &ChangeWorkPrerequisiteRequest {
+                    work_id: dependent.work_id,
+                    prerequisite_id: unblocks.work_id,
+                    expected_revision: dependent.revision,
+                    authority: delegated(project, "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "catalog-prerequisite".into(),
+                    changed_at: at(3),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("add ranking prerequisite");
+
+        let terminal = store
+            .create_work(
+                &root_request(project, "catalog-terminal-dependent", 3),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("terminal dependent");
+        let terminal = store
+            .add_work_prerequisite(
+                &ChangeWorkPrerequisiteRequest {
+                    work_id: terminal.work_id,
+                    prerequisite_id: oldest.work_id,
+                    expected_revision: terminal.revision,
+                    authority: delegated(project, "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "catalog-terminal-prerequisite".into(),
+                    changed_at: at(4),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("add terminal prerequisite");
+        let terminal = store
+            .dispose_work(
+                &DisposeWorkRequest {
+                    work_id: terminal.work_id,
+                    expected_work_revision: terminal.revision,
+                    disposition: WorkDisposition::Cancelled,
+                    replacement_id: None,
+                    reason: "terminal dependant must not affect ready rank".into(),
+                    authority: authority(project, "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "catalog-terminal-dispose".into(),
+                    disposed_at: at(5),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("dispose terminal dependent");
+
+        reset_work_event_decode_count();
+        reset_work_item_projection_decode_count();
+        let ready = store
+            .ready_work(&crate::domain::ProjectId(project.into()), at(6), 10)
+            .expect("rank ready work");
+        assert_eq!(
+            ready
+                .iter()
+                .map(|candidate| candidate.work.work_id)
+                .collect::<Vec<_>>(),
+            vec![unblocks.work_id, oldest.work_id]
+        );
+        assert_eq!(work_event_decode_count(), 0);
+        assert_eq!(work_item_projection_decode_count(), 2);
+
+        for (query, expected) in [
+            (
+                WorkCatalogQuery {
+                    assigned_to: Some("STRASSE".into()),
+                    limit: 10,
+                    ..WorkCatalogQuery::default()
+                },
+                oldest.work_id,
+            ),
+            (
+                WorkCatalogQuery {
+                    label: Some("GRÖSSE".into()),
+                    limit: 10,
+                    ..WorkCatalogQuery::default()
+                },
+                oldest.work_id,
+            ),
+            (
+                WorkCatalogQuery {
+                    search: Some("MASSE DER GRÖSSE".into()),
+                    limit: 10,
+                    ..WorkCatalogQuery::default()
+                },
+                oldest.work_id,
+            ),
+            (
+                WorkCatalogQuery {
+                    availabilities: vec![WorkAvailability::Blocked],
+                    limit: 10,
+                    ..WorkCatalogQuery::default()
+                },
+                dependent.work_id,
+            ),
+        ] {
+            reset_work_event_decode_count();
+            let page = store
+                .query_work_catalog(&crate::domain::ProjectId(project.into()), at(6), &query)
+                .expect("indexed catalog query");
+            assert_eq!(page.items.len(), 1);
+            assert_eq!(page.items[0].work.work_id, expected);
+            assert_eq!(work_event_decode_count(), 0);
+        }
+
+        store
+            .add_work_blocker(
+                &AddWorkBlockerRequest {
+                    work_id: oldest.work_id,
+                    expected_work_revision: oldest.revision,
+                    kind: crate::domain::WorkBlockerKind::Manual,
+                    detail: "deferred work still has an independent blocker".into(),
+                    authority: delegated(project, "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "catalog-deferred-blocker".into(),
+                    blocked_at: at(7),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("block deferred candidate");
+        let oldest = store.get_work_item(oldest.work_id).expect("blocked oldest");
+        store
+            .revise_work(
+                &ReviseWorkRequest {
+                    work_id: oldest.work_id,
+                    expected_revision: oldest.revision,
+                    patch: WorkRevisionPatch {
+                        deferred_until: Some(at(100)),
+                        ..WorkRevisionPatch::default()
+                    },
+                    authority: delegated(project, "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "catalog-deferred-revision".into(),
+                    updated_at: at(8),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("defer blocked candidate");
+        let blocked_only = store
+            .query_work_catalog(
+                &crate::domain::ProjectId(project.into()),
+                at(9),
+                &WorkCatalogQuery {
+                    blocked_only: true,
+                    limit: 10,
+                    ..WorkCatalogQuery::default()
+                },
+            )
+            .expect("independent blocked-only query");
+        let blocked_availability = blocked_only
+            .items
+            .iter()
+            .map(|item| (item.work.work_id, item.availability))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            blocked_availability.get(&oldest.work_id),
+            Some(&WorkAvailability::Deferred)
+        );
+        assert_eq!(
+            blocked_availability.get(&terminal.work_id),
+            Some(&WorkAvailability::Closed)
+        );
+        assert_eq!(
+            blocked_availability.get(&dependent.work_id),
+            Some(&WorkAvailability::Blocked)
+        );
+        assert!(store.verify_all().expect("catalog integrity").is_healthy());
+    }
+
+    #[test]
+    fn doctor_exercises_work_catalog_fts_index() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-catalog-fts-integrity", "planner");
+        let item = store
+            .create_work(
+                &root_request("project-catalog-fts-integrity", "fts-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("indexed root");
+        assert!(store.verify_all().expect("healthy catalog").is_healthy());
+
+        store
+            .connection
+            .execute("DELETE FROM work_catalog_fts_data WHERE id > 1", [])
+            .expect("corrupt only the FTS segment data");
+        let report = store.verify_all().expect("catalog corruption report");
+        assert!(
+            report
+                .invalid_work_records
+                .iter()
+                .any(|record| { record == &format!("work_catalog:{}:fts_index", item.work_id.0) })
+        );
     }
 
     #[test]
@@ -14906,8 +15643,58 @@ mod tests {
     }
 
     #[test]
-    fn v1_through_v8_work_schemas_upgrade_atomically_and_reopen_idempotently() {
-        for version in [1_i64, 2_i64, 3_i64, 4_i64, 5_i64, 6_i64, 7_i64, 8_i64] {
+    fn stale_pre_migration_connection_refuses_work_mutation() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("stale-work-schema.sqlite3");
+        let mut stale = SqliteStore::open(&database).expect("initial store");
+        install_grant(&mut stale, "project-stale-schema", "planner");
+        stale
+            .connection
+            .execute_batch(
+                "DROP INDEX work_items_assigned;
+                 DROP INDEX work_items_catalog_after;
+                 DROP TABLE work_catalog_fts;
+                 DROP TABLE work_item_labels;
+                 ALTER TABLE work_items DROP COLUMN assigned_to_key;
+                 ALTER TABLE work_items DROP COLUMN search_text_key;
+                 UPDATE work_schema_metadata SET schema_version = 9 WHERE singleton = 1;",
+            )
+            .expect("model a store opened by the v9 process");
+        // The production v9 binary captures 9 at open. This current-binary
+        // fixture models that already-open handle while a second process runs
+        // the v10 migration.
+        stale.work_schema_version = 9;
+
+        let migrated = SqliteStore::open(&database).expect("second connection migrates to v10");
+        assert_eq!(migrated.work_schema_version, CURRENT_WORK_SCHEMA_VERSION);
+        drop(migrated);
+
+        let error = stale
+            .create_work(
+                &root_request("project-stale-schema", "stale-create", 1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect_err("stale connection must not mutate the migrated store");
+        assert!(matches!(
+            error,
+            StoreError::InvalidWorkProjection(message)
+                if message == "unsupported local-work schema version 10"
+        ));
+        assert_eq!(
+            stale
+                .connection
+                .query_row("SELECT COUNT(*) FROM work_items", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("unchanged item count"),
+            0
+        );
+    }
+
+    #[test]
+    fn v1_through_v9_work_schemas_upgrade_atomically_and_reopen_idempotently() {
+        for version in [
+            1_i64, 2_i64, 3_i64, 4_i64, 5_i64, 6_i64, 7_i64, 8_i64, 9_i64,
+        ] {
             let directory = tempfile::tempdir().expect("temp directory");
             let database = directory
                 .path()
@@ -14953,6 +15740,16 @@ mod tests {
             };
             drop(initialized);
             let connection = Connection::open(&database).expect("migration fixture");
+            connection
+                .execute_batch(
+                    "DROP INDEX work_items_assigned;
+                     DROP INDEX work_items_catalog_after;
+                     DROP TABLE work_catalog_fts;
+                     DROP TABLE work_item_labels;
+                     ALTER TABLE work_items DROP COLUMN assigned_to_key;
+                     ALTER TABLE work_items DROP COLUMN search_text_key;",
+                )
+                .expect("remove v10 catalog projections");
             if version <= 4 {
                 connection
                     .execute_batch(
@@ -15066,6 +15863,8 @@ mod tests {
                 ("work_session_state", "tentative_delivery_payload_hash"),
                 ("work_session_state", "tentative_delivery_payload"),
                 ("work_items", "superseded_by"),
+                ("work_items", "assigned_to_key"),
+                ("work_items", "search_text_key"),
                 ("work_handoff_offers", "offer_hash"),
                 ("work_protocol_attempts", "basis_hash"),
                 ("work_protocol_attempts", "basis_json"),

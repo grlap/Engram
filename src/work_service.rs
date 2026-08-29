@@ -7707,14 +7707,14 @@ mod tests {
         );
 
         let mut work_ids = Vec::new();
-        for item_index in 0..50 {
+        for item_index in 0..500 {
             let work = match writer
                 .work_propose(
                     root_input(
-                        &format!("Bounded item {item_index:02}"),
-                        &format!("bounded-root-{item_index:02}"),
+                        &format!("Bounded item {item_index:03}"),
+                        &format!("bounded-root-{item_index:03}"),
                     ),
-                    at(i64::from(item_index) * 10),
+                    at(i64::from(item_index)),
                 )
                 .expect("create bounded root")
             {
@@ -7724,43 +7724,119 @@ mod tests {
             work_ids.push(work.work_id);
         }
         let mut event_store = SqliteStore::open(&database).expect("event store");
-        for (item_index, work_id) in work_ids.iter().enumerate() {
-            let entry = event_store
-                .work_event_tail(*work_id, 1)
-                .expect("base event tail")
-                .pop()
-                .expect("base event");
-            let base = event_store
-                .get::<WorkEvent>(&entry.object_hash)
-                .expect("load base event")
-                .expect("base event object");
-            for event_index in 0..9 {
-                let mut event = base.clone();
-                event.created_at = at(1_000
-                    + i64::try_from(item_index).expect("item index") * 10
-                    + i64::from(event_index));
-                event.actor.reason = format!("bounded synthetic event {event_index}");
-                event_store
-                    .append_test_work_event(&event)
-                    .expect("append canonical scale event");
-            }
+        let last_work_id = *work_ids.last().expect("last scale work item");
+        let entry = event_store
+            .work_event_tail(last_work_id, 1)
+            .expect("base event tail")
+            .pop()
+            .expect("base event");
+        let base = event_store
+            .get::<WorkEvent>(&entry.object_hash)
+            .expect("load base event")
+            .expect("base event object");
+        for event_index in 0..9 {
+            let mut event = base.clone();
+            event.created_at = at(1_000 + i64::from(event_index));
+            event.actor.reason = format!("bounded synthetic event {event_index}");
+            event_store
+                .append_test_work_event(&event)
+                .expect("append canonical scale event");
         }
 
         let initial_head = SqliteStore::open(&database)
             .expect("store")
             .work_feed_head(&FeedId::Project(project.clone()))
             .expect("project feed head");
-        assert_eq!(initial_head, 500);
+        assert_eq!(initial_head, 509);
 
         crate::storage::reset_work_event_decode_count();
+        crate::storage::reset_work_item_projection_decode_count();
+        let ready_started = std::time::Instant::now();
+        reader
+            .work_next(
+                50,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Ready],
+                    ..WorkNextQuery::default()
+                },
+                at(1_100),
+            )
+            .expect("ready-only scale query");
+        let ready_elapsed = ready_started.elapsed();
+        let ready_event_decodes = crate::storage::work_event_decode_count();
+        let ready_item_decodes = crate::storage::work_item_projection_decode_count();
+        eprintln!(
+            "work_next scale ready: elapsed_us={} event_decodes={} item_decodes={}",
+            ready_elapsed.as_micros(),
+            ready_event_decodes,
+            ready_item_decodes
+        );
+        assert_eq!(ready_event_decodes, 0);
+        assert!(ready_item_decodes <= 50);
+
+        crate::storage::reset_work_event_decode_count();
+        crate::storage::reset_work_item_projection_decode_count();
+        let catalog_started = std::time::Instant::now();
+        reader
+            .work_next(
+                50,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Catalog],
+                    ..WorkNextQuery::default()
+                },
+                at(1_101),
+            )
+            .expect("catalog-only scale query");
+        let catalog_elapsed = catalog_started.elapsed();
+        let catalog_event_decodes = crate::storage::work_event_decode_count();
+        let catalog_item_decodes = crate::storage::work_item_projection_decode_count();
+        eprintln!(
+            "work_next scale catalog: elapsed_us={} event_decodes={} item_decodes={}",
+            catalog_elapsed.as_micros(),
+            catalog_event_decodes,
+            catalog_item_decodes
+        );
+        assert_eq!(catalog_event_decodes, 0);
+        assert!(catalog_item_decodes <= 51);
+
+        crate::storage::reset_work_event_decode_count();
+        crate::storage::reset_work_item_projection_decode_count();
+        let selective_catalog_started = std::time::Instant::now();
+        reader
+            .work_next(
+                50,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Catalog],
+                    search: Some("Bounded item 499".into()),
+                    ..WorkNextQuery::default()
+                },
+                at(1_102),
+            )
+            .expect("selective catalog scale query");
+        let selective_catalog_elapsed = selective_catalog_started.elapsed();
+        let selective_catalog_event_decodes = crate::storage::work_event_decode_count();
+        let selective_catalog_item_decodes = crate::storage::work_item_projection_decode_count();
+        eprintln!(
+            "work_next scale selective_catalog: elapsed_us={} event_decodes={} item_decodes={}",
+            selective_catalog_elapsed.as_micros(),
+            selective_catalog_event_decodes,
+            selective_catalog_item_decodes
+        );
+        assert_eq!(selective_catalog_event_decodes, 0);
+        assert_eq!(selective_catalog_item_decodes, 1);
+
+        crate::storage::reset_work_event_decode_count();
+        crate::storage::reset_work_item_projection_decode_count();
         let first = reader
-            .work_next(1_000, WorkNextQuery::default(), at(600))
+            .work_next(1_000, WorkNextQuery::default(), at(1_103))
             .expect("bounded default work_next");
         let first_decode_count = crate::storage::work_event_decode_count();
-        assert!(
-            first_decode_count < 200,
-            "bounded work_next decoded {first_decode_count} canonical work events"
+        let first_item_decode_count = crate::storage::work_item_projection_decode_count();
+        eprintln!(
+            "work_next scale default: event_decodes={first_decode_count} item_decodes={first_item_decode_count}"
         );
+        assert_eq!(first_decode_count, 0);
+        assert!(first_item_decode_count <= 1_000);
         assert!(
             serde_json::to_vec(&first)
                 .expect("serialize first page")

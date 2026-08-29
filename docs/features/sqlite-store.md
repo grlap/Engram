@@ -110,7 +110,7 @@ not activated; migrations mint new objects, never rewrite old ones. The
 contract is substrate-neutral — it is what keeps the deferred Git backend a
 drop-in and gives reports stable provenance hashes.
 
-The first-class work schema currently advertises version 8. Open preflights
+The first-class work schema currently advertises version 10. Open preflights
 that metadata before any DDL, refuses future or unversioned non-empty work
 schemas without mutation, and performs supported ALTER/backfill/version steps
 inside one `BEGIN IMMEDIATE` transaction. Handoff backfills must match their
@@ -136,9 +136,18 @@ Version 6 adds the redundant typed verification/environment evidence binding;
 version 7 adds rebuildable obligation state; version 8 adds the verification→
 environment reference and canonical environment-component projection; version
 9 adds the nullable rule-set hash that binds each obligation projection to its
-immutable definition. The v1–v8 upgrade runs atomically and current-version
-open requires the V9 column rather than silently interpreting a partial
-projection. `NULL` retains the stock V1 meaning for legacy definitions.
+immutable definition. Version 10 adds normalized assignment/search columns,
+normalized label rows, and a trigram FTS catalog projection. Those structures
+are backfilled atomically from retained item and blocker projections and are
+checked by `engram doctor`, including a `MATCH` probe of the FTS inverted
+index; they never replace canonical work events for lifecycle mutation. Every
+work mutation rechecks inside its write transaction that durable schema
+metadata still names the generation understood by that opener. A process kept
+alive across another process's migration therefore refuses instead of writing
+stale projections. The v1–v9 upgrade runs atomically and current-version open
+requires the V10 catalog structures rather than silently interpreting a
+partial projection. `NULL` retains the stock V1 meaning for legacy obligation
+definitions.
 Upgrading an older store clears only an unacknowledged tentative page, because
 versions 1-4 did not retain enough information to reconstruct that exact
 projection; the confirmed cursor remains unchanged and the page is delivered
