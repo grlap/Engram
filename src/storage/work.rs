@@ -3172,6 +3172,7 @@ impl SqliteStore {
         verify_authority_revocation_bindings(connection, &mut checked, &mut invalid)?;
         verify_required_child_waiver_bindings(connection, &mut checked, &mut invalid)?;
         verify_work_protocol_attempts(connection, &mut checked, &mut invalid)?;
+        verify_anchored_memory_feeds(connection, &mut checked, &mut invalid)?;
         Ok((checked, invalid, legacy))
     }
 
@@ -8619,6 +8620,80 @@ fn append_obligation_resolution_on(
     Ok(object.hash().clone())
 }
 
+/// Every work-anchored memory version and contradiction must sit in the
+/// project feed and its root-work feed; a missing entry would let peers miss a
+/// contested or new rule without any cursor gap.
+fn verify_anchored_memory_feeds(
+    connection: &Connection,
+    checked: &mut usize,
+    invalid: &mut Vec<String>,
+) -> Result<(), StoreError> {
+    let feed_has = |object_hash: &ObjectHash, feed_kind: &str, feed_id: &str| {
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM work_feed_entries
+                     WHERE feed_kind = ?1 AND feed_id = ?2 AND object_hash = ?3
+                 )",
+                params![feed_kind, feed_id, object_hash.as_str()],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(StoreError::from)
+    };
+    let mut statement = connection.prepare(
+        "SELECT object_hash, object_kind, canonical_json FROM objects
+         WHERE object_kind IN ('memory_contradiction_event', 'memory_version')
+         ORDER BY object_hash",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (stored_hash, object_kind, bytes) = row?;
+        let label = format!("{object_kind}:{stored_hash}:work-feed");
+        let Some(hash) = ObjectHash::from_stored(stored_hash) else {
+            invalid.push(label);
+            continue;
+        };
+        let Ok(object) = CanonicalObject::verify(&hash, bytes) else {
+            invalid.push(label);
+            continue;
+        };
+        let anchor = if object_kind == "memory_contradiction_event" {
+            object
+                .decode::<crate::domain::MemoryContradictionEvent>()
+                .ok()
+                .and_then(|event| event.project_id.zip(event.work_root_id))
+        } else if let Ok(crate::domain::MemoryVersion {
+            scope: crate::domain::Scope::Work { project, work },
+            ..
+        }) = object.decode::<crate::domain::MemoryVersion>()
+        {
+            let Ok((_, root)) = verified_work_identity(connection, work) else {
+                invalid.push(label);
+                continue;
+            };
+            Some((project, root))
+        } else {
+            None
+        };
+        let Some((project_id, root_id)) = anchor else {
+            continue;
+        };
+        *checked += 1;
+        if !feed_has(&hash, "project", &project_id.0)?
+            || !feed_has(&hash, "root_work", &root_id.0.to_string())?
+        {
+            invalid.push(label);
+        }
+    }
+    Ok(())
+}
+
 fn run_feed_position_for_object_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -12549,6 +12624,131 @@ mod tests {
             .expect("exact staging CAS");
         assert_eq!(staged.tentative_project_cursor, Some(head));
         assert!(staged.tentative_delivery_token.is_some());
+    }
+
+    #[test]
+    fn focus_derived_work_contradiction_publishes_one_feed_delta_and_doctor_backstops() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-contra", "planner");
+        let root = store
+            .create_work(
+                &root_request("project-contra", "contra-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root");
+        let project = root.project_id.clone();
+        let session = SessionId("contra-session".into());
+        store
+            .focus_work_session(&project, &session, root.work_id, at(1))
+            .expect("focus the root");
+        let note = |prose: &str, key: &str, second: i64| crate::NoteRequest {
+            project_id: project.clone(),
+            task_id: None,
+            work_id: Some(root.work_id),
+            prose: prose.into(),
+            visibility: crate::NoteVisibility::Shared,
+            kind: None,
+            authority: None,
+            sensitivity: None,
+            title: None,
+            tags: Vec::new(),
+            evidence: Vec::new(),
+            refs: Vec::new(),
+            actor: actor("contra-session"),
+            idempotency_key: key.into(),
+            created_at: at(second),
+        };
+        let left = store
+            .capture_note(
+                &note("Constraint: use the first rule", "contra-left", 2),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("left note");
+        let right = store
+            .capture_note(
+                &note("Constraint: use the second rule", "contra-right", 3),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("right note");
+        let third = store
+            .capture_note(
+                &note("Constraint: use the third rule", "contra-third", 4),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("third note");
+
+        // The caller omits the work anchor; the validated focus supplies it.
+        let derived = store
+            .record_memory_contradiction(
+                &project,
+                None,
+                None,
+                &session,
+                "contra-session",
+                &left.version,
+                &right.version,
+                "the first and second rules cannot both apply",
+                "contra-derived",
+                actor("contra-session"),
+                at(5),
+            )
+            .expect("focus-derived contradiction");
+        let explicit = store
+            .record_memory_contradiction(
+                &project,
+                None,
+                Some(root.work_id),
+                &session,
+                "contra-session",
+                &left.version,
+                &third.version,
+                "the first and third rules cannot both apply",
+                "contra-explicit",
+                actor("contra-session"),
+                at(6),
+            )
+            .expect("explicit contradiction");
+        let feeds = |positions: &[FeedPosition]| {
+            positions
+                .iter()
+                .map(|position| match &position.feed {
+                    FeedId::Project(_) => "project",
+                    FeedId::RootWork(_) => "root_work",
+                    FeedId::RunExecution(_) => "run_execution",
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(!derived.work_positions.is_empty());
+        assert_eq!(
+            feeds(&derived.work_positions),
+            feeds(&explicit.work_positions)
+        );
+        assert!(derived.work_positions.iter().any(
+            |position| matches!(position.feed, FeedId::RootWork(root_id) if root_id == root.work_id)
+        ));
+        assert!(store.verify_all().expect("integrity").is_healthy());
+
+        // Doctor names a work-anchored contradiction that lost its feed entry.
+        store
+            .connection
+            .execute(
+                "DELETE FROM work_feed_entries WHERE feed_kind = 'root_work' AND object_hash = ?1",
+                [derived.contradiction.as_str()],
+            )
+            .expect("simulate a missing anchored feed entry");
+        let report = store.verify_all().expect("integrity after damage");
+        assert!(!report.is_healthy());
+        assert!(
+            report.invalid_work_records.iter().any(|label| {
+                label
+                    == &format!(
+                        "memory_contradiction_event:{}:work-feed",
+                        derived.contradiction
+                    )
+            }),
+            "{:?}",
+            report.invalid_work_records
+        );
     }
 
     #[test]

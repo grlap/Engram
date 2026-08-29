@@ -5000,6 +5000,9 @@ impl SqliteStore {
                 "work contradiction must match the session's persisted focus".into(),
             ));
         }
+        // A caller that omits the work anchor still contradicts from its
+        // validated focus: the anchor is the focused item, never a guess.
+        let work_id = work_id.or(focused_work_id);
         if first_version == second_version {
             return Err(StoreError::InvalidContradiction(
                 "a version cannot contradict itself".into(),
