@@ -29,6 +29,18 @@ use crate::{
 
 const DEFAULT_LIMIT: u32 = 20;
 const MAX_TEXT_LINE_BYTES: usize = 96;
+/// How many change pages one `next` reads past pages that held only the
+/// actor's own actions.
+const MAX_NEXT_PAGES: usize = 8;
+
+/// Changes the core could not fit on the delivered page.
+fn changes_not_delivered(view: &WorkNextView) -> usize {
+    view.omissions
+        .iter()
+        .filter(|omission| omission.section == WorkNextSection::Changes)
+        .map(|omission| omission.omitted_count)
+        .sum()
+}
 
 /// Host context for one agent connection. Authority comes from the host, never
 /// from a word's arguments.
@@ -395,13 +407,26 @@ impl AgentVerbs {
         for item in &ready {
             lines.push(format!("  {}", ready_line(item)));
         }
-        let changes = collapse_changes(view.changes.as_deref().unwrap_or_default(), &self.actor_id);
-        let not_delivered: usize = view
-            .omissions
-            .iter()
-            .filter(|omission| omission.section == WorkNextSection::Changes)
-            .map(|omission| omission.omitted_count)
-            .sum();
+        let mut changes =
+            collapse_changes(view.changes.as_deref().unwrap_or_default(), &self.actor_id);
+        let mut not_delivered = changes_not_delivered(&view);
+        // A page that held only this actor's own actions is not worth another
+        // call: keep reading, bounded, until another actor's change shows up
+        // or the backlog is drained.
+        let mut pages = 1;
+        while changes.is_empty() && not_delivered > 0 && pages < MAX_NEXT_PAGES {
+            let more = self.service.work_next(
+                limit,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Changes],
+                    ..WorkNextQuery::default()
+                },
+                now,
+            )?;
+            changes = collapse_changes(more.changes.as_deref().unwrap_or_default(), &self.actor_id);
+            not_delivered = changes_not_delivered(&more);
+            pages += 1;
+        }
         if not_delivered > 0 && changes.is_empty() {
             lines.push(format!(
                 "changes by others (none on this page; {not_delivered} more arrive with your next call):"
@@ -464,6 +489,7 @@ impl AgentVerbs {
         }
         let mut value = serde_json::to_value(&view)?;
         value["ready"] = serde_json::to_value(&ready)?;
+        value["changes_by_others"] = json!(changes);
         value["held"] = serde_json::to_value(
             held.iter()
                 .map(|(item, expires_at)| json!({ "work": item.work, "expires_at": expires_at }))
