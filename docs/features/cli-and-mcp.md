@@ -34,6 +34,15 @@ engram control-policy set-required-assurance turn_gated \
   --idempotency-key enable-host-turn-mediation \
   --expected-policy-hash <active-policy-hash>
 
+# Select a bounded typed obligation set. The required environment must already
+# be a canonical EnvironmentEvidence hash returned by a host checkpoint.
+engram control-policy set-obligation-rule-set \
+  --input @obligation-rules.json \
+  --authorized-by host-operator \
+  --reason "pin the repository test command and environment" \
+  --idempotency-key pin-repository-verification \
+  --expected-policy-hash <active-policy-hash>
+
 engram mcp \
   --actor-id codex \
   --session-id session-unique-id \
@@ -82,19 +91,28 @@ choice as asserted context. Plain `engram init` remains an
 idempotent create-or-migrate operation and preserves any existing active
 policy. Explicitly passing a different bootstrap value for an existing store
 fails instead of silently changing policy.
-`engram control-policy set-required-assurance` is the only shipped CLI
-reconfiguration path: it records asserted operator attribution and a reason,
+`engram control-policy set-required-assurance` records asserted operator
+attribution and a reason,
 creates immutable authority and policy objects, atomically advances the active
 policy hash and epoch, and supports an optional compare-and-swap hash while
 preserving the selected obligation rule set. Its required idempotency key
 binds the complete normalized intent and persists the exact receipt in that
 same transaction. A retry after restart or an uncertain response returns the
 original receipt even though its expected policy hash is now stale; reusing
-the key for another intent is a typed conflict. The core also provides a
-host/operator-only storage API for selecting a validated canonical rule set;
-it uses the same durable replay contract but is not an MCP tool or host
-turn-protocol operation. Reapplying the active level under a fresh key records
-an exactly replayable no-op receipt. Issued grants from the prior
+the key for another intent is a typed conflict.
+
+The sibling operator-only `set-obligation-rule-set` command selects a
+validated canonical rule set with the same atomic policy successor,
+compare-and-swap, attribution, and replay contract; it is not an MCP tool or
+host turn-protocol operation. Its `--input <JSON|@file>` is limited to 64 KiB,
+must be UTF-8, rejects unknown fields at every nested V1 object, and passes
+through the same typed validator used by storage. `check_fingerprint` and
+`required_environment` are exact canonical object hashes, not shell commands
+or environment descriptions. Re-supplying the active set under a fresh key
+records an exactly replayable `changed=false` receipt. Rollback likewise
+re-supplies the desired prior JSON; a rule-set hash alone is never accepted as
+activation authority. Reapplying the active assurance under a fresh key also
+records an exactly replayable no-op receipt. Issued grants from the prior
 epoch fail begin with `policy_epoch_changed` and require one fresh evaluation;
 if the new requirement exceeds the host's declaration, that fresh evaluation
 instead fails `control_assurance_insufficient` because assurance is checked
@@ -285,7 +303,8 @@ remain unresolved. Open obligations are not an MCP error envelope.
 `work_update`. A completed receipt also returns that page reconstructed from
 the exact terminal obligation hashes bound into the seal. Each page is count-
 and byte-bounded, reports an explicit `omitted_count`, and carries immutable
-obligation/definition identities, state, rule, requirement, trigger, terminal
+obligation/definition identities, the exact rule-set hash when present, state,
+rule, requirement, trigger, terminal
 resolution/evidence when present, and deterministic typed guidance. An open
 verification requirement directs the caller to record matching host
 verification, checkpoint it, then complete, or request a host/operator waiver.

@@ -402,6 +402,10 @@ pub struct WorkEvidenceSummary {
 pub struct WorkObligationSummary {
     pub obligation_id: crate::WorkObligationId,
     pub definition: ObjectHash,
+    /// Exact immutable rule-set identity selected when the obligation opened.
+    /// Legacy stock-rule obligations omit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_set: Option<ObjectHash>,
     pub state: WorkObligationState,
     pub rule: crate::BuiltinObligationRuleRef,
     pub requirement: crate::VerificationRequirement,
@@ -2920,6 +2924,7 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
     WorkObligationSummary {
         obligation_id: record.obligation.obligation_id,
         definition: record.definition_hash.clone(),
+        rule_set: record.obligation.rule_set.clone(),
         state: record.state,
         rule: record.obligation.rule.clone(),
         requirement: record.obligation.requirement.clone(),

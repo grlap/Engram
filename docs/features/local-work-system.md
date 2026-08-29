@@ -463,9 +463,10 @@ exact run-feed cut. A passed test for a later basis-bearing mutation may close
 earlier open definitions, but a basisless latest mutation makes the open set
 waiver-only until a newer basis-bearing mutation and passed test arrive.
 
-The page exposes immutable obligation and definition identities, rule,
-requirement, trigger, state, terminal evidence/resolution, and deterministic
-typed guidance. Agents cannot mint or waive obligations. Waiver is restricted
+The page exposes immutable obligation and definition identities, the selected
+rule-set hash when present, rule, requirement, trigger, state, terminal
+evidence/resolution, and deterministic typed guidance. Agents cannot mint or
+waive obligations. Waiver is restricted
 to the host/operator CLI and the host-private `obligation_waive` operation
 under a dedicated `ObligationWaiver` authority grant; neither MCP nor
 `work_update` accepts that operation. The native host session must be bound to

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -229,6 +229,33 @@ function installObligationWaiverGrant(engramHome, waivedBy) {
   return JSON.parse(granted.stdout).grant;
 }
 
+function setObligationRuleSet(
+  engramHome,
+  input,
+  reason,
+  idempotencyKey,
+  expectedPolicy,
+) {
+  const args = [
+    "--home",
+    engramHome,
+    "control-policy",
+    "set-obligation-rule-set",
+    "--input",
+    input,
+    "--authorized-by",
+    "control-dogfood-policy-operator",
+    "--reason",
+    reason,
+    "--idempotency-key",
+    idempotencyKey,
+  ];
+  if (expectedPolicy !== undefined) {
+    args.push("--expected-policy-hash", expectedPolicy);
+  }
+  return spawnSync(binary, args, { cwd: root, encoding: "utf8" });
+}
+
 function cliWork(engramHome, actorId, grant, operation, input) {
   const args = [
     "--home",
@@ -428,6 +455,44 @@ test("host control survives restart and gates turn dispatch", async () => {
       /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=advisory obligation_rules=([0-9a-f]{64})/,
     );
     assert.ok(initialPolicy, advisoryDoctor.stdout);
+    const unknownRuleField = setObligationRuleSet(
+      engramHome,
+      JSON.stringify({ schema_version: 1, rules: [], typo: true }),
+      "reject a misspelled policy field",
+      "dogfood-rule-unknown-field",
+      initialPolicy[1],
+    );
+    assert.notEqual(unknownRuleField.status, 0);
+    assert.match(unknownRuleField.stderr, /unknown field `typo`/u);
+    const unknownNestedRuleField = setObligationRuleSet(
+      engramHome,
+      JSON.stringify({
+        schema_version: 1,
+        rules: [
+          {
+            rule: { rule_id: "strict-nested-input", rule_version: 1 },
+            trigger: "source_changed",
+            requirement: { check_kind: "test", typo: true },
+          },
+        ],
+      }),
+      "reject a misspelled nested requirement field",
+      "dogfood-rule-unknown-nested-field",
+      initialPolicy[1],
+    );
+    assert.notEqual(unknownNestedRuleField.status, 0);
+    assert.match(unknownNestedRuleField.stderr, /unknown field `typo`/u);
+    const oversizedRulePath = join(engramHome, "oversized-rule-set.json");
+    writeFileSync(oversizedRulePath, " ".repeat(64 * 1024 + 1), "utf8");
+    const oversizedRuleSet = setObligationRuleSet(
+      engramHome,
+      `@${oversizedRulePath}`,
+      "reject oversized policy input",
+      "dogfood-rule-oversized-input",
+      initialPolicy[1],
+    );
+    assert.notEqual(oversizedRuleSet.status, 0);
+    assert.match(oversizedRuleSet.stderr, /exceeds the 65536-byte limit/u);
     const plainReinit = spawnSync(binary, ["--home", engramHome, "init"], {
       cwd: root,
       encoding: "utf8",
@@ -1079,6 +1144,15 @@ test("work-bound control records observations and rebinds after a stale fence", 
       encoding: "utf8",
     });
     assert.equal(initialized.status, 0, initialized.stderr);
+    const boundDoctor = spawnSync(binary, ["--home", engramHome, "doctor"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(boundDoctor.status, 0, boundDoctor.stderr);
+    const boundInitialPolicy = boundDoctor.stdout.match(
+      /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=turn_gated obligation_rules=([0-9a-f]{64})/,
+    );
+    assert.ok(boundInitialPolicy, boundDoctor.stdout);
     const authorityGrant = installWorkGrant(engramHome, actor);
     const proposed = cliWork(engramHome, actor, authorityGrant, "propose", {
       kind: "root",
@@ -1450,19 +1524,126 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ).decision,
       "begin",
     );
-    assert.equal(
-      ok(
-        await client.request({
-          operation: "turn_checkpoint",
-          routing_token: rebound.routing_token,
-          grant_id: reboundTurn.grant.grant_id,
-          next_intent: "continue",
-          idempotency_key: "checkpoint-bound-rebound-turn",
-        }),
-      ).decision,
-      "checkpointed",
+    const pinnedEnvironmentComponents = {
+      ...boundEnvironmentComponents,
+      sandbox: "control-dogfood-pinned-sandbox",
+    };
+    const reboundCheckpoint = ok(
+      await client.request({
+        operation: "turn_checkpoint",
+        routing_token: rebound.routing_token,
+        grant_id: reboundTurn.grant.grant_id,
+        next_intent: "continue",
+        environment_evidence: [
+          {
+            source_basis: {
+              workspace_id: "control-dogfood-workspace",
+              source_revision: "revision-2",
+            },
+            environment_fingerprint: canonicalFingerprint(
+              pinnedEnvironmentComponents,
+            ),
+            components: pinnedEnvironmentComponents,
+            observed_at: "2026-08-28T20:00:30Z",
+          },
+        ],
+        idempotency_key: "checkpoint-bound-rebound-turn",
+      }),
     );
+    assert.equal(reboundCheckpoint.decision, "checkpointed");
+    const pinnedEnvironment =
+      reboundCheckpoint.receipt.environment_evidence[0];
+    const pinnedEnvironmentFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      proposed.work.short_ref,
+    );
+    assert.deepEqual(
+      pinnedEnvironmentFocus.evidence_items.find(
+        (item) => item.evidence === pinnedEnvironment,
+      ).environment_components,
+      pinnedEnvironmentComponents,
+    );
+    const pinnedCheckFingerprint = fingerprint("bound-final-verification");
+    const pinnedRuleSet = {
+      schema_version: 1,
+      rules: [
+        {
+          rule: {
+            rule_id: "source_mutation_requires_pinned_test",
+            rule_version: 1,
+          },
+          trigger: "source_changed",
+          requirement: {
+            check_kind: "test",
+            check_fingerprint: pinnedCheckFingerprint,
+            required_environment: pinnedEnvironment,
+          },
+        },
+      ],
+    };
+    const pinnedRuleActivation = setObligationRuleSet(
+      engramHome,
+      JSON.stringify(pinnedRuleSet),
+      "pin the exact verification command and environment",
+      "dogfood-pinned-rule-set",
+      boundInitialPolicy[1],
+    );
+    assert.equal(pinnedRuleActivation.status, 0, pinnedRuleActivation.stderr);
+    const pinnedRuleReceipt = JSON.parse(pinnedRuleActivation.stdout);
+    assert.equal(pinnedRuleReceipt.changed, true);
+    assert.equal(pinnedRuleReceipt.policy_epoch, 2);
+    assert.equal(pinnedRuleReceipt.previous_rule_set, boundInitialPolicy[2]);
+    assert.match(
+      pinnedRuleActivation.stderr,
+      /asserted host context, not an authenticated identity/,
+    );
+    const pinnedRuleReplay = setObligationRuleSet(
+      engramHome,
+      JSON.stringify(pinnedRuleSet),
+      "pin the exact verification command and environment",
+      "dogfood-pinned-rule-set",
+      boundInitialPolicy[1],
+    );
+    assert.equal(pinnedRuleReplay.status, 0, pinnedRuleReplay.stderr);
+    assert.deepEqual(JSON.parse(pinnedRuleReplay.stdout), pinnedRuleReceipt);
+    assert.match(
+      pinnedRuleReplay.stderr,
+      /asserted host context, not an authenticated identity/,
+    );
+    const pinnedRuleConflict = setObligationRuleSet(
+      engramHome,
+      JSON.stringify({ schema_version: 1, rules: [] }),
+      "change the intent under a durable key",
+      "dogfood-pinned-rule-set",
+      boundInitialPolicy[1],
+    );
+    assert.notEqual(pinnedRuleConflict.status, 0);
+    assert.match(pinnedRuleConflict.stderr, /reused for a different intent/);
+    const pinnedRuleStaleCas = setObligationRuleSet(
+      engramHome,
+      JSON.stringify({ schema_version: 1, rules: [] }),
+      "reject a stale rule-set administrator",
+      "dogfood-pinned-rule-stale-cas",
+      boundInitialPolicy[1],
+    );
+    assert.notEqual(pinnedRuleStaleCas.status, 0);
+    assert.match(pinnedRuleStaleCas.stderr, /active control policy changed/);
 
+    const stalePolicyLease = ok(
+      await client.request({
+        operation: "lease_acquire",
+        routing_token: rebound.routing_token,
+        kind: "execution",
+        mode: "exclusive",
+        subject: sourceTree,
+        ttl_seconds: 60,
+        idempotency_key: "lease-bound-completion-src-stale-policy",
+      }),
+    );
+    assert.equal(stalePolicyLease.decision, "refuse");
+    assert.equal(stalePolicyLease.directive.code, "policy_epoch_changed");
     const completionLease = ok(
       await client.request({
         operation: "lease_acquire",
@@ -1684,6 +1865,108 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(staleRefusal.code, "open_work_obligations");
     assert.equal(staleRefusal.obligation_page.items[0].state, "open");
 
+    const mismatchedPinnedTurn = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: rebound.routing_token,
+        idempotency_key: "bound-mismatched-pinned-verification-turn",
+        intent_fingerprint: fingerprint(
+          "bound-mismatched-pinned-verification-turn",
+        ),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(mismatchedPinnedTurn.decision, "grant");
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: rebound.routing_token,
+          grant_id: mismatchedPinnedTurn.grant.grant_id,
+          delivery_tokens: mismatchedPinnedTurn.grant.delivery
+            ? [mismatchedPinnedTurn.grant.delivery.page.delivery_token]
+            : [],
+          idempotency_key: "begin-bound-mismatched-pinned-verification-turn",
+        }),
+      ).decision,
+      "begin",
+    );
+    const mismatchedPinnedComponents = {
+      ...pinnedEnvironmentComponents,
+      sandbox: "control-dogfood-mismatched-pinned-sandbox",
+    };
+    const mismatchedPinnedCheckpoint = ok(
+      await client.request({
+        operation: "turn_checkpoint",
+        routing_token: rebound.routing_token,
+        grant_id: mismatchedPinnedTurn.grant.grant_id,
+        next_intent: "continue",
+        observations: [
+          {
+            observation_id: "bound-mismatched-pinned-verification",
+            action_fingerprint: fingerprint(
+              "bound-mismatched-pinned-verification",
+            ),
+            effect: "observe",
+            outcome: "succeeded",
+            source_changed: false,
+            source_basis: {
+              workspace_id: "control-dogfood-workspace",
+              source_revision: "revision-2",
+            },
+            observed_at: "2026-08-28T20:01:45Z",
+          },
+        ],
+        verification_evidence: [
+          {
+            producer_observation: {
+              kind: "observation_id",
+              observation_id: "bound-mismatched-pinned-verification",
+            },
+            check_kind: "test",
+            environment: { kind: "index", index: 0 },
+            summary: "mismatched pins must leave the obligation open",
+            refs: ["command:control-dogfood-mismatched-pins"],
+          },
+        ],
+        environment_evidence: [
+          {
+            source_basis: {
+              workspace_id: "control-dogfood-workspace",
+              source_revision: "revision-2",
+            },
+            environment_fingerprint: canonicalFingerprint(
+              mismatchedPinnedComponents,
+            ),
+            components: mismatchedPinnedComponents,
+            observed_at: "2026-08-28T20:01:45Z",
+          },
+        ],
+        idempotency_key: "checkpoint-bound-mismatched-pinned-verification",
+      }),
+    );
+    assert.equal(mismatchedPinnedCheckpoint.decision, "checkpointed");
+    const pinnedOpenFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      proposed.work.short_ref,
+    );
+    const pinnedOpenItem = pinnedOpenFocus.obligation_page.items.find(
+      (item) => item.state === "open",
+    );
+    assert.ok(pinnedOpenItem, JSON.stringify(pinnedOpenFocus.obligation_page));
+    assert.equal(pinnedOpenItem.rule_set, pinnedRuleReceipt.obligation_rule_set);
+    assert.equal(
+      pinnedOpenItem.requirement.check_fingerprint,
+      pinnedCheckFingerprint,
+    );
+    assert.equal(
+      pinnedOpenItem.requirement.required_environment,
+      pinnedEnvironment,
+    );
+
     const verificationTurn = ok(
       await client.request({
         operation: "turn_evaluate",
@@ -1709,10 +1992,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ).decision,
       "begin",
     );
-    const finalEnvironmentComponents = {
-      ...boundEnvironmentComponents,
-      sandbox: "control-dogfood-sandbox-v2",
-    };
     const finalVerificationCheckpoint = ok(
       await client.request({
         operation: "turn_checkpoint",
@@ -1740,22 +2019,12 @@ test("work-bound control records observations and rebinds after a stale fence", 
               observation_id: "bound-final-verification",
             },
             check_kind: "test",
-            environment: { kind: "index", index: 0 },
+            environment: {
+              kind: "object_hash",
+              object_hash: pinnedEnvironment,
+            },
             summary: "host observed the final source verification",
             refs: ["command:control-dogfood-final-check"],
-          },
-        ],
-        environment_evidence: [
-          {
-            source_basis: {
-              workspace_id: "control-dogfood-workspace",
-              source_revision: "revision-2",
-            },
-            environment_fingerprint: canonicalFingerprint(
-              finalEnvironmentComponents,
-            ),
-            components: finalEnvironmentComponents,
-            observed_at: "2026-08-28T20:02:00Z",
           },
         ],
         idempotency_key: "checkpoint-bound-final-verification-turn",
@@ -1763,8 +2032,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     const finalVerification =
       finalVerificationCheckpoint.receipt.verification_evidence[0];
-    const finalEnvironment =
-      finalVerificationCheckpoint.receipt.environment_evidence[0];
     cliWork(engramHome, actor, authorityGrant, "update", {
       kind: "checkpoint",
       summary: "acknowledge the final typed verification",
@@ -1803,6 +2070,69 @@ test("work-bound control records observations and rebinds after a stale fence", 
         }),
       ).lease_id,
       completionLease.lease.lease_id,
+    );
+
+    const stockRuleSet = {
+      schema_version: 1,
+      rules: [
+        {
+          rule: {
+            rule_id: "source_mutation_requires_test",
+            rule_version: 1,
+          },
+          trigger: "source_changed",
+          requirement: { check_kind: "test" },
+        },
+      ],
+    };
+    const stockRuleSetPath = join(engramHome, "stock-obligation-rules.json");
+    writeFileSync(stockRuleSetPath, JSON.stringify(stockRuleSet), "utf8");
+    const rollbackRuleSet = setObligationRuleSet(
+      engramHome,
+      `@${stockRuleSetPath}`,
+      "roll back to the earlier stock rule set",
+      "dogfood-rule-set-rollback",
+      pinnedRuleReceipt.active_policy,
+    );
+    assert.equal(rollbackRuleSet.status, 0, rollbackRuleSet.stderr);
+    const rollbackRuleReceipt = JSON.parse(rollbackRuleSet.stdout);
+    assert.equal(rollbackRuleReceipt.changed, true);
+    assert.equal(rollbackRuleReceipt.policy_epoch, 3);
+    assert.equal(
+      rollbackRuleReceipt.previous_rule_set,
+      pinnedRuleReceipt.obligation_rule_set,
+    );
+    assert.equal(rollbackRuleReceipt.obligation_rule_set, boundInitialPolicy[2]);
+    const rollbackReplay = setObligationRuleSet(
+      engramHome,
+      `@${stockRuleSetPath}`,
+      "roll back to the earlier stock rule set",
+      "dogfood-rule-set-rollback",
+      pinnedRuleReceipt.active_policy,
+    );
+    assert.equal(rollbackReplay.status, 0, rollbackReplay.stderr);
+    assert.deepEqual(JSON.parse(rollbackReplay.stdout), rollbackRuleReceipt);
+    const historicalPinnedFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      proposed.work.short_ref,
+    );
+    const historicalPinnedItem = historicalPinnedFocus.obligation_page.items.find(
+      (item) => item.rule_set === pinnedRuleReceipt.obligation_rule_set,
+    );
+    assert.ok(
+      historicalPinnedItem,
+      JSON.stringify(historicalPinnedFocus.obligation_page),
+    );
+    assert.equal(historicalPinnedItem.state, "satisfied");
+    assert.equal(
+      historicalPinnedItem.requirement.check_fingerprint,
+      pinnedCheckFingerprint,
+    );
+    assert.equal(
+      historicalPinnedItem.requirement.required_environment,
+      pinnedEnvironment,
     );
 
     const waiverProposed = cliWork(
@@ -1955,6 +2285,9 @@ test("work-bound control records observations and rebinds after a stale fence", 
       (item) => item.state === "open",
     );
     assert.ok(waiverOpen, JSON.stringify(waiverOpenFocus.obligation_page));
+    assert.equal(waiverOpen.rule_set, rollbackRuleReceipt.obligation_rule_set);
+    assert.equal(waiverOpen.requirement.check_fingerprint, undefined);
+    assert.equal(waiverOpen.requirement.required_environment, undefined);
 
     const forbiddenAgentWaiver = spawnSync(
       binary,
@@ -2107,27 +2440,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
         (item) => item.state === "satisfied",
       ).length,
       2,
-    );
-    const freshEnvironmentItems = freshSatisfied.evidence_items.filter(
-      (item) => item.evidence_kind === "environment",
-    );
-    assert.equal(freshEnvironmentItems.length, 2);
-    assert.deepEqual(
-      freshEnvironmentItems.find(
-        (item) => item.evidence === checkpointed.receipt.environment_evidence[0],
-      ).environment_components,
-      boundEnvironmentComponents,
-    );
-    assert.deepEqual(
-      freshEnvironmentItems.find((item) => item.evidence === finalEnvironment)
-        .environment_components,
-      finalEnvironmentComponents,
-    );
-    assert.equal(
-      freshSatisfied.evidence_items.find(
-        (item) => item.evidence === finalVerification,
-      ).environment,
-      finalEnvironment,
     );
     const freshWaived = cliWorkFocus(
       engramHome,

@@ -138,7 +138,10 @@ basis. Each observation and resulting obligation freeze the selected rule-set
 hash from the grant's policy epoch, so a later policy change affects only new
 observations and never reinterprets recorded history. A later passed test may
 satisfy the stock obligation only against the newest basis-bearing source
-mutation at the evaluated feed cut.
+mutation at the evaluated feed cut. The operator-only control-policy CLI can
+select another bounded typed set whose test requirement pins an exact command
+fingerprint and previously recorded environment-evidence hash; this is not a
+general natural-language policy engine.
 If the newest mutation has no basis, the open obligations remain waiver-only
 until another basis-bearing mutation and test arrive. Focus, nested next views,
 updates, and both completion outcomes share one bounded `obligation_page`
@@ -226,7 +229,10 @@ Initialize with `engram init` or make an attributed bootstrap choice with
 `engram init --required-assurance <level> --authorized-by <actor> --reason
 <text>`, verify with `engram doctor`, change the immutable policy through
 `engram control-policy set-required-assurance --idempotency-key <key>` (the
-durable key replays the exact receipt after an uncertain response), run the MCP server
+durable key replays the exact receipt after an uncertain response), or select a
+validated typed obligation set with
+`engram control-policy set-obligation-rule-set --input <JSON|@file>
+--idempotency-key <key>`. Run the MCP server
 with `engram mcp --actor-id <agent> --session-id <session>`, or run the
 host-private service with `engram control --actor-id <agent> --session-id
 <session>`, or issue a bounded local work grant with `engram authority grant

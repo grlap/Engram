@@ -598,11 +598,12 @@ not authenticated attestation; the V1 no-op redactor is visible in
 diagnostics, and hosts must not place credentials or secrets in them.
 
 Only a typed, passed verification for the required check, exact run, and
-latest source revision may satisfy a verification obligation. The current
-built-in rule leaves `required_environment` empty, so an environment link is
-audited but is not yet mandatory for satisfaction. The matcher requires the
-evidence to follow the latest mutation at the evaluated run-feed cut and
-therefore makes a later source mutation reopen the requirement. Generic
+latest source revision may satisfy a verification obligation. The stock rule
+leaves `check_fingerprint` and `required_environment` empty, so it accepts any
+passed test and treats an environment link as audit provenance. An
+operator-selected typed V1 set may instead pin both exact hashes. The matcher
+still requires the evidence to follow the latest mutation at the evaluated
+run-feed cut, so a later source mutation reopens the requirement. Generic
 agent-recorded `work_evidence` remains useful context but never verifies a
 check.
 
@@ -630,10 +631,10 @@ Definitions and resolutions are canonical feed objects; the mutable obligation
 row is only a verified projection. `work_focus`, nested `work_next.focus`,
 `work_update`, and both completion outcomes use one count- and byte-bounded
 `obligation_page` with explicit omission count, immutable identities, state,
-rule, requirement, trigger, terminal evidence/resolution, and deterministic
-typed guidance. Generic readiness strings remain separate. A fresh session
-reconstructs the same summaries from canonical history rather than trusting a
-prior response.
+rule-set identity, rule, requirement, trigger, terminal evidence/resolution,
+and deterministic typed guidance. Generic readiness strings remain separate.
+A fresh session reconstructs the same summaries from canonical history rather
+than trusting a prior response.
 
 A waiver requires a dedicated
 `WorkAuthorityOperation::ObligationWaiver` grant. It may be requested through
@@ -882,11 +883,16 @@ policy epochs exactly once.
 Current policy state schema V3 also requires one canonical obligation-rule-set
 selection. Opening a recognized schema-V2 policy appends one system-attributed
 `upgrade_builtin_obligation_rules` successor selecting the stock V1 set; it
-does not rewrite the predecessor. The host/operator storage API may append an
-attributed `set_obligation_rule_set` successor under an epoch/hash compare-and-
-swap. That API is not exposed through MCP or the host turn protocol. V1 rule
-sets are bounded typed data, not a natural-language rule engine; unknown
-schemas, duplicate rule identities, and unknown triggers fail closed.
+does not rewrite the predecessor. The operator-only
+`engram control-policy set-obligation-rule-set` command may append an
+attributed successor under an epoch/hash compare-and-swap. It accepts bounded,
+strict JSON inline or through `@file`, and activates only the fully re-supplied
+typed set; rollback never trusts a hash alone. The command is not exposed
+through MCP or the host turn protocol. V1 rule sets are bounded typed data,
+not a natural-language rule engine; unknown schemas, nested fields, duplicate
+rule identities, and unknown triggers fail closed. General conditions,
+additional trigger/evidence vocabularies, configurable blocking phases, and
+waiver-authority rules remain deferred.
 Host and user authority is the ceiling; `ControlPolicy` configures mediation,
 synchronization, TTL, and conflict behavior below that ceiling; task-applicable
 hard/firm pinned rules may further restrict execution but never grant a denied

@@ -2,7 +2,7 @@
 
 use std::{
     env, fs,
-    io::{self, BufReader, BufWriter},
+    io::{self, BufReader, BufWriter, Read},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -11,12 +11,14 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use engram::domain::{AssuranceLevel, SCHEMA_VERSION};
 use engram::{
-    ActorContext, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, HostControlServer,
-    LocalWorkService, McpServer, ObjectHash, ProjectId, ProjectPolicyAuthorityDecision, SessionId,
-    SqliteStore, WaiveWorkObligationRequest, WorkAuthorityGrant, WorkAuthorityOperation,
-    WorkAuthorityScope, WorkAvailability, WorkCompleteInput, WorkHandoffInput, WorkLifecycle,
-    WorkNextQuery, WorkNextSection, WorkObligationId, WorkPlanningBudget, WorkProposeInput,
-    WorkUpdateInput, project_database_path,
+    ActorContext, BuiltinObligationRuleRef, BuiltinObligationTrigger, ControlAssurance,
+    ControlPolicy, DevelopmentNoopRedactor, HostControlServer, LocalWorkService, McpServer,
+    ObjectHash, ObligationRuleDefinition, ObligationRuleSet, ProjectId,
+    ProjectPolicyAuthorityDecision, SessionId, SqliteStore, VerificationKind,
+    VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
+    WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability, WorkCompleteInput,
+    WorkHandoffInput, WorkLifecycle, WorkNextQuery, WorkNextSection, WorkObligationId,
+    WorkPlanningBudget, WorkProposeInput, WorkUpdateInput, project_database_path,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -189,6 +191,84 @@ enum ControlPolicyCommand {
         #[arg(long)]
         expected_policy_hash: Option<String>,
     },
+    /// Activate a typed immutable obligation rule set for future observations.
+    SetObligationRuleSet {
+        /// Strict JSON object or @path to a JSON file containing the rule set.
+        #[arg(long)]
+        input: String,
+        /// Host/operator actor id attributed to the policy decision.
+        #[arg(long)]
+        authorized_by: String,
+        /// Auditable reason for selecting this rule set.
+        #[arg(long)]
+        reason: String,
+        /// Durable caller key for exact receipt replay after an uncertain response.
+        #[arg(long)]
+        idempotency_key: String,
+        /// Optional compare-and-swap guard from `engram doctor`.
+        #[arg(long)]
+        expected_policy_hash: Option<String>,
+    },
+}
+
+const MAX_CONTROL_POLICY_CLI_INPUT_BYTES: u64 = 64 * 1024;
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CliObligationRuleSet {
+    schema_version: u16,
+    rules: Vec<CliObligationRuleDefinition>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CliObligationRuleDefinition {
+    rule: CliBuiltinObligationRuleRef,
+    trigger: BuiltinObligationTrigger,
+    requirement: CliVerificationRequirement,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CliBuiltinObligationRuleRef {
+    rule_id: String,
+    rule_version: u16,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CliVerificationRequirement {
+    check_kind: VerificationKind,
+    #[serde(default)]
+    check_fingerprint: Option<ObjectHash>,
+    #[serde(default)]
+    required_environment: Option<ObjectHash>,
+}
+
+impl From<CliObligationRuleSet> for ObligationRuleSet {
+    fn from(value: CliObligationRuleSet) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            rules: value.rules.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<CliObligationRuleDefinition> for ObligationRuleDefinition {
+    fn from(value: CliObligationRuleDefinition) -> Self {
+        Self {
+            rule: BuiltinObligationRuleRef {
+                rule_id: value.rule.rule_id,
+                rule_version: value.rule.rule_version,
+            },
+            trigger: value.trigger,
+            requirement: VerificationRequirement {
+                check_kind: value.requirement.check_kind,
+                check_fingerprint: value.requirement.check_fingerprint,
+                required_environment: value.requirement.required_environment,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -398,26 +478,10 @@ fn run_control_policy(
             expected_policy_hash,
         } => {
             let level = ControlAssurance::from(level);
-            let expected_policy = expected_policy_hash
-                .map(|value| {
-                    ObjectHash::from_str(&value).map_err(|message| {
-                        anyhow::anyhow!("invalid expected policy hash: {message}")
-                    })
-                })
-                .transpose()?;
+            let expected_policy = parse_expected_policy_hash(expected_policy_hash)?;
             let receipt = store.set_required_control_assurance(
                 level,
-                &ActorContext {
-                    actor_id: authorized_by,
-                    actor_kind: "host_operator".into(),
-                    assurance: AssuranceLevel::Asserted,
-                    run_id: None,
-                    session_id: None,
-                    source_tool: Some("cli:control_policy".into()),
-                    source_skill: None,
-                    provenance_chain: Vec::new(),
-                    reason: "authorize a project-scoped behavioral-control policy change".into(),
-                },
+                &control_policy_actor(authorized_by),
                 &reason,
                 &idempotency_key,
                 expected_policy.as_ref(),
@@ -436,9 +500,62 @@ fn run_control_policy(
             warn_if_action_gated(receipt.required_assurance);
             serde_json::to_value(receipt)?
         }
+        ControlPolicyCommand::SetObligationRuleSet {
+            input,
+            authorized_by,
+            reason,
+            idempotency_key,
+            expected_policy_hash,
+        } => {
+            let input: CliObligationRuleSet = parse_bounded_json_input(
+                &input,
+                "obligation rule-set",
+                MAX_CONTROL_POLICY_CLI_INPUT_BYTES,
+            )?;
+            let rule_set = ObligationRuleSet::from(input);
+            let expected_policy = parse_expected_policy_hash(expected_policy_hash)?;
+            let receipt = store.set_obligation_rule_set(
+                &rule_set,
+                &control_policy_actor(authorized_by),
+                &reason,
+                &idempotency_key,
+                expected_policy.as_ref(),
+                chrono::Utc::now(),
+                &DevelopmentNoopRedactor,
+            )?;
+            if receipt.changed {
+                eprintln!(
+                    "WARNING: policy administrator identity is asserted host context, not an authenticated identity"
+                );
+            }
+            serde_json::to_value(receipt)?
+        }
     };
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
+}
+
+fn control_policy_actor(actor_id: String) -> ActorContext {
+    ActorContext {
+        actor_id,
+        actor_kind: "host_operator".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: None,
+        session_id: None,
+        source_tool: Some("cli:control_policy".into()),
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "authorize a project-scoped behavioral-control policy change".into(),
+    }
+}
+
+fn parse_expected_policy_hash(value: Option<String>) -> Result<Option<ObjectHash>> {
+    value
+        .map(|value| {
+            ObjectHash::from_str(&value)
+                .map_err(|message| anyhow::anyhow!("invalid expected policy hash: {message}"))
+        })
+        .transpose()
 }
 
 #[allow(
@@ -708,6 +825,32 @@ fn parse_json_input<T: serde::de::DeserializeOwned>(input: &str) -> Result<T> {
         input.to_owned()
     };
     serde_json::from_str(&json).context("invalid work operation JSON")
+}
+
+fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
+    input: &str,
+    label: &str,
+    max_bytes: u64,
+) -> Result<T> {
+    let json = if let Some(path) = input.strip_prefix('@') {
+        let file = fs::File::open(path)
+            .with_context(|| format!("failed to open {label} JSON input {path}"))?;
+        let mut bytes = Vec::new();
+        file.take(max_bytes + 1)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("failed to read {label} JSON input {path}"))?;
+        if bytes.len() as u64 > max_bytes {
+            bail!("{label} JSON input exceeds the {max_bytes}-byte limit");
+        }
+        String::from_utf8(bytes)
+            .with_context(|| format!("{label} JSON input {path} is not UTF-8"))?
+    } else {
+        if input.len() as u64 > max_bytes {
+            bail!("{label} JSON input exceeds the {max_bytes}-byte limit");
+        }
+        input.to_owned()
+    };
+    serde_json::from_str(&json).with_context(|| format!("invalid {label} JSON"))
 }
 
 fn serve_control(

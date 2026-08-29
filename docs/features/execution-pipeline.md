@@ -23,7 +23,8 @@ authority), the host-private turn channel (`session_bind` → `turn_evaluate`
 → `turn_begin` → `turn_checkpoint`) with exact live `WorkRun` binding, bounded
 context delivery, host execution observations, typed verification/environment
 evidence, immutable policy-selected obligation rule sets with the stock
-source-change/test rule, obligation-gated `CompletionSeal`, the
+source-change/test rule plus operator-selected exact check/environment pins,
+obligation-gated `CompletionSeal`, the
 `WorkSourceSnapshot` type and its admission path, and a
 side-effect-free dummy publication adapter that proves the idempotency
 contract.
@@ -31,8 +32,9 @@ contract.
 Specified but not yet shipped: a `WorkSourceAdapter` intake port; fenced report
 assembly (`ReportAssemblyClaim`, `report_ready`) and durable publication
 intents; real external adapters; capability requirements on work; a general
-obligation rule language; and an environment fingerprint required by the
-seal. Per-project required assurance is selectable at bootstrap and through an
+obligation rule language; and project-wide environment requirements outside
+the bounded typed obligation schema. Per-project required assurance is
+selectable at bootstrap and through an
 attributed, immutable policy update. Table rows and diagram nodes marked
 **planned** are exactly the remaining items.
 
@@ -279,11 +281,11 @@ capability requirements and packet assignment do not.
   capability map at bind. Today `session_bind` carries only
   `capability_map_revision`; work items have no requirement field and no
   matcher exists.
-- **Environment pinning in configurable obligations.** Environment components,
-  verification links, and the seal's exact bounded environment-hash set ship.
-  The built-in source-change/test rule leaves `required_environment` empty; a
-  policy that requires a particular environment hash remains part of the
-  planned configurable rule model.
+- **Environment policy beyond exact typed pins.** Environment components,
+  verification links, the seal's exact bounded environment-hash set, and an
+  operator-selected V1 obligation requirement for one previously recorded
+  environment hash ship. Conditions over component families, signed
+  attestation, or project-wide environment predicates remain planned.
 - **General obligation policies.** Canonical policy-selected rule sets, the
   stock source-change/test rule, immutable definitions and resolutions, host
   waiver, exact seal bindings, and named completion refusal ship. V1 accepts

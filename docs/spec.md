@@ -516,9 +516,12 @@ recognized policy without that field is preserved and advanced by one
 system-attributed migration epoch selecting the stock V1 set; it is never
 rewritten in place. Assurance-only and built-in-envelope transitions preserve
 the selected set. A host/operator-only activation may append a validated
-`set_obligation_rule_set` successor under the same epoch/hash compare-and-swap;
-no MCP or model-turn operation can administer it. Unknown schemas, unknown
-triggers, duplicate rule identities, and missing selected objects fail closed.
+`set_obligation_rule_set` successor under the same epoch/hash compare-and-swap.
+The shipped operator CLI accepts at most 64 KiB of strict nested V1 JSON inline
+or through `@file`; rollback re-supplies the desired typed JSON and never
+activates a hash alone. No MCP or model-turn operation can administer it.
+Unknown schemas, unknown fields or triggers, duplicate rule identities, and
+missing selected objects fail closed.
 Every active run rechecks that shared epoch at turn/action boundaries—no
 single work claim or resource lease controls project policy. Host/user
 authority is the ceiling; control policy and work-applicable pinned rules may
@@ -1107,6 +1110,11 @@ only to later observations and cannot reinterpret existing history; legacy
 records without the hash retain the stock V1 meaning. Obligation definitions
 and terminal satisfaction/waiver events are direct project, root-work, and
 run-execution feed objects; query rows are verified projections.
+A typed V1 requirement may leave the verification command and environment
+open, as the stock set does, or pin an exact `check_fingerprint` and previously
+recorded `EnvironmentEvidence` object hash. A mismatched command, environment,
+or source basis leaves the obligation open; only exact passed evidence at the
+post-mutation cut satisfies it.
 A passed test satisfies open definitions only against the latest mutation at
 the evaluated run-feed cut. A latest basisless mutation therefore leaves the
 open set waiver-only until a later basis-bearing mutation and passed test; that

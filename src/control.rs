@@ -2116,4 +2116,94 @@ mod tests {
             Err(VerificationEvidenceMismatch::StaleSourceRevision)
         );
     }
+
+    #[test]
+    fn fixed_clock_environment_evidence_has_a_stable_rule_pin_hash() {
+        use crate::{
+            CanonicalObject,
+            domain::{
+                ActorContext, AssuranceLevel, ControlWorkBinding, EnvironmentComponents,
+                EnvironmentEvidence, ExecutionSourceBasis, RootExecutionId, VerificationKind,
+                VerificationRequirement, WorkClaimId, WorkId, WorkRunId,
+            },
+        };
+
+        let fixed_time = Utc
+            .with_ymd_and_hms(2026, 8, 28, 20, 0, 30)
+            .single()
+            .expect("fixed environment time");
+        let components = EnvironmentComponents {
+            toolchain: "rustc-1.89.0".into(),
+            sandbox: Some("windows-host-sandbox-v1".into()),
+            workspace_id: "workspace-a".into(),
+            capability_map_revision: 7,
+        };
+        let environment_fingerprint = CanonicalObject::freeze(&components)
+            .expect("freeze fixed environment components")
+            .hash()
+            .clone();
+        let run_id = WorkRunId(
+            uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405060").expect("fixed run id"),
+        );
+        let session_id = SessionId("fixed-environment-host".into());
+        let evidence = EnvironmentEvidence {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            project_id: ProjectId("fixed-environment-project".into()),
+            binding: ControlWorkBinding {
+                root_execution_id: RootExecutionId(
+                    uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405061")
+                        .expect("fixed root execution id"),
+                ),
+                work_id: WorkId(
+                    uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405062")
+                        .expect("fixed work id"),
+                ),
+                run_id,
+                work_revision: 4,
+                claim_id: WorkClaimId(
+                    uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405063")
+                        .expect("fixed claim id"),
+                ),
+                claim_fence: 9,
+            },
+            session_id: session_id.clone(),
+            source_basis: ExecutionSourceBasis {
+                workspace_id: "workspace-a".into(),
+                source_revision: "sha256:fixed-source-revision".into(),
+            },
+            environment_fingerprint,
+            components: Some(components),
+            observed_at: fixed_time,
+            actor: ActorContext {
+                actor_id: "fixed-host".into(),
+                actor_kind: "host".into(),
+                assurance: AssuranceLevel::Asserted,
+                run_id: Some(run_id.0.to_string()),
+                session_id: Some(session_id),
+                source_tool: Some("host-control:turn_checkpoint".into()),
+                source_skill: None,
+                provenance_chain: Vec::new(),
+                reason: "record fixed environment evidence".into(),
+            },
+            recorded_at: fixed_time,
+        };
+        let evidence_hash = CanonicalObject::freeze(&evidence)
+            .expect("freeze fixed environment evidence")
+            .hash()
+            .clone();
+
+        assert_eq!(
+            evidence_hash.as_str(),
+            "392e8e11ddb907bf40efc8a56d16b0023d1609e7ea4b5e08be6e9328a3cbac7d"
+        );
+        let requirement = VerificationRequirement {
+            check_kind: VerificationKind::Test,
+            check_fingerprint: Some(hash("cargo test --workspace")),
+            required_environment: Some(evidence_hash.clone()),
+        };
+        assert_eq!(
+            requirement.required_environment.as_ref(),
+            Some(&evidence_hash)
+        );
+    }
 }
