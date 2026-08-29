@@ -1566,13 +1566,28 @@ fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
             bail!("staged copy bytes differ from the backup");
         }
         if exists {
-            // Take the writer slot, fold the old log into the old file, and
-            // truncate it; a stale log must never meet the restored file.
+            // Fold the old log into the old file and truncate it under an
+            // exclusive lock; a stale log must never meet the restored file.
+            // A checkpoint that could not complete means another process still
+            // holds the store, and replacement stops there.
             let old = rusqlite::Connection::open(database).with_context(|| {
                 format!("failed to open {} for replacement", database.display())
             })?;
-            old.execute_batch("BEGIN IMMEDIATE; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);")
-                .context("failed to checkpoint the store being replaced; is another Engram process using it?")?;
+            old.execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN IMMEDIATE; COMMIT;")
+                .context(
+                    "failed to take the store being replaced; is another Engram process using it?",
+                )?;
+            let (busy, log_frames, checkpointed): (i64, i64, i64) = old
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })
+                .context("failed to checkpoint the store being replaced")?;
+            if busy != 0 || log_frames != checkpointed {
+                bail!(
+                    "another process still uses {}; stop it and retry (checkpoint busy={busy}, log={log_frames}, checkpointed={checkpointed})",
+                    database.display()
+                );
+            }
             drop(old);
             for suffix in ["-wal", "-shm", "-journal"] {
                 let sidecar = PathBuf::from(format!("{}{suffix}", database.display()));
@@ -1581,18 +1596,14 @@ fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
                         .with_context(|| format!("failed to remove {}", sidecar.display()))?;
                 }
             }
+            fs::rename(&staged, database)
+                .with_context(|| format!("failed to install {} as the store", staged.display()))?;
+        } else {
+            // Nothing may be replaced without --replace, not even a store that
+            // appeared while the copy was being staged.
+            engram::install_store_copy_without_replacing(&staged, database)
+                .with_context(|| format!("failed to install {} as the store", staged.display()))?;
         }
-        // Read-only verification may have left empty log sidecars beside the
-        // staged copy; they must not travel with it.
-        for suffix in ["-wal", "-shm", "-journal"] {
-            let sidecar = PathBuf::from(format!("{}{suffix}", staged.display()));
-            if sidecar.exists() {
-                fs::remove_file(&sidecar)
-                    .with_context(|| format!("failed to remove {}", sidecar.display()))?;
-            }
-        }
-        fs::rename(&staged, database)
-            .with_context(|| format!("failed to install {} as the store", staged.display()))?;
         Ok(())
     })();
     if let Err(error) = install {

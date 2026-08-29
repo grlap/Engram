@@ -764,7 +764,8 @@ fn unique_sibling_path(path: &Path, label: &str) -> std::path::PathBuf {
 /// Publishes a staged file under `target` without replacing anything: the
 /// final name is created exclusively, the staged bytes are copied in and
 /// flushed, and the staged file is removed. An existing `target` is an error
-/// and leaves both files untouched.
+/// and leaves both files untouched; a failure while writing removes the
+/// partial target so a retry is not blocked by it.
 fn publish_without_replacing(staged: &Path, target: &Path) -> Result<(), StoreError> {
     let io_error = |what: &str, error: std::io::Error| {
         StoreError::InvalidWork(format!("cannot {what} {}: {error}", target.display()))
@@ -783,25 +784,77 @@ fn publish_without_replacing(staged: &Path, target: &Path) -> Result<(), StoreEr
                 io_error("create", error)
             }
         })?;
-    let mut input = std::fs::File::open(staged).map_err(|error| io_error("read into", error))?;
-    std::io::copy(&mut input, &mut out).map_err(|error| io_error("write", error))?;
-    out.sync_all().map_err(|error| io_error("flush", error))?;
+    let written = (|| -> std::io::Result<()> {
+        let mut input = std::fs::File::open(staged)?;
+        std::io::copy(&mut input, &mut out)?;
+        out.sync_all()
+    })();
     drop(out);
-    drop(input);
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(target);
+        return Err(io_error("write", error));
+    }
     remove_store_files(staged).map_err(|error| io_error("clean up after", error))?;
     Ok(())
+}
+
+/// Installs a verified staged copy as `target` without replacing anything;
+/// hosts use it for a restore into an absent store.
+///
+/// # Errors
+///
+/// Returns [`StoreError`] when `target` already exists or the copy fails.
+pub fn install_store_copy_without_replacing(
+    staged: &Path,
+    target: &Path,
+) -> Result<(), StoreError> {
+    publish_without_replacing(staged, target)
+}
+
+/// The log sidecars SQLite may keep beside a store file.
+fn store_sidecars(path: &Path) -> [std::path::PathBuf; 3] {
+    let base = path.display().to_string();
+    [
+        std::path::PathBuf::from(format!("{base}-wal")),
+        std::path::PathBuf::from(format!("{base}-shm")),
+        std::path::PathBuf::from(format!("{base}-journal")),
+    ]
 }
 
 /// Removes a store file and any log sidecars an open may have left beside it.
 fn remove_store_files(path: &Path) -> std::io::Result<()> {
     std::fs::remove_file(path)?;
-    for suffix in ["-wal", "-shm", "-journal"] {
-        let sidecar = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+    for sidecar in store_sidecars(path) {
         if sidecar.exists() {
             std::fs::remove_file(&sidecar)?;
         }
     }
     Ok(())
+}
+
+/// A `file:` URI that opens `path` as an immutable database: SQLite then
+/// reads the file bytes alone and never touches or creates log sidecars.
+fn immutable_uri(path: &Path) -> Result<String, StoreError> {
+    let absolute = std::path::absolute(path).map_err(|error| {
+        StoreError::InvalidWork(format!("cannot resolve {}: {error}", path.display()))
+    })?;
+    let mut text = absolute.to_string_lossy().replace('\\', "/");
+    if let Some(stripped) = text.strip_prefix("//?/") {
+        text = stripped.to_owned();
+    }
+    let encoded = text
+        .chars()
+        .map(|character| match character {
+            '%' => "%25".to_owned(),
+            '?' => "%3F".to_owned(),
+            '#' => "%23".to_owned(),
+            other => other.to_string(),
+        })
+        .collect::<String>();
+    Ok(format!(
+        "file:///{}?immutable=1",
+        encoded.trim_start_matches('/')
+    ))
 }
 
 /// V1's canonical local persistence backend.
@@ -870,9 +923,22 @@ impl SqliteStore {
         }
         // The staged copy is ours: one ordinary open settles its journal mode
         // so the copy verifies and restores through read-only opens later.
+        // Closing that connection folds and removes its log; any sidecar left
+        // behind is empty and must not travel with the copy.
         if let Err(error) = Self::open_with_host_path_identity(&staged, None) {
-            let _ = std::fs::remove_file(&staged);
+            let _ = remove_store_files(&staged);
             return Err(error);
+        }
+        for sidecar in store_sidecars(&staged) {
+            if sidecar.exists()
+                && let Err(error) = std::fs::remove_file(&sidecar)
+            {
+                let _ = remove_store_files(&staged);
+                return Err(StoreError::InvalidWork(format!(
+                    "cannot remove {}: {error}",
+                    sidecar.display()
+                )));
+            }
         }
         let manifest = match Self::verify_backup(&staged) {
             Ok(manifest) => manifest,
@@ -907,12 +973,28 @@ impl SqliteStore {
                 path.display()
             )));
         }
+        // A backup is one self-contained file. Log sidecars beside it mean it
+        // was opened read-write after it was written, so its main file may
+        // not hold everything; refuse rather than verify a stale picture.
+        for sidecar in store_sidecars(path) {
+            if sidecar.exists() {
+                return Err(StoreError::InvalidWork(format!(
+                    "backup {} has a log sidecar {}; it was opened after it was written",
+                    path.display(),
+                    sidecar.display()
+                )));
+            }
+        }
         let bytes = std::fs::read(path).map_err(|error| {
             StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
         })?;
         let digest = <sha2::Sha256 as sha2::Digest>::digest(&bytes);
-        let connection =
-            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        // `immutable=1` reads exactly the hashed bytes: no shared-memory or log
+        // file is consulted or created, so a read-only directory works too.
+        let connection = Connection::open_with_flags(
+            immutable_uri(path)?,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        )?;
         let report = Self::from_connection(connection, None, None)?.verify_all()?;
         if !report.is_healthy() {
             return Err(StoreError::InvalidWork(format!(
@@ -4304,6 +4386,22 @@ impl SqliteStore {
         let session = Self::load_control_session_on(&transaction, session_id)?
             .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         Self::verify_control_session(&session, project_id, routing_token)?;
+        // An opener that could not resolve the project root's filesystem
+        // identity must not begin, or replay the beginning of, a turn whose
+        // basis names paths, even one issued earlier by a resolved opener.
+        if self.host_path_policy.is_none()
+            && Self::load_turn_grant(&transaction, session_id, grant_id)?.is_some_and(|grant| {
+                grant
+                    .grant
+                    .basis
+                    .resource_intents
+                    .iter()
+                    .any(|subject| matches!(subject, crate::domain::ResourceSubject::Path { .. }))
+                    || !grant.grant.basis.leases.is_empty()
+            })
+        {
+            return Err(StoreError::HostPathIdentityUnresolved);
+        }
         if let Some(replay) = Self::replay_control_operation(
             &transaction,
             session_id,
@@ -4316,20 +4414,6 @@ impl SqliteStore {
         }
         let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
             .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
-        // An opener that could not resolve the project root's filesystem
-        // identity must not begin a turn whose basis names paths, even one
-        // issued earlier by a resolved opener.
-        if self.host_path_policy.is_none()
-            && (grant
-                .grant
-                .basis
-                .resource_intents
-                .iter()
-                .any(|subject| matches!(subject, crate::domain::ResourceSubject::Path { .. }))
-                || !grant.grant.basis.leases.is_empty())
-        {
-            return Err(StoreError::HostPathIdentityUnresolved);
-        }
         let policy = Self::load_active_control_policy(&transaction)?;
         let task_admission_epoch = transaction.query_row(
             "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",

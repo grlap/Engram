@@ -79,6 +79,7 @@ pub use project::{
 pub use storage::{
     BackupManifest, ControlDiagnostics, ControlPolicyUpdateReceipt, IntegrityReport,
     ObligationRuleSetUpdateReceipt, SqliteStore, TaskChange, describe_host_path_policy,
+    install_store_copy_without_replacing,
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use verbs::{
