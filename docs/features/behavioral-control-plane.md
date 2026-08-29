@@ -1210,7 +1210,10 @@ and an overlapping acquisition continues to defer after nominal expiry with
 `checkpoint_required: true`. Restart preserves that pin. Checkpoint closes the
 uncertain turn atomically, after which an expired or released scope can move to
 the next holder under a higher fence. The store persists one host path policy
-on first open and refuses later openers with different path semantics. The
+on the first open that resolved the project root's filesystem identity
+(host-supplied or probed on the real filesystem) and refuses later resolved
+openers with different path semantics; an opener that could not resolve the
+identity refuses path leases rather than guessing. The
 storage boundary binds path subjects to the session project, NFC-normalizes
 them, applies that persisted case policy, and under Windows rules rejects
 trailing-dot/space, alternate-data-stream, reserved-device, and 8.3-shaped

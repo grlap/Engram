@@ -92,7 +92,7 @@ impl McpServer {
     }
 
     fn store(&self) -> Result<SqliteStore, StoreError> {
-        SqliteStore::open(&self.database)
+        SqliteStore::open_unresolved(&self.database)
     }
 
     fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {

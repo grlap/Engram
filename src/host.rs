@@ -16,8 +16,8 @@ use serde_json::Value;
 
 use crate::{
     ActorContext, ControlAssurance, ControlWorkBinding, DevelopmentNoopRedactor, EffectClass,
-    EnvironmentEvidenceInput, ExecutionObservationInput, LeaseKind, LeaseMode, ObjectHash,
-    ProjectId, ResourceSubject, SessionId, SqliteStore, TurnIntent, TurnPurpose,
+    EnvironmentEvidenceInput, ExecutionObservationInput, HostPathPolicy, LeaseKind, LeaseMode,
+    ObjectHash, ProjectId, ResourceSubject, SessionId, SqliteStore, TurnIntent, TurnPurpose,
     VerificationEvidenceInput, WorkObligationId,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
@@ -134,7 +134,33 @@ impl HostControlServer {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Result<Self, StoreError> {
-        let mut store = SqliteStore::open(database)?;
+        Self::open_with_host_path_identity(
+            database,
+            Some(HostPathPolicy::host_default()),
+            project_id,
+            actor_id,
+            session_id,
+            source_skill,
+        )
+    }
+
+    /// Opens the project store with the project root's resolved filesystem
+    /// identity (`None` when unresolved: path leases then fail closed) and
+    /// fixes asserted host context for this connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the SQLite store cannot be opened or its
+    /// persisted path policy differs from the resolved one.
+    pub fn open_with_host_path_identity(
+        database: impl AsRef<Path>,
+        identity: Option<HostPathPolicy>,
+        project_id: ProjectId,
+        actor_id: String,
+        session_id: SessionId,
+        source_skill: Option<String>,
+    ) -> Result<Self, StoreError> {
+        let mut store = SqliteStore::open_with_host_path_identity(database, identity)?;
         let connection_token = store.resume_control_connection(&session_id, Utc::now())?;
         Ok(Self {
             store,
@@ -463,6 +489,7 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
 const fn store_error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::InvalidControlSession(_) => "invalid_control_session",
+        StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
         StoreError::ControlSessionTokenMismatch(_) => "control_session_token_mismatch",
         StoreError::ControlConnectionSuperseded(_) => "control_connection_superseded",

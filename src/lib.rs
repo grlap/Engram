@@ -73,10 +73,12 @@ pub use domain::{
 pub use host::{HostControlRequest, HostControlServer};
 pub use mcp::McpServer;
 pub use memory::{DevelopmentNoopRedactor, Redactor};
-pub use project::project_database_path;
+pub use project::{
+    HostPathProbeError, parse_host_path_policy, probe_host_path_policy, project_database_path,
+};
 pub use storage::{
     ControlDiagnostics, ControlPolicyUpdateReceipt, IntegrityReport,
-    ObligationRuleSetUpdateReceipt, SqliteStore, TaskChange,
+    ObligationRuleSetUpdateReceipt, SqliteStore, TaskChange, describe_host_path_policy,
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use verbs::{

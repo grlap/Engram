@@ -2355,7 +2355,7 @@ impl LocalWorkService {
     }
 
     fn store(&self) -> Result<SqliteStore, StoreError> {
-        SqliteStore::open(&self.database)
+        SqliteStore::open_unresolved(&self.database)
     }
 
     fn protocol_intent<'a, T>(&'a self, input: &'a T) -> WorkProtocolIntent<'a, T> {

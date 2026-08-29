@@ -622,11 +622,18 @@ segments, for example:
 
 The matching `turn_evaluate` supplies exact or tree `resource_intents` beneath
 that subject. The core rejects a different embedded project id and
-NFC-normalizes every segment. The first store opener atomically persists the
-host filesystem identity policy: Windows and macOS defaults case-fold, Linux
-defaults case-sensitive, and Windows rejects reserved names, alternate data
-stream syntax, trailing-dot/space aliases, and known 8.3 aliases. Later openers
-must present the same policy. Lease expiry immediately removes authority;
+NFC-normalizes every segment. The CLI resolves the project root's filesystem
+identity before opening the store: `--host-path-policy case_fold|case_sensitive`
+(or `ENGRAM_HOST_PATH_POLICY`) when the host knows it, otherwise a probe that
+writes one uniquely named file into the project root and looks it up under
+the opposite case. The first resolved opener persists that policy; later
+resolved openers must present the same one, and a mismatch names both. An
+opener that could not resolve the identity (unwritable or missing root) still
+reads and tracks work, but every path lease is refused with
+`host_path_identity_unresolved` instead of guessing. Windows alias rules
+(reserved names, alternate data stream syntax, trailing-dot/space aliases,
+known 8.3 aliases) follow the running operating system. `doctor` reports the
+persisted and resolved policy. Lease expiry immediately removes authority;
 releasing and later reacquiring an overlapping subject advances the
 project-wide resource fence even when the new holder belongs to another task.
 A session must release active leases before rebinding to another task; expired

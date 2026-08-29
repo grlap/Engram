@@ -276,6 +276,10 @@ pub enum StoreError {
     InvalidControlObservation(String),
     #[error("control session input is invalid: {0}")]
     InvalidControlSession(String),
+    #[error(
+        "the project root's filesystem identity is unresolved, so path leases are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
+    )]
+    HostPathIdentityUnresolved,
     #[error("session {0:?} has no host-private control binding")]
     ControlSessionNotBound(String),
     #[error("routing token does not match control session {0:?}")]
@@ -702,21 +706,126 @@ impl IntegrityReport {
     }
 }
 
+/// Human-readable form of a host path policy for diagnostics and refusals.
+#[must_use]
+pub fn describe_host_path_policy(policy: HostPathPolicy) -> String {
+    format!(
+        "{}, windows alias rules {}",
+        if policy.case_fold_paths {
+            "case_fold"
+        } else {
+            "case_sensitive"
+        },
+        if policy.windows_alias_rules {
+            "on"
+        } else {
+            "off"
+        }
+    )
+}
+
 /// V1's canonical local persistence backend.
 pub struct SqliteStore {
     connection: Connection,
-    host_path_policy: HostPathPolicy,
+    /// The project root's filesystem identity for this opener. `None` means
+    /// unresolved: reads and work proceed, path leases fail closed.
+    host_path_policy: Option<HostPathPolicy>,
 }
 
 impl SqliteStore {
-    /// Opens or creates a local database and applies idempotent schema setup.
+    /// Opens or creates a local database and applies idempotent schema setup
+    /// under the running target's conservative path policy. Embedding hosts
+    /// and the CLI should prefer [`Self::open_with_host_path_identity`] with
+    /// the project root's probed or host-supplied identity.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when SQLite cannot open or initialize the store.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
+        Self::open_with_host_path_identity(path, Some(HostPathPolicy::host_default()))
+    }
+
+    /// Opens a local database without asserting the project root's filesystem
+    /// identity: work and memory operations proceed against any persisted
+    /// policy, and path-bearing leases fail closed. Agent-facing services that
+    /// never lease paths open this way so they cannot disagree with the
+    /// resolved policy the host bound.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when SQLite cannot open or initialize the store.
+    pub fn open_unresolved(path: impl AsRef<Path>) -> Result<Self, StoreError> {
+        Self::open_with_host_path_identity(path, None)
+    }
+
+    /// Opens or creates a local database with the project root's resolved
+    /// filesystem identity, probed or host-supplied, or `None` when it could
+    /// not be resolved. The first resolved opener persists the policy; later
+    /// resolved openers must present the same one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when SQLite cannot open or initialize the store
+    /// or the persisted policy differs from the resolved one.
+    pub fn open_with_host_path_identity(
+        path: impl AsRef<Path>,
+        identity: Option<HostPathPolicy>,
+    ) -> Result<Self, StoreError> {
         let connection = Connection::open(path)?;
-        Self::from_connection(connection, HostPathPolicy::host_default(), None)
+        Self::from_connection(connection, identity, None)
+    }
+
+    /// The filesystem identity this opener resolved, if any.
+    #[must_use]
+    pub const fn host_path_identity(&self) -> Option<HostPathPolicy> {
+        self.host_path_policy
+    }
+
+    /// Reads the policy persisted by the first resolved opener, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the policy row cannot be read.
+    pub fn stored_host_path_policy(&self) -> Result<Option<HostPathPolicy>, StoreError> {
+        Self::stored_host_path_policy_on(&self.connection)
+    }
+
+    fn stored_host_path_policy_on(
+        connection: &Connection,
+    ) -> Result<Option<HostPathPolicy>, StoreError> {
+        if !Self::sqlite_table_exists(connection, "control_host_path_policy")? {
+            return Ok(None);
+        }
+        Ok(connection
+            .query_row(
+                "SELECT case_fold_paths, windows_alias_rules
+                 FROM control_host_path_policy WHERE singleton = 1",
+                [],
+                |row| {
+                    Ok(HostPathPolicy {
+                        case_fold_paths: row.get::<_, bool>(0)?,
+                        windows_alias_rules: row.get::<_, bool>(1)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// The policy that normalizes one lease subject: logical subjects never
+    /// need one, path subjects need the resolved identity.
+    fn path_policy_for(
+        &self,
+        subject: &crate::domain::ResourceSubject,
+    ) -> Result<HostPathPolicy, StoreError> {
+        match subject {
+            crate::domain::ResourceSubject::Logical { .. } => Ok(HostPathPolicy {
+                case_fold_paths: false,
+                windows_alias_rules: false,
+            }),
+            crate::domain::ResourceSubject::Path { .. } => self
+                .host_path_policy
+                .ok_or(StoreError::HostPathIdentityUnresolved),
+        }
     }
 
     /// Creates a store with an explicit bootstrap control-assurance requirement.
@@ -731,6 +840,7 @@ impl SqliteStore {
     /// has a different assurance requirement.
     pub fn open_with_initial_control_assurance<R: Redactor>(
         path: impl AsRef<Path>,
+        identity: Option<HostPathPolicy>,
         required_assurance: ControlAssurance,
         authorized_by: &ActorContext,
         reason: &str,
@@ -749,7 +859,7 @@ impl SqliteStore {
         let connection = Connection::open(path)?;
         Self::from_connection(
             connection,
-            HostPathPolicy::host_default(),
+            identity,
             Some(InitialControlPolicy {
                 required_assurance,
                 authorized_by,
@@ -770,26 +880,34 @@ impl SqliteStore {
         path: impl AsRef<Path>,
         policy: HostPathPolicy,
     ) -> Result<Self, StoreError> {
-        let connection = Connection::open(path)?;
-        Self::from_connection(connection, policy, None)
+        Self::open_with_host_path_identity(path, Some(policy))
     }
 
-    /// Creates an isolated store for tests or ephemeral runs.
+    /// Creates an isolated store for tests or ephemeral runs under the running
+    /// target's conservative path policy.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when SQLite cannot initialize the schema.
     pub fn open_in_memory() -> Result<Self, StoreError> {
-        Self::from_connection(
-            Connection::open_in_memory()?,
-            HostPathPolicy::host_default(),
-            None,
-        )
+        Self::open_in_memory_with_host_path_identity(Some(HostPathPolicy::host_default()))
+    }
+
+    /// Creates an isolated store with an explicit or unresolved filesystem
+    /// identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when SQLite cannot initialize the schema.
+    pub fn open_in_memory_with_host_path_identity(
+        identity: Option<HostPathPolicy>,
+    ) -> Result<Self, StoreError> {
+        Self::from_connection(Connection::open_in_memory()?, identity, None)
     }
 
     fn from_connection(
         connection: Connection,
-        host_path_policy: HostPathPolicy,
+        host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<InitialControlPolicy>,
     ) -> Result<Self, StoreError> {
         Self::from_connection_with_busy_timeout(
@@ -807,7 +925,7 @@ impl SqliteStore {
     )]
     fn from_connection_with_busy_timeout(
         mut connection: Connection,
-        host_path_policy: HostPathPolicy,
+        host_path_policy: Option<HostPathPolicy>,
         initial_control_policy: Option<InitialControlPolicy>,
         busy_timeout: Duration,
     ) -> Result<Self, StoreError> {
@@ -1106,8 +1224,10 @@ impl SqliteStore {
         }
         if core_schema_complete {
             Self::bind_host_path_policy(&mut connection, host_path_policy)?;
+        } else if let Some(policy) = host_path_policy {
+            Self::bind_host_path_policy_on(&connection, policy)?;
         } else {
-            Self::bind_host_path_policy_on(&connection, host_path_policy)?;
+            Self::preflight_host_path_policy(&connection, None)?;
         }
         if !core_schema_complete {
             let has_memory_work_id = connection.query_row(
@@ -2434,52 +2554,39 @@ impl SqliteStore {
 
     fn preflight_host_path_policy(
         connection: &Connection,
-        expected: HostPathPolicy,
+        expected: Option<HostPathPolicy>,
     ) -> Result<(), StoreError> {
-        let table_exists = connection.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM sqlite_master
-                 WHERE type = 'table' AND name = 'control_host_path_policy'
-             )",
-            [],
-            |row| row.get::<_, bool>(0),
-        )?;
-        if !table_exists {
+        let stored = Self::stored_host_path_policy_on(connection)?;
+        let Some(stored) = stored else {
             if Self::has_path_bearing_control_state(connection)? {
                 return Err(StoreError::InvalidControlSession(
                     "path-bearing control state exists without a bound host path policy".into(),
                 ));
             }
             return Ok(());
-        }
-        let stored = connection
-            .query_row(
-                "SELECT case_fold_paths, windows_alias_rules
-                 FROM control_host_path_policy WHERE singleton = 1",
-                [],
-                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
-            )
-            .optional()?;
-        if stored.is_none() {
-            if Self::has_path_bearing_control_state(connection)? {
-                return Err(StoreError::InvalidControlSession(
-                    "path-bearing control state exists without a bound host path policy".into(),
-                ));
-            }
-            return Ok(());
-        }
-        if stored != Some((expected.case_fold_paths, expected.windows_alias_rules)) {
-            return Err(StoreError::InvalidControlSession(
-                "store host path policy differs from this embedding host".into(),
-            ));
+        };
+        // An unresolved opener asserts nothing and may read; only a resolved
+        // opener that disagrees with the persisted identity is refused.
+        if let Some(expected) = expected
+            && stored != expected
+        {
+            return Err(StoreError::InvalidControlSession(format!(
+                "the store's persisted host path policy ({}) differs from this opener's ({}); if the project moved to a different filesystem, supply --host-path-policy matching the store or re-initialize a fresh store",
+                describe_host_path_policy(stored),
+                describe_host_path_policy(expected)
+            )));
         }
         Ok(())
     }
 
     fn bind_host_path_policy(
         connection: &mut Connection,
-        expected: HostPathPolicy,
+        expected: Option<HostPathPolicy>,
     ) -> Result<(), StoreError> {
+        let Some(expected) = expected else {
+            Self::preflight_host_path_policy(connection, None)?;
+            return Ok(());
+        };
         let snapshot = connection.unchecked_transaction()?;
         let need = Self::host_path_policy_migration_need_on(&snapshot, expected)?;
         snapshot.commit()?;
@@ -2500,20 +2607,8 @@ impl SqliteStore {
         connection: &Connection,
         expected: HostPathPolicy,
     ) -> Result<OpenMigrationNeed, StoreError> {
-        Self::preflight_host_path_policy(connection, expected)?;
-        let table_exists = Self::sqlite_table_exists(connection, "control_host_path_policy")?;
-        if !table_exists {
-            return Ok(OpenMigrationNeed::NeedsWrite);
-        }
-        let stored = connection
-            .query_row(
-                "SELECT case_fold_paths, windows_alias_rules
-                 FROM control_host_path_policy WHERE singleton = 1",
-                [],
-                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
-            )
-            .optional()?;
-        Ok(if stored.is_some() {
+        Self::preflight_host_path_policy(connection, Some(expected))?;
+        Ok(if Self::stored_host_path_policy_on(connection)?.is_some() {
             OpenMigrationNeed::Current
         } else {
             OpenMigrationNeed::NeedsWrite
@@ -2524,27 +2619,7 @@ impl SqliteStore {
         connection: &Connection,
         expected: HostPathPolicy,
     ) -> Result<(), StoreError> {
-        let table_exists = connection.query_row(
-            "SELECT EXISTS(
-                 SELECT 1 FROM sqlite_master
-                 WHERE type = 'table' AND name = 'control_host_path_policy'
-             )",
-            [],
-            |row| row.get::<_, bool>(0),
-        )?;
-        let stored = if table_exists {
-            connection
-                .query_row(
-                    "SELECT case_fold_paths, windows_alias_rules
-                     FROM control_host_path_policy WHERE singleton = 1",
-                    [],
-                    |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
-                )
-                .optional()?
-        } else {
-            None
-        };
-        if stored == Some((expected.case_fold_paths, expected.windows_alias_rules)) {
+        if Self::stored_host_path_policy_on(connection)? == Some(expected) {
             return Ok(());
         }
         connection.execute_batch(
@@ -2572,7 +2647,7 @@ impl SqliteStore {
                 i64::from(expected.windows_alias_rules)
             ],
         )?;
-        Self::preflight_host_path_policy(connection, expected)?;
+        Self::preflight_host_path_policy(connection, Some(expected))?;
         Ok(())
     }
 
@@ -3221,7 +3296,7 @@ impl SqliteStore {
             ));
         }
         let subject = subject
-            .normalized_for_project_with_policy(project_id, self.host_path_policy)
+            .normalized_for_project_with_policy(project_id, self.path_policy_for(subject)?)
             .ok_or_else(|| {
                 StoreError::InvalidControlSession(
                     "lease subject is invalid or belongs to another project".into(),
@@ -3743,9 +3818,10 @@ impl SqliteStore {
             .resource_intents
             .iter()
             .map(|resource| {
-                resource.normalized_for_project_with_policy(project_id, self.host_path_policy)
+                self.path_policy_for(resource)
+                    .map(|policy| resource.normalized_for_project_with_policy(project_id, policy))
             })
-            .collect::<Option<Vec<_>>>()
+            .collect::<Result<Option<Vec<_>>, StoreError>>()?
             .ok_or_else(|| {
                 StoreError::InvalidControlSession(
                     "turn resource intent is invalid or belongs to another project".into(),
@@ -10249,6 +10325,176 @@ mod tests {
     }
 
     #[test]
+    fn unresolved_path_identity_refuses_path_leases_but_not_logical_ones() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store =
+            SqliteStore::open_in_memory_with_host_path_identity(None).expect("unresolved store");
+        assert_eq!(store.host_path_identity(), None);
+        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+        let session = bind_control_for(&mut store, "unresolved", "bind-unresolved", &effects, now);
+        complete_control_turn(
+            &mut store,
+            &session,
+            "sync-unresolved",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let path = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        assert!(matches!(
+            store.acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session.status.session_id,
+                &session.connection_token,
+                &session.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &path,
+                300,
+                "lease-unresolved-path",
+                now + TimeDelta::seconds(2),
+            ),
+            Err(StoreError::HostPathIdentityUnresolved)
+        ));
+        let logical = crate::domain::ResourceSubject::Logical {
+            namespace: "engram".into(),
+            segments: vec!["report".into()],
+            coverage: crate::domain::ResourceCoverage::Exact,
+        };
+        assert!(matches!(
+            store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session.status.session_id,
+                    &session.connection_token,
+                    &session.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &logical,
+                    300,
+                    "lease-unresolved-logical",
+                    now + TimeDelta::seconds(3),
+                )
+                .expect("logical leases need no path identity"),
+            WorkLeaseDecision::Granted { .. }
+        ));
+        // A persisted policy is still binding for a later resolved opener,
+        // while an unresolved opener may read the same store.
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("identity.sqlite3");
+        let folded = HostPathPolicy {
+            case_fold_paths: true,
+            windows_alias_rules: false,
+        };
+        drop(SqliteStore::open_with_host_path_policy(&database, folded).expect("bind folded"));
+        let reader = SqliteStore::open_unresolved(&database).expect("unresolved opener reads");
+        assert_eq!(
+            reader.stored_host_path_policy().expect("stored policy"),
+            Some(folded)
+        );
+        assert!(matches!(
+            SqliteStore::open_with_host_path_policy(
+                &database,
+                HostPathPolicy {
+                    case_fold_paths: false,
+                    windows_alias_rules: false,
+                },
+            ),
+            Err(StoreError::InvalidControlSession(_))
+        ));
+    }
+
+    #[test]
+    fn case_aliases_conflict_only_under_a_folding_policy() {
+        for (case_fold_paths, expect_conflict) in [(true, true), (false, false)] {
+            let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+            let mut store =
+                SqliteStore::open_in_memory_with_host_path_identity(Some(HostPathPolicy {
+                    case_fold_paths,
+                    windows_alias_rules: false,
+                }))
+                .expect("explicit policy store");
+            let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+            let session_a = bind_control_for(&mut store, "case-a", "bind-case-a", &effects, now);
+            let session_b = bind_control_for(&mut store, "case-b", "bind-case-b", &effects, now);
+            complete_control_turn(
+                &mut store,
+                &session_b,
+                "sync-case-b",
+                vec![EffectClass::Observe],
+                Vec::new(),
+                now + TimeDelta::seconds(1),
+            );
+            complete_control_turn(
+                &mut store,
+                &session_a,
+                "sync-case-a",
+                vec![EffectClass::Observe],
+                Vec::new(),
+                now + TimeDelta::seconds(2),
+            );
+            let lower = crate::domain::ResourceSubject::Path {
+                project_id: ProjectId("project-a".into()),
+                segments: vec!["src".into(), "Main.rs".into()],
+                coverage: crate::domain::ResourceCoverage::Exact,
+            };
+            assert!(matches!(
+                store
+                    .acquire_work_lease(
+                        &ProjectId("project-a".into()),
+                        &session_a.status.session_id,
+                        &session_a.connection_token,
+                        &session_a.routing_token,
+                        crate::domain::LeaseKind::Execution,
+                        crate::domain::LeaseMode::Exclusive,
+                        &lower,
+                        300,
+                        "lease-case-a",
+                        now + TimeDelta::seconds(3),
+                    )
+                    .expect("first lease"),
+                WorkLeaseDecision::Granted { .. }
+            ));
+            complete_control_turn(
+                &mut store,
+                &session_b,
+                "resync-case-b",
+                vec![EffectClass::Observe],
+                Vec::new(),
+                now + TimeDelta::seconds(3),
+            );
+            let upper = crate::domain::ResourceSubject::Path {
+                project_id: ProjectId("project-a".into()),
+                segments: vec!["SRC".into(), "main.RS".into()],
+                coverage: crate::domain::ResourceCoverage::Exact,
+            };
+            let decision = store
+                .acquire_work_lease(
+                    &ProjectId("project-a".into()),
+                    &session_b.status.session_id,
+                    &session_b.connection_token,
+                    &session_b.routing_token,
+                    crate::domain::LeaseKind::Execution,
+                    crate::domain::LeaseMode::Exclusive,
+                    &upper,
+                    300,
+                    "lease-case-b",
+                    now + TimeDelta::seconds(4),
+                )
+                .expect("second lease decision");
+            assert_eq!(
+                matches!(decision, WorkLeaseDecision::Defer { .. }),
+                expect_conflict,
+                "case_fold_paths={case_fold_paths} decided {decision:?}"
+            );
+        }
+    }
+
+    #[test]
     fn current_store_reopens_through_a_read_only_connection() {
         let directory = tempfile::tempdir().expect("temporary store directory");
         let database = directory.path().join("engram.db");
@@ -10256,7 +10502,7 @@ mod tests {
         let connection =
             Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .expect("open read-only SQLite connection");
-        SqliteStore::from_connection(connection, HostPathPolicy::host_default(), None)
+        SqliteStore::from_connection(connection, Some(HostPathPolicy::host_default()), None)
             .expect("current schema opens without a write transaction");
     }
 
@@ -10302,7 +10548,7 @@ mod tests {
             Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .expect("open migrated store read-only");
         drop(
-            SqliteStore::from_connection(read_only, HostPathPolicy::host_default(), None)
+            SqliteStore::from_connection(read_only, Some(HostPathPolicy::host_default()), None)
                 .expect("current replay schema opens without a write transaction"),
         );
 
@@ -10337,7 +10583,7 @@ mod tests {
         drop(
             SqliteStore::from_connection_with_busy_timeout(
                 current,
-                HostPathPolicy::host_default(),
+                Some(HostPathPolicy::host_default()),
                 None,
                 Duration::from_millis(25),
             )
@@ -10360,7 +10606,7 @@ mod tests {
         let candidate = Connection::open(&database).expect("open repair candidate connection");
         let result = SqliteStore::from_connection_with_busy_timeout(
             candidate,
-            HostPathPolicy::host_default(),
+            Some(HostPathPolicy::host_default()),
             None,
             Duration::from_millis(25),
         );
@@ -12958,6 +13204,7 @@ mod tests {
     ) -> Result<SqliteStore, StoreError> {
         SqliteStore::open_with_initial_control_assurance(
             path,
+            Some(HostPathPolicy::host_default()),
             required_assurance,
             &actor("bootstrap-policy-admin"),
             "select the test bootstrap policy",
@@ -14736,7 +14983,7 @@ mod tests {
             Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .expect("open migrated store read-only");
         drop(
-            SqliteStore::from_connection(read_only, HostPathPolicy::host_default(), None)
+            SqliteStore::from_connection(read_only, Some(HostPathPolicy::host_default()), None)
                 .expect("unsupported legacy projection does not require later write locks"),
         );
 

@@ -14,14 +14,15 @@ use engram::domain::{AssuranceLevel, SCHEMA_VERSION};
 use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
     ClaimInput, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, DoneInput, HandoffAction,
-    HandoffInput, HostControlServer, LocalWorkService, LsInput, McpServer, NextInput, NoteInput,
-    ObjectHash, ObligationRuleDefinition, ObligationRuleSet, ProjectId,
+    HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService, LsInput, McpServer,
+    NextInput, NoteInput, ObjectHash, ObligationRuleDefinition, ObligationRuleSet, ProjectId,
     ProjectPolicyAuthorityDecision, SessionId, SqliteStore, UpdateAction, UpdateInput,
     VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
     WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability, WorkCompleteInput,
     WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
-    WorkObligationId, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput, looks_like_work_ref,
-    parse_defer_date, project_database_path,
+    WorkObligationId, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput,
+    describe_host_path_policy, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
+    probe_host_path_policy, project_database_path,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -34,8 +35,44 @@ struct Cli {
     /// Host-local Engram data directory (or set `ENGRAM_HOME`).
     #[arg(long)]
     home: Option<PathBuf>,
+    /// Filesystem identity of the project root. Omit to probe the root's real
+    /// filesystem; supply it when probing is impossible or the host knows
+    /// better. Unresolved identity refuses path leases instead of guessing.
+    #[arg(long, env = "ENGRAM_HOST_PATH_POLICY", value_enum)]
+    host_path_policy: Option<HostPathPolicyArg>,
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum HostPathPolicyArg {
+    #[value(name = "case_fold")]
+    CaseFold,
+    #[value(name = "case_sensitive")]
+    CaseSensitive,
+}
+
+/// Resolved project-root filesystem identity: host-supplied, probed, or
+/// unresolved (with the reason already printed to stderr).
+fn resolve_host_path_identity(
+    root: &Path,
+    supplied: Option<HostPathPolicyArg>,
+) -> Option<HostPathPolicy> {
+    if let Some(supplied) = supplied {
+        return parse_host_path_policy(match supplied {
+            HostPathPolicyArg::CaseFold => "case_fold",
+            HostPathPolicyArg::CaseSensitive => "case_sensitive",
+        });
+    }
+    match probe_host_path_policy(root) {
+        Ok(policy) => Some(policy),
+        Err(error) => {
+            eprintln!(
+                "WARNING: {error}; path leases are refused until --host-path-policy case_fold|case_sensitive (or ENGRAM_HOST_PATH_POLICY) is supplied"
+            );
+            None
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -596,7 +633,8 @@ enum AuthorityCommand {
 #[tokio::main]
 async fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
-    let (project_id, database) = resolve_project(&cli.project_file, cli.home)?;
+    let (project_id, database, root) = resolve_project(&cli.project_file, cli.home)?;
+    let identity = resolve_host_path_identity(&root, cli.host_path_policy);
     match cli.command {
         Command::Init {
             required_assurance,
@@ -604,11 +642,12 @@ async fn main() -> Result<ExitCode> {
             reason,
         } => initialize(
             &database,
+            identity,
             required_assurance.map(Into::into),
             authorized_by,
             reason,
         )?,
-        Command::Doctor => doctor(&database)?,
+        Command::Doctor => doctor(&database, identity)?,
         Command::Mcp {
             actor_id,
             session_id,
@@ -634,7 +673,14 @@ async fn main() -> Result<ExitCode> {
             actor_id,
             session_id,
             source_skill,
-        } => serve_control(database, project_id, actor_id, session_id, source_skill)?,
+        } => serve_control(
+            database,
+            identity,
+            project_id,
+            actor_id,
+            session_id,
+            source_skill,
+        )?,
         Command::Work {
             actor_id,
             session_id,
@@ -658,9 +704,11 @@ async fn main() -> Result<ExitCode> {
                 operation => run_work(context, json, operation),
             };
         }
-        Command::Authority { operation } => run_authority(&database, project_id, operation)?,
+        Command::Authority { operation } => {
+            run_authority(&database, identity, project_id, operation)?;
+        }
         Command::ControlPolicy { operation } => {
-            run_control_policy(&database, project_id, operation)?;
+            run_control_policy(&database, identity, project_id, operation)?;
         }
     }
     Ok(ExitCode::SUCCESS)
@@ -678,10 +726,11 @@ struct WorkContext {
 
 fn run_control_policy(
     database: &Path,
+    identity: Option<HostPathPolicy>,
     _project_id: ProjectId,
     operation: ControlPolicyCommand,
 ) -> Result<()> {
-    let mut store = SqliteStore::open(database)
+    let mut store = SqliteStore::open_with_host_path_identity(database, identity)
         .with_context(|| format!("failed to open {}", database.display()))?;
     let value = match operation {
         ControlPolicyCommand::SetRequiredAssurance {
@@ -778,10 +827,11 @@ fn parse_expected_policy_hash(value: Option<String>) -> Result<Option<ObjectHash
 )]
 fn run_authority(
     database: &Path,
+    identity: Option<HostPathPolicy>,
     project_id: ProjectId,
     operation: AuthorityCommand,
 ) -> Result<()> {
-    let mut store = SqliteStore::open(database)
+    let mut store = SqliteStore::open_with_host_path_identity(database, identity)
         .with_context(|| format!("failed to open {}", database.display()))?;
     let now = chrono::Utc::now();
     let value = match operation {
@@ -1307,13 +1357,15 @@ fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
 
 fn serve_control(
     database: PathBuf,
+    identity: Option<HostPathPolicy>,
     project_id: ProjectId,
     actor_id: String,
     session_id: String,
     source_skill: Option<String>,
 ) -> Result<()> {
-    let mut server = HostControlServer::open(
+    let mut server = HostControlServer::open_with_host_path_identity(
         database,
+        identity,
         project_id,
         actor_id,
         SessionId(session_id),
@@ -1328,7 +1380,12 @@ fn serve_control(
         .context("Engram host-control stdio service stopped with an error")
 }
 
-fn resolve_project(project_file: &Path, home: Option<PathBuf>) -> Result<(ProjectId, PathBuf)> {
+/// Resolves the stable project id, its host-local database, and the project
+/// root (the directory holding the project file).
+fn resolve_project(
+    project_file: &Path,
+    home: Option<PathBuf>,
+) -> Result<(ProjectId, PathBuf, PathBuf)> {
     let project_id = fs::read_to_string(project_file)
         .with_context(|| format!("failed to read {}", project_file.display()))?;
     let project_id = project_id.trim();
@@ -1339,11 +1396,16 @@ fn resolve_project(project_file: &Path, home: Option<PathBuf>) -> Result<(Projec
     let home = home.context("pass --home or set ENGRAM_HOME")?;
     let project_id = ProjectId(project_id.to_owned());
     let database = project_database_path(&home, &project_id);
-    Ok((project_id, database))
+    let root = project_file
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    Ok((project_id, database, root))
 }
 
 fn initialize(
     database: &Path,
+    identity: Option<HostPathPolicy>,
     required_assurance: Option<ControlAssurance>,
     authorized_by: Option<String>,
     reason: Option<String>,
@@ -1357,10 +1419,11 @@ fn initialize(
         .zip(reason.as_deref())
         .map(|(actor_id, reason)| (actor_id.trim().to_owned(), reason.trim().to_owned()));
     let store = match (required_assurance, authorized_by, reason) {
-        (None, None, None) => SqliteStore::open(database),
+        (None, None, None) => SqliteStore::open_with_host_path_identity(database, identity),
         (Some(required_assurance), Some(authorized_by), Some(reason)) => {
             SqliteStore::open_with_initial_control_assurance(
                 database,
+                identity,
                 required_assurance,
                 &ActorContext {
                     actor_id: authorized_by,
@@ -1409,8 +1472,8 @@ fn initialize(
     Ok(())
 }
 
-fn doctor(database: &Path) -> Result<()> {
-    let store = SqliteStore::open(database)
+fn doctor(database: &Path, identity: Option<HostPathPolicy>) -> Result<()> {
+    let store = SqliteStore::open_with_host_path_identity(database, identity)
         .with_context(|| format!("failed to open {}", database.display()))?;
     let report = store.verify_all()?;
     if !report.is_healthy() {
@@ -1444,6 +1507,23 @@ fn doctor(database: &Path) -> Result<()> {
         control.issued_turns,
         control.begun_turns,
     );
+    match (store.stored_host_path_policy()?, identity) {
+        (Some(stored), Some(_)) => println!(
+            "Host path policy: {} (persisted; this opener resolved the same)",
+            describe_host_path_policy(stored)
+        ),
+        (Some(stored), None) => println!(
+            "Host path policy: {} (persisted; this opener could not resolve the project root, so path leases would be refused)",
+            describe_host_path_policy(stored)
+        ),
+        (None, Some(resolved)) => println!(
+            "Host path policy: {} (resolved now, persisted by this open)",
+            describe_host_path_policy(resolved)
+        ),
+        (None, None) => println!(
+            "Host path policy: unresolved; path leases are refused until --host-path-policy is supplied"
+        ),
+    }
     warn_if_action_gated(control.required_assurance);
     if !control.action_gating_available {
         eprintln!(
