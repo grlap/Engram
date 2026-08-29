@@ -124,6 +124,15 @@ session phases, exact context delivery, short-lived grants, idempotent
 operation results, and canonical checkpoint events. A control-process restart
 invalidates every unbegun grant and resumes at `sync_required`; retry evidence
 remains durable without resurrecting authority.
+Every host observation that reports `source_changed=true` now opens one
+immutable built-in test obligation on the exact run, even when the action
+failed or supplied no source basis. A later passed test may satisfy it only
+against the newest basis-bearing source mutation at the evaluated feed cut.
+If the newest mutation has no basis, the open obligations remain waiver-only
+until another basis-bearing mutation and test arrive. Focus and dense deltas
+show definitions and terminal satisfaction/waiver events; waiver remains a
+host/operator-only authority command and is not exposed through MCP or
+`work_update`.
 Opening a replacement process rotates an internal connection generation, so a
 still-running predecessor fails with `control_connection_superseded`. Begun
 turns remain checkpoint-required. `session_status.open_grant_id` identifies

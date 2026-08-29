@@ -1,6 +1,7 @@
 //! Local SQLite object store and integrity verification.
 
 mod work;
+pub(crate) use work::WorkObligationRecord;
 
 pub(crate) use work::{StageWorkSessionDelivery, normalize_completion_acceptance_shape};
 
@@ -268,6 +269,8 @@ pub enum StoreError {
     ControlWorkBindingStale { work: crate::domain::WorkId },
     #[error("execution observation {observation_id:?} is outside the turn grant scope")]
     ControlGrantScopeMismatch { observation_id: String },
+    #[error("execution observation {observation_id:?} does not match the bound work scope")]
+    ControlObservationScopeMismatch { observation_id: String },
     #[error("verification producer observation {0:?} cannot be resolved for this checkpoint")]
     VerificationProducerObservationNotFound(String),
     #[error("turn grant {0:?} does not exist")]
@@ -3901,7 +3904,7 @@ impl SqliteStore {
                 let mut execution_observations = Vec::with_capacity(observations.len());
                 for input in observations {
                     if !grant.grant.basis.requested_effects.contains(&input.effect) {
-                        return Err(StoreError::ControlGrantScopeMismatch {
+                        return Err(StoreError::ControlObservationScopeMismatch {
                             observation_id: input.observation_id.clone(),
                         });
                     }

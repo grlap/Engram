@@ -93,6 +93,28 @@ installs and irreversibly revokes canonical work-authority grants; those
 commands are not MCP tools. Search/stats/import/export and the remaining broad
 administrative CLI in the specification are still planned.
 
+The same host boundary can waive one exact open run obligation, but only with
+a separately admitted grant:
+
+```bash
+WAIVER_GRANT=$(engram authority grant \
+  --subject-actor-id host-operator \
+  --issued-by project-owner \
+  --allow-obligation-waiver | jq -r .grant)
+
+engram authority waive-obligation \
+  --obligation-id <uuid> \
+  --expected-definition <hash> \
+  --authority-grant "$WAIVER_GRANT" \
+  --waived-by host-operator \
+  --reason "accepted without the required test" \
+  --idempotency-key <retry-key>
+```
+
+This command is host/operator private. MCP and `work_update` cannot request an
+obligation waiver, and agent-facing focus/deltas omit the authority grant and
+waiver reason.
+
 ## Shipped MCP tools
 
 | Tool | Purpose |
@@ -332,8 +354,20 @@ focused run and does not mint another canonical object or feed entry. Generic
 evidence can be cited for context and completion, but cannot satisfy a typed
 verification requirement.
 
-An effect absent from the frozen grant is a request error with code
-`grant_scope_mismatch`.
+Every work-bound observation with `source_changed: true` atomically opens one
+built-in test obligation, irrespective of `outcome` and irrespective of
+whether `source_basis` is present. A passed typed test satisfies open
+obligations only against the newest mutation source revision at the evaluated
+run-feed cut. Thus a newest basisless mutation makes the open set waiver-only
+until a later basis-bearing mutation plus passed test arrives; that later test
+may satisfy both the earlier and newer definitions. `work_focus` exposes the
+bounded current obligation summaries and `work_next` deltas use
+`obligation_opened`, `obligation_satisfied`, or `obligation_waived` without
+leaking host authority.
+
+An observation effect absent from the frozen grant is a request error with
+code `observation_scope_mismatch`. `grant_scope_mismatch` instead identifies a
+checkpoint request whose grant was issued but never begun.
 Checkpointing an already-begun grant compares its frozen session/grant binding
 but deliberately does not recheck claim expiry or live ownership: begin already
 consumed authority, and checkpoint records what happened rather than granting a

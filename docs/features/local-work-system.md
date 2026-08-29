@@ -426,6 +426,24 @@ surface. A later mutation at the evaluated run-feed cut makes older
 verification stale even when it came from another workspace with the same
 previous content fingerprint.
 
+Every source-changing execution observation also creates one immutable
+built-in test obligation on the run, independent of action outcome and source
+basis availability. Definitions and their later satisfied/waived resolutions
+are direct dense feed objects; `work_run_obligations` is only their verified
+query projection. Satisfaction is evaluated against the latest mutation at an
+exact run-feed cut. A passed test for a later basis-bearing mutation may close
+earlier open definitions, but a basisless latest mutation makes the open set
+waiver-only until a newer basis-bearing mutation and passed test arrive.
+
+Focus and delta packets expose bounded obligation identity, rule, requirement,
+state, and evidence. Agents cannot mint or waive them. Waiver is restricted to
+the host/operator `engram authority waive-obligation` CLI under a dedicated
+`ObligationWaiver` authority operation; neither MCP nor `work_update` accepts
+that operation, and agent projections redact its authority hash and reason.
+The cut-aware open-obligation query is intentionally prepared for the A3
+completion-seal gate rather than being presented as a shipped completion rule
+in A2.
+
 The operator-only `engram authority grant|revoke` commands are the current
 host boundary for local use. They are deliberately absent from agent-facing
 MCP. `engram mcp --work-authority-grant <hash>` fixes the grant for one MCP

@@ -590,7 +590,31 @@ therefore makes a later source mutation reopen the requirement. Generic
 agent-recorded `work_evidence` remains useful context but never verifies a
 check.
 
-An effect outside the frozen grant is rejected as `grant_scope_mismatch`. An
+The built-in `source_mutation_requires_test` rule evaluates every work-bound
+observation with `source_changed=true`, regardless of outcome or whether a
+source basis is present. Each match appends one immutable `work_obligation`
+definition directly to the project, root-work, and run-execution feeds. A
+passed `test` verification appends a separate `work_obligation_resolution`
+only when it matches the exact run and the newest source basis visible at the
+evaluated run-feed cut. That evidence may satisfy older still-open mutation
+obligations as well as the newest one. If the newest mutation has no source
+basis, no verification can match it: all open obligations remain waiver-only
+until a later basis-bearing mutation and passed test establish a newer
+verifiable state.
+
+Definitions and resolutions are canonical feed objects; the mutable obligation
+row is only a verified projection. Focus and agent deltas expose bounded
+definition, state, and evidence summaries. A waiver requires a dedicated
+`WorkAuthorityOperation::ObligationWaiver` grant and the host-private
+`engram authority waive-obligation` command. Its grant hash and reason never
+cross MCP or the six-operation work protocol, and there is deliberately no
+`work_update` waiver variant. Completion-seal enforcement consumes the
+cut-aware open-obligation query in the next slice; A2 records and resolves the
+canonical obligation state without claiming that final gate is already wired.
+
+An observation effect outside the frozen grant is rejected as
+`observation_scope_mismatch`; `grant_scope_mismatch` remains reserved for a
+checkpoint against an issued but not begun grant. An
 exact retry replays the same observation and typed-evidence hashes, while a
 different ordered input under the same checkpoint key is an idempotency
 conflict. Task-only sessions cannot append run observations or typed run

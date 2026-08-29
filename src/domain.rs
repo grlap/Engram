@@ -554,6 +554,26 @@ pub struct VerificationEvidence {
     pub recorded_at: DateTime<Utc>,
 }
 
+/// Exact verification property required by one immutable work obligation.
+///
+/// Builtin V1 rules require the verification kind while deliberately leaving
+/// the command fingerprint open. Future immutable rules may pin an exact
+/// fingerprint without allowing the candidate evidence to define its own
+/// requirement.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct VerificationRequirement {
+    pub check_kind: VerificationKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_fingerprint: Option<ObjectHash>,
+}
+
+/// Immutable identity of one builtin obligation rule version.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BuiltinObligationRuleRef {
+    pub rule_id: String,
+    pub rule_version: u16,
+}
+
 /// Immutable host-minted identity of the environment used for one exact run
 /// and source-content fingerprint.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -583,6 +603,7 @@ pub enum WorkEvidenceKind {
 #[serde(rename_all = "snake_case")]
 pub enum VerificationEvidenceMismatch {
     WrongKind,
+    CheckKindMismatch,
     WrongRun,
     StaleSourceRevision,
     CheckFingerprintMismatch,
@@ -1361,6 +1382,25 @@ impl Default for WorkRunId {
     }
 }
 
+/// Stable identity of one immutable execution obligation.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct WorkObligationId(pub Uuid);
+
+impl WorkObligationId {
+    /// Creates a time-sortable identifier.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
+impl Default for WorkObligationId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Stable identity of a fenced work claim across renewal and handoff.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -1746,6 +1786,61 @@ pub enum WorkAuthorityOperation {
     ClaimRecovery,
     CompletionWaiver,
     CompletionDrain,
+    ObligationWaiver,
+}
+
+/// Immutable requirement opened by one exact run-bound execution fact.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkObligation {
+    pub schema_version: u16,
+    pub obligation_id: WorkObligationId,
+    pub project_id: ProjectId,
+    pub root_execution_id: RootExecutionId,
+    pub root_id: WorkId,
+    pub work_id: WorkId,
+    pub run_id: WorkRunId,
+    pub work_revision: i64,
+    pub rule: BuiltinObligationRuleRef,
+    pub triggering_observation: ObjectHash,
+    pub trigger_position: FeedPosition,
+    pub requirement: VerificationRequirement,
+    pub opened_at: DateTime<Utc>,
+}
+
+/// Append-only terminal result for one immutable work obligation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkObligationResolution {
+    Satisfied {
+        evidence: ObjectHash,
+        evaluated_cut: FeedPosition,
+    },
+    Waived {
+        authority_grant: ObjectHash,
+        reason: String,
+    },
+}
+
+/// Immutable terminal event for one work obligation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkObligationResolutionEvent {
+    pub schema_version: u16,
+    pub project_id: ProjectId,
+    pub obligation_id: WorkObligationId,
+    pub definition: ObjectHash,
+    pub run_id: WorkRunId,
+    pub resolution: WorkObligationResolution,
+    pub actor: ActorContext,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Rebuildable current state of one immutable obligation definition.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkObligationState {
+    Open,
+    Satisfied,
+    Waived,
 }
 
 /// Durable scope within which a work-authority grant may be consumed.
@@ -2315,6 +2410,18 @@ pub struct WaiveRequiredChildRequest {
     pub parent_id: WorkId,
     pub child_id: WorkId,
     pub expected_parent_revision: i64,
+    pub reason: String,
+    pub authority: LifecycleAuthorityDecision,
+    pub actor: ActorContext,
+    pub idempotency_key: String,
+    pub waived_at: DateTime<Utc>,
+}
+
+/// Host/operator-private request to waive one exact open work obligation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WaiveWorkObligationRequest {
+    pub obligation_id: WorkObligationId,
+    pub expected_definition: ObjectHash,
     pub reason: String,
     pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,

@@ -23,8 +23,9 @@ use crate::{
     WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState,
     WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence,
     WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
-    WorkItemKind, WorkLifecycle, WorkOrigin, WorkPlanningAuthority, WorkRevisionPatch, WorkRun,
-    WorkRunId, WorkRunState, WorkSessionState, WorkTransition,
+    WorkItemKind, WorkLifecycle, WorkObligation, WorkObligationResolution,
+    WorkObligationResolutionEvent, WorkObligationState, WorkOrigin, WorkPlanningAuthority,
+    WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkTransition,
     domain::{
         AssuranceLevel, MemoryAssertionEvent, MemoryContradictionEvent, ProvenanceLink,
         ProvenanceRelation, SCHEMA_VERSION, Scope, Sensitivity,
@@ -355,6 +356,8 @@ pub struct WorkFocusView {
     pub evidence: Vec<ObjectHash>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_items: Vec<WorkEvidenceSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub obligation_items: Vec<WorkObligationSummary>,
     #[serde(default)]
     pub memories: Vec<WorkMemoryIndexEntry>,
     pub history: WorkHistoryView,
@@ -388,6 +391,21 @@ pub struct WorkEvidenceSummary {
     pub environment_fingerprint: Option<ObjectHash>,
     pub summary: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// Bounded agent-facing summary of one immutable run obligation.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkObligationSummary {
+    pub obligation_id: crate::WorkObligationId,
+    pub definition: ObjectHash,
+    pub state: WorkObligationState,
+    pub rule: crate::BuiltinObligationRuleRef,
+    pub requirement: crate::VerificationRequirement,
+    pub triggering_observation: ObjectHash,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<ObjectHash>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<ObjectHash>,
 }
 
 /// Bounded actionable input for one required-child completion waiver.
@@ -2250,6 +2268,20 @@ impl LocalWorkService {
             })
             .transpose()?
             .unwrap_or_default();
+        let mut obligation_records = run
+            .as_ref()
+            .map(|run| store.work_run_obligations(run.run_id))
+            .transpose()?
+            .unwrap_or_default();
+        let obligation_total = obligation_records.len();
+        if obligation_records.len() > MAX_FOCUS_RELATIONS {
+            obligation_records =
+                obligation_records.split_off(obligation_records.len() - MAX_FOCUS_RELATIONS);
+        }
+        let obligation_items = obligation_records
+            .iter()
+            .map(work_obligation_summary)
+            .collect();
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {
@@ -2314,6 +2346,12 @@ impl LocalWorkService {
                 evidence_total - evidence.len(),
             ));
         }
+        if obligation_total > obligation_records.len() {
+            omissions.push(count_omission(
+                WorkNextSection::Focus,
+                obligation_total - obligation_records.len(),
+            ));
+        }
         if memories.len() > usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX) {
             omissions.push(count_omission(
                 WorkNextSection::Focus,
@@ -2355,6 +2393,7 @@ impl LocalWorkService {
                 .collect(),
             evidence,
             evidence_items,
+            obligation_items,
             memories: memories
                 .into_iter()
                 .take(usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX))
@@ -2812,6 +2851,26 @@ fn work_evidence_summary(
     }
 }
 
+fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> WorkObligationSummary {
+    let evidence = record.resolution.as_ref().and_then(|event| {
+        if let WorkObligationResolution::Satisfied { evidence, .. } = &event.resolution {
+            Some(evidence.clone())
+        } else {
+            None
+        }
+    });
+    WorkObligationSummary {
+        obligation_id: record.obligation.obligation_id,
+        definition: record.definition_hash.clone(),
+        state: record.state,
+        rule: record.obligation.rule.clone(),
+        requirement: record.obligation.requirement.clone(),
+        triggering_observation: record.obligation.triggering_observation.clone(),
+        resolution: record.resolution_hash.clone(),
+        evidence,
+    }
+}
+
 fn record_byte_omission(response: &mut WorkNextView, section: WorkNextSection) {
     if let Some(existing) = response.omissions.iter_mut().find(|entry| {
         entry.section == section && entry.reason == WorkSectionOmissionReason::ByteBudget
@@ -2895,6 +2954,7 @@ fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
         || focus.children.pop().is_some()
         || focus.prerequisites.pop().is_some()
         || focus.handoffs.pop().is_some()
+        || focus.obligation_items.pop().is_some()
         || focus.evidence_items.pop().is_some()
         || focus.evidence.pop().is_some()
 }
@@ -3280,6 +3340,73 @@ fn agent_change_object(
                 )),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 created_at: evidence.observed_at,
+            }))
+        }
+        "work_obligation" => {
+            let obligation = serde_json::from_value::<WorkObligation>(object)?;
+            let item = store.get_work_item(obligation.work_id)?;
+            if &obligation.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "work obligation is bound outside its project work item".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: obligation.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(obligation.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(obligation.work_revision),
+                change_kind: "obligation_opened".into(),
+                summary: compact_text(&format!(
+                    "{} v{} requires {:?}",
+                    obligation.rule.rule_id,
+                    obligation.rule.rule_version,
+                    obligation.requirement.check_kind
+                )),
+                actor_id: None,
+                created_at: obligation.opened_at,
+            }))
+        }
+        "work_obligation_resolution" => {
+            let event = serde_json::from_value::<WorkObligationResolutionEvent>(object)?;
+            let record = store
+                .work_run_obligations(event.run_id)?
+                .into_iter()
+                .find(|record| record.obligation.obligation_id == event.obligation_id)
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "obligation resolution has no verified definition projection".into(),
+                    )
+                })?;
+            let item = store.get_work_item(record.obligation.work_id)?;
+            if &event.project_id != project_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "work obligation resolution is bound outside its project".into(),
+                ));
+            }
+            let (change_kind, summary) = match event.resolution {
+                WorkObligationResolution::Satisfied { evidence, .. } => (
+                    "obligation_satisfied",
+                    format!("{} satisfied by {evidence}", record.obligation.rule.rule_id),
+                ),
+                WorkObligationResolution::Waived { .. } => (
+                    "obligation_waived",
+                    format!(
+                        "{} waived by host authority",
+                        record.obligation.rule.rule_id
+                    ),
+                ),
+            };
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: event.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(record.obligation.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(record.obligation.work_revision),
+                change_kind: change_kind.into(),
+                summary: compact_text(&summary),
+                actor_id: Some(compact_text(&event.actor.actor_id)),
+                created_at: event.created_at,
             }))
         }
         "memory_version" => {
@@ -3840,6 +3967,18 @@ mod tests {
         assert_ne!(capture, checkpoint);
         assert_ne!(checkpoint, complete);
         assert_ne!(capture, complete);
+    }
+
+    #[test]
+    fn work_update_does_not_admit_obligation_waivers() {
+        let attempted = serde_json::json!({
+            "kind": "waive_obligation",
+            "obligation_id": uuid::Uuid::now_v7(),
+            "reason": "agent attempted to waive a host obligation",
+            "idempotency_key": "agent-waiver"
+        });
+
+        assert!(serde_json::from_value::<WorkUpdateInput>(attempted).is_err());
     }
 
     #[test]

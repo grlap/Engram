@@ -982,6 +982,19 @@ test("work-bound control records observations and rebinds after a stale fence", 
       "checkpointed",
     );
 
+    const boundLease = ok(
+      await client.request({
+        operation: "lease_acquire",
+        routing_token: bound.routing_token,
+        kind: "execution",
+        mode: "exclusive",
+        subject: sourceTree,
+        ttl_seconds: 60,
+        idempotency_key: "lease-bound-run-src",
+      }),
+    );
+    assert.equal(boundLease.decision, "granted");
+
     const observedTurn = ok(
       await client.request({
         operation: "turn_evaluate",
@@ -989,7 +1002,8 @@ test("work-bound control records observations and rebinds after a stale fence", 
         idempotency_key: "bound-observed-turn",
         intent_fingerprint: fingerprint("bound-observed-turn"),
         purpose: "ordinary",
-        requested_effects: ["observe"],
+        requested_effects: ["mutate_local"],
+        resource_intents: [libraryFile],
       }),
     );
     assert.equal(observedTurn.decision, "grant");
@@ -1012,9 +1026,9 @@ test("work-bound control records observations and rebinds after a stale fence", 
       {
         observation_id: "bound-observation-1",
         action_fingerprint: fingerprint("bound-observation-1"),
-        effect: "observe",
+        effect: "mutate_local",
         outcome: "succeeded",
-        source_changed: false,
+        source_changed: true,
         source_basis: {
           workspace_id: "control-dogfood-workspace",
           source_revision: "revision-1",
@@ -1024,11 +1038,32 @@ test("work-bound control records observations and rebinds after a stale fence", 
       {
         observation_id: "bound-observation-2",
         action_fingerprint: fingerprint("bound-observation-2"),
-        effect: "observe",
+        effect: "mutate_local",
         outcome: "failed",
         source_changed: false,
       },
     ];
+    const outOfScopeCheckpoint = await client.request({
+      operation: "turn_checkpoint",
+      routing_token: bound.routing_token,
+      grant_id: observedTurn.grant.grant_id,
+      next_intent: "continue",
+      observations: [
+        {
+          observation_id: "bound-out-of-scope-observation",
+          action_fingerprint: fingerprint("bound-out-of-scope-observation"),
+          effect: "observe",
+          outcome: "succeeded",
+          source_changed: false,
+        },
+      ],
+      idempotency_key: "checkpoint-bound-out-of-scope",
+    });
+    assert.equal(outOfScopeCheckpoint.status, "error");
+    assert.equal(
+      outOfScopeCheckpoint.error.code,
+      "observation_scope_mismatch",
+    );
     const checkpointRequest = {
       operation: "turn_checkpoint",
       routing_token: bound.routing_token,
@@ -1064,6 +1099,18 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(checkpointed.receipt.verification_evidence.length, 1);
     assert.equal(checkpointed.receipt.environment_evidence.length, 1);
     assert.deepEqual(ok(await client.request(checkpointRequest)), checkpointed);
+    const obligationFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      proposed.work.short_ref,
+    );
+    assert.equal(obligationFocus.obligation_items.length, 1);
+    assert.equal(obligationFocus.obligation_items[0].state, "satisfied");
+    assert.equal(
+      obligationFocus.obligation_items[0].evidence,
+      checkpointed.receipt.verification_evidence[0],
+    );
     const conflictingCheckpoint = await client.request({
       ...checkpointRequest,
       observations: observations.slice(0, 1),
@@ -1095,6 +1142,15 @@ test("work-bound control records observations and rebinds after a stale fence", 
       evidence: [verificationEvidence],
       idempotency_key: "bound-contribution-checkpoint",
     });
+    const releasedBoundLease = ok(
+      await client.request({
+        operation: "lease_release",
+        routing_token: bound.routing_token,
+        lease_id: boundLease.lease.lease_id,
+        idempotency_key: "release-bound-run-src",
+      }),
+    );
+    assert.equal(releasedBoundLease.lease_id, boundLease.lease.lease_id);
     cliWork(engramHome, actor, authorityGrant, "update", {
       kind: "release",
       reason: "exercise stale control binding",

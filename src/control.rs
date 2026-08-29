@@ -12,15 +12,16 @@ use serde::Serialize;
 use crate::{
     CanonicalObject, ObjectHash,
     domain::{
-        ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, CONTROL_SCHEMA_VERSION,
-        ChangeCursor, ContextPacket, ControlAssurance, ControlDirective, ControlHealth,
-        ControlRefusalCode, DirectiveSatisfaction, DirectiveTarget, EffectClass,
+        ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, BuiltinObligationRuleRef,
+        CONTROL_SCHEMA_VERSION, ChangeCursor, ContextPacket, ControlAssurance, ControlDirective,
+        ControlHealth, ControlRefusalCode, DirectiveSatisfaction, DirectiveTarget, EffectClass,
         ExecutionObservation, IssuedTurnGrant, LeaseBasis, LeaseKind, LeaseMode,
         ObservedActionBeginDecision, ObservedTurnDecision, PacketSafety, ParticipantMembership,
         ProjectPolicyEpoch, SessionPhase, TaskDelta, TaskState, TurnBeginDecision,
         TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision,
         TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnPurpose, VerificationEvidence,
-        VerificationEvidenceMismatch, VerificationResult, WorkEvidenceKind,
+        VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
+        WorkEvidenceKind, WorkObligation, WorkObligationId,
     },
     storage::StoreError,
 };
@@ -29,6 +30,7 @@ const MAX_SHADOW_GRANT_TTL_SECONDS: i64 = 300;
 
 /// Immutable inputs for matching typed verification evidence at one exact
 /// dense run-feed cut.
+#[derive(Clone, Copy)]
 pub struct VerificationEvidenceMatchInput<'a> {
     pub candidate_kind: WorkEvidenceKind,
     pub evidence: Option<&'a VerificationEvidence>,
@@ -36,7 +38,7 @@ pub struct VerificationEvidenceMatchInput<'a> {
     pub latest_mutation: &'a ExecutionObservation,
     pub evidence_position: i64,
     pub latest_mutation_position: i64,
-    pub required_check_fingerprint: &'a ObjectHash,
+    pub requirement: &'a VerificationRequirement,
 }
 
 /// Applies the anti-stale verification rule without performing I/O.
@@ -62,6 +64,9 @@ pub fn match_verification_evidence(
     let producer = input
         .producer
         .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+    if evidence.check_kind != input.requirement.check_kind {
+        return Err(VerificationEvidenceMismatch::CheckKindMismatch);
+    }
     let latest_basis = input
         .latest_mutation
         .source_basis
@@ -87,7 +92,11 @@ pub fn match_verification_evidence(
         return Err(VerificationEvidenceMismatch::StaleSourceRevision);
     }
     if evidence.check_fingerprint != producer.action_fingerprint
-        || &evidence.check_fingerprint != input.required_check_fingerprint
+        || input
+            .requirement
+            .check_fingerprint
+            .as_ref()
+            .is_some_and(|required| required != &evidence.check_fingerprint)
     {
         return Err(VerificationEvidenceMismatch::CheckFingerprintMismatch);
     }
@@ -109,6 +118,76 @@ pub fn match_verification_evidence(
         return Err(VerificationEvidenceMismatch::InvalidTime);
     }
     Ok(())
+}
+
+/// Immutable builtin rules opened by one exact host observation.
+#[must_use]
+pub fn evaluate_builtin_obligation_rules(
+    observation: &ExecutionObservation,
+) -> Vec<(BuiltinObligationRuleRef, VerificationRequirement)> {
+    if !observation.source_changed {
+        return Vec::new();
+    }
+    vec![(
+        BuiltinObligationRuleRef {
+            rule_id: "source_mutation_requires_test".into(),
+            rule_version: 1,
+        },
+        VerificationRequirement {
+            check_kind: crate::domain::VerificationKind::Test,
+            check_fingerprint: None,
+        },
+    )]
+}
+
+/// Complete immutable inputs for resolving open obligations with one evidence
+/// candidate at an exact dense run-feed cut.
+pub struct ObligationSatisfactionInput<'a> {
+    pub open_obligations: &'a [WorkObligation],
+    pub evidence: &'a VerificationEvidence,
+    pub producer: &'a ExecutionObservation,
+    pub latest_mutation: &'a ExecutionObservation,
+    pub evidence_position: i64,
+    pub latest_mutation_position: i64,
+    pub evaluated_cut: &'a crate::domain::FeedPosition,
+}
+
+/// Returns the open definitions satisfied by one exact verification fact.
+///
+/// Storage owns snapshotting and append-only persistence. This function owns
+/// the deterministic rule and anti-stale decision only.
+#[must_use]
+pub fn evaluate_obligation_satisfaction(
+    input: &ObligationSatisfactionInput<'_>,
+) -> Vec<WorkObligationId> {
+    let expected_feed = crate::domain::FeedId::RunExecution(input.evidence.binding.run_id);
+    if input.evaluated_cut.feed != expected_feed
+        || input.evidence_position > input.evaluated_cut.position
+    {
+        return Vec::new();
+    }
+    input
+        .open_obligations
+        .iter()
+        .filter(|obligation| {
+            obligation.run_id == input.evidence.binding.run_id
+                && obligation.trigger_position.feed == expected_feed
+                && obligation.trigger_position.position <= input.evaluated_cut.position
+        })
+        .filter(|obligation| {
+            match_verification_evidence(&VerificationEvidenceMatchInput {
+                candidate_kind: WorkEvidenceKind::Verification,
+                evidence: Some(input.evidence),
+                producer: Some(input.producer),
+                latest_mutation: input.latest_mutation,
+                evidence_position: input.evidence_position,
+                latest_mutation_position: input.latest_mutation_position,
+                requirement: &obligation.requirement,
+            })
+            .is_ok()
+        })
+        .map(|obligation| obligation.obligation_id)
+        .collect()
 }
 
 /// Minimum host assurance that may mediate one material effect class.
@@ -1932,7 +2011,16 @@ mod tests {
             actor,
             recorded_at: verification_time,
         };
-        let required = evidence.check_fingerprint.clone();
+        let rules = evaluate_builtin_obligation_rules(&latest_mutation);
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].0.rule_id, "source_mutation_requires_test");
+        assert_eq!(rules[0].1.check_kind, VerificationKind::Test);
+        assert_eq!(rules[0].1.check_fingerprint, None);
+        assert!(evaluate_builtin_obligation_rules(&producer).is_empty());
+        let requirement = VerificationRequirement {
+            check_kind: VerificationKind::Test,
+            check_fingerprint: Some(evidence.check_fingerprint.clone()),
+        };
         let exact = VerificationEvidenceMatchInput {
             candidate_kind: WorkEvidenceKind::Verification,
             evidence: Some(&evidence),
@@ -1940,9 +2028,31 @@ mod tests {
             latest_mutation: &latest_mutation,
             evidence_position: 4,
             latest_mutation_position: 1,
-            required_check_fingerprint: &required,
+            requirement: &requirement,
         };
         assert_eq!(match_verification_evidence(&exact), Ok(()));
+        let kind_only_requirement = VerificationRequirement {
+            check_kind: VerificationKind::Test,
+            check_fingerprint: None,
+        };
+        assert_eq!(
+            match_verification_evidence(&VerificationEvidenceMatchInput {
+                requirement: &kind_only_requirement,
+                ..exact
+            }),
+            Ok(())
+        );
+        let wrong_check_requirement = VerificationRequirement {
+            check_kind: VerificationKind::Build,
+            check_fingerprint: None,
+        };
+        assert_eq!(
+            match_verification_evidence(&VerificationEvidenceMatchInput {
+                requirement: &wrong_check_requirement,
+                ..exact
+            }),
+            Err(VerificationEvidenceMismatch::CheckKindMismatch)
+        );
 
         let wrong_kind = VerificationEvidenceMatchInput {
             candidate_kind: WorkEvidenceKind::Generic,
@@ -1966,7 +2076,7 @@ mod tests {
             latest_mutation: &later_mutation,
             evidence_position: 4,
             latest_mutation_position: 3,
-            required_check_fingerprint: &required,
+            requirement: &requirement,
         };
         assert_eq!(
             match_verification_evidence(&stale),

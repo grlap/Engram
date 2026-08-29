@@ -416,6 +416,7 @@ const fn store_error_code(error: &StoreError) -> &'static str {
         }
         StoreError::ControlWorkBindingStale { .. } => "stale_fence",
         StoreError::ControlGrantScopeMismatch { .. } => "grant_scope_mismatch",
+        StoreError::ControlObservationScopeMismatch { .. } => "observation_scope_mismatch",
         StoreError::VerificationProducerObservationNotFound(_) => "verification_producer_not_found",
         StoreError::ControlTurnGrantNotFound(_) => "turn_grant_not_found",
         StoreError::WorkLeaseNotFound(_) => "work_lease_not_found",

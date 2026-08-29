@@ -1078,6 +1078,19 @@ revision reopens the requirement. Agent-authored generic evidence never
 satisfies verification; the work protocol may only attach an existing typed
 hash to the focused run.
 
+Every such observation with `source_changed=true` opens one immutable built-in
+test obligation regardless of outcome or source-basis presence. Obligation
+definitions and terminal satisfaction/waiver events are direct project,
+root-work, and run-execution feed objects; query rows are verified projections.
+A passed test satisfies open definitions only against the latest mutation at
+the evaluated run-feed cut. A latest basisless mutation therefore leaves the
+open set waiver-only until a later basis-bearing mutation and passed test; that
+test may satisfy earlier definitions too. Focus and deltas expose bounded,
+authority-redacted summaries. Waiver is host/operator private, requires the
+dedicated `ObligationWaiver` authority operation, and is absent from MCP and
+`work_update`. A3 uses the cut-aware open set to gate completion seals; A2 does
+not yet claim that completion enforcement.
+
 The transport may be an in-process API, native host integration, wrapper, or
 local gateway. It is never exposed as an agent-callable way to mint grants.
 The host must bind a local work item/run before delivering a task prompt, obtain a `TurnGrant`

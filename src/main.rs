@@ -13,9 +13,10 @@ use engram::domain::{AssuranceLevel, SCHEMA_VERSION};
 use engram::{
     ActorContext, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, HostControlServer,
     LocalWorkService, McpServer, ObjectHash, ProjectId, ProjectPolicyAuthorityDecision, SessionId,
-    SqliteStore, WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability,
-    WorkCompleteInput, WorkHandoffInput, WorkLifecycle, WorkNextQuery, WorkNextSection,
-    WorkPlanningBudget, WorkProposeInput, WorkUpdateInput, project_database_path,
+    SqliteStore, WaiveWorkObligationRequest, WorkAuthorityGrant, WorkAuthorityOperation,
+    WorkAuthorityScope, WorkAvailability, WorkCompleteInput, WorkHandoffInput, WorkLifecycle,
+    WorkNextQuery, WorkNextSection, WorkObligationId, WorkPlanningBudget, WorkProposeInput,
+    WorkUpdateInput, project_database_path,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -283,6 +284,9 @@ enum AuthorityCommand {
         /// Admit release/cancellation waivers for missing contributions.
         #[arg(long)]
         allow_completion_waiver: bool,
+        /// Admit host/operator waiver of an exact open execution obligation.
+        #[arg(long)]
+        allow_obligation_waiver: bool,
     },
     /// Irreversibly revoke an installed grant and print the revocation hash.
     Revoke {
@@ -294,6 +298,21 @@ enum AuthorityCommand {
         /// Attributed reason for revocation.
         #[arg(long)]
         reason: String,
+    },
+    /// Waive one exact open execution obligation under dedicated authority.
+    WaiveObligation {
+        #[arg(long)]
+        obligation_id: String,
+        #[arg(long)]
+        expected_definition: String,
+        #[arg(long)]
+        authority_grant: String,
+        #[arg(long)]
+        waived_by: String,
+        #[arg(long)]
+        reason: String,
+        #[arg(long)]
+        idempotency_key: String,
     },
 }
 
@@ -439,6 +458,7 @@ fn run_authority(
             allow_reopen,
             allow_claim_recovery,
             allow_completion_waiver,
+            allow_obligation_waiver,
         } => {
             if !(1..=86_400).contains(&valid_seconds) {
                 bail!("--valid-seconds must be from 1 through 86400");
@@ -462,6 +482,9 @@ fn run_authority(
             }
             if allow_completion_waiver {
                 operations.push(WorkAuthorityOperation::CompletionWaiver);
+            }
+            if allow_obligation_waiver {
+                operations.push(WorkAuthorityOperation::ObligationWaiver);
             }
             let hash = store.install_work_authority_grant(
                 WorkAuthorityGrant {
@@ -524,6 +547,49 @@ fn run_authority(
                 &DevelopmentNoopRedactor,
             )?;
             serde_json::json!({ "grant": grant, "revocation": revocation })
+        }
+        AuthorityCommand::WaiveObligation {
+            obligation_id,
+            expected_definition,
+            authority_grant,
+            waived_by,
+            reason,
+            idempotency_key,
+        } => {
+            eprintln!(
+                "WARNING: obligation waiver identity is asserted host context, not an authenticated identity"
+            );
+            let obligation_id = WorkObligationId(
+                uuid::Uuid::parse_str(&obligation_id).context("invalid work obligation id")?,
+            );
+            let expected_definition = ObjectHash::from_str(&expected_definition)
+                .map_err(|message| anyhow::anyhow!("invalid definition hash: {message}"))?;
+            let authority_grant = ObjectHash::from_str(&authority_grant)
+                .map_err(|message| anyhow::anyhow!("invalid authority grant hash: {message}"))?;
+            serde_json::to_value(store.waive_work_obligation(
+                &WaiveWorkObligationRequest {
+                    obligation_id,
+                    expected_definition,
+                    reason,
+                    authority: engram::LifecycleAuthorityDecision {
+                        grant: authority_grant,
+                    },
+                    actor: ActorContext {
+                        actor_id: waived_by,
+                        actor_kind: "host_operator".into(),
+                        assurance: AssuranceLevel::Asserted,
+                        run_id: None,
+                        session_id: None,
+                        source_tool: Some("cli:authority_waive_obligation".into()),
+                        source_skill: None,
+                        provenance_chain: Vec::new(),
+                        reason: "waive an exact host-observed work obligation".into(),
+                    },
+                    idempotency_key,
+                    waived_at: now,
+                },
+                &DevelopmentNoopRedactor,
+            )?)?
         }
     };
     println!("{}", serde_json::to_string_pretty(&value)?);
