@@ -24,7 +24,7 @@ use crate::{
     WorkNextSection, WorkNextView, WorkObligationPage, WorkObligationState, WorkProposeInput,
     WorkProposeResult, WorkRevisionPatch, WorkUpdateInput,
     storage::StoreError,
-    work_service::{ReadyWorkSummary, WorkChangeProjection},
+    work_service::{ReadyWorkSummary, WorkChange, WorkChangeProjection},
 };
 
 const DEFAULT_LIMIT: u32 = 20;
@@ -349,16 +349,25 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when the core cannot read or stage the view.
     pub fn next(&self, input: &NextInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
         let view = self.service.work_next(
-            input.limit.unwrap_or(DEFAULT_LIMIT),
+            limit,
             WorkNextQuery {
-                sections: vec![
-                    WorkNextSection::Focus,
-                    WorkNextSection::Ready,
-                    WorkNextSection::Changes,
-                ],
+                sections: vec![WorkNextSection::Focus, WorkNextSection::Changes],
                 ..WorkNextQuery::default()
             },
+            now,
+        )?;
+        let held = self.held_items(limit, now)?;
+        // The core's ready section is byte-bounded; the catalog pages densely.
+        let ready = self.catalog(
+            &WorkNextQuery {
+                sections: vec![WorkNextSection::Catalog],
+                lifecycles: vec![WorkLifecycle::Open],
+                availabilities: vec![WorkAvailability::Ready],
+                ..WorkNextQuery::default()
+            },
+            limit,
             now,
         )?;
         let mut lines = Vec::new();
@@ -369,15 +378,23 @@ impl AgentVerbs {
             )),
             None => lines.push("focus: none".into()),
         }
-        let ready = view.ready.as_deref().unwrap_or_default();
+        lines.push(format!("held by you ({}):", held.len()));
+        for (item, expires_at) in &held {
+            lines.push(format!(
+                "  {} \"{}\" until {}",
+                item.work.short_ref,
+                short(&item.work.title),
+                clock(*expires_at, now)
+            ));
+        }
         lines.push(format!("ready ({}):", ready.len()));
-        for item in ready {
+        for item in &ready {
             lines.push(format!("  {}", ready_line(item)));
         }
-        let changes = view.changes.as_deref().unwrap_or_default();
+        let changes = collapse_changes(view.changes.as_deref().unwrap_or_default());
         lines.push(format!("changes ({} since your last call):", changes.len()));
-        for change in changes {
-            lines.push(format!("  {}", change_line(&change.delivery)));
+        for change in &changes {
+            lines.push(format!("  {change}"));
         }
         for omission in &view.omissions {
             lines.push(format!(
@@ -403,15 +420,96 @@ impl AgentVerbs {
                 guidance.next.insert(0, command);
             }
         }
+        if let Some((item, _)) = held.iter().find(|(item, _)| {
+            view.focus
+                .as_ref()
+                .is_none_or(|focus| focus.status.work.work_id != item.work.work_id)
+        }) {
+            let command = format!("engram work show {}", item.work.short_ref);
+            if !guidance.next.contains(&command) {
+                guidance.next.push(command);
+            }
+        }
         if guidance.next.is_empty() {
             guidance.next.push("engram work add \"…\"".into());
         }
-        Ok(Receipt::assemble(
-            lines,
-            guidance,
-            serde_json::to_value(&view)?,
-            false,
-        ))
+        let mut value = serde_json::to_value(&view)?;
+        value["ready"] = serde_json::to_value(&ready)?;
+        value["held"] = serde_json::to_value(
+            held.iter()
+                .map(|(item, expires_at)| json!({ "work": item.work, "expires_at": expires_at }))
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(Receipt::assemble(lines, guidance, value, false))
+    }
+
+    /// Open items this session holds under a live claim, in catalog order.
+    fn held_items(
+        &self,
+        limit: u32,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<(ReadyWorkSummary, DateTime<Utc>)>, VerbError> {
+        let items = self.catalog(
+            &WorkNextQuery {
+                sections: vec![WorkNextSection::Catalog],
+                lifecycles: vec![WorkLifecycle::Open],
+                availabilities: vec![WorkAvailability::Claimed, WorkAvailability::Active],
+                ..WorkNextQuery::default()
+            },
+            limit,
+            now,
+        )?;
+        let mut held = Vec::new();
+        for item in items {
+            let detail = self.service.inspect_work(&item.work.short_ref, now)?;
+            if let Holder::You(expires_at) = self.holder(&detail, now) {
+                held.push((item, expires_at));
+            }
+        }
+        Ok(held)
+    }
+
+    /// Reads catalog pages until `limit` items or the end; the core bounds
+    /// each page by bytes, so one call rarely returns the whole list.
+    fn catalog(
+        &self,
+        query: &WorkNextQuery,
+        limit: u32,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<ReadyWorkSummary>, VerbError> {
+        let wanted = usize::try_from(limit).unwrap_or(usize::MAX).max(1);
+        let mut items: Vec<ReadyWorkSummary> = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let remaining = u32::try_from(wanted - items.len()).unwrap_or(u32::MAX);
+            let view = self.service.work_next(
+                remaining,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Catalog],
+                    search: query.search.clone(),
+                    lifecycles: query.lifecycles.clone(),
+                    availabilities: query.availabilities.clone(),
+                    blocked_only: query.blocked_only,
+                    assigned_to: query.assigned_to.clone(),
+                    label: query.label.clone(),
+                    after: after.clone(),
+                },
+                now,
+            )?;
+            let Some(page) = view.catalog else {
+                break;
+            };
+            let page_len = page.items.len();
+            items.extend(page.items);
+            match page.next_after {
+                Some(next) if page_len > 0 && items.len() < wanted => {
+                    after = Some(next.0.to_string());
+                }
+                _ => break,
+            }
+        }
+        items.truncate(wanted);
+        Ok(items)
     }
 
     /// `ls`: open items by default; `search` is `ls` over every lifecycle.
@@ -420,53 +518,43 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when the catalog cannot be read.
     pub fn ls(&self, input: &LsInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let mut sections = vec![WorkNextSection::Catalog];
-        if input.mine {
-            sections.push(WorkNextSection::Focus);
-        }
-        let mut view = self.service.work_next(
-            input.limit.unwrap_or(DEFAULT_LIMIT),
-            WorkNextQuery {
-                sections,
-                search: input.search.clone(),
-                lifecycles: if input.all {
-                    Vec::new()
-                } else {
-                    vec![WorkLifecycle::Open]
-                },
-                availabilities: Vec::new(),
-                blocked_only: input.blocked,
-                assigned_to: input.mine.then(|| self.actor_id.clone()),
-                label: input.label.clone(),
-                after: None,
+        let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
+        let query = WorkNextQuery {
+            sections: vec![WorkNextSection::Catalog],
+            search: input.search.clone(),
+            lifecycles: if input.all {
+                Vec::new()
+            } else {
+                vec![WorkLifecycle::Open]
             },
-            now,
-        )?;
-        if input.mine
-            && let Some(focus) = view.focus.take()
-            && matches!(self.holder(&focus, now), Holder::You(_))
-            && catalog_filters_admit(&focus.status, input)
-            && let Some(catalog) = view.catalog.as_mut()
-            && !catalog
-                .items
-                .iter()
-                .any(|item| item.work.work_id == focus.status.work.work_id)
-        {
-            catalog.items.insert(0, focus.status);
+            availabilities: Vec::new(),
+            blocked_only: input.blocked,
+            assigned_to: input.mine.then(|| self.actor_id.clone()),
+            label: input.label.clone(),
+            after: None,
+        };
+        let mut items = self.catalog(&query, limit.saturating_add(1), now)?;
+        let more = items.len() > limit as usize;
+        items.truncate(limit as usize);
+        if input.mine {
+            for (held, _) in self.held_items(limit, now)? {
+                if catalog_filters_admit(&held, input)
+                    && !items
+                        .iter()
+                        .any(|item| item.work.work_id == held.work.work_id)
+                {
+                    items.insert(0, held);
+                }
+            }
         }
-        let items = view
-            .catalog
-            .as_ref()
-            .map(|catalog| catalog.items.as_slice())
-            .unwrap_or_default();
         let mut lines = vec![format!("{} item(s):", items.len())];
-        for item in items {
+        for item in &items {
             lines.push(format!("  {}", catalog_line(item)));
         }
-        if let Some(catalog) = &view.catalog
-            && catalog.next_after.is_some()
-        {
-            lines.push("  (more items exist; narrow with --search or --label)".into());
+        if more {
+            lines.push(format!(
+                "  (more than {limit}; raise --limit or narrow with --search or --label)"
+            ));
         }
         let mut next = Vec::new();
         if let Some(first) = items.first() {
@@ -487,7 +575,7 @@ impl AgentVerbs {
                 reminders: Vec::new(),
                 next,
             },
-            serde_json::to_value(&view)?,
+            json!({ "items": items, "more": more }),
             false,
         ))
     }
@@ -991,6 +1079,22 @@ impl AgentVerbs {
             WorkCompleteResult::Completed(_) => {
                 let mut guidance = self.guidance(&after, "done", now);
                 guidance.reminders.clear();
+                // Finishing a child points back at the parent that is still
+                // open, with the parent's own next commands.
+                if let Some(parent_id) = after.status.work.parent_id
+                    && let Ok(parent) = self.service.inspect_work(&parent_id.0.to_string(), now)
+                    && parent.status.work.lifecycle == WorkLifecycle::Open
+                {
+                    guidance = self.guidance(&parent, "done", now);
+                    guidance.reminders.insert(
+                        0,
+                        format!(
+                            "{} \"{}\" is still open",
+                            parent.status.work.short_ref,
+                            short(&parent.status.work.title)
+                        ),
+                    );
+                }
                 (
                     vec![format!("done {work_ref} \"{title}\"")],
                     guidance,
@@ -1439,28 +1543,78 @@ fn catalog_line(item: &ReadyWorkSummary) -> String {
     line
 }
 
-fn change_line(change: &WorkChangeProjection) -> String {
-    match change {
-        WorkChangeProjection::Visible(summary) => {
-            let subject = summary
-                .work_ref
-                .clone()
-                .unwrap_or_else(|| summary.object_kind.clone());
-            let actor = summary
-                .actor_id
-                .as_ref()
-                .map(|actor| format!(" by {actor}"))
-                .unwrap_or_default();
-            format!(
-                "{subject} {}{actor}: {}",
-                summary.change_kind,
-                short(&summary.summary)
-            )
+/// One line per change an agent cares about. A single `note` appends an
+/// evidence object, an evidence-added event, and a checkpoint; they collapse
+/// into one `noted` line. Summaries that repeat their change kind as a prefix
+/// lose the prefix.
+fn collapse_changes(changes: &[WorkChange]) -> Vec<String> {
+    let visible = changes
+        .iter()
+        .map(|change| match &change.delivery {
+            WorkChangeProjection::Visible(summary) => Some((
+                summary
+                    .work_ref
+                    .clone()
+                    .unwrap_or_else(|| summary.object_kind.clone()),
+                summary.change_kind.clone(),
+                strip_kind_prefix(&summary.summary, &summary.change_kind),
+                summary.actor_id.clone(),
+            )),
+            WorkChangeProjection::Omitted(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let mut lines: Vec<String> = Vec::new();
+    let mut last_note: Option<(String, String)> = None;
+    for (index, change) in changes.iter().enumerate() {
+        let Some((subject, kind, text, actor_id)) = visible[index].as_ref() else {
+            last_note = None;
+            if let WorkChangeProjection::Omitted(omission) = &change.delivery {
+                lines.push(format!(
+                    "{} (not visible from your focus)",
+                    omission.object_kind
+                ));
+            }
+            continue;
+        };
+        if kind == "evidence_added" {
+            continue;
         }
-        WorkChangeProjection::Omitted(omission) => {
-            format!("{} (not visible from your focus)", omission.object_kind)
+        if kind == "checkpoint" {
+            let repeats_note = last_note.as_ref().is_some_and(|(note_subject, note_text)| {
+                note_subject == subject && note_text == text
+            });
+            let precedes_completion = visible.get(index + 1).is_some_and(|next| {
+                next.as_ref()
+                    .is_some_and(|(next_subject, next_kind, next_text, _)| {
+                        next_subject == subject && next_kind == "completed" && next_text == text
+                    })
+            });
+            if repeats_note || precedes_completion {
+                continue;
+            }
         }
+        last_note = (kind == "evidence").then(|| (subject.clone(), text.clone()));
+        let verb = match kind.as_str() {
+            "evidence" => "noted",
+            "checkpoint" => "checkpointed",
+            other => other,
+        };
+        let actor = actor_id
+            .as_ref()
+            .map(|actor| format!(" by {actor}"))
+            .unwrap_or_default();
+        lines.push(format!("{subject} {verb}{actor}: {}", short(text)));
     }
+    lines
+}
+
+fn strip_kind_prefix(summary: &str, kind: &str) -> String {
+    let prefix = format!("{kind}: ");
+    summary
+        .strip_prefix(&prefix)
+        .unwrap_or(summary)
+        .trim()
+        .to_owned()
 }
 
 fn availability_words(status: &ReadyWorkSummary) -> &'static str {

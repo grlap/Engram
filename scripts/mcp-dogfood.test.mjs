@@ -816,7 +816,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const keylessReplay = receipt(await a.call("add", { title: "Keyless root" }));
     assert.equal(keylessReplay.work.work_id, keyless.work.work_id);
     const keylessCatalog = receipt(await a.call("ls", { search: "keyless root" }));
-    assert.equal(keylessCatalog.catalog.items.length, 1);
+    assert.equal(keylessCatalog.items.length, 1);
     assert.ok(next.focus.allowed_next.includes("work_update:claim"));
 
     // work_ref selects the target in the same call: focus is still the keyless
@@ -1010,17 +1010,17 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.ok(completed.history.items.length > 0);
     assert.equal(completed.reminders.length, 0);
     const openOnly = receipt(await b.call("ls", { search: "dogfood local work" }));
-    assert.equal(openOnly.catalog.items.length, 0);
+    assert.equal(openOnly.items.length, 0);
     const completedCatalog = receipt(
       await b.call("ls", { search: "dogfood local work", all: true }),
     );
-    assert.equal(completedCatalog.catalog.items.length, 1);
-    assert.equal(completedCatalog.catalog.items[0].work.work_id, added.work.work_id);
+    assert.equal(completedCatalog.items.length, 1);
+    assert.equal(completedCatalog.items[0].work.work_id, added.work.work_id);
     assert.equal(JSON.stringify(completedCatalog).includes(grantB), false);
     assert.equal("changes" in completedCatalog, false);
     assert.equal("delivered_through" in completedCatalog, false);
     const searched = receipt(await b.call("search", { query: "dogfood local work" }));
-    assert.equal(searched.catalog.items.length, 1);
+    assert.equal(searched.items.length, 1);
 
     const replacement = receipt(
       await b.call("add", {
@@ -1051,8 +1051,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const supersededCatalog = receipt(
       await b.call("ls", { search: "obsolete plan", all: true }),
     );
-    assert.equal(supersededCatalog.catalog.items.length, 1);
-    assert.equal(supersededCatalog.catalog.items[0].work.work_id, obsolete.work_id);
+    assert.equal(supersededCatalog.items.length, 1);
+    assert.equal(supersededCatalog.items[0].work.work_id, obsolete.work_id);
 
     const disposable = receipt(
       await b.call("add", {

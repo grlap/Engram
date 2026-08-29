@@ -1009,7 +1009,7 @@ impl LocalWorkService {
         let focus = if wants_focus {
             session
                 .focused_work_id
-                .map(|work_id| self.focus_view(&store, work_id, now))
+                .map(|work_id| self.focus_view(&store, work_id, true, now))
                 .transpose()?
         } else {
             None
@@ -1104,6 +1104,22 @@ impl LocalWorkService {
         Ok(())
     }
 
+    /// Inspects work by reference without changing ambient focus or staging
+    /// any delivery.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the reference is absent or projections are invalid.
+    pub fn inspect_work(
+        &self,
+        work_ref: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkFocusView, StoreError> {
+        let store = self.store()?;
+        let work = store.resolve_work_ref(&self.project_id, work_ref)?;
+        self.focus_view(&store, work.work_id, false, now)
+    }
+
     /// Selects and inspects ambient work without implicitly changing its claim.
     ///
     /// # Errors
@@ -1117,7 +1133,7 @@ impl LocalWorkService {
         let mut store = self.store()?;
         let item = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
-        self.focus_view(&store, item.work_id, now)
+        self.focus_view(&store, item.work_id, true, now)
     }
 
     /// Creates a root or atomically decomposes ambient focused work.
@@ -1208,7 +1224,7 @@ impl LocalWorkService {
                         work.work_id,
                         now,
                     )?;
-                    let focus = self.focus_view(&store, work.work_id, now)?;
+                    let focus = self.focus_view(&store, work.work_id, true, now)?;
                     let result = WorkProposeResult::Root {
                         work: work_item_summary(&work),
                         focus: Box::new(focus),
@@ -1248,7 +1264,7 @@ impl LocalWorkService {
                     &DevelopmentNoopRedactor,
                 )?;
                 store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
-                let focus = self.focus_view(&store, work.work_id, now)?;
+                let focus = self.focus_view(&store, work.work_id, true, now)?;
                 WorkProposeResult::Root {
                     work: work_item_summary(&work),
                     focus: Box::new(focus),
@@ -2546,6 +2562,7 @@ impl LocalWorkService {
         &self,
         store: &SqliteStore,
         work_id: WorkId,
+        with_memories: bool,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
         let session = store.work_session_state(&self.project_id, &self.session_id, now)?;
@@ -2610,14 +2627,20 @@ impl LocalWorkService {
         }
         let children = store.work_children(work_id)?;
         let prerequisites = store.work_prerequisites(work_id)?;
-        let memories = store.search_work_memories(
-            &self.project_id,
-            work_id,
-            &self.session_id,
-            &self.actor_id,
-            None,
-            Some(MAX_FOCUS_MEMORIES + 1),
-        )?;
+        // The work-memory index is bound to the session's persisted focus; an
+        // inspection of another item carries no memory index.
+        let memories = if with_memories {
+            store.search_work_memories(
+                &self.project_id,
+                work_id,
+                &self.session_id,
+                &self.actor_id,
+                None,
+                Some(MAX_FOCUS_MEMORIES + 1),
+            )?
+        } else {
+            Vec::new()
+        };
         let mut omissions = Vec::new();
         let blockers = status.blockers.clone();
         if children.len() > MAX_FOCUS_RELATIONS {
