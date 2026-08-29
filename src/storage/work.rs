@@ -8663,6 +8663,19 @@ fn verify_anchored_memory_feeds(
             invalid.push(label);
             continue;
         };
+        // Objects retained under another schema are never activated or fed;
+        // only the current schema carries feed expectations.
+        let current_schema = serde_json::from_slice::<serde_json::Value>(object.bytes())
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("schema_version")
+                    .and_then(serde_json::Value::as_u64)
+            })
+            == Some(u64::from(SCHEMA_VERSION));
+        if !current_schema {
+            continue;
+        }
         let anchor = if object_kind == "memory_contradiction_event" {
             object
                 .decode::<crate::domain::MemoryContradictionEvent>()

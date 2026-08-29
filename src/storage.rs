@@ -692,7 +692,12 @@ struct AuthorizedContradiction {
     right: ObjectHash,
     reason: String,
     task_id: Option<TaskId>,
+    /// The caller's own work anchor, kept for the idempotency fingerprint so a
+    /// retry of an omitted-work request still replays.
     work_id: Option<crate::domain::WorkId>,
+    /// The work whose feeds receive the event: the caller's anchor, or the
+    /// validated focus when the caller omitted it.
+    feed_work_id: Option<crate::domain::WorkId>,
     work_root_id: Option<crate::domain::WorkId>,
 }
 
@@ -5002,6 +5007,7 @@ impl SqliteStore {
         }
         // A caller that omits the work anchor still contradicts from its
         // validated focus: the anchor is the focused item, never a guess.
+        let caller_work_id = work_id;
         let work_id = work_id.or(focused_work_id);
         if first_version == second_version {
             return Err(StoreError::InvalidContradiction(
@@ -5103,7 +5109,8 @@ impl SqliteStore {
             right,
             reason: reason.into(),
             task_id: task_anchor,
-            work_id: work_root_anchor.and(work_id),
+            work_id: work_root_anchor.and(caller_work_id),
+            feed_work_id: work_root_anchor.and(work_id),
             work_root_id: work_root_anchor,
         })
     }
@@ -5258,7 +5265,7 @@ impl SqliteStore {
                 )
             })
             .transpose()?;
-        let work_positions = authorized.work_id.map_or_else(
+        let work_positions = authorized.feed_work_id.map_or_else(
             || Ok(Vec::new()),
             |work_id| {
                 work::append_context_object_to_work_feeds(
