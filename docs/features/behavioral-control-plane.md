@@ -603,15 +603,27 @@ until a later basis-bearing mutation and passed test establish a newer
 verifiable state.
 
 Definitions and resolutions are canonical feed objects; the mutable obligation
-row is only a verified projection. Focus and agent deltas expose bounded
-definition, state, and evidence summaries. A waiver requires a dedicated
-`WorkAuthorityOperation::ObligationWaiver` grant and the host-private
-`engram authority waive-obligation` command. Its grant hash and reason never
-cross MCP or the six-operation work protocol, and there is deliberately no
-`work_update` waiver variant. Completion now evaluates the cut-aware open set
-at the exact pre-seal run-feed cut. Open definitions return a bounded typed
-`open_work_obligations` result; terminal definitions are frozen into the seal
-as exact definition/resolution hash pairs under obligation schema V1.
+row is only a verified projection. `work_focus`, nested `work_next.focus`,
+`work_update`, and both completion outcomes use one count- and byte-bounded
+`obligation_page` with explicit omission count, immutable identities, state,
+rule, requirement, trigger, terminal evidence/resolution, and deterministic
+typed guidance. Generic readiness strings remain separate. A fresh session
+reconstructs the same summaries from canonical history rather than trusting a
+prior response.
+
+A waiver requires a dedicated
+`WorkAuthorityOperation::ObligationWaiver` grant. It may be requested through
+the operator CLI or the host-private `obligation_waive` JSON-lines operation,
+never through MCP or `work_update`. The private request is bound to the
+session's exact live `WorkRun` and expected definition. Its canonical
+resolution records the server-fixed session actor beside the asserted
+`waived_by` human; neither that assertion nor the grant is authentication.
+Policy refusals are typed as `waiver_not_admitted`, `obligation_not_open`, or
+`definition_changed`, and exact retries replay exactly. Agent-facing pages and
+the host receipt omit the authority grant and reason. Completion evaluates the
+cut-aware open set at the exact pre-seal run-feed cut. Terminal definitions are
+frozen into the seal as exact definition/resolution hash pairs under obligation
+schema V1, and completion success reconstructs its page from that sealed basis.
 
 An observation effect outside the frozen grant is rejected as
 `observation_scope_mismatch`; `grant_scope_mismatch` remains reserved for a

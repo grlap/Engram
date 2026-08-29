@@ -403,10 +403,13 @@ event count and only the newest bounded event summaries, plus body-free memory
 index entries. Active blockers include their id, type, and compact detail so an
 agent can construct `unblock`; when exactly one blocker is active the id may be
 omitted and Engram infers it. Authorized memory bodies remain available on
-demand through their version hash. `work_update` and `work_handoff` never rebuild this history:
-their success envelopes contain only the operation, compact receipt, current
-obligations, and `allowed_next`, so hundreds of historical events cannot grow a
-mutation response.
+demand through their version hash. `work_update` and `work_handoff` never
+rebuild this history: their success envelopes contain only the operation,
+compact receipt, one bounded `obligation_page`, generic readiness obligations,
+and `allowed_next`, so hundreds of historical events cannot grow a mutation
+response. The same page field appears on `work_focus`, nested
+`work_next.focus`, and both completion outcomes. Its item count and canonical
+byte size are bounded independently, with an explicit `omitted_count`.
 
 `work_complete` accepts either previously recorded evidence and checkpoint
 state or an optional `capture { summary, refs }`. The capture form records one
@@ -444,18 +447,21 @@ exact run-feed cut. A passed test for a later basis-bearing mutation may close
 earlier open definitions, but a basisless latest mutation makes the open set
 waiver-only until a newer basis-bearing mutation and passed test arrive.
 
-Focus and delta packets expose bounded obligation identity, rule, requirement,
-state, and evidence. Agents cannot mint or waive them. Waiver is restricted to
-the host/operator `engram authority waive-obligation` CLI under a dedicated
-`ObligationWaiver` authority operation; neither MCP nor `work_update` accepts
-that operation, and agent projections redact its authority hash and reason.
-At the exact pre-seal cut, every applicable definition must have a satisfied or
-waived resolution at or before that cut. Otherwise `work_complete` returns the
-typed `open_work_obligations` result with at most 16 obligation ids,
-definition hashes, required check kinds, an omitted count, and the remedy:
-record matching host verification, checkpoint it, then complete; or request a
-host/operator waiver. A successful seal stores only canonical hashes and is
-reconstructible from the immutable feed.
+The page exposes immutable obligation and definition identities, rule,
+requirement, trigger, state, terminal evidence/resolution, and deterministic
+typed guidance. Agents cannot mint or waive obligations. Waiver is restricted
+to the host/operator CLI and the host-private `obligation_waive` operation
+under a dedicated `ObligationWaiver` authority grant; neither MCP nor
+`work_update` accepts that operation. The native host session must be bound to
+the same live run. Canonical resolution preserves its server-fixed actor and
+the asserted human `waived_by`, while agent pages and the receipt omit the
+grant and reason. At the exact pre-seal cut, every applicable definition must
+have a satisfied or waived resolution at or before that cut. Otherwise
+`work_complete` returns the typed `open_work_obligations` result with the
+shared page and remedy: record matching host verification, checkpoint it, then
+complete; or request a host/operator waiver. A successful seal stores only
+canonical hashes; its page and a fresh session's later focus are reconstructed
+from that immutable basis.
 
 The operator-only `engram authority grant|revoke` commands are the current
 host boundary for local use. They are deliberately absent from agent-facing

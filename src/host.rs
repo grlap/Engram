@@ -15,9 +15,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    ActorContext, ControlAssurance, ControlWorkBinding, EffectClass, EnvironmentEvidenceInput,
-    ExecutionObservationInput, LeaseKind, LeaseMode, ObjectHash, ProjectId, ResourceSubject,
-    SessionId, SqliteStore, TurnIntent, TurnPurpose, VerificationEvidenceInput,
+    ActorContext, ControlAssurance, ControlWorkBinding, DevelopmentNoopRedactor, EffectClass,
+    EnvironmentEvidenceInput, ExecutionObservationInput, LeaseKind, LeaseMode, ObjectHash,
+    ProjectId, ResourceSubject, SessionId, SqliteStore, TurnIntent, TurnPurpose,
+    VerificationEvidenceInput, WorkObligationId,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
 };
@@ -54,6 +55,17 @@ pub enum HostControlRequest {
     LeaseRelease {
         routing_token: String,
         lease_id: String,
+        idempotency_key: String,
+    },
+    /// Host/operator-only waiver of one exact open execution obligation. This
+    /// operation is deliberately absent from agent-facing work and MCP input.
+    ObligationWaive {
+        routing_token: String,
+        obligation_id: String,
+        expected_definition: String,
+        authority_grant: String,
+        waived_by: String,
+        reason: String,
         idempotency_key: String,
     },
     TurnEvaluate {
@@ -220,6 +232,51 @@ impl HostControlServer {
                 now,
             )?)
             .map_err(StoreError::Json),
+            HostControlRequest::ObligationWaive {
+                routing_token,
+                obligation_id,
+                expected_definition,
+                authority_grant,
+                waived_by,
+                reason,
+                idempotency_key,
+            } => {
+                let obligation_id =
+                    WorkObligationId(uuid::Uuid::parse_str(&obligation_id).map_err(|_| {
+                        StoreError::InvalidControlSession("obligation_id must be a UUID".into())
+                    })?);
+                let expected_definition =
+                    ObjectHash::from_str(&expected_definition).map_err(|_| {
+                        StoreError::InvalidControlSession(
+                            "expected_definition must be a lowercase SHA-256 digest".into(),
+                        )
+                    })?;
+                let authority_grant = ObjectHash::from_str(&authority_grant).map_err(|_| {
+                    StoreError::InvalidControlSession(
+                        "authority_grant must be a lowercase SHA-256 digest".into(),
+                    )
+                })?;
+                let actor = self.actor(
+                    "obligation_waive",
+                    "present a host-authorized human obligation waiver",
+                );
+                serde_json::to_value(self.store.waive_bound_work_obligation(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.connection_token,
+                    &routing_token,
+                    obligation_id,
+                    &expected_definition,
+                    &authority_grant,
+                    &waived_by,
+                    &reason,
+                    &actor,
+                    &idempotency_key,
+                    now,
+                    &DevelopmentNoopRedactor,
+                )?)
+                .map_err(StoreError::Json)
+            }
             HostControlRequest::TurnEvaluate {
                 routing_token,
                 idempotency_key,

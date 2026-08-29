@@ -60,9 +60,10 @@ pub use domain::{
     WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
     WorkId, WorkItem, WorkItemKind, WorkLease, WorkLeaseDecision, WorkLeaseEvent,
     WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkLifecycle, WorkObligation, WorkObligationId,
-    WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkOrigin,
-    WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason, WorkRevisionPatch, WorkRun,
-    WorkRunId, WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot,
+    WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState,
+    WorkObligationWaiverDecision, WorkObligationWaiverReceipt, WorkObligationWaiverRefusalCode,
+    WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason, WorkRevisionPatch,
+    WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot,
     WorkTransition,
 };
 pub use host::{HostControlRequest, HostControlServer};
@@ -78,6 +79,7 @@ pub use work_service::{
     WorkChangeOmissionReason, WorkChangeProjection, WorkChildInput, WorkCompleteInput,
     WorkCompleteRefusal, WorkCompleteResult, WorkCompletedReceipt, WorkCompletionCaptureInput,
     WorkEvidenceAttachInput, WorkEvidenceSummary, WorkFocusView, WorkHandoffInput,
-    WorkHandoffResult, WorkNextQuery, WorkNextSection, WorkNextView, WorkPrerequisiteInput,
-    WorkProposeInput, WorkProposeResult, WorkUpdateInput, WorkUpdateResult,
+    WorkHandoffResult, WorkNextQuery, WorkNextSection, WorkNextView, WorkObligationGuidance,
+    WorkObligationPage, WorkObligationSummary, WorkPrerequisiteInput, WorkProposeInput,
+    WorkProposeResult, WorkUpdateInput, WorkUpdateResult,
 };

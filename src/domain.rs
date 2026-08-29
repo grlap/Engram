@@ -1827,6 +1827,7 @@ pub enum WorkObligationResolution {
     },
     Waived {
         authority_grant: ObjectHash,
+        waived_by: String,
         reason: String,
     },
 }
@@ -2445,11 +2446,51 @@ pub struct WaiveRequiredChildRequest {
 pub struct WaiveWorkObligationRequest {
     pub obligation_id: WorkObligationId,
     pub expected_definition: ObjectHash,
+    /// Human operator identity asserted by the host. The request actor remains
+    /// the server-fixed control session that presented this authority.
+    pub waived_by: String,
     pub reason: String,
     pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub waived_at: DateTime<Utc>,
+}
+
+/// Stable host-private policy refusal for an obligation waiver request.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkObligationWaiverRefusalCode {
+    WaiverNotAdmitted,
+    ObligationNotOpen,
+    DefinitionChanged,
+}
+
+/// Redacted durable receipt for a host-authorized obligation waiver.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkObligationWaiverReceipt {
+    pub obligation_id: WorkObligationId,
+    pub definition: ObjectHash,
+    pub resolution: ObjectHash,
+    pub state: WorkObligationState,
+    pub waived_by: String,
+    pub waived_at: DateTime<Utc>,
+}
+
+/// Host-private result. Policy outcomes are replayable typed values; routing,
+/// token, and idempotency faults remain transport errors.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "decision", rename_all = "snake_case")]
+pub enum WorkObligationWaiverDecision {
+    Waived {
+        receipt: WorkObligationWaiverReceipt,
+    },
+    Refused {
+        code: WorkObligationWaiverRefusalCode,
+        obligation_id: WorkObligationId,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        current_definition: Option<ObjectHash>,
+        remedy: String,
+    },
 }
 
 /// What a memory means independently of how it is delivered.

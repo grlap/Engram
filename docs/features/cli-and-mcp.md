@@ -111,9 +111,20 @@ engram authority waive-obligation \
   --idempotency-key <retry-key>
 ```
 
-This command is host/operator private. MCP and `work_update` cannot request an
-obligation waiver, and agent-facing focus/deltas omit the authority grant and
-waiver reason.
+The equivalent native-host operation is `obligation_waive` on the private
+JSON-lines channel. Its request names the routing token, exact obligation and
+definition hashes, dedicated grant, asserted `waived_by` human, bounded reason,
+and idempotency key. The control session must be bound to that obligation's
+live run. Policy outcomes are typed as `waiver_not_admitted`,
+`obligation_not_open`, or `definition_changed`; transport, token, and
+same-key/different-intent faults remain request errors. A committed retry
+replays the exact result. The canonical resolution keeps the server-fixed
+session actor beside the asserted human attribution, while the receipt omits
+the authority hash and reason.
+
+Both waiver surfaces are host/operator private. MCP and `work_update` cannot
+request a waiver, and agent-facing projections omit its authority grant and
+reason.
 
 ## Shipped MCP tools
 
@@ -229,8 +240,9 @@ sequence without exposing the host-only tentative cursor or token.
 atomically handles roots and bounded decomposition. `work_update` carries a
 typed transition such as claim/release, checkpoint, blocker, cancel,
 supersede, deferral, assignment, revision, or prerequisite change. Update and
-handoff success responses contain only a compact receipt, current obligations,
-and `allowed_next`; their size does not grow with item history. Each entry
+handoff success responses contain only a compact receipt, one bounded
+`obligation_page`, generic readiness `obligations`, and `allowed_next`;
+their size does not grow with item history. Each entry
 names the exact tool and tagged operation. For example,
 `allowed_next: ["work_update:claim(recovery_reason_required)"]` directs the
 agent to submit the `work_update` claim variant with an attributed
@@ -249,12 +261,18 @@ claim projection's own revision counter.
 checkpoint its exact evidence set, and seal in one model-level call. Completion
 is refused while blockers, prerequisites, required child seals or explicit
 completion waivers, live handoffs, capture requirements, or run obligations
-remain unresolved. Open obligations are not an MCP error envelope:
-`work_complete` returns a typed `open_work_obligations` result containing at
-most 16 `{ obligation_id, definition, required_check }` entries, an
-`omitted_count`, and the exact remedy to record matching host verification,
-checkpoint it, then complete—or request a host/operator waiver. That result is
-durably replayable under the same idempotency key.
+remain unresolved. Open obligations are not an MCP error envelope.
+`work_complete` returns a typed `open_work_obligations` result with the same
+`obligation_page` used by `work_focus`, nested `work_next.focus`, and
+`work_update`. A completed receipt also returns that page reconstructed from
+the exact terminal obligation hashes bound into the seal. Each page is count-
+and byte-bounded, reports an explicit `omitted_count`, and carries immutable
+obligation/definition identities, state, rule, requirement, trigger, terminal
+resolution/evidence when present, and deterministic typed guidance. An open
+verification requirement directs the caller to record matching host
+verification, checkpoint it, then complete, or request a host/operator waiver.
+Generic readiness strings remain a separate compatibility field. The typed
+completion result is durably replayable under the same idempotency key.
 An interrupted capture-backed completion recovers committed evidence or
 checkpoint timestamps for exact replay, while missing substeps use current
 time and recheck the live claim.
@@ -291,6 +309,7 @@ shipped operations are:
 | `turn_evaluate` | Derive membership/context/head/policy from SQLite and persist a decision plus optional grant |
 | `turn_begin` | Recheck freshness and exact delivery token, then consume the issued grant |
 | `turn_checkpoint` | Promote tentative delivery, atomically append bound execution observations, complete the grant, and append a canonical control checkpoint event |
+| `obligation_waive` | Resolve one exact open obligation on the session's bound run under dedicated human-attributed waiver authority |
 
 The bind response supplies the `routing_token` used on later calls. A granted
 turn carries an exact dense task delta under `grant.delivery.delta`. The final
@@ -367,7 +386,8 @@ obligations only against the newest mutation source revision at the evaluated
 run-feed cut. Thus a newest basisless mutation makes the open set waiver-only
 until a later basis-bearing mutation plus passed test arrives; that later test
 may satisfy both the earlier and newer definitions. `work_focus` exposes the
-bounded current obligation summaries and `work_next` deltas use
+canonical bounded `obligation_page`, the same field appears inside
+`work_next.focus`, and `work_next` deltas use
 `obligation_opened`, `obligation_satisfied`, or `obligation_waived` without
 leaking host authority.
 

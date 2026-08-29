@@ -42,6 +42,7 @@ pub const MAX_AGENT_WORK_RESPONSE_BYTES: usize = 12 * 1024;
 const MAX_CHANGE_SECTION_BYTES: usize = 4 * 1024;
 const MAX_READY_SECTION_BYTES: usize = 2 * 1024;
 const MAX_CATALOG_SECTION_BYTES: usize = 3 * 1024;
+const MAX_OBLIGATION_PAGE_BYTES: usize = 4 * 1024;
 const MAX_FOCUS_HISTORY: u32 = 4;
 const MAX_FOCUS_RELATIONS: usize = 8;
 const MAX_FOCUS_MEMORIES: u32 = 8;
@@ -356,8 +357,7 @@ pub struct WorkFocusView {
     pub evidence: Vec<ObjectHash>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_items: Vec<WorkEvidenceSummary>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub obligation_items: Vec<WorkObligationSummary>,
+    pub obligation_page: WorkObligationPage,
     #[serde(default)]
     pub memories: Vec<WorkMemoryIndexEntry>,
     pub history: WorkHistoryView,
@@ -406,6 +406,31 @@ pub struct WorkObligationSummary {
     pub resolution: Option<ObjectHash>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<ObjectHash>,
+    /// Asserted human operator attribution for a waiver. The authority grant
+    /// and free-form waiver reason remain host-private.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waived_by: Option<String>,
+    pub guidance: WorkObligationGuidance,
+}
+
+/// Count- and byte-bounded typed completion obligations. `omitted_count`
+/// makes truncation explicit instead of overloading generic readiness prose.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct WorkObligationPage {
+    pub items: Vec<WorkObligationSummary>,
+    pub omitted_count: usize,
+}
+
+/// Deterministic next action derived from immutable obligation state and its
+/// verification requirement. Waiver authority is intentionally absent.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum WorkObligationGuidance {
+    RecordVerificationThenCheckpoint {
+        requirement: crate::VerificationRequirement,
+        host_waiver_requestable: bool,
+    },
+    None,
 }
 
 /// Bounded actionable input for one required-child completion waiver.
@@ -619,6 +644,7 @@ pub struct WorkUpdateResult {
     pub operation: String,
     pub receipt: WorkMutationReceipt,
     pub obligations: Vec<String>,
+    pub obligation_page: WorkObligationPage,
     pub allowed_next: Vec<String>,
 }
 
@@ -714,6 +740,7 @@ pub struct WorkCompletedReceipt {
     pub work_id: WorkId,
     pub run_id: crate::WorkRunId,
     pub completed_at: DateTime<Utc>,
+    pub obligation_page: WorkObligationPage,
 }
 
 /// Bounded policy refusal returned when an exact completion cut remains open.
@@ -721,8 +748,7 @@ pub struct WorkCompletedReceipt {
 pub struct WorkCompleteRefusal {
     pub code: String,
     pub work_id: WorkId,
-    pub obligations: Vec<crate::OpenWorkObligation>,
-    pub omitted_count: usize,
+    pub obligation_page: WorkObligationPage,
     pub remedy: String,
 }
 
@@ -1647,6 +1673,7 @@ impl LocalWorkService {
             operation: operation.to_owned(),
             receipt: compact_mutation_receipt(&guidance.status.work, control_binding, receipt),
             obligations: compact_obligations(&guidance.status),
+            obligation_page: work_obligation_page(store, work_id)?,
             allowed_next: guidance.allowed_next,
         };
         ensure_agent_response_budget(&result, "work_update")?;
@@ -1683,7 +1710,7 @@ impl LocalWorkService {
         let scoped_key = self.core_operation_key("work_complete", &raw_key, "complete_work")?;
         if let Some(value) = store.work_operation_result_value("complete_work", &scoped_key)? {
             let seal: CompletionSeal = serde_json::from_value(value)?;
-            let result = completion_result(&seal)?;
+            let result = completion_result(&store, &seal)?;
             store.finish_work_protocol_attempt(
                 &self.project_id,
                 &self.session_id,
@@ -1747,7 +1774,7 @@ impl LocalWorkService {
             },
             &DevelopmentNoopRedactor,
         );
-        let result = completion_protocol_result(completion)?;
+        let result = completion_protocol_result(&store, claim.run_id, completion)?;
         store.finish_work_protocol_attempt(
             &self.project_id,
             &self.session_id,
@@ -2288,20 +2315,12 @@ impl LocalWorkService {
             })
             .transpose()?
             .unwrap_or_default();
-        let mut obligation_records = run
+        let obligation_records = run
             .as_ref()
             .map(|run| store.work_run_obligations(run.run_id))
             .transpose()?
             .unwrap_or_default();
-        let obligation_total = obligation_records.len();
-        if obligation_records.len() > MAX_FOCUS_RELATIONS {
-            obligation_records =
-                obligation_records.split_off(obligation_records.len() - MAX_FOCUS_RELATIONS);
-        }
-        let obligation_items = obligation_records
-            .iter()
-            .map(work_obligation_summary)
-            .collect();
+        let obligation_page = work_obligation_page_from_records(obligation_records)?;
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {
@@ -2366,12 +2385,6 @@ impl LocalWorkService {
                 evidence_total - evidence.len(),
             ));
         }
-        if obligation_total > obligation_records.len() {
-            omissions.push(count_omission(
-                WorkNextSection::Focus,
-                obligation_total - obligation_records.len(),
-            ));
-        }
         if memories.len() > usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX) {
             omissions.push(count_omission(
                 WorkNextSection::Focus,
@@ -2413,7 +2426,7 @@ impl LocalWorkService {
                 .collect(),
             evidence,
             evidence_items,
-            obligation_items,
+            obligation_page,
             memories: memories
                 .into_iter()
                 .take(usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX))
@@ -2879,6 +2892,21 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
             None
         }
     });
+    let waived_by = record.resolution.as_ref().and_then(|event| {
+        if let WorkObligationResolution::Waived { waived_by, .. } = &event.resolution {
+            Some(compact_text(waived_by))
+        } else {
+            None
+        }
+    });
+    let guidance = if record.state == WorkObligationState::Open {
+        WorkObligationGuidance::RecordVerificationThenCheckpoint {
+            requirement: record.obligation.requirement.clone(),
+            host_waiver_requestable: true,
+        }
+    } else {
+        WorkObligationGuidance::None
+    };
     WorkObligationSummary {
         obligation_id: record.obligation.obligation_id,
         definition: record.definition_hash.clone(),
@@ -2888,7 +2916,95 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
         triggering_observation: record.obligation.triggering_observation.clone(),
         resolution: record.resolution_hash.clone(),
         evidence,
+        waived_by,
+        guidance,
     }
+}
+
+fn work_obligation_page(
+    store: &SqliteStore,
+    work_id: WorkId,
+) -> Result<WorkObligationPage, StoreError> {
+    let Some(run) = store.latest_work_run(work_id)? else {
+        return Ok(WorkObligationPage::default());
+    };
+    work_obligation_page_from_records(store.work_run_obligations(run.run_id)?)
+}
+
+fn work_obligation_page_for_run(
+    store: &SqliteStore,
+    run_id: WorkRunId,
+    state: Option<WorkObligationState>,
+) -> Result<WorkObligationPage, StoreError> {
+    let records = store
+        .work_run_obligations(run_id)?
+        .into_iter()
+        .filter(|record| state.is_none_or(|expected| record.state == expected))
+        .collect();
+    work_obligation_page_from_records(records)
+}
+
+fn sealed_work_obligation_page(
+    store: &SqliteStore,
+    seal: &CompletionSeal,
+) -> Result<WorkObligationPage, StoreError> {
+    let records = store.work_run_obligations(seal.run_id)?;
+    let mut bindings = records
+        .iter()
+        .map(|record| {
+            let resolution = record.resolution_hash.clone().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "sealed obligation {} has no terminal resolution",
+                    record.obligation.obligation_id.0
+                ))
+            })?;
+            Ok(crate::CompletionObligationBinding {
+                obligation_id: record.obligation.obligation_id,
+                definition: record.definition_hash.clone(),
+                resolution,
+            })
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    bindings.sort_by(|left, right| {
+        left.obligation_id
+            .0
+            .as_bytes()
+            .cmp(right.obligation_id.0.as_bytes())
+            .then_with(|| left.definition.as_str().cmp(right.definition.as_str()))
+    });
+    if seal.obligation_schema_version.is_some() && bindings != seal.obligations {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "completion seal for run {:?} does not match its canonical obligation closure",
+            seal.run_id
+        )));
+    }
+    work_obligation_page_from_records(records)
+}
+
+fn work_obligation_page_from_records(
+    mut records: Vec<crate::storage::WorkObligationRecord>,
+) -> Result<WorkObligationPage, StoreError> {
+    let omitted_count = records.len().saturating_sub(MAX_FOCUS_RELATIONS);
+    if omitted_count > 0 {
+        records.drain(..omitted_count);
+    }
+    let mut page = WorkObligationPage {
+        items: records.iter().map(work_obligation_summary).collect(),
+        omitted_count,
+    };
+    while serde_json::to_vec(&page)?.len() > MAX_OBLIGATION_PAGE_BYTES
+        && trim_obligation_page_once(&mut page)
+    {}
+    Ok(page)
+}
+
+fn trim_obligation_page_once(page: &mut WorkObligationPage) -> bool {
+    if page.items.is_empty() {
+        return false;
+    }
+    page.items.remove(0);
+    page.omitted_count = page.omitted_count.saturating_add(1);
+    true
 }
 
 fn record_byte_omission(response: &mut WorkNextView, section: WorkNextSection) {
@@ -2974,7 +3090,7 @@ fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
         || focus.children.pop().is_some()
         || focus.prerequisites.pop().is_some()
         || focus.handoffs.pop().is_some()
-        || focus.obligation_items.pop().is_some()
+        || trim_obligation_page_once(&mut focus.obligation_page)
         || focus.evidence_items.pop().is_some()
         || focus.evidence.pop().is_some()
 }
@@ -3075,32 +3191,51 @@ fn handoff_metadata(input: &WorkHandoffInput) -> (&'static str, &'static str, &s
     }
 }
 
-fn completion_result(seal: &CompletionSeal) -> Result<WorkCompleteResult, StoreError> {
+fn completion_result(
+    store: &SqliteStore,
+    seal: &CompletionSeal,
+) -> Result<WorkCompleteResult, StoreError> {
     Ok(WorkCompleteResult::Completed(WorkCompletedReceipt {
         seal: crate::CanonicalObject::freeze(seal)?.hash().clone(),
         work_id: seal.work_id,
         run_id: seal.run_id,
         completed_at: seal.completed_at,
+        obligation_page: sealed_work_obligation_page(store, seal)?,
     }))
 }
 
 fn completion_protocol_result(
+    store: &SqliteStore,
+    run_id: WorkRunId,
     completion: Result<CompletionSeal, StoreError>,
 ) -> Result<WorkCompleteResult, StoreError> {
     match completion {
-        Ok(seal) => completion_result(&seal),
+        Ok(seal) => completion_result(store, &seal),
         Err(StoreError::OpenWorkObligations {
             work,
             obligations,
             omitted_count,
-        }) => Ok(WorkCompleteResult::Refused(WorkCompleteRefusal {
-            code: "open_work_obligations".into(),
-            work_id: work,
-            obligations,
-            omitted_count,
-            remedy: "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
-                .into(),
-        })),
+        }) => {
+            let obligation_page =
+                work_obligation_page_for_run(store, run_id, Some(WorkObligationState::Open))?;
+            if obligation_page
+                .items
+                .len()
+                .saturating_add(obligation_page.omitted_count)
+                != obligations.len().saturating_add(omitted_count)
+            {
+                return Err(StoreError::InvalidWorkProjection(
+                    "completion refusal does not match the canonical open-obligation set".into(),
+                ));
+            }
+            Ok(WorkCompleteResult::Refused(WorkCompleteRefusal {
+                code: "open_work_obligations".into(),
+                work_id: work,
+                obligation_page,
+                remedy: "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
+                    .into(),
+            }))
+        }
         Err(error) => Err(error),
     }
 }

@@ -570,6 +570,7 @@ fn run_authority(
                 &WaiveWorkObligationRequest {
                     obligation_id,
                     expected_definition,
+                    waived_by: waived_by.clone(),
                     reason,
                     authority: engram::LifecycleAuthorityDecision {
                         grant: authority_grant,

@@ -6681,7 +6681,7 @@ impl SqliteStore {
                 .and_then(serde_json::Value::as_str)
                 == Some(stored.idempotency_key.as_str())
             && match stored.operation.as_str() {
-                "turn_begin" | "turn_checkpoint" | "lease_acquire" => result
+                "turn_begin" | "turn_checkpoint" | "lease_acquire" | "obligation_waive" => result
                     .get("decision")
                     .and_then(serde_json::Value::as_str)
                     .is_some(),

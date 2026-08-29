@@ -35,7 +35,8 @@ use crate::{
         WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry,
         WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
         WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
-        WorkObligationState, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
+        WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
+        WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
         WorkReadinessReason, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
         WorkSourceSnapshot, WorkTransition,
     },
@@ -138,9 +139,23 @@ struct ObligationProjectionRow {
 struct WorkObligationWaiverFingerprint<'a> {
     obligation_id: WorkObligationId,
     expected_definition: &'a ObjectHash,
+    waived_by: &'a str,
     reason: &'a str,
     authority: &'a LifecycleAuthorityDecision,
     actor: &'a crate::domain::ActorContext,
+    idempotency_key: &'a str,
+}
+
+#[derive(Serialize)]
+struct ControlWorkObligationWaiverFingerprint<'a> {
+    control_schema_version: u16,
+    session_id: &'a SessionId,
+    bind_intent_hash: &'a str,
+    obligation_id: WorkObligationId,
+    expected_definition: &'a ObjectHash,
+    authority_grant: &'a ObjectHash,
+    waived_by: &'a str,
+    reason: &'a str,
     idempotency_key: &'a str,
 }
 
@@ -4051,6 +4066,257 @@ impl SqliteStore {
         Ok(waiver)
     }
 
+    /// Resolves one exact open obligation through a bound host-control session.
+    /// Policy refusals are frozen as typed results under the control-operation
+    /// idempotency key; transport, routing, and integrity faults remain errors.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the session capabilities are invalid, the
+    /// request key conflicts, or canonical storage cannot be verified.
+    #[allow(clippy::too_many_arguments)]
+    pub fn waive_bound_work_obligation<R: Redactor>(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        connection_token: &str,
+        routing_token: &str,
+        obligation_id: WorkObligationId,
+        expected_definition: &ObjectHash,
+        authority_grant: &ObjectHash,
+        waived_by: &str,
+        reason: &str,
+        actor: &crate::domain::ActorContext,
+        idempotency_key: &str,
+        waived_at: DateTime<Utc>,
+        redactor: &R,
+    ) -> Result<WorkObligationWaiverDecision, StoreError> {
+        let request = WaiveWorkObligationRequest {
+            obligation_id,
+            expected_definition: expected_definition.clone(),
+            waived_by: waived_by.to_owned(),
+            reason: reason.to_owned(),
+            authority: LifecycleAuthorityDecision {
+                grant: authority_grant.clone(),
+            },
+            actor: actor.clone(),
+            idempotency_key: idempotency_key.to_owned(),
+            waived_at,
+        };
+        inspect_work_request(redactor, &request)?;
+        let waived_by = normalize_text(&request.waived_by, "obligation waiver actor")?;
+        let reason = normalize_text(&request.reason, "obligation waiver reason")?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        Self::verify_control_connection(&transaction, session_id, connection_token)?;
+        let session = Self::load_control_session_on(&transaction, session_id)?
+            .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
+        Self::verify_control_session(&session, project_id, routing_token)?;
+        if actor.session_id.as_ref() != Some(session_id) || actor.actor_id != session.actor.actor_id
+        {
+            return Err(StoreError::InvalidControlSession(
+                "obligation waiver actor is not the server-fixed control session".into(),
+            ));
+        }
+        let intent = CanonicalObject::freeze(&ControlWorkObligationWaiverFingerprint {
+            control_schema_version: crate::CONTROL_SCHEMA_VERSION,
+            session_id,
+            bind_intent_hash: &session.bind_intent_hash,
+            obligation_id,
+            expected_definition,
+            authority_grant,
+            waived_by: &request.waived_by,
+            reason: &request.reason,
+            idempotency_key,
+        })?;
+        if let Some(replay) = Self::replay_control_operation(
+            &transaction,
+            session_id,
+            "obligation_waive",
+            idempotency_key,
+            intent.hash(),
+        )? {
+            transaction.commit()?;
+            return Ok(replay);
+        }
+        let record = load_work_obligation_by_id_on(&transaction, obligation_id)?;
+        let binding_admitted = session.work_binding.as_ref().is_some_and(|binding| {
+            binding.run_id == record.obligation.run_id
+                && binding.work_id == record.obligation.work_id
+                && binding.root_execution_id == record.obligation.root_execution_id
+        });
+        if !binding_admitted {
+            let decision = WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
+                obligation_id,
+                current_definition: Some(record.definition_hash),
+                remedy: "bind the host control session to the live claim for this obligation run"
+                    .into(),
+            };
+            Self::persist_control_operation(
+                &transaction,
+                session_id,
+                "obligation_waive",
+                idempotency_key,
+                &intent,
+                &decision,
+                waived_at,
+            )?;
+            transaction.commit()?;
+            return Ok(decision);
+        }
+        let binding = session.work_binding.as_ref().ok_or_else(|| {
+            StoreError::InvalidControlProjection(
+                "admitted obligation waiver lost its work binding".into(),
+            )
+        })?;
+        if let Err(error) = validate_control_work_binding_on(
+            &transaction,
+            project_id,
+            session_id,
+            binding,
+            waived_at,
+        ) {
+            if matches!(error, StoreError::ControlWorkBindingStale { .. }) {
+                let decision = WorkObligationWaiverDecision::Refused {
+                    code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
+                    obligation_id,
+                    current_definition: Some(record.definition_hash),
+                    remedy: "reread the live claim, then bind the current work generation".into(),
+                };
+                Self::persist_control_operation(
+                    &transaction,
+                    session_id,
+                    "obligation_waive",
+                    idempotency_key,
+                    &intent,
+                    &decision,
+                    waived_at,
+                )?;
+                transaction.commit()?;
+                return Ok(decision);
+            }
+            return Err(error);
+        }
+        if record.definition_hash != *expected_definition {
+            let decision = WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::DefinitionChanged,
+                obligation_id,
+                current_definition: Some(record.definition_hash),
+                remedy:
+                    "reread obligation_page and retry only after reviewing the current definition"
+                        .into(),
+            };
+            Self::persist_control_operation(
+                &transaction,
+                session_id,
+                "obligation_waive",
+                idempotency_key,
+                &intent,
+                &decision,
+                waived_at,
+            )?;
+            transaction.commit()?;
+            return Ok(decision);
+        }
+        if record.state != WorkObligationState::Open {
+            let decision = WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::ObligationNotOpen,
+                obligation_id,
+                current_definition: Some(record.definition_hash),
+                remedy: "reread obligation_page; this obligation already has a terminal resolution"
+                    .into(),
+            };
+            Self::persist_control_operation(
+                &transaction,
+                session_id,
+                "obligation_waive",
+                idempotency_key,
+                &intent,
+                &decision,
+                waived_at,
+            )?;
+            transaction.commit()?;
+            return Ok(decision);
+        }
+        let item = load_work_item(&transaction, record.obligation.work_id)?;
+        let mut authority_actor = request.actor.clone();
+        authority_actor.actor_id.clone_from(&waived_by);
+        let authority = resolve_work_authority(
+            &transaction,
+            &request.authority,
+            &authority_actor,
+            WorkAuthorityOperation::ObligationWaiver,
+            AuthorityTarget {
+                project_id: &record.obligation.project_id,
+                policy_ref: &item.authority_policy_ref,
+                work_id: Some(record.obligation.work_id),
+                root_id: Some(record.obligation.root_id),
+                run_id: Some(record.obligation.run_id),
+            },
+            waived_at,
+        );
+        if let Err(StoreError::InvalidWork(_)) = authority {
+            let decision = WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
+                obligation_id,
+                current_definition: Some(record.definition_hash),
+                remedy:
+                    "obtain a live obligation_waiver grant for this operator and exact work scope"
+                        .into(),
+            };
+            Self::persist_control_operation(
+                &transaction,
+                session_id,
+                "obligation_waive",
+                idempotency_key,
+                &intent,
+                &decision,
+                waived_at,
+            )?;
+            transaction.commit()?;
+            return Ok(decision);
+        }
+        authority?;
+        let event = WorkObligationResolutionEvent {
+            schema_version: SCHEMA_VERSION,
+            project_id: record.obligation.project_id.clone(),
+            obligation_id,
+            definition: record.definition_hash.clone(),
+            run_id: record.obligation.run_id,
+            resolution: WorkObligationResolution::Waived {
+                authority_grant: authority_grant.clone(),
+                waived_by: waived_by.clone(),
+                reason,
+            },
+            actor: request.actor,
+            created_at: waived_at,
+        };
+        let resolution = append_obligation_resolution_on(&transaction, &record, &event)?;
+        let decision = WorkObligationWaiverDecision::Waived {
+            receipt: WorkObligationWaiverReceipt {
+                obligation_id,
+                definition: record.definition_hash,
+                resolution,
+                state: WorkObligationState::Waived,
+                waived_by,
+                waived_at,
+            },
+        };
+        Self::persist_control_operation(
+            &transaction,
+            session_id,
+            "obligation_waive",
+            idempotency_key,
+            &intent,
+            &decision,
+            waived_at,
+        )?;
+        transaction.commit()?;
+        Ok(decision)
+    }
+
     /// Resolves one exact open obligation through dedicated host/operator
     /// authority. This operation is intentionally absent from the ambient
     /// agent work protocol.
@@ -4066,10 +4332,12 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkObligationResolutionEvent, StoreError> {
         inspect_work_request(redactor, request)?;
+        let waived_by = normalize_text(&request.waived_by, "obligation waiver actor")?;
         let reason = normalize_text(&request.reason, "obligation waiver reason")?;
         let request_object = request_object(&WorkObligationWaiverFingerprint {
             obligation_id: request.obligation_id,
             expected_definition: &request.expected_definition,
+            waived_by: &request.waived_by,
             reason: &request.reason,
             authority: &request.authority,
             actor: &request.actor,
@@ -4101,10 +4369,12 @@ impl SqliteStore {
             )));
         }
         let item = load_work_item(&transaction, record.obligation.work_id)?;
+        let mut authority_actor = request.actor.clone();
+        authority_actor.actor_id.clone_from(&waived_by);
         resolve_work_authority(
             &transaction,
             &request.authority,
-            &request.actor,
+            &authority_actor,
             WorkAuthorityOperation::ObligationWaiver,
             AuthorityTarget {
                 project_id: &record.obligation.project_id,
@@ -4123,6 +4393,7 @@ impl SqliteStore {
             run_id: record.obligation.run_id,
             resolution: WorkObligationResolution::Waived {
                 authority_grant: request.authority.grant.clone(),
+                waived_by,
                 reason,
             },
             actor: request.actor.clone(),
@@ -7694,11 +7965,14 @@ fn validate_obligation_resolution_projection(
         }
         WorkObligationResolution::Waived {
             authority_grant,
+            waived_by,
             reason,
         } => {
             if state != WorkObligationState::Waived
                 || projected_kind != Some("waived")
                 || projected_evidence.is_some()
+                || waived_by.trim().is_empty()
+                || waived_by.trim() != waived_by
                 || reason.trim().is_empty()
                 || reason.trim() != reason
             {
@@ -7711,7 +7985,8 @@ fn validate_obligation_resolution_projection(
                 connection,
                 obligation,
                 authority_grant,
-                &event.actor,
+                waived_by,
+                event.actor.assurance,
                 event.created_at,
             )?;
         }
@@ -7723,7 +7998,8 @@ fn validate_obligation_waiver_authority(
     connection: &Connection,
     obligation: &WorkObligation,
     grant_hash: &ObjectHash,
-    actor: &crate::domain::ActorContext,
+    waived_by: &str,
+    actor_assurance: crate::domain::AssuranceLevel,
     at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
     let grant = load_typed_work_object::<WorkAuthorityGrant>(
@@ -7745,7 +8021,8 @@ fn validate_obligation_waiver_authority(
         run_id: Some(obligation.run_id),
     };
     let valid = grant.project_id == obligation.project_id
-        && grant.subject_actor_id == actor.actor_id
+        && grant.subject_actor_id == waived_by
+        && assurance_covers(actor_assurance, grant.assurance)
         && grant
             .operations
             .contains(&WorkAuthorityOperation::ObligationWaiver)
@@ -16621,20 +16898,20 @@ mod tests {
         };
         assert_eq!(refusal.code, "open_work_obligations");
         assert_eq!(refusal.work_id, work.work_id);
-        assert_eq!(refusal.obligations.len(), 1);
+        assert_eq!(refusal.obligation_page.items.len(), 1);
         assert_eq!(
-            refusal.obligations[0].obligation_id,
+            refusal.obligation_page.items[0].obligation_id,
             expected_obligation.obligation.obligation_id
         );
         assert_eq!(
-            refusal.obligations[0].definition,
+            refusal.obligation_page.items[0].definition,
             expected_obligation.definition_hash
         );
         assert_eq!(
-            refusal.obligations[0].required_check,
+            refusal.obligation_page.items[0].requirement.check_kind,
             VerificationKind::Test
         );
-        assert_eq!(refusal.omitted_count, 0);
+        assert_eq!(refusal.obligation_page.omitted_count, 0);
         assert_eq!(
             refusal.remedy,
             "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
@@ -16867,6 +17144,7 @@ mod tests {
                 &WaiveWorkObligationRequest {
                     obligation_id: waiver_target.obligation.obligation_id,
                     expected_definition: waiver_target.definition_hash.clone(),
+                    waived_by: "operator".into(),
                     reason: "already terminal must not be waived".into(),
                     authority: LifecycleAuthorityDecision {
                         grant: waiver_grant.clone(),
@@ -16904,6 +17182,7 @@ mod tests {
         let waiver_request = WaiveWorkObligationRequest {
             obligation_id: waiver_target.obligation.obligation_id,
             expected_definition: waiver_target.definition_hash.clone(),
+            waived_by: "operator".into(),
             reason: "operator accepted the unverified final mutation".into(),
             authority: LifecycleAuthorityDecision {
                 grant: waiver_grant,
@@ -17061,6 +17340,258 @@ mod tests {
             .verify_all()
             .expect("final obligation integrity report");
         assert!(final_report.is_healthy(), "{final_report:?}");
+    }
+
+    #[test]
+    fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let mut store = SqliteStore::open(&database).expect("store");
+        let planner_grant = install_grant(&mut store, "project-host-waiver", "planner");
+        let waiver_grant = install_grant(&mut store, "project-host-waiver", "human-operator");
+        let work = store
+            .create_work(
+                &root_request("project-host-waiver", "create-host-waiver-work", 1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("create local work");
+        let claim = claim(
+            &mut store,
+            &work,
+            "runner",
+            "claim-host-waiver-work",
+            2,
+            120,
+        );
+        let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
+        let binding = ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        };
+        let mut host_actor = actor("runner");
+        host_actor.run_id = Some(run.run_id.0.to_string());
+        let observation = ExecutionObservation {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding: binding.clone(),
+            session_id: SessionId("runner".into()),
+            grant_id: "host-waiver-test-turn".into(),
+            observation_id: "host-waiver-mutation".into(),
+            action_fingerprint: ObjectHash::from_canonical_bytes(b"host waiver mutation"),
+            effect: EffectClass::MutateLocal,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: true,
+            source_basis: None,
+            observed_at: Some(at(3)),
+            actor: host_actor.clone(),
+            recorded_at: at(3),
+        };
+        {
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("observation transaction");
+            append_control_execution_observation_on(&transaction, &observation)
+                .expect("append mutation and obligation");
+            transaction.commit().expect("commit mutation");
+        }
+        let open = store
+            .work_run_obligations(run.run_id)
+            .expect("open obligation")
+            .pop()
+            .expect("one obligation");
+        let unbound_session = SessionId("unbound-runner".into());
+        let unbound_connection = store
+            .resume_control_connection(&unbound_session, at(4))
+            .expect("resume unbound host connection");
+        let unbound_actor = actor("unbound-runner");
+        let unbound = store
+            .bind_control_session(
+                &work.project_id,
+                "local-work:unbound-host-waiver",
+                "Unbound obligation waiver attempt",
+                &unbound_session,
+                &unbound_connection,
+                &unbound_actor,
+                ControlAssurance::TurnGated,
+                &[EffectClass::Observe],
+                1,
+                "bind-unbound-host-waiver",
+                at(4),
+            )
+            .expect("bind unbound host session");
+        let unbound_refusal = store
+            .waive_bound_work_obligation(
+                &work.project_id,
+                &unbound_session,
+                &unbound_connection,
+                &unbound.routing_token,
+                open.obligation.obligation_id,
+                &open.definition_hash,
+                &waiver_grant,
+                "human-operator",
+                "reviewed the exact obligation",
+                &unbound_actor,
+                "unbound-host-waiver",
+                at(5),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("unbound refusal is typed");
+        assert!(matches!(
+            unbound_refusal,
+            WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
+                ..
+            }
+        ));
+        let session_id = SessionId("runner".into());
+        let connection_token = store
+            .resume_control_connection(&session_id, at(4))
+            .expect("resume host connection");
+        let bound = store
+            .bind_control_session_with_work(
+                &work.project_id,
+                "local-work:host-waiver",
+                "Host-authorized obligation waiver",
+                &session_id,
+                &connection_token,
+                &host_actor,
+                Some(&binding),
+                ControlAssurance::TurnGated,
+                &[EffectClass::Observe, EffectClass::MutateLocal],
+                1,
+                "bind-host-waiver",
+                at(4),
+            )
+            .expect("bind host session");
+        let wrong_definition = store
+            .waive_bound_work_obligation(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &bound.routing_token,
+                open.obligation.obligation_id,
+                &ObjectHash::from_canonical_bytes(b"wrong definition"),
+                &waiver_grant,
+                "human-operator",
+                "reviewed the exact obligation",
+                &host_actor,
+                "host-waiver-wrong-definition",
+                at(5),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("definition mismatch is typed");
+        assert!(matches!(
+            wrong_definition,
+            WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::DefinitionChanged,
+                ..
+            }
+        ));
+        let not_admitted = store
+            .waive_bound_work_obligation(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &bound.routing_token,
+                open.obligation.obligation_id,
+                &open.definition_hash,
+                &planner_grant,
+                "human-operator",
+                "reviewed the exact obligation",
+                &host_actor,
+                "host-waiver-not-admitted",
+                at(5),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("authority refusal is typed");
+        assert!(matches!(
+            not_admitted,
+            WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
+                ..
+            }
+        ));
+        let waived = store
+            .waive_bound_work_obligation(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &bound.routing_token,
+                open.obligation.obligation_id,
+                &open.definition_hash,
+                &waiver_grant,
+                "human-operator",
+                "reviewed the exact obligation",
+                &host_actor,
+                "host-waiver-success",
+                at(6),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("waive obligation");
+        let replay = store
+            .waive_bound_work_obligation(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &bound.routing_token,
+                open.obligation.obligation_id,
+                &open.definition_hash,
+                &waiver_grant,
+                "human-operator",
+                "reviewed the exact obligation",
+                &host_actor,
+                "host-waiver-success",
+                at(7),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("replay host waiver");
+        assert_eq!(replay, waived);
+        let WorkObligationWaiverDecision::Waived { receipt } = waived else {
+            panic!("expected waived receipt");
+        };
+        assert_eq!(receipt.waived_by, "human-operator");
+        let resolved = store
+            .work_run_obligations(run.run_id)
+            .expect("resolved obligation")
+            .pop()
+            .expect("one obligation");
+        let event = resolved.resolution.expect("waiver resolution");
+        assert_eq!(event.actor.actor_id, "runner");
+        assert_eq!(event.actor.session_id, Some(session_id.clone()));
+        assert!(matches!(
+            event.resolution,
+            WorkObligationResolution::Waived { waived_by, .. }
+                if waived_by == "human-operator"
+        ));
+        let already_terminal = store
+            .waive_bound_work_obligation(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &bound.routing_token,
+                open.obligation.obligation_id,
+                &open.definition_hash,
+                &waiver_grant,
+                "human-operator",
+                "reviewed the exact obligation",
+                &host_actor,
+                "host-waiver-terminal",
+                at(8),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("terminal refusal is typed");
+        assert!(matches!(
+            already_terminal,
+            WorkObligationWaiverDecision::Refused {
+                code: WorkObligationWaiverRefusalCode::ObligationNotOpen,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -17565,9 +18096,9 @@ mod tests {
         let focus = work_protocol
             .work_focus(&work.short_ref, at(10))
             .expect("focus after obligation resolution");
-        assert_eq!(focus.obligation_items.len(), 1);
+        assert_eq!(focus.obligation_page.items.len(), 1);
         assert_eq!(
-            focus.obligation_items[0].state,
+            focus.obligation_page.items[0].state,
             WorkObligationState::Satisfied
         );
         let objects_after_attach = store

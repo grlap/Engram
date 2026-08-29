@@ -130,12 +130,16 @@ immutable built-in test obligation on the exact run, even when the action
 failed or supplied no source basis. A later passed test may satisfy it only
 against the newest basis-bearing source mutation at the evaluated feed cut.
 If the newest mutation has no basis, the open obligations remain waiver-only
-until another basis-bearing mutation and test arrive. Focus and dense deltas
-show definitions and terminal satisfaction/waiver events; waiver remains a
-host/operator-only authority command and is not exposed through MCP or
-`work_update`. `work_complete` returns a bounded, durably replayable
-`open_work_obligations` result until every applicable definition is satisfied
-or waived and its typed evidence is acknowledged by the final checkpoint.
+until another basis-bearing mutation and test arrive. Focus, nested next views,
+updates, and both completion outcomes share one bounded `obligation_page`
+with typed guidance and an explicit omission count. Dense deltas still show
+definition and terminal satisfaction/waiver events. Waiver remains host/
+operator-only: the CLI and private JSON-lines channel require dedicated
+authority, while MCP and `work_update` expose no waiver operation. Agent pages
+and host receipts omit the grant and reason. `work_complete` returns a
+durably replayable `open_work_obligations` result until every applicable
+definition is satisfied or waived and its typed evidence is acknowledged by
+the final checkpoint.
 Opening a replacement process rotates an internal connection generation, so a
 still-running predecessor fails with `control_connection_superseded`. Begun
 turns remain checkpoint-required. `session_status.open_grant_id` identifies

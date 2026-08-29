@@ -1085,14 +1085,21 @@ root-work, and run-execution feed objects; query rows are verified projections.
 A passed test satisfies open definitions only against the latest mutation at
 the evaluated run-feed cut. A latest basisless mutation therefore leaves the
 open set waiver-only until a later basis-bearing mutation and passed test; that
-test may satisfy earlier definitions too. Focus and deltas expose bounded,
-authority-redacted summaries. Waiver is host/operator private, requires the
+test may satisfy earlier definitions too. Focus, nested next views, updates,
+and both completion outcomes expose one count- and byte-bounded,
+authority-redacted `obligation_page` with an explicit omission count and
+deterministic typed guidance. Waiver is host/operator private, requires the
 dedicated `ObligationWaiver` authority operation, and is absent from MCP and
-`work_update`. Completion evaluates the cut-aware set at the exact pre-seal
-run-feed position. Open definitions return a bounded, durably replayable
-`open_work_obligations` protocol result. A new seal declares obligation schema
-V1 and binds every applicable definition to its satisfied/waived resolution;
-its final checkpoint acknowledges the matching typed verification evidence.
+`work_update`. The private JSON-lines request is bound to the session's exact
+run and records the server-fixed actor beside an asserted `waived_by` human;
+typed policy refusals are replayable while grant, token, and transport faults
+remain request errors. Completion evaluates the cut-aware set at the exact
+pre-seal run-feed position. Open definitions return a bounded, durably
+replayable `open_work_obligations` protocol result. A new seal declares
+obligation schema V1 and binds every applicable definition to its
+satisfied/waived resolution; success and fresh-session focus reconstruct their
+pages from canonical history, and the final checkpoint acknowledges the
+matching typed verification evidence.
 Required child seals are decoded and checked recursively. Legacy terminal
 seals remain readable, but a new parent refuses a legacy child whose cut
 already contained obligation definitions.

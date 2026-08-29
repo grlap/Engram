@@ -139,6 +139,28 @@ function installWorkGrant(engramHome, actorId) {
   return JSON.parse(granted.stdout).grant;
 }
 
+function installObligationWaiverGrant(engramHome, waivedBy) {
+  const granted = spawnSync(
+    binary,
+    [
+      "--home",
+      engramHome,
+      "authority",
+      "grant",
+      "--subject-actor-id",
+      waivedBy,
+      "--issued-by",
+      "control-dogfood-host",
+      "--allow-obligation-waiver",
+      "--reason",
+      "authorize one reviewed host-private obligation waiver",
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(granted.status, 0, granted.stderr);
+  return JSON.parse(granted.stdout).grant;
+}
+
 function cliWork(engramHome, actorId, grant, operation, input) {
   const args = [
     "--home",
@@ -181,6 +203,33 @@ function cliWorkFocus(engramHome, actorId, grant, workRef) {
   );
   assert.equal(focused.status, 0, focused.stderr);
   return JSON.parse(focused.stdout);
+}
+
+function cliWorkAcknowledge(engramHome, actorId, grant, page) {
+  if (page.delivery_token === undefined) return;
+  const acknowledged = spawnSync(
+    binary,
+    [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      actorId,
+      "--session-id",
+      actorId,
+      "--authority-grant",
+      grant,
+      "next",
+      "--acknowledge-through",
+      String(page.delivered_through),
+      "--acknowledge-token",
+      page.delivery_token,
+      "--sections",
+      "focus",
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(acknowledged.status, 0, acknowledged.stderr);
 }
 
 test("host control survives restart and gates turn dispatch", async () => {
@@ -1105,10 +1154,10 @@ test("work-bound control records observations and rebinds after a stale fence", 
       authorityGrant,
       proposed.work.short_ref,
     );
-    assert.equal(obligationFocus.obligation_items.length, 1);
-    assert.equal(obligationFocus.obligation_items[0].state, "satisfied");
+    assert.equal(obligationFocus.obligation_page.items.length, 1);
+    assert.equal(obligationFocus.obligation_page.items[0].state, "satisfied");
     assert.equal(
-      obligationFocus.obligation_items[0].evidence,
+      obligationFocus.obligation_page.items[0].evidence,
       checkpointed.receipt.verification_evidence[0],
     );
     const conflictingCheckpoint = await client.request({
@@ -1306,6 +1355,44 @@ test("work-bound control records observations and rebinds after a stale fence", 
       "checkpointed",
     );
 
+    const openNext = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "next",
+    );
+    const openNextItem = openNext.focus.obligation_page.items.find(
+      (item) => item.state === "open",
+    );
+    assert.ok(openNextItem, JSON.stringify(openNext.focus.obligation_page));
+    assert.equal(
+      openNextItem.guidance.action,
+      "record_verification_then_checkpoint",
+    );
+    cliWorkAcknowledge(engramHome, actor, authorityGrant, openNext);
+    const openFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      proposed.work.short_ref,
+    );
+    assert.deepEqual(openFocus.obligation_page, openNext.focus.obligation_page);
+    const openUpdate = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "update",
+      {
+        kind: "checkpoint",
+        summary: "checkpoint typed open-obligation guidance",
+        idempotency_key: "bound-open-obligation-guidance-checkpoint",
+      },
+    );
+    assert.ok(
+      openUpdate.obligation_page.items.some((item) => item.state === "open"),
+    );
+    assert.ok(Array.isArray(openUpdate.obligations));
+
     const refusedCompletionInput = {
       capture: {
         summary: "capture the attempted completion cut",
@@ -1325,9 +1412,12 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     assert.equal(refusedCompletion.code, "open_work_obligations");
     assert.equal(refusedCompletion.work_id, proposed.work.work_id);
-    assert.equal(refusedCompletion.obligations.length, 1);
-    assert.equal(refusedCompletion.obligations[0].required_check, "test");
-    assert.equal(refusedCompletion.omitted_count, 0);
+    assert.equal(refusedCompletion.obligation_page.items.length, 1);
+    assert.equal(
+      refusedCompletion.obligation_page.items[0].requirement.check_kind,
+      "test",
+    );
+    assert.equal(refusedCompletion.obligation_page.omitted_count, 0);
     assert.match(refusedCompletion.remedy, /checkpoint_work acknowledging it/);
     assert.deepEqual(
       cliWork(
@@ -1339,6 +1429,87 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ),
       refusedCompletion,
     );
+
+    const staleVerificationTurn = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: rebound.routing_token,
+        idempotency_key: "bound-stale-verification-turn",
+        intent_fingerprint: fingerprint("bound-stale-verification-turn"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(staleVerificationTurn.decision, "grant");
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: rebound.routing_token,
+          grant_id: staleVerificationTurn.grant.grant_id,
+          delivery_tokens: staleVerificationTurn.grant.delivery
+            ? [staleVerificationTurn.grant.delivery.page.delivery_token]
+            : [],
+          idempotency_key: "begin-bound-stale-verification-turn",
+        }),
+      ).decision,
+      "begin",
+    );
+    const staleVerificationCheckpoint = ok(
+      await client.request({
+        operation: "turn_checkpoint",
+        routing_token: rebound.routing_token,
+        grant_id: staleVerificationTurn.grant.grant_id,
+        next_intent: "continue",
+        observations: [
+          {
+            observation_id: "bound-stale-verification",
+            action_fingerprint: fingerprint("bound-stale-verification"),
+            effect: "observe",
+            outcome: "succeeded",
+            source_changed: false,
+            source_basis: {
+              workspace_id: "control-dogfood-workspace",
+              source_revision: "revision-1",
+            },
+            observed_at: "2026-08-28T20:01:30Z",
+          },
+        ],
+        verification_evidence: [
+          {
+            producer_observation: {
+              kind: "observation_id",
+              observation_id: "bound-stale-verification",
+            },
+            check_kind: "test",
+            summary: "stale source verification must not satisfy revision-2",
+            refs: ["command:control-dogfood-stale-check"],
+          },
+        ],
+        idempotency_key: "checkpoint-bound-stale-verification-turn",
+      }),
+    );
+    const staleVerification =
+      staleVerificationCheckpoint.receipt.verification_evidence[0];
+    const staleRefusal = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "complete",
+      {
+        capture: {
+          summary: "checkpoint stale verification without laundering it",
+          refs: ["test:control-dogfood-stale-verification"],
+        },
+        evidence: [staleVerification],
+        acceptance: [
+          { satisfied: true, note: "stale evidence remains completion-ineligible" },
+        ],
+        idempotency_key: "bound-stale-obligation-completion",
+      },
+    );
+    assert.equal(staleRefusal.code, "open_work_obligations");
+    assert.equal(staleRefusal.obligation_page.items[0].state, "open");
 
     const verificationTurn = ok(
       await client.request({
@@ -1422,6 +1593,339 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     assert.equal(completed.work_id, proposed.work.work_id);
     assert.ok(completed.seal);
+    assert.equal(
+      completed.obligation_page.items.filter(
+        (item) => item.state === "satisfied",
+      ).length,
+      2,
+    );
+
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "lease_release",
+          routing_token: rebound.routing_token,
+          lease_id: completionLease.lease.lease_id,
+          idempotency_key: "release-bound-completion-src",
+        }),
+      ).lease_id,
+      completionLease.lease.lease_id,
+    );
+
+    const waiverProposed = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "propose",
+      {
+        kind: "root",
+        title: "Exercise host-private obligation waiver",
+        outcome: "A human-attributed host waiver resolves one exact obligation",
+        acceptance: ["The typed waiver is replayable and agent-inaccessible"],
+        work_kind: "chore",
+        idempotency_key: "waiver-root",
+      },
+    );
+    const waiverClaimed = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "update",
+      {
+        kind: "claim",
+        ttl_seconds: 300,
+        idempotency_key: "waiver-claim",
+      },
+    );
+    const waiverBinding = waiverClaimed.receipt.control_binding;
+    assert.ok(waiverBinding, JSON.stringify(waiverClaimed));
+    const waiverBound = ok(
+      await client.request({
+        operation: "session_bind",
+        external_ref: "local-work:host-waiver-dogfood",
+        title: "Host-private obligation waiver",
+        assurance: "turn_gated",
+        mediated_effects: ["observe", "mutate_local"],
+        work_binding: waiverBinding,
+        capability_map_revision: 1,
+        idempotency_key: "bind-host-waiver-run",
+      }),
+    );
+    const waiverSync = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: waiverBound.routing_token,
+        idempotency_key: "host-waiver-sync",
+        intent_fingerprint: fingerprint("host-waiver-sync"),
+        purpose: "ordinary",
+        requested_effects: ["observe"],
+      }),
+    );
+    assert.equal(waiverSync.decision, "grant");
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: waiverBound.routing_token,
+          grant_id: waiverSync.grant.grant_id,
+          delivery_tokens: waiverSync.grant.delivery
+            ? [waiverSync.grant.delivery.page.delivery_token]
+            : [],
+          idempotency_key: "begin-host-waiver-sync",
+        }),
+      ).decision,
+      "begin",
+    );
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_checkpoint",
+          routing_token: waiverBound.routing_token,
+          grant_id: waiverSync.grant.grant_id,
+          next_intent: "continue",
+          idempotency_key: "checkpoint-host-waiver-sync",
+        }),
+      ).decision,
+      "checkpointed",
+    );
+    const waiverLease = ok(
+      await client.request({
+        operation: "lease_acquire",
+        routing_token: waiverBound.routing_token,
+        kind: "execution",
+        mode: "exclusive",
+        subject: sourceTree,
+        ttl_seconds: 60,
+        idempotency_key: "lease-host-waiver-src",
+      }),
+    );
+    assert.equal(waiverLease.decision, "granted");
+    const waiverMutationTurn = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: waiverBound.routing_token,
+        idempotency_key: "host-waiver-mutation-turn",
+        intent_fingerprint: fingerprint("host-waiver-mutation-turn"),
+        purpose: "ordinary",
+        requested_effects: ["mutate_local"],
+        resource_intents: [libraryFile],
+      }),
+    );
+    assert.equal(waiverMutationTurn.decision, "grant");
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_begin",
+          routing_token: waiverBound.routing_token,
+          grant_id: waiverMutationTurn.grant.grant_id,
+          delivery_tokens: waiverMutationTurn.grant.delivery
+            ? [waiverMutationTurn.grant.delivery.page.delivery_token]
+            : [],
+          idempotency_key: "begin-host-waiver-mutation-turn",
+        }),
+      ).decision,
+      "begin",
+    );
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "turn_checkpoint",
+          routing_token: waiverBound.routing_token,
+          grant_id: waiverMutationTurn.grant.grant_id,
+          next_intent: "continue",
+          observations: [
+            {
+              observation_id: "host-waiver-source-mutation",
+              action_fingerprint: fingerprint("host-waiver-source-mutation"),
+              effect: "mutate_local",
+              outcome: "succeeded",
+              source_changed: true,
+              source_basis: {
+                workspace_id: "control-dogfood-waiver-workspace",
+                source_revision: "waiver-revision-1",
+              },
+              observed_at: "2026-08-28T20:03:00Z",
+            },
+          ],
+          idempotency_key: "checkpoint-host-waiver-mutation-turn",
+        }),
+      ).decision,
+      "checkpointed",
+    );
+    const waiverOpenFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      waiverProposed.work.short_ref,
+    );
+    const waiverOpen = waiverOpenFocus.obligation_page.items.find(
+      (item) => item.state === "open",
+    );
+    assert.ok(waiverOpen, JSON.stringify(waiverOpenFocus.obligation_page));
+
+    const forbiddenAgentWaiver = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        actor,
+        "--authority-grant",
+        authorityGrant,
+        "update",
+        "--input",
+        JSON.stringify({
+          kind: "waive_obligation",
+          obligation_id: waiverOpen.obligation_id,
+          idempotency_key: "agent-must-not-waive-obligation",
+        }),
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.notEqual(forbiddenAgentWaiver.status, 0);
+    assert.match(forbiddenAgentWaiver.stderr, /unknown variant|waive_obligation/);
+
+    const humanOperator = "dogfood-human-operator";
+    const waiverAuthority = installObligationWaiverGrant(
+      engramHome,
+      humanOperator,
+    );
+    const notAdmittedWaiver = ok(
+      await client.request({
+        operation: "obligation_waive",
+        routing_token: waiverBound.routing_token,
+        obligation_id: waiverOpen.obligation_id,
+        expected_definition: waiverOpen.definition,
+        authority_grant: authorityGrant,
+        waived_by: humanOperator,
+        reason: "human reviewed the exact final mutation",
+        idempotency_key: "host-waiver-not-admitted",
+      }),
+    );
+    assert.equal(notAdmittedWaiver.decision, "refused");
+    assert.equal(notAdmittedWaiver.code, "waiver_not_admitted");
+    const wrongDefinitionWaiver = ok(
+      await client.request({
+        operation: "obligation_waive",
+        routing_token: waiverBound.routing_token,
+        obligation_id: waiverOpen.obligation_id,
+        expected_definition: fingerprint("wrong-obligation-definition"),
+        authority_grant: waiverAuthority,
+        waived_by: humanOperator,
+        reason: "human reviewed the exact final mutation",
+        idempotency_key: "host-waiver-wrong-definition",
+      }),
+    );
+    assert.equal(wrongDefinitionWaiver.decision, "refused");
+    assert.equal(wrongDefinitionWaiver.code, "definition_changed");
+    assert.equal(
+      wrongDefinitionWaiver.current_definition,
+      waiverOpen.definition,
+    );
+    const waiverRequest = {
+      operation: "obligation_waive",
+      routing_token: waiverBound.routing_token,
+      obligation_id: waiverOpen.obligation_id,
+      expected_definition: waiverOpen.definition,
+      authority_grant: waiverAuthority,
+      waived_by: humanOperator,
+      reason: "human reviewed the exact final mutation",
+      idempotency_key: "host-waiver-success",
+    };
+    const waived = ok(await client.request(waiverRequest));
+    assert.equal(waived.decision, "waived");
+    assert.equal(waived.receipt.waived_by, humanOperator);
+    assert.equal(waived.receipt.state, "waived");
+    assert.equal(JSON.stringify(waived).includes(waiverAuthority), false);
+    assert.equal(
+      JSON.stringify(waived).includes(waiverRequest.reason),
+      false,
+    );
+    assert.deepEqual(ok(await client.request(waiverRequest)), waived);
+    const terminalWaiver = ok(
+      await client.request({
+        ...waiverRequest,
+        idempotency_key: "host-waiver-already-terminal",
+      }),
+    );
+    assert.equal(terminalWaiver.decision, "refused");
+    assert.equal(terminalWaiver.code, "obligation_not_open");
+
+    const waivedFocus = cliWorkFocus(
+      engramHome,
+      actor,
+      authorityGrant,
+      waiverProposed.work.short_ref,
+    );
+    assert.equal(waivedFocus.obligation_page.items[0].state, "waived");
+    assert.equal(
+      waivedFocus.obligation_page.items[0].waived_by,
+      humanOperator,
+    );
+    assert.equal(
+      JSON.stringify(waivedFocus.obligation_page).includes(waiverAuthority),
+      false,
+    );
+    const waiverCompleted = cliWork(
+      engramHome,
+      actor,
+      authorityGrant,
+      "complete",
+      {
+        capture: {
+          summary: "capture completion after the authorized waiver",
+          refs: ["test:control-dogfood-host-waiver"],
+        },
+        acceptance: [
+          { satisfied: true, note: "the host-private waiver path is verified" },
+        ],
+        idempotency_key: "host-waiver-completion",
+      },
+    );
+    assert.ok(waiverCompleted.seal);
+    assert.equal(waiverCompleted.obligation_page.items[0].state, "waived");
+    assert.equal(
+      waiverCompleted.obligation_page.items[0].waived_by,
+      humanOperator,
+    );
+    assert.equal(
+      ok(
+        await client.request({
+          operation: "lease_release",
+          routing_token: waiverBound.routing_token,
+          lease_id: waiverLease.lease.lease_id,
+          idempotency_key: "release-host-waiver-src",
+        }),
+      ).lease_id,
+      waiverLease.lease.lease_id,
+    );
+
+    const freshSatisfied = cliWorkFocus(
+      engramHome,
+      "fresh-obligation-explainer",
+      authorityGrant,
+      proposed.work.short_ref,
+    );
+    assert.equal(
+      freshSatisfied.obligation_page.items.filter(
+        (item) => item.state === "satisfied",
+      ).length,
+      2,
+    );
+    const freshWaived = cliWorkFocus(
+      engramHome,
+      "fresh-obligation-explainer",
+      authorityGrant,
+      waiverProposed.work.short_ref,
+    );
+    assert.equal(freshWaived.obligation_page.items[0].state, "waived");
+    assert.equal(
+      freshWaived.obligation_page.items[0].waived_by,
+      humanOperator,
+    );
 
     const doctor = spawnSync(binary, ["--home", engramHome, "doctor"], {
       cwd: root,
