@@ -34,6 +34,59 @@ function fingerprint(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+async function holdSqliteWriter(database) {
+  const helper = String.raw`
+    import { DatabaseSync } from "node:sqlite";
+    const database = new DatabaseSync(process.argv.at(-1));
+    database.exec("BEGIN IMMEDIATE");
+    process.stdout.write("ready\n");
+    process.stdin.resume();
+    process.stdin.on("end", () => {
+      database.exec("ROLLBACK");
+      database.close();
+    });
+  `;
+  const child = spawn(
+    process.execPath,
+    ["--no-warnings", "--input-type=module", "--eval", helper, database],
+    { cwd: root, stdio: ["pipe", "pipe", "pipe"] },
+  );
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString("utf8");
+  });
+  await new Promise((resolvePromise, reject) => {
+    let output = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`SQLite writer helper timed out: ${stderr}`));
+    }, 5000);
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString("utf8");
+      if (!output.includes("ready\n")) return;
+      clearTimeout(timer);
+      resolvePromise();
+    });
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      reject(
+        new Error(
+          `SQLite writer helper exited code=${code} signal=${signal}: ${stderr}`,
+        ),
+      );
+    });
+  });
+  return {
+    close() {
+      if (child.exitCode !== null) return Promise.resolve();
+      return new Promise((resolvePromise) => {
+        child.once("exit", resolvePromise);
+        child.stdin.end();
+      });
+    },
+  };
+}
+
 function canonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) {
@@ -255,6 +308,7 @@ test("host control survives restart and gates turn dispatch", async () => {
   let client;
   let peer;
   let advisory;
+  let sqliteWriter;
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
       cwd: root,
@@ -934,12 +988,22 @@ test("host control survives restart and gates turn dispatch", async () => {
     assert.equal(wrongToken.status, "error");
     assert.equal(wrongToken.error.code, "control_session_token_mismatch");
 
+    const database = join(
+      engramHome,
+      "projects",
+      fingerprint(projectId),
+      "engram.db",
+    );
+    sqliteWriter = await holdSqliteWriter(database);
     const doctor = spawnSync(binary, ["--home", engramHome, "doctor"], {
       cwd: root,
       encoding: "utf8",
     });
     assert.equal(doctor.status, 0, doctor.stderr);
+    await sqliteWriter.close();
+    sqliteWriter = undefined;
   } finally {
+    await sqliteWriter?.close();
     await advisory?.close();
     await peer?.close();
     await client?.close();

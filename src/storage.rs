@@ -574,6 +574,12 @@ struct InitialControlPolicy {
     reason: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OpenMigrationNeed {
+    Current,
+    NeedsWrite,
+}
+
 struct StoredTurnGrant {
     grant: IssuedTurnGrant,
     state: TurnGrantState,
@@ -749,17 +755,31 @@ impl SqliteStore {
         )
     }
 
+    fn from_connection(
+        connection: Connection,
+        host_path_policy: HostPathPolicy,
+        initial_control_policy: Option<InitialControlPolicy>,
+    ) -> Result<Self, StoreError> {
+        Self::from_connection_with_busy_timeout(
+            connection,
+            host_path_policy,
+            initial_control_policy,
+            Duration::from_secs(5),
+        )
+    }
+
     #[allow(
         clippy::if_not_else,
         clippy::too_many_lines,
         reason = "the cold-schema branch stays adjacent to the complete idempotent DDL for auditability"
     )]
-    fn from_connection(
+    fn from_connection_with_busy_timeout(
         mut connection: Connection,
         host_path_policy: HostPathPolicy,
         initial_control_policy: Option<InitialControlPolicy>,
+        busy_timeout: Duration,
     ) -> Result<Self, StoreError> {
-        connection.busy_timeout(Duration::from_secs(5))?;
+        connection.busy_timeout(busy_timeout)?;
         work::preflight_schema(&connection)?;
         if Self::sqlite_table_exists(&connection, "task_changes")? {
             Self::verify_task_change_cursor_schema(&connection)?;
@@ -1346,10 +1366,95 @@ impl SqliteStore {
         policy_preexisted: bool,
         initial_control_policy: Option<InitialControlPolicy>,
     ) -> Result<(), StoreError> {
+        let snapshot = connection.unchecked_transaction()?;
+        let need = Self::control_policy_migration_need_on(
+            &snapshot,
+            policy_preexisted,
+            initial_control_policy.as_ref(),
+        )?;
+        snapshot.commit()?;
+        if need == OpenMigrationNeed::Current {
+            return Ok(());
+        }
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::migrate_control_policy_on(&transaction, policy_preexisted, initial_control_policy)?;
+        if Self::control_policy_migration_need_on(
+            &transaction,
+            policy_preexisted,
+            initial_control_policy.as_ref(),
+        )? == OpenMigrationNeed::NeedsWrite
+        {
+            Self::migrate_control_policy_on(
+                &transaction,
+                policy_preexisted,
+                initial_control_policy,
+            )?;
+        }
         transaction.commit()?;
         Ok(())
+    }
+
+    fn control_policy_migration_need_on(
+        connection: &Connection,
+        policy_preexisted: bool,
+        initial_control_policy: Option<&InitialControlPolicy>,
+    ) -> Result<OpenMigrationNeed, StoreError> {
+        let schema_version = connection
+            .query_row(
+                "SELECT schema_version FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        match schema_version {
+            Some(CONTROL_POLICY_STATE_SCHEMA_VERSION) => {
+                let current = Self::verify_control_policy_history(connection)?;
+                let (_, policy, _) = Self::load_control_policy_head(connection)?;
+                Self::validate_migratable_active_control_policy(&policy)?;
+                if initial_control_policy
+                    .is_some_and(|initial| initial.required_assurance != current.required_assurance)
+                {
+                    return Err(StoreError::InvalidControlProjection(
+                        "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                            .into(),
+                    ));
+                }
+                if current.supported_effects != Self::builtin_control_effects()
+                    || current.grant_ttl_seconds != BUILTIN_CONTROL_GRANT_TTL_SECONDS
+                {
+                    return Ok(OpenMigrationNeed::NeedsWrite);
+                }
+                Self::validate_active_control_policy(&policy)?;
+                let rule_set = current.obligation_rule_set.as_ref().ok_or_else(|| {
+                    StoreError::InvalidControlProjection(
+                        "current control policy has no obligation rule-set selection".into(),
+                    )
+                })?;
+                Self::load_obligation_rule_set_on(connection, rule_set)?;
+                Ok(OpenMigrationNeed::Current)
+            }
+            Some(LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION) => {
+                let current = Self::verify_control_policy_history(connection)?;
+                let (_, policy, _) = Self::load_control_policy_head(connection)?;
+                Self::validate_migratable_active_control_policy(&policy)?;
+                if initial_control_policy
+                    .is_some_and(|initial| initial.required_assurance != current.required_assurance)
+                {
+                    return Err(StoreError::InvalidControlProjection(
+                        "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                            .into(),
+                    ));
+                }
+                Ok(OpenMigrationNeed::NeedsWrite)
+            }
+            Some(1) => Ok(OpenMigrationNeed::NeedsWrite),
+            None if !policy_preexisted => Ok(OpenMigrationNeed::NeedsWrite),
+            None => Err(StoreError::InvalidControlProjection(
+                "control policy singleton disappeared from an established store".into(),
+            )),
+            Some(other) => Err(StoreError::InvalidControlProjection(format!(
+                "control policy state schema {other} is not supported"
+            ))),
+        }
     }
 
     #[allow(
@@ -1364,27 +1469,6 @@ impl SqliteStore {
         let initial_required_assurance = initial_control_policy
             .as_ref()
             .map(|policy| policy.required_assurance);
-        let schema_version: Option<i64> = connection
-            .query_row(
-                "SELECT schema_version FROM control_policy_state WHERE singleton = 1",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if schema_version == Some(CONTROL_POLICY_STATE_SCHEMA_VERSION) {
-            let (policy, _, _) = Self::load_control_policy_head(connection)?;
-            if initial_required_assurance
-                .is_some_and(|requested| requested != policy.required_assurance)
-            {
-                return Err(StoreError::InvalidControlProjection(
-                    "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
-                        .into(),
-                ));
-            }
-            let policy = Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
-            Self::upgrade_builtin_obligation_rules_on(connection, policy, Utc::now())?;
-            return Ok(());
-        }
         let projected_state: Option<(i64, String, String, i64)> = connection
             .query_row(
                 "SELECT schema_version, required_assurance,
@@ -1409,7 +1493,8 @@ impl SqliteStore {
                         .into(),
                 ));
             }
-            Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
+            let policy = Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
+            Self::upgrade_builtin_obligation_rules_on(connection, policy, Utc::now())?;
             return Ok(());
         }
         let (schema_version, projected_assurance, projected_effects_json, projected_grant_ttl) =
@@ -2249,10 +2334,44 @@ impl SqliteStore {
         connection: &mut Connection,
         expected: HostPathPolicy,
     ) -> Result<(), StoreError> {
+        let snapshot = connection.unchecked_transaction()?;
+        let need = Self::host_path_policy_migration_need_on(&snapshot, expected)?;
+        snapshot.commit()?;
+        if need == OpenMigrationNeed::Current {
+            return Ok(());
+        }
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        Self::bind_host_path_policy_on(&transaction, expected)?;
+        if Self::host_path_policy_migration_need_on(&transaction, expected)?
+            == OpenMigrationNeed::NeedsWrite
+        {
+            Self::bind_host_path_policy_on(&transaction, expected)?;
+        }
         transaction.commit()?;
         Ok(())
+    }
+
+    fn host_path_policy_migration_need_on(
+        connection: &Connection,
+        expected: HostPathPolicy,
+    ) -> Result<OpenMigrationNeed, StoreError> {
+        Self::preflight_host_path_policy(connection, expected)?;
+        let table_exists = Self::sqlite_table_exists(connection, "control_host_path_policy")?;
+        if !table_exists {
+            return Ok(OpenMigrationNeed::NeedsWrite);
+        }
+        let stored = connection
+            .query_row(
+                "SELECT case_fold_paths, windows_alias_rules
+                 FROM control_host_path_policy WHERE singleton = 1",
+                [],
+                |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .optional()?;
+        Ok(if stored.is_some() {
+            OpenMigrationNeed::Current
+        } else {
+            OpenMigrationNeed::NeedsWrite
+        })
     }
 
     fn bind_host_path_policy_on(
@@ -9736,6 +9855,62 @@ mod tests {
                 .expect("open read-only SQLite connection");
         SqliteStore::from_connection(connection, HostPathPolicy::host_default(), None)
             .expect("current schema opens without a write transaction");
+    }
+
+    #[test]
+    fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("engram.db");
+        drop(SqliteStore::open(&database).expect("initialize current store"));
+
+        let mut blocker = Connection::open(&database).expect("open blocking connection");
+        let blocking_transaction = blocker
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("hold the SQLite writer slot");
+        let current = Connection::open(&database).expect("open current-store connection");
+        drop(
+            SqliteStore::from_connection_with_busy_timeout(
+                current,
+                HostPathPolicy::host_default(),
+                None,
+                Duration::from_millis(25),
+            )
+            .expect("a current warm open remains read-only while another writer is active"),
+        );
+        blocking_transaction
+            .rollback()
+            .expect("release the SQLite writer slot");
+
+        let repair = Connection::open(&database).expect("open repair fixture connection");
+        repair
+            .execute("DELETE FROM control_host_path_policy", [])
+            .expect("remove the recoverable empty-store path binding");
+        drop(repair);
+
+        let mut blocker = Connection::open(&database).expect("reopen blocking connection");
+        let blocking_transaction = blocker
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("hold the writer slot across the repair attempt");
+        let candidate = Connection::open(&database).expect("open repair candidate connection");
+        let result = SqliteStore::from_connection_with_busy_timeout(
+            candidate,
+            HostPathPolicy::host_default(),
+            None,
+            Duration::from_millis(25),
+        );
+        let Err(StoreError::Sqlite(error)) = result else {
+            panic!("a required path-policy binding must contend for the writer slot");
+        };
+        assert!(matches!(
+            error.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+        ));
+        blocking_transaction
+            .rollback()
+            .expect("release the writer slot after the negative probe");
+        drop(blocker);
+
+        drop(SqliteStore::open(&database).expect("retry and persist the required binding"));
     }
 
     #[test]
