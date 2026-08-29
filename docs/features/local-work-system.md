@@ -182,6 +182,16 @@ parent cannot cite a legacy child seal when that child's cut already contained
 obligation definitions. Legacy terminal seals remain readable and are reported
 as legacy rather than treated as missing bindings.
 
+New seals also declare environment schema V1 and bind the exact sorted,
+distinct set of environment-evidence hashes visible at the same dense cut.
+The set is capped at 64 and contains hashes only: canonical toolchain,
+sandbox/image, workspace, and capability-map components remain in their own
+evidence objects. Pre-environment seals retain their original canonical bytes,
+decode with an empty environment basis, and are surfaced as legacy by
+diagnostics rather than rewritten. Environment identity is currently audit
+evidence; the built-in test obligation does not yet require a particular
+environment hash.
+
 Optional report assembly therefore uses a distinct post-completion authority:
 
 ```text
@@ -249,6 +259,7 @@ Every completed run has a `CompletionSeal`: accepted work revision, run and
 claim fences, dense completion-cut position, executor checkpoint state,
 reconciled action outcomes, released/transferred resource leases, acceptance
 results, evidence hashes, and the exact terminal obligation basis. The shipped
+seal also carries the exact bounded environment-evidence hash set at that cut.
 `work_complete` requires the linked
 action-outcome and resource-lease drain sets to be empty, terminalizes the work
 claim, and seals atomically. A root seal also consumes each required child seal

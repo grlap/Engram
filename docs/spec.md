@@ -1069,12 +1069,16 @@ action/shared/external/lifecycle authority are not yet shipped;
 
 For a work-bound begun turn, the private checkpoint may atomically append up to
 64 host execution observations, mint up to 16 typed verification objects, and
-mint up to four opaque environment identities. Verification derives its
+mint up to four source-bound environment identities. Verification derives its
 source/run/session/check/result/time binding from a producer observation and
-is evaluated against the latest mutation at the current run-feed cut.
-`source_revision` fingerprints committed plus dirty content; workspace identity
-is audit context rather than an anti-stale equality constraint. A later source
-revision reopens the requirement. Agent-authored generic evidence never
+may link an environment by object hash or same-request index. Environment
+evidence may retain an opaque legacy fingerprint or supply a bounded closed
+component identity: toolchain, optional sandbox/image, workspace id, and the
+bound session's capability-map revision. Engram derives the component
+fingerprint and rejects a workspace, revision, run, or capability-map mismatch.
+These fields are asserted host context, not attestation, and must not contain
+secrets. `source_revision` fingerprints committed plus dirty content. A later
+source revision reopens the requirement. Agent-authored generic evidence never
 satisfies verification; the work protocol may only attach an existing typed
 hash to the focused run.
 
@@ -1100,6 +1104,11 @@ obligation schema V1 and binds every applicable definition to its
 satisfied/waived resolution; success and fresh-session focus reconstruct their
 pages from canonical history, and the final checkpoint acknowledges the
 matching typed verification evidence.
+The current built-in requirement does not pin an environment hash. New seals
+nevertheless declare environment schema V1 and bind the sorted, distinct
+environment-evidence hashes at or before the exact dense cut, with a maximum
+of 64 and without copying component bytes. Older seals decode unchanged and
+are reported as legacy.
 Required child seals are decoded and checked recursively. Legacy terminal
 seals remain readable, but a new parent refuses a legacy child whose cut
 already contained obligation definitions.
@@ -1212,7 +1221,9 @@ supplied a required child seal or authorized omission, reconciled every action
 outcome, released or transferred resource leases, contributed, and satisfied
 acceptance, and closed every obligation applicable at the exact completion cut
 with a bound terminal resolution—or a human-authorized waiver records the
-omission. Reopening the root before report
+omission. New seals also cite the exact bounded environment-evidence hash set
+at that cut; the component objects remain separate canonical evidence.
+Reopening the root before report
 freeze supersedes that run and aborts assembly; reopening after `report_ready`
 requires a superseding report rather than mutating frozen bytes.
 

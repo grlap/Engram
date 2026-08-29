@@ -115,9 +115,14 @@ A host-private JSON-lines service now provides a working `session_bind →
 turn_evaluate → turn_begin → turn_checkpoint` loop. It can bind the session to
 an exact live `WorkRun` claim and atomically record host execution observations
 and host-minted verification/environment evidence on that run at the control
-checkpoint. Verification is bound to the exact check, run, and full-content
-source revision; a later mutation makes it stale, while workspace identity is
-audit context only. Claim ownership is the exact control session id. The claim
+checkpoint. When the host supplies bounded environment components (toolchain,
+optional sandbox/image identity, workspace id, and capability-map revision),
+Engram derives and checks their canonical fingerprint and rejects a workspace
+or bound-session capability-map mismatch. Verification may cite that exact
+environment object, while its anti-stale decision remains bound to the check,
+run, and full-content source revision; a later mutation makes it stale. These
+values are asserted host facts, not attestation, and must not contain secrets.
+Claim ownership is the exact control session id. The claim
 receipt and focus view expose a paste-ready
 root/work/run/claim/fence tuple, so the host never needs to query SQLite to
 construct the binding. It persists routing,
@@ -139,7 +144,9 @@ authority, while MCP and `work_update` expose no waiver operation. Agent pages
 and host receipts omit the grant and reason. `work_complete` returns a
 durably replayable `open_work_obligations` result until every applicable
 definition is satisfied or waived and its typed evidence is acknowledged by
-the final checkpoint.
+the final checkpoint. New completion seals also bind the sorted, distinct
+environment-evidence hashes visible at their dense run-feed cut (at most 64),
+without copying toolchain or sandbox bytes into the seal.
 Opening a replacement process rotates an internal connection generation, so a
 still-running predecessor fails with `control_connection_superseded`. Begun
 turns remain checkpoint-required. `session_status.open_grant_id` identifies

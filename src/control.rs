@@ -100,6 +100,14 @@ pub fn match_verification_evidence(
     {
         return Err(VerificationEvidenceMismatch::CheckFingerprintMismatch);
     }
+    if input
+        .requirement
+        .required_environment
+        .as_ref()
+        .is_some_and(|required| evidence.environment.as_ref() != Some(required))
+    {
+        return Err(VerificationEvidenceMismatch::EnvironmentMismatch);
+    }
     if evidence.result != VerificationResult::Passed {
         return Err(VerificationEvidenceMismatch::ResultNotPassed);
     }
@@ -136,6 +144,7 @@ pub fn evaluate_builtin_obligation_rules(
         VerificationRequirement {
             check_kind: crate::domain::VerificationKind::Test,
             check_fingerprint: None,
+            required_environment: None,
         },
     )]
 }
@@ -2002,6 +2011,7 @@ mod tests {
             session_id,
             producer_observation: hash("producer observation"),
             source_basis: producer.source_basis.clone().unwrap(),
+            environment: None,
             check_kind: VerificationKind::Test,
             check_fingerprint: producer.action_fingerprint.clone(),
             result: VerificationResult::Passed,
@@ -2020,6 +2030,7 @@ mod tests {
         let requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: Some(evidence.check_fingerprint.clone()),
+            required_environment: None,
         };
         let exact = VerificationEvidenceMatchInput {
             candidate_kind: WorkEvidenceKind::Verification,
@@ -2034,6 +2045,7 @@ mod tests {
         let kind_only_requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: None,
+            required_environment: None,
         };
         assert_eq!(
             match_verification_evidence(&VerificationEvidenceMatchInput {
@@ -2045,6 +2057,7 @@ mod tests {
         let wrong_check_requirement = VerificationRequirement {
             check_kind: VerificationKind::Build,
             check_fingerprint: None,
+            required_environment: None,
         };
         assert_eq!(
             match_verification_evidence(&VerificationEvidenceMatchInput {

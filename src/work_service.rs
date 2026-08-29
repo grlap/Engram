@@ -389,6 +389,10 @@ pub struct WorkEvidenceSummary {
     pub verification_result: Option<VerificationResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environment_fingerprint: Option<ObjectHash>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<ObjectHash>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment_components: Option<crate::EnvironmentComponents>,
     pub summary: String,
     pub created_at: DateTime<Utc>,
 }
@@ -2845,6 +2849,8 @@ fn work_evidence_summary(
                 check_fingerprint: None,
                 verification_result: None,
                 environment_fingerprint: None,
+                environment: None,
+                environment_components: None,
                 summary: compact_text(&evidence.summary),
                 created_at: evidence.created_at,
             })
@@ -2861,6 +2867,8 @@ fn work_evidence_summary(
                 check_fingerprint: Some(evidence.check_fingerprint),
                 verification_result: Some(evidence.result),
                 environment_fingerprint: None,
+                environment: evidence.environment,
+                environment_components: None,
                 summary: compact_text(&evidence.summary),
                 created_at: evidence.completed_at,
             })
@@ -2877,6 +2885,8 @@ fn work_evidence_summary(
                 check_fingerprint: None,
                 verification_result: None,
                 environment_fingerprint: Some(evidence.environment_fingerprint),
+                environment: None,
+                environment_components: evidence.components,
                 summary: "host-recorded environment identity".into(),
                 created_at: evidence.observed_at,
             })
@@ -3488,8 +3498,14 @@ fn agent_change_object(
                 revision: Some(evidence.binding.work_revision),
                 change_kind: "verification_evidence".into(),
                 summary: compact_text(&format!(
-                    "{:?} {:?}; source_revision={}",
-                    evidence.check_kind, evidence.result, evidence.source_basis.source_revision
+                    "{:?} {:?}; source_revision={}; environment={}",
+                    evidence.check_kind,
+                    evidence.result,
+                    evidence.source_basis.source_revision,
+                    evidence
+                        .environment
+                        .as_ref()
+                        .map_or("none", ObjectHash::as_str)
                 )),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 created_at: evidence.completed_at,
@@ -3503,6 +3519,18 @@ fn agent_change_object(
                     "environment evidence is bound outside its project work item".into(),
                 ));
             }
+            let component_summary = evidence.components.as_ref().map_or_else(
+                || "opaque_components".into(),
+                |components| {
+                    format!(
+                        "toolchain={}; sandbox={}; workspace={}; capability_map_revision={}",
+                        components.toolchain,
+                        components.sandbox.as_deref().unwrap_or("none"),
+                        components.workspace_id,
+                        components.capability_map_revision
+                    )
+                },
+            );
             Ok(WorkChangeProjection::Visible(WorkChangeSummary {
                 schema_version: evidence.schema_version,
                 object_kind: object_kind.into(),
@@ -3511,8 +3539,10 @@ fn agent_change_object(
                 revision: Some(evidence.binding.work_revision),
                 change_kind: "environment_evidence".into(),
                 summary: compact_text(&format!(
-                    "environment {}; source_revision={}",
-                    evidence.environment_fingerprint, evidence.source_basis.source_revision
+                    "environment {}; source_revision={}; {}",
+                    evidence.environment_fingerprint,
+                    evidence.source_basis.source_revision,
+                    component_summary
                 )),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 created_at: evidence.observed_at,

@@ -208,9 +208,12 @@ soon as the agent starts.
    or action fingerprint, effect and outcome, observed state change, source
    and workspace basis); `VerificationEvidence` (tests, reviews, acceptance
    checks — the kind that discharges an obligation, bound to the obligation
-   and to the source state actually verified); `EnvironmentEvidence` (source
-   revision and workspace identity plus toolchain, sandbox, or image
-   identity). An obligation names the kind that satisfies it; a seal over the
+   and to the source state actually verified, optionally linked to the exact
+   environment object); `EnvironmentEvidence` (source revision and workspace
+   identity plus a canonical toolchain, sandbox/image, workspace, and
+   capability-map component identity). Component values are asserted host
+   context, not attestation. An obligation names the kind that satisfies it;
+   a seal over the
    wrong kind is not a seal, and today's generic `WorkEvidence` may remain
    narrative or acceptance support but never discharges a verification
    obligation.
@@ -251,8 +254,9 @@ capability requirements and packet assignment do not.
    rewriting prior policy history; an `advisory` run of the same sequence is
    the integration test, not the acceptance test.
 3. Record a source mutation, observe `work_complete` refuse the open built-in
-   test obligation, record matching host verification, checkpoint that typed
-   evidence, and freeze the exact obligation-bound `CompletionSeal`. Then
+   test obligation, record matching host verification linked to canonical
+   environment evidence, checkpoint that typed evidence, and freeze the exact
+   obligation and bounded environment basis in `CompletionSeal`. Then
    exercise the report path; until fenced report assembly and a real
    side-effecting adapter exist, the dummy receipt does not claim the ticket
    was updated.
@@ -270,11 +274,11 @@ capability requirements and packet assignment do not.
   capability map at bind. Today `session_bind` carries only
   `capability_map_revision`; work items have no requirement field and no
   matcher exists.
-- **Environment fingerprint as required seal evidence.** Today
-  `CompletionSeal` binds the run-feed cut, child seals or waivers,
-  contributions, acceptance, evidence, and a zero-linked-state
-  `CompletionDrainAttestation`; the environment is not a required evidence
-  kind.
+- **Environment pinning in configurable obligations.** Environment components,
+  verification links, and the seal's exact bounded environment-hash set ship.
+  The built-in source-change/test rule leaves `required_environment` empty; a
+  policy that requires a particular environment hash remains part of the
+  planned configurable rule model.
 - **General obligation policies.** The built-in source-change/test rule,
   immutable definitions and resolutions, host waiver, exact seal bindings, and
   named completion refusal ship. Configurable triggers, conditions, evidence

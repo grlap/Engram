@@ -34,22 +34,23 @@ use crate::{
         ContextPacketPayload, ControlAssurance, ControlDelivery, ControlEpochs, ControlHealth,
         ControlPolicy, ControlSessionBinding, ControlSessionStatus, ControlTurnBeginDecision,
         ControlTurnCheckpointDecision, ControlTurnDecision, ControlWorkBinding, Delivery,
-        DeliveryPage, DeltaItem, EffectClass, EnvironmentEvidence, EnvironmentEvidenceInput,
-        ExecutionObservation, ExecutionObservationInput, ExecutionObservationReference,
-        ExecutionOutcome, HostPathPolicy, IssuedTurnGrant, LocalTask, MemoryAssertionEvent,
-        MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus,
-        MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
-        ObservedTurnDecision, OpenWorkObligation, PacketSafety, ParticipantMembership,
-        ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION,
-        Scope, Sensitivity, SessionId, SessionPhase, TaskAdmissionEpoch, TaskBindReceipt,
-        TaskClaimEvent, TaskDelta, TaskId, TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState,
-        TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
-        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
-        TurnEvaluationInput, TurnGrantState, TurnIntent, TurnNextIntent, VerificationEvidence,
+        DeliveryPage, DeltaItem, EffectClass, EnvironmentComponents, EnvironmentEvidence,
+        EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservation,
+        ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome, HostPathPolicy,
+        IssuedTurnGrant, LocalTask, MemoryAssertionEvent, MemoryContradictionEvent,
+        MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus, MemorySummary,
+        MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, ObservedTurnDecision,
+        OpenWorkObligation, PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision,
+        ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId,
+        SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId,
+        TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision,
+        TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
+        TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+        TurnGrantState, TurnIntent, TurnNextIntent, VerificationEvidence,
         VerificationEvidenceInput, VerificationKind, VerificationResult, WorkLease,
         WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
     },
-    memory::{Redactor, activation_policy, classify_note},
+    memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
 };
 
 #[derive(Serialize)]
@@ -273,6 +274,12 @@ pub enum StoreError {
     ControlObservationScopeMismatch { observation_id: String },
     #[error("verification producer observation {0:?} cannot be resolved for this checkpoint")]
     VerificationProducerObservationNotFound(String),
+    #[error("environment fingerprint does not match the canonical component identity")]
+    EnvironmentFingerprintMismatch,
+    #[error("environment evidence {0:?} cannot be resolved for this checkpoint")]
+    EnvironmentEvidenceNotFound(String),
+    #[error("environment evidence {0:?} does not match the verification run/source basis")]
+    EnvironmentBasisMismatch(String),
     #[error("turn grant {0:?} does not exist")]
     ControlTurnGrantNotFound(String),
     #[error("work lease {0:?} does not exist")]
@@ -3850,7 +3857,12 @@ impl SqliteStore {
         now: DateTime<Utc>,
     ) -> Result<ControlTurnCheckpointDecision, StoreError> {
         validate_execution_observation_inputs(observations)?;
-        validate_typed_evidence_inputs(verification_evidence, environment_evidence, now)?;
+        validate_typed_evidence_inputs(
+            verification_evidence,
+            environment_evidence,
+            now,
+            &DevelopmentNoopRedactor,
+        )?;
         let intent_object = CanonicalObject::freeze(&ControlTurnCheckpointFingerprint {
             control_schema_version: CONTROL_SCHEMA_VERSION,
             session_id,
@@ -3945,6 +3957,38 @@ impl SqliteStore {
                     execution_observations.push(hash);
                 }
                 let binding = binding.as_ref();
+                let mut environment_hashes = Vec::with_capacity(environment_evidence.len());
+                let mut environment_records = Vec::with_capacity(environment_evidence.len());
+                for input in environment_evidence {
+                    let binding = binding.ok_or_else(|| {
+                        StoreError::InvalidControlSession(
+                            "environment evidence lost its work binding".into(),
+                        )
+                    })?;
+                    if input.components.as_ref().is_some_and(|components| {
+                        components.capability_map_revision != session.capability_map_revision
+                    }) {
+                        return Err(StoreError::EnvironmentBasisMismatch(
+                            input.environment_fingerprint.to_string(),
+                        ));
+                    }
+                    let evidence = EnvironmentEvidence {
+                        schema_version: SCHEMA_VERSION,
+                        project_id: project_id.clone(),
+                        binding: binding.clone(),
+                        session_id: session_id.clone(),
+                        source_basis: input.source_basis.clone(),
+                        environment_fingerprint: input.environment_fingerprint.clone(),
+                        components: input.components.clone(),
+                        observed_at: input.observed_at,
+                        actor: session.actor.clone(),
+                        recorded_at: now,
+                    };
+                    let hash =
+                        work::append_control_environment_evidence_on(&transaction, &evidence)?;
+                    environment_hashes.push(hash.clone());
+                    environment_records.push((hash, evidence));
+                }
                 let mut verification_hashes = Vec::with_capacity(verification_evidence.len());
                 for input in verification_evidence {
                     let (producer_hash, producer) = match &input.producer_observation {
@@ -3986,6 +4030,14 @@ impl SqliteStore {
                             "verification producer has no source content basis".into(),
                         )
                     })?;
+                    let environment = resolve_verification_environment_on(
+                        &transaction,
+                        input.environment.as_ref(),
+                        &environment_records,
+                        project_id,
+                        binding,
+                        &source_basis,
+                    )?;
                     let evidence = VerificationEvidence {
                         schema_version: SCHEMA_VERSION,
                         project_id: project_id.clone(),
@@ -3993,6 +4045,7 @@ impl SqliteStore {
                         session_id: session_id.clone(),
                         producer_observation: producer_hash,
                         source_basis,
+                        environment,
                         check_kind: input.check_kind,
                         check_fingerprint: producer.action_fingerprint.clone(),
                         result: verification_result(producer.outcome),
@@ -4003,29 +4056,6 @@ impl SqliteStore {
                         recorded_at: now,
                     };
                     verification_hashes.push(work::append_control_verification_evidence_on(
-                        &transaction,
-                        &evidence,
-                    )?);
-                }
-                let mut environment_hashes = Vec::with_capacity(environment_evidence.len());
-                for input in environment_evidence {
-                    let binding = binding.ok_or_else(|| {
-                        StoreError::InvalidControlSession(
-                            "environment evidence lost its work binding".into(),
-                        )
-                    })?;
-                    let evidence = EnvironmentEvidence {
-                        schema_version: SCHEMA_VERSION,
-                        project_id: project_id.clone(),
-                        binding: binding.clone(),
-                        session_id: session_id.clone(),
-                        source_basis: input.source_basis.clone(),
-                        environment_fingerprint: input.environment_fingerprint.clone(),
-                        observed_at: input.observed_at,
-                        actor: session.actor.clone(),
-                        recorded_at: now,
-                    };
-                    environment_hashes.push(work::append_control_environment_evidence_on(
                         &transaction,
                         &evidence,
                     )?);
@@ -8245,10 +8275,11 @@ fn validate_execution_observation_inputs(
     Ok(())
 }
 
-fn validate_typed_evidence_inputs(
+fn validate_typed_evidence_inputs<R: Redactor>(
     verification: &[VerificationEvidenceInput],
     environment: &[EnvironmentEvidenceInput],
     now: DateTime<Utc>,
+    redactor: &R,
 ) -> Result<(), StoreError> {
     if verification.len() > MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT {
         return Err(StoreError::InvalidControlSession(format!(
@@ -8287,6 +8318,12 @@ fn validate_typed_evidence_inputs(
     }
     for (index, input) in environment.iter().enumerate() {
         validate_execution_source_basis(&input.source_basis, &format!("environment-{index}"))?;
+        if let Some(components) = &input.components {
+            validate_environment_components(components, &input.source_basis, redactor)?;
+            if environment_components_fingerprint(components)? != input.environment_fingerprint {
+                return Err(StoreError::EnvironmentFingerprintMismatch);
+            }
+        }
         if input.observed_at > now {
             return Err(StoreError::InvalidControlSession(format!(
                 "environment evidence {index} is timestamped after its checkpoint"
@@ -8294,6 +8331,81 @@ fn validate_typed_evidence_inputs(
         }
     }
     Ok(())
+}
+
+fn environment_components_fingerprint(
+    components: &EnvironmentComponents,
+) -> Result<ObjectHash, StoreError> {
+    Ok(CanonicalObject::freeze(components)?.hash().clone())
+}
+
+fn validate_environment_components<R: Redactor>(
+    components: &EnvironmentComponents,
+    source_basis: &crate::domain::ExecutionSourceBasis,
+    redactor: &R,
+) -> Result<(), StoreError> {
+    let valid_text = |value: &str| {
+        let trimmed = value.trim();
+        !trimmed.is_empty() && trimmed == value && value.len() <= 256
+    };
+    if !valid_text(&components.toolchain)
+        || !valid_text(&components.workspace_id)
+        || components
+            .sandbox
+            .as_deref()
+            .is_some_and(|value| !valid_text(value))
+        || components.workspace_id != source_basis.workspace_id
+        || components.capability_map_revision <= 0
+    {
+        return Err(StoreError::InvalidControlSession(
+            "environment components must be trimmed, nonempty, at most 256 bytes, and match their source workspace"
+                .into(),
+        ));
+    }
+    redactor
+        .inspect(&components.toolchain)
+        .map_err(StoreError::RedactionRefused)?;
+    redactor
+        .inspect(&components.workspace_id)
+        .map_err(StoreError::RedactionRefused)?;
+    if let Some(sandbox) = &components.sandbox {
+        redactor
+            .inspect(sandbox)
+            .map_err(StoreError::RedactionRefused)?;
+    }
+    Ok(())
+}
+
+fn resolve_verification_environment_on(
+    connection: &Connection,
+    reference: Option<&EnvironmentEvidenceReference>,
+    same_checkpoint: &[(ObjectHash, EnvironmentEvidence)],
+    project_id: &crate::domain::ProjectId,
+    binding: &ControlWorkBinding,
+    source_basis: &crate::domain::ExecutionSourceBasis,
+) -> Result<Option<ObjectHash>, StoreError> {
+    let Some(reference) = reference else {
+        return Ok(None);
+    };
+    let (hash, evidence) = match reference {
+        EnvironmentEvidenceReference::Index { index } => same_checkpoint
+            .get(*index)
+            .cloned()
+            .ok_or_else(|| StoreError::EnvironmentEvidenceNotFound(index.to_string()))?,
+        EnvironmentEvidenceReference::ObjectHash { object_hash } => {
+            let evidence = work::load_control_environment_evidence_on(connection, object_hash)?
+                .ok_or_else(|| StoreError::EnvironmentEvidenceNotFound(object_hash.to_string()))?;
+            (object_hash.clone(), evidence)
+        }
+    };
+    let same_run = &evidence.project_id == project_id
+        && evidence.binding.root_execution_id == binding.root_execution_id
+        && evidence.binding.work_id == binding.work_id
+        && evidence.binding.run_id == binding.run_id;
+    if !same_run || evidence.source_basis.source_revision != source_basis.source_revision {
+        return Err(StoreError::EnvironmentBasisMismatch(hash.to_string()));
+    }
+    Ok(Some(hash))
 }
 
 fn validate_execution_source_basis(
@@ -8901,6 +9013,35 @@ mod tests {
         fn description(&self) -> &'static str {
             "test sentinel redactor"
         }
+    }
+
+    #[test]
+    fn environment_components_are_redactor_inspected_before_canonicalization() {
+        let components = EnvironmentComponents {
+            toolchain: "reject-me-toolchain".into(),
+            sandbox: Some("sandbox-v1".into()),
+            workspace_id: "workspace-redaction".into(),
+            capability_map_revision: 1,
+        };
+        let input = EnvironmentEvidenceInput {
+            source_basis: crate::ExecutionSourceBasis {
+                workspace_id: components.workspace_id.clone(),
+                source_revision: "revision-redaction".into(),
+            },
+            environment_fingerprint: environment_components_fingerprint(&components)
+                .expect("freeze environment components"),
+            components: Some(components),
+            observed_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+        };
+        assert!(matches!(
+            validate_typed_evidence_inputs(
+                &[],
+                &[input],
+                Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+                &SentinelRedactor,
+            ),
+            Err(StoreError::RedactionRefused(_))
+        ));
     }
 
     #[test]

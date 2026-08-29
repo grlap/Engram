@@ -95,6 +95,13 @@ never rewrite-under-the-old-hash. A sanitized derivative must be a new
 canonical object with explicit provenance; portable feed closure still uses
 the original position plus an exclusion stub/placeholder where permitted.
 
+Host-supplied environment components (toolchain, sandbox/image label,
+workspace id, and capability-map revision) are asserted audit context rather
+than attestation. Every textual component passes through the write-time
+redactor and a 256-byte bound before canonicalization. The shipped development
+redactor is deliberately a visible no-op, so hosts must never place credentials
+or other secret values in these fields.
+
 The agent work protocol applies a separate authorized presentation projection.
 `work_next` verifies each canonical source object, then emits a typed compact
 summary beside the original dense position and object hash. The hash binds the

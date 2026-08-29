@@ -34,6 +34,21 @@ function fingerprint(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function canonicalJson(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    .join(",")}}`;
+}
+
+function canonicalFingerprint(value) {
+  return fingerprint(canonicalJson(value));
+}
+
 class ControlClient {
   constructor(engramHome, sessionId) {
     this.pending = [];
@@ -1113,6 +1128,12 @@ test("work-bound control records observations and rebinds after a stale fence", 
       outOfScopeCheckpoint.error.code,
       "observation_scope_mismatch",
     );
+    const boundEnvironmentComponents = {
+      toolchain: "rustc-control-dogfood",
+      sandbox: "control-dogfood-sandbox-v1",
+      workspace_id: "control-dogfood-workspace",
+      capability_map_revision: 1,
+    };
     const checkpointRequest = {
       operation: "turn_checkpoint",
       routing_token: bound.routing_token,
@@ -1126,6 +1147,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
             observation_id: "bound-observation-1",
           },
           check_kind: "test",
+          environment: { kind: "index", index: 0 },
           summary: "host observed the bound verification check",
           refs: ["command:control-dogfood-bound-check"],
         },
@@ -1133,15 +1155,35 @@ test("work-bound control records observations and rebinds after a stale fence", 
       environment_evidence: [
         {
           source_basis: {
-            workspace_id: "control-dogfood-peer-workspace",
+            workspace_id: "control-dogfood-workspace",
             source_revision: "revision-1",
           },
-          environment_fingerprint: fingerprint("control-dogfood-environment"),
+          environment_fingerprint: canonicalFingerprint(
+            boundEnvironmentComponents,
+          ),
+          components: boundEnvironmentComponents,
           observed_at: "2026-08-28T20:00:00Z",
         },
       ],
       idempotency_key: "checkpoint-bound-observations",
     };
+    const mismatchedEnvironmentCheckpoint = await client.request({
+      ...checkpointRequest,
+      environment_evidence: checkpointRequest.environment_evidence.map(
+        (environment) => ({
+          ...environment,
+          environment_fingerprint: fingerprint(
+            "mismatched-control-dogfood-environment",
+          ),
+        }),
+      ),
+      idempotency_key: "checkpoint-bound-mismatched-environment",
+    });
+    assert.equal(mismatchedEnvironmentCheckpoint.status, "error");
+    assert.equal(
+      mismatchedEnvironmentCheckpoint.error.code,
+      "environment_fingerprint_mismatch",
+    );
     const checkpointed = ok(await client.request(checkpointRequest));
     assert.equal(checkpointed.decision, "checkpointed");
     assert.equal(checkpointed.receipt.execution_observations.length, 2);
@@ -1159,6 +1201,20 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(
       obligationFocus.obligation_page.items[0].evidence,
       checkpointed.receipt.verification_evidence[0],
+    );
+    const environmentSummary = obligationFocus.evidence_items.find(
+      (item) => item.evidence === checkpointed.receipt.environment_evidence[0],
+    );
+    assert.deepEqual(
+      environmentSummary.environment_components,
+      boundEnvironmentComponents,
+    );
+    const verificationSummary = obligationFocus.evidence_items.find(
+      (item) => item.evidence === checkpointed.receipt.verification_evidence[0],
+    );
+    assert.equal(
+      verificationSummary.environment,
+      checkpointed.receipt.environment_evidence[0],
     );
     const conflictingCheckpoint = await client.request({
       ...checkpointRequest,
@@ -1536,6 +1592,10 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ).decision,
       "begin",
     );
+    const finalEnvironmentComponents = {
+      ...boundEnvironmentComponents,
+      sandbox: "control-dogfood-sandbox-v2",
+    };
     const finalVerificationCheckpoint = ok(
       await client.request({
         operation: "turn_checkpoint",
@@ -1563,8 +1623,22 @@ test("work-bound control records observations and rebinds after a stale fence", 
               observation_id: "bound-final-verification",
             },
             check_kind: "test",
+            environment: { kind: "index", index: 0 },
             summary: "host observed the final source verification",
             refs: ["command:control-dogfood-final-check"],
+          },
+        ],
+        environment_evidence: [
+          {
+            source_basis: {
+              workspace_id: "control-dogfood-workspace",
+              source_revision: "revision-2",
+            },
+            environment_fingerprint: canonicalFingerprint(
+              finalEnvironmentComponents,
+            ),
+            components: finalEnvironmentComponents,
+            observed_at: "2026-08-28T20:02:00Z",
           },
         ],
         idempotency_key: "checkpoint-bound-final-verification-turn",
@@ -1572,6 +1646,8 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     const finalVerification =
       finalVerificationCheckpoint.receipt.verification_evidence[0];
+    const finalEnvironment =
+      finalVerificationCheckpoint.receipt.environment_evidence[0];
     cliWork(engramHome, actor, authorityGrant, "update", {
       kind: "checkpoint",
       summary: "acknowledge the final typed verification",
@@ -1914,6 +1990,27 @@ test("work-bound control records observations and rebinds after a stale fence", 
         (item) => item.state === "satisfied",
       ).length,
       2,
+    );
+    const freshEnvironmentItems = freshSatisfied.evidence_items.filter(
+      (item) => item.evidence_kind === "environment",
+    );
+    assert.equal(freshEnvironmentItems.length, 2);
+    assert.deepEqual(
+      freshEnvironmentItems.find(
+        (item) => item.evidence === checkpointed.receipt.environment_evidence[0],
+      ).environment_components,
+      boundEnvironmentComponents,
+    );
+    assert.deepEqual(
+      freshEnvironmentItems.find((item) => item.evidence === finalEnvironment)
+        .environment_components,
+      finalEnvironmentComponents,
+    );
+    assert.equal(
+      freshSatisfied.evidence_items.find(
+        (item) => item.evidence === finalVerification,
+      ).environment,
+      finalEnvironment,
     );
     const freshWaived = cliWorkFocus(
       engramHome,

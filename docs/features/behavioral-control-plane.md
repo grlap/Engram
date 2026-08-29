@@ -557,7 +557,7 @@ TurnCheckpoint {
   action_outcome_hashes[]
   execution_observations[]               # bounded host facts for the bound run
   verification_evidence[]                # <= 16 host-minted checks
-  environment_evidence[]                 # <= 4 opaque environment identities
+  environment_evidence[]                 # <= 4 source-bound environment identities
   capture_hashes[]
   blocker_refs[]
   next_intent: continue | wait | handoff | contribute | exit
@@ -581,11 +581,27 @@ and four `environment_evidence` objects. Verification cites its producer by
 canonical observation hash or by an `observation_id` in the same request.
 Storage derives the run/source binding, command fingerprint, result, producer
 session, and times from that observation; a missing producer is a named
-`verification_producer_not_found` request fault. Environment fingerprints are
-opaque host-produced identities. Only a typed, passed verification for the
-required check, exact run, and latest source revision may satisfy a
-verification obligation. The matcher ignores workspace identity, requires the
-evidence to follow the latest mutation at the evaluated run-feed cut, and
+`verification_producer_not_found` request fault. Verification may also cite an
+environment object by hash or by same-request index. That object must name the
+same run and source revision.
+
+Environment evidence retains the opaque legacy fingerprint form. The stronger
+form supplies a closed, bounded component identity: `toolchain`, optional
+`sandbox` or image label, `workspace_id`, and the session's
+`capability_map_revision`. Engram derives the RFC 8785/SHA-256 fingerprint from
+those components, requires the workspace to match the source basis and the
+capability revision to match the bound session, and persists the components as
+canonical evidence. `environment_fingerprint_mismatch`,
+`environment_evidence_not_found`, and `environment_basis_mismatch` identify
+the three repairable failures. Component strings are asserted host context,
+not authenticated attestation; the V1 no-op redactor is visible in
+diagnostics, and hosts must not place credentials or secrets in them.
+
+Only a typed, passed verification for the required check, exact run, and
+latest source revision may satisfy a verification obligation. The current
+built-in rule leaves `required_environment` empty, so an environment link is
+audited but is not yet mandatory for satisfaction. The matcher requires the
+evidence to follow the latest mutation at the evaluated run-feed cut and
 therefore makes a later source mutation reopen the requirement. Generic
 agent-recorded `work_evidence` remains useful context but never verifies a
 check.
@@ -624,6 +640,11 @@ the host receipt omit the authority grant and reason. Completion evaluates the
 cut-aware open set at the exact pre-seal run-feed cut. Terminal definitions are
 frozen into the seal as exact definition/resolution hash pairs under obligation
 schema V1, and completion success reconstructs its page from that sealed basis.
+New seals separately declare environment schema V1 and bind the sorted,
+distinct environment-evidence hashes at or before the same dense run-feed cut.
+The seal carries hashes only, refuses more than 64 records, and never copies
+toolchain, sandbox, or image bytes. Pre-environment seals decode unchanged and
+are reported as legacy rather than rewritten.
 
 An observation effect outside the frozen grant is rejected as
 `observation_scope_mismatch`; `grant_scope_mismatch` remains reserved for a

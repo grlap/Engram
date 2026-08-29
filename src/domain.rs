@@ -16,6 +16,8 @@ use crate::ObjectHash;
 pub const SCHEMA_VERSION: u16 = 1;
 /// Completion-seal obligation basis emitted by A3 and later writers.
 pub const COMPLETION_OBLIGATION_SCHEMA_VERSION: u16 = 1;
+/// Completion-seal environment basis emitted by B and later writers.
+pub const COMPLETION_ENVIRONMENT_SCHEMA_VERSION: u16 = 1;
 
 /// Behavioral-control protocol version understood by this release.
 pub const CONTROL_SCHEMA_VERSION: u16 = 1;
@@ -521,17 +523,45 @@ pub struct VerificationEvidenceInput {
     pub producer_observation: ExecutionObservationReference,
     pub check_kind: VerificationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentEvidenceReference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<String>,
 }
 
-/// Host-private request to capture the opaque environment identity used for
-/// one exact run and content state.
+/// Host-declared components whose canonical bytes identify one execution
+/// environment without embedding image, sandbox, or toolchain payload bytes.
+/// These are asserted audit labels, not authenticated attestation, and must
+/// never contain credentials or other secret material.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct EnvironmentComponents {
+    pub toolchain: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
+    pub workspace_id: String,
+    pub capability_map_revision: i64,
+}
+
+/// Host-private reference to environment evidence already stored or supplied
+/// earlier in the same checkpoint request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EnvironmentEvidenceReference {
+    ObjectHash { object_hash: ObjectHash },
+    Index { index: usize },
+}
+
+/// Host-private request to capture the environment identity used for one exact
+/// run and content state. When `components` is present, storage derives and
+/// compares `environment_fingerprint`; absence preserves the legacy opaque
+/// fingerprint contract.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EnvironmentEvidenceInput {
     pub source_basis: ExecutionSourceBasis,
     pub environment_fingerprint: ObjectHash,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub components: Option<EnvironmentComponents>,
     pub observed_at: DateTime<Utc>,
 }
 
@@ -546,6 +576,8 @@ pub struct VerificationEvidence {
     pub session_id: SessionId,
     pub producer_observation: ObjectHash,
     pub source_basis: ExecutionSourceBasis,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<ObjectHash>,
     pub check_kind: VerificationKind,
     pub check_fingerprint: ObjectHash,
     pub result: VerificationResult,
@@ -559,14 +591,16 @@ pub struct VerificationEvidence {
 /// Exact verification property required by one immutable work obligation.
 ///
 /// Builtin V1 rules require the verification kind while deliberately leaving
-/// the command fingerprint open. Future immutable rules may pin an exact
-/// fingerprint without allowing the candidate evidence to define its own
-/// requirement.
+/// the command fingerprint and environment open. Future immutable rules may
+/// pin an exact fingerprint and environment without allowing candidate
+/// evidence to define its own requirement.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct VerificationRequirement {
     pub check_kind: VerificationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check_fingerprint: Option<ObjectHash>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_environment: Option<ObjectHash>,
 }
 
 /// Immutable identity of one builtin obligation rule version.
@@ -586,6 +620,8 @@ pub struct EnvironmentEvidence {
     pub session_id: SessionId,
     pub source_basis: ExecutionSourceBasis,
     pub environment_fingerprint: ObjectHash,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub components: Option<EnvironmentComponents>,
     pub observed_at: DateTime<Utc>,
     pub actor: ActorContext,
     pub recorded_at: DateTime<Utc>,
@@ -609,6 +645,7 @@ pub enum VerificationEvidenceMismatch {
     WrongRun,
     StaleSourceRevision,
     CheckFingerprintMismatch,
+    EnvironmentMismatch,
     ResultNotPassed,
     InvalidTime,
     InvalidProducer,
@@ -1963,6 +2000,11 @@ pub struct CompletionSeal {
     pub obligation_schema_version: Option<u16>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub obligations: Vec<CompletionObligationBinding>,
+    /// Absent only on immutable pre-B seals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_schema_version: Option<u16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment: Vec<ObjectHash>,
     pub required_child_seals: Vec<ObjectHash>,
     #[serde(default)]
     pub required_child_waivers: Vec<RequiredChildWaiver>,

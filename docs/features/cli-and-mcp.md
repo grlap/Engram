@@ -365,11 +365,29 @@ Each entry supplies `producer_observation` as either
 `summary`, and bounded `refs`. Storage derives the check fingerprint, outcome,
 source/run/session binding, and timestamps from the producer; an unknown
 producer returns `verification_producer_not_found`. Up to four
-`environment_evidence` entries bind an opaque host-produced environment
-fingerprint to an exact source basis. The receipt returns all three typed hash
-lists. An exact retry returns those hashes without another feed append;
-changing any ordered list under the same checkpoint key fails with
-`control_operation_idempotency_conflict`.
+`environment_evidence` entries bind an environment identity to an exact source
+basis. The legacy form may retain only an opaque host-produced fingerprint.
+The component form adds
+`components { toolchain, sandbox?, workspace_id, capability_map_revision }`;
+Engram derives the canonical component fingerprint, requires the component
+workspace to equal the source workspace, and requires the capability-map
+revision to equal the bound session. Component strings are trimmed,
+nonempty, limited to 256 bytes, inspected by the configured redactor, and are
+asserted host context rather than attestation. Do not place secrets in them.
+
+A verification may cite an environment as
+`{ kind: "object_hash", object_hash }` or
+`{ kind: "index", index }`, where the index addresses the same request's
+ordered environment list. The referenced object must belong to the same run
+and source revision. The current built-in test requirement does not require a
+particular environment, but its optional link is retained for audit and future
+typed policies. Mismatched derived bytes, a missing reference, or a run/source/
+session basis mismatch return `environment_fingerprint_mismatch`,
+`environment_evidence_not_found`, or `environment_basis_mismatch`.
+
+The receipt returns all three typed hash lists. An exact retry returns those
+hashes without another feed append; changing any ordered list under the same
+checkpoint key fails with `control_operation_idempotency_conflict`.
 
 Agent-facing `work_update:evidence` retains its legacy generic form. It also
 accepts the attach-only form
@@ -394,9 +412,14 @@ leaking host authority.
 Every new completion seal declares obligation schema V1 and freezes the exact
 definition/resolution hash pairs applicable at its dense pre-seal cut. The
 final checkpoint must acknowledge the matching typed verification evidence.
+A new seal also declares environment schema V1 and cites the sorted, distinct
+environment-evidence hashes at or before that cut. It refuses more than 64
+environment records and never copies the component payload into the seal.
 A new parent verifies required child seals transitively and refuses a legacy
 child seal whose run already had obligation definitions; existing legacy
 terminal seals remain readable and are surfaced as legacy by diagnostics.
+Pre-environment seals likewise decode with no environment bindings and are
+reported as legacy rather than rewritten.
 
 An observation effect absent from the frozen grant is a request error with
 code `observation_scope_mismatch`. `grant_scope_mismatch` instead identifies a

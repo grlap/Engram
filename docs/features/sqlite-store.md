@@ -102,7 +102,7 @@ not activated; migrations mint new objects, never rewrite old ones. The
 contract is substrate-neutral — it is what keeps the deferred Git backend a
 drop-in and gives reports stable provenance hashes.
 
-The first-class work schema currently advertises version 5. Open preflights
+The first-class work schema currently advertises version 8. Open preflights
 that metadata before any DDL, refuses future or unversioned non-empty work
 schemas without mutation, and performs supported ALTER/backfill/version steps
 inside one `BEGIN IMMEDIATE` transaction. Handoff backfills must match their
@@ -124,6 +124,11 @@ Fresh staging is an exact compare-and-swap over the confirmed cursor, absence
 of another pending page, focused work id, and bound legacy task. A losing
 concurrent caller discards its local projection and returns the durable winning
 page; if focus or task binding won first, it reprojects against that new basis.
+Version 6 adds the redundant typed verification/environment evidence binding;
+version 7 adds rebuildable obligation state; version 8 adds the verification→
+environment reference and canonical environment-component projection. The
+v1–v7 upgrade runs atomically and current-version open requires both v8 columns
+rather than silently interpreting a partial projection.
 Upgrading an older store clears only an unacknowledged tentative page, because
 versions 1-4 did not retain enough information to reconstruct that exact
 projection; the confirmed cursor remains unchanged and the page is delivered

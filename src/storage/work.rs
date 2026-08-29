@@ -19,33 +19,33 @@ use crate::{
     CanonicalObject, ObjectHash,
     domain::{
         AcceptWorkHandoffRequest, AcceptanceResult, AddWorkBlockerRequest,
-        COMPLETION_OBLIGATION_SCHEMA_VERSION, CancelWorkHandoffRequest,
-        ChangeWorkPrerequisiteRequest, ChildRequirement, ClaimWorkRequest, ClearWorkBlockerRequest,
-        CompleteWorkRequest, CompletionObligationBinding, CompletionSeal, CompletionWaiver,
-        ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest, DisposeWorkRequest,
-        EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
-        LifecycleAuthorityDecision, MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest,
-        OpenWorkObligation, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
-        ReopenWorkRequest, RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution,
-        RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId, TaskId,
-        VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest,
-        WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope,
-        WorkAvailability, WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint,
-        WorkClaim, WorkClaimId, WorkClaimState, WorkDecomposition, WorkDependencyRef,
-        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry,
-        WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
-        WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
-        WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
-        WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
-        WorkReadinessReason, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
-        WorkSourceSnapshot, WorkTransition,
+        COMPLETION_ENVIRONMENT_SCHEMA_VERSION, COMPLETION_OBLIGATION_SCHEMA_VERSION,
+        CancelWorkHandoffRequest, ChangeWorkPrerequisiteRequest, ChildRequirement,
+        ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest,
+        CompletionObligationBinding, CompletionSeal, CompletionWaiver, ControlWorkBinding,
+        CreateWorkRequest, DecomposeWorkRequest, DisposeWorkRequest, EnvironmentEvidence,
+        ExecutionObservation, FeedId, FeedPosition, LifecycleAuthorityDecision,
+        MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest, OpenWorkObligation,
+        ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
+        RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution, RootExecutionId,
+        RootExecutionState, SCHEMA_VERSION, SessionId, TaskId, VerificationEvidence,
+        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkAuthorityGrant,
+        WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability,
+        WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId,
+        WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
+        WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId,
+        WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation, WorkObligationId,
+        WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState,
+        WorkObligationWaiverDecision, WorkObligationWaiverReceipt, WorkObligationWaiverRefusalCode,
+        WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason, WorkRun,
+        WorkRunId, WorkRunState, WorkSessionState, WorkSourceSnapshot, WorkTransition,
     },
     memory::Redactor,
 };
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
-const CURRENT_WORK_SCHEMA_VERSION: i64 = 7;
+const CURRENT_WORK_SCHEMA_VERSION: i64 = 8;
 const REQUIRED_WORK_TABLES: &[&str] = &[
     "work_authority_grants",
     "work_authority_revocations",
@@ -84,6 +84,7 @@ const REBUILDABLE_WORK_INDEXES: &[&str] = &[
 // its matching checkpoint event are appended.
 const CHECKPOINT_APPEND_COUNT: i64 = 2;
 const MAX_OPEN_COMPLETION_OBLIGATIONS: usize = 16;
+const MAX_COMPLETION_ENVIRONMENT_EVIDENCE: usize = 64;
 
 #[derive(Clone, Copy)]
 pub(crate) struct StageWorkSessionDelivery<'a> {
@@ -109,6 +110,8 @@ struct EvidenceProjectionRow {
     verification_result: Option<String>,
     observed_at_ms: Option<i64>,
     environment_fingerprint: Option<String>,
+    environment_evidence_hash: Option<String>,
+    components_json: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug)]
@@ -404,7 +407,9 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
              check_fingerprint TEXT,
              verification_result TEXT,
              observed_at_ms INTEGER,
-             environment_fingerprint TEXT
+             environment_fingerprint TEXT,
+             environment_evidence_hash TEXT REFERENCES objects(object_hash),
+             components_json BLOB
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_run_evidence_run
              ON work_run_evidence(run_id, evidence_hash);
@@ -701,6 +706,11 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
         ("verification_result", "TEXT"),
         ("observed_at_ms", "INTEGER"),
         ("environment_fingerprint", "TEXT"),
+        (
+            "environment_evidence_hash",
+            "TEXT REFERENCES objects(object_hash)",
+        ),
+        ("components_json", "BLOB"),
     ] {
         let exists = transaction.query_row(
             "SELECT EXISTS(
@@ -903,6 +913,8 @@ fn current_work_schema_is_complete(connection: &Connection) -> Result<bool, Stor
         ("work_run_evidence", "verification_result"),
         ("work_run_evidence", "observed_at_ms"),
         ("work_run_evidence", "environment_fingerprint"),
+        ("work_run_evidence", "environment_evidence_hash"),
+        ("work_run_evidence", "components_json"),
     ] {
         let exists = connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
@@ -2998,6 +3010,8 @@ impl SqliteStore {
                                     verification_result: None,
                                     observed_at_ms: None,
                                     environment_fingerprint: None,
+                                    environment_evidence_hash: None,
+                                    components_json: None,
                                 },
                             );
                         }
@@ -3335,6 +3349,18 @@ impl SqliteStore {
             run.run_id,
             &completion_cut,
         )?;
+        let environment =
+            completion_environment_basis_on(&transaction, run.run_id, &completion_cut)?;
+        if environment.len() > MAX_COMPLETION_ENVIRONMENT_EVIDENCE {
+            return Err(StoreError::WorkCompletionRefused {
+                work: item.work_id,
+                reason: format!(
+                    "completion cites {} environment records; checkpoint fewer environment records (maximum {})",
+                    environment.len(),
+                    MAX_COMPLETION_ENVIRONMENT_EVIDENCE
+                ),
+            });
+        }
         if live_descendant_execution_authority(&transaction, item.work_id, request.completed_at)? {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
@@ -3400,6 +3426,8 @@ impl SqliteStore {
             acceptance,
             obligation_schema_version: Some(COMPLETION_OBLIGATION_SCHEMA_VERSION),
             obligations,
+            environment_schema_version: Some(COMPLETION_ENVIRONMENT_SCHEMA_VERSION),
+            environment,
             required_child_seals,
             required_child_waivers,
             unfinished_optional_children,
@@ -3412,6 +3440,7 @@ impl SqliteStore {
             completed_at: request.completed_at,
         };
         validate_completion_seal_obligation_basis_on(&transaction, &seal)?;
+        validate_completion_seal_environment_basis_on(&transaction, &seal)?;
         validate_completion_seal_children_on(&transaction, &seal, 0, true)?;
         let seal_object = CanonicalObject::freeze(&seal)?;
         SqliteStore::insert_object(&transaction, "completion_seal", &seal_object)?;
@@ -7442,6 +7471,28 @@ pub(super) fn load_control_execution_observation_on(
     Ok(Some(CanonicalObject::verify(hash, bytes)?.decode()?))
 }
 
+pub(super) fn load_control_environment_evidence_on(
+    connection: &Connection,
+    hash: &ObjectHash,
+) -> Result<Option<EnvironmentEvidence>, StoreError> {
+    let stored = connection
+        .query_row(
+            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            [hash.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .optional()?;
+    let Some((kind, bytes)) = stored else {
+        return Ok(None);
+    };
+    if kind != "environment_evidence" {
+        return Ok(None);
+    }
+    let evidence = CanonicalObject::verify(hash, bytes)?.decode()?;
+    expected_environment_projection(connection, hash)?;
+    Ok(Some(evidence))
+}
+
 fn applicable_work_obligations_at_cut_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -7545,6 +7596,81 @@ enum CompletionObligationBasisKind {
     LegacyNoDefinitions,
     LegacyWithDefinitions,
     Current,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CompletionEnvironmentBasisKind {
+    Legacy,
+    Current,
+}
+
+fn completion_environment_basis_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    cut: &FeedPosition,
+) -> Result<Vec<ObjectHash>, StoreError> {
+    if cut.feed != FeedId::RunExecution(run_id) {
+        return Err(StoreError::InvalidWorkProjection(
+            "environment cut does not name the requested run feed".into(),
+        ));
+    }
+    if cut.position > feed_head(connection, &cut.feed)? {
+        return Err(StoreError::InvalidWorkProjection(
+            "environment cut exceeds the current run-feed head".into(),
+        ));
+    }
+    let mut statement = connection.prepare(
+        "SELECT DISTINCT object_hash FROM work_feed_entries
+         WHERE feed_kind = 'run_execution' AND feed_id = ?1
+           AND position <= ?2 AND object_kind = 'environment_evidence'
+         ORDER BY object_hash",
+    )?;
+    let rows = statement
+        .query_map(params![run_id.0.to_string(), cut.position], |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut environment = Vec::with_capacity(rows.len());
+    for stored in rows {
+        let hash =
+            ObjectHash::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredHash(stored))?;
+        expected_environment_projection(connection, &hash)?;
+        environment.push(hash);
+    }
+    Ok(environment)
+}
+
+fn validate_completion_seal_environment_basis_on(
+    connection: &Connection,
+    seal: &CompletionSeal,
+) -> Result<CompletionEnvironmentBasisKind, StoreError> {
+    match seal.environment_schema_version {
+        None => {
+            if !seal.environment.is_empty() {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "legacy completion seal for run {} carries unversioned environment bindings",
+                    seal.run_id.0
+                )));
+            }
+            Ok(CompletionEnvironmentBasisKind::Legacy)
+        }
+        Some(COMPLETION_ENVIRONMENT_SCHEMA_VERSION) => {
+            let expected =
+                completion_environment_basis_on(connection, seal.run_id, &seal.completion_cut)?;
+            if expected.len() > MAX_COMPLETION_ENVIRONMENT_EVIDENCE || seal.environment != expected
+            {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "completion seal for run {} does not bind the exact environment cut",
+                    seal.run_id.0
+                )));
+            }
+            Ok(CompletionEnvironmentBasisKind::Current)
+        }
+        Some(version) => Err(StoreError::InvalidWorkProjection(format!(
+            "completion seal for run {} has unsupported environment schema {version}",
+            seal.run_id.0
+        ))),
+    }
 }
 
 fn validate_completion_seal_obligation_basis_on(
@@ -8049,6 +8175,8 @@ struct TypedEvidenceProjection<'a> {
     verification_result: Option<String>,
     observed_at: DateTime<Utc>,
     environment_fingerprint: Option<&'a ObjectHash>,
+    environment_evidence: Option<&'a ObjectHash>,
+    components_json: Option<Vec<u8>>,
 }
 
 pub(super) fn append_control_verification_evidence_on(
@@ -8075,6 +8203,8 @@ pub(super) fn append_control_verification_evidence_on(
             verification_result: Some(result),
             observed_at: evidence.completed_at,
             environment_fingerprint: None,
+            environment_evidence: evidence.environment.as_ref(),
+            components_json: None,
         },
     )?;
     satisfy_open_obligations_on(transaction, evidence, &evidence_hash)?;
@@ -8104,6 +8234,12 @@ pub(super) fn append_control_environment_evidence_on(
             verification_result: None,
             observed_at: evidence.observed_at,
             environment_fingerprint: Some(&evidence.environment_fingerprint),
+            environment_evidence: None,
+            components_json: evidence
+                .components
+                .as_ref()
+                .map(serde_json::to_vec)
+                .transpose()?,
         },
     )
 }
@@ -8150,8 +8286,9 @@ fn append_control_typed_evidence_on(
              evidence_hash, work_id, run_id, evidence_kind,
              workspace_id, source_revision, producer_session_id,
              producer_observation_hash, check_fingerprint,
-             verification_result, observed_at_ms, environment_fingerprint
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             verification_result, observed_at_ms, environment_fingerprint,
+             environment_evidence_hash, components_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             object.hash().as_str(),
             item.work_id.0.to_string(),
@@ -8165,6 +8302,8 @@ fn append_control_typed_evidence_on(
             projection.verification_result.as_deref(),
             projection.observed_at.timestamp_millis(),
             projection.environment_fingerprint.map(ObjectHash::as_str),
+            projection.environment_evidence.map(ObjectHash::as_str),
+            projection.components_json.as_deref(),
         ],
     )?;
     append_to_work_feeds(
@@ -9590,7 +9729,8 @@ fn work_evidence_kind_on(
             "SELECT work_id, run_id, evidence_kind,
                     workspace_id, source_revision, producer_session_id,
                     producer_observation_hash, check_fingerprint,
-                    verification_result, observed_at_ms, environment_fingerprint
+                    verification_result, observed_at_ms, environment_fingerprint,
+                    environment_evidence_hash, components_json
              FROM work_run_evidence
              WHERE run_id = ?1 AND evidence_hash = ?2",
             params![run_id.0.to_string(), evidence_hash.as_str()],
@@ -9607,6 +9747,8 @@ fn work_evidence_kind_on(
                     verification_result: row.get(8)?,
                     observed_at_ms: row.get(9)?,
                     environment_fingerprint: row.get(10)?,
+                    environment_evidence_hash: row.get(11)?,
+                    components_json: row.get(12)?,
                 })
             },
         )
@@ -9639,6 +9781,8 @@ fn work_evidence_kind_on(
                     verification_result: None,
                     observed_at_ms: None,
                     environment_fingerprint: None,
+                    environment_evidence_hash: None,
+                    components_json: None,
                 },
             )
         }
@@ -10461,6 +10605,21 @@ fn expected_verification_projection(
         &evidence.producer_observation,
         "execution_observation",
     )?;
+    let environment_matches = if let Some(environment_hash) = &evidence.environment {
+        expected_environment_projection(connection, environment_hash)?;
+        let environment = load_typed_work_object::<EnvironmentEvidence>(
+            connection,
+            environment_hash,
+            "environment_evidence",
+        )?;
+        environment.project_id == evidence.project_id
+            && environment.binding.root_execution_id == evidence.binding.root_execution_id
+            && environment.binding.work_id == evidence.binding.work_id
+            && environment.binding.run_id == evidence.binding.run_id
+            && environment.source_basis.source_revision == evidence.source_basis.source_revision
+    } else {
+        true
+    };
     let run_id = evidence.binding.run_id.0.to_string();
     let result_matches = matches!(
         (producer.outcome, evidence.result),
@@ -10486,7 +10645,8 @@ fn expected_verification_projection(
         && evidence.completed_at <= evidence.recorded_at
         && producer.recorded_at <= evidence.recorded_at
         && evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
-        && evidence.actor.run_id.as_deref() == Some(run_id.as_str());
+        && evidence.actor.run_id.as_deref() == Some(run_id.as_str())
+        && environment_matches;
     if !bound {
         return Err(StoreError::InvalidWorkProjection(format!(
             "verification evidence {evidence_hash} is not bound to its producer observation"
@@ -10504,6 +10664,8 @@ fn expected_verification_projection(
         verification_result: Some(encode_state(evidence.result)?),
         observed_at_ms: Some(evidence.completed_at.timestamp_millis()),
         environment_fingerprint: None,
+        environment_evidence_hash: evidence.environment.map(|hash| hash.to_string()),
+        components_json: None,
     })
 }
 
@@ -10517,10 +10679,32 @@ fn expected_environment_projection(
         "environment_evidence",
     )?;
     let run_id = evidence.binding.run_id.0.to_string();
+    let source_text_is_valid = |value: &str| {
+        let trimmed = value.trim();
+        !trimmed.is_empty() && trimmed == value && value.len() <= 512
+    };
+    let source_basis_matches_contract = source_text_is_valid(&evidence.source_basis.workspace_id)
+        && source_text_is_valid(&evidence.source_basis.source_revision);
+    let components_match = if let Some(components) = &evidence.components {
+        let text_is_valid = |value: &str| {
+            let trimmed = value.trim();
+            !trimmed.is_empty() && trimmed == value && value.len() <= 256
+        };
+        text_is_valid(&components.toolchain)
+            && text_is_valid(&components.workspace_id)
+            && components.sandbox.as_deref().is_none_or(text_is_valid)
+            && components.workspace_id == evidence.source_basis.workspace_id
+            && components.capability_map_revision > 0
+            && CanonicalObject::freeze(components)?.hash() == &evidence.environment_fingerprint
+    } else {
+        true
+    };
     let bound = evidence.schema_version == SCHEMA_VERSION
+        && source_basis_matches_contract
         && evidence.observed_at <= evidence.recorded_at
         && evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
-        && evidence.actor.run_id.as_deref() == Some(run_id.as_str());
+        && evidence.actor.run_id.as_deref() == Some(run_id.as_str())
+        && components_match;
     if !bound {
         return Err(StoreError::InvalidWorkProjection(format!(
             "environment evidence {evidence_hash} has an invalid run/session binding"
@@ -10538,6 +10722,12 @@ fn expected_environment_projection(
         verification_result: None,
         observed_at_ms: Some(evidence.observed_at.timestamp_millis()),
         environment_fingerprint: Some(evidence.environment_fingerprint.to_string()),
+        environment_evidence_hash: None,
+        components_json: evidence
+            .components
+            .as_ref()
+            .map(serde_json::to_vec)
+            .transpose()?,
     })
 }
 
@@ -10552,7 +10742,8 @@ fn verify_evidence_rows(
         "SELECT evidence_hash, work_id, run_id, evidence_kind,
                 workspace_id, source_revision, producer_session_id,
                 producer_observation_hash, check_fingerprint,
-                verification_result, observed_at_ms, environment_fingerprint
+                verification_result, observed_at_ms, environment_fingerprint,
+                environment_evidence_hash, components_json
          FROM work_run_evidence ORDER BY evidence_hash",
     )?;
     let rows = statement.query_map([], |row| {
@@ -10570,6 +10761,8 @@ fn verify_evidence_rows(
                 verification_result: row.get(9)?,
                 observed_at_ms: row.get(10)?,
                 environment_fingerprint: row.get(11)?,
+                environment_evidence_hash: row.get(12)?,
+                components_json: row.get(13)?,
             },
         ))
     })?;
@@ -10747,6 +10940,16 @@ fn verify_completion_rows(
                 continue;
             }
         };
+        match validate_completion_seal_environment_basis_on(connection, &seal) {
+            Ok(CompletionEnvironmentBasisKind::Legacy) => legacy.push(format!(
+                "completion_seal:{seal_hash}:legacy_environment_basis"
+            )),
+            Ok(CompletionEnvironmentBasisKind::Current) => {}
+            Err(_) => {
+                invalid.push(format!("completion_seal:{seal_hash}:environment_basis"));
+                continue;
+            }
+        }
         if validate_completion_seal_children_on(connection, &seal, 0, obligation_basis).is_err() {
             invalid.push(format!(
                 "completion_seal:{seal_hash}:child_obligation_basis"
@@ -11709,14 +11912,14 @@ mod tests {
         ActorContext, AssuranceLevel, CheckpointWorkRequest, ChildWorkDraft, ChildWorkPrerequisite,
         CompleteWorkRequest, ControlAssurance, ControlRefusalCode, ControlTurnBeginDecision,
         ControlTurnCheckpointDecision, ControlTurnDecision, CreateWorkRequest,
-        DecomposeWorkRequest, DisposeWorkRequest, EffectClass, EnvironmentEvidenceInput,
-        ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome,
-        ExecutionSourceBasis, LifecycleAuthorityDecision, NoteRequest, NoteVisibility,
-        ProvenanceLink, RecordWorkEvidenceRequest, ReopenWorkRequest, Scope, Sensitivity,
-        TurnIntent, TurnNextIntent, TurnPurpose, VerificationEvidenceInput,
-        VerificationEvidenceMismatch, VerificationKind, VerificationResult,
-        WaiveRequiredChildRequest, WorkDependencyRef, WorkItemKind, WorkPlanningAuthority,
-        WorkPlanningBudget, WorkRevisionPatch,
+        DecomposeWorkRequest, DisposeWorkRequest, EffectClass, EnvironmentComponents,
+        EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservationInput,
+        ExecutionObservationReference, ExecutionOutcome, ExecutionSourceBasis,
+        LifecycleAuthorityDecision, NoteRequest, NoteVisibility, ProvenanceLink,
+        RecordWorkEvidenceRequest, ReopenWorkRequest, Scope, Sensitivity, TurnIntent,
+        TurnNextIntent, TurnPurpose, VerificationEvidenceInput, VerificationEvidenceMismatch,
+        VerificationKind, VerificationResult, WaiveRequiredChildRequest, WorkDependencyRef,
+        WorkItemKind, WorkPlanningAuthority, WorkPlanningBudget, WorkRevisionPatch,
     };
     use crate::memory::DevelopmentNoopRedactor;
     use crate::work_service::{
@@ -14320,8 +14523,8 @@ mod tests {
     }
 
     #[test]
-    fn v1_through_v6_work_schemas_upgrade_atomically_and_reopen_idempotently() {
-        for version in [1_i64, 2_i64, 3_i64, 4_i64, 5_i64, 6_i64] {
+    fn v1_through_v7_work_schemas_upgrade_atomically_and_reopen_idempotently() {
+        for version in [1_i64, 2_i64, 3_i64, 4_i64, 5_i64, 6_i64, 7_i64] {
             let directory = tempfile::tempdir().expect("temp directory");
             let database = directory
                 .path()
@@ -14390,9 +14593,19 @@ mod tests {
                     )
                     .expect("remove v6 typed-evidence projection columns");
             }
-            connection
-                .execute_batch("DROP TABLE work_run_obligations;")
-                .expect("remove v7 obligation projection");
+            if version <= 6 {
+                connection
+                    .execute_batch("DROP TABLE work_run_obligations;")
+                    .expect("remove v7 obligation projection");
+            }
+            if version <= 7 {
+                connection
+                    .execute_batch(
+                        "ALTER TABLE work_run_evidence DROP COLUMN environment_evidence_hash;
+                         ALTER TABLE work_run_evidence DROP COLUMN components_json;",
+                    )
+                    .expect("remove v8 environment projection columns");
+            }
             if version == 1 {
                 connection
                     .execute_batch(
@@ -14478,6 +14691,8 @@ mod tests {
                 ("work_run_evidence", "verification_result"),
                 ("work_run_evidence", "observed_at_ms"),
                 ("work_run_evidence", "environment_fingerprint"),
+                ("work_run_evidence", "environment_evidence_hash"),
+                ("work_run_evidence", "components_json"),
             ] {
                 assert!(
                     connection
@@ -15869,6 +16084,7 @@ mod tests {
                         session_id: SessionId("child-agent".into()),
                         producer_observation: producer,
                         source_basis: child_basis,
+                        environment: None,
                         check_kind: VerificationKind::Test,
                         check_fingerprint: ObjectHash::from_canonical_bytes(
                             b"cargo test required child",
@@ -15924,14 +16140,23 @@ mod tests {
                 .expect("completion seal is an object");
             legacy_child_fields.remove("obligation_schema_version");
             legacy_child_fields.remove("obligations");
+            legacy_child_fields.remove("environment_schema_version");
+            legacy_child_fields.remove("environment");
             let legacy_child: CompletionSeal =
                 serde_json::from_value(legacy_child_json).expect("decode legacy child seal");
             assert_eq!(legacy_child.obligation_schema_version, None);
             assert!(legacy_child.obligations.is_empty());
+            assert_eq!(legacy_child.environment_schema_version, None);
+            assert!(legacy_child.environment.is_empty());
             assert_eq!(
                 validate_completion_seal_obligation_basis_on(&store.connection, &legacy_child,)
                     .expect("classify legacy child seal"),
                 CompletionObligationBasisKind::LegacyWithDefinitions
+            );
+            assert_eq!(
+                validate_completion_seal_environment_basis_on(&store.connection, &legacy_child)
+                    .expect("classify legacy child environment basis"),
+                CompletionEnvironmentBasisKind::Legacy
             );
             let legacy_child_object =
                 CanonicalObject::freeze(&legacy_child).expect("freeze legacy child seal");
@@ -15955,6 +16180,35 @@ mod tests {
                     ],
                 )
                 .expect("temporarily select legacy child seal");
+            let expected_legacy_child = HashMap::from([(
+                legacy_child_object.hash().to_string(),
+                (
+                    legacy_child.work_id.0.to_string(),
+                    legacy_child.run_id.0.to_string(),
+                    legacy_child.root_execution_id.0.to_string(),
+                    serde_json::to_value(&legacy_child).expect("legacy child projection"),
+                ),
+            )]);
+            let mut checked = 0;
+            let mut invalid = Vec::new();
+            let mut legacy = Vec::new();
+            verify_completion_rows(
+                &transaction,
+                &expected_legacy_child,
+                &mut checked,
+                &mut invalid,
+                &mut legacy,
+            )
+            .expect("doctor classifies legacy child seal");
+            assert_eq!(checked, 1);
+            assert!(invalid.is_empty(), "{invalid:?}");
+            assert!(legacy.iter().any(|record| {
+                record
+                    == &format!(
+                        "completion_seal:{}:legacy_environment_basis",
+                        legacy_child_object.hash()
+                    )
+            }));
             let legacy_parent_result =
                 required_child_seals(&transaction, root.work_id, child_run.root_execution_id);
             assert!(
@@ -15998,6 +16252,8 @@ mod tests {
                 .expect("completion seal is an object");
             legacy_root_fields.remove("obligation_schema_version");
             legacy_root_fields.remove("obligations");
+            legacy_root_fields.remove("environment_schema_version");
+            legacy_root_fields.remove("environment");
             let legacy_root: CompletionSeal =
                 serde_json::from_value(legacy_root_json).expect("decode legacy root seal");
             assert_eq!(
@@ -16555,7 +16811,17 @@ mod tests {
             actor: run_actor.clone(),
             recorded_at: at(7),
         };
-        let verification_hash = {
+        let environment_components = EnvironmentComponents {
+            toolchain: "rustc-1.89.0".into(),
+            sandbox: Some("completion-sandbox-v1".into()),
+            workspace_id: source_basis.workspace_id.clone(),
+            capability_map_revision: 1,
+        };
+        let environment_fingerprint = CanonicalObject::freeze(&environment_components)
+            .expect("freeze completion environment components")
+            .hash()
+            .clone();
+        let (verification_hash, environment_hash) = {
             let transaction = store
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -16563,6 +16829,22 @@ mod tests {
             let producer =
                 append_control_execution_observation_on(&transaction, &verification_observation)
                     .expect("append verification producer");
+            let environment_hash = append_control_environment_evidence_on(
+                &transaction,
+                &EnvironmentEvidence {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: work.project_id.clone(),
+                    binding: verification_observation.binding.clone(),
+                    session_id: SessionId("runner".into()),
+                    source_basis: source_basis.clone(),
+                    environment_fingerprint,
+                    components: Some(environment_components.clone()),
+                    observed_at: at(7),
+                    actor: run_actor.clone(),
+                    recorded_at: at(7),
+                },
+            )
+            .expect("append completion environment evidence");
             let hash = append_control_verification_evidence_on(
                 &transaction,
                 &VerificationEvidence {
@@ -16572,6 +16854,7 @@ mod tests {
                     session_id: SessionId("runner".into()),
                     producer_observation: producer,
                     source_basis,
+                    environment: Some(environment_hash.clone()),
                     check_kind: VerificationKind::Test,
                     check_fingerprint: verification_observation.action_fingerprint.clone(),
                     result: VerificationResult::Passed,
@@ -16584,7 +16867,7 @@ mod tests {
             )
             .expect("append matching verification evidence");
             transaction.commit().expect("commit verification");
-            hash
+            (hash, environment_hash)
         };
         let terminal = store
             .work_run_obligations(run.run_id)
@@ -16603,9 +16886,10 @@ mod tests {
         let all_evidence = store
             .work_run_evidence(run.run_id)
             .expect("all completion evidence");
-        assert_eq!(all_evidence.len(), 2);
+        assert_eq!(all_evidence.len(), 3);
         assert!(all_evidence.contains(&generic_evidence));
         assert!(all_evidence.contains(&verification_hash));
+        assert!(all_evidence.contains(&environment_hash));
         checkpoint(
             &mut store,
             &work,
@@ -16639,6 +16923,26 @@ mod tests {
                     .clone()
                     .expect("terminal resolution hash"),
             }]
+        );
+        assert_eq!(
+            seal.environment_schema_version,
+            Some(COMPLETION_ENVIRONMENT_SCHEMA_VERSION)
+        );
+        assert_eq!(seal.environment, vec![environment_hash.clone()]);
+        assert_eq!(
+            validate_completion_seal_environment_basis_on(&store.connection, &seal)
+                .expect("reconstruct exact completion environment basis"),
+            CompletionEnvironmentBasisKind::Current
+        );
+        let mut forged_environment_basis = seal.clone();
+        forged_environment_basis.environment.clear();
+        assert!(
+            validate_completion_seal_environment_basis_on(
+                &store.connection,
+                &forged_environment_basis,
+            )
+            .is_err(),
+            "completion accepted a seal that omitted environment evidence"
         );
         assert_eq!(
             validate_completion_seal_obligation_basis_on(&store.connection, &seal)
@@ -16687,6 +16991,123 @@ mod tests {
                 .verify_all()
                 .expect("restored integrity report")
                 .is_healthy()
+        );
+    }
+
+    #[test]
+    fn completion_refuses_more_than_the_bounded_environment_basis() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-bounded-environment", "planner");
+        let work = store
+            .create_work(
+                &root_request(
+                    "project-bounded-environment",
+                    "create-bounded-environment-work",
+                    1,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("create local work");
+        let claim = claim(
+            &mut store,
+            &work,
+            "runner",
+            "claim-bounded-environment-work",
+            2,
+            300,
+        );
+        let run = load_work_run(&store.connection, claim.run_id).expect("claimed run");
+        let binding = ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        };
+        let mut run_actor = actor("runner");
+        run_actor.run_id = Some(run.run_id.0.to_string());
+        let environment_hashes = {
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("environment transaction");
+            let mut hashes = Vec::new();
+            for index in 0..=MAX_COMPLETION_ENVIRONMENT_EVIDENCE {
+                let components = EnvironmentComponents {
+                    toolchain: format!("toolchain-{index}"),
+                    sandbox: Some("bounded-environment-sandbox".into()),
+                    workspace_id: "workspace-bounded-environment".into(),
+                    capability_map_revision: 1,
+                };
+                let environment_fingerprint = CanonicalObject::freeze(&components)
+                    .expect("freeze bounded environment components")
+                    .hash()
+                    .clone();
+                hashes.push(
+                    append_control_environment_evidence_on(
+                        &transaction,
+                        &EnvironmentEvidence {
+                            schema_version: SCHEMA_VERSION,
+                            project_id: work.project_id.clone(),
+                            binding: binding.clone(),
+                            session_id: SessionId("runner".into()),
+                            source_basis: ExecutionSourceBasis {
+                                workspace_id: components.workspace_id.clone(),
+                                source_revision: "bounded-environment-revision".into(),
+                            },
+                            environment_fingerprint,
+                            components: Some(components),
+                            observed_at: at(3),
+                            actor: run_actor.clone(),
+                            recorded_at: at(3),
+                        },
+                    )
+                    .expect("append bounded environment evidence"),
+                );
+            }
+            transaction.commit().expect("commit environment evidence");
+            hashes
+        };
+        assert_eq!(
+            environment_hashes.len(),
+            MAX_COMPLETION_ENVIRONMENT_EVIDENCE + 1
+        );
+        let generic_evidence = evidence(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "bounded-environment-generic-evidence",
+            4,
+        );
+        let mut acknowledged = environment_hashes;
+        acknowledged.push(generic_evidence.clone());
+        checkpoint(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            "bounded-environment-checkpoint",
+            5,
+            &acknowledged,
+        );
+        let result = complete(
+            &mut store,
+            &work,
+            &claim,
+            "runner",
+            &generic_evidence,
+            "bounded-environment-completion",
+            6,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(StoreError::WorkCompletionRefused { ref reason, .. })
+                    if reason.contains("maximum 64")
+            ),
+            "completion did not refuse an oversized environment basis: {result:?}"
         );
     }
 
@@ -17043,6 +17464,7 @@ mod tests {
                     session_id: SessionId("runner".into()),
                     producer_observation: producer,
                     source_basis: first_test.source_basis.clone().expect("first test basis"),
+                    environment: None,
                     check_kind: VerificationKind::Test,
                     check_fingerprint: first_test.action_fingerprint.clone(),
                     result: VerificationResult::Passed,
@@ -17099,6 +17521,7 @@ mod tests {
                     session_id: SessionId("runner".into()),
                     producer_observation: producer,
                     source_basis: final_test.source_basis.clone().expect("final test basis"),
+                    environment: None,
                     check_kind: VerificationKind::Test,
                     check_fingerprint: final_test.action_fingerprint.clone(),
                     result: VerificationResult::Passed,
@@ -17840,15 +18263,27 @@ mod tests {
                 observation_id: "verification-command-1".into(),
             },
             check_kind: VerificationKind::Test,
+            environment: Some(EnvironmentEvidenceReference::Index { index: 0 }),
             summary: Some("host observed the workspace test suite".into()),
             refs: vec!["command:cargo-test-workspace".into()],
         }];
+        let environment_components = EnvironmentComponents {
+            toolchain: "rustc-1.89.0".into(),
+            sandbox: Some("windows-host-sandbox-v1".into()),
+            workspace_id: "workspace-b".into(),
+            capability_map_revision: 1,
+        };
+        let environment_fingerprint = CanonicalObject::freeze(&environment_components)
+            .expect("freeze environment components")
+            .hash()
+            .clone();
         let environment_inputs = vec![EnvironmentEvidenceInput {
             source_basis: ExecutionSourceBasis {
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),
             },
-            environment_fingerprint: ObjectHash::from_canonical_bytes(b"rust-toolchain-host"),
+            environment_fingerprint,
+            components: Some(environment_components.clone()),
             observed_at: at(9),
         }];
         let missing_producer = VerificationEvidenceInput {
@@ -17856,9 +18291,74 @@ mod tests {
                 object_hash: ObjectHash::from_canonical_bytes(b"missing producer"),
             },
             check_kind: VerificationKind::Test,
+            environment: None,
             summary: None,
             refs: Vec::new(),
         };
+        assert!(matches!(
+            store.checkpoint_control_turn_with_evidence(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &[],
+                &[],
+                &[EnvironmentEvidenceInput {
+                    environment_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"wrong environment fingerprint"
+                    ),
+                    ..environment_inputs[0].clone()
+                }],
+                "checkpoint-mismatched-environment-fingerprint",
+                at(10),
+            ),
+            Err(StoreError::EnvironmentFingerprintMismatch)
+        ));
+        let mismatched_components = EnvironmentComponents {
+            capability_map_revision: 2,
+            ..environment_components.clone()
+        };
+        assert!(matches!(
+            store.checkpoint_control_turn_with_evidence(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &[],
+                &[],
+                &[EnvironmentEvidenceInput {
+                    environment_fingerprint: CanonicalObject::freeze(&mismatched_components)
+                        .expect("freeze mismatched environment components")
+                        .hash()
+                        .clone(),
+                    components: Some(mismatched_components),
+                    ..environment_inputs[0].clone()
+                }],
+                "checkpoint-mismatched-capability-map",
+                at(10),
+            ),
+            Err(StoreError::EnvironmentBasisMismatch(_))
+        ));
+        assert!(matches!(
+            store.checkpoint_control_turn_with_evidence(
+                &work.project_id,
+                &session_id,
+                &connection_token,
+                &control_binding.routing_token,
+                &grant.grant_id,
+                TurnNextIntent::Continue,
+                &observations,
+                &verification_inputs,
+                &[],
+                "checkpoint-missing-same-request-environment",
+                at(10),
+            ),
+            Err(StoreError::EnvironmentEvidenceNotFound(index)) if index == "0"
+        ));
         assert!(matches!(
             store.checkpoint_control_turn_with_evidence(
                 &work.project_id,
@@ -17935,6 +18435,10 @@ mod tests {
         );
         assert_eq!(verification.check_fingerprint, producer.action_fingerprint);
         assert_eq!(
+            verification.environment.as_ref(),
+            Some(&receipt.environment_evidence[0])
+        );
+        assert_eq!(
             verification.result,
             crate::domain::VerificationResult::Passed
         );
@@ -17949,6 +18453,94 @@ mod tests {
             .load_environment_evidence(environment_hash)
             .expect("load typed environment evidence");
         assert_eq!(environment.source_basis.workspace_id, "workspace-b");
+        assert_eq!(
+            environment.environment_fingerprint,
+            CanonicalObject::freeze(&environment_components)
+                .expect("re-freeze environment components")
+                .hash()
+                .clone()
+        );
+        assert_eq!(
+            environment.components.as_ref(),
+            Some(&environment_components)
+        );
+        let legacy_opaque_environment = EnvironmentEvidence {
+            components: None,
+            ..environment.clone()
+        };
+        let legacy_opaque_object = CanonicalObject::freeze(&legacy_opaque_environment)
+            .expect("freeze legacy opaque environment evidence");
+        assert!(
+            !std::str::from_utf8(legacy_opaque_object.bytes())
+                .expect("environment evidence is UTF-8 JSON")
+                .contains("components"),
+            "the additive component field changed legacy canonical bytes"
+        );
+        assert_eq!(
+            legacy_opaque_object
+                .decode::<EnvironmentEvidence>()
+                .expect("decode legacy opaque environment evidence"),
+            legacy_opaque_environment
+        );
+        assert_eq!(
+            super::super::resolve_verification_environment_on(
+                &store.connection,
+                Some(&EnvironmentEvidenceReference::ObjectHash {
+                    object_hash: environment_hash.clone(),
+                }),
+                &[],
+                &work.project_id,
+                &work_binding,
+                &verification.source_basis,
+            )
+            .expect("resolve existing environment by hash"),
+            Some(environment_hash.clone())
+        );
+        let mut wrong_environment_binding = work_binding.clone();
+        wrong_environment_binding.run_id = WorkRunId(uuid::Uuid::now_v7());
+        assert!(matches!(
+            super::super::resolve_verification_environment_on(
+                &store.connection,
+                Some(&EnvironmentEvidenceReference::ObjectHash {
+                    object_hash: environment_hash.clone(),
+                }),
+                &[],
+                &work.project_id,
+                &wrong_environment_binding,
+                &verification.source_basis,
+            ),
+            Err(StoreError::EnvironmentBasisMismatch(_))
+        ));
+        let wrong_source_basis = ExecutionSourceBasis {
+            source_revision: "content-revision-2".into(),
+            ..verification.source_basis.clone()
+        };
+        assert!(matches!(
+            super::super::resolve_verification_environment_on(
+                &store.connection,
+                Some(&EnvironmentEvidenceReference::ObjectHash {
+                    object_hash: environment_hash.clone(),
+                }),
+                &[],
+                &work.project_id,
+                &work_binding,
+                &wrong_source_basis,
+            ),
+            Err(StoreError::EnvironmentBasisMismatch(_))
+        ));
+        assert!(matches!(
+            super::super::resolve_verification_environment_on(
+                &store.connection,
+                Some(&EnvironmentEvidenceReference::ObjectHash {
+                    object_hash: ObjectHash::from_canonical_bytes(b"missing environment"),
+                }),
+                &[],
+                &work.project_id,
+                &work_binding,
+                &verification.source_basis,
+            ),
+            Err(StoreError::EnvironmentEvidenceNotFound(_))
+        ));
         assert_eq!(
             store
                 .work_evidence_kind(run.run_id, environment_hash)
@@ -17987,9 +18579,33 @@ mod tests {
             requirement: &crate::domain::VerificationRequirement {
                 check_kind: crate::domain::VerificationKind::Test,
                 check_fingerprint: Some(producer.action_fingerprint.clone()),
+                required_environment: None,
             },
         };
         assert_eq!(match_verification_evidence(&verification_match), Ok(()));
+        let exact_environment_requirement = crate::domain::VerificationRequirement {
+            check_kind: crate::domain::VerificationKind::Test,
+            check_fingerprint: Some(producer.action_fingerprint.clone()),
+            required_environment: Some(environment_hash.clone()),
+        };
+        assert_eq!(
+            match_verification_evidence(&VerificationEvidenceMatchInput {
+                requirement: &exact_environment_requirement,
+                ..verification_match
+            }),
+            Ok(())
+        );
+        let wrong_environment_requirement = crate::domain::VerificationRequirement {
+            required_environment: Some(ObjectHash::from_canonical_bytes(b"other environment")),
+            ..exact_environment_requirement
+        };
+        assert_eq!(
+            match_verification_evidence(&VerificationEvidenceMatchInput {
+                requirement: &wrong_environment_requirement,
+                ..verification_match
+            }),
+            Err(VerificationEvidenceMismatch::EnvironmentMismatch)
+        );
         let obligations = store
             .work_run_obligations(run.run_id)
             .expect("load immutable run obligations");
@@ -18264,10 +18880,24 @@ mod tests {
             ),
             (
                 verification_hash,
-                "verification-environment",
+                "verification-environment-fingerprint",
                 "UPDATE work_run_evidence SET environment_fingerprint = ?2
                  WHERE evidence_hash = ?1",
                 Some(environment_hash.as_str()),
+            ),
+            (
+                verification_hash,
+                "verification-environment-link",
+                "UPDATE work_run_evidence SET environment_evidence_hash = ?2
+                 WHERE evidence_hash = ?1",
+                Some(producer_hash.as_str()),
+            ),
+            (
+                verification_hash,
+                "verification-components",
+                "UPDATE work_run_evidence SET components_json = X'7B7D'
+                 WHERE evidence_hash = ?1",
+                None,
             ),
             (
                 environment_hash,
@@ -18331,6 +18961,20 @@ mod tests {
                 "UPDATE work_run_evidence SET environment_fingerprint = ?2
                  WHERE evidence_hash = ?1",
                 Some(verification_hash.as_str()),
+            ),
+            (
+                environment_hash,
+                "environment-link",
+                "UPDATE work_run_evidence SET environment_evidence_hash = ?2
+                 WHERE evidence_hash = ?1",
+                Some(verification_hash.as_str()),
+            ),
+            (
+                environment_hash,
+                "environment-components",
+                "UPDATE work_run_evidence SET components_json = X'7B7D'
+                 WHERE evidence_hash = ?1",
+                None,
             ),
         ];
         for (evidence_hash, label, sql, second_value) in projection_corruptions {
