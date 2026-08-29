@@ -60,6 +60,15 @@ is tracked but not shipped. Clean service unavailability may allow only
 policy-designated reversible local work with durably spooled reconciliation
 debt; shared, external, and lifecycle effects remain closed.
 
+The active immutable policy also selects a canonical obligation-rule-set hash.
+Checkpointing resolves that selection from the begun grant's frozen policy
+epoch, and both the execution observation and each generated obligation retain
+it. A later operator policy change cannot retroactively weaken or strengthen an
+old execution fact. Unknown rule-set schemas or missing/corrupt selected
+objects fail store open; V1's rule-set administrator is host/operator-only and
+records asserted, redactor-inspected attribution rather than authenticated
+identity.
+
 ## Sensitivity labels
 
 `public` / `internal` / `restricted` / `secret-ref`, enforced at retrieval:

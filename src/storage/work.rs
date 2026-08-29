@@ -45,7 +45,7 @@ use crate::{
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
-const CURRENT_WORK_SCHEMA_VERSION: i64 = 8;
+const CURRENT_WORK_SCHEMA_VERSION: i64 = 9;
 const REQUIRED_WORK_TABLES: &[&str] = &[
     "work_authority_grants",
     "work_authority_revocations",
@@ -124,6 +124,7 @@ struct ObligationProjectionRow {
     work_id: String,
     run_id: String,
     work_revision: i64,
+    rule_set_hash: Option<String>,
     rule_id: String,
     rule_version: i64,
     triggering_observation_hash: String,
@@ -422,6 +423,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              run_id TEXT NOT NULL REFERENCES work_runs(run_id),
              work_revision INTEGER NOT NULL,
+             rule_set_hash TEXT REFERENCES objects(object_hash),
              rule_id TEXT NOT NULL,
              rule_version INTEGER NOT NULL,
              triggering_observation_hash TEXT NOT NULL REFERENCES objects(object_hash),
@@ -727,6 +729,22 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
                 [],
             )?;
         }
+    }
+    let has_obligation_rule_set = transaction.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM pragma_table_info('work_run_obligations')
+             WHERE name = 'rule_set_hash'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_obligation_rule_set {
+        require_legacy_work_schema(starting_version, "work_run_obligations.rule_set_hash")?;
+        transaction.execute(
+            "ALTER TABLE work_run_obligations
+             ADD COLUMN rule_set_hash TEXT REFERENCES objects(object_hash)",
+            [],
+        )?;
     }
     let upgrading = starting_version != Some(CURRENT_WORK_SCHEMA_VERSION);
     if upgrading {
@@ -7735,7 +7753,7 @@ fn load_work_obligation_records_on(
     let state = state.map(encode_state).transpose()?;
     let mut statement = connection.prepare(
         "SELECT obligation_id, definition_hash, project_id, root_execution_id,
-                root_id, work_id, run_id, work_revision, rule_id, rule_version,
+                root_id, work_id, run_id, work_revision, rule_set_hash, rule_id, rule_version,
                 triggering_observation_hash, trigger_position, check_kind,
                 check_fingerprint, state, resolution_hash, resolution_kind,
                 evidence_hash, opened_at_ms, resolved_at_ms
@@ -7754,18 +7772,19 @@ fn load_work_obligation_records_on(
                 work_id: row.get(5)?,
                 run_id: row.get(6)?,
                 work_revision: row.get(7)?,
-                rule_id: row.get(8)?,
-                rule_version: row.get(9)?,
-                triggering_observation_hash: row.get(10)?,
-                trigger_position: row.get(11)?,
-                check_kind: row.get(12)?,
-                check_fingerprint: row.get(13)?,
-                state: row.get(14)?,
-                resolution_hash: row.get(15)?,
-                resolution_kind: row.get(16)?,
-                evidence_hash: row.get(17)?,
-                opened_at_ms: row.get(18)?,
-                resolved_at_ms: row.get(19)?,
+                rule_set_hash: row.get(8)?,
+                rule_id: row.get(9)?,
+                rule_version: row.get(10)?,
+                triggering_observation_hash: row.get(11)?,
+                trigger_position: row.get(12)?,
+                check_kind: row.get(13)?,
+                check_fingerprint: row.get(14)?,
+                state: row.get(15)?,
+                resolution_hash: row.get(16)?,
+                resolution_kind: row.get(17)?,
+                evidence_hash: row.get(18)?,
+                opened_at_ms: row.get(19)?,
+                resolved_at_ms: row.get(20)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -7806,13 +7825,17 @@ fn require_expected_obligations_on(
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
         let observation: ExecutionObservation = CanonicalObject::verify(&hash, bytes)?.decode()?;
-        for (rule, requirement) in crate::control::evaluate_builtin_obligation_rules(&observation) {
+        let rule_set = obligation_rule_set_for_observation_on(connection, &observation)?;
+        for (rule, requirement) in
+            crate::control::evaluate_obligation_rules(&rule_set, &observation)
+        {
             let matches = records
                 .iter()
                 .filter(|record| {
                     record.obligation.run_id == run_id
                         && record.obligation.triggering_observation == hash
                         && record.obligation.trigger_position.position == position
+                        && record.obligation.rule_set == observation.obligation_rule_set
                         && record.obligation.rule == rule
                         && record.obligation.requirement == requirement
                 })
@@ -7876,6 +7899,14 @@ fn load_work_obligation_record_on(
                 .ok_or_else(|| StoreError::InvalidStoredHash(value.clone()))
         })
         .transpose()?;
+    let expected_rule_set = row
+        .rule_set_hash
+        .as_ref()
+        .map(|value| {
+            ObjectHash::from_stored(value.clone())
+                .ok_or_else(|| StoreError::InvalidStoredHash(value.clone()))
+        })
+        .transpose()?;
     let expected_trigger = ObjectHash::from_stored(row.triggering_observation_hash.clone()).ok_or(
         StoreError::InvalidStoredHash(row.triggering_observation_hash.clone()),
     )?;
@@ -7886,6 +7917,7 @@ fn load_work_obligation_record_on(
         && obligation.work_id.0.to_string() == row.work_id
         && obligation.run_id.0.to_string() == row.run_id
         && obligation.work_revision == row.work_revision
+        && obligation.rule_set == expected_rule_set
         && obligation.rule.rule_id == row.rule_id
         && i64::from(obligation.rule.rule_version) == row.rule_version
         && obligation.triggering_observation == expected_trigger
@@ -8386,6 +8418,16 @@ pub(super) fn append_control_execution_observation_on(
     Ok(object.hash().clone())
 }
 
+fn obligation_rule_set_for_observation_on(
+    connection: &Connection,
+    observation: &ExecutionObservation,
+) -> Result<crate::domain::ObligationRuleSet, StoreError> {
+    match observation.obligation_rule_set.as_ref() {
+        Some(hash) => SqliteStore::load_obligation_rule_set_on(connection, hash),
+        None => Ok(crate::control::builtin_obligation_rule_set()),
+    }
+}
+
 fn append_builtin_obligations_on(
     transaction: &Transaction<'_>,
     observation: &ExecutionObservation,
@@ -8394,7 +8436,8 @@ fn append_builtin_obligations_on(
 ) -> Result<Vec<ObjectHash>, StoreError> {
     let item = load_work_item(transaction, observation.binding.work_id)?;
     let mut definitions = Vec::new();
-    for (rule, requirement) in crate::control::evaluate_builtin_obligation_rules(observation) {
+    let rule_set = obligation_rule_set_for_observation_on(transaction, observation)?;
+    for (rule, requirement) in crate::control::evaluate_obligation_rules(&rule_set, observation) {
         let obligation = WorkObligation {
             schema_version: SCHEMA_VERSION,
             obligation_id: WorkObligationId::new(),
@@ -8404,6 +8447,7 @@ fn append_builtin_obligations_on(
             work_id: item.work_id,
             run_id: observation.binding.run_id,
             work_revision: observation.binding.work_revision,
+            rule_set: observation.obligation_rule_set.clone(),
             rule,
             triggering_observation: observation_hash.clone(),
             trigger_position: trigger_position.clone(),
@@ -8423,10 +8467,10 @@ fn append_builtin_obligations_on(
         transaction.execute(
             "INSERT INTO work_run_obligations (
                  obligation_id, definition_hash, project_id, root_execution_id,
-                 root_id, work_id, run_id, work_revision, rule_id, rule_version,
+                 root_id, work_id, run_id, work_revision, rule_set_hash, rule_id, rule_version,
                  triggering_observation_hash, trigger_position, check_kind,
                  check_fingerprint, state, opened_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 obligation.obligation_id.0.to_string(),
                 object.hash().as_str(),
@@ -8436,6 +8480,7 @@ fn append_builtin_obligations_on(
                 obligation.work_id.0.to_string(),
                 obligation.run_id.0.to_string(),
                 obligation.work_revision,
+                obligation.rule_set.as_ref().map(ObjectHash::as_str),
                 obligation.rule.rule_id,
                 obligation.rule.rule_version,
                 obligation.triggering_observation.as_str(),
@@ -10857,19 +10902,30 @@ fn verify_obligation_rows(
             invalid.push(format!("work_obligation_trigger:{run_id}:{position}"));
             continue;
         };
-        for (rule, _) in crate::control::evaluate_builtin_obligation_rules(&observation) {
+        let Ok(rule_set) = obligation_rule_set_for_observation_on(connection, &observation) else {
+            invalid.push(format!(
+                "work_obligation_trigger:{run_id}:{position}:invalid_rule_set"
+            ));
+            continue;
+        };
+        for (rule, _) in crate::control::evaluate_obligation_rules(&rule_set, &observation) {
             let exists = connection.query_row(
                 "SELECT EXISTS(
                      SELECT 1 FROM work_run_obligations
                      WHERE run_id = ?1 AND rule_id = ?2 AND rule_version = ?3
                        AND triggering_observation_hash = ?4 AND trigger_position = ?5
+                       AND rule_set_hash IS ?6
                  )",
                 params![
                     run_id,
                     rule.rule_id,
                     rule.rule_version,
                     hash.as_str(),
-                    position
+                    position,
+                    observation
+                        .obligation_rule_set
+                        .as_ref()
+                        .map(ObjectHash::as_str),
                 ],
                 |row| row.get::<_, bool>(0),
             )?;
@@ -14523,8 +14579,8 @@ mod tests {
     }
 
     #[test]
-    fn v1_through_v7_work_schemas_upgrade_atomically_and_reopen_idempotently() {
-        for version in [1_i64, 2_i64, 3_i64, 4_i64, 5_i64, 6_i64, 7_i64] {
+    fn v1_through_v8_work_schemas_upgrade_atomically_and_reopen_idempotently() {
+        for version in [1_i64, 2_i64, 3_i64, 4_i64, 5_i64, 6_i64, 7_i64, 8_i64] {
             let directory = tempfile::tempdir().expect("temp directory");
             let database = directory
                 .path()
@@ -14605,6 +14661,11 @@ mod tests {
                          ALTER TABLE work_run_evidence DROP COLUMN components_json;",
                     )
                     .expect("remove v8 environment projection columns");
+            }
+            if (7..=8).contains(&version) {
+                connection
+                    .execute_batch("ALTER TABLE work_run_obligations DROP COLUMN rule_set_hash;")
+                    .expect("remove v9 obligation rule-set projection column");
             }
             if version == 1 {
                 connection
@@ -16046,6 +16107,7 @@ mod tests {
                         effect: EffectClass::MutateLocal,
                         outcome: ExecutionOutcome::Succeeded,
                         source_changed: true,
+                        obligation_rule_set: None,
                         source_basis: Some(child_basis.clone()),
                         observed_at: Some(at(7)),
                         actor: child_actor.clone(),
@@ -16068,6 +16130,7 @@ mod tests {
                         effect: EffectClass::Observe,
                         outcome: ExecutionOutcome::Succeeded,
                         source_changed: false,
+                        obligation_rule_set: None,
                         source_basis: Some(child_basis.clone()),
                         observed_at: Some(at(7)),
                         actor: child_actor.clone(),
@@ -16731,6 +16794,7 @@ mod tests {
             effect: EffectClass::MutateLocal,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: true,
+            obligation_rule_set: None,
             source_basis: Some(source_basis.clone()),
             observed_at: Some(at(3)),
             actor: run_actor.clone(),
@@ -16806,6 +16870,7 @@ mod tests {
             effect: EffectClass::Observe,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: false,
+            obligation_rule_set: None,
             source_basis: Some(source_basis.clone()),
             observed_at: Some(at(7)),
             actor: run_actor.clone(),
@@ -17164,6 +17229,7 @@ mod tests {
                     effect: EffectClass::MutateLocal,
                     outcome: ExecutionOutcome::Succeeded,
                     source_changed: true,
+                    obligation_rule_set: None,
                     source_basis: Some(ExecutionSourceBasis {
                         workspace_id: "workspace-bounded".into(),
                         source_revision: format!("revision-{index}"),
@@ -17257,6 +17323,7 @@ mod tests {
                     effect: EffectClass::MutateLocal,
                     outcome: ExecutionOutcome::Succeeded,
                     source_changed: true,
+                    obligation_rule_set: None,
                     source_basis: Some(ExecutionSourceBasis {
                         workspace_id: "workspace-protocol".into(),
                         source_revision: "revision-protocol".into(),
@@ -17408,6 +17475,7 @@ mod tests {
             },
             outcome: ExecutionOutcome::Succeeded,
             source_changed,
+            obligation_rule_set: None,
             source_basis: basis,
             observed_at: Some(at_time),
             actor: run_actor.clone(),
@@ -17808,6 +17876,7 @@ mod tests {
             effect: EffectClass::MutateLocal,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: true,
+            obligation_rule_set: None,
             source_basis: None,
             observed_at: Some(at(3)),
             actor: host_actor.clone(),
@@ -18022,6 +18091,10 @@ mod tests {
         let directory = tempfile::tempdir().expect("temporary directory");
         let database = directory.path().join("engram.sqlite3");
         let mut store = SqliteStore::open(&database).expect("store");
+        let frozen_rule_set = store
+            .control_diagnostics()
+            .expect("initial control policy")
+            .obligation_rule_set;
         install_grant(&mut store, "project-control-work", "planner");
         let work = store
             .create_work(
@@ -18208,6 +18281,21 @@ mod tests {
                 .expect("begin bound work turn"),
             ControlTurnBeginDecision::Begin { .. }
         ));
+        let empty_rule_set = crate::domain::ObligationRuleSet {
+            schema_version: crate::domain::OBLIGATION_RULE_SET_SCHEMA_VERSION,
+            rules: Vec::new(),
+        };
+        let changed_rules = store
+            .set_obligation_rule_set(
+                &empty_rule_set,
+                &actor("obligation-rule-admin"),
+                "disable future built-in obligation triggers in this test",
+                None,
+                at(9),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate empty future rule set after turn begin");
+        assert_ne!(changed_rules.obligation_rule_set, frozen_rule_set);
         let out_of_scope = ExecutionObservationInput {
             observation_id: "outside-grant-scope".into(),
             action_fingerprint: ObjectHash::from_canonical_bytes(b"observe after mutation grant"),
@@ -18406,6 +18494,10 @@ mod tests {
         assert_eq!(observation.binding, work_binding);
         assert_eq!(observation.session_id, session_id);
         assert!(observation.source_changed);
+        assert_eq!(
+            observation.obligation_rule_set.as_ref(),
+            Some(&frozen_rule_set)
+        );
         assert_eq!(observation.source_basis, observations[0].source_basis);
         assert_eq!(observation.observed_at, observations[0].observed_at);
         assert_eq!(observation.recorded_at, at(10));
@@ -18613,6 +18705,10 @@ mod tests {
         let obligation = &obligations[0];
         assert_eq!(obligation.state, WorkObligationState::Satisfied);
         assert_eq!(
+            obligation.obligation.rule_set.as_ref(),
+            Some(&frozen_rule_set)
+        );
+        assert_eq!(
             obligation.obligation.triggering_observation,
             *observation_hash
         );
@@ -18779,6 +18875,63 @@ mod tests {
             Err(StoreError::ControlOperationIdempotencyConflict { operation, key })
                 if operation == "turn_checkpoint" && key == "checkpoint-control-work"
         ));
+
+        let mut future_observation = observation.clone();
+        future_observation.observation_id = "source-mutation-under-empty-rules".into();
+        future_observation.action_fingerprint =
+            ObjectHash::from_canonical_bytes(b"write after rule-set activation");
+        future_observation.obligation_rule_set = Some(changed_rules.obligation_rule_set.clone());
+        future_observation
+            .source_basis
+            .as_mut()
+            .expect("future mutation source basis")
+            .source_revision = "content-revision-2".into();
+        future_observation.observed_at = Some(at(12));
+        future_observation.recorded_at = at(12);
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("future observation transaction");
+        append_control_execution_observation_on(&transaction, &future_observation)
+            .expect("append observation under the newly active empty rule set");
+        transaction.commit().expect("commit future observation");
+        let retained = store
+            .work_run_obligations(run.run_id)
+            .expect("reload obligations after rule-set activation");
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].definition_hash, obligation.definition_hash);
+        store
+            .connection
+            .execute_batch("SAVEPOINT corrupt_obligation_rule_set")
+            .expect("start obligation rule-set corruption fixture");
+        store
+            .connection
+            .execute(
+                "UPDATE work_run_obligations SET rule_set_hash = ?1
+                 WHERE definition_hash = ?2",
+                params![
+                    changed_rules.obligation_rule_set.as_str(),
+                    obligation.definition_hash.as_str()
+                ],
+            )
+            .expect("corrupt obligation rule-set projection");
+        assert!(store.work_run_obligations(run.run_id).is_err());
+        let corrupt_rules = store
+            .verify_all()
+            .expect("report obligation rule-set corruption");
+        assert!(
+            corrupt_rules
+                .invalid_work_records
+                .iter()
+                .any(|record| record.contains("work_obligation")),
+            "rule-set corruption was not reported: {corrupt_rules:?}"
+        );
+        store
+            .connection
+            .execute_batch(
+                "ROLLBACK TO corrupt_obligation_rule_set; RELEASE corrupt_obligation_rule_set",
+            )
+            .expect("restore obligation rule-set projection");
 
         let stale = store
             .evaluate_control_turn(

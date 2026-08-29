@@ -367,7 +367,7 @@ test("host control survives restart and gates turn dispatch", async () => {
     );
     assert.equal(advisoryDoctor.status, 0, advisoryDoctor.stderr);
     const initialPolicy = advisoryDoctor.stdout.match(
-      /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=advisory/,
+      /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=advisory obligation_rules=([0-9a-f]{64})/,
     );
     assert.ok(initialPolicy, advisoryDoctor.stdout);
     const plainReinit = spawnSync(binary, ["--home", engramHome, "init"], {
@@ -587,10 +587,11 @@ test("host control survives restart and gates turn dispatch", async () => {
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(configuredDoctor.status, 0, configuredDoctor.stderr);
-    assert.match(
-      configuredDoctor.stdout,
-      /Control policy schema=1 id=[0-9a-f]{64} epoch=2 required=turn_gated/,
+    const configuredPolicyLine = configuredDoctor.stdout.match(
+      /Control policy schema=1 id=[0-9a-f]{64} epoch=2 required=turn_gated obligation_rules=([0-9a-f]{64})/,
     );
+    assert.ok(configuredPolicyLine, configuredDoctor.stdout);
+    assert.equal(configuredPolicyLine[1], initialPolicy[2]);
     const advisoryTokens = advisoryIssued.grant.delivery
       ? [advisoryIssued.grant.delivery.page.delivery_token]
       : [];

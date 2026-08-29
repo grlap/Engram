@@ -18,6 +18,8 @@ pub const SCHEMA_VERSION: u16 = 1;
 pub const COMPLETION_OBLIGATION_SCHEMA_VERSION: u16 = 1;
 /// Completion-seal environment basis emitted by B and later writers.
 pub const COMPLETION_ENVIRONMENT_SCHEMA_VERSION: u16 = 1;
+/// Immutable obligation-rule-set schema emitted by C and later writers.
+pub const OBLIGATION_RULE_SET_SCHEMA_VERSION: u16 = 1;
 
 /// Behavioral-control protocol version understood by this release.
 pub const CONTROL_SCHEMA_VERSION: u16 = 1;
@@ -78,6 +80,8 @@ impl ControlAssurance {
 pub enum ProjectPolicyOperation {
     SetRequiredAssurance,
     UpgradeBuiltinEnvelope,
+    UpgradeBuiltinObligationRules,
+    SetObligationRuleSet,
     #[serde(other)]
     Unknown,
 }
@@ -93,6 +97,8 @@ pub struct ProjectPolicyAuthorityDecision {
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_policy: Option<ObjectHash>,
     pub required_assurance: ControlAssurance,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obligation_rule_set: Option<ObjectHash>,
     pub authorized_by: ActorContext,
     pub reason: String,
     pub decided_at: DateTime<Utc>,
@@ -108,6 +114,8 @@ pub struct ControlPolicy {
     pub required_assurance: ControlAssurance,
     pub supported_effects: Vec<EffectClass>,
     pub grant_ttl_seconds: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obligation_rule_set: Option<ObjectHash>,
     pub authority: ObjectHash,
     pub activated_at: DateTime<Utc>,
 }
@@ -475,6 +483,10 @@ pub struct ExecutionObservation {
     pub effect: EffectClass,
     pub outcome: ExecutionOutcome,
     pub source_changed: bool,
+    /// Exact immutable rule set selected by the frozen turn-policy basis.
+    /// Legacy observations omit this field and retain the stock V1 meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub obligation_rule_set: Option<ObjectHash>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_basis: Option<ExecutionSourceBasis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -608,6 +620,34 @@ pub struct VerificationRequirement {
 pub struct BuiltinObligationRuleRef {
     pub rule_id: String,
     pub rule_version: u16,
+}
+
+/// Closed trigger vocabulary understood by the immutable V1 obligation rules.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuiltinObligationTrigger {
+    SourceChanged,
+    #[serde(other)]
+    Unknown,
+}
+
+/// One immutable typed rule definition in a canonical obligation rule set.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ObligationRuleDefinition {
+    pub rule: BuiltinObligationRuleRef,
+    pub trigger: BuiltinObligationTrigger,
+    pub requirement: VerificationRequirement,
+}
+
+/// Canonical rule table selected by one immutable project policy version.
+///
+/// The rule set is intentionally small and typed. Policy activation may select
+/// a different immutable set for future observations, while obligations already
+/// opened from an older set keep their recorded definition and requirement.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ObligationRuleSet {
+    pub schema_version: u16,
+    pub rules: Vec<ObligationRuleDefinition>,
 }
 
 /// Immutable host-minted identity of the environment used for one exact run
@@ -1839,6 +1879,10 @@ pub struct WorkObligation {
     pub work_id: WorkId,
     pub run_id: WorkRunId,
     pub work_revision: i64,
+    /// Exact rule-set identity selected by the triggering observation. Legacy
+    /// definitions omit it and retain the stock V1 rule meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_set: Option<ObjectHash>,
     pub rule: BuiltinObligationRuleRef,
     pub triggering_observation: ObjectHash,
     pub trigger_position: FeedPosition,

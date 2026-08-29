@@ -4227,6 +4227,7 @@ mod tests {
             effect: crate::EffectClass::MutateLocal,
             outcome: crate::ExecutionOutcome::Succeeded,
             source_changed: true,
+            obligation_rule_set: None,
             source_basis: Some(crate::ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "revision-a".into(),

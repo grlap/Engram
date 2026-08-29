@@ -22,8 +22,9 @@ Shipped in this repository today: the local work graph (`WorkItem`,
 authority), the host-private turn channel (`session_bind` → `turn_evaluate`
 → `turn_begin` → `turn_checkpoint`) with exact live `WorkRun` binding, bounded
 context delivery, host execution observations, typed verification/environment
-evidence, the built-in source-change test obligation, obligation-gated
-`CompletionSeal`, the `WorkSourceSnapshot` type and its admission path, and a
+evidence, immutable policy-selected obligation rule sets with the stock
+source-change/test rule, obligation-gated `CompletionSeal`, the
+`WorkSourceSnapshot` type and its admission path, and a
 side-effect-free dummy publication adapter that proves the idempotency
 contract.
 
@@ -35,13 +36,16 @@ seal. Per-project required assurance is selectable at bootstrap and through an
 attributed, immutable policy update. Table rows and diagram nodes marked
 **planned** are exactly the remaining items.
 
-The first shipped **obligation** rule is deliberately small and typed:
-`source_changed observation → built-in test obligation → passed matching
-verification | host-authorized waiver → CompletionSeal`. Definitions and
-resolutions are immutable feed objects. The seal records the exact
-definition/resolution pairs applicable at its dense run-feed cut, and
-`work_complete` returns a bounded `open_work_obligations` result until that set
-is terminal. A configurable rule language remains planned.
+The shipped **obligation** substrate is deliberately small and typed. An
+immutable policy version selects a canonical rule-set hash; the stock V1 set
+implements `source_changed observation → test obligation → passed matching
+verification | host-authorized waiver → CompletionSeal`. The observation and
+definition freeze that selection, so activating another validated set affects
+only future observations. Definitions and resolutions are immutable feed
+objects. The seal records the exact definition/resolution pairs applicable at
+its dense run-feed cut, and `work_complete` returns a bounded
+`open_work_obligations` result until that set is terminal. A general rule
+language remains planned.
 
 The upstream layers — intake/enrichment, planning, capability and context
 assignment — belong to an external, separately named intake system that is
@@ -67,10 +71,10 @@ frozen artifact back.
 | **Intake / enrich** (external) | fetching the ticket; gathering evidence — bug reports, linked tickets, production logs; redaction; tiering into pinned / index / on-demand | an immutable `WorkSourceSnapshot` plus an evidence bundle | no — a refreshed ticket is a new snapshot and a visible delta |
 | **Planning** (external) | goal, acceptance criteria, approach, sufficiency check (“can repro and acceptance be derived at all?”) | the root `WorkItem` with acceptance; the plan as a *proposal* | yes, under optimistic revision control and bounded planning authority; while a live claim exists, planning is claim-bound |
 | **Capability & context assignment** (external, coarse pass) | which capabilities the whole item requires; which context tier is pinned | capability requirements on the item (**planned**); the context packet to deliver | yes |
-| **Engram** | work graph, turn admission, exact bounded delivery, claims and leases, typed evidence, built-in obligations, obligation-gated seals, report freeze (**planned**) | — | — |
+| **Engram** | work graph, turn admission, exact bounded delivery, claims and leases, typed evidence, policy-selected typed obligations, obligation-gated seals, report freeze (**planned**) | — | — |
 | **Hosting environment** (TermAl under integration) | agent runtime, workspace (worktree or sandbox), tools and skills, credentials, resource limits; enforcing Engram's decisions | `session_bind` with assurance, mediated effects, capability-map revision, and an exact live `WorkRun` binding; evidence from execution | — |
 | **Decomposition** (admitted by Engram) | splitting the root once the code is visible, under the holder's claim-bound planning authority or a bounded planning delegation | child `WorkItem`s and their `WorkRun`s, registered in the existing `RootExecution`; each run is separately claimable, owns a dense run feed, and receives a seal on completion | under Engram admission |
-| **Obligations** (Engram; built-in rule shipped) | turning each source-changing host observation into a concrete test duty on its run, with the evidence kind that discharges it and who may waive it | an immutable `WorkObligation` definition (run, rule version, triggering observation, required evidence kind), immutable resolution events (`satisfied` by matching verification evidence, `waived` by an attributed host-authorized decision), and exact definition/resolution bindings in `CompletionSeal`; a rebuildable projection holds current state | no — state advances only by appending a resolution through an Engram transaction |
+| **Obligations** (Engram; typed canonical rule sets shipped) | selecting a bounded immutable rule set through project policy and turning matching host observations into concrete duties on their runs | a canonical `ObligationRuleSet` hash frozen into each observation and immutable `WorkObligation` definition (run, rule-set hash, rule version, triggering observation, required evidence kind), immutable resolution events (`satisfied` by matching verification evidence, `waived` by an attributed host-authorized decision), and exact definition/resolution bindings in `CompletionSeal`; a rebuildable projection holds current state | no — a policy successor affects only later observations and obligation state advances only by appending a resolution through an Engram transaction |
 | **Capability & context assignment** (fine pass, under a claim; **planned**) | what each run needs delivered | per-run context packets (packets carry `work_id` and feed heads today, not `run_id`) | yes, per run |
 | **Publication** (adapter) | returning the report to the ticket source | a frozen report, a publication intent with an idempotency key, a receipt (**planned** beyond the dummy contract) | no |
 
@@ -105,7 +109,7 @@ flowchart TD
         CT["Per turn: turn_evaluate → turn_begin → turn_checkpoint<br/>(task- or WorkRun-bound)"]
         WB["Native WorkRun binding"]
         EV["Evidence · deltas · handoffs"]
-        PO["Builtin obligation rules"]
+        PO["Policy-selected immutable<br/>obligation rules"]
         OB["Obligations<br/>rule × verified observation → required evidence"]
         SE["CompletionSeal"]
         RA["ReportAssemblyClaim → report_ready"]
@@ -253,8 +257,9 @@ capability requirements and packet assignment do not.
    `advisory` for a shadow host and later advance to `turn_gated` without
    rewriting prior policy history; an `advisory` run of the same sequence is
    the integration test, not the acceptance test.
-3. Record a source mutation, observe `work_complete` refuse the open built-in
-   test obligation, record matching host verification linked to canonical
+3. Record a source mutation under the stock policy-selected rule set, observe
+   `work_complete` refuse the open test obligation, record matching host
+   verification linked to canonical
    environment evidence, checkpoint that typed evidence, and freeze the exact
    obligation and bounded environment basis in `CompletionSeal`. Then
    exercise the report path; until fenced report assembly and a real
@@ -279,10 +284,12 @@ capability requirements and packet assignment do not.
   The built-in source-change/test rule leaves `required_environment` empty; a
   policy that requires a particular environment hash remains part of the
   planned configurable rule model.
-- **General obligation policies.** The built-in source-change/test rule,
-  immutable definitions and resolutions, host waiver, exact seal bindings, and
-  named completion refusal ship. Configurable triggers, conditions, evidence
-  kinds, blocking phases, and waiver authorities remain planned.
+- **General obligation policies.** Canonical policy-selected rule sets, the
+  stock source-change/test rule, immutable definitions and resolutions, host
+  waiver, exact seal bindings, and named completion refusal ship. V1 accepts
+  only its bounded typed trigger/requirement schema. Additional triggers,
+  conditions, evidence kinds, blocking phases, waiver authorities, and a
+  general rule language remain planned.
 - **Automated evidence gathering and the sufficiency check** live in the
   external intake system, not in this repository.
 - **A real publication adapter.** V1 proves the contract against the dummy.

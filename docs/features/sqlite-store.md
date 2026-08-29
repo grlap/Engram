@@ -126,9 +126,11 @@ concurrent caller discards its local projection and returns the durable winning
 page; if focus or task binding won first, it reprojects against that new basis.
 Version 6 adds the redundant typed verification/environment evidence binding;
 version 7 adds rebuildable obligation state; version 8 adds the verification→
-environment reference and canonical environment-component projection. The
-v1–v7 upgrade runs atomically and current-version open requires both v8 columns
-rather than silently interpreting a partial projection.
+environment reference and canonical environment-component projection; version
+9 adds the nullable rule-set hash that binds each obligation projection to its
+immutable definition. The v1–v8 upgrade runs atomically and current-version
+open requires the V9 column rather than silently interpreting a partial
+projection. `NULL` retains the stock V1 meaning for legacy definitions.
 Upgrading an older store clears only an unacknowledged tentative page, because
 versions 1-4 did not retain enough information to reconstruct that exact
 projection; the confirmed cursor remains unchanged and the page is delivered

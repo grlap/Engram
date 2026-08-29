@@ -13,13 +13,15 @@ use crate::{
     CanonicalObject, ObjectHash,
     domain::{
         ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, BuiltinObligationRuleRef,
-        CONTROL_SCHEMA_VERSION, ChangeCursor, ContextPacket, ControlAssurance, ControlDirective,
-        ControlHealth, ControlRefusalCode, DirectiveSatisfaction, DirectiveTarget, EffectClass,
-        ExecutionObservation, IssuedTurnGrant, LeaseBasis, LeaseKind, LeaseMode,
-        ObservedActionBeginDecision, ObservedTurnDecision, PacketSafety, ParticipantMembership,
-        ProjectPolicyEpoch, SessionPhase, TaskDelta, TaskState, TurnBeginDecision,
-        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision,
-        TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnPurpose, VerificationEvidence,
+        BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextPacket,
+        ControlAssurance, ControlDirective, ControlHealth, ControlRefusalCode,
+        DirectiveSatisfaction, DirectiveTarget, EffectClass, ExecutionObservation, IssuedTurnGrant,
+        LeaseBasis, LeaseKind, LeaseMode, OBLIGATION_RULE_SET_SCHEMA_VERSION,
+        ObligationRuleDefinition, ObligationRuleSet, ObservedActionBeginDecision,
+        ObservedTurnDecision, PacketSafety, ParticipantMembership, ProjectPolicyEpoch,
+        SessionPhase, TaskDelta, TaskState, TurnBeginDecision, TurnBeginSnapshot,
+        TurnCheckpointDecision, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
+        TurnGrantBasis, TurnGrantState, TurnPurpose, VerificationEvidence,
         VerificationEvidenceMismatch, VerificationRequirement, VerificationResult,
         WorkEvidenceKind, WorkObligation, WorkObligationId,
     },
@@ -128,25 +130,41 @@ pub fn match_verification_evidence(
     Ok(())
 }
 
-/// Immutable builtin rules opened by one exact host observation.
+/// Stock immutable V1 rule table installed by project-policy bootstrap.
 #[must_use]
-pub fn evaluate_builtin_obligation_rules(
+pub fn builtin_obligation_rule_set() -> ObligationRuleSet {
+    ObligationRuleSet {
+        schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+        rules: vec![ObligationRuleDefinition {
+            rule: BuiltinObligationRuleRef {
+                rule_id: "source_mutation_requires_test".into(),
+                rule_version: 1,
+            },
+            trigger: BuiltinObligationTrigger::SourceChanged,
+            requirement: VerificationRequirement {
+                check_kind: crate::domain::VerificationKind::Test,
+                check_fingerprint: None,
+                required_environment: None,
+            },
+        }],
+    }
+}
+
+/// Evaluates one exact immutable rule set against one host observation.
+#[must_use]
+pub fn evaluate_obligation_rules(
+    rule_set: &ObligationRuleSet,
     observation: &ExecutionObservation,
 ) -> Vec<(BuiltinObligationRuleRef, VerificationRequirement)> {
-    if !observation.source_changed {
-        return Vec::new();
-    }
-    vec![(
-        BuiltinObligationRuleRef {
-            rule_id: "source_mutation_requires_test".into(),
-            rule_version: 1,
-        },
-        VerificationRequirement {
-            check_kind: crate::domain::VerificationKind::Test,
-            check_fingerprint: None,
-            required_environment: None,
-        },
-    )]
+    rule_set
+        .rules
+        .iter()
+        .filter(|definition| match definition.trigger {
+            BuiltinObligationTrigger::SourceChanged => observation.source_changed,
+            BuiltinObligationTrigger::Unknown => false,
+        })
+        .map(|definition| (definition.rule.clone(), definition.requirement.clone()))
+        .collect()
 }
 
 /// Complete immutable inputs for resolving open obligations with one evidence
@@ -1977,6 +1995,7 @@ mod tests {
             effect: EffectClass::MutateLocal,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: true,
+            obligation_rule_set: None,
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "content-revision-1".into(),
@@ -1996,6 +2015,7 @@ mod tests {
             effect: EffectClass::Observe,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: false,
+            obligation_rule_set: None,
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),
@@ -2021,12 +2041,12 @@ mod tests {
             actor,
             recorded_at: verification_time,
         };
-        let rules = evaluate_builtin_obligation_rules(&latest_mutation);
+        let rules = evaluate_obligation_rules(&builtin_obligation_rule_set(), &latest_mutation);
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].0.rule_id, "source_mutation_requires_test");
         assert_eq!(rules[0].1.check_kind, VerificationKind::Test);
         assert_eq!(rules[0].1.check_fingerprint, None);
-        assert!(evaluate_builtin_obligation_rules(&producer).is_empty());
+        assert!(evaluate_obligation_rules(&builtin_obligation_rule_set(), &producer).is_empty());
         let requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: Some(evidence.check_fingerprint.clone()),

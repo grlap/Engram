@@ -39,7 +39,8 @@ use crate::{
         ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome, HostPathPolicy,
         IssuedTurnGrant, LocalTask, MemoryAssertionEvent, MemoryContradictionEvent,
         MemoryContradictionReceipt, MemoryId, MemoryRecord, MemoryStatus, MemorySummary,
-        MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, ObservedTurnDecision,
+        MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
+        OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, ObservedTurnDecision,
         OpenWorkObligation, PacketSafety, ParticipantMembership, ProjectPolicyAuthorityDecision,
         ProjectPolicyEpoch, ProjectPolicyOperation, SCHEMA_VERSION, Scope, Sensitivity, SessionId,
         SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId,
@@ -366,6 +367,7 @@ pub struct ControlDiagnostics {
     pub policy_epoch: ProjectPolicyEpoch,
     pub required_assurance: ControlAssurance,
     pub supported_effects: Vec<EffectClass>,
+    pub obligation_rule_set: ObjectHash,
     pub unenforced_effects: Vec<EffectClass>,
     pub active_sessions: usize,
     pub issued_turns: usize,
@@ -385,6 +387,19 @@ pub struct ControlPolicyUpdateReceipt {
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_required_assurance: ControlAssurance,
     pub required_assurance: ControlAssurance,
+    pub activated_at: DateTime<Utc>,
+}
+
+/// Operator-facing receipt for one immutable obligation rule-set activation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ObligationRuleSetUpdateReceipt {
+    pub changed: bool,
+    pub active_policy: ObjectHash,
+    pub previous_policy: Option<ObjectHash>,
+    pub authority: ObjectHash,
+    pub policy_epoch: ProjectPolicyEpoch,
+    pub previous_rule_set: Option<ObjectHash>,
+    pub obligation_rule_set: ObjectHash,
     pub activated_at: DateTime<Utc>,
 }
 
@@ -437,7 +452,8 @@ const MAX_TYPED_EVIDENCE_REFS: usize = 64;
 const MAX_TYPED_EVIDENCE_REF_BYTES: usize = 1_024;
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
 const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
-const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 2;
+const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 3;
+const LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 2;
 const CONTROL_POLICY_SCHEMA_VERSION_V1: u16 = 1;
 const CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1: u16 = 1;
 const CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1: u16 = 1;
@@ -541,12 +557,14 @@ struct RawControlSession {
 }
 
 struct ControlPolicyProjection {
+    state_schema_version: i64,
     policy_hash: ObjectHash,
     authority_hash: ObjectHash,
     epoch: ProjectPolicyEpoch,
     required_assurance: ControlAssurance,
     supported_effects: Vec<EffectClass>,
     grant_ttl_seconds: i64,
+    obligation_rule_set: Option<ObjectHash>,
     activated_at: DateTime<Utc>,
 }
 
@@ -1247,7 +1265,8 @@ impl SqliteStore {
                     ));
                 }
             }
-            CONTROL_POLICY_STATE_SCHEMA_VERSION => {
+            LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION
+            | CONTROL_POLICY_STATE_SCHEMA_VERSION => {
                 if !columns.contains("policy_hash") {
                     return Err(StoreError::InvalidControlProjection(
                         "current control policy state has no active policy hash".into(),
@@ -1270,6 +1289,16 @@ impl SqliteStore {
                 // can mutate a partially corrupt current store.
                 let snapshot = connection.unchecked_transaction()?;
                 Self::verify_control_policy_history(&snapshot)?;
+                if schema_version == CONTROL_POLICY_STATE_SCHEMA_VERSION {
+                    let (_, policy, _) = Self::load_control_policy_head(&snapshot)?;
+                    Self::validate_migratable_active_control_policy(&policy)?;
+                    let rule_set = policy.obligation_rule_set.as_ref().ok_or_else(|| {
+                        StoreError::InvalidControlProjection(
+                            "current control policy has no obligation rule-set selection".into(),
+                        )
+                    })?;
+                    Self::load_obligation_rule_set_on(&snapshot, rule_set)?;
+                }
                 snapshot.commit()?;
             }
             other => {
@@ -1352,7 +1381,8 @@ impl SqliteStore {
                         .into(),
                 ));
             }
-            Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
+            let policy = Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
+            Self::upgrade_builtin_obligation_rules_on(connection, policy, Utc::now())?;
             return Ok(());
         }
         let projected_state: Option<(i64, String, String, i64)> = connection
@@ -1412,6 +1442,20 @@ impl SqliteStore {
                     BUILTIN_CONTROL_GRANT_TTL_SECONDS,
                 )
             };
+        if schema_version == LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION {
+            let (policy, _, _) = Self::load_control_policy_head(connection)?;
+            if initial_required_assurance
+                .is_some_and(|requested| requested != policy.required_assurance)
+            {
+                return Err(StoreError::InvalidControlProjection(
+                    "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                        .into(),
+                ));
+            }
+            let policy = Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
+            Self::upgrade_builtin_obligation_rules_on(connection, policy, Utc::now())?;
+            return Ok(());
+        }
         if schema_version != 1 {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy state schema {schema_version} is not supported"
@@ -1498,12 +1542,14 @@ impl SqliteStore {
                     )
                 }
             };
+        let obligation_rule_set = Self::insert_builtin_obligation_rule_set(connection)?;
         let authority = ProjectPolicyAuthorityDecision {
             schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1,
             operation: ProjectPolicyOperation::SetRequiredAssurance,
             policy_epoch: ProjectPolicyEpoch(1),
             previous_policy: None,
             required_assurance,
+            obligation_rule_set: Some(obligation_rule_set.clone()),
             authorized_by,
             reason,
             decided_at: now,
@@ -1527,6 +1573,7 @@ impl SqliteStore {
             required_assurance,
             supported_effects: projected_effects,
             grant_ttl_seconds: projected_grant_ttl,
+            obligation_rule_set: Some(obligation_rule_set),
             authority: authority_object.hash().clone(),
             activated_at: now,
         };
@@ -1647,6 +1694,7 @@ impl SqliteStore {
             policy_epoch: ProjectPolicyEpoch(next_epoch),
             previous_policy: Some(current.policy_hash.clone()),
             required_assurance: current.required_assurance,
+            obligation_rule_set: current.obligation_rule_set.clone(),
             authorized_by: ActorContext {
                 actor_id: source.into(),
                 actor_kind: "system".into(),
@@ -1680,10 +1728,11 @@ impl SqliteStore {
             required_assurance: current.required_assurance,
             supported_effects: new_effects,
             grant_ttl_seconds: BUILTIN_CONTROL_GRANT_TTL_SECONDS,
+            obligation_rule_set: current.obligation_rule_set,
             authority: authority_object.hash().clone(),
             activated_at: now,
         };
-        Self::validate_active_control_policy(&policy)?;
+        Self::validate_migratable_active_control_policy(&policy)?;
         let policy_object = CanonicalObject::freeze(&policy)?;
         Self::insert_object(connection, "control_policy", &policy_object)?;
         connection.execute(
@@ -1727,6 +1776,184 @@ impl SqliteStore {
             ));
         }
         Ok(activated)
+    }
+
+    fn insert_builtin_obligation_rule_set(
+        connection: &Connection,
+    ) -> Result<ObjectHash, StoreError> {
+        let rule_set = crate::control::builtin_obligation_rule_set();
+        Self::validate_obligation_rule_set(&rule_set)?;
+        let object = CanonicalObject::freeze(&rule_set)?;
+        Self::insert_object(connection, "obligation_rule_set", &object)?;
+        Ok(object.hash().clone())
+    }
+
+    pub(super) fn load_obligation_rule_set_on(
+        connection: &Connection,
+        hash: &ObjectHash,
+    ) -> Result<ObligationRuleSet, StoreError> {
+        let bytes = Self::load_control_object_bytes(connection, hash, "obligation_rule_set")?;
+        let rule_set: ObligationRuleSet = CanonicalObject::verify(hash, bytes)?.decode()?;
+        Self::validate_obligation_rule_set(&rule_set)?;
+        Ok(rule_set)
+    }
+
+    pub(super) fn obligation_rule_set_for_policy_on(
+        connection: &Connection,
+        policy_hash: &ObjectHash,
+    ) -> Result<(Option<ObjectHash>, ObligationRuleSet), StoreError> {
+        let (policy, _) = Self::load_control_policy_version(connection, policy_hash)?;
+        match policy.obligation_rule_set {
+            Some(hash) => {
+                let rule_set = Self::load_obligation_rule_set_on(connection, &hash)?;
+                Ok((Some(hash), rule_set))
+            }
+            None => Ok((None, crate::control::builtin_obligation_rule_set())),
+        }
+    }
+
+    fn obligation_rule_set_for_policy_epoch_on(
+        connection: &Connection,
+        epoch: ProjectPolicyEpoch,
+    ) -> Result<(Option<ObjectHash>, ObligationRuleSet), StoreError> {
+        let stored_hash = connection
+            .query_row(
+                "SELECT policy_hash FROM control_policy_versions WHERE policy_epoch = ?1",
+                [epoch.0],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::InvalidControlProjection(format!(
+                    "turn grant names missing control policy epoch {}",
+                    epoch.0
+                ))
+            })?;
+        let policy_hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        Self::obligation_rule_set_for_policy_on(connection, &policy_hash)
+    }
+
+    fn validate_obligation_rule_set(rule_set: &ObligationRuleSet) -> Result<(), StoreError> {
+        const MAX_RULES: usize = 64;
+        let mut identities = HashSet::new();
+        let valid = rule_set.schema_version == OBLIGATION_RULE_SET_SCHEMA_VERSION
+            && rule_set.rules.len() <= MAX_RULES
+            && rule_set.rules.iter().all(|definition| {
+                let id = definition.rule.rule_id.as_str();
+                !id.is_empty()
+                    && id.len() <= 128
+                    && id.trim() == id
+                    && definition.rule.rule_version > 0
+                    && !matches!(
+                        definition.trigger,
+                        crate::domain::BuiltinObligationTrigger::Unknown
+                    )
+                    && identities.insert((id.to_owned(), definition.rule.rule_version))
+            });
+        if !valid {
+            return Err(StoreError::InvalidControlProjection(
+                "canonical obligation rule set has an unsupported or ambiguous shape".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the migration successor, authority, selector CAS, and history verification form one atomic policy upgrade"
+    )]
+    fn upgrade_builtin_obligation_rules_on(
+        connection: &Connection,
+        current: ControlPolicyProjection,
+        now: DateTime<Utc>,
+    ) -> Result<ControlPolicyProjection, StoreError> {
+        if let Some(hash) = current.obligation_rule_set.as_ref() {
+            Self::load_obligation_rule_set_on(connection, hash)?;
+            return Ok(current);
+        }
+        let rule_set_hash = Self::insert_builtin_obligation_rule_set(connection)?;
+        let next_epoch = current.epoch.0.checked_add(1).ok_or_else(|| {
+            StoreError::InvalidControlProjection("control policy epoch overflowed".into())
+        })?;
+        let source = "engram:migration";
+        let reason = "select the canonical stock V1 obligation rule set";
+        let authority = ProjectPolicyAuthorityDecision {
+            schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1,
+            operation: ProjectPolicyOperation::UpgradeBuiltinObligationRules,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            obligation_rule_set: Some(rule_set_hash.clone()),
+            authorized_by: ActorContext {
+                actor_id: source.into(),
+                actor_kind: "system".into(),
+                assurance: AssuranceLevel::Asserted,
+                run_id: None,
+                session_id: None,
+                source_tool: Some(source.into()),
+                source_skill: None,
+                provenance_chain: Vec::new(),
+                reason: reason.into(),
+            },
+            reason: reason.into(),
+            decided_at: now,
+        };
+        let authority_object = CanonicalObject::freeze(&authority)?;
+        Self::insert_object(
+            connection,
+            "project_policy_authority_decision",
+            &authority_object,
+        )?;
+        let policy = ControlPolicy {
+            schema_version: CONTROL_POLICY_SCHEMA_VERSION_V1,
+            control_schema_version: CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            supported_effects: current.supported_effects,
+            grant_ttl_seconds: current.grant_ttl_seconds,
+            obligation_rule_set: Some(rule_set_hash),
+            authority: authority_object.hash().clone(),
+            activated_at: now,
+        };
+        Self::validate_active_control_policy(&policy)?;
+        let policy_object = CanonicalObject::freeze(&policy)?;
+        Self::insert_object(connection, "control_policy", &policy_object)?;
+        connection.execute(
+            "INSERT INTO control_policy_versions (
+                 policy_hash, policy_epoch, authority_hash, policy_json
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                policy_object.hash().as_str(),
+                policy.policy_epoch.0,
+                authority_object.hash().as_str(),
+                policy_object.bytes(),
+            ],
+        )?;
+        let changed = connection.execute(
+            "UPDATE control_policy_state SET
+                 schema_version = ?1, policy_epoch = ?2,
+                 required_assurance = ?3, supported_effects_json = ?4,
+                 grant_ttl_seconds = ?5, policy_hash = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+            params![
+                CONTROL_POLICY_STATE_SCHEMA_VERSION,
+                policy.policy_epoch.0,
+                enum_name(policy.required_assurance)?,
+                serde_json::to_string(&policy.supported_effects)?,
+                policy.grant_ttl_seconds,
+                policy_object.hash().as_str(),
+                current.epoch.0,
+                current.policy_hash.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidControlProjection(
+                "obligation rule-set policy upgrade compare-and-swap matched no row".into(),
+            ));
+        }
+        Self::verify_control_policy_history(connection)
     }
 
     fn current_core_schema_is_complete(connection: &Connection) -> Result<bool, StoreError> {
@@ -3920,6 +4147,10 @@ impl SqliteStore {
                 } else {
                     None
                 };
+                let (obligation_rule_set, _) = Self::obligation_rule_set_for_policy_epoch_on(
+                    &transaction,
+                    grant.grant.basis.project_policy_epoch,
+                )?;
                 let mut observation_records = HashMap::new();
                 let mut execution_observations = Vec::with_capacity(observations.len());
                 for input in observations {
@@ -3943,6 +4174,7 @@ impl SqliteStore {
                         effect: input.effect,
                         outcome: input.outcome,
                         source_changed: input.source_changed,
+                        obligation_rule_set: obligation_rule_set.clone(),
                         source_basis: input.source_basis.clone(),
                         observed_at: input.observed_at,
                         actor: session.actor.clone(),
@@ -6180,6 +6412,7 @@ impl SqliteStore {
             policy_epoch: ProjectPolicyEpoch(next_epoch),
             previous_policy: Some(current.policy_hash.clone()),
             required_assurance,
+            obligation_rule_set: current.obligation_rule_set.clone(),
             authorized_by,
             reason,
             decided_at: now,
@@ -6203,6 +6436,7 @@ impl SqliteStore {
             required_assurance,
             supported_effects: current.supported_effects,
             grant_ttl_seconds: current.grant_ttl_seconds,
+            obligation_rule_set: current.obligation_rule_set,
             authority: authority_object.hash().clone(),
             activated_at: now,
         };
@@ -6263,6 +6497,171 @@ impl SqliteStore {
         Ok(receipt)
     }
 
+    /// Selects a canonical obligation rule set through a new immutable project
+    /// policy version. This host/operator-only entry point is intentionally not
+    /// exposed through the agent MCP or host turn protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the rule set or asserted attribution is
+    /// invalid, the expected policy is stale, history is corrupt, or the CAS
+    /// activation cannot complete atomically.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "rule-set insertion, attributed policy activation, selector CAS, and post-CAS verification form one auditable transaction"
+    )]
+    pub fn set_obligation_rule_set<R: Redactor>(
+        &mut self,
+        rule_set: &ObligationRuleSet,
+        authorized_by: &ActorContext,
+        reason: &str,
+        expected_policy: Option<&ObjectHash>,
+        now: DateTime<Utc>,
+        redactor: &R,
+    ) -> Result<ObligationRuleSetUpdateReceipt, StoreError> {
+        Self::validate_obligation_rule_set(rule_set)?;
+        if authorized_by.assurance != AssuranceLevel::Asserted {
+            return Err(StoreError::InvalidControlProjection(
+                "V1 control-policy administration records asserted host context only".into(),
+            ));
+        }
+        let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
+        let reason = normalize_control_text(reason, "obligation rule-set update reason")?;
+        redactor
+            .inspect(&reason)
+            .map_err(StoreError::RedactionRefused)?;
+        let rule_set_object = CanonicalObject::freeze(rule_set)?;
+
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current = Self::verify_control_policy_history(&transaction)?;
+        if let Some(expected) = expected_policy
+            && expected != &current.policy_hash
+        {
+            return Err(StoreError::ControlPolicyConflict {
+                expected: expected.clone(),
+                current: current.policy_hash,
+            });
+        }
+        let current_rule_set = current.obligation_rule_set.clone().ok_or_else(|| {
+            StoreError::InvalidControlProjection(
+                "active control policy has no obligation rule-set selection".into(),
+            )
+        })?;
+        if current_rule_set == *rule_set_object.hash() {
+            let (policy, _) =
+                Self::load_control_policy_version(&transaction, &current.policy_hash)?;
+            let receipt = ObligationRuleSetUpdateReceipt {
+                changed: false,
+                active_policy: current.policy_hash,
+                previous_policy: policy.previous_policy,
+                authority: current.authority_hash,
+                policy_epoch: current.epoch,
+                previous_rule_set: Some(current_rule_set.clone()),
+                obligation_rule_set: current_rule_set,
+                activated_at: current.activated_at,
+            };
+            transaction.commit()?;
+            return Ok(receipt);
+        }
+
+        Self::insert_object(&transaction, "obligation_rule_set", &rule_set_object)?;
+        let next_epoch = current.epoch.0.checked_add(1).ok_or_else(|| {
+            StoreError::InvalidControlProjection("control policy epoch overflowed".into())
+        })?;
+        let authority = ProjectPolicyAuthorityDecision {
+            schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1,
+            operation: ProjectPolicyOperation::SetObligationRuleSet,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            obligation_rule_set: Some(rule_set_object.hash().clone()),
+            authorized_by,
+            reason,
+            decided_at: now,
+        };
+        let authority_object = CanonicalObject::freeze(&authority)?;
+        if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
+            )));
+        }
+        Self::insert_object(
+            &transaction,
+            "project_policy_authority_decision",
+            &authority_object,
+        )?;
+        let policy = ControlPolicy {
+            schema_version: CONTROL_POLICY_SCHEMA_VERSION_V1,
+            control_schema_version: CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            supported_effects: current.supported_effects,
+            grant_ttl_seconds: current.grant_ttl_seconds,
+            obligation_rule_set: Some(rule_set_object.hash().clone()),
+            authority: authority_object.hash().clone(),
+            activated_at: now,
+        };
+        Self::validate_active_control_policy(&policy)?;
+        let policy_object = CanonicalObject::freeze(&policy)?;
+        Self::insert_object(&transaction, "control_policy", &policy_object)?;
+        transaction.execute(
+            "INSERT INTO control_policy_versions (
+                 policy_hash, policy_epoch, authority_hash, policy_json
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                policy_object.hash().as_str(),
+                policy.policy_epoch.0,
+                authority_object.hash().as_str(),
+                policy_object.bytes(),
+            ],
+        )?;
+        let changed = transaction.execute(
+            "UPDATE control_policy_state SET
+                 schema_version = ?1, policy_epoch = ?2,
+                 required_assurance = ?3, supported_effects_json = ?4,
+                 grant_ttl_seconds = ?5, policy_hash = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+            params![
+                CONTROL_POLICY_STATE_SCHEMA_VERSION,
+                policy.policy_epoch.0,
+                enum_name(policy.required_assurance)?,
+                serde_json::to_string(&policy.supported_effects)?,
+                policy.grant_ttl_seconds,
+                policy_object.hash().as_str(),
+                current.epoch.0,
+                current.policy_hash.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidControlProjection(
+                "obligation rule-set policy compare-and-swap matched no row".into(),
+            ));
+        }
+        let activated = Self::load_active_control_policy(&transaction)?;
+        if activated.policy_hash != *policy_object.hash() || activated.epoch != policy.policy_epoch
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "activated obligation rule-set policy failed post-CAS integrity validation".into(),
+            ));
+        }
+        Self::verify_control_policy_history(&transaction)?;
+        let receipt = ObligationRuleSetUpdateReceipt {
+            changed: true,
+            active_policy: policy_object.hash().clone(),
+            previous_policy: policy.previous_policy,
+            authority: authority_object.hash().clone(),
+            policy_epoch: policy.policy_epoch,
+            previous_rule_set: Some(current_rule_set),
+            obligation_rule_set: rule_set_object.hash().clone(),
+            activated_at: policy.activated_at,
+        };
+        transaction.commit()?;
+        Ok(receipt)
+    }
+
     /// Summarizes the built-in control policy and live operational envelope.
     ///
     /// # Errors
@@ -6277,6 +6676,17 @@ impl SqliteStore {
         } else {
             Self::verify_control_policy_history(&self.connection)?
         };
+        if policy.state_schema_version != CONTROL_POLICY_STATE_SCHEMA_VERSION {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy uses a migratable legacy state schema".into(),
+            ));
+        }
+        let obligation_rule_set = policy.obligation_rule_set.clone().ok_or_else(|| {
+            StoreError::InvalidControlProjection(
+                "active control policy has no obligation rule-set selection".into(),
+            )
+        })?;
+        Self::load_obligation_rule_set_on(&self.connection, &obligation_rule_set)?;
         let active_sessions = self.connection.query_row(
             "SELECT COUNT(*) FROM control_sessions WHERE phase != 'exited'",
             [],
@@ -6312,6 +6722,7 @@ impl SqliteStore {
             active_policy: policy.policy_hash,
             policy_epoch: policy.epoch,
             required_assurance: policy.required_assurance,
+            obligation_rule_set,
             supported_effects: policy.supported_effects,
             unenforced_effects,
             active_sessions: Self::control_count(active_sessions, "active session")?,
@@ -6529,7 +6940,18 @@ impl SqliteStore {
     ) -> Result<(), StoreError> {
         report.checked_control_records += 1;
         match Self::verify_control_policy_history(connection) {
-            Ok(_) => {}
+            Ok(policy) => {
+                let active_rules_are_valid = policy.state_schema_version
+                    == CONTROL_POLICY_STATE_SCHEMA_VERSION
+                    && policy.obligation_rule_set.as_ref().is_some_and(|hash| {
+                        Self::load_obligation_rule_set_on(connection, hash).is_ok()
+                    });
+                if !active_rules_are_valid {
+                    report
+                        .invalid_control_records
+                        .push("control_policy_state:active".into());
+                }
+            }
             Err(error @ StoreError::Sqlite(_)) => return Err(error),
             Err(_) => report
                 .invalid_control_records
@@ -6557,7 +6979,15 @@ impl SqliteStore {
             report.checked_control_records += 1;
             let valid = ObjectHash::from_stored(stored_hash.clone())
                 .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
-                .and_then(|hash| Self::load_control_policy_version(connection, &hash));
+                .and_then(|hash| Self::load_control_policy_version(connection, &hash))
+                .and_then(|(policy, authority)| {
+                    if policy.schema_version == CONTROL_POLICY_SCHEMA_VERSION_V1
+                        && let Some(rule_set) = policy.obligation_rule_set.as_ref()
+                    {
+                        Self::load_obligation_rule_set_on(connection, rule_set)?;
+                    }
+                    Ok((policy, authority))
+                });
             let is_orphaned_successor =
                 active_policy_epoch.is_none_or(|active_epoch| projected_epoch > active_epoch);
             let is_invalid = match valid {
@@ -6855,7 +7285,18 @@ impl SqliteStore {
         connection: &Connection,
     ) -> Result<ControlPolicyProjection, StoreError> {
         let (projection, policy, _) = Self::load_control_policy_head(connection)?;
+        if projection.state_schema_version != CONTROL_POLICY_STATE_SCHEMA_VERSION {
+            return Err(StoreError::InvalidControlProjection(
+                "active control policy uses a migratable legacy state schema".into(),
+            ));
+        }
         Self::validate_active_control_policy(&policy)?;
+        let rule_set = policy.obligation_rule_set.as_ref().ok_or_else(|| {
+            StoreError::InvalidControlProjection(
+                "active control policy has no obligation rule-set selection".into(),
+            )
+        })?;
+        Self::load_obligation_rule_set_on(connection, rule_set)?;
         Ok(projection)
     }
 
@@ -6913,7 +7354,14 @@ impl SqliteStore {
                     "control policy singleton is missing from an established store".into(),
                 )
             })?;
-        if schema_version != CONTROL_POLICY_STATE_SCHEMA_VERSION || epoch <= 0 || grant_ttl <= 0 {
+        if ![
+            LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION,
+            CONTROL_POLICY_STATE_SCHEMA_VERSION,
+        ]
+        .contains(&schema_version)
+            || epoch <= 0
+            || grant_ttl <= 0
+        {
             return Err(StoreError::InvalidControlProjection(
                 "active control policy has an unknown state schema or invalid bounds".into(),
             ));
@@ -6956,12 +7404,14 @@ impl SqliteStore {
             ));
         }
         let projection = ControlPolicyProjection {
+            state_schema_version: schema_version,
             policy_hash: active_hash,
             authority_hash: policy.authority.clone(),
             epoch: policy.policy_epoch,
             required_assurance: policy.required_assurance,
             supported_effects: policy.supported_effects.clone(),
             grant_ttl_seconds: policy.grant_ttl_seconds,
+            obligation_rule_set: policy.obligation_rule_set.clone(),
             activated_at: policy.activated_at,
         };
         Ok((projection, policy, authority))
@@ -7026,6 +7476,7 @@ impl SqliteStore {
             || authority.policy_epoch != policy.policy_epoch
             || authority.previous_policy != policy.previous_policy
             || authority.required_assurance != policy.required_assurance
+            || authority.obligation_rule_set != policy.obligation_rule_set
             || authority.decided_at != policy.activated_at
             || (authority_is_v1
                 && (matches!(authority.operation, ProjectPolicyOperation::Unknown)
@@ -7110,6 +7561,7 @@ impl SqliteStore {
             || policy.control_schema_version != CONTROL_SCHEMA_VERSION
             || policy.grant_ttl_seconds > MAX_CONTROL_GRANT_TTL_SECONDS
             || policy.supported_effects != Self::builtin_control_effects()
+            || policy.obligation_rule_set.is_none()
         {
             return Err(StoreError::InvalidControlProjection(
                 "active control policy has an unsupported schema or effect envelope".into(),
@@ -7146,56 +7598,128 @@ impl SqliteStore {
         }
         match authority.operation {
             ProjectPolicyOperation::SetRequiredAssurance => {
-                let envelope_changed = previous.is_some_and(|previous| {
-                    previous.schema_version == CONTROL_POLICY_SCHEMA_VERSION_V1
-                        && (current.supported_effects != previous.supported_effects
-                            || current.grant_ttl_seconds != previous.grant_ttl_seconds)
-                });
-                let invalid_epoch_one = previous.is_none()
-                    && !Self::is_recognized_builtin_envelope(
-                        &current.supported_effects,
-                        current.grant_ttl_seconds,
-                    );
-                if envelope_changed || invalid_epoch_one {
-                    return Err(StoreError::InvalidControlProjection(
-                        "a V1 SetRequiredAssurance policy transition changed the effect envelope or grant TTL"
-                            .into(),
-                    ));
-                }
+                Self::validate_assurance_policy_transition(previous, current)?;
             }
             ProjectPolicyOperation::UpgradeBuiltinEnvelope => {
-                let Some(previous) = previous else {
-                    return Err(StoreError::InvalidControlProjection(
-                        "a V1 UpgradeBuiltinEnvelope policy transition cannot create epoch one"
-                            .into(),
-                    ));
-                };
-                let previous_is_recognized = Self::is_recognized_builtin_envelope(
-                    &previous.supported_effects,
-                    previous.grant_ttl_seconds,
-                );
-                let current_is_recognized = Self::is_recognized_builtin_envelope(
-                    &current.supported_effects,
-                    current.grant_ttl_seconds,
-                );
-                let envelope_changed = current.supported_effects != previous.supported_effects
-                    || current.grant_ttl_seconds != previous.grant_ttl_seconds;
-                if current.required_assurance != previous.required_assurance
-                    || !previous_is_recognized
-                    || !current_is_recognized
-                    || !envelope_changed
-                {
-                    return Err(StoreError::InvalidControlProjection(
-                        "a V1 UpgradeBuiltinEnvelope transition must preserve assurance and move between recognized built-in envelopes"
-                            .into(),
-                    ));
-                }
+                Self::validate_builtin_envelope_transition(previous, current)?;
+            }
+            ProjectPolicyOperation::UpgradeBuiltinObligationRules => {
+                Self::validate_builtin_obligation_rule_transition(previous, current)?;
+            }
+            ProjectPolicyOperation::SetObligationRuleSet => {
+                Self::validate_obligation_rule_set_transition(previous, current)?;
             }
             ProjectPolicyOperation::Unknown => {
                 return Err(StoreError::InvalidControlProjection(
                     "a V1 control policy authority uses an unknown operation".into(),
                 ));
             }
+        }
+        Ok(())
+    }
+
+    fn validate_assurance_policy_transition(
+        previous: Option<&ControlPolicy>,
+        current: &ControlPolicy,
+    ) -> Result<(), StoreError> {
+        let envelope_changed = previous.is_some_and(|previous| {
+            previous.schema_version == CONTROL_POLICY_SCHEMA_VERSION_V1
+                && (current.supported_effects != previous.supported_effects
+                    || current.grant_ttl_seconds != previous.grant_ttl_seconds)
+        });
+        let invalid_epoch_one = previous.is_none()
+            && !Self::is_recognized_builtin_envelope(
+                &current.supported_effects,
+                current.grant_ttl_seconds,
+            );
+        let rule_set_changed = previous
+            .is_some_and(|previous| current.obligation_rule_set != previous.obligation_rule_set);
+        if envelope_changed || invalid_epoch_one || rule_set_changed {
+            return Err(StoreError::InvalidControlProjection(
+                "a V1 SetRequiredAssurance policy transition changed a preserved policy field"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_builtin_envelope_transition(
+        previous: Option<&ControlPolicy>,
+        current: &ControlPolicy,
+    ) -> Result<(), StoreError> {
+        let Some(previous) = previous else {
+            return Err(StoreError::InvalidControlProjection(
+                "a V1 UpgradeBuiltinEnvelope policy transition cannot create epoch one".into(),
+            ));
+        };
+        let previous_is_recognized = Self::is_recognized_builtin_envelope(
+            &previous.supported_effects,
+            previous.grant_ttl_seconds,
+        );
+        let current_is_recognized = Self::is_recognized_builtin_envelope(
+            &current.supported_effects,
+            current.grant_ttl_seconds,
+        );
+        let envelope_changed = current.supported_effects != previous.supported_effects
+            || current.grant_ttl_seconds != previous.grant_ttl_seconds;
+        if current.required_assurance != previous.required_assurance
+            || current.obligation_rule_set != previous.obligation_rule_set
+            || !previous_is_recognized
+            || !current_is_recognized
+            || !envelope_changed
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "a V1 UpgradeBuiltinEnvelope transition must preserve assurance and move between recognized built-in envelopes"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_builtin_obligation_rule_transition(
+        previous: Option<&ControlPolicy>,
+        current: &ControlPolicy,
+    ) -> Result<(), StoreError> {
+        let Some(previous) = previous else {
+            return Err(StoreError::InvalidControlProjection(
+                "an obligation rule-set policy transition cannot create epoch one".into(),
+            ));
+        };
+        let builtin_hash = CanonicalObject::freeze(&crate::control::builtin_obligation_rule_set())?
+            .hash()
+            .clone();
+        if current.required_assurance != previous.required_assurance
+            || current.supported_effects != previous.supported_effects
+            || current.grant_ttl_seconds != previous.grant_ttl_seconds
+            || previous.obligation_rule_set.is_some()
+            || current.obligation_rule_set.as_ref() != Some(&builtin_hash)
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "the built-in obligation rule upgrade must select the stock set from an unselected legacy policy"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_obligation_rule_set_transition(
+        previous: Option<&ControlPolicy>,
+        current: &ControlPolicy,
+    ) -> Result<(), StoreError> {
+        let Some(previous) = previous else {
+            return Err(StoreError::InvalidControlProjection(
+                "a rule-set selection cannot create policy epoch one".into(),
+            ));
+        };
+        if current.required_assurance != previous.required_assurance
+            || current.supported_effects != previous.supported_effects
+            || current.grant_ttl_seconds != previous.grant_ttl_seconds
+            || current.obligation_rule_set.is_none()
+            || current.obligation_rule_set == previous.obligation_rule_set
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "a rule-set selection must change only the selected obligation rule set".into(),
+            ));
         }
         Ok(())
     }
@@ -9615,6 +10139,179 @@ mod tests {
     }
 
     #[test]
+    fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("obligation-rules.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open(&database).expect("initialize store");
+        let initial = store.control_diagnostics().expect("initial diagnostics");
+        let stock: ObligationRuleSet = store
+            .get(&initial.obligation_rule_set)
+            .expect("read stock rule set")
+            .expect("stock rule set object");
+        assert_eq!(stock, crate::control::builtin_obligation_rule_set());
+
+        let empty = ObligationRuleSet {
+            schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+            rules: Vec::new(),
+        };
+        let changed = store
+            .set_obligation_rule_set(
+                &empty,
+                &actor("rule-policy-admin"),
+                "disable future obligation triggers",
+                Some(&initial.active_policy),
+                now,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate empty rule set");
+        assert!(changed.changed);
+        assert_eq!(changed.previous_rule_set, Some(initial.obligation_rule_set));
+        assert_eq!(changed.policy_epoch, ProjectPolicyEpoch(2));
+        let active = store.control_diagnostics().expect("changed diagnostics");
+        assert_eq!(active.obligation_rule_set, changed.obligation_rule_set);
+
+        let replay = store
+            .set_obligation_rule_set(
+                &empty,
+                &actor("rule-policy-admin"),
+                "exact semantic replay",
+                Some(&changed.active_policy),
+                now + TimeDelta::seconds(1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("reapply selected rule set");
+        assert!(!replay.changed);
+        assert_eq!(replay.active_policy, changed.active_policy);
+        assert!(matches!(
+            store.set_obligation_rule_set(
+                &ObligationRuleSet {
+                    schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION + 1,
+                    rules: Vec::new(),
+                },
+                &actor("rule-policy-admin"),
+                "unknown schema must fail closed",
+                None,
+                now + TimeDelta::seconds(2),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidControlProjection(_))
+        ));
+        assert!(
+            store
+                .verify_all()
+                .expect("verify rule-set history")
+                .is_healthy()
+        );
+        drop(store);
+
+        let reopened = SqliteStore::open(&database).expect("reopen selected rule set");
+        let diagnostics = reopened
+            .control_diagnostics()
+            .expect("reopened diagnostics");
+        assert_eq!(diagnostics.active_policy, changed.active_policy);
+        assert_eq!(diagnostics.obligation_rule_set, changed.obligation_rule_set);
+        let selected: ObligationRuleSet = reopened
+            .get(&changed.obligation_rule_set)
+            .expect("read selected rule set")
+            .expect("selected rule set object");
+        assert_eq!(selected, empty);
+    }
+
+    #[test]
+    fn schema_two_policy_without_rule_selection_upgrades_once() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("schema-two-obligation-rules.db");
+        let store = SqliteStore::open(&database).expect("initialize current store");
+        let initial = store.control_diagnostics().expect("initial diagnostics");
+        let mut legacy_policy: ControlPolicy = store
+            .get(&initial.active_policy)
+            .expect("read initial policy")
+            .expect("initial policy object");
+        let mut legacy_authority: ProjectPolicyAuthorityDecision = store
+            .get(&legacy_policy.authority)
+            .expect("read initial authority")
+            .expect("initial authority object");
+        legacy_authority.obligation_rule_set = None;
+        let authority_object =
+            CanonicalObject::freeze(&legacy_authority).expect("freeze schema-two authority");
+        legacy_policy.obligation_rule_set = None;
+        legacy_policy.authority = authority_object.hash().clone();
+        let policy_object =
+            CanonicalObject::freeze(&legacy_policy).expect("freeze schema-two policy");
+        let transaction = store
+            .connection
+            .unchecked_transaction()
+            .expect("schema-two fixture transaction");
+        SqliteStore::insert_object(
+            &transaction,
+            "project_policy_authority_decision",
+            &authority_object,
+        )
+        .expect("insert schema-two authority");
+        SqliteStore::insert_object(&transaction, "control_policy", &policy_object)
+            .expect("insert schema-two policy");
+        transaction
+            .execute("DELETE FROM control_policy_versions", [])
+            .expect("replace policy history");
+        transaction
+            .execute(
+                "INSERT INTO control_policy_versions (
+                     policy_hash, policy_epoch, authority_hash, policy_json
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    policy_object.hash().as_str(),
+                    legacy_policy.policy_epoch.0,
+                    authority_object.hash().as_str(),
+                    policy_object.bytes(),
+                ],
+            )
+            .expect("insert schema-two version");
+        transaction
+            .execute(
+                "UPDATE control_policy_state SET schema_version = ?1, policy_hash = ?2",
+                params![
+                    LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION,
+                    policy_object.hash().as_str()
+                ],
+            )
+            .expect("select schema-two policy");
+        transaction.commit().expect("commit schema-two fixture");
+        drop(store);
+
+        let reopened = SqliteStore::open(&database).expect("upgrade schema-two policy");
+        let upgraded = reopened
+            .control_diagnostics()
+            .expect("upgraded diagnostics");
+        assert_eq!(upgraded.policy_epoch, ProjectPolicyEpoch(2));
+        let upgraded_policy: ControlPolicy = reopened
+            .get(&upgraded.active_policy)
+            .expect("read upgraded policy")
+            .expect("upgraded policy object");
+        assert_eq!(
+            upgraded_policy.obligation_rule_set.as_ref(),
+            Some(&upgraded.obligation_rule_set)
+        );
+        let upgraded_authority: ProjectPolicyAuthorityDecision = reopened
+            .get(&upgraded_policy.authority)
+            .expect("read upgrade authority")
+            .expect("upgrade authority object");
+        assert_eq!(
+            upgraded_authority.operation,
+            ProjectPolicyOperation::UpgradeBuiltinObligationRules
+        );
+        drop(reopened);
+        assert_eq!(
+            SqliteStore::open(&database)
+                .expect("idempotent upgraded reopen")
+                .control_diagnostics()
+                .expect("idempotent diagnostics")
+                .policy_epoch,
+            ProjectPolicyEpoch(2)
+        );
+    }
+
+    #[test]
     fn live_control_policy_load_is_bounded_independently_of_history_depth() {
         let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
         let mut store = SqliteStore::open_in_memory().expect("store");
@@ -9820,7 +10517,8 @@ mod tests {
                  DROP TABLE control_policy_versions;
                  DELETE FROM objects
                  WHERE object_kind IN (
-                     'control_policy', 'project_policy_authority_decision'
+                     'control_policy', 'project_policy_authority_decision',
+                     'obligation_rule_set'
                  );",
             )
             .expect("remove every control-policy artifact");
@@ -11785,7 +12483,7 @@ mod tests {
         assert_eq!(
             store.verify_all().unwrap(),
             IntegrityReport {
-                checked_objects: 3,
+                checked_objects: 4,
                 invalid_objects: Vec::new(),
                 checked_control_records: 2,
                 invalid_control_records: Vec::new(),

@@ -792,11 +792,12 @@ fn initialize(
     }
     warn_if_action_gated(control.required_assurance);
     println!(
-        "Initialized local Engram store at {} with policy {} (epoch {}, required {})",
+        "Initialized local Engram store at {} with policy {} (epoch {}, required {}, obligation rules {})",
         database.display(),
         control.active_policy,
         control.policy_epoch.0,
         control_assurance_name(control.required_assurance),
+        control.obligation_rule_set,
     );
     Ok(())
 }
@@ -825,11 +826,12 @@ fn doctor(database: &Path) -> Result<()> {
     }
     let control = store.control_diagnostics()?;
     println!(
-        "Control policy schema={} id={} epoch={} required={} supported={:?}; sessions={} issued={} begun={}",
+        "Control policy schema={} id={} epoch={} required={} obligation_rules={} supported={:?}; sessions={} issued={} begun={}",
         control.control_schema_version,
         control.active_policy,
         control.policy_epoch.0,
         control_assurance_name(control.required_assurance),
+        control.obligation_rule_set,
         control.supported_effects,
         control.active_sessions,
         control.issued_turns,

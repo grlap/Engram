@@ -130,10 +130,15 @@ session phases, exact context delivery, short-lived grants, idempotent
 operation results, and canonical checkpoint events. A control-process restart
 invalidates every unbegun grant and resumes at `sync_required`; retry evidence
 remains durable without resurrecting authority.
-Every host observation that reports `source_changed=true` now opens one
-immutable built-in test obligation on the exact run, even when the action
-failed or supplied no source basis. A later passed test may satisfy it only
-against the newest basis-bearing source mutation at the evaluated feed cut.
+The active immutable control policy now selects a canonical, hash-addressed
+obligation rule set. The stock V1 set contains one typed rule: every host
+observation that reports `source_changed=true` opens an immutable test
+obligation on the exact run, even when the action failed or supplied no source
+basis. Each observation and resulting obligation freeze the selected rule-set
+hash from the grant's policy epoch, so a later policy change affects only new
+observations and never reinterprets recorded history. A later passed test may
+satisfy the stock obligation only against the newest basis-bearing source
+mutation at the evaluated feed cut.
 If the newest mutation has no basis, the open obligations remain waiver-only
 until another basis-bearing mutation and test arrive. Focus, nested next views,
 updates, and both completion outcomes share one bounded `obligation_page`

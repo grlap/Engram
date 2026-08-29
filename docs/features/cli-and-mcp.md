@@ -59,7 +59,8 @@ engram mcp --actor-id codex --session-id session-unique-id \
 identity resolves to the same opaque SQLite path for every worktree and
 session on the host. `doctor` verifies every canonical object plus
 hash-bound control record, reports the active immutable policy hash, epoch,
-required assurance, built-in effect envelope, and live
+required assurance, selected obligation-rule-set hash, built-in effect
+envelope, and live
 issued/begun turns, and visibly warns that action gating, organizational
 authority mediation, and action-outcome reconciliation are unavailable. V1's
 development no-op redactor provides no secret or PII protection.
@@ -72,11 +73,14 @@ choice as asserted context. Plain `engram init` remains an
 idempotent create-or-migrate operation and preserves any existing active
 policy. Explicitly passing a different bootstrap value for an existing store
 fails instead of silently changing policy.
-`engram control-policy set-required-assurance` is the only shipped
-reconfiguration path: it records asserted operator attribution and a
-reason, creates immutable authority and policy objects, atomically advances
-the active policy hash and epoch, and supports an optional compare-and-swap
-hash. Reapplying the active level is idempotent. Issued grants from the prior
+`engram control-policy set-required-assurance` is the only shipped CLI
+reconfiguration path: it records asserted operator attribution and a reason,
+creates immutable authority and policy objects, atomically advances the active
+policy hash and epoch, and supports an optional compare-and-swap hash while
+preserving the selected obligation rule set. The core also provides a
+host/operator-only storage API for selecting a validated canonical rule set;
+it is not an MCP tool or host turn-protocol operation. Reapplying the active
+level is idempotent. Issued grants from the prior
 epoch fail begin with `policy_epoch_changed` and require one fresh evaluation;
 if the new requirement exceeds the host's declaration, that fresh evaluation
 instead fails `control_assurance_insufficient` because assurance is checked

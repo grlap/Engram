@@ -504,6 +504,14 @@ authenticated policy administration is deferred. The implicit bootstrap
 default uses synthetic system attribution; an explicit initial assurance
 requires and records an asserted operator plus reason. Selecting the new policy
 and advancing the project epoch is one transaction.
+The active policy also selects one canonical `ObligationRuleSet` hash. A
+recognized policy without that field is preserved and advanced by one
+system-attributed migration epoch selecting the stock V1 set; it is never
+rewritten in place. Assurance-only and built-in-envelope transitions preserve
+the selected set. A host/operator-only activation may append a validated
+`set_obligation_rule_set` successor under the same epoch/hash compare-and-swap;
+no MCP or model-turn operation can administer it. Unknown schemas, unknown
+triggers, duplicate rule identities, and missing selected objects fail closed.
 Every active run rechecks that shared epoch at turn/action boundaries—no
 single work claim or resource lease controls project policy. Host/user
 authority is the ceiling; control policy and work-applicable pinned rules may
@@ -1082,10 +1090,16 @@ source revision reopens the requirement. Agent-authored generic evidence never
 satisfies verification; the work protocol may only attach an existing typed
 hash to the focused run.
 
-Every such observation with `source_changed=true` opens one immutable built-in
-test obligation regardless of outcome or source-basis presence. Obligation
-definitions and terminal satisfaction/waiver events are direct project,
-root-work, and run-execution feed objects; query rows are verified projections.
+Every checkpoint resolves the obligation rule set selected by the begun
+grant's frozen project-policy epoch and records its hash on the canonical
+`ExecutionObservation`. The stock V1 set maps every observation with
+`source_changed=true` to one immutable test obligation regardless of outcome
+or source-basis presence. Each definition binds the same rule-set hash, rule
+identity/version, trigger, and requirement. A later policy activation applies
+only to later observations and cannot reinterpret existing history; legacy
+records without the hash retain the stock V1 meaning. Obligation definitions
+and terminal satisfaction/waiver events are direct project, root-work, and
+run-execution feed objects; query rows are verified projections.
 A passed test satisfies open definitions only against the latest mutation at
 the evaluated run-feed cut. A latest basisless mutation therefore leaves the
 open set waiver-only until a later basis-bearing mutation and passed test; that

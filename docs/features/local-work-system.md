@@ -449,9 +449,14 @@ surface. A later mutation at the evaluated run-feed cut makes older
 verification stale even when it came from another workspace with the same
 previous content fingerprint.
 
-Every source-changing execution observation also creates one immutable
-built-in test obligation on the run, independent of action outcome and source
-basis availability. Definitions and their later satisfied/waived resolutions
+Every execution observation freezes the canonical obligation-rule-set hash
+selected by the begun grant's project-policy epoch. The stock V1 set turns each
+source-changing observation into one immutable test obligation on the run,
+independent of action outcome and source-basis availability. Each definition
+repeats the exact rule-set hash, rule identity/version, trigger, and requirement;
+changing the active policy affects only later observations and never
+reinterprets an existing definition. Legacy records without the hash retain
+the stock V1 meaning. Definitions and their later satisfied/waived resolutions
 are direct dense feed objects; `work_run_obligations` is only their verified
 query projection. Satisfaction is evaluated against the latest mutation at an
 exact run-feed cut. A passed test for a later basis-bearing mutation may close

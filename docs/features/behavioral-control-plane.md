@@ -606,17 +606,25 @@ therefore makes a later source mutation reopen the requirement. Generic
 agent-recorded `work_evidence` remains useful context but never verifies a
 check.
 
-The built-in `source_mutation_requires_test` rule evaluates every work-bound
+The active immutable `ControlPolicy` selects a canonical
+`ObligationRuleSet` by hash. The stock V1 set contains the typed
+`source_mutation_requires_test` rule, which evaluates every work-bound
 observation with `source_changed=true`, regardless of outcome or whether a
-source basis is present. Each match appends one immutable `work_obligation`
-definition directly to the project, root-work, and run-execution feeds. A
-passed `test` verification appends a separate `work_obligation_resolution`
-only when it matches the exact run and the newest source basis visible at the
-evaluated run-feed cut. That evidence may satisfy older still-open mutation
-obligations as well as the newest one. If the newest mutation has no source
-basis, no verification can match it: all open obligations remain waiver-only
-until a later basis-bearing mutation and passed test establish a newer
-verifiable state.
+source basis is present. The checkpoint resolves the rule set from the begun
+grant's frozen project-policy epoch and records its hash on the
+`ExecutionObservation`; every resulting `WorkObligation` repeats that exact
+selection. Activating another set affects only observations from later policy
+epochs and cannot reinterpret an old trigger, definition, or completion cut.
+Legacy observations without a rule-set field retain the stock V1 meaning.
+
+Each match appends one immutable `work_obligation` definition directly to the
+project, root-work, and run-execution feeds. A passed `test` verification
+appends a separate `work_obligation_resolution` only when it matches the exact
+run and the newest source basis visible at the evaluated run-feed cut. That
+evidence may satisfy older still-open mutation obligations as well as the
+newest one. If the newest mutation has no source basis, no verification can
+match it: all open obligations remain waiver-only until a later basis-bearing
+mutation and passed test establish a newer verifiable state.
 
 Definitions and resolutions are canonical feed objects; the mutable obligation
 row is only a verified projection. `work_focus`, nested `work_next.focus`,
@@ -857,12 +865,22 @@ contract declared by their own schema; only the active head must match the
 running binary's supported policy and control schemas. V1 keeps a static list
 of recognized built-in envelopes. Epoch one must use one of them, and the
 `set_required_assurance` operation may change only `required_assurance`,
-preserving the predecessor's supported effects and grant TTL. When a running
-binary widens the built-in envelope, store open appends a separate,
-system-attributed `upgrade_builtin_envelope` epoch that preserves assurance and
-moves only between recognized envelopes. A legacy selector is first preserved
-as canonical epoch one, so adding `coordinate` is visible as epoch two and
-invalidates earlier session policy epochs exactly once.
+preserving the predecessor's supported effects, grant TTL, and selected
+obligation rule set. When a running binary widens the built-in envelope, store
+open appends a separate, system-attributed `upgrade_builtin_envelope` epoch
+that preserves assurance and rule selection and moves only between recognized
+envelopes. A legacy selector is first preserved as canonical epoch one, so
+adding `coordinate` is visible as epoch two and invalidates earlier session
+policy epochs exactly once.
+
+Current policy state schema V3 also requires one canonical obligation-rule-set
+selection. Opening a recognized schema-V2 policy appends one system-attributed
+`upgrade_builtin_obligation_rules` successor selecting the stock V1 set; it
+does not rewrite the predecessor. The host/operator storage API may append an
+attributed `set_obligation_rule_set` successor under an epoch/hash compare-and-
+swap. That API is not exposed through MCP or the host turn protocol. V1 rule
+sets are bounded typed data, not a natural-language rule engine; unknown
+schemas, duplicate rule identities, and unknown triggers fail closed.
 Host and user authority is the ceiling; `ControlPolicy` configures mediation,
 synchronization, TTL, and conflict behavior below that ceiling; task-applicable
 hard/firm pinned rules may further restrict execution but never grant a denied
