@@ -107,7 +107,7 @@ engram mcp --actor-id codex --session-id session-unique-id \
 # Host-only escape hatches: the six-operation JSON protocol from the shell,
 # and the legacy MCP tools for one release.
 engram work --actor-id codex --session-id session-unique-id \
-  --authority-grant "$GRANT" legacy focus <short-ref>
+  --authority-grant "$GRANT" core focus <short-ref>
 engram mcp --actor-id codex --session-id session-unique-id \
   --work-authority-grant "$GRANT" --legacy-tools
 ```
@@ -174,7 +174,7 @@ word prints the exact structured receipt (the existing shape plus `reminders`
 and `next`) instead of text, and `done` exits with status 2 when the typed
 `open_work_obligations` refusal says something is still owed. The
 six-operation JSON protocol stays reachable for hosts and operators as
-`engram work legacy {next,focus,propose,update,complete,handoff}`, whose
+`engram work core {next,focus,propose,update,complete,handoff}`, whose
 mutation payloads accept an inline JSON object or `@path`; that is the shell
 counterpart of `engram mcp --legacy-tools` and carries host-only fields such as
 explicit delivery acknowledgement, typed evidence attach, prerequisite edits,
@@ -251,11 +251,9 @@ most three agent-supplied fields.
 `ls --mine` returns items assigned to the actor plus the session's focused
 item when this session holds it; claims on other items are visible through
 `show`. `add --under` selects the parent and submits one required child
-through `work_propose:decompose`, then focuses that child exactly as a root
-`add` focuses the new root; the core's decomposition admission rule still
-requires at least two children per decomposition, so until that rule admits
-one child the word returns the core's own refusal (`work_invalid`,
-"decomposition must contain from 2 through 64 children") as words. `note`
+through `work_propose:decompose` (a decomposition admits one through 64
+children), then focuses that child exactly as a root `add` focuses the new
+root. `note`
 records evidence and then checkpoints the run's current evidence set;
 repeating an identical `note`, `add`, `claim`, or `done` replays its receipt
 because the core derives the idempotency key.
@@ -301,7 +299,7 @@ after both replacement paths ship.
 The eight words translate into six ambient operations: `work_next`,
 `work_focus`, `work_propose`, `work_update`, `work_complete`, and
 `work_handoff`. Hosts may call them directly through `--legacy-tools` or
-`engram work legacy`. Session binding supplies project, actor, current work,
+`engram work core`. Session binding supplies project, actor, current work,
 and cursors, so update/complete/handoff do not repeatedly shuttle ids. Ambient state contains no authority;
 the host fixes a canonical grant hash for the MCP process and each mutation
 rechecks that grant and revocation state. `work_next` returns only the selected
@@ -697,7 +695,7 @@ provenance/explain, idempotent retry/conflict, lease contention/expiry/retry,
 natural constraint classification, and pinned-contradiction fail-closed
 behavior) keeps running under `--legacy-tools` because those tools have no
 eight-word counterpart. The CLI path drives the same lifecycle through the
-words in text and `--json` modes and keeps one `engram work legacy focus` call.
+words in text and `--json` modes and keeps one `engram work core focus` call.
 Both scripts are part of `scripts/check.sh`.
 
 `scripts/control-dogfood.test.mjs` launches the real bounded JSON-lines service,

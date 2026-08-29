@@ -414,10 +414,10 @@ enum WorkCommand {
         #[arg(long, value_name = "REASON", conflicts_with = "to")]
         cancel: Option<String>,
     },
-    /// Six-operation JSON protocol retained for hosts and operators.
-    Legacy {
+    /// Six-operation JSON protocol for hosts and operators.
+    Core {
         #[command(subcommand)]
-        operation: LegacyWorkCommand,
+        operation: CoreWorkCommand,
     },
 }
 
@@ -445,7 +445,7 @@ impl From<WorkKindArg> for WorkItemKind {
 }
 
 #[derive(Debug, Subcommand)]
-enum LegacyWorkCommand {
+enum CoreWorkCommand {
     /// Return ambient focus, ready candidates, and new project-feed entries.
     Next {
         #[arg(long, default_value_t = 20)]
@@ -646,8 +646,8 @@ async fn main() -> Result<ExitCode> {
                 authority_grant: parse_optional_hash(authority_grant)?,
             };
             return match operation {
-                WorkCommand::Legacy { operation } => {
-                    run_legacy_work(context, operation).map(|()| ExitCode::SUCCESS)
+                WorkCommand::Core { operation } => {
+                    run_core_work(context, operation).map(|()| ExitCode::SUCCESS)
                 }
                 operation => run_work(context, json, operation),
             };
@@ -1115,7 +1115,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             };
             verbs.handoff(HandoffInput { work_ref, action }, now)
         }
-        WorkCommand::Legacy { .. } => bail!("legacy operations are dispatched separately"),
+        WorkCommand::Core { .. } => bail!("core operations are dispatched separately"),
     };
     match outcome {
         Ok(receipt) => {
@@ -1160,7 +1160,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     }
 }
 
-fn run_legacy_work(context: WorkContext, operation: LegacyWorkCommand) -> Result<()> {
+fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<()> {
     let service = LocalWorkService::new(
         context.database,
         context.project_id,
@@ -1171,7 +1171,7 @@ fn run_legacy_work(context: WorkContext, operation: LegacyWorkCommand) -> Result
     );
     let now = chrono::Utc::now();
     let value = match operation {
-        LegacyWorkCommand::Next {
+        CoreWorkCommand::Next {
             limit,
             acknowledge_through,
             acknowledge_token,
@@ -1202,31 +1202,31 @@ fn run_legacy_work(context: WorkContext, operation: LegacyWorkCommand) -> Result
             },
             now,
         )?)?,
-        LegacyWorkCommand::Focus { work_ref } => {
+        CoreWorkCommand::Focus { work_ref } => {
             serde_json::to_value(service.work_focus(&work_ref, now)?)?
         }
-        LegacyWorkCommand::Propose { work_ref, input } => {
+        CoreWorkCommand::Propose { work_ref, input } => {
             serde_json::to_value(service.work_propose_on(
                 work_ref.as_deref(),
                 parse_json_input::<WorkProposeInput>(&input)?,
                 now,
             )?)?
         }
-        LegacyWorkCommand::Update { work_ref, input } => {
+        CoreWorkCommand::Update { work_ref, input } => {
             serde_json::to_value(service.work_update_on(
                 work_ref.as_deref(),
                 parse_json_input::<WorkUpdateInput>(&input)?,
                 now,
             )?)?
         }
-        LegacyWorkCommand::Complete { work_ref, input } => {
+        CoreWorkCommand::Complete { work_ref, input } => {
             serde_json::to_value(service.work_complete_on(
                 work_ref.as_deref(),
                 parse_json_input::<WorkCompleteInput>(&input)?,
                 now,
             )?)?
         }
-        LegacyWorkCommand::Handoff { work_ref, input } => {
+        CoreWorkCommand::Handoff { work_ref, input } => {
             serde_json::to_value(service.work_handoff_on(
                 work_ref.as_deref(),
                 parse_json_input::<WorkHandoffInput>(&input)?,

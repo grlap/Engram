@@ -1066,7 +1066,7 @@ impl SqliteStore {
         if let Some(budget) = grant.planning_budget.as_ref()
             && (budget.max_depth == 0
                 || budget.max_open_descendants < 2
-                || budget.max_children_per_decomposition < 2
+                || budget.max_children_per_decomposition < 1
                 || budget.max_children_per_decomposition > 64)
         {
             return Err(StoreError::InvalidWork(
@@ -5693,9 +5693,9 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkDecomposition, StoreError> {
         inspect_work_request(redactor, request)?;
-        if request.children.len() < 2 || request.children.len() > 64 {
+        if request.children.is_empty() || request.children.len() > 64 {
             return Err(StoreError::InvalidWork(
-                "decomposition must contain from 2 through 64 children".into(),
+                "decomposition must contain from 1 through 64 children".into(),
             ));
         }
         let mut keys = HashSet::new();
@@ -9374,7 +9374,7 @@ fn validate_decomposition_budget(
 ) -> Result<(), StoreError> {
     let proposed = u32::try_from(proposed_children)
         .map_err(|_| StoreError::InvalidWork("decomposition size overflow".into()))?;
-    if budget.max_children_per_decomposition < 2 || proposed > budget.max_children_per_decomposition
+    if budget.max_children_per_decomposition < 1 || proposed > budget.max_children_per_decomposition
     {
         return Err(StoreError::InvalidWork(
             "decomposition exceeds the authorized per-operation child budget".into(),
@@ -15268,20 +15268,20 @@ mod tests {
                 &DevelopmentNoopRedactor,
             )
             .expect("root");
-        let one_child = store.decompose_work(
+        let no_children = store.decompose_work(
             &DecomposeWorkRequest {
                 parent_id: root.work_id,
                 expected_parent_revision: root.revision,
-                children: vec![child("only", ChildRequirement::Required, "Only")],
+                children: Vec::new(),
                 prerequisites: Vec::new(),
                 authority: delegated(&root.project_id.0, "planner"),
                 actor: actor("planner"),
-                idempotency_key: "one-child".into(),
+                idempotency_key: "no-children".into(),
                 created_at: at(1),
             },
             &DevelopmentNoopRedactor,
         );
-        assert!(matches!(one_child, Err(StoreError::InvalidWork(_))));
+        assert!(matches!(no_children, Err(StoreError::InvalidWork(_))));
 
         let expired_authority = install_delegated_with_budget(
             &mut store,

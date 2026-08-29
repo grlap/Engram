@@ -653,9 +653,8 @@ test("CLI words translate the same ambient lifecycle service", () => {
     const allList = cliText(engramHome, actor, grant, "ls", "--all", "--search", "dogfood work");
     assert.match(allList, /^1 item\(s\):\n\s+w-[0-9a-f]{12}\s+p1\s+completed/u);
 
-    // `add --under` translates to a one-child decomposition; the core's
-    // admission rule still requires at least two children, and the word
-    // surfaces that refusal as words rather than a hash or a workaround.
+    // `add --under` translates to a one-child decomposition and focuses the
+    // new child; the text receipt names both items and no hash.
     const parentPlan = cliText(engramHome, actor, grant, "add", "Parent plan");
     const parentRef = parentPlan.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
     assert.ok(parentRef, parentPlan);
@@ -668,9 +667,12 @@ test("CLI words translate the same ambient lifecycle service", () => {
       "--under",
       parentRef,
     );
-    assert.equal(child.status, 1, child.stdout);
-    assert.match(child.stderr, /from 2 through 64 children/u);
-    assert.doesNotMatch(child.stderr, HASH);
+    assert.equal(child.status, 0, child.stderr);
+    assert.match(
+      child.stdout,
+      new RegExp(`^added w-[0-9a-f]{12} "Follow-up step" under ${parentRef} "Parent plan"`, "u"),
+    );
+    assert.doesNotMatch(child.stdout, HASH);
     const legacyFocus = spawnSync(
       binary,
       [
@@ -681,7 +683,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
         actor,
         "--session-id",
         actor,
-        "legacy",
+        "core",
         "focus",
         workRef,
       ],
@@ -1093,16 +1095,18 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(compactFocus.status.work.lifecycle, "completed");
     assert.equal(compactFocus.evidence.length, 1);
 
-    // `add` with `under` translates to a one-child decomposition; the core's
-    // admission rule still requires at least two children, so the tool
-    // returns that refusal with its stable code and words, never a workaround.
-    const singleChild = structuredError(
+    // `add` with `under` translates to a one-child decomposition and focuses
+    // the new required child.
+    const singleChild = receipt(
       await a.call("add", { title: "Child step", under: keyless.work.short_ref }),
-      "work_invalid",
     );
-    assert.match(singleChild.message, /from 2 through 64 children/u);
+    assert.equal(singleChild.work.title, "Child step");
+    assert.equal(singleChild.work.parent_id, keyless.work.work_id);
     assert.ok(Array.isArray(singleChild.reminders));
     assert.ok(Array.isArray(singleChild.next));
+    const parentShow = receipt(await a.call("show", { work_ref: keyless.work.short_ref }));
+    assert.equal(parentShow.children.length, 1);
+    assert.equal(parentShow.children[0].title, "Child step");
     // Planning fields revise in one call, and deferral shows up as words.
     const rootRef = keyless.work.short_ref;
     const revised = receipt(
