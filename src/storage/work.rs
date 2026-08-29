@@ -49,7 +49,7 @@ use crate::{
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
-const CURRENT_WORK_SCHEMA_VERSION: i64 = 10;
+const CURRENT_WORK_SCHEMA_VERSION: i64 = 11;
 const REQUIRED_WORK_TABLES: &[&str] = &[
     "work_authority_grants",
     "work_authority_revocations",
@@ -72,7 +72,9 @@ const REQUIRED_WORK_TABLES: &[&str] = &[
     "work_session_state",
 ];
 const REBUILDABLE_WORK_INDEXES: &[&str] = &[
+    "objects_work_authority_revocation_grant",
     "objects_work_event_work_id",
+    "work_feed_entries_work_event_item",
     "work_authority_grants_active",
     "work_blockers_active",
     "work_claims_live",
@@ -89,6 +91,7 @@ const REBUILDABLE_WORK_INDEXES: &[&str] = &[
     "work_run_evidence_run",
     "work_run_obligations_run",
 ];
+const REQUIRED_WORK_TRIGGERS: &[&str] = &["work_feed_entries_require_work_id"];
 // A checkpoint acknowledges the run feed immediately before its own object and
 // its matching checkpoint event are appended.
 const CHECKPOINT_APPEND_COUNT: i64 = 2;
@@ -258,6 +261,27 @@ struct ControlWorkObligationWaiverFingerprint<'a> {
     idempotency_key: &'a str,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct WorkRelationBasis {
+    schema_version: u16,
+    prerequisite_ids: Vec<WorkId>,
+    active_blockers: Vec<WorkRelationBlockerBasis>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct WorkRelationBlockerBasis {
+    blocker_id: String,
+    blocker_hash: ObjectHash,
+}
+
+fn empty_work_relation_basis() -> WorkRelationBasis {
+    WorkRelationBasis {
+        schema_version: SCHEMA_VERSION,
+        prerequisite_ids: Vec::new(),
+        active_blockers: Vec::new(),
+    }
+}
+
 /// Hash-verified immutable obligation plus its rebuildable terminal state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkObligationRecord {
@@ -362,7 +386,7 @@ pub(super) fn schema_version(connection: &Connection) -> Result<i64, StoreError>
         })
 }
 
-fn require_work_schema_version(
+pub(super) fn require_work_schema_version(
     connection: &Connection,
     expected_version: i64,
 ) -> Result<(), StoreError> {
@@ -441,6 +465,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
              active_run_id TEXT,
              superseded_by TEXT REFERENCES work_items(work_id),
              source_snapshot_hash TEXT REFERENCES objects(object_hash),
+             latest_event_hash TEXT REFERENCES objects(object_hash),
              created_at_ms INTEGER NOT NULL,
              updated_at_ms INTEGER NOT NULL,
              item_json BLOB NOT NULL,
@@ -612,6 +637,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
              position INTEGER NOT NULL,
              object_kind TEXT NOT NULL,
              object_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             work_id TEXT REFERENCES work_items(work_id),
              PRIMARY KEY(feed_kind, feed_id, position),
              UNIQUE(feed_kind, feed_id, object_hash),
              FOREIGN KEY(feed_kind, feed_id)
@@ -620,6 +646,9 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
+         CREATE INDEX IF NOT EXISTS objects_work_authority_revocation_grant
+             ON objects(json_extract(canonical_json, '$.grant'))
+             WHERE object_kind = 'work_authority_revocation';
          CREATE TABLE IF NOT EXISTS work_operation_results (
              operation TEXT NOT NULL,
              idempotency_key TEXT NOT NULL,
@@ -657,6 +686,49 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
         "INSERT INTO work_schema_metadata (singleton, schema_version)
          VALUES (1, ?1) ON CONFLICT(singleton) DO NOTHING",
         [CURRENT_WORK_SCHEMA_VERSION],
+    )?;
+    let has_feed_work_id = transaction.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM pragma_table_info('work_feed_entries')
+             WHERE name = 'work_id'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_feed_work_id {
+        require_legacy_work_schema(starting_version, "work_feed_entries.work_id")?;
+        transaction.execute(
+            "ALTER TABLE work_feed_entries
+             ADD COLUMN work_id TEXT REFERENCES work_items(work_id)",
+            [],
+        )?;
+    }
+    let has_latest_event_hash = transaction.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM pragma_table_info('work_items')
+             WHERE name = 'latest_event_hash'
+         )",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_latest_event_hash {
+        require_legacy_work_schema(starting_version, "work_items.latest_event_hash")?;
+        transaction.execute(
+            "ALTER TABLE work_items
+             ADD COLUMN latest_event_hash TEXT REFERENCES objects(object_hash)",
+            [],
+        )?;
+    }
+    transaction.execute_batch(
+        "CREATE INDEX IF NOT EXISTS work_feed_entries_work_event_item
+             ON work_feed_entries(feed_kind, work_id, position DESC)
+             WHERE object_kind = 'work_event' AND work_id IS NOT NULL;
+         CREATE TRIGGER IF NOT EXISTS work_feed_entries_require_work_id
+             BEFORE INSERT ON work_feed_entries
+             WHEN NEW.object_kind = 'work_event' AND NEW.work_id IS NULL
+             BEGIN
+                 SELECT RAISE(ABORT, 'work-event feed entry requires work_id');
+             END;",
     )?;
     let has_tentative_cursor = transaction.query_row(
         "SELECT EXISTS(
@@ -931,6 +1003,69 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
     }
     let upgrading = starting_version != Some(CURRENT_WORK_SCHEMA_VERSION);
     if upgrading {
+        let event_rows = {
+            let mut statement = transaction.prepare(
+                "SELECT entry.feed_id, entry.object_hash, object.object_kind,
+                        object.canonical_json
+                 FROM work_feed_entries entry
+                 JOIN objects object ON object.object_hash = entry.object_hash
+                 WHERE entry.feed_kind = 'project'
+                   AND entry.object_kind = 'work_event'
+                 ORDER BY entry.feed_id, entry.position",
+            )?;
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for (feed_id, stored_hash, object_kind, bytes) in event_rows {
+            if object_kind != "work_event" {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "project feed work event {stored_hash} has object kind {object_kind:?}"
+                )));
+            }
+            let hash = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredHash(stored_hash.clone()))?;
+            let event: WorkEvent = CanonicalObject::verify(&hash, bytes)?.decode()?;
+            if event.project_id.0 != feed_id {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "project feed work event {stored_hash} belongs to another project"
+                )));
+            }
+            transaction.execute(
+                "UPDATE work_feed_entries SET work_id = ?2
+                 WHERE object_hash = ?1 AND object_kind = 'work_event'",
+                params![stored_hash, event.work_id.0.to_string()],
+            )?;
+        }
+        transaction.execute(
+            "UPDATE work_items SET latest_event_hash = (
+                 SELECT entry.object_hash
+                 FROM work_feed_entries entry
+                 WHERE entry.feed_kind = 'project'
+                   AND entry.object_kind = 'work_event'
+                   AND entry.work_id = work_items.work_id
+                 ORDER BY entry.position DESC
+                 LIMIT 1
+             )",
+            [],
+        )?;
+        let missing_latest_event = transaction.query_row(
+            "SELECT COUNT(*) FROM work_items WHERE latest_event_hash IS NULL",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        if missing_latest_event != 0 {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "local-work migration found {missing_latest_event} items without a latest event"
+            )));
+        }
         let catalog_items = transaction
             .prepare("SELECT item_json FROM work_items ORDER BY work_id")?
             .query_map([], |row| row.get::<_, Vec<u8>>(0))?
@@ -971,7 +1106,8 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
                     "handoff offer {offer_id} projection does not match its scalar bindings"
                 )));
             }
-            let canonical_event_offer = latest_canonical_handoff_offer(&transaction, &offer_id)?;
+            let canonical_event_offer =
+                latest_canonical_handoff_offer(&transaction, &offer_id, &work_id)?;
             if canonical_event_offer.as_ref() != Some(&offer) {
                 return Err(StoreError::InvalidWorkProjection(format!(
                     "handoff offer {offer_id} projection differs from canonical work history"
@@ -1089,50 +1225,63 @@ fn current_work_schema_is_complete(connection: &Connection) -> Result<bool, Stor
     for (object_type, objects) in [
         ("table", REQUIRED_WORK_TABLES),
         ("index", REBUILDABLE_WORK_INDEXES),
+        ("trigger", REQUIRED_WORK_TRIGGERS),
     ] {
-        for object in objects {
-            let stored_type = connection
-                .query_row(
-                    "SELECT type FROM sqlite_master WHERE name = ?1",
-                    [object],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()?;
-            if stored_type.as_deref() != Some(object_type) {
-                return Ok(false);
-            }
+        let mut statement = connection.prepare("SELECT name FROM sqlite_master WHERE type = ?1")?;
+        let stored = statement
+            .query_map([object_type], |row| row.get::<_, String>(0))?
+            .collect::<Result<HashSet<_>, _>>()?;
+        if objects.iter().any(|object| !stored.contains(*object)) {
+            return Ok(false);
         }
     }
-    for (table, column) in [
-        ("work_session_state", "tentative_project_cursor"),
-        ("work_session_state", "tentative_delivery_token"),
-        ("work_session_state", "tentative_delivery_payload_hash"),
-        ("work_session_state", "tentative_delivery_payload"),
-        ("work_items", "superseded_by"),
-        ("work_items", "assigned_to_key"),
-        ("work_items", "search_text_key"),
-        ("work_handoff_offers", "offer_hash"),
-        ("work_protocol_attempts", "basis_hash"),
-        ("work_protocol_attempts", "basis_json"),
-        ("work_protocol_attempts", "result_hash"),
-        ("work_run_evidence", "evidence_kind"),
-        ("work_run_evidence", "workspace_id"),
-        ("work_run_evidence", "source_revision"),
-        ("work_run_evidence", "producer_session_id"),
-        ("work_run_evidence", "producer_observation_hash"),
-        ("work_run_evidence", "check_fingerprint"),
-        ("work_run_evidence", "verification_result"),
-        ("work_run_evidence", "observed_at_ms"),
-        ("work_run_evidence", "environment_fingerprint"),
-        ("work_run_evidence", "environment_evidence_hash"),
-        ("work_run_evidence", "components_json"),
+    for (table, columns) in [
+        (
+            "work_session_state",
+            &[
+                "tentative_project_cursor",
+                "tentative_delivery_token",
+                "tentative_delivery_payload_hash",
+                "tentative_delivery_payload",
+            ][..],
+        ),
+        (
+            "work_items",
+            &[
+                "superseded_by",
+                "assigned_to_key",
+                "search_text_key",
+                "latest_event_hash",
+            ][..],
+        ),
+        ("work_handoff_offers", &["offer_hash"][..]),
+        (
+            "work_protocol_attempts",
+            &["basis_hash", "basis_json", "result_hash"][..],
+        ),
+        (
+            "work_run_evidence",
+            &[
+                "evidence_kind",
+                "workspace_id",
+                "source_revision",
+                "producer_session_id",
+                "producer_observation_hash",
+                "check_fingerprint",
+                "verification_result",
+                "observed_at_ms",
+                "environment_fingerprint",
+                "environment_evidence_hash",
+                "components_json",
+            ][..],
+        ),
+        ("work_feed_entries", &["work_id"][..]),
     ] {
-        let exists = connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
-            params![table, column],
-            |row| row.get::<_, bool>(0),
-        )?;
-        if !exists {
+        let mut statement = connection.prepare("SELECT name FROM pragma_table_info(?1)")?;
+        let stored = statement
+            .query_map([table], |row| row.get::<_, String>(0))?
+            .collect::<Result<HashSet<_>, _>>()?;
+        if columns.iter().any(|column| !stored.contains(*column)) {
             return Ok(false);
         }
     }
@@ -1155,6 +1304,7 @@ fn require_legacy_work_schema(
 fn latest_canonical_handoff_offer(
     connection: &Connection,
     offer_id: &str,
+    work_id: &str,
 ) -> Result<Option<WorkHandoffOffer>, StoreError> {
     let stored = connection
         .query_row(
@@ -1162,10 +1312,11 @@ fn latest_canonical_handoff_offer(
              FROM work_feed_entries entry
              JOIN objects object ON object.object_hash = entry.object_hash
              WHERE entry.feed_kind = 'project'
-               AND entry.object_kind = 'work_event'
-               AND json_extract(object.canonical_json, '$.handoff_offer.offer_id') = ?1
+                AND entry.object_kind = 'work_event'
+                AND entry.work_id = ?2
+                AND json_extract(object.canonical_json, '$.handoff_offer.offer_id') = ?1
              ORDER BY entry.position DESC LIMIT 1",
-            [offer_id],
+            params![offer_id, work_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -1563,6 +1714,18 @@ impl SqliteStore {
         item: &WorkItem,
         now: DateTime<Utc>,
     ) -> Vec<WorkAuthorityOperation> {
+        let target = AuthorityTarget {
+            project_id: &item.project_id,
+            policy_ref: &item.authority_policy_ref,
+            work_id: Some(item.work_id),
+            root_id: Some(item.root_id),
+            run_id: item.active_run_id,
+        };
+        let Ok(grant) =
+            resolve_work_authority_grant(&self.connection, decision, actor, target, now)
+        else {
+            return Vec::new();
+        };
         [
             WorkAuthorityOperation::Plan,
             WorkAuthorityOperation::Claim,
@@ -1574,23 +1737,7 @@ impl SqliteStore {
             WorkAuthorityOperation::CompletionDrain,
         ]
         .into_iter()
-        .filter(|operation| {
-            resolve_work_authority(
-                &self.connection,
-                decision,
-                actor,
-                *operation,
-                AuthorityTarget {
-                    project_id: &item.project_id,
-                    policy_ref: &item.authority_policy_ref,
-                    work_id: Some(item.work_id),
-                    root_id: Some(item.root_id),
-                    run_id: item.active_run_id,
-                },
-                now,
-            )
-            .is_ok()
-        })
+        .filter(|operation| grant.operations.contains(operation))
         .collect()
     }
 
@@ -2233,8 +2380,15 @@ impl SqliteStore {
     /// Returns [`StoreError`] when work or claim projections are invalid.
     pub fn current_work_claim(&self, work_id: WorkId) -> Result<Option<WorkClaim>, StoreError> {
         let item = load_work_item(&self.connection, work_id)?;
+        self.current_work_claim_for_item(&item)
+    }
+
+    pub(crate) fn current_work_claim_for_item(
+        &self,
+        item: &WorkItem,
+    ) -> Result<Option<WorkClaim>, StoreError> {
         item.active_run_id
-            .or(self.latest_work_run(work_id)?.map(|run| run.run_id))
+            .or(self.latest_work_run(item.work_id)?.map(|run| run.run_id))
             .map(|run_id| load_work_claim_optional(&self.connection, run_id))
             .transpose()
             .map(Option::flatten)
@@ -2287,17 +2441,29 @@ impl SqliteStore {
         claimant: &SessionId,
     ) -> Result<bool, StoreError> {
         let item = load_work_item(&self.connection, work_id)?;
+        let claim = self.current_work_claim_for_item(&item)?;
+        self.work_claim_recovery_required_for_item(&item, claim.as_ref(), claimant)
+    }
+
+    pub(crate) fn work_claim_recovery_required_for_item(
+        &self,
+        item: &WorkItem,
+        claim: Option<&WorkClaim>,
+        claimant: &SessionId,
+    ) -> Result<bool, StoreError> {
+        if claim.is_none_or(|claim| claim.holder == *claimant) {
+            return Ok(false);
+        }
         let Some(run_id) = item.active_run_id else {
             return Ok(false);
         };
         let run = load_work_run(&self.connection, run_id)?;
         let execution = load_root_execution(&self.connection, run.root_execution_id)?;
-        Ok(
-            load_work_claim_optional(&self.connection, run_id)?.is_some_and(|claim| {
-                claim.holder != *claimant
-                    && !root_participant_is_accounted(&execution, &claim.holder)
-            }),
-        )
+        Ok(claim.is_some_and(|claim| {
+            claim.run_id == run_id
+                && claim.holder != *claimant
+                && !root_participant_is_accounted(&execution, &claim.holder)
+        }))
     }
 
     /// Returns every handoff offer for work in stable offer order.
@@ -2446,6 +2612,18 @@ impl SqliteStore {
         now: DateTime<Utc>,
     ) -> Result<(bool, bool), StoreError> {
         let item = load_work_item(&self.connection, work_id)?;
+        let claim = self.current_work_claim_for_item(&item)?;
+        self.work_completion_readiness_for_item(&item, claim.as_ref(), session_id, now)
+    }
+
+    pub(crate) fn work_completion_readiness_for_item(
+        &self,
+        item: &WorkItem,
+        claim: Option<&WorkClaim>,
+        session_id: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<(bool, bool), StoreError> {
+        let work_id = item.work_id;
         if item.lifecycle != WorkLifecycle::Open {
             return Ok((false, false));
         }
@@ -2453,10 +2631,12 @@ impl SqliteStore {
             return Ok((false, false));
         };
         let run = load_work_run(&self.connection, run_id)?;
-        let Some(claim) = load_work_claim_optional(&self.connection, run_id)? else {
+        let Some(claim) = claim else {
             return Ok((false, false));
         };
-        if claim.state != WorkClaimState::Active
+        if claim.work_id != item.work_id
+            || claim.run_id != run_id
+            || claim.state != WorkClaimState::Active
             || claim.holder != *session_id
             || claim.expires_at <= now
         {
@@ -2483,11 +2663,6 @@ impl SqliteStore {
         {
             return Ok((false, false));
         }
-        let required_child_seal_count =
-            required_child_seals(&self.connection, work_id, run.root_execution_id)?.len();
-        let root_execution = load_root_execution(&self.connection, run.root_execution_id)?;
-        let required_child_waiver_count =
-            validated_required_child_waivers(&self.connection, work_id, &root_execution)?.len();
         let required_child_count = self.connection.query_row(
             "SELECT COUNT(*) FROM work_items child
              WHERE child.parent_id = ?1
@@ -2495,10 +2670,17 @@ impl SqliteStore {
             [work_id.0.to_string()],
             |row| row.get::<_, i64>(0),
         )?;
-        if usize::try_from(required_child_count).ok()
-            != Some(required_child_seal_count + required_child_waiver_count)
-        {
-            return Ok((false, false));
+        if required_child_count != 0 {
+            let required_child_seal_count =
+                required_child_seals(&self.connection, work_id, run.root_execution_id)?.len();
+            let root_execution = load_root_execution(&self.connection, run.root_execution_id)?;
+            let required_child_waiver_count =
+                validated_required_child_waivers(&self.connection, work_id, &root_execution)?.len();
+            if usize::try_from(required_child_count).ok()
+                != Some(required_child_seal_count + required_child_waiver_count)
+            {
+                return Ok((false, false));
+            }
         }
         let evidence = self.work_run_evidence(run_id)?;
         let Some(checkpoint_hash) = run.last_checkpoint else {
@@ -2780,7 +2962,7 @@ impl SqliteStore {
                  WHERE entry.feed_kind = 'root_work'
                    AND entry.feed_id = ?1
                    AND entry.object_kind = 'work_event'
-                   AND json_extract(object.canonical_json, '$.work_id') = ?2
+                   AND entry.work_id = ?2
                  ORDER BY entry.position DESC LIMIT ?3
              ) ORDER BY position",
         )?;
@@ -2819,7 +3001,7 @@ impl SqliteStore {
              WHERE entry.feed_kind = 'root_work'
                AND entry.feed_id = ?1
                AND entry.object_kind = 'work_event'
-               AND json_extract(object.canonical_json, '$.work_id') = ?2",
+               AND entry.work_id = ?2",
             params![item.root_id.0.to_string(), work_id.0.to_string()],
             |row| row.get(0),
         )?;
@@ -2832,6 +3014,19 @@ impl SqliteStore {
     pub(crate) fn append_test_work_event(&mut self, event: &WorkEvent) -> Result<(), StoreError> {
         let transaction = self.begin_work_mutation()?;
         append_work_event(&transaction, event)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn append_test_work_events(
+        &mut self,
+        events: &[WorkEvent],
+    ) -> Result<(), StoreError> {
+        let transaction = self.begin_work_mutation()?;
+        for event in events {
+            append_work_event(&transaction, event)?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -2859,6 +3054,7 @@ impl SqliteStore {
         let mut blockers = HashMap::new();
         let mut prerequisite_rows = HashMap::new();
         let mut blocker_rows = HashMap::new();
+        let mut relation_bases = HashMap::new();
         let mut evidence_rows = HashMap::new();
         let mut completion_rows = HashMap::new();
 
@@ -2925,6 +3121,18 @@ impl SqliteStore {
                     .is_none_or(|blocker| blocker.work_id == event.work_id);
             if !internally_bound {
                 invalid.push(label);
+                continue;
+            }
+            let current_basis = relation_bases
+                .entry(event.work_id)
+                .or_insert_with(empty_work_relation_basis);
+            if apply_work_relation_transition(current_basis, &event).is_err()
+                || event.relation_fingerprint.as_ref().is_some_and(|expected| {
+                    work_relation_fingerprint(current_basis)
+                        .map_or(true, |actual| actual != *expected)
+                })
+            {
+                invalid.push(format!("{label}:relation_fingerprint"));
                 continue;
             }
             match &event.transition {
@@ -3393,10 +3601,8 @@ impl SqliteStore {
                 "completion cannot terminalize a run with an offered handoff".into(),
             ));
         }
-        let relation_events = canonical_work_events_for_item(&transaction, item.work_id)?;
-        let active_blockers =
-            load_active_blockers_from_events(&transaction, item.work_id, &relation_events)?;
-        if !active_blockers.is_empty() {
+        let relation_basis = validated_current_work_relation_basis(&transaction, item.work_id)?;
+        if !relation_basis.active_blockers.is_empty() {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
                 reason: "one or more explicit blockers remain active".into(),
@@ -3472,8 +3678,7 @@ impl SqliteStore {
                 reason: "V1 completion drain accepts only a grant-backed zero-linked-state attestation until action and resource projections are linked to work runs".into(),
             });
         }
-        let incomplete =
-            incomplete_prerequisites_from_events(&transaction, item.work_id, &relation_events)?;
+        let incomplete = incomplete_prerequisite_projections(&transaction, item.work_id)?;
         if !incomplete.is_empty() {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
@@ -3677,6 +3882,7 @@ impl SqliteStore {
             claim: Some(claim.clone()),
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Completed {
                 seal: seal_object.hash().clone(),
             },
@@ -3887,6 +4093,7 @@ impl SqliteStore {
             claim: None,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Reopened {
                 run_id: run.run_id,
                 generation: run.generation,
@@ -4121,6 +4328,7 @@ impl SqliteStore {
             claim,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Disposed {
                 lifecycle: item.lifecycle,
                 replacement_id: item.superseded_by,
@@ -4241,6 +4449,7 @@ impl SqliteStore {
             claim: None,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::RequiredChildWaived {
                 child_id: child.work_id,
                 child_revision: child.revision,
@@ -4791,6 +5000,7 @@ impl SqliteStore {
             claim: Some(claim.clone()),
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Claimed {
                 claim: claim.clone(),
                 recovered,
@@ -4915,6 +5125,7 @@ impl SqliteStore {
             claim: Some(claim.clone()),
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Released {
                 claim_id: claim.claim_id,
                 fence: claim.fence,
@@ -5005,6 +5216,7 @@ impl SqliteStore {
             &item.project_id,
             item.root_id,
             Some(run.run_id),
+            None,
             "work_checkpoint",
             &object,
         )?;
@@ -5034,6 +5246,7 @@ impl SqliteStore {
             claim: Some(claim),
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Checkpointed {
                 checkpoint: object.hash().clone(),
             },
@@ -5121,6 +5334,7 @@ impl SqliteStore {
             &item.project_id,
             item.root_id,
             Some(run.run_id),
+            None,
             "work_evidence",
             &object,
         )?;
@@ -5145,6 +5359,7 @@ impl SqliteStore {
             claim: Some(claim),
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::EvidenceAdded {
                 evidence: object.hash().clone(),
             },
@@ -5234,6 +5449,7 @@ impl SqliteStore {
             &item.project_id,
             item.root_id,
             Some(run.run_id),
+            None,
             "work_checkpoint",
             &checkpoint_object,
         )?;
@@ -5294,6 +5510,7 @@ impl SqliteStore {
             claim: Some(claim.clone()),
             handoff_offer: Some(offer.clone()),
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::HandoffOffered {
                 offer_id: offer.offer_id,
                 to: offer.to.clone(),
@@ -5438,6 +5655,7 @@ impl SqliteStore {
             claim: Some(claim.clone()),
             handoff_offer: Some(offer.clone()),
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::HandedOff {
                 offer_id: offer.offer_id,
                 claim_id: claim.claim_id,
@@ -5559,6 +5777,7 @@ impl SqliteStore {
             claim: Some(claim),
             handoff_offer: Some(offer.clone()),
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::HandoffCancelled {
                 offer_id: offer.offer_id,
                 offer: offer_object.hash().clone(),
@@ -5802,6 +6021,7 @@ impl SqliteStore {
             claim: None,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Created {
                 prerequisites: Vec::new(),
                 authority_grant: request.authority.grant.clone(),
@@ -6050,6 +6270,7 @@ impl SqliteStore {
                 claim: None,
                 handoff_offer: None,
                 blocker: None,
+                relation_fingerprint: None,
                 transition: WorkTransition::Created {
                     prerequisites: item_prerequisites.clone(),
                     authority_grant: match &request.authority {
@@ -6101,6 +6322,7 @@ impl SqliteStore {
             claim: claim_snapshot,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Decomposed {
                 children: children.iter().map(|child| child.work_id).collect(),
                 authority: request.authority.clone(),
@@ -6236,6 +6458,7 @@ impl SqliteStore {
             claim: claim_snapshot,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Revised {
                 authority: request.authority.clone(),
             },
@@ -6369,6 +6592,7 @@ impl SqliteStore {
             claim: claim_snapshot,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: if add {
                 WorkTransition::PrerequisiteAdded {
                     prerequisite_id: prerequisite.work_id,
@@ -6487,6 +6711,7 @@ impl SqliteStore {
             claim: claim_snapshot,
             handoff_offer: None,
             blocker: Some(blocker.clone()),
+            relation_fingerprint: None,
             transition: WorkTransition::Blocked {
                 blocker_id: blocker.blocker_id.clone(),
             },
@@ -6587,6 +6812,7 @@ impl SqliteStore {
             claim: claim_snapshot,
             handoff_offer: None,
             blocker: None,
+            relation_fingerprint: None,
             transition: WorkTransition::Unblocked {
                 blocker_id: request.blocker_id.clone(),
             },
@@ -6761,6 +6987,7 @@ fn inspect_work_on(
     now: DateTime<Utc>,
 ) -> Result<ReadyWork, StoreError> {
     let work = load_work_item(connection, work_id)?;
+    require_work_item_relation_integrity(connection, work_id)?;
     let blockers = load_active_blocker_projections(connection, work_id)?;
     let blocked_by = incomplete_prerequisite_projections(connection, work_id)?;
     derive_projected_work_availability(connection, work, blockers, blocked_by, now)
@@ -6833,9 +7060,9 @@ fn inspect_work_canonical_on(
     now: DateTime<Utc>,
 ) -> Result<ReadyWork, StoreError> {
     let work = load_work_item(connection, work_id)?;
-    let events = canonical_work_events_for_item(connection, work_id)?;
-    let blockers = load_active_blockers_from_events(connection, work_id, &events)?;
-    let blocked_by = incomplete_prerequisites_from_events(connection, work_id, &events)?;
+    require_work_item_relation_integrity(connection, work_id)?;
+    let blockers = load_active_blocker_projections(connection, work_id)?;
+    let blocked_by = incomplete_prerequisite_projections(connection, work_id)?;
     derive_work_availability(connection, work, blockers, blocked_by, now)
 }
 
@@ -7040,25 +7267,60 @@ fn latest_canonical_work_event_for_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkEvent, StoreError> {
-    let stored = connection
+    latest_canonical_work_event_for_item_optional(connection, work_id)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(format!("work item {work_id:?} has no canonical event"))
+    })
+}
+
+fn latest_canonical_work_event_for_item_optional(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Option<WorkEvent>, StoreError> {
+    let projected_hash = connection
+        .query_row(
+            "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+            [work_id.0.to_string()],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?;
+    let latest = connection
         .query_row(
             "SELECT object.object_hash, object.canonical_json
              FROM objects object
              JOIN work_feed_entries entry ON entry.object_hash = object.object_hash
              WHERE object.object_kind = 'work_event'
                AND entry.feed_kind = 'project'
-               AND json_extract(object.canonical_json, '$.work_id') = ?1
+               AND entry.object_kind = 'work_event'
+               AND entry.work_id = ?1
              ORDER BY entry.position DESC LIMIT 1",
             [work_id.0.to_string()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
-        .optional()?
-        .ok_or_else(|| {
-            StoreError::InvalidWorkProjection(format!(
-                "work item {work_id:?} has no canonical event"
-            ))
-        })?;
-    decode_canonical_work_event(stored)
+        .optional()?;
+    match (projected_hash.flatten(), latest) {
+        (None, None) => Ok(None),
+        (Some(projected_hash), Some((stored_hash, bytes))) => {
+            let projected_hash = ObjectHash::from_stored(projected_hash.clone())
+                .ok_or(StoreError::InvalidStoredHash(projected_hash))?;
+            let stored_hash_value = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredHash(stored_hash.clone()))?;
+            if projected_hash != stored_hash_value {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "work item {work_id:?} latest-event binding differs from its indexed feed head"
+                )));
+            }
+            let event = decode_canonical_work_event((stored_hash, bytes))?;
+            if event.work_id != work_id {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "work item {work_id:?} latest-event binding names another item"
+                )));
+            }
+            Ok(Some(event))
+        }
+        _ => Err(StoreError::InvalidWorkProjection(format!(
+            "work item {work_id:?} latest-event binding is incomplete"
+        ))),
+    }
 }
 
 fn canonical_work_events_for_item(
@@ -7071,7 +7333,8 @@ fn canonical_work_events_for_item(
          JOIN work_feed_entries entry ON entry.object_hash = object.object_hash
          WHERE object.object_kind = 'work_event'
            AND entry.feed_kind = 'project'
-           AND json_extract(object.canonical_json, '$.work_id') = ?1
+           AND entry.object_kind = 'work_event'
+           AND entry.work_id = ?1
          ORDER BY entry.position",
     )?;
     statement
@@ -7565,6 +7828,28 @@ fn incomplete_prerequisite_projections(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<WorkId>, StoreError> {
+    let prerequisite_ids = load_prerequisite_projection_ids(connection, work_id)?;
+    let mut incomplete = Vec::new();
+    for prerequisite_id in prerequisite_ids {
+        let prerequisite = load_work_item(connection, prerequisite_id)?;
+        let satisfied = prerequisite.lifecycle == WorkLifecycle::Completed
+            || (prerequisite.lifecycle == WorkLifecycle::Superseded
+                && prerequisite
+                    .superseded_by
+                    .map(|replacement| load_work_item(connection, replacement))
+                    .transpose()?
+                    .is_some_and(|replacement| replacement.lifecycle == WorkLifecycle::Completed));
+        if !satisfied {
+            incomplete.push(prerequisite_id);
+        }
+    }
+    Ok(incomplete)
+}
+
+fn load_prerequisite_projection_ids(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<WorkId>, StoreError> {
     let prerequisite_ids = {
         let mut statement = connection.prepare(
             "SELECT prerequisite_id, event_hash FROM work_prerequisites
@@ -7584,7 +7869,7 @@ fn incomplete_prerequisite_projections(
             })
             .collect::<Result<Vec<_>, StoreError>>()?
     };
-    let mut incomplete = Vec::new();
+    let mut bound = Vec::with_capacity(prerequisite_ids.len());
     for (prerequisite_id, event_hash) in prerequisite_ids {
         let event: WorkEvent = load_typed_work_object(connection, &event_hash, "work_event")?;
         let event_binds_edge = event.work_id == work_id
@@ -7603,19 +7888,9 @@ fn incomplete_prerequisite_projections(
                 "prerequisite edge {work_id:?}->{prerequisite_id:?} differs from its event binding"
             )));
         }
-        let prerequisite = load_work_item(connection, prerequisite_id)?;
-        let satisfied = prerequisite.lifecycle == WorkLifecycle::Completed
-            || (prerequisite.lifecycle == WorkLifecycle::Superseded
-                && prerequisite
-                    .superseded_by
-                    .map(|replacement| load_work_item(connection, replacement))
-                    .transpose()?
-                    .is_some_and(|replacement| replacement.lifecycle == WorkLifecycle::Completed));
-        if !satisfied {
-            incomplete.push(prerequisite_id);
-        }
+        bound.push(prerequisite_id);
     }
-    Ok(incomplete)
+    Ok(bound)
 }
 
 fn incomplete_prerequisite_catalog_rows(
@@ -7665,8 +7940,8 @@ fn incomplete_prerequisites(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<WorkId>, StoreError> {
-    let events = canonical_work_events_for_item(connection, work_id)?;
-    incomplete_prerequisites_from_events(connection, work_id, &events)
+    require_work_item_relation_integrity(connection, work_id)?;
+    incomplete_prerequisite_projections(connection, work_id)
 }
 
 fn incomplete_prerequisites_from_events(
@@ -7772,18 +8047,20 @@ fn insert_reserved_feed_entry(
     position: &FeedPosition,
     object_kind: &str,
     object: &CanonicalObject,
+    work_id: Option<WorkId>,
 ) -> Result<(), StoreError> {
     let (feed_kind, feed_id) = feed_parts(&position.feed);
     transaction.execute(
         "INSERT INTO work_feed_entries (
-             feed_kind, feed_id, position, object_kind, object_hash
-         ) VALUES (?1, ?2, ?3, ?4, ?5)",
+             feed_kind, feed_id, position, object_kind, object_hash, work_id
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             feed_kind,
             feed_id,
             position.position,
             object_kind,
-            object.hash().as_str()
+            object.hash().as_str(),
+            work_id.map(|work_id| work_id.0.to_string())
         ],
     )?;
     Ok(())
@@ -7794,6 +8071,7 @@ fn append_to_work_feeds(
     project_id: &crate::domain::ProjectId,
     root_id: WorkId,
     run_id: Option<WorkRunId>,
+    work_id: Option<WorkId>,
     object_kind: &str,
     object: &CanonicalObject,
 ) -> Result<Vec<FeedPosition>, StoreError> {
@@ -7808,7 +8086,7 @@ fn append_to_work_feeds(
         .into_iter()
         .map(|feed| {
             let position = reserve_feed_position(transaction, &feed)?;
-            insert_reserved_feed_entry(transaction, &position, object_kind, object)?;
+            insert_reserved_feed_entry(transaction, &position, object_kind, object, work_id)?;
             Ok(position)
         })
         .collect()
@@ -7826,6 +8104,7 @@ pub(super) fn append_memory_capture_to_work_feeds(
         &item.project_id,
         item.root_id,
         item.active_run_id,
+        None,
         "memory_version",
         version,
     )?;
@@ -7834,6 +8113,7 @@ pub(super) fn append_memory_capture_to_work_feeds(
         &item.project_id,
         item.root_id,
         item.active_run_id,
+        None,
         "memory_assertion_event",
         assertion,
     )?);
@@ -7852,6 +8132,7 @@ pub(super) fn append_context_object_to_work_feeds(
         &item.project_id,
         item.root_id,
         item.active_run_id,
+        None,
         object_kind,
         object,
     )
@@ -8732,6 +9013,7 @@ fn append_control_typed_evidence_on(
         &item.project_id,
         item.root_id,
         Some(run.run_id),
+        None,
         object_kind,
         object,
     )?;
@@ -8756,6 +9038,7 @@ fn append_control_typed_evidence_on(
         claim,
         handoff_offer: None,
         blocker: None,
+        relation_fingerprint: None,
         transition: WorkTransition::TypedEvidenceAdded {
             evidence: object.hash().clone(),
             evidence_kind: projection.kind,
@@ -8791,6 +9074,7 @@ pub(super) fn append_control_execution_observation_on(
         &item.project_id,
         item.root_id,
         Some(run.run_id),
+        None,
         "execution_observation",
         &object,
     )?;
@@ -8850,6 +9134,7 @@ fn append_builtin_obligations_on(
             &obligation.project_id,
             obligation.root_id,
             Some(obligation.run_id),
+            None,
             "work_obligation",
             &object,
         )?;
@@ -8976,6 +9261,7 @@ fn append_obligation_resolution_on(
         &record.obligation.project_id,
         record.obligation.root_id,
         Some(record.obligation.run_id),
+        None,
         "work_obligation_resolution",
         &object,
     )?;
@@ -9170,16 +9456,36 @@ fn append_work_event(
     transaction: &Transaction<'_>,
     event: &WorkEvent,
 ) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
-    let object = CanonicalObject::freeze(event)?;
+    let mut event = event.clone();
+    let mut relation_basis =
+        if latest_canonical_work_event_for_item_optional(transaction, event.work_id)?.is_some() {
+            validated_current_work_relation_basis(transaction, event.work_id)?
+        } else {
+            projected_work_relation_basis(transaction, event.work_id)?
+        };
+    apply_work_relation_transition(&mut relation_basis, &event)?;
+    event.relation_fingerprint = Some(work_relation_fingerprint(&relation_basis)?);
+    let object = CanonicalObject::freeze(&event)?;
     SqliteStore::insert_object(transaction, "work_event", &object)?;
     let positions = append_to_work_feeds(
         transaction,
         &event.project_id,
         event.root_id,
         event.run_id,
+        Some(event.work_id),
         "work_event",
         &object,
     )?;
+    let changed = transaction.execute(
+        "UPDATE work_items SET latest_event_hash = ?2 WHERE work_id = ?1",
+        params![event.work_id.0.to_string(), object.hash().as_str()],
+    )?;
+    if changed != 1 {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "work event append lost item {:?}",
+            event.work_id
+        )));
+    }
     Ok((object.hash().clone(), positions))
 }
 
@@ -9232,7 +9538,12 @@ fn load_handoff_offer_projection(
             projection.offer_id.0
         )));
     }
-    if latest_canonical_handoff_offer(connection, &projection.offer_id.0.to_string())?.as_ref()
+    if latest_canonical_handoff_offer(
+        connection,
+        &projection.offer_id.0.to_string(),
+        &projection.work_id.0.to_string(),
+    )?
+    .as_ref()
         != Some(&canonical)
     {
         return Err(StoreError::InvalidWorkProjection(format!(
@@ -9465,6 +9776,7 @@ fn expire_handoff_offers(
                 claim: claim.clone(),
                 handoff_offer: Some(offer.clone()),
                 blocker: None,
+                relation_fingerprint: None,
                 transition: WorkTransition::HandoffExpired {
                     offer_id: offer.offer_id,
                     offer: offer_object.hash().clone(),
@@ -9519,13 +9831,141 @@ fn require_work_projection_integrity(connection: &Connection) -> Result<(), Stor
     }
 }
 
+fn projected_work_relation_basis(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<WorkRelationBasis, StoreError> {
+    let mut prerequisite_ids = load_prerequisite_projection_ids(connection, work_id)?;
+    prerequisite_ids.sort_by_key(|prerequisite_id| prerequisite_id.0);
+    let mut active_blockers = load_active_blocker_projections(connection, work_id)?
+        .into_iter()
+        .map(|blocker| {
+            let blocker_id = blocker.blocker_id.clone();
+            let blocker_hash = CanonicalObject::freeze(&blocker)?.hash().clone();
+            Ok(WorkRelationBlockerBasis {
+                blocker_id,
+                blocker_hash,
+            })
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    active_blockers.sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
+    Ok(WorkRelationBasis {
+        schema_version: SCHEMA_VERSION,
+        prerequisite_ids,
+        active_blockers,
+    })
+}
+
+fn work_relation_fingerprint(basis: &WorkRelationBasis) -> Result<ObjectHash, StoreError> {
+    Ok(CanonicalObject::freeze(basis)?.hash().clone())
+}
+
+fn validated_current_work_relation_basis(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<WorkRelationBasis, StoreError> {
+    let latest = latest_canonical_work_event_for_item(connection, work_id)?;
+    let basis = projected_work_relation_basis(connection, work_id)?;
+    if let Some(expected) = latest.relation_fingerprint {
+        let actual = work_relation_fingerprint(&basis)?;
+        if actual != expected {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "relations for {work_id:?} differ from the latest canonical fingerprint"
+            )));
+        }
+    } else {
+        // Legacy histories did not snapshot the relation basis. Reconstruct
+        // them once before a new event promotes the validated basis.
+        let events = canonical_work_events_for_item(connection, work_id)?;
+        load_active_blockers_from_events(connection, work_id, &events)?;
+        incomplete_prerequisites_from_events(connection, work_id, &events)?;
+    }
+    Ok(basis)
+}
+
+fn apply_work_relation_transition(
+    basis: &mut WorkRelationBasis,
+    event: &WorkEvent,
+) -> Result<(), StoreError> {
+    match &event.transition {
+        WorkTransition::Created { prerequisites, .. } => {
+            basis.prerequisite_ids.clone_from(prerequisites);
+            basis
+                .prerequisite_ids
+                .sort_by_key(|prerequisite_id| prerequisite_id.0);
+            basis.prerequisite_ids.dedup();
+        }
+        WorkTransition::PrerequisiteAdded {
+            prerequisite_id, ..
+        } => {
+            if basis.prerequisite_ids.contains(prerequisite_id) {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "prerequisite {prerequisite_id:?} is already active"
+                )));
+            }
+            basis.prerequisite_ids.push(*prerequisite_id);
+            basis
+                .prerequisite_ids
+                .sort_by_key(|prerequisite_id| prerequisite_id.0);
+        }
+        WorkTransition::PrerequisiteRemoved {
+            prerequisite_id, ..
+        } => {
+            let previous = basis.prerequisite_ids.len();
+            basis
+                .prerequisite_ids
+                .retain(|candidate| candidate != prerequisite_id);
+            if basis.prerequisite_ids.len() == previous {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "prerequisite {prerequisite_id:?} is not active"
+                )));
+            }
+        }
+        WorkTransition::Blocked { blocker_id } => {
+            let blocker = event.blocker.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "block event {blocker_id} has no blocker snapshot"
+                ))
+            })?;
+            if blocker.blocker_id != *blocker_id
+                || basis
+                    .active_blockers
+                    .iter()
+                    .any(|candidate| candidate.blocker_id == *blocker_id)
+            {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "block event {blocker_id} has an invalid relation transition"
+                )));
+            }
+            basis.active_blockers.push(WorkRelationBlockerBasis {
+                blocker_id: blocker_id.clone(),
+                blocker_hash: CanonicalObject::freeze(blocker)?.hash().clone(),
+            });
+            basis
+                .active_blockers
+                .sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
+        }
+        WorkTransition::Unblocked { blocker_id } => {
+            let previous = basis.active_blockers.len();
+            basis
+                .active_blockers
+                .retain(|candidate| candidate.blocker_id != *blocker_id);
+            if basis.active_blockers.len() == previous {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "blocker {blocker_id} is not active"
+                )));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn require_work_item_relation_integrity(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<(), StoreError> {
-    let events = canonical_work_events_for_item(connection, work_id)?;
-    load_active_blockers_from_events(connection, work_id, &events)?;
-    incomplete_prerequisites_from_events(connection, work_id, &events)?;
+    validated_current_work_relation_basis(connection, work_id)?;
     Ok(())
 }
 
@@ -9645,6 +10085,22 @@ fn resolve_work_authority(
     target: AuthorityTarget<'_>,
     at: DateTime<Utc>,
 ) -> Result<WorkAuthorityGrant, StoreError> {
+    let grant = resolve_work_authority_grant(connection, decision, actor, target, at)?;
+    if !grant.operations.contains(&operation) {
+        return Err(StoreError::InvalidWork(format!(
+            "work authority grant does not admit {operation:?}"
+        )));
+    }
+    Ok(grant)
+}
+
+fn resolve_work_authority_grant(
+    connection: &Connection,
+    decision: &LifecycleAuthorityDecision,
+    actor: &crate::domain::ActorContext,
+    target: AuthorityTarget<'_>,
+    at: DateTime<Utc>,
+) -> Result<WorkAuthorityGrant, StoreError> {
     let stored: Option<(Vec<u8>, Option<i64>)> = connection
         .query_row(
             "SELECT grant_json, revoked_at_ms FROM work_authority_grants
@@ -9691,11 +10147,6 @@ fn resolve_work_authority(
         return Err(StoreError::InvalidWork(format!(
             "work authority grant is not valid before {}",
             grant.issued_at.format("%Y-%m-%d %H:%M:%S UTC")
-        )));
-    }
-    if !grant.operations.contains(&operation) {
-        return Err(StoreError::InvalidWork(format!(
-            "work authority grant does not admit {operation:?}"
         )));
     }
     Ok(grant)
@@ -10669,6 +11120,13 @@ fn validated_required_child_waivers(
     parent_id: WorkId,
     execution: &RootExecution,
 ) -> Result<Vec<RequiredChildWaiver>, StoreError> {
+    // The root-execution projection is already bound to the latest canonical
+    // event. An empty projected waiver set cannot authorize completion, so it
+    // is safe to avoid replaying the retained root history here. Doctor still
+    // performs the exhaustive comparison below for nonempty projected sets.
+    if execution.required_child_waivers.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut statement = connection.prepare(
         "SELECT object_hash FROM work_feed_entries
          WHERE feed_kind = 'root_work' AND feed_id = ?1
@@ -11624,7 +12082,7 @@ fn verify_work_feed_integrity(
     let mut feed_sequences: HashMap<String, Vec<String>> = HashMap::new();
     let mut statement = connection.prepare(
         "SELECT entry.feed_kind, entry.feed_id, entry.position, entry.object_kind,
-                entry.object_hash, object.object_kind, object.canonical_json
+                entry.object_hash, entry.work_id, object.object_kind, object.canonical_json
          FROM work_feed_entries entry
          LEFT JOIN objects object ON object.object_hash = entry.object_hash
          ORDER BY entry.feed_kind, entry.feed_id, entry.position",
@@ -11637,11 +12095,21 @@ fn verify_work_feed_integrity(
             row.get::<_, String>(3)?,
             row.get::<_, String>(4)?,
             row.get::<_, Option<String>>(5)?,
-            row.get::<_, Option<Vec<u8>>>(6)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<Vec<u8>>>(7)?,
         ))
     })?;
     for row in rows {
-        let (feed_kind, feed_id, position, entry_kind, stored_hash, object_kind, bytes) = row?;
+        let (
+            feed_kind,
+            feed_id,
+            position,
+            entry_kind,
+            stored_hash,
+            projected_work_id,
+            object_kind,
+            bytes,
+        ) = row?;
         *checked += 1;
         let label = format!("work_feed:{feed_kind}:{feed_id}:{position}");
         let feed_key = format!("{feed_kind}:{feed_id}");
@@ -11671,6 +12139,20 @@ fn verify_work_feed_integrity(
         };
         if object_kind.as_deref() != Some(entry_kind.as_str()) {
             invalid.push(label);
+            continue;
+        }
+        if entry_kind == "work_event" {
+            if object
+                .decode::<WorkEvent>()
+                .ok()
+                .map(|event| event.work_id.0.to_string())
+                != projected_work_id
+            {
+                invalid.push(format!("{label}:work_id_binding"));
+                continue;
+            }
+        } else if projected_work_id.is_some() {
+            invalid.push(format!("{label}:unexpected_work_id_binding"));
             continue;
         }
         let expected = match entry_kind.as_str() {
@@ -12229,7 +12711,7 @@ fn verify_work_scalar_bindings(
     let checks = [
         (
             "work_item",
-            "SELECT work_id FROM work_items WHERE
+            "SELECT item.work_id FROM work_items item WHERE
              work_id != json_extract(item_json, '$.work_id') OR
              project_id != json_extract(item_json, '$.project_id') OR
              short_ref != json_extract(item_json, '$.short_ref') OR
@@ -12301,6 +12783,23 @@ fn verify_work_scalar_bindings(
             invalid.push(format!("{kind}:{}:scalar_binding", row?));
         }
     }
+
+    let mut statement = connection.prepare(
+        "SELECT item.work_id FROM work_items item WHERE
+         COALESCE(item.latest_event_hash, '') != COALESCE((
+             SELECT entry.object_hash FROM work_feed_entries entry
+             WHERE entry.feed_kind = 'project'
+               AND entry.object_kind = 'work_event'
+               AND entry.work_id = item.work_id
+             ORDER BY entry.position DESC LIMIT 1
+         ), '')",
+    )?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+    for row in rows {
+        *checked += 1;
+        invalid.push(format!("work_item:{}:latest_event_hash", row?));
+    }
+    drop(statement);
 
     let mut statement = connection.prepare(
         "SELECT work_id, deferred_until_ms, superseded_by, created_at_ms, updated_at_ms, item_json
@@ -15382,6 +15881,284 @@ mod tests {
     }
 
     #[test]
+    fn indexed_feed_work_identity_is_fail_closed_and_doctor_visible() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-feed-work-id", "planner");
+        let root = store
+            .create_work(
+                &root_request("project-feed-work-id", "root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root");
+        let other = store
+            .create_work(
+                &root_request("project-feed-work-id", "other", 1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("other root");
+        claim(&mut store, &root, "planner", "claim-feed-work-id", 2, 120);
+        let head_before = store
+            .work_feed_head(&FeedId::Project(root.project_id.clone()))
+            .expect("project feed head");
+        store
+            .connection
+            .execute(
+                "UPDATE work_feed_entries SET work_id = ?2
+                 WHERE object_kind = 'work_event'
+                   AND work_id = ?1
+                   AND object_hash = (
+                       SELECT latest_event_hash FROM work_items WHERE work_id = ?1
+                   )",
+                params![root.work_id.0.to_string(), other.work_id.0.to_string()],
+            )
+            .expect("corrupt indexed work identity");
+
+        assert!(matches!(
+            store.get_work_item(root.work_id),
+            Err(StoreError::InvalidWorkProjection(_))
+        ));
+        let report = store.verify_all().expect("feed identity report");
+        assert!(
+            report
+                .invalid_work_records
+                .iter()
+                .any(|record| record.contains("work_id_binding"))
+        );
+        assert!(report.invalid_work_records.iter().any(|record| {
+            record == &format!("work_item:{}:latest_event_hash", root.work_id.0)
+        }));
+        assert_eq!(
+            store
+                .work_feed_head(&FeedId::Project(root.project_id))
+                .expect("unchanged project feed head"),
+            head_before
+        );
+    }
+
+    #[test]
+    fn relation_fingerprint_refuses_omission_before_canonical_promotion() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-relation-fingerprint", "planner");
+        let root = store
+            .create_work(
+                &root_request("project-relation-fingerprint", "root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root");
+        let decomposition = store
+            .decompose_work(
+                &DecomposeWorkRequest {
+                    parent_id: root.work_id,
+                    expected_parent_revision: root.revision,
+                    children: vec![
+                        child("first", ChildRequirement::Required, "First"),
+                        child("second", ChildRequirement::Required, "Second"),
+                    ],
+                    prerequisites: vec![ChildWorkPrerequisite {
+                        work_key: "second".into(),
+                        prerequisite: WorkDependencyRef::Proposed("first".into()),
+                    }],
+                    authority: delegated(&root.project_id.0, "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "decompose-relation-fingerprint".into(),
+                    created_at: at(1),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("decompose");
+        let first = &decomposition.children[0];
+        let second = &decomposition.children[1];
+        let feed = FeedId::Project(root.project_id.clone());
+        let head_before = store.work_feed_head(&feed).expect("project feed head");
+        store
+            .connection
+            .execute(
+                "DELETE FROM work_prerequisites
+                 WHERE work_id = ?1 AND prerequisite_id = ?2",
+                params![second.work_id.0.to_string(), first.work_id.0.to_string()],
+            )
+            .expect("omit prerequisite projection");
+
+        assert!(matches!(
+            store.inspect_work(second.work_id, at(2)),
+            Err(StoreError::InvalidWorkProjection(_))
+        ));
+        let refused = store.revise_work(
+            &ReviseWorkRequest {
+                work_id: second.work_id,
+                expected_revision: second.revision,
+                patch: WorkRevisionPatch {
+                    title: Some("must not promote omitted relation".into()),
+                    ..WorkRevisionPatch::default()
+                },
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "refuse-omitted-relation".into(),
+                updated_at: at(2),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(refused, Err(StoreError::InvalidWorkProjection(_))));
+        assert_eq!(
+            store.work_feed_head(&feed).expect("feed after refusal"),
+            head_before
+        );
+        assert!(!store.verify_all().expect("relation report").is_healthy());
+    }
+
+    #[test]
+    fn version_ten_backfills_indexed_feed_work_identity_atomically() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("work-v10-feed-identity.sqlite3");
+        let mut store = SqliteStore::open(&database).expect("current store");
+        install_grant(&mut store, "project-v10-feed-identity", "planner");
+        let root = store
+            .create_work(
+                &root_request("project-v10-feed-identity", "root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root");
+        drop(store);
+        let connection = Connection::open(&database).expect("downgrade fixture");
+        connection
+            .execute_batch(
+                "DROP TRIGGER work_feed_entries_require_work_id;
+                 DROP INDEX work_feed_entries_work_event_item;
+                 ALTER TABLE work_feed_entries DROP COLUMN work_id;
+                 ALTER TABLE work_items DROP COLUMN latest_event_hash;
+                 UPDATE work_schema_metadata SET schema_version = 10 WHERE singleton = 1;",
+            )
+            .expect("downgrade feed identity projection");
+        drop(connection);
+
+        let migrated = SqliteStore::open(&database).expect("migrate v10 store");
+        assert_eq!(migrated.work_schema_version, CURRENT_WORK_SCHEMA_VERSION);
+        assert_eq!(
+            migrated.get_work_item(root.work_id).expect("migrated root"),
+            root
+        );
+        assert_eq!(
+            migrated
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM work_feed_entries
+                     WHERE object_kind = 'work_event' AND work_id IS NULL",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("backfilled feed identity count"),
+            0
+        );
+        assert_eq!(
+            migrated
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM work_items WHERE latest_event_hash IS NULL",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("backfilled latest event count"),
+            0
+        );
+        assert!(
+            migrated
+                .verify_all()
+                .expect("migrated integrity")
+                .is_healthy()
+        );
+    }
+
+    #[test]
+    fn stale_control_evidence_writer_and_null_event_binding_fail_closed() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("stale-control-work-schema.sqlite3");
+        let mut stale = SqliteStore::open(&database).expect("stale opener");
+        install_grant(&mut stale, "project-stale-control-schema", "planner");
+        let root = stale
+            .create_work(
+                &root_request("project-stale-control-schema", "root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root");
+        stale
+            .connection
+            .execute(
+                "UPDATE work_schema_metadata SET schema_version = 10 WHERE singleton = 1",
+                [],
+            )
+            .expect("model v10 opener metadata");
+        stale.work_schema_version = 10;
+        let migrated = Connection::open(&database).expect("migration connection");
+        migrated
+            .execute(
+                "UPDATE work_schema_metadata SET schema_version = 11 WHERE singleton = 1",
+                [],
+            )
+            .expect("model v11 migration");
+        drop(migrated);
+
+        let observation = ExecutionObservationInput {
+            observation_id: "stale-schema-observation".into(),
+            action_fingerprint: ObjectHash::from_canonical_bytes(b"stale schema observation"),
+            effect: EffectClass::Observe,
+            outcome: ExecutionOutcome::Succeeded,
+            source_changed: false,
+            source_basis: None,
+            observed_at: None,
+        };
+        let error = stale
+            .checkpoint_control_turn_with_observations(
+                &root.project_id,
+                &SessionId("runner".into()),
+                "connection-token",
+                "routing-token",
+                "grant-id",
+                TurnNextIntent::Continue,
+                &[observation],
+                "stale-control-checkpoint",
+                at(2),
+            )
+            .expect_err("stale control evidence writer must refuse");
+        assert!(
+            matches!(
+                error,
+                StoreError::InvalidWorkProjection(ref message)
+                    if message == "unsupported local-work schema version 11"
+            ),
+            "unexpected stale-writer error: {error:?}"
+        );
+
+        stale
+            .connection
+            .execute(
+                "INSERT INTO work_feed_heads (feed_kind, feed_id, position)
+                 VALUES ('project', 'trigger-probe', 0)",
+                [],
+            )
+            .expect("trigger probe feed");
+        let event_hash = stale
+            .connection
+            .query_row(
+                "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+                [root.work_id.0.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("root latest event");
+        assert!(
+            stale
+                .connection
+                .execute(
+                    "INSERT INTO work_feed_entries (
+                         feed_kind, feed_id, position, object_kind, object_hash, work_id
+                     ) VALUES ('project', 'trigger-probe', 1, 'work_event', ?1, NULL)",
+                    [event_hash],
+                )
+                .is_err(),
+            "schema trigger must reject a work event without work_id"
+        );
+    }
+
+    #[test]
     fn future_and_unversioned_work_schemas_are_refused_without_ddl() {
         for (name, setup) in [
             (
@@ -15662,10 +16439,11 @@ mod tests {
             .expect("model a store opened by the v9 process");
         // The production v9 binary captures 9 at open. This current-binary
         // fixture models that already-open handle while a second process runs
-        // the v10 migration.
+        // the current migration.
         stale.work_schema_version = 9;
 
-        let migrated = SqliteStore::open(&database).expect("second connection migrates to v10");
+        let migrated =
+            SqliteStore::open(&database).expect("second connection migrates to current schema");
         assert_eq!(migrated.work_schema_version, CURRENT_WORK_SCHEMA_VERSION);
         drop(migrated);
 
@@ -15678,7 +16456,7 @@ mod tests {
         assert!(matches!(
             error,
             StoreError::InvalidWorkProjection(message)
-                if message == "unsupported local-work schema version 10"
+                if message == "unsupported local-work schema version 11"
         ));
         assert_eq!(
             stale

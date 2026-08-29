@@ -53,4 +53,10 @@ echo "Rust test gate: fd soft limit=$effective_soft_limit, test threads=$test_th
 
 RUST_TEST_THREADS=$test_threads
 export RUST_TEST_THREADS
-exec cargo test "$@"
+cargo test "$@"
+
+if [ "$#" -eq 0 ]; then
+    echo "Rust performance gate: claim-validated mutations, test threads=1"
+    cargo test claim_validated_mutations_are_bounded_at_project_scale -- \
+        --ignored --nocapture --test-threads=1
+fi

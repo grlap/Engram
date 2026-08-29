@@ -10,6 +10,7 @@
 use std::{
     fmt::{self, Write as _},
     path::PathBuf,
+    sync::Arc,
 };
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
@@ -46,7 +47,7 @@ fn changes_not_delivered(view: &WorkNextView) -> usize {
 /// from a word's arguments.
 #[derive(Clone, Debug)]
 pub struct AgentVerbs {
-    service: LocalWorkService,
+    service: Arc<LocalWorkService>,
     actor_id: String,
     session_id: SessionId,
 }
@@ -367,15 +368,29 @@ impl AgentVerbs {
         source_skill: Option<String>,
         authority_grant: Option<ObjectHash>,
     ) -> Self {
-        Self {
-            service: LocalWorkService::new(
+        Self::with_shared_service(
+            Arc::new(LocalWorkService::new(
                 database,
                 project_id,
                 actor_id.clone(),
                 session_id.clone(),
                 source_skill,
                 authority_grant,
-            ),
+            )),
+            actor_id,
+            session_id,
+        )
+    }
+
+    /// Builds the agent surface over a service retained by its host process.
+    #[must_use]
+    pub(crate) fn with_shared_service(
+        service: Arc<LocalWorkService>,
+        actor_id: String,
+        session_id: SessionId,
+    ) -> Self {
+        Self {
+            service,
             actor_id,
             session_id,
         }

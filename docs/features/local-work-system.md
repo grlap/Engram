@@ -328,13 +328,24 @@ revision and idempotency key.
   that work. Releasing, handing off, or recovering the claim increments its
   fence and revokes or transfers its dependent leases transactionally.
 
-Every admitted change appends a canonical `WorkEvent`. Project, root-work, and
-run-execution feeds each allocate a dense per-feed position in the event
-transaction; delivery pages have their own dense per-session sequence. A
-position is always carried with its feed kind and id. A delivery position is
-separate from the vector of source-feed positions represented by that
-delivery. A global database row id is not a cursor. Object hashes reproduce
-content but never order changes.
+Every admitted change appends a canonical `WorkEvent`. New events bind the
+complete post-transition prerequisite and active-blocker basis by hash, so a
+claim-validated mutation can verify the current relation projection without
+replaying the item's whole history. Project, root-work, and run-execution
+feeds each allocate a dense per-feed position in the event transaction; their
+work-event entries carry a verified item id for bounded exact-item lookup. The
+item projection also retains the latest event hash; operational reads require
+it to equal the newest indexed feed entry, and a schema trigger prevents any
+work-event append without an item id. Delivery pages have their own dense
+per-session sequence. A position is always carried with its feed kind and id.
+A delivery position is separate from the vector of source-feed positions
+represented by that delivery. A global database row id is not a cursor. Object
+hashes reproduce content but never order changes. `engram doctor`, migration,
+and recovery still replay retained history exhaustively and compare it with
+those bindings. The serial scale regression covers claim, evidence,
+checkpoint, revision, block/unblock, handoff, completion, and `work_next` over
+500 items and 5,000 events, including one 500-event item, with a fixed
+canonical-decode budget.
 
 ## Agent-native protocol
 
@@ -356,9 +367,15 @@ The hot agent protocol has six operations:
 | `work_handoff` | Couple an outgoing checkpoint to an offered/accepted claim transfer |
 
 This six-operation slice is shipped through one `LocalWorkService` used by
-both CLI and MCP. The ambient SQLite row binds only project, session, focused
-work, and the processed project-feed cursor. It never stores authority. A host
-or operator starts the service with one immutable `WorkAuthorityGrant` hash;
+both CLI and MCP. The long-lived MCP server retains one service instance for
+the process lifetime and shares it across the eight-word and legacy work
+handlers. That instance lazily retains one SQLite connection; cloning a
+service explicitly creates an independent connection so concurrent delivery
+and CAS behavior remains real rather than process-local serialization. The
+serial scale benchmark samples that same retained-service lifecycle. The
+ambient SQLite row binds only project, session, focused work, and the
+processed project-feed cursor. It never stores authority. A host or operator
+starts the service with one immutable `WorkAuthorityGrant` hash;
 every mutation resolves that canonical grant and its live revocation marker
 inside the lifecycle transaction. `work_focus` accepts a short ref or UUID,
 while update, completion, and handoff infer the current revision, run, claim,
@@ -367,9 +384,10 @@ section selector over `focus`, `ready`, `catalog`, and `changes`; excluding
 `changes` performs no delivery staging. Ready and catalog candidate selection
 uses bounded, maintained SQLite projections and decodes only the rows selected
 by the requested limit and filters. Those two sections are advisory: lifecycle
-mutations still re-read hash-verified canonical history under their write
-transaction, while `engram doctor` verifies the derived catalog indexes
-against retained item and blocker projections. For change delivery it verifies
+mutations still verify the exact hash-bound item, run, claim, lease, authority,
+and relation basis they consume under their write transaction, while `engram
+doctor` exhaustively verifies the derived catalog and relation indexes against
+retained canonical history. For change delivery it verifies
 the canonical source objects, projects explicit compact summaries, and stages
 only the largest dense prefix that fits the change byte budget. Full canonical
 snapshots and memory bodies are not ambient protocol payloads. Each summary

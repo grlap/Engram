@@ -1,7 +1,7 @@
 //! MCP stdio surface: the eight-word agent tools by default, and the legacy
 //! task/memory/work tools only when the host opts in.
 
-use std::{path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
 
 use chrono::Utc;
 use rmcp::{
@@ -34,7 +34,7 @@ pub struct McpServer {
     actor_id: String,
     session_id: SessionId,
     source_skill: Option<String>,
-    work_authority_grant: Option<ObjectHash>,
+    work_service: Arc<LocalWorkService>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -50,13 +50,21 @@ impl McpServer {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Self {
+        let work_service = Arc::new(LocalWorkService::new(
+            database.clone(),
+            project_id.clone(),
+            actor_id.clone(),
+            session_id.clone(),
+            source_skill.clone(),
+            None,
+        ));
         Self {
             database,
             project_id,
             actor_id,
             session_id,
             source_skill,
-            work_authority_grant: None,
+            work_service,
             tool_router: Self::agent_tool_router(),
         }
     }
@@ -64,7 +72,14 @@ impl McpServer {
     /// Binds one host-selected grant to this connection's work mutations.
     #[must_use]
     pub fn with_work_authority_grant(mut self, grant: Option<ObjectHash>) -> Self {
-        self.work_authority_grant = grant;
+        self.work_service = Arc::new(LocalWorkService::new(
+            self.database.clone(),
+            self.project_id.clone(),
+            self.actor_id.clone(),
+            self.session_id.clone(),
+            self.source_skill.clone(),
+            grant,
+        ));
         self
     }
 
@@ -81,13 +96,10 @@ impl McpServer {
     }
 
     fn verbs(&self) -> AgentVerbs {
-        AgentVerbs::new(
-            self.database.clone(),
-            self.project_id.clone(),
+        AgentVerbs::with_shared_service(
+            Arc::clone(&self.work_service),
             self.actor_id.clone(),
             self.session_id.clone(),
-            self.source_skill.clone(),
-            self.work_authority_grant.clone(),
         )
     }
 
@@ -117,15 +129,8 @@ impl McpServer {
         store.bound_task(&self.project_id, &self.session_id)
     }
 
-    fn work_service(&self) -> LocalWorkService {
-        LocalWorkService::new(
-            self.database.clone(),
-            self.project_id.clone(),
-            self.actor_id.clone(),
-            self.session_id.clone(),
-            self.source_skill.clone(),
-            self.work_authority_grant.clone(),
-        )
+    fn work_service(&self) -> &LocalWorkService {
+        self.work_service.as_ref()
     }
 }
 
@@ -1319,5 +1324,55 @@ fn parse_authority(value: &str) -> Result<Authority, &'static str> {
         "firm" => Ok(Authority::Firm),
         "soft" => Ok(Authority::Soft),
         _ => Err("expected hard, firm, or soft"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retained_work_service_survives_failure_and_serves_both_tool_sets() {
+        let directory = tempfile::tempdir().expect("temporary MCP home");
+        let server = McpServer::new(
+            directory.path().join("engram.sqlite3"),
+            ProjectId("mcp-retained-service".into()),
+            "agent".into(),
+            SessionId("mcp-retained-session".into()),
+            Some("mcp-test".into()),
+        )
+        .with_legacy_tools(true);
+
+        let refused = server.verbs().add(
+            AddInput {
+                title: "requires host authority".into(),
+                ..AddInput::default()
+            },
+            Utc::now(),
+        );
+        assert!(refused.is_err());
+        assert!(format!("{:?}", server.work_service).contains("store_initialized: true"));
+
+        server
+            .verbs()
+            .next(&NextInput { limit: Some(5) }, Utc::now())
+            .expect("agent tool remains usable after refusal");
+        server
+            .work_service()
+            .work_next(
+                5,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Catalog],
+                    ..WorkNextQuery::default()
+                },
+                Utc::now(),
+            )
+            .expect("legacy work tool shares the usable retained service");
+
+        let cloned_handler = server.clone();
+        assert!(Arc::ptr_eq(
+            &server.work_service,
+            &cloned_handler.work_service
+        ));
     }
 }

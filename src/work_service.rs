@@ -1,6 +1,11 @@
 //! Ambient six-operation protocol over the local work lifecycle.
 
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    fmt,
+    path::PathBuf,
+    str::FromStr,
+    sync::{Mutex, MutexGuard, OnceLock},
+};
 
 #[cfg(test)]
 use std::sync::{Arc, Barrier};
@@ -52,7 +57,6 @@ const MAX_LABEL_ITEMS: usize = 8;
 const MAX_DELIVERY_STAGE_RETRIES: usize = 8;
 
 /// Immutable host context for one CLI or MCP work-service connection.
-#[derive(Clone, Debug)]
 pub struct LocalWorkService {
     database: PathBuf,
     project_id: ProjectId,
@@ -60,8 +64,43 @@ pub struct LocalWorkService {
     session_id: SessionId,
     source_skill: Option<String>,
     authority_grant: Option<ObjectHash>,
+    cached_store: OnceLock<Mutex<SqliteStore>>,
     #[cfg(test)]
     delivery_stage_hook: Option<DeliveryStageTestHook>,
+}
+
+impl Clone for LocalWorkService {
+    fn clone(&self) -> Self {
+        Self {
+            database: self.database.clone(),
+            project_id: self.project_id.clone(),
+            actor_id: self.actor_id.clone(),
+            session_id: self.session_id.clone(),
+            source_skill: self.source_skill.clone(),
+            authority_grant: self.authority_grant.clone(),
+            // A clone is a separate protocol connection. Keeping its SQLite
+            // handle independent preserves the real cross-connection CAS and
+            // delivery-race semantics exercised by hosts and tests.
+            cached_store: OnceLock::new(),
+            #[cfg(test)]
+            delivery_stage_hook: self.delivery_stage_hook.clone(),
+        }
+    }
+}
+
+impl fmt::Debug for LocalWorkService {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LocalWorkService")
+            .field("database", &self.database)
+            .field("project_id", &self.project_id)
+            .field("actor_id", &self.actor_id)
+            .field("session_id", &self.session_id)
+            .field("source_skill", &self.source_skill)
+            .field("authority_grant", &self.authority_grant)
+            .field("store_initialized", &self.cached_store.get().is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(test)]
@@ -829,6 +868,7 @@ impl LocalWorkService {
             session_id,
             source_skill,
             authority_grant,
+            cached_store: OnceLock::new(),
             #[cfg(test)]
             delivery_stage_hook: None,
         }
@@ -2368,8 +2408,23 @@ impl LocalWorkService {
         }
     }
 
-    fn store(&self) -> Result<SqliteStore, StoreError> {
-        SqliteStore::open_unresolved(&self.database)
+    fn store(&self) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+        if self.cached_store.get().is_none() {
+            let opened = SqliteStore::open_unresolved(&self.database)?;
+            // A simultaneous first call may win initialization. Dropping this
+            // redundant opener is safe; both opened the same canonical store.
+            let _ = self.cached_store.set(Mutex::new(opened));
+        }
+        let cached = self.cached_store.get().ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "local work service could not initialize its SQLite connection".into(),
+            )
+        })?;
+        cached.lock().map_err(|_| {
+            StoreError::InvalidWorkProjection(
+                "local work service SQLite connection lock is poisoned".into(),
+            )
+        })
     }
 
     fn protocol_intent<'a, T>(&'a self, input: &'a T) -> WorkProtocolIntent<'a, T> {
@@ -2761,7 +2816,7 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkGuidance, StoreError> {
         let status = store.inspect_work(work_id, now)?;
-        let claim = store.current_work_claim(work_id)?;
+        let claim = store.current_work_claim_for_item(&status.work)?;
         let handoffs = store.work_handoff_offers(work_id)?;
         let actor = self.actor("work_focus", "inspect ambient local work");
         let (authority_operations, waivable_required_children) =
@@ -2786,10 +2841,18 @@ impl LocalWorkService {
             } else {
                 (Vec::new(), Vec::new())
             };
-        let (completion_capture_ready, completion_preflight_ready) =
-            store.work_completion_readiness(work_id, &self.session_id, now)?;
-        let claim_recovery_required =
-            store.work_claim_recovery_required(work_id, &self.session_id)?;
+        let (completion_capture_ready, completion_preflight_ready) = store
+            .work_completion_readiness_for_item(
+                &status.work,
+                claim.as_ref(),
+                &self.session_id,
+                now,
+            )?;
+        let claim_recovery_required = store.work_claim_recovery_required_for_item(
+            &status.work,
+            claim.as_ref(),
+            &self.session_id,
+        )?;
         let next = allowed_next(
             &status,
             AllowedNextContext {
@@ -4486,6 +4549,55 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, Debug)]
+    struct ScaleSample {
+        elapsed_us: u128,
+        canonical_decodes: usize,
+        work_event_decodes: usize,
+        item_decodes: usize,
+    }
+
+    fn measure_scale_operation<T>(
+        samples: &mut Vec<ScaleSample>,
+        operation: impl FnOnce() -> T,
+    ) -> T {
+        crate::canonical::reset_canonical_decode_count();
+        crate::storage::reset_work_event_decode_count();
+        crate::storage::reset_work_item_projection_decode_count();
+        let started = std::time::Instant::now();
+        let result = operation();
+        samples.push(ScaleSample {
+            elapsed_us: started.elapsed().as_micros(),
+            canonical_decodes: crate::canonical::canonical_decode_count(),
+            work_event_decodes: crate::storage::work_event_decode_count(),
+            item_decodes: crate::storage::work_item_projection_decode_count(),
+        });
+        result
+    }
+
+    fn scale_p95<T: Copy + Ord>(values: impl Iterator<Item = T>) -> T {
+        let mut values = values.collect::<Vec<_>>();
+        assert!(!values.is_empty(), "scale percentile needs samples");
+        values.sort_unstable();
+        values[(values.len() * 95).div_ceil(100) - 1]
+    }
+
+    fn report_scale_samples(operation: &str, samples: &[ScaleSample]) {
+        eprintln!(
+            "claim mutation scale {operation}: samples={} p95_us={} canonical_decodes_p95={} canonical_decodes_max={} work_event_decodes_p95={} item_decodes_p95={}",
+            samples.len(),
+            scale_p95(samples.iter().map(|sample| sample.elapsed_us)),
+            scale_p95(samples.iter().map(|sample| sample.canonical_decodes)),
+            samples
+                .iter()
+                .map(|sample| sample.canonical_decodes)
+                .max()
+                .expect("scale samples"),
+            scale_p95(samples.iter().map(|sample| sample.work_event_decodes)),
+            scale_p95(samples.iter().map(|sample| sample.item_decodes)),
+        );
+    }
+
     #[test]
     fn core_operation_keys_separate_protocol_variants_and_suboperations() {
         let service = LocalWorkService::new(
@@ -4785,6 +4897,7 @@ mod tests {
                 claim: Some(claim.clone()),
                 handoff_offer: None,
                 blocker: None,
+                relation_fingerprint: None,
                 transition,
                 actor: actor.clone(),
                 created_at: at(1),
@@ -7984,5 +8097,341 @@ mod tests {
             acknowledge_token = Some(delivery_token);
         }
         assert_eq!(expected_position, head + 1);
+    }
+
+    #[test]
+    #[ignore = "runs serially from scripts/test-rust.sh to keep the latency budget meaningful"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one scale regression measures the complete claim-validated mutation family against one fixed project fixture"
+    )]
+    fn claim_validated_mutations_are_bounded_at_project_scale() {
+        // The long-lived MCP server retains one service for its process
+        // lifetime, so these samples include exactly the production warm-call
+        // lifecycle rather than silently omitting a per-request reopen.
+        const ITEM_COUNT: usize = 500;
+        const TOTAL_EVENT_COUNT: usize = 5_000;
+        const DEEP_EVENT_COUNT: usize = 500;
+        const SAMPLE_COUNT: usize = 20;
+
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("claim-mutation-scale".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let writer = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            SessionId("mutation-writer".into()),
+            Some("protocol-test".into()),
+            Some(grant.clone()),
+        );
+        let reader = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            SessionId("mutation-reader".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+
+        let mut work_items = Vec::with_capacity(ITEM_COUNT);
+        for item_index in 0..ITEM_COUNT {
+            let work = match writer
+                .work_propose(
+                    root_input(
+                        &format!("Claim mutation item {item_index:03}"),
+                        &format!("claim-mutation-root-{item_index:03}"),
+                    ),
+                    at(i64::try_from(item_index).expect("item timestamp")),
+                )
+                .expect("create scale root")
+            {
+                WorkProposeResult::Root { work, .. } => work,
+                WorkProposeResult::Decomposition(_) => panic!("expected root"),
+            };
+            work_items.push(work);
+        }
+
+        let mut event_store = SqliteStore::open(&database).expect("event store");
+        let mut synthetic_events = Vec::with_capacity(TOTAL_EVENT_COUNT - ITEM_COUNT);
+        for (item_index, work) in work_items.iter().enumerate() {
+            let entry = event_store
+                .work_event_tail(work.work_id, 1)
+                .expect("base event tail")
+                .pop()
+                .expect("base event");
+            let base = event_store
+                .get::<WorkEvent>(&entry.object_hash)
+                .expect("load base event")
+                .expect("base event object");
+            let event_count = if item_index == ITEM_COUNT - 1 {
+                DEEP_EVENT_COUNT
+            } else if item_index < 9 {
+                10
+            } else {
+                9
+            };
+            for event_index in 1..event_count {
+                let mut event = base.clone();
+                event.created_at = at(600 + i64::try_from(event_index).expect("event timestamp"));
+                event.actor.reason =
+                    format!("claim mutation scale item {item_index:03} event {event_index:02}");
+                synthetic_events.push(event);
+            }
+        }
+        event_store
+            .append_test_work_events(&synthetic_events)
+            .expect("append scale event history");
+        assert_eq!(
+            event_store
+                .work_feed_head(&FeedId::Project(project.clone()))
+                .expect("scale project feed head"),
+            i64::try_from(TOTAL_EVENT_COUNT).expect("scale feed head")
+        );
+        drop(event_store);
+
+        let sampled_work = &work_items[ITEM_COUNT - SAMPLE_COUNT..];
+        let mut claim_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for (sample_index, work) in sampled_work.iter().enumerate() {
+            writer
+                .select_work(
+                    &work.short_ref,
+                    at(1_100 + i64::try_from(sample_index).expect("select timestamp")),
+                )
+                .expect("select claim target");
+            measure_scale_operation(&mut claim_samples, || {
+                writer.work_update(
+                    WorkUpdateInput::Claim {
+                        ttl_seconds: Some(3_600),
+                        recovery_reason: None,
+                        idempotency_key: format!("scale-claim-{sample_index:02}"),
+                    },
+                    at(1_120 + i64::try_from(sample_index).expect("claim timestamp")),
+                )
+            })
+            .expect("claim scale target");
+        }
+
+        let mut work_next_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for sample_index in 0..SAMPLE_COUNT {
+            measure_scale_operation(&mut work_next_samples, || {
+                reader.work_next(
+                    50,
+                    WorkNextQuery {
+                        sections: vec![WorkNextSection::Ready],
+                        ..WorkNextQuery::default()
+                    },
+                    at(1_150 + i64::try_from(sample_index).expect("work_next timestamp")),
+                )
+            })
+            .expect("measure ready work_next");
+        }
+
+        let mut evidence_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for (sample_index, work) in sampled_work.iter().enumerate() {
+            writer
+                .select_work(
+                    &work.short_ref,
+                    at(1_170 + i64::try_from(sample_index * 2).expect("select timestamp")),
+                )
+                .expect("select evidence target");
+            measure_scale_operation(&mut evidence_samples, || {
+                writer.work_update(
+                    WorkUpdateInput::Evidence {
+                        summary: format!("scale evidence {sample_index:02}"),
+                        refs: vec![format!("test:claim-mutation-scale:{sample_index:02}")],
+                        attach: None,
+                        idempotency_key: format!("scale-evidence-{sample_index:02}"),
+                    },
+                    at(1_171 + i64::try_from(sample_index * 2).expect("evidence timestamp")),
+                )
+            })
+            .expect("record scale evidence");
+        }
+
+        let mut checkpoint_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for (sample_index, work) in sampled_work.iter().enumerate() {
+            writer
+                .select_work(
+                    &work.short_ref,
+                    at(1_220 + i64::try_from(sample_index * 2).expect("select timestamp")),
+                )
+                .expect("select checkpoint target");
+            measure_scale_operation(&mut checkpoint_samples, || {
+                writer.work_update(
+                    WorkUpdateInput::Checkpoint {
+                        summary: format!("scale checkpoint {sample_index:02}"),
+                        evidence: None,
+                        idempotency_key: format!("scale-checkpoint-{sample_index:02}"),
+                    },
+                    at(1_221 + i64::try_from(sample_index * 2).expect("checkpoint timestamp")),
+                )
+            })
+            .expect("record scale checkpoint");
+        }
+
+        let mut revise_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for (sample_index, work) in sampled_work.iter().enumerate() {
+            writer
+                .select_work(
+                    &work.short_ref,
+                    at(1_270 + i64::try_from(sample_index * 2).expect("select timestamp")),
+                )
+                .expect("select revision target");
+            measure_scale_operation(&mut revise_samples, || {
+                writer.work_update(
+                    WorkUpdateInput::Revise {
+                        patch: WorkRevisionPatch {
+                            title: Some(format!(
+                                "Claim mutation target revision {sample_index:02}"
+                            )),
+                            ..WorkRevisionPatch::default()
+                        },
+                        idempotency_key: format!("scale-revise-{sample_index:02}"),
+                    },
+                    at(1_271 + i64::try_from(sample_index * 2).expect("revise timestamp")),
+                )
+            })
+            .expect("revise scale target");
+        }
+
+        let mut block_samples = Vec::with_capacity(SAMPLE_COUNT);
+        let mut unblock_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for (sample_index, work) in sampled_work.iter().enumerate() {
+            writer
+                .select_work(
+                    &work.short_ref,
+                    at(1_320 + i64::try_from(sample_index * 3).expect("select timestamp")),
+                )
+                .expect("select blocker target");
+            let blocked = measure_scale_operation(&mut block_samples, || {
+                writer.work_update(
+                    WorkUpdateInput::Block {
+                        blocker_kind: WorkBlockerKind::Manual,
+                        detail: format!("scale blocker {sample_index:02}"),
+                        idempotency_key: format!("scale-block-{sample_index:02}"),
+                    },
+                    at(1_321 + i64::try_from(sample_index * 3).expect("block timestamp")),
+                )
+            })
+            .expect("block scale target");
+            let blocker_id = blocked
+                .receipt
+                .result
+                .get("blocker_id")
+                .and_then(serde_json::Value::as_str)
+                .expect("blocker receipt id")
+                .to_owned();
+            measure_scale_operation(&mut unblock_samples, || {
+                writer.work_update(
+                    WorkUpdateInput::Unblock {
+                        blocker_id: Some(blocker_id),
+                        idempotency_key: format!("scale-unblock-{sample_index:02}"),
+                    },
+                    at(1_322 + i64::try_from(sample_index * 3).expect("unblock timestamp")),
+                )
+            })
+            .expect("unblock scale target");
+        }
+
+        let mut handoff_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for (sample_index, work) in sampled_work.iter().enumerate() {
+            writer
+                .select_work(
+                    &work.short_ref,
+                    at(1_400 + i64::try_from(sample_index * 4).expect("select timestamp")),
+                )
+                .expect("select handoff target");
+            measure_scale_operation(&mut handoff_samples, || {
+                writer.work_handoff(
+                    WorkHandoffInput::Offer {
+                        to: "handoff-peer".into(),
+                        ttl_seconds: Some(300),
+                        checkpoint_summary: format!("scale handoff checkpoint {sample_index:02}"),
+                        idempotency_key: format!("scale-handoff-offer-{sample_index:02}"),
+                    },
+                    at(1_401 + i64::try_from(sample_index * 4).expect("offer timestamp")),
+                )
+            })
+            .expect("offer scale handoff");
+            writer
+                .work_handoff(
+                    WorkHandoffInput::Cancel {
+                        reason: "restore benchmark executor".into(),
+                        idempotency_key: format!("scale-handoff-cancel-{sample_index:02}"),
+                    },
+                    at(1_402 + i64::try_from(sample_index * 4).expect("cancel timestamp")),
+                )
+                .expect("cancel scale handoff");
+            writer
+                .work_update(
+                    WorkUpdateInput::Checkpoint {
+                        summary: format!("post-handoff checkpoint {sample_index:02}"),
+                        evidence: None,
+                        idempotency_key: format!("scale-post-handoff-checkpoint-{sample_index:02}"),
+                    },
+                    at(1_403 + i64::try_from(sample_index * 4).expect("checkpoint timestamp")),
+                )
+                .expect("checkpoint after scale handoff");
+        }
+
+        let mut complete_samples = Vec::with_capacity(SAMPLE_COUNT);
+        for (sample_index, work) in sampled_work.iter().enumerate() {
+            writer
+                .select_work(
+                    &work.short_ref,
+                    at(1_500 + i64::try_from(sample_index * 2).expect("select timestamp")),
+                )
+                .expect("select completion target");
+            let completed = measure_scale_operation(&mut complete_samples, || {
+                writer.work_complete(
+                    WorkCompleteInput {
+                        capture: None,
+                        evidence: Vec::new(),
+                        acceptance: None,
+                        note: Some(format!("scale completion {sample_index:02}")),
+                        idempotency_key: format!("scale-complete-{sample_index:02}"),
+                    },
+                    at(1_501 + i64::try_from(sample_index * 2).expect("complete timestamp")),
+                )
+            })
+            .expect("complete scale target");
+            assert!(matches!(completed, WorkCompleteResult::Completed(_)));
+        }
+
+        for (operation, samples) in [
+            ("claim", &claim_samples),
+            ("evidence", &evidence_samples),
+            ("checkpoint", &checkpoint_samples),
+            ("revise", &revise_samples),
+            ("block", &block_samples),
+            ("unblock", &unblock_samples),
+            ("handoff", &handoff_samples),
+            ("complete", &complete_samples),
+            ("work_next", &work_next_samples),
+        ] {
+            assert_eq!(samples.len(), SAMPLE_COUNT);
+            report_scale_samples(operation, samples);
+            let latency_target_us = if operation == "work_next" {
+                100_000
+            } else {
+                50_000
+            };
+            let decode_target = if operation == "work_next" { 16 } else { 64 };
+            assert!(
+                scale_p95(samples.iter().map(|sample| sample.elapsed_us)) <= latency_target_us,
+                "{operation} exceeded its p95 latency target of {latency_target_us}us"
+            );
+            let max_decodes = samples
+                .iter()
+                .map(|sample| sample.canonical_decodes)
+                .max()
+                .expect("scale samples");
+            assert!(
+                max_decodes <= decode_target,
+                "{operation} exceeded its bounded canonical-decode budget of {decode_target}: {max_decodes}"
+            );
+        }
     }
 }

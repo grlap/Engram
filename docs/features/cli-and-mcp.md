@@ -149,6 +149,10 @@ precedence. An unset, empty, or whitespace-only variable starts the same
 grant-less MCP service as today; a nonempty malformed value fails startup and
 never falls back silently. The value must not be logged or copied into MCP
 traffic, agent-visible receipts, or configuration committed to the repository.
+The MCP process retains one `LocalWorkService` and its lazily opened SQLite
+connection for its lifetime; both the eight-word tools and optional legacy
+work tools use that same service. A failed operation rolls back before the
+next call uses the connection.
 
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and

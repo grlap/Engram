@@ -2628,6 +2628,10 @@ impl SqliteStore {
     }
 
     fn current_core_schema_is_complete(connection: &Connection) -> Result<bool, StoreError> {
+        let mut statement = connection.prepare("SELECT name FROM sqlite_master")?;
+        let stored = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<HashSet<_>, _>>()?;
         for object in [
             "objects",
             "publication_intents",
@@ -2662,12 +2666,7 @@ impl SqliteStore {
             "control_work_leases_task_state",
             "control_operation_results",
         ] {
-            let exists = connection.query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = ?1)",
-                [object],
-                |row| row.get::<_, bool>(0),
-            )?;
-            if !exists {
+            if !stored.contains(object) {
                 return Ok(false);
             }
         }
@@ -4782,6 +4781,12 @@ impl SqliteStore {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if !observations.is_empty()
+            || !verification_evidence.is_empty()
+            || !environment_evidence.is_empty()
+        {
+            work::require_work_schema_version(&transaction, self.work_schema_version)?;
+        }
         Self::verify_control_connection(&transaction, session_id, connection_token)?;
         let session = Self::load_control_session_on(&transaction, session_id)?
             .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
@@ -5089,6 +5094,9 @@ impl SqliteStore {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if matches!(request.visibility, NoteVisibility::Shared) && request.work_id.is_some() {
+            work::require_work_schema_version(&transaction, self.work_schema_version)?;
+        }
         Self::validate_note_anchors_on(&transaction, request)?;
         if let Some((stored_request, receipt_json)) = transaction
             .query_row(
@@ -5404,6 +5412,9 @@ impl SqliteStore {
             second_version,
             reason,
         )?;
+        if authorized.feed_work_id.is_some() {
+            work::require_work_schema_version(&transaction, self.work_schema_version)?;
+        }
         let request = CanonicalObject::freeze(&ContradictionIntentFingerprint {
             project_id,
             task_id: authorized.task_id,

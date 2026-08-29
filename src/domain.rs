@@ -2108,6 +2108,10 @@ pub struct WorkEvent {
     pub claim: Option<WorkClaim>,
     pub handoff_offer: Option<WorkHandoffOffer>,
     pub blocker: Option<WorkBlocker>,
+    /// Hash of the exact prerequisite and active-blocker projection after this
+    /// transition. Older events omit it and require full-history validation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation_fingerprint: Option<ObjectHash>,
     pub transition: WorkTransition,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,

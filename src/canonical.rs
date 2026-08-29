@@ -7,10 +7,28 @@
 use std::fmt;
 use std::str::FromStr;
 
+#[cfg(test)]
+use std::cell::Cell;
+
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 
 use crate::storage::StoreError;
+
+#[cfg(test)]
+thread_local! {
+    static CANONICAL_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_canonical_decode_count() {
+    CANONICAL_DECODE_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn canonical_decode_count() -> usize {
+    CANONICAL_DECODE_COUNT.with(Cell::get)
+}
 
 /// A lowercase SHA-256 digest of RFC 8785 canonical JSON bytes.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -137,6 +155,8 @@ impl CanonicalObject {
     /// Returns [`StoreError`] when the canonical bytes cannot be deserialized
     /// into `T`.
     pub fn decode<T: DeserializeOwned>(&self) -> Result<T, StoreError> {
+        #[cfg(test)]
+        CANONICAL_DECODE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
         Ok(serde_json::from_slice(&self.bytes)?)
     }
 }

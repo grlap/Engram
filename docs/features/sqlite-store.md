@@ -110,7 +110,7 @@ not activated; migrations mint new objects, never rewrite old ones. The
 contract is substrate-neutral — it is what keeps the deferred Git backend a
 drop-in and gives reports stable provenance hashes.
 
-The first-class work schema currently advertises version 10. Open preflights
+The first-class work schema currently advertises version 11. Open preflights
 that metadata before any DDL, refuses future or unversioned non-empty work
 schemas without mutation, and performs supported ALTER/backfill/version steps
 inside one `BEGIN IMMEDIATE` transaction. Handoff backfills must match their
@@ -140,14 +140,25 @@ immutable definition. Version 10 adds normalized assignment/search columns,
 normalized label rows, and a trigram FTS catalog projection. Those structures
 are backfilled atomically from retained item and blocker projections and are
 checked by `engram doctor`, including a `MATCH` probe of the FTS inverted
-index; they never replace canonical work events for lifecycle mutation. Every
-work mutation rechecks inside its write transaction that durable schema
-metadata still names the generation understood by that opener. A process kept
-alive across another process's migration therefore refuses instead of writing
-stale projections. The v1–v9 upgrade runs atomically and current-version open
-requires the V10 catalog structures rather than silently interpreting a
-partial projection. `NULL` retains the stock V1 meaning for legacy obligation
-definitions.
+index; they never replace canonical work events for lifecycle mutation.
+Version 11 adds a verified work-id binding to each work-event feed entry, an
+item-local feed index, a projected latest-event hash on each item, and an
+indexed exact authority-revocation lookup. Migration backfills both event
+bindings from hash-verified canonical events in the same transaction as the
+schema-version change. A database trigger refuses every new work-event feed
+entry whose item binding is absent, including writes attempted by an older
+process. Operational reads require the item head to equal the latest indexed
+feed entry before they decode it. New `WorkEvent` objects also bind the
+complete post-transition prerequisite and active-blocker basis by hash.
+Operational reads verify that hash plus each active row's exact canonical
+event binding; `doctor`, migration, and recovery retain exhaustive replay of
+the full history. Every work mutation rechecks inside its write transaction
+that durable schema metadata still names the generation understood by that
+opener. A process kept alive across another process's migration therefore
+refuses instead of writing stale projections. The v1–v10 upgrade runs
+atomically and current-version open requires the V11 feed, head, trigger, and
+relation structures rather than silently interpreting a partial projection.
+`NULL` retains the stock V1 meaning for legacy obligation definitions.
 Upgrading an older store clears only an unacknowledged tentative page, because
 versions 1-4 did not retain enough information to reconstruct that exact
 projection; the confirmed cursor remains unchanged and the page is delivered

@@ -94,6 +94,11 @@ class McpClient {
       this.stderr += chunk.toString("utf8");
     });
     this.child.stdout.on("data", (chunk) => this.#receive(chunk));
+    this.closed = new Promise((resolvePromise) => {
+      this.child.once("close", (code, signal) => {
+        resolvePromise({ code, signal });
+      });
+    });
     this.child.on("exit", (code, signal) => {
       const error = new Error(
         `MCP server exited code=${code} signal=${signal}: ${this.stderr}`,
@@ -174,8 +179,24 @@ class McpClient {
     return result;
   }
 
-  close() {
-    this.child.stdin.end();
+  async close() {
+    if (!this.child.stdin.destroyed) this.child.stdin.end();
+    let timer;
+    try {
+      const { code, signal } = await Promise.race([
+        this.closed,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            this.child.kill();
+            reject(new Error(`MCP server did not close: ${this.stderr}`));
+          }, 5000);
+        }),
+      ]);
+      assert.equal(signal, null, `MCP server terminated by ${signal}`);
+      assert.equal(code, 0, this.stderr);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -342,8 +363,7 @@ test("legacy memory loop still works for two sessions under --legacy-tools", asy
     );
 
     const beforeRestart = JSON.stringify(delta);
-    b.close();
-    await wait(50);
+    await b.close();
     b = new McpClient(engramHome, "eval-b", { legacyTools: true });
     await b.initialize();
     const afterRestart = structured(
@@ -482,8 +502,7 @@ test("legacy memory loop still works for two sessions under --legacy-tools", asy
     assert.match(doctor.stdout, /store is healthy/u);
     assert.match(doctor.stderr, /no-op redactor/u);
   } finally {
-    a?.close();
-    b?.close();
+    await Promise.all([a?.close(), b?.close()]);
     rmSync(engramHome, { recursive: true, force: true });
   }
 });
@@ -519,8 +538,7 @@ test("legacy tools are opt-in and still answer one call", async () => {
     assert.equal(emptyNext.focus, undefined);
     assert.deepEqual(emptyNext.next, ['engram work add "…"']);
   } finally {
-    plain?.close();
-    legacy?.close();
+    await Promise.all([plain?.close(), legacy?.close()]);
     rmSync(engramHome, { recursive: true, force: true });
   }
 });
@@ -725,7 +743,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
           "work_invalid",
         );
       } finally {
-        client.close();
+        await client.close();
       }
     };
     const unsetError = await grantlessError(undefined, "unset");
@@ -1133,8 +1151,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       "work_invalid",
     );
   } finally {
-    a?.close();
-    b?.close();
+    await Promise.all([a?.close(), b?.close()]);
     rmSync(engramHome, { recursive: true, force: true });
   }
 });
