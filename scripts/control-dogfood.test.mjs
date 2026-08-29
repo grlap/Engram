@@ -361,6 +361,8 @@ test("host control survives restart and gates turn dispatch", async () => {
         "dogfood-operator",
         "--reason",
         "exercise the fail-closed warning",
+        "--idempotency-key",
+        "dogfood-action-gated",
       ],
       { cwd: root, encoding: "utf8" },
     );
@@ -381,6 +383,8 @@ test("host control survives restart and gates turn dispatch", async () => {
         "dogfood-operator",
         "--reason",
         "restore a bindable V1 requirement",
+        "--idempotency-key",
+        "dogfood-action-recovery",
       ],
       { cwd: root, encoding: "utf8" },
     );
@@ -584,6 +588,8 @@ test("host control survives restart and gates turn dispatch", async () => {
           authorizedBy,
           "--reason",
           reason,
+          "--idempotency-key",
+          `invalid-attribution-${authorizedBy || "missing"}-${reason || "missing"}`,
         ],
         { cwd: root, encoding: "utf8" },
       );
@@ -602,6 +608,8 @@ test("host control survives restart and gates turn dispatch", async () => {
         "dogfood-operator",
         "--reason",
         "reject a stale operator",
+        "--idempotency-key",
+        "dogfood-stale-policy",
         "--expected-policy-hash",
         "0".repeat(64),
       ],
@@ -622,6 +630,8 @@ test("host control survives restart and gates turn dispatch", async () => {
         "dogfood-operator",
         "--reason",
         "exercise attributed policy activation",
+        "--idempotency-key",
+        "dogfood-policy-activation",
         "--expected-policy-hash",
         initialPolicy[1],
       ],
@@ -635,6 +645,48 @@ test("host control survives restart and gates turn dispatch", async () => {
     assert.equal(configuredPolicy.changed, true);
     assert.equal(configuredPolicy.previous_policy, initialPolicy[1]);
     assert.match(configured.stderr, /asserted host context, not an authenticated identity/);
+    const configuredReplay = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "control-policy",
+        "set-required-assurance",
+        "turn_gated",
+        "--authorized-by",
+        "dogfood-operator",
+        "--reason",
+        "exercise attributed policy activation",
+        "--idempotency-key",
+        "dogfood-policy-activation",
+        "--expected-policy-hash",
+        initialPolicy[1],
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(configuredReplay.status, 0, configuredReplay.stderr);
+    assert.deepEqual(JSON.parse(configuredReplay.stdout), configuredPolicy);
+    const configuredConflict = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "control-policy",
+        "set-required-assurance",
+        "turn_gated",
+        "--authorized-by",
+        "dogfood-operator",
+        "--reason",
+        "different intent under the same durable key",
+        "--idempotency-key",
+        "dogfood-policy-activation",
+        "--expected-policy-hash",
+        initialPolicy[1],
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.notEqual(configuredConflict.status, 0);
+    assert.match(configuredConflict.stderr, /reused for a different intent/);
     const configuredDoctor = spawnSync(
       binary,
       ["--home", engramHome, "doctor"],

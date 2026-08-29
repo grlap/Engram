@@ -837,7 +837,13 @@ reported as an unavailable authority-mediation capability by `doctor`; the
 setter also warns that the specific supplied identity is asserted rather than
 authenticated. Selecting the hash and incrementing the project epoch is one
 SQLite transaction with an optional expected-policy-hash compare and swap.
-Reapplying the active assurance is an idempotent no-op. Every
+Both host/operator policy setters require a store-scoped idempotency key. The
+normalized intent deliberately excludes the caller's retry-time clock, while
+the exact receipt retains the originally committed activation timestamp. The
+receipt commits with the policy activation and replays after restart or an
+uncertain response before the expected-hash check; same-key different-intent
+reuse is refused. Reapplying the active assurance under a fresh key persists
+an exactly replayable no-op receipt. Every
 `turn_begin` and future `action_authorize` reads that
 project epoch plus the bound task's `admission_epoch`, so a project mismatch
 invalidates issued grants across all active tasks without a non-atomic

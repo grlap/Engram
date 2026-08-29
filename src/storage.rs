@@ -22,7 +22,7 @@ use crate::domain::ControlRefusalCode;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 use crate::{
@@ -179,6 +179,27 @@ struct WorkLeaseReleaseFingerprint<'a> {
     session_id: &'a SessionId,
     lease_id: &'a str,
     idempotency_key: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+enum ControlPolicyOperationFingerprint<'a> {
+    SetRequiredAssurance {
+        fingerprint_schema_version: u16,
+        idempotency_key: &'a str,
+        required_assurance: ControlAssurance,
+        authorized_by: &'a ActorContext,
+        reason: &'a str,
+        expected_policy: Option<&'a ObjectHash>,
+    },
+    SetObligationRuleSet {
+        fingerprint_schema_version: u16,
+        idempotency_key: &'a str,
+        obligation_rule_set: &'a ObjectHash,
+        authorized_by: &'a ActorContext,
+        reason: &'a str,
+        expected_policy: Option<&'a ObjectHash>,
+    },
 }
 
 /// Errors at the immutable storage boundary.
@@ -378,7 +399,7 @@ pub struct ControlDiagnostics {
 }
 
 /// Operator-facing receipt for one idempotent project control-policy update.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlPolicyUpdateReceipt {
     pub changed: bool,
     pub active_policy: ObjectHash,
@@ -391,7 +412,7 @@ pub struct ControlPolicyUpdateReceipt {
 }
 
 /// Operator-facing receipt for one immutable obligation rule-set activation.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObligationRuleSetUpdateReceipt {
     pub changed: bool,
     pub active_policy: ObjectHash,
@@ -452,7 +473,8 @@ const MAX_TYPED_EVIDENCE_REFS: usize = 64;
 const MAX_TYPED_EVIDENCE_REF_BYTES: usize = 1_024;
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
 const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
-const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 3;
+const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 4;
+const LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 3;
 const LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 2;
 const CONTROL_POLICY_SCHEMA_VERSION_V1: u16 = 1;
 const CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1: u16 = 1;
@@ -463,6 +485,10 @@ const MAX_CONTROL_GRANT_TTL_SECONDS: i64 = CONTROL_POLICY_V1_MAX_GRANT_TTL_SECON
 const MAX_CONTROL_POLICY_PROVENANCE_LINKS: usize = 32;
 const MAX_CONTROL_POLICY_ATTRIBUTION_BYTES: usize = 64 * 1_024;
 const MAX_CONTROL_POLICY_AUTHORITY_BYTES: usize = 72 * 1_024;
+const MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES: usize = 96 * 1_024;
+const MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES: usize = 16 * 1_024;
+const MAX_CONTROL_POLICY_IDEMPOTENCY_KEY_BYTES: usize = 512;
+const CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION: u16 = 1;
 const WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION: u16 = 2;
 
 #[cfg(test)]
@@ -626,6 +652,16 @@ struct StoredControlGrantRow {
 struct StoredControlOperation {
     sequence: i64,
     session_id: String,
+    operation: String,
+    idempotency_key: String,
+    intent_hash: String,
+    intent_json: Vec<u8>,
+    result_hash: String,
+    result_json: Vec<u8>,
+}
+
+struct StoredControlPolicyOperation {
+    sequence: i64,
     operation: String,
     idempotency_key: String,
     intent_hash: String,
@@ -965,6 +1001,17 @@ impl SqliteStore {
                  authority_hash TEXT NOT NULL REFERENCES objects(object_hash),
                  policy_json BLOB NOT NULL
              ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_policy_operation_results (
+                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                 operation TEXT NOT NULL,
+                 idempotency_key TEXT NOT NULL,
+                 intent_hash TEXT NOT NULL,
+                 intent_json BLOB NOT NULL,
+                 result_hash TEXT NOT NULL,
+                 result_json BLOB NOT NULL,
+                 created_at_ms INTEGER NOT NULL,
+                 UNIQUE(operation, idempotency_key)
+             ) STRICT;
              CREATE TABLE IF NOT EXISTS task_control_state (
                  task_id TEXT PRIMARY KEY REFERENCES tasks(task_id),
                  admission_epoch INTEGER NOT NULL
@@ -1164,6 +1211,7 @@ impl SqliteStore {
         for table in [
             "control_policy_state",
             "control_policy_versions",
+            "control_policy_operation_results",
             "control_sessions",
             "control_turn_grants",
         ] {
@@ -1208,6 +1256,31 @@ impl SqliteStore {
         let mut statement = connection.prepare("PRAGMA table_info('control_policy_state')")?;
         let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
         Ok(rows.collect::<Result<HashSet<_>, _>>()?)
+    }
+
+    fn control_policy_operation_results_table_is_complete(
+        connection: &Connection,
+    ) -> Result<bool, StoreError> {
+        if !Self::sqlite_table_exists(connection, "control_policy_operation_results")? {
+            return Ok(false);
+        }
+        let mut statement =
+            connection.prepare("PRAGMA table_info('control_policy_operation_results')")?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<HashSet<_>, _>>()?;
+        Ok([
+            "sequence",
+            "operation",
+            "idempotency_key",
+            "intent_hash",
+            "intent_json",
+            "result_hash",
+            "result_json",
+            "created_at_ms",
+        ]
+        .iter()
+        .all(|column| columns.contains(*column)))
     }
 
     #[allow(
@@ -1286,6 +1359,7 @@ impl SqliteStore {
                 }
             }
             LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION
+            | LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION
             | CONTROL_POLICY_STATE_SCHEMA_VERSION => {
                 if !columns.contains("policy_hash") {
                     return Err(StoreError::InvalidControlProjection(
@@ -1309,7 +1383,7 @@ impl SqliteStore {
                 // can mutate a partially corrupt current store.
                 let snapshot = connection.unchecked_transaction()?;
                 Self::verify_control_policy_history(&snapshot)?;
-                if schema_version == CONTROL_POLICY_STATE_SCHEMA_VERSION {
+                if schema_version >= LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION {
                     let (_, policy, _) = Self::load_control_policy_head(&snapshot)?;
                     Self::validate_migratable_active_control_policy(&policy)?;
                     let rule_set = policy.obligation_rule_set.as_ref().ok_or_else(|| {
@@ -1318,6 +1392,13 @@ impl SqliteStore {
                         )
                     })?;
                     Self::load_obligation_rule_set_on(&snapshot, rule_set)?;
+                }
+                if schema_version == CONTROL_POLICY_STATE_SCHEMA_VERSION
+                    && !Self::control_policy_operation_results_table_is_complete(&snapshot)?
+                {
+                    return Err(StoreError::InvalidControlProjection(
+                        "current control policy operation-result table is missing".into(),
+                    ));
                 }
                 snapshot.commit()?;
             }
@@ -1430,7 +1511,32 @@ impl SqliteStore {
                     )
                 })?;
                 Self::load_obligation_rule_set_on(connection, rule_set)?;
+                if !Self::control_policy_operation_results_table_is_complete(connection)? {
+                    return Err(StoreError::InvalidControlProjection(
+                        "current control policy operation-result table is missing".into(),
+                    ));
+                }
                 Ok(OpenMigrationNeed::Current)
+            }
+            Some(LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION) => {
+                let current = Self::verify_control_policy_history(connection)?;
+                let (_, policy, _) = Self::load_control_policy_head(connection)?;
+                Self::validate_active_control_policy(&policy)?;
+                if initial_control_policy
+                    .is_some_and(|initial| initial.required_assurance != current.required_assurance)
+                {
+                    return Err(StoreError::InvalidControlProjection(
+                        "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                            .into(),
+                    ));
+                }
+                let rule_set = current.obligation_rule_set.as_ref().ok_or_else(|| {
+                    StoreError::InvalidControlProjection(
+                        "current control policy has no obligation rule-set selection".into(),
+                    )
+                })?;
+                Self::load_obligation_rule_set_on(connection, rule_set)?;
+                Ok(OpenMigrationNeed::NeedsWrite)
             }
             Some(LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION) => {
                 let current = Self::verify_control_policy_history(connection)?;
@@ -1466,6 +1572,7 @@ impl SqliteStore {
         policy_preexisted: bool,
         initial_control_policy: Option<InitialControlPolicy>,
     ) -> Result<(), StoreError> {
+        Self::ensure_control_policy_operation_results_table(connection)?;
         let initial_required_assurance = initial_control_policy
             .as_ref()
             .map(|policy| policy.required_assurance);
@@ -1527,6 +1634,23 @@ impl SqliteStore {
                     BUILTIN_CONTROL_GRANT_TTL_SECONDS,
                 )
             };
+        if schema_version == LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION {
+            let current = Self::verify_control_policy_history(connection)?;
+            if initial_required_assurance
+                .is_some_and(|requested| requested != current.required_assurance)
+            {
+                return Err(StoreError::InvalidControlProjection(
+                    "initial assurance cannot replace an existing policy; use control-policy set-required-assurance"
+                        .into(),
+                ));
+            }
+            connection.execute(
+                "UPDATE control_policy_state SET schema_version = ?1 WHERE singleton = 1",
+                [CONTROL_POLICY_STATE_SCHEMA_VERSION],
+            )?;
+            Self::verify_control_policy_history(connection)?;
+            return Ok(());
+        }
         if schema_version == LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION {
             let (policy, _, _) = Self::load_control_policy_head(connection)?;
             if initial_required_assurance
@@ -1539,6 +1663,11 @@ impl SqliteStore {
             }
             let policy = Self::upgrade_builtin_control_envelope_on(connection, policy, Utc::now())?;
             Self::upgrade_builtin_obligation_rules_on(connection, policy, Utc::now())?;
+            connection.execute(
+                "UPDATE control_policy_state SET schema_version = ?1 WHERE singleton = 1",
+                [CONTROL_POLICY_STATE_SCHEMA_VERSION],
+            )?;
+            Self::verify_control_policy_history(connection)?;
             return Ok(());
         }
         if schema_version != 1 {
@@ -1700,6 +1829,25 @@ impl SqliteStore {
                 ));
         }
         Self::upgrade_builtin_control_envelope_on(connection, policy, now)?;
+        Ok(())
+    }
+
+    fn ensure_control_policy_operation_results_table(
+        connection: &Connection,
+    ) -> Result<(), StoreError> {
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS control_policy_operation_results (
+                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                 operation TEXT NOT NULL,
+                 idempotency_key TEXT NOT NULL,
+                 intent_hash TEXT NOT NULL,
+                 intent_json BLOB NOT NULL,
+                 result_hash TEXT NOT NULL,
+                 result_json BLOB NOT NULL,
+                 created_at_ms INTEGER NOT NULL,
+                 UNIQUE(operation, idempotency_key)
+             ) STRICT;",
+        )?;
         Ok(())
     }
 
@@ -2119,7 +2267,9 @@ impl SqliteStore {
                 [],
                 |row| row.get::<_, bool>(0),
             )?;
-            if !has_control_policy_hash || !has_versions {
+            let has_policy_operation_results =
+                Self::control_policy_operation_results_table_is_complete(connection)?;
+            if !has_control_policy_hash || !has_versions || !has_policy_operation_results {
                 return Ok(false);
             }
         }
@@ -6470,14 +6620,16 @@ impl SqliteStore {
     /// expected policy is stale, canonical history is corrupt, or persistence
     /// cannot complete atomically.
     #[allow(
+        clippy::too_many_arguments,
         clippy::too_many_lines,
-        reason = "the attributed authority decision and immutable policy activation form one auditable transaction"
+        reason = "the caller key, attribution, CAS guard, clock, and redactor are independent parts of one auditable policy transaction"
     )]
     pub fn set_required_control_assurance<R: Redactor>(
         &mut self,
         required_assurance: ControlAssurance,
         authorized_by: &ActorContext,
         reason: &str,
+        idempotency_key: &str,
         expected_policy: Option<&ObjectHash>,
         now: DateTime<Utc>,
         redactor: &R,
@@ -6492,10 +6644,34 @@ impl SqliteStore {
         redactor
             .inspect(&reason)
             .map_err(StoreError::RedactionRefused)?;
+        let idempotency_key = normalize_control_policy_idempotency_key(idempotency_key)?;
+        let intent =
+            CanonicalObject::freeze(&ControlPolicyOperationFingerprint::SetRequiredAssurance {
+                fingerprint_schema_version: CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION,
+                idempotency_key,
+                required_assurance,
+                authorized_by: &authorized_by,
+                reason: &reason,
+                expected_policy,
+            })?;
+        if intent.bytes().len() > MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation intent exceeds the {MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES}-byte canonical limit"
+            )));
+        }
 
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(receipt) = Self::replay_control_policy_operation::<ControlPolicyUpdateReceipt>(
+            &transaction,
+            "set_required_assurance",
+            idempotency_key,
+            &intent,
+        )? {
+            transaction.commit()?;
+            return Ok(receipt);
+        }
         let current = Self::verify_control_policy_history(&transaction)?;
         if let Some(expected) = expected_policy
             && expected != &current.policy_hash
@@ -6518,6 +6694,14 @@ impl SqliteStore {
                 required_assurance: current.required_assurance,
                 activated_at: current.activated_at,
             };
+            Self::persist_control_policy_operation(
+                &transaction,
+                "set_required_assurance",
+                idempotency_key,
+                &intent,
+                &receipt,
+                now,
+            )?;
             transaction.commit()?;
             return Ok(receipt);
         }
@@ -6612,6 +6796,14 @@ impl SqliteStore {
             required_assurance: policy.required_assurance,
             activated_at: policy.activated_at,
         };
+        Self::persist_control_policy_operation(
+            &transaction,
+            "set_required_assurance",
+            idempotency_key,
+            &intent,
+            &receipt,
+            now,
+        )?;
         transaction.commit()?;
         Ok(receipt)
     }
@@ -6626,14 +6818,16 @@ impl SqliteStore {
     /// invalid, the expected policy is stale, history is corrupt, or the CAS
     /// activation cannot complete atomically.
     #[allow(
+        clippy::too_many_arguments,
         clippy::too_many_lines,
-        reason = "rule-set insertion, attributed policy activation, selector CAS, and post-CAS verification form one auditable transaction"
+        reason = "the caller key, rule set, attribution, CAS guard, clock, and redactor are independent parts of one auditable policy transaction"
     )]
     pub fn set_obligation_rule_set<R: Redactor>(
         &mut self,
         rule_set: &ObligationRuleSet,
         authorized_by: &ActorContext,
         reason: &str,
+        idempotency_key: &str,
         expected_policy: Option<&ObjectHash>,
         now: DateTime<Utc>,
         redactor: &R,
@@ -6650,10 +6844,36 @@ impl SqliteStore {
             .inspect(&reason)
             .map_err(StoreError::RedactionRefused)?;
         let rule_set_object = CanonicalObject::freeze(rule_set)?;
+        let idempotency_key = normalize_control_policy_idempotency_key(idempotency_key)?;
+        let intent =
+            CanonicalObject::freeze(&ControlPolicyOperationFingerprint::SetObligationRuleSet {
+                fingerprint_schema_version: CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION,
+                idempotency_key,
+                obligation_rule_set: rule_set_object.hash(),
+                authorized_by: &authorized_by,
+                reason: &reason,
+                expected_policy,
+            })?;
+        if intent.bytes().len() > MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation intent exceeds the {MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES}-byte canonical limit"
+            )));
+        }
 
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(receipt) =
+            Self::replay_control_policy_operation::<ObligationRuleSetUpdateReceipt>(
+                &transaction,
+                "set_obligation_rule_set",
+                idempotency_key,
+                &intent,
+            )?
+        {
+            transaction.commit()?;
+            return Ok(receipt);
+        }
         let current = Self::verify_control_policy_history(&transaction)?;
         if let Some(expected) = expected_policy
             && expected != &current.policy_hash
@@ -6681,6 +6901,14 @@ impl SqliteStore {
                 obligation_rule_set: current_rule_set,
                 activated_at: current.activated_at,
             };
+            Self::persist_control_policy_operation(
+                &transaction,
+                "set_obligation_rule_set",
+                idempotency_key,
+                &intent,
+                &receipt,
+                now,
+            )?;
             transaction.commit()?;
             return Ok(receipt);
         }
@@ -6777,6 +7005,14 @@ impl SqliteStore {
             obligation_rule_set: rule_set_object.hash().clone(),
             activated_at: policy.activated_at,
         };
+        Self::persist_control_policy_operation(
+            &transaction,
+            "set_obligation_rule_set",
+            idempotency_key,
+            &intent,
+            &receipt,
+            now,
+        )?;
         transaction.commit()?;
         Ok(receipt)
     }
@@ -7045,6 +7281,31 @@ impl SqliteStore {
                     .push(format!("control_operation:{}", stored.sequence));
             }
         }
+        let mut policy_operation_statement = self.connection.prepare(
+            "SELECT sequence, operation, idempotency_key, intent_hash, intent_json,
+                    result_hash, result_json
+             FROM control_policy_operation_results ORDER BY sequence",
+        )?;
+        let policy_operation_rows = policy_operation_statement.query_map([], |row| {
+            Ok(StoredControlPolicyOperation {
+                sequence: row.get(0)?,
+                operation: row.get(1)?,
+                idempotency_key: row.get(2)?,
+                intent_hash: row.get(3)?,
+                intent_json: row.get(4)?,
+                result_hash: row.get(5)?,
+                result_json: row.get(6)?,
+            })
+        })?;
+        for row in policy_operation_rows {
+            let stored = row?;
+            report.checked_control_records += 1;
+            if Self::verify_control_policy_operation(&stored).is_err() {
+                report
+                    .invalid_control_records
+                    .push(format!("control_policy_operation:{}", stored.sequence));
+            }
+        }
         let (checked_work_records, invalid_work_records, legacy_work_records) =
             self.verify_work_projections()?;
         report.checked_work_records = checked_work_records;
@@ -7279,6 +7540,59 @@ impl SqliteStore {
         Ok(())
     }
 
+    fn verify_control_policy_operation(
+        stored: &StoredControlPolicyOperation,
+    ) -> Result<(), StoreError> {
+        if stored.intent_json.len() > MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES
+            || stored.result_json.len() > MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES
+        {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation {} exceeds its canonical byte limits",
+                stored.sequence
+            )));
+        }
+        let intent = Self::decode_canonical_value(&stored.intent_hash, stored.intent_json.clone())?;
+        let row_matches = intent
+            .get("fingerprint_schema_version")
+            .and_then(serde_json::Value::as_u64)
+            == Some(u64::from(
+                CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION,
+            ))
+            && intent.get("operation").and_then(serde_json::Value::as_str)
+                == Some(stored.operation.as_str())
+            && intent
+                .get("idempotency_key")
+                .and_then(serde_json::Value::as_str)
+                == Some(stored.idempotency_key.as_str());
+        if !row_matches {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation {} is not bound to its row",
+                stored.sequence
+            )));
+        }
+        match stored.operation.as_str() {
+            "set_required_assurance" => {
+                Self::decode_canonical_projection::<ControlPolicyUpdateReceipt>(
+                    &stored.result_hash,
+                    stored.result_json.clone(),
+                )?;
+            }
+            "set_obligation_rule_set" => {
+                Self::decode_canonical_projection::<ObligationRuleSetUpdateReceipt>(
+                    &stored.result_hash,
+                    stored.result_json.clone(),
+                )?;
+            }
+            _ => {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "control policy operation {} has unknown operation {:?}",
+                    stored.sequence, stored.operation
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn decode_canonical_value(
         stored_hash: &str,
         bytes: Vec<u8>,
@@ -7475,6 +7789,7 @@ impl SqliteStore {
             })?;
         if ![
             LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION,
+            LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION,
             CONTROL_POLICY_STATE_SCHEMA_VERSION,
         ]
         .contains(&schema_version)
@@ -8494,6 +8809,88 @@ impl SqliteStore {
         Self::decode_canonical_projection(&result_hash, result_json).map(Some)
     }
 
+    fn replay_control_policy_operation<T: DeserializeOwned>(
+        connection: &Connection,
+        operation: &str,
+        idempotency_key: &str,
+        intent: &CanonicalObject,
+    ) -> Result<Option<T>, StoreError> {
+        let stored = connection
+            .query_row(
+                "SELECT sequence, intent_hash, intent_json, result_hash, result_json
+                 FROM control_policy_operation_results
+                 WHERE operation = ?1 AND idempotency_key = ?2",
+                params![operation, idempotency_key],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((sequence, stored_intent_hash, stored_intent_json, result_hash, result_json)) =
+            stored
+        else {
+            return Ok(None);
+        };
+        let stored_intent = ObjectHash::from_stored(stored_intent_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredHash(stored_intent_hash))?;
+        CanonicalObject::verify(&stored_intent, stored_intent_json.clone())?;
+        if stored_intent != *intent.hash() || stored_intent_json != intent.bytes() {
+            return Err(StoreError::ControlOperationIdempotencyConflict {
+                operation: operation.into(),
+                key: idempotency_key.into(),
+            });
+        }
+        if result_json.len() > MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation result {sequence} exceeds its canonical byte limit"
+            )));
+        }
+        Self::decode_canonical_projection(&result_hash, result_json).map(Some)
+    }
+
+    fn persist_control_policy_operation<T: Serialize>(
+        transaction: &Transaction<'_>,
+        operation: &str,
+        idempotency_key: &str,
+        intent: &CanonicalObject,
+        result: &T,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        if intent.bytes().len() > MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation intent exceeds the {MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES}-byte canonical limit"
+            )));
+        }
+        let result = CanonicalObject::freeze(result)?;
+        if result.bytes().len() > MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation result exceeds the {MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES}-byte canonical limit"
+            )));
+        }
+        transaction.execute(
+            "INSERT INTO control_policy_operation_results (
+                 operation, idempotency_key, intent_hash, intent_json,
+                 result_hash, result_json, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                operation,
+                idempotency_key,
+                intent.hash().as_str(),
+                intent.bytes(),
+                result.hash().as_str(),
+                result.bytes(),
+                now.timestamp_millis(),
+            ],
+        )?;
+        Ok(())
+    }
+
     fn refuse_work_lease(
         transaction: &Transaction<'_>,
         session_id: &SessionId,
@@ -9477,6 +9874,16 @@ fn normalize_control_text(value: &str, label: &str) -> Result<String, StoreError
     Ok(normalized.to_owned())
 }
 
+fn normalize_control_policy_idempotency_key(value: &str) -> Result<&str, StoreError> {
+    let normalized = value.trim();
+    if normalized.is_empty() || normalized.len() > MAX_CONTROL_POLICY_IDEMPOTENCY_KEY_BYTES {
+        return Err(StoreError::InvalidControlProjection(format!(
+            "control policy idempotency key must contain from 1 through {MAX_CONTROL_POLICY_IDEMPOTENCY_KEY_BYTES} bytes"
+        )));
+    }
+    Ok(normalized)
+}
+
 fn normalize_optional_control_text(
     value: Option<&str>,
     label: &str,
@@ -9858,6 +10265,69 @@ mod tests {
     }
 
     #[test]
+    fn replayless_policy_schema_migrates_once_then_requires_its_receipt_table() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("policy-replay-migration.db");
+        drop(SqliteStore::open(&database).expect("initialize current store"));
+        let fixture = Connection::open(&database).expect("open schema-three fixture");
+        fixture
+            .execute(
+                "UPDATE control_policy_state SET schema_version = ?1 WHERE singleton = 1",
+                [LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION],
+            )
+            .expect("downgrade projection schema marker");
+        fixture
+            .execute_batch("DROP TABLE control_policy_operation_results;")
+            .expect("remove future receipt table");
+        drop(fixture);
+
+        let migrated = SqliteStore::open(&database).expect("migrate schema three to four");
+        assert_eq!(
+            migrated
+                .connection
+                .query_row(
+                    "SELECT schema_version FROM control_policy_state WHERE singleton = 1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("read migrated schema"),
+            CONTROL_POLICY_STATE_SCHEMA_VERSION
+        );
+        assert!(
+            SqliteStore::sqlite_table_exists(
+                &migrated.connection,
+                "control_policy_operation_results"
+            )
+            .expect("inspect receipt table")
+        );
+        drop(migrated);
+
+        let read_only =
+            Connection::open_with_flags(&database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .expect("open migrated store read-only");
+        drop(
+            SqliteStore::from_connection(read_only, HostPathPolicy::host_default(), None)
+                .expect("current replay schema opens without a write transaction"),
+        );
+
+        let corrupt = Connection::open(&database).expect("open partial-current fixture");
+        corrupt
+            .execute_batch("DROP TABLE control_policy_operation_results;")
+            .expect("remove required current receipt table");
+        drop(corrupt);
+        assert!(matches!(
+            SqliteStore::open(&database),
+            Err(StoreError::InvalidControlProjection(message))
+                if message.contains("operation-result table is missing")
+        ));
+        let refused = Connection::open(&database).expect("inspect refused store");
+        assert!(
+            !SqliteStore::sqlite_table_exists(&refused, "control_policy_operation_results")
+                .expect("confirm fail-before-DDL")
+        );
+    }
+
+    #[test]
     fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
         let directory = tempfile::tempdir().expect("temporary store directory");
         let database = directory.path().join("engram.db");
@@ -9932,6 +10402,279 @@ mod tests {
         }
         drop(raw);
         drop(SqliteStore::open(&database).expect("retry cold bootstrap"));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one restart fixture proves both policy setter receipts across conflicts, no-ops, later heads, and integrity scanning"
+    )]
+    fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("policy-operation-replay.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
+            .expect("initialize advisory policy");
+        let initial = store.control_diagnostics().expect("initial policy");
+        let changed = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("durable-policy-admin"),
+                "require durable turn mediation",
+                "durable-assurance-update",
+                Some(&initial.active_policy),
+                now,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate policy");
+        drop(store);
+
+        let mut store = SqliteStore::open(&database).expect("reopen after uncertain response");
+        let replay = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("durable-policy-admin"),
+                "require durable turn mediation",
+                "durable-assurance-update",
+                Some(&initial.active_policy),
+                now + TimeDelta::minutes(10),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("replay committed assurance receipt");
+        assert_eq!(replay, changed);
+        assert!(matches!(
+            store.set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("durable-policy-admin"),
+                "different intent under the same key",
+                "durable-assurance-update",
+                Some(&initial.active_policy),
+                now + TimeDelta::minutes(11),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::ControlOperationIdempotencyConflict { .. })
+        ));
+
+        let no_op = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("durable-policy-admin"),
+                "record an exact no-op receipt",
+                "durable-assurance-noop",
+                Some(&changed.active_policy),
+                now + TimeDelta::minutes(12),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("record no-op receipt");
+        assert!(!no_op.changed);
+        drop(store);
+
+        let mut store = SqliteStore::open(&database).expect("reopen no-op receipt");
+        let no_op_replay = store
+            .set_required_control_assurance(
+                ControlAssurance::TurnGated,
+                &actor("durable-policy-admin"),
+                "record an exact no-op receipt",
+                "durable-assurance-noop",
+                Some(&changed.active_policy),
+                now + TimeDelta::minutes(13),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("replay no-op receipt");
+        assert_eq!(no_op_replay, no_op);
+
+        let empty_rules = ObligationRuleSet {
+            schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+            rules: Vec::new(),
+        };
+        let rule_changed = store
+            .set_obligation_rule_set(
+                &empty_rules,
+                &actor("durable-rule-admin"),
+                "select the empty obligation rule set",
+                "durable-rule-update",
+                Some(&changed.active_policy),
+                now + TimeDelta::minutes(14),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate rule set");
+        drop(store);
+
+        let mut store = SqliteStore::open(&database).expect("reopen rule receipt");
+        let rule_replay = store
+            .set_obligation_rule_set(
+                &empty_rules,
+                &actor("durable-rule-admin"),
+                "select the empty obligation rule set",
+                "durable-rule-update",
+                Some(&changed.active_policy),
+                now + TimeDelta::minutes(15),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("replay rule-set receipt");
+        assert_eq!(rule_replay, rule_changed);
+        let later = store
+            .set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &actor("later-policy-admin"),
+                "advance beyond the stored rule receipt",
+                "later-assurance-update",
+                Some(&rule_changed.active_policy),
+                now + TimeDelta::minutes(16),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("activate later policy head");
+        assert_eq!(later.policy_epoch.0, rule_changed.policy_epoch.0 + 1);
+        let replay_after_later_head = store
+            .set_obligation_rule_set(
+                &empty_rules,
+                &actor("durable-rule-admin"),
+                "select the empty obligation rule set",
+                "durable-rule-update",
+                Some(&changed.active_policy),
+                now + TimeDelta::minutes(17),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("replay rule receipt after later head");
+        assert_eq!(replay_after_later_head, rule_changed);
+        assert!(matches!(
+            store.set_obligation_rule_set(
+                &empty_rules,
+                &actor("durable-rule-admin"),
+                "different rule intent under the same key",
+                "durable-rule-update",
+                Some(&changed.active_policy),
+                now + TimeDelta::minutes(18),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::ControlOperationIdempotencyConflict { .. })
+        ));
+        assert!(
+            store
+                .verify_all()
+                .expect("verify durable receipts")
+                .is_healthy()
+        );
+        let corrupted_sequence = store
+            .connection
+            .query_row(
+                "SELECT sequence FROM control_policy_operation_results
+                 WHERE operation = 'set_required_assurance'
+                   AND idempotency_key = 'durable-assurance-update'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("locate durable receipt");
+        store
+            .connection
+            .execute(
+                "UPDATE control_policy_operation_results SET result_json = ?1
+                 WHERE sequence = ?2",
+                params![b"{}".as_slice(), corrupted_sequence],
+            )
+            .expect("corrupt durable receipt projection");
+        assert!(
+            store
+                .verify_all()
+                .expect("scan corrupt durable receipt")
+                .invalid_control_records
+                .contains(&format!("control_policy_operation:{corrupted_sequence}"))
+        );
+    }
+
+    #[test]
+    fn failed_policy_receipt_insert_rolls_back_the_policy_activation() {
+        let directory = tempfile::tempdir().expect("temporary store directory");
+        let database = directory.path().join("policy-operation-rollback.db");
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open(&database).expect("initialize store");
+        let initial = store.control_diagnostics().expect("initial policy");
+        store
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER fail_policy_operation_receipt
+                 BEFORE INSERT ON control_policy_operation_results
+                 BEGIN
+                     SELECT RAISE(ABORT, 'injected policy receipt failure');
+                 END;",
+            )
+            .expect("install receipt failure trigger");
+        assert!(matches!(
+            store.set_required_control_assurance(
+                ControlAssurance::Advisory,
+                &actor("rollback-policy-admin"),
+                "prove receipt and activation share one transaction",
+                "rollback-policy-update",
+                Some(&initial.active_policy),
+                now,
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::Sqlite(_))
+        ));
+        store
+            .connection
+            .execute_batch("DROP TRIGGER fail_policy_operation_receipt;")
+            .expect("drop receipt failure trigger");
+        let after = store.control_diagnostics().expect("policy after rollback");
+        assert_eq!(after.active_policy, initial.active_policy);
+        assert_eq!(after.policy_epoch, initial.policy_epoch);
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM control_policy_operation_results",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("count policy receipts"),
+            0
+        );
+        store
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER fail_policy_operation_receipt
+                 BEFORE INSERT ON control_policy_operation_results
+                 BEGIN
+                     SELECT RAISE(ABORT, 'injected rule receipt failure');
+                 END;",
+            )
+            .expect("reinstall receipt failure trigger");
+        let empty_rules = ObligationRuleSet {
+            schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+            rules: Vec::new(),
+        };
+        assert!(matches!(
+            store.set_obligation_rule_set(
+                &empty_rules,
+                &actor("rollback-rule-admin"),
+                "prove rule receipt and activation share one transaction",
+                "rollback-rule-update",
+                Some(&initial.active_policy),
+                now + TimeDelta::seconds(1),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::Sqlite(_))
+        ));
+        store
+            .connection
+            .execute_batch("DROP TRIGGER fail_policy_operation_receipt;")
+            .expect("drop rule receipt failure trigger");
+        let after_rule = store
+            .control_diagnostics()
+            .expect("policy after rule rollback");
+        assert_eq!(after_rule.active_policy, initial.active_policy);
+        assert_eq!(after_rule.obligation_rule_set, initial.obligation_rule_set);
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM control_policy_operation_results",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("count rule receipts"),
+            0
+        );
     }
 
     #[test]
@@ -10050,6 +10793,7 @@ mod tests {
                 ControlAssurance::Advisory,
                 &actor("legacy-policy-admin"),
                 "explicitly lower the migrated requirement",
+                "legacy-policy-lower",
                 Some(&upgraded.active_policy),
                 Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
                 &DevelopmentNoopRedactor,
@@ -10234,6 +10978,7 @@ mod tests {
                 ControlAssurance::TurnGated,
                 &actor("policy-admin"),
                 "require host turn mediation",
+                "policy-turn-gated",
                 Some(&initial.active_policy),
                 now,
                 &DevelopmentNoopRedactor,
@@ -10249,6 +10994,7 @@ mod tests {
                 ControlAssurance::TurnGated,
                 &actor("policy-admin"),
                 "idempotent replay",
+                "policy-turn-gated-noop",
                 Some(&changed.active_policy),
                 now + TimeDelta::seconds(1),
                 &DevelopmentNoopRedactor,
@@ -10262,6 +11008,7 @@ mod tests {
                 ControlAssurance::ActionGated,
                 &actor("policy-admin"),
                 "stale compare and swap",
+                "policy-stale-cas",
                 Some(&initial.active_policy),
                 now + TimeDelta::seconds(2),
                 &DevelopmentNoopRedactor,
@@ -10335,6 +11082,7 @@ mod tests {
                 &empty,
                 &actor("rule-policy-admin"),
                 "disable future obligation triggers",
+                "rule-set-empty",
                 Some(&initial.active_policy),
                 now,
                 &DevelopmentNoopRedactor,
@@ -10351,6 +11099,7 @@ mod tests {
                 &empty,
                 &actor("rule-policy-admin"),
                 "exact semantic replay",
+                "rule-set-empty-noop",
                 Some(&changed.active_policy),
                 now + TimeDelta::seconds(1),
                 &DevelopmentNoopRedactor,
@@ -10358,6 +11107,20 @@ mod tests {
             .expect("reapply selected rule set");
         assert!(!replay.changed);
         assert_eq!(replay.active_policy, changed.active_policy);
+        drop(store);
+        let mut store = SqliteStore::open(&database).expect("reopen rule-set no-op receipt");
+        let replay_after_restart = store
+            .set_obligation_rule_set(
+                &empty,
+                &actor("rule-policy-admin"),
+                "exact semantic replay",
+                "rule-set-empty-noop",
+                Some(&changed.active_policy),
+                now + TimeDelta::seconds(10),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("replay selected rule-set no-op after restart");
+        assert_eq!(replay_after_restart, replay);
         assert!(matches!(
             store.set_obligation_rule_set(
                 &ObligationRuleSet {
@@ -10366,6 +11129,7 @@ mod tests {
                 },
                 &actor("rule-policy-admin"),
                 "unknown schema must fail closed",
+                "rule-set-invalid-schema",
                 None,
                 now + TimeDelta::seconds(2),
                 &DevelopmentNoopRedactor,
@@ -10505,6 +11269,7 @@ mod tests {
                     required_assurance,
                     &actor("policy-load-admin"),
                     &format!("install policy epoch {epoch}"),
+                    &format!("policy-load-{epoch}"),
                     Some(&active),
                     now + TimeDelta::milliseconds(epoch),
                     &DevelopmentNoopRedactor,
@@ -10754,6 +11519,7 @@ mod tests {
             .execute_batch(
                 "DROP TABLE control_turn_grants;
                  DROP TABLE control_sessions;
+                 DROP TABLE control_policy_operation_results;
                  DROP TABLE control_policy_versions;
                  DROP TABLE control_policy_state;
                  DELETE FROM objects
@@ -10792,6 +11558,7 @@ mod tests {
                 ControlAssurance::TurnGated,
                 &actor("policy-admin"),
                 "create a successor",
+                "policy-successor-rollback",
                 Some(&initial.active_policy),
                 now,
                 &DevelopmentNoopRedactor,
@@ -10929,6 +11696,7 @@ mod tests {
                 ControlAssurance::TurnGated,
                 &actor("policy-admin"),
                 "create current policy",
+                "policy-current-forward-schema",
                 Some(&initial.active_policy),
                 now,
                 &DevelopmentNoopRedactor,
@@ -11041,6 +11809,7 @@ mod tests {
                 ControlAssurance::TurnGated,
                 &actor("policy-admin"),
                 "create current policy",
+                "policy-current-envelope",
                 Some(&initial.active_policy),
                 now,
                 &DevelopmentNoopRedactor,
@@ -11159,6 +11928,7 @@ mod tests {
                     ControlAssurance::Advisory,
                     &candidate,
                     "inspect every attribution leaf",
+                    "policy-redaction-leaf",
                     None,
                     now,
                     &SentinelRedactor,
@@ -11174,6 +11944,7 @@ mod tests {
                 ControlAssurance::Advisory,
                 &oversized_field,
                 "bound optional fields",
+                "policy-oversized-field",
                 None,
                 now,
                 &DevelopmentNoopRedactor,
@@ -11194,6 +11965,7 @@ mod tests {
                 ControlAssurance::Advisory,
                 &too_many_links,
                 "bound provenance count",
+                "policy-provenance-count",
                 None,
                 now,
                 &DevelopmentNoopRedactor,
@@ -11214,6 +11986,7 @@ mod tests {
                 ControlAssurance::Advisory,
                 &oversized_attribution,
                 "bound aggregate attribution",
+                "policy-oversized-attribution",
                 None,
                 now,
                 &DevelopmentNoopRedactor,
@@ -11236,6 +12009,7 @@ mod tests {
                 ControlAssurance::Advisory,
                 &normalized,
                 " normalize persisted attribution ",
+                "policy-normalized-attribution",
                 None,
                 now,
                 &DevelopmentNoopRedactor,
@@ -11434,6 +12208,7 @@ mod tests {
                 ControlAssurance::Advisory,
                 &actor("policy-admin"),
                 "exercise policy epoch transition",
+                "policy-epoch-transition",
                 None,
                 now + TimeDelta::seconds(1),
                 &DevelopmentNoopRedactor,
@@ -11551,6 +12326,7 @@ mod tests {
                 ControlAssurance::ActionGated,
                 &actor("action-policy-admin"),
                 "prove the unavailable assurance fails closed",
+                "policy-action-gated",
                 Some(&current.active_policy),
                 now + TimeDelta::seconds(1),
                 &DevelopmentNoopRedactor,
@@ -11870,6 +12646,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the lease epoch fixture keeps the refused replay and adopted fresh-key path adjacent"
+    )]
     fn lease_epoch_refusal_is_sticky_and_adopts_for_a_fresh_key() {
         let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
         let mut store = SqliteStore::open_in_memory().expect("store");
@@ -11894,6 +12674,7 @@ mod tests {
                 ControlAssurance::Advisory,
                 &actor("lease-epoch-admin"),
                 "exercise lease epoch adoption",
+                "policy-lease-epoch",
                 Some(&current.active_policy),
                 now + TimeDelta::seconds(2),
                 &DevelopmentNoopRedactor,

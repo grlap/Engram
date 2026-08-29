@@ -149,7 +149,7 @@ fn control_assurance_name(value: ControlAssurance) -> &'static str {
 fn warn_if_action_gated(value: ControlAssurance) {
     if value == ControlAssurance::ActionGated {
         eprintln!(
-            "CONTROL WARNING: no current V1 host can bind at action_gated; recover with `engram control-policy set-required-assurance turn_gated --authorized-by <actor> --reason <reason>`"
+            "CONTROL WARNING: no current V1 host can bind at action_gated; recover with `engram control-policy set-required-assurance turn_gated --authorized-by <actor> --reason <reason> --idempotency-key <key>`"
         );
     }
 }
@@ -182,6 +182,9 @@ enum ControlPolicyCommand {
         /// Auditable reason for changing the project-wide requirement.
         #[arg(long)]
         reason: String,
+        /// Durable caller key for exact receipt replay after an uncertain response.
+        #[arg(long)]
+        idempotency_key: String,
         /// Optional compare-and-swap guard from `engram doctor`.
         #[arg(long)]
         expected_policy_hash: Option<String>,
@@ -391,6 +394,7 @@ fn run_control_policy(
             level,
             authorized_by,
             reason,
+            idempotency_key,
             expected_policy_hash,
         } => {
             let level = ControlAssurance::from(level);
@@ -415,6 +419,7 @@ fn run_control_policy(
                     reason: "authorize a project-scoped behavioral-control policy change".into(),
                 },
                 &reason,
+                &idempotency_key,
                 expected_policy.as_ref(),
                 chrono::Utc::now(),
                 &DevelopmentNoopRedactor,

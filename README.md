@@ -225,7 +225,8 @@ tracked `.engram-project` identity to one database shared across worktrees.
 Initialize with `engram init` or make an attributed bootstrap choice with
 `engram init --required-assurance <level> --authorized-by <actor> --reason
 <text>`, verify with `engram doctor`, change the immutable policy through
-`engram control-policy set-required-assurance`, run the MCP server
+`engram control-policy set-required-assurance --idempotency-key <key>` (the
+durable key replays the exact receipt after an uncertain response), run the MCP server
 with `engram mcp --actor-id <agent> --session-id <session>`, or run the
 host-private service with `engram control --actor-id <agent> --session-id
 <session>`, or issue a bounded local work grant with `engram authority grant

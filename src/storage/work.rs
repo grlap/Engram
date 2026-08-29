@@ -18290,6 +18290,7 @@ mod tests {
                 &empty_rule_set,
                 &actor("obligation-rule-admin"),
                 "disable future built-in obligation triggers in this test",
+                "work-obligation-rule-disable",
                 None,
                 at(9),
                 &DevelopmentNoopRedactor,

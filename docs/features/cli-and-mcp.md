@@ -31,6 +31,7 @@ engram doctor
 engram control-policy set-required-assurance turn_gated \
   --authorized-by host-operator \
   --reason "enable mandatory host turn mediation" \
+  --idempotency-key enable-host-turn-mediation \
   --expected-policy-hash <active-policy-hash>
 
 engram mcp \
@@ -85,10 +86,15 @@ fails instead of silently changing policy.
 reconfiguration path: it records asserted operator attribution and a reason,
 creates immutable authority and policy objects, atomically advances the active
 policy hash and epoch, and supports an optional compare-and-swap hash while
-preserving the selected obligation rule set. The core also provides a
+preserving the selected obligation rule set. Its required idempotency key
+binds the complete normalized intent and persists the exact receipt in that
+same transaction. A retry after restart or an uncertain response returns the
+original receipt even though its expected policy hash is now stale; reusing
+the key for another intent is a typed conflict. The core also provides a
 host/operator-only storage API for selecting a validated canonical rule set;
-it is not an MCP tool or host turn-protocol operation. Reapplying the active
-level is idempotent. Issued grants from the prior
+it uses the same durable replay contract but is not an MCP tool or host
+turn-protocol operation. Reapplying the active level under a fresh key records
+an exactly replayable no-op receipt. Issued grants from the prior
 epoch fail begin with `policy_epoch_changed` and require one fresh evaluation;
 if the new requirement exceeds the host's declaration, that fresh evaluation
 instead fails `control_assurance_insufficient` because assurance is checked

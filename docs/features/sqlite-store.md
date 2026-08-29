@@ -37,6 +37,7 @@ engram.db
   control_turn_grants  # short-lived issued/begun/completed authority
   control_work_leases  # scoped live/released lease projection + fences
   control_operation_results # begin/checkpoint/lease retry receipts
+  control_policy_operation_results # store-scoped operator-policy receipts
   report_assemblies / report_assembly_claims # target post-completion authority
   derived.*    # status, FTS5, usage counters — rebuildable cache
   meta         # store schema version; guards old clients
@@ -63,6 +64,13 @@ Path resources are project-bound and normalized before they enter these rows;
 cross-task rebind is rejected while an active lease remains. Replacement host
 connections atomically rotate `control_connections`, making requests from a
 still-live predecessor fail closed.
+Store-scoped policy administration uses a separate
+`control_policy_operation_results` table because operator updates do not belong
+to an agent session. It hash-verifies the complete normalized intent and exact
+receipt, and commits the receipt in the same transaction as policy activation.
+The caller's wall-clock retry time is attribution rather than intent, so a
+lost-response retry can replay the original receipt after restart even when
+the original compare-and-swap hash is no longer the active head.
 `doctor` verifies the redundant row bindings and canonical hashes for all of
 these tiers. Context contents, pinned-safety evaluation, packet hash, and the
 stamped task head are read in one immediate transaction before a grant is

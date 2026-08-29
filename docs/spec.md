@@ -491,6 +491,13 @@ never reinterpret an old key as fresh authority. Only a transition that can chan
 behavior enters the work/run delta feed, so control does not become a second
 status ledger.
 
+Host/operator project-policy mutations use a separate store-scoped durable
+idempotency key because they are not owned by an agent session. The normalized
+intent and exact receipt commit atomically with activation. Retry-time wall
+clock is excluded from intent, so a lost-response retry with the original
+expected head returns the committed receipt before re-evaluating that now-stale
+compare-and-swap guard; same-key different-intent reuse is a conflict.
+
 Initialization installs and selects a versioned safe project-scoped
 `ControlPolicy`. A pre-control-plane database is recognized only when the
 entire policy/session/turn-grant table family and canonical policy objects are
