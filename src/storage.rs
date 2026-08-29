@@ -744,6 +744,66 @@ pub struct BackupManifest {
     pub created_at: DateTime<Utc>,
 }
 
+/// A sibling path only this process will use, for staging a file before it
+/// is published under its final name.
+fn unique_sibling_path(path: &Path, label: &str) -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    let name = path.file_name().map_or_else(
+        || "store".into(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    path.with_file_name(format!(
+        ".{name}.{label}-{}-{nanos}.tmp",
+        std::process::id()
+    ))
+}
+
+/// Publishes a staged file under `target` without replacing anything: the
+/// final name is created exclusively, the staged bytes are copied in and
+/// flushed, and the staged file is removed. An existing `target` is an error
+/// and leaves both files untouched.
+fn publish_without_replacing(staged: &Path, target: &Path) -> Result<(), StoreError> {
+    let io_error = |what: &str, error: std::io::Error| {
+        StoreError::InvalidWork(format!("cannot {what} {}: {error}", target.display()))
+    };
+    let mut out = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(target)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                StoreError::InvalidWork(format!(
+                    "backup target {} already exists",
+                    target.display()
+                ))
+            } else {
+                io_error("create", error)
+            }
+        })?;
+    let mut input = std::fs::File::open(staged).map_err(|error| io_error("read into", error))?;
+    std::io::copy(&mut input, &mut out).map_err(|error| io_error("write", error))?;
+    out.sync_all().map_err(|error| io_error("flush", error))?;
+    drop(out);
+    drop(input);
+    remove_store_files(staged).map_err(|error| io_error("clean up after", error))?;
+    Ok(())
+}
+
+/// Removes a store file and any log sidecars an open may have left beside it.
+fn remove_store_files(path: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(path)?;
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let sidecar = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+        if sidecar.exists() {
+            std::fs::remove_file(&sidecar)?;
+        }
+    }
+    Ok(())
+}
+
 /// V1's canonical local persistence backend.
 pub struct SqliteStore {
     connection: Connection,
@@ -789,12 +849,6 @@ impl SqliteStore {
     /// Returns [`StoreError`] when the copy cannot be written, opened, or
     /// fails verification; a failed copy is removed.
     pub fn backup_to(&self, path: &Path) -> Result<BackupManifest, StoreError> {
-        if path.exists() {
-            return Err(StoreError::InvalidWork(format!(
-                "backup target {} already exists",
-                path.display()
-            )));
-        }
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
         {
@@ -805,29 +859,61 @@ impl SqliteStore {
                 ))
             })?;
         }
-        let target = path.to_string_lossy().into_owned();
+        // The copy is written to a path only this invocation knows, verified
+        // and hashed there, and then published under the requested name
+        // without ever replacing an existing file.
+        let staged = unique_sibling_path(path, "backup");
+        let target = staged.to_string_lossy().into_owned();
         if let Err(error) = self.connection.execute("VACUUM INTO ?1", [&target]) {
-            let _ = std::fs::remove_file(path);
+            let _ = std::fs::remove_file(&staged);
             return Err(error.into());
         }
-        match Self::verify_backup(path) {
-            Ok(manifest) => Ok(manifest),
-            Err(error) => {
-                let _ = std::fs::remove_file(path);
-                Err(error)
-            }
+        // The staged copy is ours: one ordinary open settles its journal mode
+        // so the copy verifies and restores through read-only opens later.
+        if let Err(error) = Self::open_with_host_path_identity(&staged, None) {
+            let _ = std::fs::remove_file(&staged);
+            return Err(error);
         }
+        let manifest = match Self::verify_backup(&staged) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                let _ = std::fs::remove_file(&staged);
+                return Err(error);
+            }
+        };
+        if let Err(error) = publish_without_replacing(&staged, path) {
+            let _ = std::fs::remove_file(&staged);
+            return Err(error);
+        }
+        Ok(BackupManifest {
+            path: path.to_path_buf(),
+            ..manifest
+        })
     }
 
-    /// Opens a backup copy without asserting a path identity, verifies it, and
-    /// returns its manifest.
+    /// Verifies an existing backup file without creating, migrating, or
+    /// modifying anything: the bytes are hashed first, then the file is
+    /// opened read-only and every immutable object and hash-bound record is
+    /// checked.
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError`] when the file cannot be opened, read, or fails
-    /// verification.
+    /// Returns [`StoreError`] when the path is not an existing regular file,
+    /// cannot be opened read-only as a current store, or fails verification.
     pub fn verify_backup(path: &Path) -> Result<BackupManifest, StoreError> {
-        let report = Self::open_unresolved(path)?.verify_all()?;
+        if !path.is_file() {
+            return Err(StoreError::InvalidWork(format!(
+                "backup {} is not an existing file",
+                path.display()
+            )));
+        }
+        let bytes = std::fs::read(path).map_err(|error| {
+            StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
+        })?;
+        let digest = <sha2::Sha256 as sha2::Digest>::digest(&bytes);
+        let connection =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let report = Self::from_connection(connection, None, None)?.verify_all()?;
         if !report.is_healthy() {
             return Err(StoreError::InvalidWork(format!(
                 "backup {} failed verification: {} object(s), {} control record(s), {} work record(s) invalid",
@@ -837,10 +923,6 @@ impl SqliteStore {
                 report.invalid_work_records.len()
             )));
         }
-        let bytes = std::fs::read(path).map_err(|error| {
-            StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
-        })?;
-        let digest = <sha2::Sha256 as sha2::Digest>::digest(&bytes);
         Ok(BackupManifest {
             path: path.to_path_buf(),
             file_sha256: format!("{digest:x}"),
@@ -4234,6 +4316,20 @@ impl SqliteStore {
         }
         let grant = Self::load_turn_grant(&transaction, session_id, grant_id)?
             .ok_or_else(|| StoreError::ControlTurnGrantNotFound(grant_id.into()))?;
+        // An opener that could not resolve the project root's filesystem
+        // identity must not begin a turn whose basis names paths, even one
+        // issued earlier by a resolved opener.
+        if self.host_path_policy.is_none()
+            && (grant
+                .grant
+                .basis
+                .resource_intents
+                .iter()
+                .any(|subject| matches!(subject, crate::domain::ResourceSubject::Path { .. }))
+                || !grant.grant.basis.leases.is_empty())
+        {
+            return Err(StoreError::HostPathIdentityUnresolved);
+        }
         let policy = Self::load_active_control_policy(&transaction)?;
         let task_admission_epoch = transaction.query_row(
             "SELECT admission_epoch FROM task_control_state WHERE task_id = ?1",
@@ -10630,6 +10726,119 @@ mod tests {
                 "case_fold_paths={case_fold_paths} decided {decision:?}"
             );
         }
+    }
+
+    #[test]
+    fn verify_backup_touches_nothing_and_backups_never_replace() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let missing = directory.path().join("absent.sqlite3");
+        assert!(matches!(
+            SqliteStore::verify_backup(&missing),
+            Err(StoreError::InvalidWork(_))
+        ));
+        assert!(!missing.exists(), "verification must not create a store");
+
+        let database = directory.path().join("live.sqlite3");
+        let store = SqliteStore::open(&database).expect("live store");
+        let target = directory.path().join("copies").join("one.sqlite3");
+        let first = store.backup_to(&target).expect("first backup");
+        let second = store.backup_to(&target);
+        assert!(matches!(second, Err(StoreError::InvalidWork(_))));
+        assert_eq!(
+            SqliteStore::verify_backup(&target)
+                .expect("the published copy is untouched")
+                .file_sha256,
+            first.file_sha256
+        );
+        let leftovers = std::fs::read_dir(target.parent().expect("copies directory"))
+            .expect("list copies")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(leftovers, 0, "staged files never survive a refusal");
+    }
+
+    #[test]
+    fn unresolved_opener_cannot_begin_a_path_bearing_grant() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("unresolved-begin.sqlite3");
+        let mut store = SqliteStore::open(&database).expect("resolved opener");
+        let effects = [EffectClass::Observe, EffectClass::MutateLocal];
+        let session = bind_control_for(&mut store, "ub-a", "bind-ub-a", &effects, now);
+        complete_control_turn(
+            &mut store,
+            &session,
+            "sync-ub-a",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let subject = crate::domain::ResourceSubject::Path {
+            project_id: ProjectId("project-a".into()),
+            segments: vec!["src".into()],
+            coverage: crate::domain::ResourceCoverage::Tree,
+        };
+        let WorkLeaseDecision::Granted { .. } = store
+            .acquire_work_lease(
+                &ProjectId("project-a".into()),
+                &session.status.session_id,
+                &session.connection_token,
+                &session.routing_token,
+                crate::domain::LeaseKind::Execution,
+                crate::domain::LeaseMode::Exclusive,
+                &subject,
+                60,
+                "ub-lease",
+                now + TimeDelta::seconds(2),
+            )
+            .unwrap()
+        else {
+            panic!("the lease must grant on the resolved opener");
+        };
+        let ControlTurnDecision::Grant { grant } = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &session.status.session_id,
+                &session.connection_token,
+                &session.routing_token,
+                &TurnIntent {
+                    idempotency_key: "ub-turn".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"ub-turn"),
+                    purpose: crate::domain::TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::MutateLocal],
+                    resource_intents: vec![crate::domain::ResourceSubject::Path {
+                        project_id: ProjectId("project-a".into()),
+                        segments: vec!["src".into(), "lib.rs".into()],
+                        coverage: crate::domain::ResourceCoverage::Exact,
+                    }],
+                },
+                now + TimeDelta::seconds(3),
+            )
+            .unwrap()
+        else {
+            panic!("the mutation turn must grant on the resolved opener");
+        };
+        drop(store);
+        let delivery_tokens = grant
+            .delivery
+            .iter()
+            .map(|delivery| delivery.page.delivery_token.clone())
+            .collect::<Vec<_>>();
+        let mut unresolved = SqliteStore::open_unresolved(&database).expect("unresolved opener");
+        assert!(matches!(
+            unresolved.begin_control_turn(
+                &ProjectId("project-a".into()),
+                &session.status.session_id,
+                &session.connection_token,
+                &session.routing_token,
+                &grant.grant_id,
+                &delivery_tokens,
+                "ub-begin",
+                now + TimeDelta::seconds(4),
+            ),
+            Err(StoreError::HostPathIdentityUnresolved)
+        ));
     }
 
     #[test]

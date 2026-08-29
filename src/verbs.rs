@@ -530,6 +530,16 @@ impl AgentVerbs {
         limit: u32,
         now: DateTime<Utc>,
     ) -> Result<Vec<(ReadyWorkSummary, DateTime<Utc>)>, VerbError> {
+        // One claim query names what this session holds; the catalog then
+        // supplies the summaries without a focus view per item.
+        let mine = self
+            .service
+            .held_work(now)?
+            .into_iter()
+            .collect::<std::collections::HashMap<_, _>>();
+        if mine.is_empty() {
+            return Ok(Vec::new());
+        }
         let items = self.catalog(
             &WorkNextQuery {
                 sections: vec![WorkNextSection::Catalog],
@@ -540,14 +550,13 @@ impl AgentVerbs {
             limit,
             now,
         )?;
-        let mut held = Vec::new();
-        for item in items {
-            let detail = self.service.inspect_work(&item.work.short_ref, now)?;
-            if let Holder::You(expires_at) = self.holder(&detail, now) {
-                held.push((item, expires_at));
-            }
-        }
-        Ok(held)
+        Ok(items
+            .into_iter()
+            .filter_map(|item| {
+                mine.get(&item.work.work_id)
+                    .map(|expires_at| (item, *expires_at))
+            })
+            .collect())
     }
 
     /// Reads catalog pages until `limit` items or the end; the core bounds

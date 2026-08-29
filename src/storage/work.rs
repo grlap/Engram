@@ -2049,6 +2049,40 @@ impl SqliteStore {
             .map(Option::flatten)
     }
 
+    /// Lists the work this session holds under a live claim, with each claim's
+    /// expiry, from the claim projection alone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when a stored work id is invalid.
+    pub fn work_held_by(
+        &self,
+        holder: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<(WorkId, DateTime<Utc>)>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT work_id, expires_at_ms FROM work_claims
+             WHERE holder_session_id = ?1 AND state = 'active' AND expires_at_ms > ?2
+             ORDER BY expires_at_ms, work_id",
+        )?;
+        let rows = statement.query_map(params![holder.0, now.timestamp_millis()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        let mut held = Vec::new();
+        for row in rows {
+            let (work_id, expires_at_ms) = row?;
+            let work_id = uuid::Uuid::parse_str(&work_id).map(WorkId).map_err(|_| {
+                StoreError::InvalidWorkProjection(format!("claim has invalid work id {work_id}"))
+            })?;
+            let expires_at =
+                DateTime::<Utc>::from_timestamp_millis(expires_at_ms).ok_or_else(|| {
+                    StoreError::InvalidWorkProjection("claim has an invalid expiry".into())
+                })?;
+            held.push((work_id, expires_at));
+        }
+        Ok(held)
+    }
+
     /// Reports whether taking the current run from another prior holder needs
     /// an attributed claim-recovery waiver.
     ///
@@ -9274,8 +9308,24 @@ fn resolve_work_authority(
     })?;
     let grant: WorkAuthorityGrant = CanonicalObject::verify(&decision.grant, bytes)?.decode()?;
     require_authority_revocation_integrity(connection, &decision.grant, revoked_at_ms)?;
-    // Each refusal names its own cause, so an agent can tell an expired grant
-    // from one that never covered the operation.
+    // The caller and the target are checked first, so a grant hash in the
+    // wrong hands learns only that it does not apply; an eligible caller then
+    // hears exactly why: revoked, expired, not yet valid, or not admitted.
+    if grant.subject_actor_id != actor.actor_id
+        || !assurance_covers(actor.assurance, grant.assurance)
+    {
+        return Err(StoreError::InvalidWork(
+            "work authority grant was issued to another actor or assurance".into(),
+        ));
+    }
+    if grant.project_id != *target.project_id
+        || grant.policy_ref != target.policy_ref
+        || !authority_scope_matches(&grant.scope, target)
+    {
+        return Err(StoreError::InvalidWork(
+            "work authority grant does not cover this project, policy, or work scope".into(),
+        ));
+    }
     if revoked_at_ms.is_some() {
         return Err(StoreError::InvalidWork(
             "work authority grant was revoked by the host".into(),
@@ -9293,25 +9343,10 @@ fn resolve_work_authority(
             grant.issued_at.format("%Y-%m-%d %H:%M:%S UTC")
         )));
     }
-    if grant.subject_actor_id != actor.actor_id
-        || !assurance_covers(actor.assurance, grant.assurance)
-    {
-        return Err(StoreError::InvalidWork(
-            "work authority grant was issued to another actor or assurance".into(),
-        ));
-    }
     if !grant.operations.contains(&operation) {
         return Err(StoreError::InvalidWork(format!(
             "work authority grant does not admit {operation:?}"
         )));
-    }
-    if grant.project_id != *target.project_id
-        || grant.policy_ref != target.policy_ref
-        || !authority_scope_matches(&grant.scope, target)
-    {
-        return Err(StoreError::InvalidWork(
-            "work authority grant does not cover this project, policy, or work scope".into(),
-        ));
     }
     Ok(grant)
 }

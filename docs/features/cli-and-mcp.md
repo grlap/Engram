@@ -118,7 +118,7 @@ engram control \
 # back. A backup carries host grants and private scratch, so it is exactly as
 # sensitive as the store; schedule it on the host, never publish it.
 engram backup                      # → <home>/backups/<project>/engram-<utc>.db + manifest
-engram restore --from <backup-file> [--replace]
+engram restore --from <backup-file> [--replace]   # stop other Engram processes first
 
 # Host/operator boundary: mint a bounded, expiring grant for one exact actor.
 # Grants expire after one hour by default (--valid-seconds, at most one day);

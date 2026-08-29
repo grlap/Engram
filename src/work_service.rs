@@ -1108,6 +1108,20 @@ impl LocalWorkService {
         Ok(())
     }
 
+    /// The work this session holds under a live claim, with expiry, read from
+    /// the claim projection without building any focus view.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store cannot be read.
+    pub fn held_work(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<(WorkId, DateTime<Utc>)>, StoreError> {
+        let store = self.store()?;
+        store.work_held_by(&self.session_id, now)
+    }
+
     /// Inspects work by reference without changing ambient focus or staging
     /// any delivery.
     ///

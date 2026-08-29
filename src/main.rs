@@ -1526,10 +1526,22 @@ fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+/// Restores a verified backup as the project store. The backup is verified
+/// read-only before anything is touched, staged beside the store, verified
+/// again, and only then installed. Replacing an existing store first
+/// checkpoints and truncates its write-ahead log under the writer lock so no
+/// stale log can be applied to the restored file; no other Engram process
+/// may use the store while it is replaced.
 fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
     let manifest = SqliteStore::verify_backup(from)
         .with_context(|| format!("backup {} is not usable", from.display()))?;
-    if database.exists() && !replace {
+    if let (Ok(source), Ok(target)) = (fs::canonicalize(from), fs::canonicalize(database))
+        && source == target
+    {
+        bail!("backup {} is the store itself", from.display());
+    }
+    let exists = database.exists();
+    if exists && !replace {
         bail!(
             "store {} already exists; pass --replace to overwrite it with the backup",
             database.display()
@@ -1539,15 +1551,54 @@ fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    for suffix in ["-wal", "-shm", "-journal"] {
-        let sidecar = PathBuf::from(format!("{}{suffix}", database.display()));
-        if sidecar.exists() {
-            fs::remove_file(&sidecar)
-                .with_context(|| format!("failed to remove {}", sidecar.display()))?;
+    let staged = PathBuf::from(format!(
+        "{}.restore-{}.tmp",
+        database.display(),
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&staged);
+    fs::copy(from, &staged)
+        .with_context(|| format!("failed to stage {} beside the store", from.display()))?;
+    let install = (|| -> Result<()> {
+        let staged_manifest = SqliteStore::verify_backup(&staged)
+            .with_context(|| format!("staged copy {} failed verification", staged.display()))?;
+        if staged_manifest.file_sha256 != manifest.file_sha256 {
+            bail!("staged copy bytes differ from the backup");
         }
+        if exists {
+            // Take the writer slot, fold the old log into the old file, and
+            // truncate it; a stale log must never meet the restored file.
+            let old = rusqlite::Connection::open(database).with_context(|| {
+                format!("failed to open {} for replacement", database.display())
+            })?;
+            old.execute_batch("BEGIN IMMEDIATE; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);")
+                .context("failed to checkpoint the store being replaced; is another Engram process using it?")?;
+            drop(old);
+            for suffix in ["-wal", "-shm", "-journal"] {
+                let sidecar = PathBuf::from(format!("{}{suffix}", database.display()));
+                if sidecar.exists() {
+                    fs::remove_file(&sidecar)
+                        .with_context(|| format!("failed to remove {}", sidecar.display()))?;
+                }
+            }
+        }
+        // Read-only verification may have left empty log sidecars beside the
+        // staged copy; they must not travel with it.
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let sidecar = PathBuf::from(format!("{}{suffix}", staged.display()));
+            if sidecar.exists() {
+                fs::remove_file(&sidecar)
+                    .with_context(|| format!("failed to remove {}", sidecar.display()))?;
+            }
+        }
+        fs::rename(&staged, database)
+            .with_context(|| format!("failed to install {} as the store", staged.display()))?;
+        Ok(())
+    })();
+    if let Err(error) = install {
+        let _ = fs::remove_file(&staged);
+        return Err(error);
     }
-    fs::copy(from, database)
-        .with_context(|| format!("failed to copy {} into place", from.display()))?;
     let restored = SqliteStore::verify_backup(database)
         .with_context(|| format!("restored store {} failed verification", database.display()))?;
     if restored.file_sha256 != manifest.file_sha256 {
