@@ -99,18 +99,24 @@ enum Command {
         source_skill: Option<String>,
     },
     /// Track work with eight words: next, ls, show, add, claim, update, note, done.
+    ///
+    /// The host fixes actor, session, and authority through the environment
+    /// so an agent types only the word and its arguments.
     Work {
         /// Actor identity asserted by the invoking host or operator wrapper.
-        #[arg(long)]
+        #[arg(long, env = "ENGRAM_ACTOR_ID")]
         actor_id: String,
         /// Durable session identity used for ambient focus and cursors.
-        #[arg(long)]
+        #[arg(long, env = "ENGRAM_SESSION_ID")]
         session_id: String,
         /// Skill instruction that supplied this actor context, when available.
-        #[arg(long)]
+        #[arg(long, env = "ENGRAM_SOURCE_SKILL")]
         source_skill: Option<String>,
         /// Host-selected immutable authority grant for mutations.
-        #[arg(long)]
+        ///
+        /// Prefer the environment source when argv may be observable to peer
+        /// processes. An explicit flag takes precedence over the environment.
+        #[arg(long, env = "ENGRAM_WORK_AUTHORITY_GRANT", hide_env_values = true)]
         authority_grant: Option<String>,
         /// Print the exact structured receipt instead of text.
         #[arg(long, global = true)]

@@ -102,7 +102,9 @@ policy outside the core. Extend ports using neutral request/response records.
 ## Using Engram as an agent
 
 Engram tracks the work of this repository. You use eight words; everything
-else is the host's business.
+else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
+`ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
+you type only the word.
 
 ```bash
 engram work next                  # what is ready, what you hold, what changed

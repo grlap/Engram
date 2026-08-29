@@ -15,7 +15,9 @@ agent sees eight words; every host and operator control lives under
 ## Using Engram as an agent
 
 Engram tracks the work of this repository. You use eight words; everything
-else is the host's business.
+else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
+`ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
+you type only the word.
 
 ```bash
 engram work next                  # what is ready, what you hold, what changed
@@ -46,6 +48,23 @@ Rules that matter:
 The same eight words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
 `update`, `note`, `done`) with the same flat arguments, plus `search` and
 `handoff`.
+
+If you know Beads, the words map one to one:
+
+| Beads | Engram |
+| --- | --- |
+| `bd ready` | `engram work next` |
+| `bd list` | `engram work ls` |
+| `bd show <id>` | `engram work show REF` |
+| `bd create --title=T [--parent=<id>]` | `engram work add "T" [--under REF]` |
+| `bd update <id> --claim` | `engram work claim REF` |
+| `bd update <id> --status=blocked` | `engram work update REF --blocked "why"` |
+| `bd update <id> --notes=N` | `engram work note "N"` |
+| `bd close <id>` | `engram work done ["what was delivered"]` |
+
+`done` differs from `bd close` in one way: it is checked against the item's
+acceptance and against anything the host recorded as owed, and it tells you
+what is missing instead of closing anyway.
 
 ## Host integration
 
