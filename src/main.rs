@@ -1533,8 +1533,15 @@ fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
 /// stale log can be applied to the restored file; no other Engram process
 /// may use the store while it is replaced.
 fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
-    let manifest = SqliteStore::verify_backup(from)
-        .with_context(|| format!("backup {} is not usable", from.display()))?;
+    // A backup from an older schema is still usable: it is migrated on the
+    // staged copy, never on the backup itself.
+    let manifest = match SqliteStore::verify_backup(from) {
+        Ok(manifest) => Some(manifest),
+        Err(engram::storage::StoreError::BackupNeedsMigration { .. }) => None,
+        Err(error) => {
+            return Err(error).with_context(|| format!("backup {} is not usable", from.display()));
+        }
+    };
     if let (Ok(source), Ok(target)) = (fs::canonicalize(from), fs::canonicalize(database))
         && source == target
     {
@@ -1559,10 +1566,14 @@ fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
     let _ = fs::remove_file(&staged);
     fs::copy(from, &staged)
         .with_context(|| format!("failed to stage {} beside the store", from.display()))?;
+    let mut migrated_from = None;
     let install = (|| -> Result<()> {
-        let staged_manifest = SqliteStore::verify_backup(&staged)
+        let (staged_manifest, from_version) = SqliteStore::prepare_restore_copy(&staged)
             .with_context(|| format!("staged copy {} failed verification", staged.display()))?;
-        if staged_manifest.file_sha256 != manifest.file_sha256 {
+        migrated_from = from_version;
+        if let Some(manifest) = &manifest
+            && staged_manifest.file_sha256 != manifest.file_sha256
+        {
             bail!("staged copy bytes differ from the backup");
         }
         if exists {
@@ -1612,8 +1623,15 @@ fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
     }
     let restored = SqliteStore::verify_backup(database)
         .with_context(|| format!("restored store {} failed verification", database.display()))?;
-    if restored.file_sha256 != manifest.file_sha256 {
+    if let Some(manifest) = &manifest
+        && restored.file_sha256 != manifest.file_sha256
+    {
         bail!("restored store bytes differ from the backup");
+    }
+    if let Some(from_version) = migrated_from {
+        eprintln!(
+            "NOTE: the backup was written under work schema {from_version}; the restored store was migrated to the current schema before installation"
+        );
     }
     println!("{}", serde_json::to_string_pretty(&restored)?);
     Ok(())

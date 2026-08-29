@@ -283,6 +283,11 @@ pub enum StoreError {
         "the project root's filesystem identity is unresolved, so path leases are refused; pass --host-path-policy case_fold|case_sensitive or set ENGRAM_HOST_PATH_POLICY"
     )]
     HostPathIdentityUnresolved,
+    #[error(
+        "backup was written under an older store schema{}; restore migrates a staged copy before installing it",
+        from_version.map(|version| format!(" (work schema {version})")).unwrap_or_default()
+    )]
+    BackupNeedsMigration { from_version: Option<i64> },
     #[error("session {0:?} has no host-private control binding")]
     ControlSessionNotBound(String),
     #[error("routing token does not match control session {0:?}")]
@@ -964,10 +969,44 @@ impl SqliteStore {
         })
     }
 
+    /// Makes a staged restore copy current: a copy written under an older
+    /// schema is migrated in place (it is the caller's private file), its log
+    /// sidecars are removed, and the result is verified. Returns the manifest
+    /// of the installable bytes and the schema version the copy came from
+    /// when a migration happened.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the copy cannot be migrated or fails
+    /// verification.
+    pub fn prepare_restore_copy(
+        staged: &Path,
+    ) -> Result<(BackupManifest, Option<i64>), StoreError> {
+        match Self::verify_backup(staged) {
+            Ok(manifest) => Ok((manifest, None)),
+            Err(StoreError::BackupNeedsMigration { from_version }) => {
+                drop(Self::open_with_host_path_identity(staged, None)?);
+                for sidecar in store_sidecars(staged) {
+                    if sidecar.exists() {
+                        std::fs::remove_file(&sidecar).map_err(|error| {
+                            StoreError::InvalidWork(format!(
+                                "cannot remove {}: {error}",
+                                sidecar.display()
+                            ))
+                        })?;
+                    }
+                }
+                Ok((Self::verify_backup(staged)?, from_version.or(Some(0))))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     /// Verifies an existing backup file without creating, migrating, or
     /// modifying anything: the bytes are hashed first, then the file is
     /// opened read-only and every immutable object and hash-bound record is
-    /// checked.
+    /// checked. A file written under an older schema is reported as
+    /// [`StoreError::BackupNeedsMigration`] rather than modified.
     ///
     /// # Errors
     ///
@@ -998,11 +1037,27 @@ impl SqliteStore {
         let digest = <sha2::Sha256 as sha2::Digest>::digest(&bytes);
         // `immutable=1` reads exactly the hashed bytes: no shared-memory or log
         // file is consulted or created, so a read-only directory works too.
-        let connection = Connection::open_with_flags(
-            immutable_uri(path)?,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-        )?;
-        let report = Self::from_connection(connection, None, None)?.verify_all()?;
+        let immutable = || {
+            Connection::open_with_flags(
+                immutable_uri(path)?,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+            )
+            .map_err(StoreError::from)
+        };
+        let store = match Self::from_connection(immutable()?, None, None) {
+            Ok(store) => store,
+            // An older but supported schema needs a write to migrate, which
+            // an immutable open refuses; name that instead of the raw error so
+            // a restore can migrate a staged copy on purpose.
+            Err(StoreError::Sqlite(rusqlite::Error::SqliteFailure(error, _)))
+                if error.code == rusqlite::ErrorCode::ReadOnly =>
+            {
+                let from_version = work::schema_version(&immutable()?).ok();
+                return Err(StoreError::BackupNeedsMigration { from_version });
+            }
+            Err(error) => return Err(error),
+        };
+        let report = store.verify_all()?;
         if !report.is_healthy() {
             return Err(StoreError::InvalidWork(format!(
                 "backup {} failed verification: {} object(s), {} control record(s), {} work record(s) invalid",
@@ -10932,6 +10987,56 @@ mod tests {
             ),
             Err(StoreError::HostPathIdentityUnresolved)
         ));
+    }
+
+    #[test]
+    fn older_schema_backups_are_named_and_migrated_on_the_staged_copy() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("live.sqlite3");
+        let store = SqliteStore::open(&database).expect("live store");
+        let backup = directory.path().join("older.sqlite3");
+        store.backup_to(&backup).expect("backup");
+        drop(store);
+        // Age the backup: an older work schema version makes the current
+        // schema incomplete, so an ordinary open would have to migrate.
+        let aged = Connection::open(&backup).expect("open backup for aging");
+        aged.execute(
+            "UPDATE work_schema_metadata SET schema_version = 9 WHERE singleton = 1",
+            [],
+        )
+        .expect("age the backup");
+        aged.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .expect("checkpoint the aged backup");
+        drop(aged);
+        for sidecar in store_sidecars(&backup) {
+            let _ = std::fs::remove_file(sidecar);
+        }
+        let before = std::fs::read(&backup).expect("aged bytes");
+        assert!(matches!(
+            SqliteStore::verify_backup(&backup),
+            Err(StoreError::BackupNeedsMigration {
+                from_version: Some(9)
+            })
+        ));
+        assert_eq!(
+            std::fs::read(&backup).expect("bytes after verification"),
+            before,
+            "verification must not touch the backup"
+        );
+
+        let staged = directory.path().join("staged.sqlite3");
+        std::fs::copy(&backup, &staged).expect("stage a copy");
+        let (manifest, migrated_from) =
+            SqliteStore::prepare_restore_copy(&staged).expect("migrate the staged copy");
+        assert_eq!(migrated_from, Some(9));
+        assert!(manifest.checked_objects > 0);
+        let current = SqliteStore::verify_backup(&staged).expect("the staged copy is current");
+        assert_eq!(current.file_sha256, manifest.file_sha256);
+        assert_eq!(
+            std::fs::read(&backup).expect("backup bytes after restore"),
+            before,
+            "the backup itself is never migrated"
+        );
     }
 
     #[test]
