@@ -724,6 +724,21 @@ pub fn describe_host_path_policy(policy: HostPathPolicy) -> String {
     )
 }
 
+/// What a verified backup copy contains. A backup is a full copy of the
+/// store, including host grants and private scratch, so it is exactly as
+/// sensitive as the store itself.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BackupManifest {
+    pub path: std::path::PathBuf,
+    /// SHA-256 of the backup file bytes after verification.
+    pub file_sha256: String,
+    pub file_bytes: u64,
+    pub checked_objects: usize,
+    pub checked_control_records: usize,
+    pub checked_work_records: usize,
+    pub created_at: DateTime<Utc>,
+}
+
 /// V1's canonical local persistence backend.
 pub struct SqliteStore {
     connection: Connection,
@@ -756,6 +771,80 @@ impl SqliteStore {
     /// Returns [`StoreError`] when SQLite cannot open or initialize the store.
     pub fn open_unresolved(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         Self::open_with_host_path_identity(path, None)
+    }
+
+    /// Writes a consistent copy of this store to `path` through SQLite's own
+    /// online backup (`VACUUM INTO`), then opens the copy and verifies every
+    /// immutable object and hash-bound record in it. The copy is a full store:
+    /// it carries host grants and private scratch and must be kept where the
+    /// store itself may be kept.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the copy cannot be written, opened, or
+    /// fails verification; a failed copy is removed.
+    pub fn backup_to(&self, path: &Path) -> Result<BackupManifest, StoreError> {
+        if path.exists() {
+            return Err(StoreError::InvalidWork(format!(
+                "backup target {} already exists",
+                path.display()
+            )));
+        }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                StoreError::InvalidWork(format!(
+                    "cannot create backup directory {}: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+        let target = path.to_string_lossy().into_owned();
+        if let Err(error) = self.connection.execute("VACUUM INTO ?1", [&target]) {
+            let _ = std::fs::remove_file(path);
+            return Err(error.into());
+        }
+        match Self::verify_backup(path) {
+            Ok(manifest) => Ok(manifest),
+            Err(error) => {
+                let _ = std::fs::remove_file(path);
+                Err(error)
+            }
+        }
+    }
+
+    /// Opens a backup copy without asserting a path identity, verifies it, and
+    /// returns its manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the file cannot be opened, read, or fails
+    /// verification.
+    pub fn verify_backup(path: &Path) -> Result<BackupManifest, StoreError> {
+        let report = Self::open_unresolved(path)?.verify_all()?;
+        if !report.is_healthy() {
+            return Err(StoreError::InvalidWork(format!(
+                "backup {} failed verification: {} object(s), {} control record(s), {} work record(s) invalid",
+                path.display(),
+                report.invalid_objects.len(),
+                report.invalid_control_records.len(),
+                report.invalid_work_records.len()
+            )));
+        }
+        let bytes = std::fs::read(path).map_err(|error| {
+            StoreError::InvalidWork(format!("cannot read backup {}: {error}", path.display()))
+        })?;
+        let digest = <sha2::Sha256 as sha2::Digest>::digest(&bytes);
+        Ok(BackupManifest {
+            path: path.to_path_buf(),
+            file_sha256: format!("{digest:x}"),
+            file_bytes: bytes.len() as u64,
+            checked_objects: report.checked_objects,
+            checked_control_records: report.checked_control_records,
+            checked_work_records: report.checked_work_records,
+            created_at: Utc::now(),
+        })
     }
 
     /// Opens or creates a local database with the project root's resolved
@@ -10321,6 +10410,45 @@ mod tests {
         assert!(matches!(
             SqliteStore::open_with_host_path_policy(&unsafe_database, policy),
             Err(StoreError::InvalidControlSession(_))
+        ));
+    }
+
+    #[test]
+    fn backup_copies_a_live_store_and_verifies_the_copy() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let database = directory.path().join("live.sqlite3");
+        let mut store = SqliteStore::open(&database).expect("live store");
+        let project = ProjectId("backup-project".into());
+        let session = SessionId("backup-session".into());
+        store
+            .start_task(
+                &project,
+                "dummy:BACKUP-1",
+                "Backup fixture",
+                &session,
+                actor("backup-agent"),
+                Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            )
+            .expect("fixture task");
+        let copy = directory.path().join("backups").join("copy.sqlite3");
+        let manifest = store.backup_to(&copy).expect("backup");
+        assert_eq!(manifest.path, copy);
+        assert!(manifest.checked_objects > 0);
+        assert_eq!(manifest.file_sha256.len(), 64);
+        assert_eq!(
+            manifest.file_bytes,
+            std::fs::metadata(&copy).expect("copy metadata").len()
+        );
+        let reverified = SqliteStore::verify_backup(&copy).expect("verify the copy again");
+        assert_eq!(reverified.file_sha256, manifest.file_sha256);
+        assert_eq!(reverified.checked_objects, manifest.checked_objects);
+        // The copy is a complete store: it opens and answers on its own.
+        let restored = SqliteStore::open(&copy).expect("open the copy");
+        assert!(restored.bound_task(&project, &session).is_ok());
+        // An existing target is never overwritten.
+        assert!(matches!(
+            store.backup_to(&copy),
+            Err(StoreError::InvalidWork(_))
         ));
     }
 

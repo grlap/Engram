@@ -114,6 +114,12 @@ engram control \
   --session-id session-unique-id \
   --source-skill engram-repo
 
+# Host-local loss recovery: a verified full copy of the store, and the way
+# back. A backup carries host grants and private scratch, so it is exactly as
+# sensitive as the store; schedule it on the host, never publish it.
+engram backup                      # → <home>/backups/<project>/engram-<utc>.db + manifest
+engram restore --from <backup-file> [--replace]
+
 # Host/operator boundary: mint a bounded, expiring grant for one exact actor.
 # Grants expire after one hour by default (--valid-seconds, at most one day);
 # a word run under an expired grant answers with the expiry time.

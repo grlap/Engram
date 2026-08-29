@@ -77,7 +77,7 @@ pub use project::{
     HostPathProbeError, parse_host_path_policy, probe_host_path_policy, project_database_path,
 };
 pub use storage::{
-    ControlDiagnostics, ControlPolicyUpdateReceipt, IntegrityReport,
+    BackupManifest, ControlDiagnostics, ControlPolicyUpdateReceipt, IntegrityReport,
     ObligationRuleSetUpdateReceipt, SqliteStore, TaskChange, describe_host_path_policy,
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};

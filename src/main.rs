@@ -101,6 +101,24 @@ enum Command {
     },
     /// Verify every immutable object in the local database.
     Doctor,
+    /// Write a verified copy of the store into the host-local backup directory.
+    ///
+    /// A backup is a complete store, grants and private scratch included; keep
+    /// it where the store itself may be kept.
+    Backup {
+        /// Backup file to write; defaults to `<home>/backups/<project>/engram-<utc>.db`.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Bring a verified backup back as this project's store.
+    Restore {
+        /// Backup file written by `engram backup`.
+        #[arg(long)]
+        from: PathBuf,
+        /// Replace an existing store instead of refusing.
+        #[arg(long)]
+        replace: bool,
+    },
     /// Serve the coding-agent memory tools over MCP stdio.
     Mcp {
         /// Actor identity asserted by the host integration.
@@ -648,6 +666,8 @@ async fn main() -> Result<ExitCode> {
             reason,
         )?,
         Command::Doctor => doctor(&database, identity)?,
+        Command::Backup { out } => backup(&database, out)?,
+        Command::Restore { from, replace } => restore(&database, &from, replace)?,
         Command::Mcp {
             actor_id,
             session_id,
@@ -1469,6 +1489,71 @@ fn initialize(
         control_assurance_name(control.required_assurance),
         control.obligation_rule_set,
     );
+    Ok(())
+}
+
+fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
+    let store = SqliteStore::open_unresolved(database)
+        .with_context(|| format!("failed to open {}", database.display()))?;
+    let out = if let Some(out) = out {
+        out
+    } else {
+        {
+            // <home>/projects/<digest>/engram.db → <home>/backups/<digest>/engram-<utc>.db
+            let project_dir = database
+                .parent()
+                .context("store path has no project directory")?;
+            let digest = project_dir
+                .file_name()
+                .context("store path has no project digest")?;
+            let home = project_dir
+                .parent()
+                .and_then(Path::parent)
+                .context("store path is not below an Engram home")?;
+            home.join("backups").join(digest).join(format!(
+                "engram-{}.db",
+                chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
+            ))
+        }
+    };
+    let manifest = store
+        .backup_to(&out)
+        .with_context(|| format!("failed to back up {}", database.display()))?;
+    println!("{}", serde_json::to_string_pretty(&manifest)?);
+    eprintln!(
+        "WARNING: a backup is a complete store, host grants and private scratch included; keep it where the store may be kept"
+    );
+    Ok(())
+}
+
+fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
+    let manifest = SqliteStore::verify_backup(from)
+        .with_context(|| format!("backup {} is not usable", from.display()))?;
+    if database.exists() && !replace {
+        bail!(
+            "store {} already exists; pass --replace to overwrite it with the backup",
+            database.display()
+        );
+    }
+    if let Some(parent) = database.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let sidecar = PathBuf::from(format!("{}{suffix}", database.display()));
+        if sidecar.exists() {
+            fs::remove_file(&sidecar)
+                .with_context(|| format!("failed to remove {}", sidecar.display()))?;
+        }
+    }
+    fs::copy(from, database)
+        .with_context(|| format!("failed to copy {} into place", from.display()))?;
+    let restored = SqliteStore::verify_backup(database)
+        .with_context(|| format!("restored store {} failed verification", database.display()))?;
+    if restored.file_sha256 != manifest.file_sha256 {
+        bail!("restored store bytes differ from the backup");
+    }
+    println!("{}", serde_json::to_string_pretty(&restored)?);
     Ok(())
 }
 
