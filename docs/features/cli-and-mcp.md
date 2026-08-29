@@ -8,15 +8,55 @@
 
 One core library owns classification, object storage, scope authorization,
 task binding, deltas, and context-packet construction. The CLI and MCP server
-are thin faces over it; transport code does not redefine memory policy.
+are thin faces over it; transport code does not redefine memory policy. The
+agent sees eight words; every host and operator control lives under
+[Host integration](#host-integration).
 
-The shipped agent-facing MCP interface is **advisory**. A model can omit an
-MCP call, so that surface alone cannot enforce synchronization, ownership, or
-finalization. A separate host-private JSON-lines channel now implements the
-first turn lifecycle; grants are not exposed as tools with which the agent can
-authorize itself.
+## Using Engram as an agent
 
-## Shipped CLI
+Engram tracks the work of this repository. You use eight words; everything
+else is the host's business.
+
+```bash
+engram work next                  # what is ready, what you hold, what changed
+engram work ls [--search TEXT] [--blocked] [--mine]
+engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
+engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
+engram work claim REF             # you now hold it; later commands default to it
+engram work update REF [--release | --blocked "why" | --unblock | --assignee A | --priority N | --defer DATE | --title "..."]
+engram work note "What you found or decided" [--ref path-or-url]
+engram work done ["What was delivered"]
+```
+
+Rules that matter:
+
+- `add` needs only a title. Outcome and acceptance criteria are welcome; they
+  are what `done` is checked against.
+- `claim` before you change anything. Only the holder can `note` and `done`.
+- `note` is for decisions, findings, and evidence pointers. One note feeds
+  peers, handoff, and the final report; never repeat it elsewhere.
+- `done` completes the item you hold. If something is still owed, the answer
+  is one sentence saying what and a command that resolves it. Do it and run
+  `done` again.
+- Every answer ends with `reminders` (what is owed, in words) and `next`
+  (commands you can run now). Nothing asks you to copy hashes, fences, or
+  keys; if you see one, it is a bug.
+- Lost response? Run the same command again. Identical calls are safe.
+
+The same eight words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `note`, `done`) with the same flat arguments, plus `search` and
+`handoff`.
+
+## Host integration
+
+The agent-facing MCP interface is **advisory**. A model can omit an MCP call,
+so that surface alone cannot enforce synchronization, ownership, or
+finalization. A separate host-private JSON-lines channel implements the turn
+lifecycle; grants are not exposed as tools with which the agent can authorize
+itself. Everything below is the host's and operator's business: the agent
+words above never require it.
+
+### Host and operator CLI
 
 ```bash
 export ENGRAM_HOME=/absolute/host-local/path
@@ -57,12 +97,19 @@ GRANT=$(engram authority grant \
   --subject-actor-id codex \
   --issued-by host-operator | jq -r .grant)
 
-# Read-only work operations need no grant. Mutations resolve this host-bound hash.
+# Read-only words need no grant. Mutations resolve this host-bound hash.
 engram work --actor-id codex --session-id session-unique-id next
 engram work --actor-id codex --session-id session-unique-id \
-  --authority-grant "$GRANT" focus <short-ref>
+  --authority-grant "$GRANT" claim <short-ref>
 engram mcp --actor-id codex --session-id session-unique-id \
   --work-authority-grant "$GRANT"
+
+# Host-only escape hatches: the six-operation JSON protocol from the shell,
+# and the legacy MCP tools for one release.
+engram work --actor-id codex --session-id session-unique-id \
+  --authority-grant "$GRANT" legacy focus <short-ref>
+engram mcp --actor-id codex --session-id session-unique-id \
+  --work-authority-grant "$GRANT" --legacy-tools
 ```
 
 For a long-lived MCP process, the host may set
@@ -122,12 +169,20 @@ setter prints a warning that no V1 host can bind at that level plus the
 `set-required-assurance turn_gated` recovery command. The operator identity is
 asserted host context, not authenticated administration.
 
-`engram work` exposes `next`, `focus`, `propose`, `update`, `complete`, and
-`handoff`. Mutation payloads accept an inline JSON object or `@path` to a JSON
-file. All six call the same service core as MCP. The current operator CLI also
-installs and irreversibly revokes canonical work-authority grants; those
-commands are not MCP tools. Search/stats/import/export and the remaining broad
-administrative CLI in the specification are still planned.
+`engram work` exposes the eight agent words plus `handoff`; `--json` after any
+word prints the exact structured receipt (the existing shape plus `reminders`
+and `next`) instead of text, and `done` exits with status 2 when the typed
+`open_work_obligations` refusal says something is still owed. The
+six-operation JSON protocol stays reachable for hosts and operators as
+`engram work legacy {next,focus,propose,update,complete,handoff}`, whose
+mutation payloads accept an inline JSON object or `@path`; that is the shell
+counterpart of `engram mcp --legacy-tools` and carries host-only fields such as
+explicit delivery acknowledgement, typed evidence attach, prerequisite edits,
+supersede, reopen, and required-child waivers. All words and legacy operations
+call the same service core as MCP. The operator CLI also installs and
+irreversibly revokes canonical work-authority grants; those commands are not
+MCP tools. Stats/import/export and the remaining broad administrative CLI in
+the specification are still planned.
 
 The same host boundary can waive one exact open run obligation, but only with
 a separately admitted grant:
@@ -162,7 +217,50 @@ Both waiver surfaces are host/operator private. MCP and `work_update` cannot
 request a waiver, and agent-facing projections omit its authority grant and
 reason.
 
-## Shipped MCP tools
+### MCP tools
+
+`engram mcp` registers the ten agent tools by default. `--legacy-tools` also
+registers the task, memory, and six-operation work tools for one release.
+
+| Tool | Purpose |
+| --- | --- |
+| `next` | What is ready, what this session holds, and the changes since its previous call |
+| `ls` | Open items with flat `search`, `blocked`, `mine`, `all`, and `label` filters |
+| `show` | One item in full; selects it as focus without claiming |
+| `add` | A root from a title, or one required child with `under`; outcome and acceptance default from the title |
+| `claim` | Hold an item; later calls default to it |
+| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, or `cancel` |
+| `note` | Record evidence and checkpoint it in one call, both keyless |
+| `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |
+| `search` | `ls` over every lifecycle |
+| `handoff` | `offer`, `accept`, or `cancel` the unique checkpoint-coupled handoff |
+
+Every agent tool result keeps its structured shape and adds two fields.
+`reminders` holds words only, derived by a fixed table from the readiness
+`obligations` strings, open `obligation_page` items, active blockers, and the
+claim holder. `next` holds literal `engram work …` commands derived by a fixed
+table from `allowed_next`; entries the agent cannot run through the words
+(reopen, supersede, prerequisite edits, required-child waivers) are omitted.
+Errors keep their stable code and details and add the same two fields. The
+shell prints a one-line receipt followed by `reminders:` and `next:`; `--json`
+prints the exact structured receipt. Text output never contains a 64-hex
+hash, fence number, or idempotency key. `scripts/parity.test.mjs` checks that
+on a fresh store and counts `add → claim → done` at three commands and at
+most three agent-supplied fields.
+
+`ls --mine` returns items assigned to the actor plus the session's focused
+item when this session holds it; claims on other items are visible through
+`show`. `add --under` selects the parent and submits one required child
+through `work_propose:decompose`, then focuses that child exactly as a root
+`add` focuses the new root; the core's decomposition admission rule still
+requires at least two children per decomposition, so until that rule admits
+one child the word returns the core's own refusal (`work_invalid`,
+"decomposition must contain from 2 through 64 children") as words. `note`
+records evidence and then checkpoints the run's current evidence set;
+repeating an identical `note`, `add`, `claim`, or `done` replays its receipt
+because the core derives the idempotency key.
+
+Legacy tools registered only with `--legacy-tools`:
 
 | Tool | Purpose |
 | --- | --- |
@@ -198,45 +296,13 @@ schedules one work item, while a separately versioned resource-lease operation
 authorizes mutation over canonical subjects. The legacy tool is deprecated
 after both replacement paths ship.
 
-## Current advisory agent loop
+### Work protocol contract
 
-1. The first session calls `task_start` with the external tracker reference;
-   peers call `task_join` with that reference alone. Engram persists each
-   session's active binding, including across MCP process restart.
-2. Call `memory_context` once and retain its `event_cursor`. Inject the pinned
-   and index tiers into the working context. This remains a convention in the
-   direct advisory slice. The shipped host-private control protocol instead
-   persists exact deliveries and requires their acknowledgement before issuing
-   a turn grant.
-3. Call `memory_note` when a decision, constraint, finding, evidence pointer,
-   or handoff fact becomes worth sharing. Supply a caller-stable
-   `idempotency_key`; retry the exact call after a lost response, and generate a
-   new key for different prose. Natural-language prefixes such as
-   `Decided:` help classification but flags are not required. Natural rules
-   beginning with `Never`, `Always`, `Must`, `Do not`, or `Only` become firm
-   pinned constraints without flags. The receipt
-   returns the inferred fields, their basis, canonical hashes, cursor, and
-   idempotency key.
-4. Before the next work turn or after a host wake, call `memory_delta` with the
-   retained cursor. Advance it only after processing the returned changes.
-5. Use `private: true` only for incomplete scratch. It remains searchable and
-   inspectable by the owning agent but never enters peer packets or deltas.
-6. When two shared records cannot both guide action, call
-   `memory_contradict` with their version hashes and a reason. Both become
-   visibly contested. If both are applicable firm/hard pinned records,
-   `memory_context` fails with `pinned_contradiction` and names the edge and
-   versions instead of asking the agent to invent precedence.
-
-One capture powers peer context and the ordered feed. The host may use a
-mailbox as a doorbell, but must not relay full state or make the agent repeat
-the same fact into another status ledger.
-
-## Shipped agent-native work protocol
-
-The normal model surface is six ambient operations: `work_next`, `work_focus`,
-`work_propose`, `work_update`, `work_complete`, and `work_handoff`. Session
-binding supplies project, actor, current work, and cursors, so update/complete/
-handoff do not repeatedly shuttle ids. Ambient state contains no authority;
+The eight words translate into six ambient operations: `work_next`,
+`work_focus`, `work_propose`, `work_update`, `work_complete`, and
+`work_handoff`. Hosts may call them directly through `--legacy-tools` or
+`engram work legacy`. Session binding supplies project, actor, current work,
+and cursors, so update/complete/handoff do not repeatedly shuttle ids. Ambient state contains no authority;
 the host fixes a canonical grant hash for the MCP process and each mutation
 rechecks that grant and revocation state. `work_next` returns only the selected
 `focus`, `ready`, `catalog`, and/or `changes` sections; omitting `sections`
@@ -337,7 +403,11 @@ replayable turn/action grant token appears in model-visible MCP output. The
 work-authority hash is a host process argument, not a request field or tool
 result.
 
-## Shipped host-private turn channel
+One capture powers peer context and the ordered feed. The host may use a
+mailbox as a doorbell, but must not relay full state or make the agent repeat
+the same fact into another status ledger.
+
+### Shipped host-private turn channel
 
 `engram control` is a long-lived stdio process. It accepts one JSON object per
 line and returns one `{ "status": "ok", "result": ... }` or typed error line.
@@ -562,7 +632,7 @@ shell or network path remains unmediated, the session must not claim
 `action_gated` assurance. See the
 [control-plane host contract](behavioral-control-plane.md#host-integration-contract).
 
-## Host configuration
+### Host configuration
 
 Build an executable and configure one stdio MCP process per agent session:
 
@@ -595,23 +665,40 @@ Build an executable and configure one stdio MCP process per agent session:
 The proprietary runtime supplies actor/session/tool/skill instruction context
 and injects the host-bound grant as process-local environment rather than
 placing it in argv. The same precedence and malformed-value rules described
-above apply.
+above apply. This process exposes only the ten agent tools; append
+`--legacy-tools` to the argument list while a host still depends on the
+`task_*`, `memory_*`, `context_explain`, or `work_*` tools.
 V1 records it with `asserted` assurance; configuration text is not
 authentication. Distinct concurrent sessions need distinct `--session-id`
 values. The database is shared; the MCP processes are not.
 
-## Dogfood contract
+### Dogfood contract
 
-`scripts/mcp-dogfood.test.mjs` launches two real stdio MCP processes against a
-fresh home and checks ref-only rendezvous, flag-free classification, context,
-single-item delta, private-scope non-disclosure (including a raw-hash probe),
-restart durability, provenance/explain, idempotent retry/conflict, and lease
-contention/expiry/retry. It also verifies zero-flag natural constraint
-classification and explicit pinned-contradiction fail-closed behavior. It now
-also installs operator grants, drives a real two-session work root through
-claim, evidence, checkpoint-coupled handoff, recipient checkpoint, and sealed
-completion without shuttling lifecycle ids, and drives the same lifecycle
-through the CLI translation. It is part of `scripts/check.sh`.
+`scripts/parity.test.mjs` runs the real binary against a fresh home with
+`engram init` and `engram authority grant` as host setup outside the count,
+then drives `add → claim → done` and fails if the agent needed more than three
+commands or three supplied fields, typed JSON, or saw a hash, fence, or key in
+text output. It also checks that an unheld `note` and an unnoted `done` answer
+with one sentence and the resolving command.
+
+`scripts/mcp-dogfood.test.mjs` launches real stdio MCP processes against a
+fresh home. Its main work lifecycle runs through the agent tools: an
+eight-word session creates, claims, blocks/unblocks, notes, and offers a root;
+a legacy-enabled peer accepts the checkpoint-coupled handoff, notes, and seals
+it with `done`; keyless replay, `reminders`/`next` derivation, catalog and
+search filters, cancellation, compact completion, child creation under a
+parent, and field revision are asserted along the way, and no `reminders` or
+`next` line ever carries a hash, fence, or key. One short path starts
+`engram mcp --legacy-tools`, verifies that the legacy tools are absent by
+default and present under the flag, and answers one legacy call. The two-session
+memory loop (ref-only rendezvous, flag-free classification, context,
+single-item delta, private-scope non-disclosure, restart durability,
+provenance/explain, idempotent retry/conflict, lease contention/expiry/retry,
+natural constraint classification, and pinned-contradiction fail-closed
+behavior) keeps running under `--legacy-tools` because those tools have no
+eight-word counterpart. The CLI path drives the same lifecycle through the
+words in text and `--json` modes and keeps one `engram work legacy focus` call.
+Both scripts are part of `scripts/check.sh`.
 
 `scripts/control-dogfood.test.mjs` launches the real bounded JSON-lines service,
 bootstraps an advisory policy, activates a turn-gated successor through the

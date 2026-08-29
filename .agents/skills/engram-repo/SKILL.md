@@ -91,10 +91,48 @@ contract and keep the change narrow.
 - external adapters: backend-neutral source snapshots, backup, portable
   handoff, later concurrent sync, frozen publication, idempotency, and receipt
   capabilities.
+- `verbs`: the eight-word agent surface; flat CLI flags and MCP arguments
+  translate into the unchanged six-operation core and every receipt gains
+  `reminders` and `next` from fixed tables.
 - CLI/MCP front doors translate requests; they do not redefine domain rules.
 
 Keep proprietary tracker types, authentication schemes, and organization
 policy outside the core. Extend ports using neutral request/response records.
+
+## Using Engram as an agent
+
+Engram tracks the work of this repository. You use eight words; everything
+else is the host's business.
+
+```bash
+engram work next                  # what is ready, what you hold, what changed
+engram work ls [--search TEXT] [--blocked] [--mine]
+engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
+engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
+engram work claim REF             # you now hold it; later commands default to it
+engram work update REF [--release | --blocked "why" | --unblock | --assignee A | --priority N | --defer DATE | --title "..."]
+engram work note "What you found or decided" [--ref path-or-url]
+engram work done ["What was delivered"]
+```
+
+Rules that matter:
+
+- `add` needs only a title. Outcome and acceptance criteria are welcome; they
+  are what `done` is checked against.
+- `claim` before you change anything. Only the holder can `note` and `done`.
+- `note` is for decisions, findings, and evidence pointers. One note feeds
+  peers, handoff, and the final report; never repeat it elsewhere.
+- `done` completes the item you hold. If something is still owed, the answer
+  is one sentence saying what and a command that resolves it. Do it and run
+  `done` again.
+- Every answer ends with `reminders` (what is owed, in words) and `next`
+  (commands you can run now). Nothing asks you to copy hashes, fences, or
+  keys; if you see one, it is a bug.
+- Lost response? Run the same command again. Identical calls are safe.
+
+The same eight words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `note`, `done`) with the same flat arguments, plus `search` and
+`handoff`.
 
 ## Verification
 
@@ -108,6 +146,7 @@ scripts/test-rust.sh
 node --test scripts/review-freeze-fingerprint.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
+node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 

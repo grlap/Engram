@@ -1,21 +1,28 @@
-//! MCP stdio surface for Engram's common coding-agent memory loop.
+//! MCP stdio surface: the eight-word agent tools by default, and the legacy
+//! task/memory/work tools only when the host opts in.
 
 use std::{path::PathBuf, str::FromStr};
 
 use chrono::Utc;
 use rmcp::{
-    ServerHandler, handler::server::wrapper::Parameters, model::CallToolResult,
-    schemars::JsonSchema, tool, tool_handler, tool_router,
+    ServerHandler,
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::CallToolResult,
+    schemars::JsonSchema,
+    tool, tool_handler, tool_router,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ActorContext, Authority, ChangeCursor, DevelopmentNoopRedactor, LocalWorkService, MemoryKind,
-    NoteRequest, NoteVisibility, ObjectHash, ProjectId, Sensitivity, SessionId, SqliteStore,
-    TaskId, WorkAvailability, WorkCompleteInput, WorkHandoffInput, WorkLifecycle, WorkNextQuery,
-    WorkNextSection, WorkProposeInput, WorkUpdateInput,
+    ActorContext, AddInput, AgentVerbs, Authority, ChangeCursor, ClaimInput,
+    DevelopmentNoopRedactor, DoneInput, HandoffAction, HandoffInput, LocalWorkService, LsInput,
+    MemoryKind, NextInput, NoteInput, NoteRequest, NoteVisibility, ObjectHash, ProjectId, Receipt,
+    Sensitivity, SessionId, SqliteStore, TaskId, UpdateAction, UpdateInput, VerbError,
+    WorkAvailability, WorkCompleteInput, WorkHandoffInput, WorkItemKind, WorkLifecycle,
+    WorkNextQuery, WorkNextSection, WorkProposeInput, WorkUpdateInput,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation},
+    parse_defer_date,
     storage::StoreError,
 };
 
@@ -28,11 +35,13 @@ pub struct McpServer {
     session_id: SessionId,
     source_skill: Option<String>,
     work_authority_grant: Option<ObjectHash>,
+    tool_router: ToolRouter<Self>,
 }
 
 impl McpServer {
-    /// Creates a tools-only MCP service. Task binding itself is stored in
-    /// SQLite, so a new server process resumes the session's active task.
+    /// Creates a tools-only MCP service exposing the eight-word agent tools.
+    /// Task binding itself is stored in SQLite, so a new server process
+    /// resumes the session's active task.
     #[must_use]
     pub fn new(
         database: PathBuf,
@@ -48,6 +57,7 @@ impl McpServer {
             session_id,
             source_skill,
             work_authority_grant: None,
+            tool_router: Self::agent_tool_router(),
         }
     }
 
@@ -56,6 +66,29 @@ impl McpServer {
     pub fn with_work_authority_grant(mut self, grant: Option<ObjectHash>) -> Self {
         self.work_authority_grant = grant;
         self
+    }
+
+    /// Also registers the legacy `task_*`, `memory_*`, `context_explain`, and
+    /// `work_*` tools beside the eight words.
+    #[must_use]
+    pub fn with_legacy_tools(mut self, enabled: bool) -> Self {
+        self.tool_router = if enabled {
+            Self::agent_tool_router() + Self::legacy_tool_router()
+        } else {
+            Self::agent_tool_router()
+        };
+        self
+    }
+
+    fn verbs(&self) -> AgentVerbs {
+        AgentVerbs::new(
+            self.database.clone(),
+            self.project_id.clone(),
+            self.actor_id.clone(),
+            self.session_id.clone(),
+            self.source_skill.clone(),
+            self.work_authority_grant.clone(),
+        )
     }
 
     fn store(&self) -> Result<SqliteStore, StoreError> {
@@ -255,7 +288,7 @@ struct WorkHandoffArgs {
     input: Value,
 }
 
-#[tool_router]
+#[tool_router(router = legacy_tool_router)]
 impl McpServer {
     /// Start a local execution task or bind to the existing task with this ref.
     #[tool(
@@ -749,16 +782,355 @@ impl McpServer {
     }
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+struct NextArgs {
+    /// Maximum ready items and changes to return (default 20).
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct LsArgs {
+    /// Case-insensitive text over refs, titles, outcomes, and labels.
+    search: Option<String>,
+    /// Only items with an active blocker or incomplete prerequisite.
+    blocked: Option<bool>,
+    /// Only items assigned to this actor or held by this session.
+    mine: Option<bool>,
+    /// Include completed, cancelled, and superseded items.
+    all: Option<bool>,
+    /// Exact case-insensitive label.
+    label: Option<String>,
+    /// Maximum items to return (default 20).
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ShowArgs {
+    /// Short work ref or full UUID; becomes the focus for later calls.
+    work_ref: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct AddArgs {
+    /// Only required field.
+    title: String,
+    /// Defaults to the title.
+    outcome: Option<String>,
+    /// Acceptance criteria `done` is checked against; defaults to one
+    /// criterion "<title> is done".
+    acceptance: Option<Vec<String>>,
+    /// Add as a required child of this item instead of a root.
+    under: Option<String>,
+    /// 0 (highest) through 4.
+    priority: Option<i32>,
+    labels: Option<Vec<String>>,
+    assignee: Option<String>,
+    /// task, bug, feature, epic, chore, or research.
+    kind: Option<WorkItemKind>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkClaimArgs {
+    /// Short work ref or full UUID.
+    work_ref: String,
+    /// Claim lifetime in seconds (default one hour).
+    ttl_seconds: Option<i64>,
+    /// Attributed reason for recovering a lapsed prior claim.
+    recover: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum UpdateActionArg {
+    Release,
+    Blocked,
+    Unblock,
+    Revise,
+    Cancel,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UpdateArgs {
+    /// Item to act on; defaults to the focus.
+    work_ref: Option<String>,
+    /// release, blocked (with text), unblock, revise (with fields), or cancel (with reason).
+    action: UpdateActionArg,
+    /// Reason for release (optional) or cancel (required).
+    reason: Option<String>,
+    /// Why the item is blocked.
+    text: Option<String>,
+    title: Option<String>,
+    outcome: Option<String>,
+    assignee: Option<String>,
+    /// 0 (highest) through 4.
+    priority: Option<i32>,
+    /// Defer until: RFC 3339, YYYY-MM-DD, or YYYY-MM-DDTHH:MM:SS (UTC).
+    defer: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct NoteArgs {
+    /// Item to note on; defaults to the focus.
+    work_ref: Option<String>,
+    /// What you found or decided.
+    text: String,
+    /// Evidence pointers such as paths or URLs.
+    refs: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct DoneArgs {
+    /// Item to complete; defaults to the focus.
+    work_ref: Option<String>,
+    /// What was delivered; recorded and checkpointed before sealing.
+    summary: Option<String>,
+    /// Acceptance note recorded against every criterion.
+    note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WorkSearchArgs {
+    /// Case-insensitive text over refs, titles, outcomes, and labels.
+    query: String,
+    /// Maximum items to return (default 20).
+    limit: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum HandoffActionArg {
+    Offer,
+    Accept,
+    Cancel,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct HandoffArgs {
+    /// Item to hand off; defaults to the focus.
+    work_ref: Option<String>,
+    /// offer (with to), accept, or cancel (with reason).
+    action: HandoffActionArg,
+    /// Session that receives the item.
+    to: Option<String>,
+    /// Checkpoint summary recorded with the offer.
+    summary: Option<String>,
+    /// Why an outstanding offer is cancelled.
+    reason: Option<String>,
+    /// Offer lifetime in seconds.
+    ttl_seconds: Option<i64>,
+}
+
+#[tool_router(router = agent_tool_router)]
+impl McpServer {
+    /// What is ready, what this session holds, and what changed.
+    #[tool(
+        name = "next",
+        description = "What is ready, what you hold, and what changed since your last call"
+    )]
+    fn next(&self, Parameters(args): Parameters<NextArgs>) -> CallToolResult {
+        verb(
+            self.verbs()
+                .next(&NextInput { limit: args.limit }, Utc::now()),
+        )
+    }
+
+    /// List open work with flat filters.
+    #[tool(
+        name = "ls",
+        description = "List open work; search, blocked, mine, all, and label narrow it"
+    )]
+    fn ls(&self, Parameters(args): Parameters<LsArgs>) -> CallToolResult {
+        verb(self.verbs().ls(
+            &LsInput {
+                search: args.search,
+                blocked: args.blocked.unwrap_or(false),
+                mine: args.mine.unwrap_or(false),
+                all: args.all.unwrap_or(false),
+                label: args.label,
+                limit: args.limit,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Inspect one item and make it the focus.
+    #[tool(
+        name = "show",
+        description = "One item: outcome, acceptance, holder, blockers, reminders; later calls default to it"
+    )]
+    fn show(&self, Parameters(args): Parameters<ShowArgs>) -> CallToolResult {
+        verb(self.verbs().show(&args.work_ref, Utc::now()))
+    }
+
+    /// Create a root or one required child.
+    #[tool(
+        name = "add",
+        description = "Create work from a title; outcome and acceptance are welcome; under adds a required child"
+    )]
+    fn add(&self, Parameters(args): Parameters<AddArgs>) -> CallToolResult {
+        verb(self.verbs().add(
+            AddInput {
+                title: args.title,
+                outcome: args.outcome,
+                acceptance: args.acceptance.unwrap_or_default(),
+                under: args.under,
+                priority: args.priority,
+                labels: args.labels.unwrap_or_default(),
+                assignee: args.assignee,
+                kind: args.kind,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Hold an item.
+    #[tool(
+        name = "claim",
+        description = "Hold an item before changing anything; later calls default to it"
+    )]
+    fn claim(&self, Parameters(args): Parameters<WorkClaimArgs>) -> CallToolResult {
+        verb(self.verbs().claim(
+            ClaimInput {
+                work_ref: args.work_ref,
+                ttl_seconds: args.ttl_seconds,
+                recover: args.recover,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Apply exactly one planning or claim action.
+    #[tool(
+        name = "update",
+        description = "One action: release, blocked (text), unblock, revise (title, outcome, assignee, priority, defer), or cancel (reason)"
+    )]
+    fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
+        let action = match args.action {
+            UpdateActionArg::Release => UpdateAction::Release {
+                reason: args.reason,
+            },
+            UpdateActionArg::Blocked => UpdateAction::Blocked {
+                detail: args.text.unwrap_or_default(),
+            },
+            UpdateActionArg::Unblock => UpdateAction::Unblock,
+            UpdateActionArg::Revise => {
+                let defer = match args.defer.as_deref().map(parse_defer_date).transpose() {
+                    Ok(defer) => defer,
+                    Err(message) => return invalid_argument("defer", &message),
+                };
+                UpdateAction::Revise {
+                    title: args.title,
+                    outcome: args.outcome,
+                    assignee: args.assignee,
+                    priority: args.priority,
+                    defer,
+                }
+            }
+            UpdateActionArg::Cancel => UpdateAction::Cancel {
+                reason: args.reason.unwrap_or_default(),
+            },
+        };
+        verb(self.verbs().update(
+            UpdateInput {
+                work_ref: args.work_ref,
+                action,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Record one finding once.
+    #[tool(
+        name = "note",
+        description = "Record one finding, decision, or evidence pointer on the item you hold; it feeds peers, handoff, and the final report"
+    )]
+    fn note(&self, Parameters(args): Parameters<NoteArgs>) -> CallToolResult {
+        verb(self.verbs().note(
+            &NoteInput {
+                work_ref: args.work_ref,
+                text: args.text,
+                refs: args.refs.unwrap_or_default(),
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Complete the held item.
+    #[tool(
+        name = "done",
+        description = "Complete the item you hold; a refusal says what is still owed and the command that resolves it"
+    )]
+    fn done(&self, Parameters(args): Parameters<DoneArgs>) -> CallToolResult {
+        verb(self.verbs().done(
+            DoneInput {
+                work_ref: args.work_ref,
+                summary: args.summary,
+                note: args.note,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Search every item by text.
+    #[tool(
+        name = "search",
+        description = "Search every item, including closed ones, by text"
+    )]
+    fn search(&self, Parameters(args): Parameters<WorkSearchArgs>) -> CallToolResult {
+        verb(self.verbs().search(&args.query, args.limit, Utc::now()))
+    }
+
+    /// Offer, accept, or cancel a transfer.
+    #[tool(
+        name = "handoff",
+        description = "Offer the item you hold to another session, accept an offer made to you, or cancel yours"
+    )]
+    fn handoff(&self, Parameters(args): Parameters<HandoffArgs>) -> CallToolResult {
+        let action = match args.action {
+            HandoffActionArg::Offer => HandoffAction::Offer {
+                to: args.to.unwrap_or_default(),
+                summary: args.summary,
+                ttl_seconds: args.ttl_seconds,
+            },
+            HandoffActionArg::Accept => HandoffAction::Accept,
+            HandoffActionArg::Cancel => HandoffAction::Cancel {
+                reason: args.reason.unwrap_or_default(),
+            },
+        };
+        verb(self.verbs().handoff(
+            HandoffInput {
+                work_ref: args.work_ref,
+                action,
+            },
+            Utc::now(),
+        ))
+    }
+}
+
 #[allow(
     clippy::unused_async_trait_impl,
     reason = "the rmcp handler macro emits required async trait methods"
 )]
 #[tool_handler(
+    router = self.tool_router,
     name = "engram",
     version = "0.1.0",
-    instructions = "Use work_next for bounded local ready work and deltas, work_focus to navigate without claiming, then work_update/work_complete/work_handoff against ambient focus. A host-bound grant controls mutations. Record each finding once with memory_note; private notes never enter peer views."
+    instructions = "Eight words: next, ls, show, add, claim, update, note, done (plus search and handoff). add needs only a title; claim before you change anything; note findings once; done completes what you hold. Every answer ends with reminders (what is owed) and next (commands you can run now). Identical calls are safe to repeat."
 )]
 impl ServerHandler for McpServer {}
+
+fn verb(outcome: Result<Receipt, VerbError>) -> CallToolResult {
+    match outcome {
+        Ok(receipt) => CallToolResult::structured(receipt.value),
+        Err(error) => {
+            let guidance = error.guidance();
+            let mut value = error_value(&error.error);
+            value["error"]["reminders"] = json!(guidance.reminders);
+            value["error"]["next"] = json!(guidance.next);
+            CallToolResult::structured_error(value)
+        }
+    }
+}
 
 fn result<T: serde::Serialize>(value: Result<T, StoreError>, operation: &str) -> CallToolResult {
     match value {
@@ -777,6 +1149,10 @@ fn result<T: serde::Serialize>(value: Result<T, StoreError>, operation: &str) ->
 }
 
 fn store_error(error: &StoreError) -> CallToolResult {
+    CallToolResult::structured_error(error_value(error))
+}
+
+fn error_value(error: &StoreError) -> Value {
     let details = match error {
         StoreError::TaskClaimHeld { holder, expires_at } => json!({
             "holder": holder,
@@ -861,13 +1237,13 @@ fn store_error(error: &StoreError) -> CallToolResult {
         }),
         _ => Value::Null,
     };
-    CallToolResult::structured_error(json!({
+    json!({
         "error": {
             "code": error_code(error),
             "message": error.to_string(),
             "details": details,
         }
-    }))
+    })
 }
 
 fn error_code(error: &StoreError) -> &'static str {

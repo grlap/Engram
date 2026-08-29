@@ -12,4 +12,5 @@ scripts/test-rust.sh
 node --test scripts/review-freeze-fingerprint.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
+node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs

@@ -267,6 +267,7 @@ function cliWork(engramHome, actorId, grant, operation, input) {
     actorId,
     "--authority-grant",
     grant,
+    "legacy",
     operation,
   ];
   if (input !== undefined) args.push("--input", JSON.stringify(input));
@@ -291,6 +292,7 @@ function cliWorkFocus(engramHome, actorId, grant, workRef) {
       actorId,
       "--authority-grant",
       grant,
+      "legacy",
       "focus",
       workRef,
     ],
@@ -314,6 +316,7 @@ function cliWorkAcknowledge(engramHome, actorId, grant, page) {
       actorId,
       "--authority-grant",
       grant,
+      "legacy",
       "next",
       "--acknowledge-through",
       String(page.delivered_through),
@@ -1783,6 +1786,35 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ),
       refusedCompletion,
     );
+    // The eight-word `done` answers the same typed refusal in words plus the
+    // resolving command, prints no hash, and exits 2.
+    const owed = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        actor,
+        "--authority-grant",
+        authorityGrant,
+        "done",
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(owed.status, 2, `${owed.stdout}\n${owed.stderr}`);
+    assert.match(
+      owed.stdout,
+      /^not done w-[0-9a-f]{12} "Exercise work-bound control": something is still owed\n/u,
+    );
+    assert.match(
+      owed.stdout,
+      /- tests have not run since your last source change — run them; the host records the result/u,
+    );
+    assert.match(owed.stdout, /next:\n\s+engram work done w-[0-9a-f]{12}\s*$/u);
+    assert.doesNotMatch(owed.stdout, /\b[0-9a-f]{64}\b/u);
 
     const staleVerificationTurn = ok(
       await client.request({
@@ -2301,6 +2333,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
         actor,
         "--authority-grant",
         authorityGrant,
+        "legacy",
         "update",
         "--input",
         JSON.stringify({

@@ -10,30 +10,74 @@ import test from "node:test";
 const root = resolve(import.meta.dirname, "..");
 const binary = join(root, "target", "debug", "engram");
 
+const AGENT_TOOLS = [
+  "next",
+  "ls",
+  "show",
+  "add",
+  "claim",
+  "update",
+  "note",
+  "done",
+  "search",
+  "handoff",
+];
+const LEGACY_TOOLS = [
+  "task_start",
+  "task_join",
+  "memory_note",
+  "memory_contradict",
+  "memory_context",
+  "memory_delta",
+  "memory_search",
+  "memory_show",
+  "context_explain",
+  "task_claim",
+  "work_next",
+  "work_focus",
+  "work_propose",
+  "work_update",
+  "work_complete",
+  "work_handoff",
+];
+const CONTROL_TOOLS = [
+  "session_bind",
+  "session_status",
+  "lease_acquire",
+  "lease_release",
+  "turn_evaluate",
+  "turn_begin",
+  "turn_checkpoint",
+];
+const HASH = /\b[0-9a-f]{64}\b/u;
+
 class McpClient {
-  constructor(
-    engramHome,
-    sessionId,
-    workAuthorityGrant,
-    environmentAuthorityGrant,
-  ) {
+  constructor(engramHome, sessionId, options = {}) {
+    const {
+      workAuthorityGrant,
+      environmentAuthorityGrant,
+      legacyTools = false,
+    } = options;
     this.nextId = 1;
     this.pending = new Map();
     this.stderr = "";
     this.buffer = "";
     const args = [
-        "--home",
-        engramHome,
-        "mcp",
-        "--actor-id",
-        sessionId,
-        "--session-id",
-        sessionId,
-        "--source-skill",
-        "engram-dogfood",
-      ];
+      "--home",
+      engramHome,
+      "mcp",
+      "--actor-id",
+      sessionId,
+      "--session-id",
+      sessionId,
+      "--source-skill",
+      "engram-dogfood",
+    ];
     if (workAuthorityGrant) {
       args.push("--work-authority-grant", workAuthorityGrant);
+    }
+    if (legacyTools) {
+      args.push("--legacy-tools");
     }
     const environment = { ...process.env };
     delete environment.ENGRAM_WORK_AUTHORITY_GRANT;
@@ -41,11 +85,11 @@ class McpClient {
       environment.ENGRAM_WORK_AUTHORITY_GRANT = environmentAuthorityGrant;
     }
     this.args = [...args];
-    this.child = spawn(
-      binary,
-      args,
-      { cwd: root, env: environment, stdio: ["pipe", "pipe", "pipe"] },
-    );
+    this.child = spawn(binary, args, {
+      cwd: root,
+      env: environment,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     this.child.stderr.on("data", (chunk) => {
       this.stderr += chunk.toString("utf8");
     });
@@ -115,6 +159,11 @@ class McpClient {
     this.notify("notifications/initialized");
   }
 
+  async toolNames() {
+    const listed = await this.request("tools/list", {});
+    return new Set(listed.tools.map(({ name }) => name));
+  }
+
   async call(name, arguments_ = {}) {
     const started = performance.now();
     const result = await this.request("tools/call", {
@@ -136,6 +185,18 @@ function structured(result) {
   return result.structuredContent;
 }
 
+function receipt(result) {
+  const value = structured(result);
+  assert.ok(Array.isArray(value.reminders), JSON.stringify(value));
+  assert.ok(Array.isArray(value.next), JSON.stringify(value));
+  for (const line of [...value.reminders, ...value.next]) {
+    assert.equal(typeof line, "string");
+    assert.doesNotMatch(line, HASH, line);
+    assert.doesNotMatch(line, /fence|idempotency/iu, line);
+  }
+  return value;
+}
+
 function structuredError(result, code) {
   assert.equal(result.isError, true, JSON.stringify(result));
   assert.equal(result.structuredContent.error.code, code);
@@ -146,46 +207,54 @@ async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
-test("two MCP sessions voluntarily usable memory loop", async () => {
+function buildAndInit(engramHome) {
+  const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(built.status, 0, built.stderr);
+  const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(initialized.status, 0, initialized.stderr);
+}
+
+function installWorkGrant(engramHome, actorId) {
+  const granted = spawnSync(
+    binary,
+    [
+      "--home",
+      engramHome,
+      "authority",
+      "grant",
+      "--subject-actor-id",
+      actorId,
+      "--issued-by",
+      "dogfood-host",
+      "--reason",
+      "MCP local-work dogfood",
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(granted.status, 0, granted.stderr);
+  return JSON.parse(granted.stdout).grant;
+}
+
+test("legacy memory loop still works for two sessions under --legacy-tools", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-dogfood-"));
   let a;
   let b;
   try {
-    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    assert.equal(initialized.status, 0, initialized.stderr);
+    buildAndInit(engramHome);
 
-    a = new McpClient(engramHome, "eval-a");
-    b = new McpClient(engramHome, "eval-b");
+    a = new McpClient(engramHome, "eval-a", { legacyTools: true });
+    b = new McpClient(engramHome, "eval-b", { legacyTools: true });
     await Promise.all([a.initialize(), b.initialize()]);
 
     const listed = await a.request("tools/list", {});
     const toolNames = new Set(listed.tools.map(({ name }) => name));
-    for (const name of [
-      "task_start",
-      "task_join",
-      "memory_note",
-      "memory_contradict",
-      "memory_context",
-      "memory_delta",
-      "memory_search",
-      "memory_show",
-      "context_explain",
-      "task_claim",
-      "work_next",
-      "work_focus",
-      "work_propose",
-      "work_update",
-      "work_complete",
-      "work_handoff",
-    ]) {
+    for (const name of [...AGENT_TOOLS, ...LEGACY_TOOLS]) {
       assert.ok(toolNames.has(name), `missing MCP tool ${name}`);
     }
     for (const name of [
@@ -199,15 +268,13 @@ test("two MCP sessions voluntarily usable memory loop", async () => {
       assert.ok(schema.includes("idempotency_key"), `${name} has a generic input schema`);
       assert.ok(schema.includes("required"), `${name} does not expose required fields`);
     }
-    for (const name of [
-      "session_bind",
-      "session_status",
-      "lease_acquire",
-      "lease_release",
-      "turn_evaluate",
-      "turn_begin",
-      "turn_checkpoint",
-    ]) {
+    for (const name of AGENT_TOOLS) {
+      const tool = listed.tools.find((candidate) => candidate.name === name);
+      const schema = JSON.stringify(tool.inputSchema);
+      assert.equal(schema.includes("idempotency_key"), false, `${name} asks for a key`);
+      assert.equal(schema.includes("fence"), false, `${name} asks for a fence`);
+    }
+    for (const name of CONTROL_TOOLS) {
       assert.ok(!toolNames.has(name), `control tool leaked through MCP: ${name}`);
     }
 
@@ -277,7 +344,7 @@ test("two MCP sessions voluntarily usable memory loop", async () => {
     const beforeRestart = JSON.stringify(delta);
     b.close();
     await wait(50);
-    b = new McpClient(engramHome, "eval-b");
+    b = new McpClient(engramHome, "eval-b", { legacyTools: true });
     await b.initialize();
     const afterRestart = structured(
       await b.call("memory_delta", { after: firstCursor, limit: 100 }),
@@ -421,28 +488,44 @@ test("two MCP sessions voluntarily usable memory loop", async () => {
   }
 });
 
-function installWorkGrant(engramHome, actorId) {
-  const granted = spawnSync(
-    binary,
-    [
-      "--home",
-      engramHome,
-      "authority",
-      "grant",
-      "--subject-actor-id",
-      actorId,
-      "--issued-by",
-      "dogfood-host",
-      "--reason",
-      "MCP local-work dogfood",
-    ],
-    { cwd: root, encoding: "utf8" },
-  );
-  assert.equal(granted.status, 0, granted.stderr);
-  return JSON.parse(granted.stdout).grant;
-}
+test("legacy tools are opt-in and still answer one call", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-legacy-"));
+  let plain;
+  let legacy;
+  try {
+    buildAndInit(engramHome);
+    plain = new McpClient(engramHome, "legacy-probe");
+    legacy = new McpClient(engramHome, "legacy-probe", { legacyTools: true });
+    await Promise.all([plain.initialize(), legacy.initialize()]);
+    const plainTools = await plain.toolNames();
+    for (const name of AGENT_TOOLS) {
+      assert.ok(plainTools.has(name), `missing agent tool ${name}`);
+    }
+    for (const name of [...LEGACY_TOOLS, ...CONTROL_TOOLS]) {
+      assert.ok(!plainTools.has(name), `${name} registered without --legacy-tools`);
+    }
+    const legacyTools = await legacy.toolNames();
+    for (const name of [...AGENT_TOOLS, ...LEGACY_TOOLS]) {
+      assert.ok(legacyTools.has(name), `missing MCP tool ${name} under --legacy-tools`);
+    }
+    const started = structured(
+      await legacy.call("task_start", {
+        external_ref: "dummy:LEGACY-1",
+        title: "Legacy tools answer",
+      }),
+    );
+    assert.ok(started.task.task_id);
+    const emptyNext = receipt(await plain.call("next", {}));
+    assert.equal(emptyNext.focus, undefined);
+    assert.deepEqual(emptyNext.next, ['engram work add "…"']);
+  } finally {
+    plain?.close();
+    legacy?.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
 
-function cliWork(engramHome, actorId, grant, operation, input) {
+function cliWord(engramHome, actorId, grant, word, ...agentArgs) {
   const args = [
     "--home",
     engramHome,
@@ -453,68 +536,142 @@ function cliWork(engramHome, actorId, grant, operation, input) {
     actorId,
     "--authority-grant",
     grant,
-    operation,
+    word,
+    ...agentArgs,
   ];
-  if (input !== undefined) args.push("--input", JSON.stringify(input));
-  const executed = spawnSync(binary, args, {
-    cwd: root,
-    encoding: "utf8",
-  });
+  return spawnSync(binary, args, { cwd: root, encoding: "utf8" });
+}
+
+function cliText(engramHome, actorId, grant, word, ...agentArgs) {
+  const executed = cliWord(engramHome, actorId, grant, word, ...agentArgs);
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.doesNotMatch(executed.stdout, HASH, executed.stdout);
+  assert.doesNotMatch(executed.stdout, /fence|idempotency/iu, executed.stdout);
+  return executed.stdout;
+}
+
+function cliJson(engramHome, actorId, grant, word, ...agentArgs) {
+  const executed = cliWord(engramHome, actorId, grant, word, ...agentArgs, "--json");
   assert.equal(executed.status, 0, executed.stderr);
   return JSON.parse(executed.stdout);
 }
 
-test("CLI translates the same ambient lifecycle service", () => {
+test("CLI words translate the same ambient lifecycle service", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-work-cli-"));
   try {
-    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    assert.equal(initialized.status, 0, initialized.stderr);
+    buildAndInit(engramHome);
     const actor = "cli-work-agent";
     const grant = installWorkGrant(engramHome, actor);
-    const proposed = cliWork(engramHome, actor, grant, "propose", {
-      kind: "root",
-      title: "Dogfood work CLI",
-      outcome: "The shell completes an ambient local lifecycle",
-      acceptance: ["CLI completion is sealed"],
-      work_kind: "chore",
-      idempotency_key: "cli-root",
-    });
-    assert.equal(proposed.kind, "root");
-    const next = cliWork(engramHome, actor, grant, "next");
-    assert.equal(next.session.focused_work_id, proposed.work.work_id);
-    cliWork(engramHome, actor, grant, "update", {
-      kind: "claim",
-      ttl_seconds: 300,
-      idempotency_key: "cli-claim",
-    });
-    const evidence = cliWork(engramHome, actor, grant, "update", {
-      kind: "evidence",
-      summary: "CLI lifecycle assertions passed",
-      refs: ["test:cli-work-dogfood"],
-      idempotency_key: "cli-evidence",
-    }).receipt.result;
-    cliWork(engramHome, actor, grant, "update", {
-      kind: "checkpoint",
-      summary: "CLI evidence and acceptance validated",
-      evidence: [evidence],
-      idempotency_key: "cli-checkpoint",
-    });
-    const seal = cliWork(engramHome, actor, grant, "complete", {
-      acceptance: [
-        { satisfied: true, note: "validated by the CLI dogfood session" },
-      ],
-      idempotency_key: "cli-complete",
-    });
-    assert.equal(seal.work_id, proposed.work.work_id);
-    const focused = spawnSync(
+    const added = cliText(
+      engramHome,
+      actor,
+      grant,
+      "add",
+      "Dogfood work CLI",
+      "--outcome",
+      "The shell completes an ambient local lifecycle",
+      "--accept",
+      "CLI completion is sealed",
+      "--kind",
+      "chore",
+      "--label",
+      "dogfood",
+    );
+    const workRef = added.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
+    assert.ok(workRef, added);
+    assert.match(added, /^added w-[0-9a-f]{12} "Dogfood work CLI"\n/u);
+    assert.match(added, /reminders:\n\s+- unclaimed: claim it before you change anything/u);
+    assert.match(added, new RegExp(`next:\\n(?:.*\\n)*\\s+engram work claim ${workRef}`, "u"));
+
+    const next = cliJson(engramHome, actor, grant, "next");
+    assert.equal(next.session.focused_work_id, next.focus.status.work.work_id);
+    assert.equal(next.focus.status.work.short_ref, workRef);
+    assert.ok(Array.isArray(next.changes));
+    const listed = cliText(engramHome, actor, grant, "ls", "--label", "dogfood");
+    assert.match(listed, /^1 item\(s\):\n\s+w-[0-9a-f]{12}\s+p1\s+ready\s+"Dogfood work CLI"\s+\[dogfood\]/u);
+    const nothingMine = cliText(engramHome, actor, grant, "ls", "--mine");
+    assert.match(nothingMine, /^0 item\(s\):/u);
+
+    const claimed = cliText(engramHome, actor, grant, "claim", workRef, "--ttl", "300");
+    assert.match(claimed, /^claimed w-[0-9a-f]{12} "Dogfood work CLI" \(held by you until \d{2}:\d{2} UTC\)/u);
+    const mine = cliText(engramHome, actor, grant, "ls", "--mine");
+    assert.match(mine, /^1 item\(s\):/u);
+
+    const shown = cliText(engramHome, actor, grant, "show", workRef);
+    assert.match(shown, /^w-[0-9a-f]{12} "Dogfood work CLI" — held by you until/u);
+    assert.match(shown, /kind: chore  priority: 1  labels: dogfood/u);
+    assert.match(shown, /outcome: The shell completes an ambient local lifecycle/u);
+    assert.match(shown, /acceptance:\n\s+- CLI completion is sealed/u);
+    assert.match(shown, /reminders:\n\s+- you hold this item but have not noted progress yet/u);
+    assert.match(shown, new RegExp(`\\s+engram work note ${workRef} "…"`, "u"));
+    assert.doesNotMatch(shown, new RegExp(`engram work show ${workRef}`, "u"));
+
+    const blocked = cliText(engramHome, actor, grant, "update", "--blocked", "waiting on a review");
+    assert.match(blocked, /^blocked w-[0-9a-f]{12} "Dogfood work CLI": waiting on a review/u);
+    assert.match(blocked, /reminders:\n(?:.*\n)*\s+- blocked: waiting on a review/u);
+    assert.match(blocked, new RegExp(`\\s+engram work update ${workRef} --unblock`, "u"));
+    const blockedList = cliText(engramHome, actor, grant, "ls", "--blocked");
+    assert.match(blockedList, /^1 item\(s\):/u);
+    const unblocked = cliText(engramHome, actor, grant, "update", workRef, "--unblock");
+    assert.match(unblocked, /^unblocked w-/u);
+
+    const noted = cliText(
+      engramHome,
+      actor,
+      grant,
+      "note",
+      "CLI lifecycle assertions passed",
+      "--ref",
+      "test:cli-work-dogfood",
+    );
+    assert.match(noted, /^noted on w-[0-9a-f]{12} "Dogfood work CLI": CLI lifecycle assertions passed/u);
+    assert.doesNotMatch(noted, /have not noted progress/u);
+    const notedJson = cliJson(
+      engramHome,
+      actor,
+      grant,
+      "note",
+      workRef,
+      "CLI lifecycle assertions passed",
+      "--ref",
+      "test:cli-work-dogfood",
+    );
+    assert.equal(notedJson.operation, "note");
+    assert.match(notedJson.evidence.result, HASH);
+    assert.ok(Array.isArray(notedJson.allowed_next));
+
+    const done = cliText(engramHome, actor, grant, "done");
+    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI"\nreminders: none\nnext:\n/u);
+    assert.match(done, /\s+engram work next/u);
+    const doneJson = cliJson(engramHome, actor, grant, "done");
+    assert.match(doneJson.seal, HASH);
+    const focused = cliJson(engramHome, actor, grant, "show", workRef);
+    assert.equal(focused.status.work.lifecycle, "completed");
+    assert.equal(focused.evidence.length, 1);
+    const closedList = cliText(engramHome, actor, grant, "ls");
+    assert.match(closedList, /^0 item\(s\):/u);
+    const allList = cliText(engramHome, actor, grant, "ls", "--all", "--search", "dogfood work");
+    assert.match(allList, /^1 item\(s\):\n\s+w-[0-9a-f]{12}\s+p1\s+completed/u);
+
+    // `add --under` translates to a one-child decomposition; the core's
+    // admission rule still requires at least two children, and the word
+    // surfaces that refusal as words rather than a hash or a workaround.
+    const parentPlan = cliText(engramHome, actor, grant, "add", "Parent plan");
+    const parentRef = parentPlan.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
+    assert.ok(parentRef, parentPlan);
+    const child = cliWord(
+      engramHome,
+      actor,
+      grant,
+      "add",
+      "Follow-up step",
+      "--under",
+      parentRef,
+    );
+    assert.equal(child.status, 1, child.stdout);
+    assert.match(child.stderr, /from 2 through 64 children/u);
+    assert.doesNotMatch(child.stderr, HASH);
+    const legacyFocus = spawnSync(
       binary,
       [
         "--home",
@@ -524,13 +681,14 @@ test("CLI translates the same ambient lifecycle service", () => {
         actor,
         "--session-id",
         actor,
+        "legacy",
         "focus",
-        proposed.work.short_ref,
+        workRef,
       ],
       { cwd: root, encoding: "utf8" },
     );
-    assert.equal(focused.status, 0, focused.stderr);
-    assert.equal(JSON.parse(focused.stdout).status.work.lifecycle, "completed");
+    assert.equal(legacyFocus.status, 0, legacyFocus.stderr);
+    assert.equal(JSON.parse(legacyFocus.stdout).status.work.lifecycle, "completed");
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }
@@ -541,16 +699,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
   let a;
   let b;
   try {
-    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    assert.equal(built.status, 0, built.stderr);
-    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    assert.equal(initialized.status, 0, initialized.stderr);
+    buildAndInit(engramHome);
     const grantA = installWorkGrant(engramHome, "work-agent-a");
     const grantB = installWorkGrant(engramHome, "work-agent-b");
 
@@ -564,27 +713,13 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       sessionId,
     ];
     const grantlessError = async (environmentAuthorityGrant, suffix) => {
-      const client = new McpClient(
-        engramHome,
-        `grantless-${suffix}`,
-        undefined,
+      const client = new McpClient(engramHome, `grantless-${suffix}`, {
         environmentAuthorityGrant,
-      );
+      });
       try {
         await client.initialize();
         return structuredError(
-          await client.call("work_propose", {
-            input: {
-              kind: "root",
-              title: "Grantless environment probe",
-              outcome: "No work is admitted without host authority",
-              acceptance: ["the mutation is refused"],
-              work_kind: "feature",
-              priority: 4,
-              labels: ["dogfood"],
-              idempotency_key: `grantless-${suffix}`,
-            },
-          }),
+          await client.call("add", { title: "Grantless environment probe" }),
           "work_invalid",
         );
       } finally {
@@ -593,6 +728,9 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     };
     const unsetError = await grantlessError(undefined, "unset");
     assert.match(unsetError.details.reason, /did not bind a work-authority grant/u);
+    assert.deepEqual(unsetError.reminders, [
+      "the host has not granted this session work authority",
+    ]);
     for (const [suffix, emptyGrant] of [
       ["empty", ""],
       ["whitespace", " \t "],
@@ -621,170 +759,133 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     });
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /ENGRAM_WORK_AUTHORITY_GRANT/u);
+    assert.match(help.stdout, /--legacy-tools/u);
     assert.equal(help.stdout.includes(helpSecret), false);
 
-    a = new McpClient(engramHome, "work-agent-a", undefined, grantA);
-    b = new McpClient(
-      engramHome,
-      "work-agent-b",
-      grantB,
-      malformedValue,
-    );
+    // `a` speaks only the eight words; `b` is a host that also opted into the
+    // legacy tools and passes its grant through argv over a malformed
+    // environment value.
+    a = new McpClient(engramHome, "work-agent-a", {
+      environmentAuthorityGrant: grantA,
+    });
+    b = new McpClient(engramHome, "work-agent-b", {
+      workAuthorityGrant: grantB,
+      environmentAuthorityGrant: malformedValue,
+      legacyTools: true,
+    });
     assert.equal(a.args.includes(grantA), false);
     assert.equal(b.args.includes(grantB), true);
     await Promise.all([a.initialize(), b.initialize()]);
+    const aTools = await a.toolNames();
+    assert.equal(aTools.has("work_focus"), false);
+    assert.equal(aTools.has("memory_note"), false);
 
-    const proposed = structured(
-      await a.call("work_propose", {
-        input: {
-          kind: "root",
-          title: "Dogfood local work",
-          outcome: "Two MCP sessions finish through an ambient handoff",
-          acceptance: ["recipient seals the validated result"],
-          work_kind: "feature",
-          priority: 1,
-          labels: ["dogfood"],
-          idempotency_key: "work-root",
-        },
+    const added = receipt(
+      await a.call("add", {
+        title: "Dogfood local work",
+        outcome: "Two MCP sessions finish through an ambient handoff",
+        acceptance: ["recipient seals the validated result"],
+        kind: "feature",
+        priority: 1,
+        labels: ["dogfood"],
       }),
     );
-    assert.equal(proposed.kind, "root");
-    const workRef = proposed.work.short_ref;
+    assert.equal(added.kind, "root");
+    const workRef = added.work.short_ref;
+    assert.ok(added.reminders.includes("unclaimed: claim it before you change anything"));
+    assert.ok(added.next.includes(`engram work claim ${workRef}`));
 
-    const next = structured(await a.call("work_next", { limit: 20 }));
-    assert.equal(next.session.focused_work_id, proposed.work.work_id);
+    const next = receipt(await a.call("next", { limit: 20 }));
+    assert.equal(next.session.focused_work_id, added.work.work_id);
     assert.ok(next.delivered_through > 0);
     assert.match(next.delivery_token, /^[0-9a-f-]{36}$/u);
     assert.equal(next.session.confirmed_project_cursor, 0);
     // The previous page counts as delivered once the session asks again; no
     // agent-side acknowledgement exists.
-    const following = structured(await a.call("work_next", { limit: 20 }));
+    const following = receipt(await a.call("next", { limit: 20 }));
     assert.equal(following.session.confirmed_project_cursor, next.delivered_through);
     assert.equal(following.delivered_through, next.delivered_through);
     assert.deepEqual(following.changes, []);
-    // A staged page never blocks a mutation, and a mutation without an
-    // idempotency key replays when repeated exactly.
-    const keylessRootInput = {
-      kind: "root",
-      title: "Keyless root",
-      outcome: "An identical call without a key replays instead of duplicating",
-      acceptance: ["one item exists after two identical calls"],
-    };
-    const keyless = structured(await a.call("work_propose", { input: keylessRootInput }));
+    // An identical keyless call replays instead of duplicating.
+    const keyless = receipt(await a.call("add", { title: "Keyless root" }));
     assert.equal(keyless.kind, "root");
-    const keylessReplay = structured(
-      await a.call("work_propose", { input: keylessRootInput }),
-    );
+    assert.equal(keyless.work.outcome, "Keyless root");
+    assert.deepEqual(keyless.work.acceptance, ["Keyless root is done"]);
+    const keylessReplay = receipt(await a.call("add", { title: "Keyless root" }));
     assert.equal(keylessReplay.work.work_id, keyless.work.work_id);
-    const keylessCatalog = structured(
-      await a.call("work_next", { limit: 20, sections: ["catalog"], search: "keyless root" }),
-    );
+    const keylessCatalog = receipt(await a.call("ls", { search: "keyless root" }));
     assert.equal(keylessCatalog.catalog.items.length, 1);
-    // Explicit host acknowledgement still validates the exact cursor and token
-    // without disclosing either.
-    const wrongCursor = structuredError(
-      await a.call("work_next", {
-        limit: 20,
-        acknowledge_through: 999,
-        acknowledge_token: "wrong-token",
-        sections: ["focus"],
-      }),
-      "work_invalid",
-    );
-    assert.equal(wrongCursor.details.reason.includes(next.delivery_token), false);
-    assert.equal(/\d/u.test(wrongCursor.details.reason), false);
     assert.ok(next.focus.allowed_next.includes("work_update:claim"));
 
     // work_ref selects the target in the same call: focus is still the keyless
     // root here, and the claim lands on the first root.
-    const claimed = structured(
-      await a.call("work_update", {
-        work_ref: workRef,
-        input: {
-          kind: "claim",
-          ttl_seconds: 300,
-          idempotency_key: "work-claim-a",
-        },
-      }),
+    const claimed = receipt(
+      await a.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
     );
-    assert.equal(claimed.receipt.work_id, proposed.work.work_id);
-    const replayedClaim = structured(
-      await a.call("work_update", {
-        input: {
-          kind: "claim",
-          ttl_seconds: 300,
-          idempotency_key: "work-claim-a",
-        },
-      }),
+    assert.equal(claimed.receipt.work_id, added.work.work_id);
+    assert.ok(claimed.receipt.control_binding, JSON.stringify(claimed));
+    assert.ok(
+      claimed.reminders.includes("you hold this item but have not noted progress yet"),
+      JSON.stringify(claimed.reminders),
+    );
+    assert.ok(claimed.next.includes(`engram work note ${workRef} "…"`));
+    assert.ok(claimed.next.includes(`engram work done ${workRef} "…"`));
+    const replayedClaim = receipt(
+      await a.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
     );
     assert.equal(replayedClaim.operation, "claim");
+    assert.equal(replayedClaim.receipt.work_id, added.work.work_id);
     assert.equal("focus" in replayedClaim, false);
     assert.ok(Array.isArray(replayedClaim.obligations));
     assert.ok(Array.isArray(replayedClaim.allowed_next));
-    structuredError(
-      await a.call("work_update", {
-        input: {
-          kind: "claim",
-          ttl_seconds: 301,
-          idempotency_key: "work-claim-a",
-        },
-      }),
-      "work_idempotency_conflict",
-    );
-    structured(
-      await a.call("work_update", {
-        input: {
-          kind: "block",
-          blocker_kind: "external_input",
-          detail: "Dogfood the agent-visible blocker identity",
-          idempotency_key: "work-block-a",
-        },
+    receipt(
+      await a.call("update", {
+        action: "blocked",
+        text: "Dogfood the agent-visible blocker identity",
       }),
     );
-    const blockedFocus = structured(
-      await a.call("work_focus", { work_ref: workRef }),
+    const blockedShow = receipt(await a.call("show", { work_ref: workRef }));
+    assert.equal(blockedShow.blockers.length, 1);
+    assert.ok(blockedShow.blockers[0].blocker_id.length > 0);
+    assert.ok(
+      blockedShow.reminders.includes("blocked: Dogfood the agent-visible blocker identity"),
+      JSON.stringify(blockedShow.reminders),
     );
-    assert.equal(blockedFocus.blockers.length, 1);
-    assert.ok(blockedFocus.blockers[0].blocker_id.length > 0);
-    structured(
-      await a.call("work_update", {
-        input: {
-          kind: "unblock",
-          idempotency_key: "work-unblock-a",
-        },
-      }),
-    );
+    assert.ok(blockedShow.next.includes(`engram work update ${workRef} --unblock`));
+    receipt(await a.call("update", { action: "unblock" }));
     assert.equal(
-      structured(await a.call("work_focus", { work_ref: workRef })).blockers
-        .length,
+      receipt(await a.call("show", { work_ref: workRef })).blockers.length,
       0,
     );
-    structured(await b.call("work_focus", { work_ref: workRef }));
+
+    // The legacy-enabled host session captures work-scoped memory; the
+    // eight-word session sees shared memory and never the private scratch.
+    receipt(await b.call("show", { work_ref: workRef }));
     structured(
-      await a.call("task_start", {
+      await b.call("task_start", {
         external_ref: "dummy:WORK-MIXED-7",
         title: "Dogfood explicit mixed-context routing",
       }),
     );
     structuredError(
-      await a.call("memory_note", {
+      await b.call("memory_note", {
         prose: "Decision: ambiguous mixed task and work capture must be refused.",
         idempotency_key: "work-ambiguous-memory",
       }),
       "invalid_argument",
     );
     const sharedWorkMemory = structured(
-      await a.call("memory_note", {
+      await b.call("memory_note", {
         prose: "Decision: the focused work uses one local identity for task tracking and shared execution memory.",
         idempotency_key: "work-shared-memory",
         target: "work",
       }),
     );
     assert.equal(sharedWorkMemory.scope.kind, "work");
-    assert.equal(sharedWorkMemory.scope.work, proposed.work.work_id);
+    assert.equal(sharedWorkMemory.scope.work, added.work.work_id);
     assert.ok(sharedWorkMemory.work_positions.length >= 2);
     const privateWorkMemory = structured(
-      await a.call("memory_note", {
+      await b.call("memory_note", {
         prose: "scratch: private focused implementation hypothesis",
         private: true,
         idempotency_key: "work-private-memory",
@@ -792,14 +893,10 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
     );
     assert.equal(privateWorkMemory.scope.kind, "agent");
-    assert.equal(privateWorkMemory.scope.work, proposed.work.work_id);
+    assert.equal(privateWorkMemory.scope.work, added.work.work_id);
     assert.deepEqual(privateWorkMemory.work_positions, []);
-    const shownPrivateWorkMemory = structured(
-      await a.call("memory_show", { hash: privateWorkMemory.version }),
-    );
-    assert.equal(shownPrivateWorkMemory.version.scope.work, proposed.work.work_id);
     const authorMemoryFocus = structured(
-      await a.call("work_focus", { work_ref: workRef }),
+      await b.call("work_focus", { work_ref: workRef }),
     );
     assert.ok(
       authorMemoryFocus.memories.some(
@@ -811,9 +908,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
         ({ version }) => version === privateWorkMemory.version,
       ),
     );
-    const peerMemoryFocus = structured(
-      await b.call("work_focus", { work_ref: workRef }),
-    );
+    const peerMemoryFocus = receipt(await a.call("show", { work_ref: workRef }));
     assert.ok(
       peerMemoryFocus.memories.some(
         ({ version }) => version === sharedWorkMemory.version,
@@ -825,9 +920,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       ),
       false,
     );
-    const peerWorkChanges = structured(
-      await b.call("work_next", { limit: 100 }),
-    ).changes;
+    const peerWorkChanges = receipt(await a.call("next", { limit: 100 })).changes;
     assert.ok(
       peerWorkChanges.some(
         ({ entry }) => entry.object_hash === sharedWorkMemory.version,
@@ -842,73 +935,50 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const shownWorkMemory = structured(
       await b.call("memory_show", { hash: sharedWorkMemory.version }),
     );
-    assert.equal(shownWorkMemory.version.scope.work, proposed.work.work_id);
+    assert.equal(shownWorkMemory.version.scope.work, added.work.work_id);
     assert.equal(shownWorkMemory.version.authority, "firm");
-    structuredError(
-      await b.call("memory_show", { hash: privateWorkMemory.version }),
-      "memory_access_denied",
-    );
+
     const held = structuredError(
-      await b.call("work_update", {
-        input: {
-          kind: "claim",
-          ttl_seconds: 300,
-          idempotency_key: "work-claim-b-held",
-        },
-      }),
+      await b.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
       "work_claim_held",
     );
     assert.equal(held.details.holder_session_id, "work-agent-a");
-    const evidence = structured(
-      await a.call("work_update", {
-        input: {
-          kind: "evidence",
-          summary: "MCP ambient lifecycle assertions passed",
-          refs: ["test:mcp-work-dogfood"],
-          idempotency_key: "work-evidence-a",
-        },
+    assert.match(held.reminders[0], /^held by another session until /u);
+    assert.deepEqual(held.next, [`engram work show ${workRef}`]);
+    const noted = receipt(
+      await a.call("note", {
+        text: "MCP ambient lifecycle assertions passed",
+        refs: ["test:mcp-work-dogfood"],
       }),
-    ).receipt.result;
-    assert.match(evidence, /^[0-9a-f]{64}$/u);
+    );
+    assert.equal(noted.operation, "note");
+    assert.match(noted.evidence.result, HASH);
+    assert.equal(
+      noted.reminders.includes("you hold this item but have not noted progress yet"),
+      false,
+    );
 
-    structured(
-      await a.call("work_handoff", {
-        input: {
-          kind: "offer",
-          to: "work-agent-b",
-          ttl_seconds: 240,
-          checkpoint_summary: "handoff after MCP evidence capture",
-          idempotency_key: "work-offer-b",
-        },
+    receipt(
+      await a.call("handoff", {
+        action: "offer",
+        to: "work-agent-b",
+        ttl_seconds: 240,
+        summary: "handoff after MCP evidence capture",
       }),
     );
-    const recipientFocus = structured(
-      await b.call("work_focus", { work_ref: workRef }),
-    );
+    const recipientFocus = receipt(await b.call("show", { work_ref: workRef }));
     assert.ok(recipientFocus.allowed_next.includes("work_handoff:accept"));
-    structured(
-      await b.call("work_handoff", {
-        input: { kind: "accept", idempotency_key: "work-accept-b" },
-      }),
-    );
-    structuredError(
-      await a.call("work_update", {
-        input: {
-          kind: "evidence",
-          summary: "must be rejected after handoff",
-          idempotency_key: "work-stale-a",
-        },
-      }),
+    assert.equal(recipientFocus.next[0], `engram work handoff ${workRef} --accept`);
+    const accepted = receipt(await b.call("handoff", { action: "accept" }));
+    assert.equal(accepted.operation, "accept");
+    const stale = structuredError(
+      await a.call("note", { text: "must be rejected after handoff" }),
       "work_claim_mismatch",
     );
-    structured(
-      await b.call("work_update", {
-        input: {
-          kind: "checkpoint",
-          summary: "recipient validated evidence and completion criterion",
-          evidence: [evidence],
-          idempotency_key: "work-checkpoint-b",
-        },
+    assert.deepEqual(stale.next, [`engram work claim ${workRef}`]);
+    receipt(
+      await b.call("note", {
+        text: "recipient validated evidence and completion criterion",
       }),
     );
     structuredError(
@@ -926,70 +996,42 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
       "invalid_argument",
     );
-    const seal = structured(
-      await b.call("work_complete", {
-        input: {
-          acceptance: [
-            {
-              satisfied: true,
-              note: "validated by the receiving MCP session",
-            },
-          ],
-          idempotency_key: "work-complete-b",
-        },
-      }),
+    const seal = receipt(
+      await b.call("done", { summary: "validated by the receiving MCP session" }),
     );
-    assert.equal(seal.work_id, proposed.work.work_id);
-    assert.match(seal.seal, /^[0-9a-f]{64}$/u);
-    const completed = structured(
-      await b.call("work_focus", { work_ref: workRef }),
-    );
+    assert.equal(seal.work_id, added.work.work_id);
+    assert.match(seal.seal, HASH);
+    assert.deepEqual(seal.reminders, []);
+    assert.ok(seal.next.includes("engram work next"));
+    const completed = receipt(await b.call("show", { work_ref: workRef }));
     assert.equal(completed.status.work.lifecycle, "completed");
     assert.ok(completed.history.items.length > 0);
-    const completedCatalog = structured(
-      await b.call("work_next", {
-        limit: 20,
-        search: "dogfood local work",
-        lifecycles: ["completed"],
-      }),
+    assert.equal(completed.reminders.length, 0);
+    const openOnly = receipt(await b.call("ls", { search: "dogfood local work" }));
+    assert.equal(openOnly.catalog.items.length, 0);
+    const completedCatalog = receipt(
+      await b.call("ls", { search: "dogfood local work", all: true }),
     );
     assert.equal(completedCatalog.catalog.items.length, 1);
-    assert.equal(completedCatalog.catalog.items[0].work.work_id, proposed.work.work_id);
+    assert.equal(completedCatalog.catalog.items[0].work.work_id, added.work.work_id);
     assert.equal(JSON.stringify(completedCatalog).includes(grantB), false);
-    const catalogOnly = structured(
-      await b.call("work_next", {
-        limit: 20,
-        acknowledge_through: completedCatalog.delivered_through,
-        acknowledge_token: completedCatalog.delivery_token,
-        sections: ["catalog"],
-        search: "dogfood local work",
-      }),
-    );
-    assert.equal("changes" in catalogOnly, false);
-    assert.equal("delivered_through" in catalogOnly, false);
-    assert.equal("focus" in catalogOnly, false);
-    assert.equal(catalogOnly.catalog.items.length, 1);
+    assert.equal("changes" in completedCatalog, false);
+    assert.equal("delivered_through" in completedCatalog, false);
+    const searched = receipt(await b.call("search", { query: "dogfood local work" }));
+    assert.equal(searched.catalog.items.length, 1);
 
-    const replacement = structured(
-      await b.call("work_propose", {
-        input: {
-          kind: "root",
-          title: "MCP replacement plan",
-          outcome: "A replacement remains visible in the local catalog",
-          acceptance: ["replacement is evaluated"],
-          idempotency_key: "work-replacement",
-        },
+    const replacement = receipt(
+      await b.call("add", {
+        title: "MCP replacement plan",
+        outcome: "A replacement remains visible in the local catalog",
+        acceptance: ["replacement is evaluated"],
       }),
     ).work;
-    const obsolete = structured(
-      await b.call("work_propose", {
-        input: {
-          kind: "root",
-          title: "MCP obsolete plan",
-          outcome: "The obsolete plan is not falsely completed",
-          acceptance: ["obsolete plan is disposed honestly"],
-          idempotency_key: "work-obsolete",
-        },
+    const obsolete = receipt(
+      await b.call("add", {
+        title: "MCP obsolete plan",
+        outcome: "The obsolete plan is not falsely completed",
+        acceptance: ["obsolete plan is disposed honestly"],
       }),
     ).work;
     const superseded = structured(
@@ -1004,94 +1046,88 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assert.equal(superseded.receipt.result.lifecycle, "superseded");
     assert.equal(superseded.receipt.result.superseded_by, replacement.work_id);
-    const supersededCatalog = structured(
-      await b.call("work_next", {
-        limit: 20,
-        search: "obsolete plan",
-        lifecycles: ["superseded"],
-      }),
+    const supersededCatalog = receipt(
+      await b.call("ls", { search: "obsolete plan", all: true }),
     );
     assert.equal(supersededCatalog.catalog.items.length, 1);
     assert.equal(supersededCatalog.catalog.items[0].work.work_id, obsolete.work_id);
-    structured(
-      await b.call("work_next", {
-        acknowledge_through: supersededCatalog.delivered_through,
-        acknowledge_token: supersededCatalog.delivery_token,
-        sections: ["catalog"],
-        search: "obsolete plan",
-        lifecycles: ["superseded"],
-      }),
-    );
 
-    const disposable = structured(
-      await b.call("work_propose", {
-        input: {
-          kind: "root",
-          title: "MCP disposable plan",
-          outcome: "Cancellation remains distinct from completion",
-          acceptance: ["cancellation is audited"],
-          idempotency_key: "work-disposable",
-        },
+    const disposable = receipt(
+      await b.call("add", {
+        title: "MCP disposable plan",
+        outcome: "Cancellation remains distinct from completion",
+        acceptance: ["cancellation is audited"],
       }),
     ).work;
-    const cancelled = structured(
-      await b.call("work_update", {
-        input: {
-          kind: "cancel",
-          reason: "the experiment is no longer needed",
-          idempotency_key: "work-cancel-disposable",
-        },
+    const cancelled = receipt(
+      await b.call("update", {
+        action: "cancel",
+        reason: "the experiment is no longer needed",
       }),
     );
     assert.equal(cancelled.receipt.result.lifecycle, "cancelled");
     assert.equal(cancelled.receipt.work_id, disposable.work_id);
+    assert.ok(cancelled.reminders.includes("this item was cancelled"));
 
-    const compact = structured(
-      await b.call("work_propose", {
-        input: {
-          kind: "root",
-          title: "MCP compact completion",
-          outcome: "A normal local task closes with one evidence-backed completion call",
-          acceptance: ["compact completion is sealed"],
-          idempotency_key: "work-compact-root",
-        },
+    const compact = receipt(
+      await b.call("add", {
+        title: "MCP compact completion",
+        outcome: "A normal local task closes with one evidence-backed completion call",
+        acceptance: ["compact completion is sealed"],
       }),
     ).work;
-    structured(
-      await b.call("work_update", {
-        input: {
-          kind: "claim",
-          idempotency_key: "work-compact-claim",
-        },
-      }),
-    );
-    const compactSeal = structured(
-      await b.call("work_complete", {
-        input: {
-          capture: {
-            summary: "validated compact completion through the MCP lifecycle",
-            refs: ["test:mcp-work-dogfood"],
-          },
-        },
+    receipt(await b.call("claim", { work_ref: compact.short_ref }));
+    const compactSeal = receipt(
+      await b.call("done", {
+        summary: "validated compact completion through the MCP lifecycle",
       }),
     );
     assert.equal(compactSeal.work_id, compact.work_id);
-    const compactSealReplay = structured(
-      await b.call("work_complete", {
-        input: {
-          capture: {
-            summary: "validated compact completion through the MCP lifecycle",
-            refs: ["test:mcp-work-dogfood"],
-          },
-        },
+    const compactSealReplay = receipt(
+      await b.call("done", {
+        summary: "validated compact completion through the MCP lifecycle",
       }),
     );
     assert.equal(compactSealReplay.seal, compactSeal.seal);
-    const compactFocus = structured(
-      await b.call("work_focus", { work_ref: compact.short_ref }),
-    );
+    const compactFocus = receipt(await b.call("show", { work_ref: compact.short_ref }));
     assert.equal(compactFocus.status.work.lifecycle, "completed");
     assert.equal(compactFocus.evidence.length, 1);
+
+    // `add` with `under` translates to a one-child decomposition; the core's
+    // admission rule still requires at least two children, so the tool
+    // returns that refusal with its stable code and words, never a workaround.
+    const singleChild = structuredError(
+      await a.call("add", { title: "Child step", under: keyless.work.short_ref }),
+      "work_invalid",
+    );
+    assert.match(singleChild.message, /from 2 through 64 children/u);
+    assert.ok(Array.isArray(singleChild.reminders));
+    assert.ok(Array.isArray(singleChild.next));
+    // Planning fields revise in one call, and deferral shows up as words.
+    const rootRef = keyless.work.short_ref;
+    const revised = receipt(
+      await a.call("update", {
+        work_ref: rootRef,
+        action: "revise",
+        title: "Keyless root (renamed)",
+        priority: 2,
+        defer: "2030-01-01",
+      }),
+    );
+    assert.equal(revised.operation, "revise");
+    assert.ok(revised.reminders.includes("deferred: its wake time has not arrived"));
+    const revisedShow = receipt(await a.call("show", { work_ref: rootRef }));
+    assert.equal(revisedShow.status.work.title, "Keyless root (renamed)");
+    assert.equal(revisedShow.status.work.priority, 2);
+    assert.equal(revisedShow.status.availability, "deferred");
+    structuredError(
+      await a.call("update", { work_ref: rootRef, action: "revise" }),
+      "work_invalid",
+    );
+    structuredError(
+      await a.call("update", { work_ref: rootRef, action: "revise", priority: 9 }),
+      "work_invalid",
+    );
   } finally {
     a?.close();
     b?.close();

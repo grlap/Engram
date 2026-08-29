@@ -17,7 +17,11 @@ freshness, and only then enable a replay-proven refusal set and action gates.
 This keeps false refusals and hook latency measurable before Engram can block
 work.
 
-Current milestone: the separate JSON-lines host service process-tests a
+Current milestone: agents use eight words — `next`, `ls`, `show`, `add`,
+`claim`, `update`, `note`, `done` — as flat CLI commands and MCP tools over
+the unchanged six-operation core; `add → claim → done` is measured at three
+commands and no JSON, hashes, fences, or keys, and every receipt ends with
+`reminders` and `next`. The separate JSON-lines host service process-tests a
 restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
 loop with transactional context and stale-grant refusal. It also process-tests
 exclusive resource acquisition/release, overlap fencing, denial of unleased

@@ -1,9 +1,10 @@
-//! Minimal Engram operator CLI for initializing and checking the local store.
+//! Engram CLI: host/operator administration plus the eight-word agent surface.
 
 use std::{
     env, fs,
     io::{self, BufReader, BufWriter, Read},
     path::{Path, PathBuf},
+    process::ExitCode,
     str::FromStr,
 };
 
@@ -11,14 +12,16 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use engram::domain::{AssuranceLevel, SCHEMA_VERSION};
 use engram::{
-    ActorContext, BuiltinObligationRuleRef, BuiltinObligationTrigger, ControlAssurance,
-    ControlPolicy, DevelopmentNoopRedactor, HostControlServer, LocalWorkService, McpServer,
+    ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
+    ClaimInput, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, DoneInput, HandoffAction,
+    HandoffInput, HostControlServer, LocalWorkService, LsInput, McpServer, NextInput, NoteInput,
     ObjectHash, ObligationRuleDefinition, ObligationRuleSet, ProjectId,
-    ProjectPolicyAuthorityDecision, SessionId, SqliteStore, VerificationKind,
-    VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
+    ProjectPolicyAuthorityDecision, SessionId, SqliteStore, UpdateAction, UpdateInput,
+    VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
     WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability, WorkCompleteInput,
-    WorkHandoffInput, WorkLifecycle, WorkNextQuery, WorkNextSection, WorkObligationId,
-    WorkPlanningBudget, WorkProposeInput, WorkUpdateInput, project_database_path,
+    WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
+    WorkObligationId, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput, looks_like_work_ref,
+    parse_defer_date, project_database_path,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -78,6 +81,10 @@ enum Command {
         /// processes. An explicit flag takes precedence over the environment.
         #[arg(long, env = "ENGRAM_WORK_AUTHORITY_GRANT", hide_env_values = true)]
         work_authority_grant: Option<String>,
+        /// Also register the legacy `task_*`, `memory_*`, `context_explain`,
+        /// and `work_*` tools beside the eight agent words.
+        #[arg(long)]
+        legacy_tools: bool,
     },
     /// Serve the host-private behavioral-control protocol as JSON Lines.
     Control {
@@ -91,7 +98,7 @@ enum Command {
         #[arg(long)]
         source_skill: Option<String>,
     },
-    /// Use the six-operation local work protocol from a shell.
+    /// Track work with eight words: next, ls, show, add, claim, update, note, done.
     Work {
         /// Actor identity asserted by the invoking host or operator wrapper.
         #[arg(long)]
@@ -105,6 +112,9 @@ enum Command {
         /// Host-selected immutable authority grant for mutations.
         #[arg(long)]
         authority_grant: Option<String>,
+        /// Print the exact structured receipt instead of text.
+        #[arg(long, global = true)]
+        json: bool,
         #[command(subcommand)]
         operation: WorkCommand,
     },
@@ -273,6 +283,169 @@ impl From<CliObligationRuleDefinition> for ObligationRuleDefinition {
 
 #[derive(Debug, Subcommand)]
 enum WorkCommand {
+    /// What is ready, what you hold, and what changed since your last call.
+    Next {
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// List open work.
+    Ls {
+        /// Case-insensitive text over refs, titles, outcomes, and labels.
+        #[arg(long)]
+        search: Option<String>,
+        /// Only items with an active blocker or incomplete prerequisite.
+        #[arg(long)]
+        blocked: bool,
+        /// Only items assigned to you or held by this session.
+        #[arg(long)]
+        mine: bool,
+        /// Include completed, cancelled, and superseded items.
+        #[arg(long)]
+        all: bool,
+        /// Exact case-insensitive label.
+        #[arg(long)]
+        label: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// One item: outcome, acceptance, holder, blockers, reminders.
+    Show {
+        /// Short work ref or full UUID; later words default to it.
+        work_ref: String,
+    },
+    /// Create work from a title; outcome and acceptance criteria are welcome.
+    Add {
+        title: String,
+        /// Defaults to the title.
+        #[arg(long)]
+        outcome: Option<String>,
+        /// Acceptance criterion `done` is checked against; repeatable.
+        /// Defaults to one criterion "<title> is done".
+        #[arg(long = "accept", value_name = "CRITERION")]
+        acceptance: Vec<String>,
+        /// Add as a required child of this item instead of a root.
+        #[arg(long, value_name = "REF")]
+        under: Option<String>,
+        /// 0 (highest) through 4.
+        #[arg(long)]
+        priority: Option<i32>,
+        /// Label; repeatable.
+        #[arg(long = "label", value_name = "LABEL")]
+        labels: Vec<String>,
+        #[arg(long)]
+        assignee: Option<String>,
+        #[arg(long, value_enum)]
+        kind: Option<WorkKindArg>,
+    },
+    /// Hold an item before changing anything; later words default to it.
+    Claim {
+        work_ref: String,
+        /// Claim lifetime in seconds (default one hour).
+        #[arg(long, value_name = "SECONDS")]
+        ttl: Option<i64>,
+        /// Attributed reason for recovering a lapsed prior claim.
+        #[arg(long, value_name = "REASON")]
+        recover: Option<String>,
+    },
+    /// Exactly one action: --release, --blocked, --unblock, --cancel, or field changes.
+    Update {
+        /// Item to act on; defaults to the focus.
+        work_ref: Option<String>,
+        /// Release your claim.
+        #[arg(long)]
+        release: bool,
+        /// Reason recorded with --release.
+        #[arg(long, requires = "release")]
+        reason: Option<String>,
+        /// Mark the item blocked and say why.
+        #[arg(long, value_name = "WHY")]
+        blocked: Option<String>,
+        /// Clear the item's single active blocker.
+        #[arg(long)]
+        unblock: bool,
+        #[arg(long)]
+        assignee: Option<String>,
+        /// 0 (highest) through 4.
+        #[arg(long)]
+        priority: Option<i32>,
+        /// Defer until DATE (RFC 3339, YYYY-MM-DD, or YYYY-MM-DDTHH:MM:SS UTC).
+        #[arg(long, value_name = "DATE")]
+        defer: Option<String>,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        outcome: Option<String>,
+        /// Cancel the item and say why.
+        #[arg(long, value_name = "REASON")]
+        cancel: Option<String>,
+    },
+    /// Record one finding, decision, or evidence pointer on the item you hold.
+    Note {
+        /// An optional item ref, then the note text.
+        #[arg(required = true, num_args = 1..=2, value_name = "[REF] TEXT")]
+        args: Vec<String>,
+        /// Evidence pointer such as a path or URL; repeatable.
+        #[arg(long = "ref", value_name = "PATH_OR_URL")]
+        refs: Vec<String>,
+    },
+    /// Complete the item you hold.
+    Done {
+        /// An optional item ref and what was delivered.
+        #[arg(num_args = 0..=2, value_name = "[REF] [SUMMARY]")]
+        args: Vec<String>,
+        /// Acceptance note recorded against every criterion.
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Offer the item you hold to another session, accept an offer, or cancel yours.
+    Handoff {
+        /// Item to hand off; defaults to the focus.
+        work_ref: Option<String>,
+        /// Session that receives the item.
+        #[arg(long, value_name = "ACTOR")]
+        to: Option<String>,
+        /// Checkpoint summary recorded with the offer.
+        #[arg(long, requires = "to")]
+        summary: Option<String>,
+        /// Accept the offer made to this session.
+        #[arg(long, conflicts_with_all = ["to", "cancel"])]
+        accept: bool,
+        /// Cancel your outstanding offer and say why.
+        #[arg(long, value_name = "REASON", conflicts_with = "to")]
+        cancel: Option<String>,
+    },
+    /// Six-operation JSON protocol retained for hosts and operators.
+    Legacy {
+        #[command(subcommand)]
+        operation: LegacyWorkCommand,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum WorkKindArg {
+    Task,
+    Bug,
+    Feature,
+    Epic,
+    Chore,
+    Research,
+}
+
+impl From<WorkKindArg> for WorkItemKind {
+    fn from(value: WorkKindArg) -> Self {
+        match value {
+            WorkKindArg::Task => Self::Task,
+            WorkKindArg::Bug => Self::Bug,
+            WorkKindArg::Feature => Self::Feature,
+            WorkKindArg::Epic => Self::Epic,
+            WorkKindArg::Chore => Self::Chore,
+            WorkKindArg::Research => Self::Research,
+        }
+    }
+}
+
+#[derive(Debug, Subcommand)]
+enum LegacyWorkCommand {
     /// Return ambient focus, ready candidates, and new project-feed entries.
     Next {
         #[arg(long, default_value_t = 20)]
@@ -415,7 +588,7 @@ enum AuthorityCommand {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     let cli = Cli::parse();
     let (project_id, database) = resolve_project(&cli.project_file, cli.home)?;
     match cli.command {
@@ -428,50 +601,73 @@ async fn main() -> Result<()> {
             required_assurance.map(Into::into),
             authorized_by,
             reason,
-        ),
-        Command::Doctor => doctor(&database),
+        )?,
+        Command::Doctor => doctor(&database)?,
         Command::Mcp {
             actor_id,
             session_id,
             source_skill,
             work_authority_grant,
+            legacy_tools,
         } => {
             let grant = parse_optional_hash(work_authority_grant)?;
             serve_mcp(
-                database,
-                project_id,
-                actor_id,
-                session_id,
-                source_skill,
-                grant,
+                McpServer::new(
+                    database,
+                    project_id,
+                    actor_id,
+                    SessionId(session_id),
+                    source_skill,
+                )
+                .with_work_authority_grant(grant)
+                .with_legacy_tools(legacy_tools),
             )
-            .await
+            .await?;
         }
         Command::Control {
             actor_id,
             session_id,
             source_skill,
-        } => serve_control(database, project_id, actor_id, session_id, source_skill),
+        } => serve_control(database, project_id, actor_id, session_id, source_skill)?,
         Command::Work {
             actor_id,
             session_id,
             source_skill,
             authority_grant,
+            json,
             operation,
-        } => run_work(
-            database,
-            project_id,
-            actor_id,
-            session_id,
-            source_skill,
-            parse_optional_hash(authority_grant)?,
-            operation,
-        ),
-        Command::Authority { operation } => run_authority(&database, project_id, operation),
+        } => {
+            let context = WorkContext {
+                database,
+                project_id,
+                actor_id,
+                session_id: SessionId(session_id),
+                source_skill,
+                authority_grant: parse_optional_hash(authority_grant)?,
+            };
+            return match operation {
+                WorkCommand::Legacy { operation } => {
+                    run_legacy_work(context, operation).map(|()| ExitCode::SUCCESS)
+                }
+                operation => run_work(context, json, operation),
+            };
+        }
+        Command::Authority { operation } => run_authority(&database, project_id, operation)?,
         Command::ControlPolicy { operation } => {
-            run_control_policy(&database, project_id, operation)
+            run_control_policy(&database, project_id, operation)?;
         }
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Host-fixed identity and authority for one shell work invocation.
+struct WorkContext {
+    database: PathBuf,
+    project_id: ProjectId,
+    actor_id: String,
+    session_id: SessionId,
+    source_skill: Option<String>,
+    authority_grant: Option<ObjectHash>,
 }
 
 fn run_control_policy(
@@ -734,26 +930,248 @@ fn run_authority(
     Ok(())
 }
 
-fn run_work(
-    database: PathBuf,
-    project_id: ProjectId,
-    actor_id: String,
-    session_id: String,
-    source_skill: Option<String>,
-    authority_grant: Option<ObjectHash>,
-    operation: WorkCommand,
-) -> Result<()> {
+#[allow(
+    clippy::too_many_lines,
+    reason = "each word's flag translation stays beside the others so the eight-word surface is reviewable in one place"
+)]
+fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
+    let verbs = AgentVerbs::new(
+        context.database,
+        context.project_id,
+        context.actor_id,
+        context.session_id,
+        context.source_skill,
+        context.authority_grant,
+    );
+    let now = chrono::Utc::now();
+    let outcome = match operation {
+        WorkCommand::Next { limit } => verbs.next(&NextInput { limit: Some(limit) }, now),
+        WorkCommand::Ls {
+            search,
+            blocked,
+            mine,
+            all,
+            label,
+            limit,
+        } => verbs.ls(
+            &LsInput {
+                search,
+                blocked,
+                mine,
+                all,
+                label,
+                limit: Some(limit),
+            },
+            now,
+        ),
+        WorkCommand::Show { work_ref } => verbs.show(&work_ref, now),
+        WorkCommand::Add {
+            title,
+            outcome,
+            acceptance,
+            under,
+            priority,
+            labels,
+            assignee,
+            kind,
+        } => verbs.add(
+            AddInput {
+                title,
+                outcome,
+                acceptance,
+                under,
+                priority,
+                labels,
+                assignee,
+                kind: kind.map(Into::into),
+            },
+            now,
+        ),
+        WorkCommand::Claim {
+            work_ref,
+            ttl,
+            recover,
+        } => verbs.claim(
+            ClaimInput {
+                work_ref,
+                ttl_seconds: ttl,
+                recover,
+            },
+            now,
+        ),
+        WorkCommand::Update {
+            work_ref,
+            release,
+            reason,
+            blocked,
+            unblock,
+            assignee,
+            priority,
+            defer,
+            title,
+            outcome,
+            cancel,
+        } => {
+            let revise = assignee.is_some()
+                || priority.is_some()
+                || defer.is_some()
+                || title.is_some()
+                || outcome.is_some();
+            let selected = usize::from(release)
+                + usize::from(blocked.is_some())
+                + usize::from(unblock)
+                + usize::from(cancel.is_some())
+                + usize::from(revise);
+            if selected != 1 {
+                bail!(
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, or field changes (--title, --outcome, --assignee, --priority, --defer)"
+                );
+            }
+            let action = if release {
+                UpdateAction::Release { reason }
+            } else if let Some(detail) = blocked {
+                UpdateAction::Blocked { detail }
+            } else if unblock {
+                UpdateAction::Unblock
+            } else if let Some(reason) = cancel {
+                UpdateAction::Cancel { reason }
+            } else {
+                let defer = defer
+                    .as_deref()
+                    .map(parse_defer_date)
+                    .transpose()
+                    .map_err(|message| anyhow::anyhow!("invalid --defer: {message}"))?;
+                UpdateAction::Revise {
+                    title,
+                    outcome,
+                    assignee,
+                    priority,
+                    defer,
+                }
+            };
+            verbs.update(UpdateInput { work_ref, action }, now)
+        }
+        WorkCommand::Note { mut args, refs } => {
+            let (work_ref, text) = if args.len() >= 2 {
+                let text = args.remove(1);
+                (Some(args.remove(0)), text)
+            } else {
+                let text = args.pop().unwrap_or_default();
+                if looks_like_work_ref(&text) {
+                    bail!("note needs text after the item ref");
+                }
+                (None, text)
+            };
+            verbs.note(
+                &NoteInput {
+                    work_ref,
+                    text,
+                    refs,
+                },
+                now,
+            )
+        }
+        WorkCommand::Done { mut args, note } => {
+            let (work_ref, summary) = match args.len() {
+                0 => (None, None),
+                1 => {
+                    let value = args.remove(0);
+                    if looks_like_work_ref(&value) {
+                        (Some(value), None)
+                    } else {
+                        (None, Some(value))
+                    }
+                }
+                _ => {
+                    let summary = args.remove(1);
+                    (Some(args.remove(0)), Some(summary))
+                }
+            };
+            verbs.done(
+                DoneInput {
+                    work_ref,
+                    summary,
+                    note,
+                },
+                now,
+            )
+        }
+        WorkCommand::Handoff {
+            work_ref,
+            to,
+            summary,
+            accept,
+            cancel,
+        } => {
+            let action = match (to, accept, cancel) {
+                (Some(to), false, None) => HandoffAction::Offer {
+                    to,
+                    summary,
+                    ttl_seconds: None,
+                },
+                (None, true, None) => HandoffAction::Accept,
+                (None, false, Some(reason)) => HandoffAction::Cancel { reason },
+                _ => bail!("handoff needs exactly one of --to ACTOR, --accept, or --cancel REASON"),
+            };
+            verbs.handoff(HandoffInput { work_ref, action }, now)
+        }
+        WorkCommand::Legacy { .. } => bail!("legacy operations are dispatched separately"),
+    };
+    match outcome {
+        Ok(receipt) => {
+            if json {
+                println!("{}", serde_json::to_string_pretty(&receipt.value)?);
+            } else {
+                println!("{}", receipt.text());
+            }
+            Ok(if receipt.owed {
+                ExitCode::from(2)
+            } else {
+                ExitCode::SUCCESS
+            })
+        }
+        Err(error) => {
+            let guidance = error.guidance();
+            if json {
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "error": {
+                            "message": error.to_string(),
+                            "reminders": guidance.reminders,
+                            "next": guidance.next,
+                        }
+                    }))?
+                );
+            } else {
+                eprintln!("error: {error}");
+                for reminder in &guidance.reminders {
+                    eprintln!("  - {reminder}");
+                }
+                if !guidance.next.is_empty() {
+                    eprintln!("next:");
+                    for command in &guidance.next {
+                        eprintln!("  {command}");
+                    }
+                }
+            }
+            Ok(ExitCode::FAILURE)
+        }
+    }
+}
+
+fn run_legacy_work(context: WorkContext, operation: LegacyWorkCommand) -> Result<()> {
     let service = LocalWorkService::new(
-        database,
-        project_id,
-        actor_id,
-        SessionId(session_id),
-        source_skill,
-        authority_grant,
+        context.database,
+        context.project_id,
+        context.actor_id,
+        context.session_id,
+        context.source_skill,
+        context.authority_grant,
     );
     let now = chrono::Utc::now();
     let value = match operation {
-        WorkCommand::Next {
+        LegacyWorkCommand::Next {
             limit,
             acknowledge_through,
             acknowledge_token,
@@ -784,29 +1202,31 @@ fn run_work(
             },
             now,
         )?)?,
-        WorkCommand::Focus { work_ref } => {
+        LegacyWorkCommand::Focus { work_ref } => {
             serde_json::to_value(service.work_focus(&work_ref, now)?)?
         }
-        WorkCommand::Propose { work_ref, input } => {
+        LegacyWorkCommand::Propose { work_ref, input } => {
             serde_json::to_value(service.work_propose_on(
                 work_ref.as_deref(),
                 parse_json_input::<WorkProposeInput>(&input)?,
                 now,
             )?)?
         }
-        WorkCommand::Update { work_ref, input } => serde_json::to_value(service.work_update_on(
-            work_ref.as_deref(),
-            parse_json_input::<WorkUpdateInput>(&input)?,
-            now,
-        )?)?,
-        WorkCommand::Complete { work_ref, input } => {
+        LegacyWorkCommand::Update { work_ref, input } => {
+            serde_json::to_value(service.work_update_on(
+                work_ref.as_deref(),
+                parse_json_input::<WorkUpdateInput>(&input)?,
+                now,
+            )?)?
+        }
+        LegacyWorkCommand::Complete { work_ref, input } => {
             serde_json::to_value(service.work_complete_on(
                 work_ref.as_deref(),
                 parse_json_input::<WorkCompleteInput>(&input)?,
                 now,
             )?)?
         }
-        WorkCommand::Handoff { work_ref, input } => {
+        LegacyWorkCommand::Handoff { work_ref, input } => {
             serde_json::to_value(service.work_handoff_on(
                 work_ref.as_deref(),
                 parse_json_input::<WorkHandoffInput>(&input)?,
@@ -1039,25 +1459,11 @@ fn doctor(database: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn serve_mcp(
-    database: PathBuf,
-    project_id: ProjectId,
-    actor_id: String,
-    session_id: String,
-    source_skill: Option<String>,
-    work_authority_grant: Option<ObjectHash>,
-) -> Result<()> {
-    let server = McpServer::new(
-        database,
-        project_id,
-        actor_id,
-        SessionId(session_id),
-        source_skill,
-    )
-    .with_work_authority_grant(work_authority_grant)
-    .serve(stdio())
-    .await
-    .context("failed to start Engram MCP stdio server")?;
+async fn serve_mcp(server: McpServer) -> Result<()> {
+    let server = server
+        .serve(stdio())
+        .await
+        .context("failed to start Engram MCP stdio server")?;
     server
         .waiting()
         .await

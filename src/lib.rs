@@ -13,6 +13,7 @@ pub mod memory;
 pub mod project;
 pub mod storage;
 pub mod tracker;
+pub mod verbs;
 pub mod work_service;
 
 pub use canonical::{CanonicalObject, ObjectHash};
@@ -78,6 +79,11 @@ pub use storage::{
     ObligationRuleSetUpdateReceipt, SqliteStore, TaskChange,
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
+pub use verbs::{
+    AddInput, AgentVerbs, ClaimInput, DoneInput, Guidance, HandoffAction, HandoffInput, LsInput,
+    NextInput, NoteInput, Receipt, UpdateAction, UpdateInput, VerbError, looks_like_work_ref,
+    parse_defer_date,
+};
 pub use work_service::{
     LocalWorkService, WorkAcceptanceInput, WorkChange, WorkChangeOmission,
     WorkChangeOmissionReason, WorkChangeProjection, WorkChildInput, WorkCompleteInput,
