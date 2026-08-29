@@ -11,7 +11,12 @@ const root = resolve(import.meta.dirname, "..");
 const binary = join(root, "target", "debug", "engram");
 
 class McpClient {
-  constructor(engramHome, sessionId, workAuthorityGrant) {
+  constructor(
+    engramHome,
+    sessionId,
+    workAuthorityGrant,
+    environmentAuthorityGrant,
+  ) {
     this.nextId = 1;
     this.pending = new Map();
     this.stderr = "";
@@ -30,10 +35,16 @@ class McpClient {
     if (workAuthorityGrant) {
       args.push("--work-authority-grant", workAuthorityGrant);
     }
+    const environment = { ...process.env };
+    delete environment.ENGRAM_WORK_AUTHORITY_GRANT;
+    if (environmentAuthorityGrant !== undefined) {
+      environment.ENGRAM_WORK_AUTHORITY_GRANT = environmentAuthorityGrant;
+    }
+    this.args = [...args];
     this.child = spawn(
       binary,
       args,
-      { cwd: root, stdio: ["pipe", "pipe", "pipe"] },
+      { cwd: root, env: environment, stdio: ["pipe", "pipe", "pipe"] },
     );
     this.child.stderr.on("data", (chunk) => {
       this.stderr += chunk.toString("utf8");
@@ -543,8 +554,84 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const grantA = installWorkGrant(engramHome, "work-agent-a");
     const grantB = installWorkGrant(engramHome, "work-agent-b");
 
-    a = new McpClient(engramHome, "work-agent-a", grantA);
-    b = new McpClient(engramHome, "work-agent-b", grantB);
+    const mcpArgs = (sessionId) => [
+      "--home",
+      engramHome,
+      "mcp",
+      "--actor-id",
+      sessionId,
+      "--session-id",
+      sessionId,
+    ];
+    const grantlessError = async (environmentAuthorityGrant, suffix) => {
+      const client = new McpClient(
+        engramHome,
+        `grantless-${suffix}`,
+        undefined,
+        environmentAuthorityGrant,
+      );
+      try {
+        await client.initialize();
+        return structuredError(
+          await client.call("work_propose", {
+            input: {
+              kind: "root",
+              title: "Grantless environment probe",
+              outcome: "No work is admitted without host authority",
+              acceptance: ["the mutation is refused"],
+              work_kind: "feature",
+              priority: 4,
+              labels: ["dogfood"],
+              idempotency_key: `grantless-${suffix}`,
+            },
+          }),
+          "work_invalid",
+        );
+      } finally {
+        client.close();
+      }
+    };
+    const unsetError = await grantlessError(undefined, "unset");
+    assert.match(unsetError.details.reason, /did not bind a work-authority grant/u);
+    for (const [suffix, emptyGrant] of [
+      ["empty", ""],
+      ["whitespace", " \t "],
+    ]) {
+      const emptyError = await grantlessError(emptyGrant, suffix);
+      assert.deepEqual(emptyError, unsetError);
+    }
+    const malformedValue = "not-a-work-authority-secret";
+    const malformed = spawnSync(binary, mcpArgs("malformed-env"), {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ENGRAM_WORK_AUTHORITY_GRANT: malformedValue,
+      },
+      input: "",
+    });
+    assert.notEqual(malformed.status, 0);
+    assert.match(malformed.stderr, /invalid work-authority grant/u);
+    assert.equal(malformed.stderr.includes(malformedValue), false);
+    const helpSecret = "secret-help-value-that-must-not-appear";
+    const help = spawnSync(binary, ["mcp", "--help"], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, ENGRAM_WORK_AUTHORITY_GRANT: helpSecret },
+    });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /ENGRAM_WORK_AUTHORITY_GRANT/u);
+    assert.equal(help.stdout.includes(helpSecret), false);
+
+    a = new McpClient(engramHome, "work-agent-a", undefined, grantA);
+    b = new McpClient(
+      engramHome,
+      "work-agent-b",
+      grantB,
+      malformedValue,
+    );
+    assert.equal(a.args.includes(grantA), false);
+    assert.equal(b.args.includes(grantB), true);
     await Promise.all([a.initialize(), b.initialize()]);
 
     const proposed = structured(

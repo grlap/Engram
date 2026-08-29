@@ -71,7 +71,10 @@ enum Command {
         #[arg(long)]
         source_skill: Option<String>,
         /// Host-selected immutable authority grant for work mutations.
-        #[arg(long)]
+        ///
+        /// Prefer the environment source when argv may be observable to peer
+        /// processes. An explicit flag takes precedence over the environment.
+        #[arg(long, env = "ENGRAM_WORK_AUTHORITY_GRANT", hide_env_values = true)]
         work_authority_grant: Option<String>,
     },
     /// Serve the host-private behavioral-control protocol as JSON Lines.
@@ -668,12 +671,16 @@ fn run_work(
 }
 
 fn parse_optional_hash(value: Option<String>) -> Result<Option<ObjectHash>> {
-    value
-        .map(|value| {
-            ObjectHash::from_str(&value)
-                .map_err(|message| anyhow::anyhow!("invalid work-authority grant: {message}"))
-        })
-        .transpose()
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    ObjectHash::from_str(value)
+        .map(Some)
+        .map_err(|message| anyhow::anyhow!("invalid work-authority grant: {message}"))
 }
 
 fn parse_enum_values<T>(values: &[String], field: &str) -> Result<Vec<T>>

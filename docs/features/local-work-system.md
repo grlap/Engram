@@ -482,8 +482,12 @@ from that immutable basis.
 The operator-only `engram authority grant|revoke` commands are the current
 host boundary for local use. They are deliberately absent from agent-facing
 MCP. `engram mcp --work-authority-grant <hash>` fixes the grant for one MCP
-process; `engram work --authority-grant <hash> ...` does the same for a shell
-operation. Grant text remains asserted context in this slice, not
+process; a host that must keep the hash out of the observable argument list may
+instead set `ENGRAM_WORK_AUTHORITY_GRANT`. The explicit flag wins, while an
+unset, empty, or whitespace-only variable preserves grant-less MCP startup and
+a malformed nonempty value fails closed. Hosts must not log either source.
+`engram work --authority-grant <hash> ...` does the same for a shell operation.
+Grant text remains asserted context in this slice, not
 authenticated identity. The Host Enforcement SDK replaces manual process
 binding and couples the work envelope to turn/action authority in the next
 slice.

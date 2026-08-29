@@ -55,6 +55,14 @@ engram mcp --actor-id codex --session-id session-unique-id \
   --work-authority-grant "$GRANT"
 ```
 
+For a long-lived MCP process, the host may set
+`ENGRAM_WORK_AUTHORITY_GRANT` instead of placing the host-bound grant hash in
+the process argument list. An explicit `--work-authority-grant` takes
+precedence. An unset, empty, or whitespace-only variable starts the same
+grant-less MCP service as today; a nonempty malformed value fails startup and
+never falls back silently. The value must not be logged or copied into MCP
+traffic, agent-visible receipts, or configuration committed to the repository.
+
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and
 session on the host. `doctor` verifies every canonical object plus
@@ -542,16 +550,20 @@ Build an executable and configure one stdio MCP process per agent session:
         "--session-id",
         "replace-with-this-runtime-session-id",
         "--source-skill",
-        "engram-repo",
-        "--work-authority-grant",
-        "replace-with-host-installed-grant-hash"
-      ]
+        "engram-repo"
+      ],
+      "env": {
+        "ENGRAM_WORK_AUTHORITY_GRANT": "replace-with-host-installed-grant-hash"
+      }
     }
   }
 }
 ```
 
-The proprietary runtime supplies actor/session/tool/skill instruction context.
+The proprietary runtime supplies actor/session/tool/skill instruction context
+and injects the host-bound grant as process-local environment rather than
+placing it in argv. The same precedence and malformed-value rules described
+above apply.
 V1 records it with `asserted` assurance; configuration text is not
 authentication. Distinct concurrent sessions need distinct `--session-id`
 values. The database is shared; the MCP processes are not.
