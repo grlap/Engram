@@ -17,9 +17,9 @@ freshness, and only then enable a replay-proven refusal set and action gates.
 This keeps false refusals and hook latency measurable before Engram can block
 work.
 
-Current milestone: agents use eight words — `next`, `ls`, `show`, `add`,
-`claim`, `update`, `note`, `done` — as flat CLI commands and MCP tools over
-the unchanged six-operation core; `add → claim → done` is measured at three
+Current milestone: agents use nine words — `next`, `ls`, `show`, `add`,
+`claim`, `update`, `note`, `done`, `handoff` — as flat CLI commands and MCP
+tools over the unchanged six-operation core; `add → claim → done` is measured at three
 commands and no JSON, hashes, fences, or keys, and every receipt ends with
 `reminders` and `next`. The separate JSON-lines host service process-tests a
 restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
@@ -51,8 +51,8 @@ on the V1 path below.
   packet hash + explain, typed source-feed vectors plus independent
   per-session delivery positions, peer deltas, and review counts —
   [context packets](features/context-packets.md)
-- `engram note` / `memory_note`: prose-first capture with inspectable inferred
-  defaults; one write feeds peer and report views
+- `engram work note` / MCP `note`: one work finding feeds peer, handoff,
+  evidence, and report views
 - Write policy matrix, proposal/approval, review queue,
   supersede/contradict/contested, tombstones —
   [write policy & review](features/write-policy-and-review.md)
@@ -67,7 +67,8 @@ on the V1 path below.
   [CLI & MCP](features/cli-and-mcp.md)
 - Deterministic recovery snapshot/restore, round-trip Beads migration,
   referential/projection integrity, fixture-level retrieval checks, and
-  `doctor` / `rebuild-index`. External durability is optional; V1 adds
+  `doctor` / explicit `doctor --repair-projections`. External durability is
+  optional; V1 adds
   sequential `portable` push/handoff/restore with remote-head CAS, scheduled
   cadence, visible lag/degradation, writer-epoch validation at startup/resume,
   exact-base restore, divergence refusal, complete shared-state projection with

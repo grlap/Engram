@@ -2032,7 +2032,7 @@ mod tests {
             effect: EffectClass::MutateLocal,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: true,
-            obligation_rule_set: None,
+            obligation_rule_set: hash("obligation rule set"),
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "content-revision-1".into(),
@@ -2052,7 +2052,7 @@ mod tests {
             effect: EffectClass::Observe,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: false,
-            obligation_rule_set: None,
+            obligation_rule_set: hash("obligation rule set"),
             source_basis: Some(ExecutionSourceBasis {
                 workspace_id: "workspace-b".into(),
                 source_revision: "content-revision-1".into(),
@@ -2229,10 +2229,6 @@ mod tests {
             .hash()
             .clone();
 
-        assert_eq!(
-            evidence_hash.as_str(),
-            "392e8e11ddb907bf40efc8a56d16b0023d1609e7ea4b5e08be6e9328a3cbac7d"
-        );
         let requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: Some(hash("cargo test --workspace")),

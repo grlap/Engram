@@ -49,16 +49,24 @@ sync with the data.
 
 Control decisions and transitions also use immutable intent fingerprints and
 receipts, while current sessions, grants, leases, and action state remain
-rebuildable projections. A database with no control-plane table family or
-canonical policy objects is treated as a pre-control migration and receives
-the stock policy atomically; partial/missing or corrupt established control
-storage and unknown safety-relevant policy/event schemas fail closed for every
-shipped store-open surface. The current `doctor` command therefore cannot
-inspect an otherwise unopenable
-control-policy chain; a separately constrained diagnostics-only recovery mode
-is tracked but not shipped. Clean service unavailability may allow only
+durable operational projections. A new database receives the built-in policy
+atomically; partial, missing, different-build, or corrupt control storage and
+unknown safety-relevant policy/event schemas fail closed for every
+ordinary store-open surface. `engram doctor --recover-policy` is the one
+separately constrained exception: it opens the existing database read-only,
+verifies the active selector plus every reachable policy, authority, and rule
+set, and names invalid bindings with restore/inspection guidance. It returns
+only a report, never a usable store handle; it cannot run MCP, control, work,
+grants, schema initialization, or repair, and never selects or rewrites a
+policy. Clean service unavailability may allow only
 policy-designated reversible local work with durably spooled reconciliation
 debt; shared, external, and lifecycle effects remain closed.
+
+Ordinary open also refuses missing or malformed rebuildable indexes, triggers,
+or FTS tables without DDL. Only the explicit
+`engram doctor --repair-projections` operator path may recreate those declared
+objects and repopulate FTS, after full durable-definition and policy preflight;
+it never repairs canonical, authority, ordering, or idempotency state.
 
 The active immutable policy also selects a canonical obligation-rule-set hash.
 Checkpointing resolves that selection from the begun grant's frozen policy

@@ -22,42 +22,11 @@ const AGENT_TOOLS = [
   "search",
   "handoff",
 ];
-const LEGACY_TOOLS = [
-  "task_start",
-  "task_join",
-  "memory_note",
-  "memory_contradict",
-  "memory_context",
-  "memory_delta",
-  "memory_search",
-  "memory_show",
-  "context_explain",
-  "task_claim",
-  "work_next",
-  "work_focus",
-  "work_propose",
-  "work_update",
-  "work_complete",
-  "work_handoff",
-];
-const CONTROL_TOOLS = [
-  "session_bind",
-  "session_status",
-  "lease_acquire",
-  "lease_release",
-  "turn_evaluate",
-  "turn_begin",
-  "turn_checkpoint",
-];
 const HASH = /\b[0-9a-f]{64}\b/u;
 
 class McpClient {
   constructor(engramHome, sessionId, options = {}) {
-    const {
-      workAuthorityGrant,
-      environmentAuthorityGrant,
-      legacyTools = false,
-    } = options;
+    const { workAuthorityGrant, environmentAuthorityGrant } = options;
     this.nextId = 1;
     this.pending = new Map();
     this.stderr = "";
@@ -75,9 +44,6 @@ class McpClient {
     ];
     if (workAuthorityGrant) {
       args.push("--work-authority-grant", workAuthorityGrant);
-    }
-    if (legacyTools) {
-      args.push("--legacy-tools");
     }
     const environment = { ...process.env };
     delete environment.ENGRAM_WORK_AUTHORITY_GRANT;
@@ -156,17 +122,23 @@ class McpClient {
   }
 
   async initialize() {
-    await this.request("initialize", {
+    const initialized = await this.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
       clientInfo: { name: "engram-dogfood", version: "1" },
     });
+    this.instructions = initialized.instructions;
     this.notify("notifications/initialized");
+    return initialized;
   }
 
   async toolNames() {
+    return new Set((await this.tools()).map(({ name }) => name));
+  }
+
+  async tools() {
     const listed = await this.request("tools/list", {});
-    return new Set(listed.tools.map(({ name }) => name));
+    return listed.tools;
   }
 
   async call(name, arguments_ = {}) {
@@ -262,287 +234,6 @@ function installWorkGrant(engramHome, actorId) {
   return JSON.parse(granted.stdout).grant;
 }
 
-test("legacy memory loop still works for two sessions under --legacy-tools", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-dogfood-"));
-  let a;
-  let b;
-  try {
-    buildAndInit(engramHome);
-
-    a = new McpClient(engramHome, "eval-a", { legacyTools: true });
-    b = new McpClient(engramHome, "eval-b", { legacyTools: true });
-    await Promise.all([a.initialize(), b.initialize()]);
-
-    const listed = await a.request("tools/list", {});
-    const toolNames = new Set(listed.tools.map(({ name }) => name));
-    for (const name of [...AGENT_TOOLS, ...LEGACY_TOOLS]) {
-      assert.ok(toolNames.has(name), `missing MCP tool ${name}`);
-    }
-    for (const name of [
-      "work_propose",
-      "work_update",
-      "work_complete",
-      "work_handoff",
-    ]) {
-      const tool = listed.tools.find((candidate) => candidate.name === name);
-      const schema = JSON.stringify(tool.inputSchema);
-      assert.ok(schema.includes("idempotency_key"), `${name} has a generic input schema`);
-      assert.ok(schema.includes("required"), `${name} does not expose required fields`);
-    }
-    for (const name of AGENT_TOOLS) {
-      const tool = listed.tools.find((candidate) => candidate.name === name);
-      const schema = JSON.stringify(tool.inputSchema);
-      assert.equal(schema.includes("idempotency_key"), false, `${name} asks for a key`);
-      assert.equal(schema.includes("fence"), false, `${name} asks for a fence`);
-    }
-    for (const name of CONTROL_TOOLS) {
-      assert.ok(!toolNames.has(name), `control tool leaked through MCP: ${name}`);
-    }
-
-    const started = structured(
-      await a.call("task_start", {
-        external_ref: "dummy:TASK-7",
-        title: "Dogfood Engram",
-      }),
-    );
-    const joined = structured(
-      await b.call("task_join", { external_ref: "dummy:TASK-7" }),
-    );
-    assert.equal(joined.task.task_id, started.task.task_id);
-
-    const first = structured(
-      await a.call("memory_note", {
-        prose:
-          "Decided: report freeze binds one payload to one idempotency key — retries must be byte-identical.",
-        idempotency_key: "dogfood-note-1",
-      }),
-    );
-    assert.equal(first.kind, "decision");
-    assert.equal(first.scope.kind, "task");
-    assert.ok(first.classification_reason.includes("prefix"));
-
-    const packet = structured(await b.call("memory_context"));
-    assert.ok(packet.index.some(({ version }) => version === first.version));
-    assert.ok(packet.header.packet_hash);
-    const firstCursor = packet.header.event_cursor;
-
-    const second = structured(
-      await a.call("memory_note", {
-        prose: "Decision: attach retry-test evidence to the frozen report.",
-        refs: ["repo:test/mcp-dogfood"],
-        idempotency_key: "dogfood-note-2",
-      }),
-    );
-    const delta = structured(
-      await b.call("memory_delta", { after: firstCursor, limit: 100 }),
-    );
-    assert.equal(delta.changes.length, 1);
-    assert.equal(delta.changes[0].memory.version, second.version);
-    assert.ok(delta.cursor > firstCursor);
-
-    const privateNote = structured(
-      await a.call("memory_note", {
-        prose: "scratch: half-formed hypothesis Z",
-        private: true,
-        idempotency_key: "dogfood-private",
-      }),
-    );
-    assert.equal(privateNote.scope.kind, "agent");
-    assert.equal(privateNote.cursor, null);
-    const peerSearch = structured(
-      await b.call("memory_search", { query: "hypothesis Z" }),
-    );
-    assert.deepEqual(peerSearch, []);
-    const peerAfterPrivate = structured(
-      await b.call("memory_delta", { after: delta.cursor }),
-    );
-    assert.equal(peerAfterPrivate.changes.length, 0);
-    structuredError(
-      await b.call("memory_show", { hash: privateNote.version }),
-      "memory_access_denied",
-    );
-
-    const beforeRestart = JSON.stringify(delta);
-    await b.close();
-    b = new McpClient(engramHome, "eval-b", { legacyTools: true });
-    await b.initialize();
-    const afterRestart = structured(
-      await b.call("memory_delta", { after: firstCursor, limit: 100 }),
-    );
-    assert.equal(JSON.stringify(afterRestart), beforeRestart);
-    const shown = structured(
-      await b.call("memory_show", { hash: first.version }),
-    );
-    assert.equal(shown.version.actor.session_id, "eval-a");
-    assert.equal(shown.version.actor.source_tool, "mcp:memory_note");
-    assert.ok(shown.version.classification_reason.includes("prefix"));
-    const explanation = structured(
-      await b.call("context_explain", { hash: packet.header.packet_hash }),
-    );
-    assert.equal(explanation.event_cursor, firstCursor);
-    assert.ok(explanation.index.some(({ version }) => version === first.version));
-
-    const retry = structured(
-      await a.call("memory_note", {
-        prose: "Decision: attach retry-test evidence to the frozen report.",
-        refs: ["repo:test/mcp-dogfood"],
-        idempotency_key: "dogfood-note-2",
-      }),
-    );
-    assert.equal(retry.version, second.version);
-    assert.equal(retry.duplicate, true);
-    const afterRetry = structured(
-      await b.call("memory_delta", { after: delta.cursor }),
-    );
-    assert.equal(afterRetry.changes.length, 0);
-    structuredError(
-      await a.call("memory_note", {
-        prose: "Decision: changed meaning under a reused key.",
-        refs: ["repo:test/mcp-dogfood"],
-        idempotency_key: "dogfood-note-2",
-      }),
-      "note_idempotency_conflict",
-    );
-
-    const claimA = structured(
-      await a.call("task_claim", {
-        ttl_seconds: 1,
-        idempotency_key: "claim-a",
-      }),
-    );
-    const claimReplay = structured(
-      await a.call("task_claim", {
-        ttl_seconds: 1,
-        idempotency_key: "claim-a",
-      }),
-    );
-    assert.deepEqual(claimReplay, claimA);
-    structuredError(
-      await a.call("task_claim", {
-        ttl_seconds: 2,
-        idempotency_key: "claim-a",
-      }),
-      "claim_idempotency_conflict",
-    );
-    const held = structuredError(
-      await b.call("task_claim", {
-        ttl_seconds: 1,
-        idempotency_key: "claim-b-live",
-      }),
-      "task_claim_held",
-    );
-    assert.equal(held.details.holder, "eval-a");
-    assert.ok(held.details.expires_at_ms);
-    assert.match(held.details.expires_at, /^\d{4}-\d{2}-\d{2}T/u);
-    await wait(1100);
-    const claimB = structured(
-      await b.call("task_claim", {
-        ttl_seconds: 1,
-        idempotency_key: "claim-b-expired",
-      }),
-    );
-    assert.equal(claimB.revision, claimA.revision + 1);
-    const claimDelta = structured(
-      await a.call("memory_delta", { after: delta.cursor }),
-    );
-    assert.deepEqual(
-      claimDelta.changes.map(({ object_kind }) => object_kind),
-      ["task_claim_event", "task_claim_event"],
-    );
-
-    const naturalConstraint = structured(
-      await a.call("memory_note", {
-        prose: "Never publish before every participant is ready.",
-        idempotency_key: "dogfood-constraint-a",
-      }),
-    );
-    assert.equal(naturalConstraint.kind, "constraint");
-    assert.equal(naturalConstraint.authority, "firm");
-    assert.equal(naturalConstraint.delivery, "pinned");
-    assert.match(naturalConstraint.classification_reason, /rule cue/u);
-    const conflictingConstraint = structured(
-      await a.call("memory_note", {
-        prose: "Always publish immediately after local validation passes.",
-        idempotency_key: "dogfood-constraint-b",
-      }),
-    );
-    const contradiction = structured(
-      await a.call("memory_contradict", {
-        first_version: naturalConstraint.version,
-        second_version: conflictingConstraint.version,
-        reason: "the two publication timing rules cannot both be followed",
-        idempotency_key: "dogfood-contradiction",
-      }),
-    );
-    assert.ok(contradiction.contradiction);
-    const contradictionReplay = structured(
-      await a.call("memory_contradict", {
-        first_version: conflictingConstraint.version,
-        second_version: naturalConstraint.version,
-        reason: "the two publication timing rules cannot both be followed",
-        idempotency_key: "dogfood-contradiction",
-      }),
-    );
-    assert.equal(contradictionReplay.contradiction, contradiction.contradiction);
-    assert.equal(contradictionReplay.duplicate, true);
-    const unsafePacket = structuredError(
-      await b.call("memory_context"),
-      "pinned_contradiction",
-    );
-    assert.equal(
-      unsafePacket.details.contradiction_hash,
-      contradiction.contradiction,
-    );
-
-    const doctor = spawnSync(binary, ["--home", engramHome, "doctor"], {
-      cwd: root,
-      encoding: "utf8",
-    });
-    assert.equal(doctor.status, 0, doctor.stderr);
-    assert.match(doctor.stdout, /store is healthy/u);
-    assert.match(doctor.stderr, /no-op redactor/u);
-  } finally {
-    await Promise.all([a?.close(), b?.close()]);
-    rmSync(engramHome, { recursive: true, force: true });
-  }
-});
-
-test("legacy tools are opt-in and still answer one call", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-legacy-"));
-  let plain;
-  let legacy;
-  try {
-    buildAndInit(engramHome);
-    plain = new McpClient(engramHome, "legacy-probe");
-    legacy = new McpClient(engramHome, "legacy-probe", { legacyTools: true });
-    await Promise.all([plain.initialize(), legacy.initialize()]);
-    const plainTools = await plain.toolNames();
-    for (const name of AGENT_TOOLS) {
-      assert.ok(plainTools.has(name), `missing agent tool ${name}`);
-    }
-    for (const name of [...LEGACY_TOOLS, ...CONTROL_TOOLS]) {
-      assert.ok(!plainTools.has(name), `${name} registered without --legacy-tools`);
-    }
-    const legacyTools = await legacy.toolNames();
-    for (const name of [...AGENT_TOOLS, ...LEGACY_TOOLS]) {
-      assert.ok(legacyTools.has(name), `missing MCP tool ${name} under --legacy-tools`);
-    }
-    const started = structured(
-      await legacy.call("task_start", {
-        external_ref: "dummy:LEGACY-1",
-        title: "Legacy tools answer",
-      }),
-    );
-    assert.ok(started.task.task_id);
-    const emptyNext = receipt(await plain.call("next", {}));
-    assert.equal(emptyNext.focus, undefined);
-    assert.deepEqual(emptyNext.next, ['engram work add "…"']);
-  } finally {
-    await Promise.all([plain?.close(), legacy?.close()]);
-    rmSync(engramHome, { recursive: true, force: true });
-  }
-});
-
 function cliWord(engramHome, actorId, grant, word, ...agentArgs) {
   const args = [
     "--home",
@@ -612,6 +303,39 @@ test("CLI words translate the same ambient lifecycle service", () => {
 
     const claimed = cliText(engramHome, actor, grant, "claim", workRef, "--ttl", "300");
     assert.match(claimed, /^claimed w-[0-9a-f]{12} "Dogfood work CLI" \(held by you until \d{2}:\d{2} UTC\)/u);
+    const coreRefusal = spawnSync(
+      binary,
+      [
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        actor,
+        "--authority-grant",
+        grant,
+        "core",
+        "complete",
+        "--work-ref",
+        workRef,
+        "--input",
+        JSON.stringify({
+          capture: null,
+          evidence: [],
+          acceptance: [],
+          idempotency_key: "core-refusal-current-contract",
+        }),
+      ],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(coreRefusal.status, 1, coreRefusal.stderr);
+    assert.equal(coreRefusal.stderr, "");
+    const coreRefusalReceipt = JSON.parse(coreRefusal.stdout);
+    assert.equal(coreRefusalReceipt.code, "missing_acceptance");
+    assert.equal(coreRefusalReceipt.work_id, coreRefusalReceipt.recovery.item.work_id);
+    assert.equal(coreRefusalReceipt.recovery.cause.kind, "missing_acceptance");
+    assert.equal(coreRefusalReceipt.recovery.item.ref, workRef);
     const mine = cliText(engramHome, actor, grant, "ls", "--mine");
     assert.match(mine, /^1 item\(s\):/u);
 
@@ -691,7 +415,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
       new RegExp(`^added w-[0-9a-f]{12} "Follow-up step" under ${parentRef} "Parent plan"`, "u"),
     );
     assert.doesNotMatch(child.stdout, HASH);
-    const legacyFocus = spawnSync(
+    const coreFocus = spawnSync(
       binary,
       [
         "--home",
@@ -707,8 +431,8 @@ test("CLI words translate the same ambient lifecycle service", () => {
       ],
       { cwd: root, encoding: "utf8" },
     );
-    assert.equal(legacyFocus.status, 0, legacyFocus.stderr);
-    assert.equal(JSON.parse(legacyFocus.stdout).status.work.lifecycle, "completed");
+    assert.equal(coreFocus.status, 0, coreFocus.stderr);
+    assert.equal(JSON.parse(coreFocus.stdout).status.work.lifecycle, "completed");
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }
@@ -779,26 +503,35 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     });
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout, /ENGRAM_WORK_AUTHORITY_GRANT/u);
-    assert.match(help.stdout, /--legacy-tools/u);
     assert.equal(help.stdout.includes(helpSecret), false);
 
-    // `a` speaks only the eight words; `b` is a host that also opted into the
-    // legacy tools and passes its grant through argv over a malformed
-    // environment value.
+    // Both sessions receive the same ten-tool MCP surface. `b` passes its
+    // grant through argv over a malformed environment value.
     a = new McpClient(engramHome, "work-agent-a", {
       environmentAuthorityGrant: grantA,
     });
     b = new McpClient(engramHome, "work-agent-b", {
       workAuthorityGrant: grantB,
       environmentAuthorityGrant: malformedValue,
-      legacyTools: true,
     });
     assert.equal(a.args.includes(grantA), false);
     assert.equal(b.args.includes(grantB), true);
     await Promise.all([a.initialize(), b.initialize()]);
-    const aTools = await a.toolNames();
-    assert.equal(aTools.has("work_focus"), false);
-    assert.equal(aTools.has("memory_note"), false);
+    assert.match(
+      a.instructions,
+      /Nine words: next, ls, show, add, claim, update, note, done, handoff \(plus search\)/u,
+    );
+    assert.doesNotMatch(a.instructions, /Eight words/u);
+    const aToolDefinitions = await a.tools();
+    const aTools = new Set(aToolDefinitions.map(({ name }) => name));
+    assert.deepEqual([...aTools].sort(), [...AGENT_TOOLS].sort());
+    for (const tool of aToolDefinitions) {
+      assert.doesNotMatch(
+        JSON.stringify(tool.inputSchema),
+        /"(?:idempotency_key|fence)"/u,
+        `${tool.name} exposes a host-owned protocol field`,
+      );
+    }
 
     const added = receipt(
       await a.call("add", {
@@ -878,64 +611,6 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       0,
     );
 
-    // The legacy-enabled peer may capture private scratch while focused, but
-    // shared work memory is fenced by the exact live claim holder.
-    receipt(await b.call("show", { work_ref: workRef }));
-    structured(
-      await b.call("task_start", {
-        external_ref: "dummy:WORK-MIXED-7",
-        title: "Dogfood explicit mixed-context routing",
-      }),
-    );
-    structuredError(
-      await b.call("memory_note", {
-        prose: "Decision: ambiguous mixed task and work capture must be refused.",
-        idempotency_key: "work-ambiguous-memory",
-      }),
-      "invalid_argument",
-    );
-    structuredError(
-      await b.call("memory_note", {
-        prose: "Decision: the focused work uses one local identity for task tracking and shared execution memory.",
-        idempotency_key: "work-shared-memory",
-        target: "work",
-      }),
-      "work_claim_mismatch",
-    );
-    const privateWorkMemory = structured(
-      await b.call("memory_note", {
-        prose: "scratch: private focused implementation hypothesis",
-        private: true,
-        idempotency_key: "work-private-memory",
-        target: "work",
-      }),
-    );
-    assert.equal(privateWorkMemory.scope.kind, "agent");
-    assert.equal(privateWorkMemory.scope.work, added.work.work_id);
-    assert.deepEqual(privateWorkMemory.work_positions, []);
-    const authorMemoryFocus = structured(
-      await b.call("work_focus", { work_ref: workRef }),
-    );
-    assert.ok(
-      authorMemoryFocus.memories.some(
-        ({ version }) => version === privateWorkMemory.version,
-      ),
-    );
-    const peerMemoryFocus = receipt(await a.call("show", { work_ref: workRef }));
-    assert.equal(
-      peerMemoryFocus.memories.some(
-        ({ version }) => version === privateWorkMemory.version,
-      ),
-      false,
-    );
-    const peerWorkChanges = receipt(await a.call("next", { limit: 100 })).changes;
-    assert.equal(
-      peerWorkChanges.some(
-        ({ entry }) => entry.object_hash === privateWorkMemory.version,
-      ),
-      false,
-    );
-
     const held = structuredError(
       await b.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
       "work_claim_held",
@@ -969,70 +644,6 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(recipientFocus.next[0], `engram work handoff ${workRef} --accept`);
     const accepted = receipt(await b.call("handoff", { action: "accept" }));
     assert.equal(accepted.operation, "accept");
-    const sharedWorkMemory = structured(
-      await b.call("memory_note", {
-        prose: "Decision: the focused work uses one local identity for task tracking and shared execution memory.",
-        idempotency_key: "work-shared-memory",
-        target: "work",
-      }),
-    );
-    assert.equal(sharedWorkMemory.scope.kind, "work");
-    assert.equal(sharedWorkMemory.scope.work, added.work.work_id);
-    assert.ok(sharedWorkMemory.work_positions.length >= 3);
-    const holderMemoryFocus = structured(
-      await b.call("work_focus", { work_ref: workRef }),
-    );
-    assert.ok(
-      holderMemoryFocus.memories.some(
-        ({ version }) => version === sharedWorkMemory.version,
-      ),
-    );
-    assert.ok(
-      holderMemoryFocus.memories.some(
-        ({ version }) => version === privateWorkMemory.version,
-      ),
-    );
-    const formerHolderFocus = receipt(await a.call("show", { work_ref: workRef }));
-    assert.ok(
-      formerHolderFocus.memories.some(
-        ({ version }) => version === sharedWorkMemory.version,
-      ),
-    );
-    assert.equal(
-      formerHolderFocus.memories.some(
-        ({ version }) => version === privateWorkMemory.version,
-      ),
-      false,
-    );
-    const deliveredShared = [];
-    for (let page = 0; page < 8; page += 1) {
-      deliveredShared.push(
-        ...receipt(await a.call("next", { limit: 100 })).changes,
-      );
-      if (
-        deliveredShared.some(
-          ({ entry }) => entry.object_hash === sharedWorkMemory.version,
-        )
-      ) {
-        break;
-      }
-    }
-    assert.ok(
-      deliveredShared.some(
-        ({ entry }) => entry.object_hash === sharedWorkMemory.version,
-      ),
-    );
-    assert.equal(
-      deliveredShared.some(
-        ({ entry }) => entry.object_hash === privateWorkMemory.version,
-      ),
-      false,
-    );
-    const shownWorkMemory = structured(
-      await b.call("memory_show", { hash: sharedWorkMemory.version }),
-    );
-    assert.equal(shownWorkMemory.version.scope.work, added.work.work_id);
-    assert.equal(shownWorkMemory.version.authority, "firm");
     const stale = structuredError(
       await a.call("note", { text: "must be rejected after handoff" }),
       "work_claim_mismatch",
@@ -1042,21 +653,6 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       await b.call("note", {
         text: "recipient validated evidence and completion criterion",
       }),
-    );
-    structuredError(
-      await b.call("work_complete", {
-        input: {
-          acceptance: [
-            {
-              satisfied: true,
-              assurance: "signed",
-              note: "agent must not self-assert signed assurance",
-            },
-          ],
-          idempotency_key: "work-forged-assurance",
-        },
-      }),
-      "invalid_argument",
     );
     const seal = receipt(
       await b.call("done", { summary: "validated by the receiving MCP session" }),
@@ -1081,38 +677,6 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal("delivered_through" in completedCatalog, false);
     const searched = receipt(await b.call("search", { query: "dogfood local work" }));
     assert.equal(searched.items.length, 1);
-
-    const replacement = receipt(
-      await b.call("add", {
-        title: "MCP replacement plan",
-        outcome: "A replacement remains visible in the local catalog",
-        acceptance: ["replacement is evaluated"],
-      }),
-    ).work;
-    const obsolete = receipt(
-      await b.call("add", {
-        title: "MCP obsolete plan",
-        outcome: "The obsolete plan is not falsely completed",
-        acceptance: ["obsolete plan is disposed honestly"],
-      }),
-    ).work;
-    const superseded = structured(
-      await b.call("work_update", {
-        input: {
-          kind: "supersede",
-          replacement: replacement.short_ref,
-          reason: "the replacement captures the revised plan",
-          idempotency_key: "work-supersede-obsolete",
-        },
-      }),
-    );
-    assert.equal(superseded.receipt.result.lifecycle, "superseded");
-    assert.equal(superseded.receipt.result.superseded_by, replacement.work_id);
-    const supersededCatalog = receipt(
-      await b.call("ls", { search: "obsolete plan", all: true }),
-    );
-    assert.equal(supersededCatalog.items.length, 1);
-    assert.equal(supersededCatalog.items[0].work.work_id, obsolete.work_id);
 
     const disposable = receipt(
       await b.call("add", {

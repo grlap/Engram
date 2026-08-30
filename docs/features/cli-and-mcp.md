@@ -9,12 +9,12 @@
 One core library owns classification, object storage, scope authorization,
 task binding, deltas, and context-packet construction. The CLI and MCP server
 are thin faces over it; transport code does not redefine memory policy. The
-agent sees eight words; every host and operator control lives under
+agent sees nine words; every host and operator control lives under
 [Host integration](#host-integration).
 
 ## Using Engram as an agent
 
-Engram tracks the work of this repository. You use eight words; everything
+Engram tracks the work of this repository. You use nine words; everything
 else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
 `ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
 you type only the word.
@@ -48,9 +48,9 @@ Rules that matter:
   keys; if you see one, it is a bug.
 - Lost response? Run the same command again. Identical calls are safe.
 
-The same eight words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `note`, `done`) with the same flat arguments, plus `search` and
-`handoff`.
+The same nine words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `note`, `done`, `handoff`) with the same flat arguments, plus
+`search`.
 
 If you know Beads, the words map one to one:
 
@@ -86,6 +86,15 @@ engram init --required-assurance advisory \
   --authorized-by host-operator \
   --reason "bootstrap this project for an advisory host"
 engram doctor
+
+# When ordinary open refuses a corrupt control-policy chain, inspect only that
+# immutable family. This mode is read-only, enables no service/mutation API,
+# and never selects or rewrites a policy head.
+engram doctor --recover-policy [--json]
+
+# Explicitly rebuild only declared indexes, triggers, and FTS projections.
+# Ordinary open never performs this repair implicitly.
+engram doctor --repair-projections [--json]
 
 # Host/operator boundary: activate a new immutable policy version. The
 # optional expected hash is the `id=` reported by doctor and prevents a stale
@@ -134,12 +143,9 @@ engram work --actor-id codex --session-id session-unique-id \
 engram mcp --actor-id codex --session-id session-unique-id \
   --work-authority-grant "$GRANT"
 
-# Host-only escape hatches: the six-operation JSON protocol from the shell,
-# and the legacy MCP tools for one release.
+# Host/operator escape hatch: the six-operation JSON protocol from the shell.
 engram work --actor-id codex --session-id session-unique-id \
   --authority-grant "$GRANT" core focus <short-ref>
-engram mcp --actor-id codex --session-id session-unique-id \
-  --work-authority-grant "$GRANT" --legacy-tools
 ```
 
 For a long-lived MCP process, the host may set
@@ -150,9 +156,8 @@ grant-less MCP service as today; a nonempty malformed value fails startup and
 never falls back silently. The value must not be logged or copied into MCP
 traffic, agent-visible receipts, or configuration committed to the repository.
 The MCP process retains one `LocalWorkService` and its lazily opened SQLite
-connection for its lifetime; both the eight-word tools and optional legacy
-work tools use that same service. A failed operation rolls back before the
-next call uses the connection.
+connection for its lifetime. All ten agent tools use that service. A failed
+operation rolls back before the next call uses the connection.
 
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and
@@ -173,12 +178,34 @@ unhealthy and the active control envelope cannot be decoded, the report still
 prints with `healthy: false`, `control: null`, and a `control_error`; independent
 limitations remain on stderr before the command exits nonzero.
 
+If normal open itself refuses because the active control-policy chain is
+corrupt, `engram doctor --recover-policy` uses a separate existing-file,
+read-only/query-only path. It verifies the active selector and every projected
+policy version together with the canonical authority and selected rule-set
+objects, emits a typed finding for each invalid binding, and exits nonzero
+while the store remains unusable. `--json` reports
+`mode: "control_policy_recovery"` and `mutation_enabled: false`. This mode
+cannot start MCP/control/work, issue grants, initialize schema, or repair/select a
+policy; its guidance is limited to restoring verified bytes or explicit
+operator inspection. Because the connection is read-only, it also cannot run
+SQLite crash recovery for an uncheckpointed WAL. If SQLite itself requires
+recovery, stop writers and diagnose a byte-consistent verified copy of the
+database together with its sidecars; the command fails without changing them.
+
+Missing or malformed declared indexes, triggers, or FTS tables also make
+ordinary open fail without DDL. `engram doctor --repair-projections` is the
+separate mutating operator path: it first fingerprints the complete exact-current
+durable definitions and validates control-policy bindings, recreates every
+declared rebuildable object, repopulates FTS from verified durable rows in one
+transaction, and then runs full integrity verification. It never recreates
+missing durable state or rewrites canonical objects.
+
 On a fresh store, plain `engram init` defaults to `turn_gated`;
 `--required-assurance` may instead select `advisory`, `turn_gated`, or
 `action_gated` for that first policy and requires `--authorized-by` plus
 `--reason`; the resulting epoch-one authority object records that operator
 choice as asserted context. Plain `engram init` remains an
-idempotent create-or-migrate operation and preserves any existing active
+idempotent create-or-verify operation and preserves any existing active
 policy. Explicitly passing a different bootstrap value for an existing store
 fails instead of silently changing policy.
 `engram control-policy set-required-assurance` records asserted operator
@@ -218,11 +245,11 @@ and `next`) instead of text, and `done` exits with status 2 when the typed
 `open_work_obligations` refusal says something is still owed. The
 six-operation JSON protocol stays reachable for hosts and operators as
 `engram work core {next,focus,propose,update,complete,handoff}`, whose
-mutation payloads accept an inline JSON object or `@path`; that is the shell
-counterpart of `engram mcp --legacy-tools` and carries host-only fields such as
-explicit delivery acknowledgement, typed evidence attach, prerequisite edits,
-supersede, reopen, and required-child waivers. All words and legacy operations
-call the same service core as MCP. The operator CLI also installs and
+mutation payloads accept an inline JSON object or `@path`; that host/operator
+surface carries explicit delivery acknowledgement, typed evidence attach,
+prerequisite edits, supersede, reopen, and required-child waivers. All words
+and core operations call the same service core as MCP. The operator CLI also
+installs and
 irreversibly revokes canonical work-authority grants; those commands are not
 MCP tools. Stats/import/export and the remaining broad administrative CLI in
 the specification are still planned.
@@ -269,8 +296,7 @@ reason.
 
 ### MCP tools
 
-`engram mcp` registers the ten agent tools by default. `--legacy-tools` also
-registers the task, memory, and six-operation work tools for one release.
+`engram mcp` registers exactly the ten agent tools below.
 
 | Tool | Purpose |
 | --- | --- |
@@ -313,48 +339,13 @@ records evidence and then checkpoints the run's current evidence set;
 repeating an identical `note`, `add`, `claim`, or `done` replays its receipt
 because the core derives the idempotency key.
 
-Legacy tools registered only with `--legacy-tools`:
-
-| Tool | Purpose |
-| --- | --- |
-| `task_start` | Start or ref-idempotently bind a local task |
-| `task_join` | Join the same task using only its external reference |
-| `memory_note` | Capture prose once with inferred classification and a required retry key; `target: task|work` is required when both contexts are active |
-| `memory_contradict` | Link two visible task/work shared version hashes as explicitly incompatible |
-| `memory_context` | Build a bounded packet for the session's active task and persisted work focus |
-| `memory_delta` | Return only task changes after a processed cursor |
-| `memory_search` | Full-text search visible memory |
-| `memory_show` | Verify and inspect an authorized memory by the receipt's version hash |
-| `context_explain` | Reproduce the inclusion and omission reasons for a packet |
-| `task_claim` | Acquire an expiring, safely retryable task lease with typed conflict details |
-| `work_next` | Return selected compact focus/catalog/ready/change sections under a 12 KiB wire ceiling; each call returns the changes since the session's previous call |
-| `work_focus` | Select by short ref/UUID and inspect bounded acceptance, graph, claim, blocker ids, evidence, handoff, memory index, history count/tail, exact waivable-child candidates, and allowed-next state without claiming |
-| `work_propose` | Create a root or atomically add bounded children/prerequisites to focused work; decomposition receipts return the complete compact child identity set under the 12 KiB ceiling |
-| `work_update` | Apply claim/release, checkpoint, evidence, blocker, revision/assignment/deferral, dependency, or reopen updates under inferred fences; unblock may omit its id when exactly one blocker is active |
-| `work_complete` | Seal focused work under inferred fences, optionally recording evidence and its final checkpoint in the same high-level call |
-| `work_handoff` | Offer, accept, or cancel the unique checkpoint-coupled handoff without passing offer/claim ids |
-
-Every result is structured JSON. Expected execution failures are MCP tool
-errors with stable error codes and details—for example, a live claim conflict
-returns `task_claim_held` with holder plus epoch and ISO-8601 expiry. Repeating
-a claim with the same key and TTL returns the original lease even though
-wall-clock time advanced; changing the TTL under that key is an idempotency
-conflict. A private memory hash does not become a capability: `memory_show`
-repeats project/task/participant/owner authorization, verifies the persisted
-work focus, and returns `memory_access_denied` to a peer.
-
-The shipped `task_claim` is a whole-task advisory lease and predates the local
-work design. The target does not silently reinterpret it: a fenced work claim
-schedules one work item, while a separately versioned resource-lease operation
-authorizes mutation over canonical subjects. The legacy tool is deprecated
-after both replacement paths ship.
-
 ### Work protocol contract
 
-The eight words translate into six ambient operations: `work_next`,
+The ten tools translate into six ambient operations: `work_next`,
 `work_focus`, `work_propose`, `work_update`, `work_complete`, and
-`work_handoff`. Hosts may call them directly through `--legacy-tools` or
-`engram work core`. Session binding supplies project, actor, current work,
+`work_handoff`. Hosts and operators may call them directly through
+`engram work core`; they are not additional MCP tools. Session binding supplies
+project, actor, current work,
 and cursors, so update/complete/handoff do not repeatedly shuttle ids. Ambient state contains no authority;
 the host fixes a canonical grant hash for the MCP process and each mutation
 rechecks that grant and revocation state. `work_next` returns only the selected
@@ -392,8 +383,8 @@ serialized JSON bytes; typed `omissions` report advisory sections shortened by
 count or byte budget. `work_focus` is navigation only and never
 claims/releases as a side effect. It returns an exact history count with a
 bounded newest-event summary tail, the latest run even after completion, and a
-body-free actor-filtered memory index whose version hash is the key for
-authorized `memory_show`. A staged page never blocks a focus change or a
+body-free actor-filtered memory index for host-side inspection. A staged page
+never blocks a focus change or a
 mutation; changing focus discards the un-delivered page and the next call
 recomputes the same interval under the new focus.
 `work_propose`
@@ -429,11 +420,17 @@ remain unresolved. Open obligations are not an MCP error envelope.
 `work_update`. A completed receipt also returns that page reconstructed from
 the exact terminal obligation hashes bound into the seal. Each page is count-
 and byte-bounded, reports an explicit `omitted_count`, and carries immutable
-obligation/definition identities, the exact rule-set hash when present, state,
+obligation/definition identities, the required exact rule-set hash, state,
 rule, requirement, trigger, terminal
 resolution/evidence when present, and deterministic typed guidance. An open
 verification requirement directs the caller to record matching host
 verification, checkpoint it, then complete, or request a host/operator waiver.
+Trimming retains open obligations before satisfied or waived history and keeps
+deterministic trigger/resolution ordering within those state groups. Focus
+evidence uses the same actionable-first rule: environments required by visible
+open obligations are retained first, and a visible verification summary keeps
+its referenced environment summary ahead of it. Count and byte trimming remove
+unrelated or dependent evidence before breaking that visible typed closure.
 Generic readiness strings remain a separate compatibility field. The typed
 completion result is durably replayable under the same idempotency key.
 An interrupted capture-backed completion recovers committed evidence or
@@ -449,14 +446,15 @@ deliberately a single next command, and the `done` verb exposes exactly that
 one entry in its `next` list. The recovery snapshot commits in the same SQLite
 transaction that proves its cause, and an interrupted wrapper replays those
 exact cause/item/command bytes even if live work changes afterward. Native
-`done` and the eight-word MCP surface return this as a typed refusal receipt;
-the JSON core and legacy MCP surface retain their prior non-zero error code and
-attach the same recovery object. Short-ref ambiguity likewise returns a stable
+`done` and the ten-tool MCP surface return this as a typed refusal receipt. The
+JSON core prints the same typed refusal receipt on stdout and exits with status
+1; it does not wrap the refusal in an error envelope. Short-ref ambiguity
+likewise returns a stable
 `work_reference_ambiguous` error with up to eight ordered candidates, an exact
 `more` count, and full-id retry guidance on every JSON front door.
 
-The MCP schemas for `work_propose`, `work_update`, `work_complete`, and
-`work_handoff` expose their typed discriminated inputs rather than opaque JSON.
+The host-only JSON core schemas for `work_propose`, `work_update`,
+`work_complete`, and `work_handoff` use typed discriminated inputs.
 Each accepts an optional `work_ref`; the target is resolved and bound inside
 the mutation, so a concurrent focus change by the same session cannot redirect
 it, and it becomes the ambient focus as a side effect. `idempotency_key` is
@@ -563,7 +561,7 @@ Each entry supplies `producer_observation` as either
 source/run/session binding, and timestamps from the producer; an unknown
 producer returns `verification_producer_not_found`. Up to four
 `environment_evidence` entries bind an environment identity to an exact source
-basis. The legacy form may retain only an opaque host-produced fingerprint.
+basis. The opaque form supplies only a host-produced fingerprint.
 The component form adds
 `components { toolchain, sandbox?, workspace_id, capability_map_revision }`;
 Engram derives the canonical component fingerprint, requires the component
@@ -587,7 +585,7 @@ each scoped to the exact grant and canonical request intent. An exact retry retu
 hashes without another feed append; changing any ordered list under the same
 checkpoint key fails with `control_operation_idempotency_conflict`.
 
-Agent-facing `work_update:evidence` retains its legacy generic form. It also
+Agent-facing `work_update:evidence` retains its generic form. It also
 accepts the attach-only form
 `{ kind: "evidence", attach: { evidence: <typed-hash> }, idempotency_key }`.
 Attach validates that the hash is verification/environment evidence on the
@@ -612,12 +610,9 @@ definition/resolution hash pairs applicable at its dense pre-seal cut. The
 final checkpoint must acknowledge the matching typed verification evidence.
 A new seal also declares environment schema V1 and cites the sorted, distinct
 environment-evidence hashes at or before that cut. It refuses more than 64
-environment records and never copies the component payload into the seal.
-A new parent verifies required child seals transitively and refuses a legacy
-child seal whose run already had obligation definitions; existing legacy
-terminal seals remain readable and are surfaced as legacy by diagnostics.
-Pre-environment seals likewise decode with no environment bindings and are
-reported as legacy rather than rewritten.
+environment records and never copies the component payload into the seal. A
+parent verifies required child seals transitively; every accepted seal carries
+the current obligation and environment schema bindings.
 
 An observation effect absent from the frozen grant is a request error with
 code `observation_scope_mismatch`. Checkpointing an issued-but-unbegun grant
@@ -709,16 +704,6 @@ Action authorization/begin/completion, standalone delivery acknowledgement,
 lease renewal/handoff/recovery, heartbeat, and independent exit remain
 planned protocol operations.
 
-`memory_note` never makes an ambient scope switch silently. If exactly one of
-the legacy task binding or local work focus exists, that context is the
-default. If both exist, the caller must select `target: task` or
-`target: work`; omission is a typed `invalid_argument` refusal. Task notes
-reach peers through `memory_delta`. Work notes retain the focused item as
-their provenance subject, enter project/root/run feeds, and reach work peers
-through `work_next` and focused context. Capture, search, and show re-read the
-persisted focus at the storage boundary, so a stale or caller-supplied work id
-cannot redirect access.
-
 Hooks can integrate the shipped turn boundary. Full action gating needs a wrapper,
 gateway, or native host integration around every declared material tool. If a
 shell or network path remains unmediated, the session must not claim
@@ -758,12 +743,10 @@ Build an executable and configure one stdio MCP process per agent session:
 The proprietary runtime supplies actor/session/tool/skill instruction context
 and injects the host-bound grant as process-local environment rather than
 placing it in argv. The same precedence and malformed-value rules described
-above apply. This process exposes only the ten agent tools; append
-`--legacy-tools` to the argument list while a host still depends on the
-`task_*`, `memory_*`, `context_explain`, or `work_*` tools.
-V1 records it with `asserted` assurance; configuration text is not
-authentication. Distinct concurrent sessions need distinct `--session-id`
-values. The database is shared; the MCP processes are not.
+above apply. This process exposes exactly the ten agent tools. V1 records host
+context with `asserted` assurance; configuration text is not authentication.
+Distinct concurrent sessions need distinct `--session-id` values. The database
+is shared; the MCP processes are not.
 
 ### Dogfood contract
 
@@ -775,23 +758,15 @@ text output. It also checks that an unheld `note` and an unnoted `done` answer
 with one sentence and the resolving command.
 
 `scripts/mcp-dogfood.test.mjs` launches real stdio MCP processes against a
-fresh home. Its main work lifecycle runs through the agent tools: an
-eight-word session creates, claims, blocks/unblocks, notes, and offers a root;
-a legacy-enabled peer accepts the checkpoint-coupled handoff, notes, and seals
-it with `done`; keyless replay, `reminders`/`next` derivation, catalog and
-search filters, cancellation, compact completion, child creation under a
-parent, and field revision are asserted along the way, and no `reminders` or
-`next` line ever carries a hash, fence, or key. One short path starts
-`engram mcp --legacy-tools`, verifies that the legacy tools are absent by
-default and present under the flag, and answers one legacy call. The two-session
-memory loop (ref-only rendezvous, flag-free classification, context,
-single-item delta, private-scope non-disclosure, restart durability,
-provenance/explain, idempotent retry/conflict, lease contention/expiry/retry,
-natural constraint classification, and pinned-contradiction fail-closed
-behavior) keeps running under `--legacy-tools` because those tools have no
-eight-word counterpart. The CLI path drives the same lifecycle through the
-words in text and `--json` modes and keeps one `engram work core focus` call.
-Both scripts are part of `scripts/check.sh`.
+fresh home. Its main lifecycle uses only the ten agent tools: one session
+creates, claims, blocks/unblocks, notes, and offers a root; a peer accepts the
+checkpoint-coupled handoff, notes, and seals it with `done`. Keyless replay,
+`reminders`/`next` derivation, catalog and search filters, cancellation,
+compact completion, child creation under a parent, and field revision are
+asserted along the way, and no `reminders` or `next` line ever carries a hash,
+fence, or key. The CLI path drives the same lifecycle through the words in text
+and `--json` modes and keeps one `engram work core focus` call. Both scripts are
+part of `scripts/check.sh`.
 
 `scripts/control-dogfood.test.mjs` launches the real bounded JSON-lines service,
 bootstraps an advisory policy, activates a turn-gated successor through the

@@ -39,7 +39,7 @@ attributed, immutable policy update. Table rows and diagram nodes marked
 **planned** are exactly the remaining items.
 
 The shipped **obligation** substrate is deliberately small and typed. An
-immutable policy version selects a canonical rule-set hash; the stock V1 set
+immutable policy version selects a canonical rule-set hash; the built-in set
 implements `source_changed observation → test obligation → passed matching
 verification | host-authorized waiver → CompletionSeal`. The observation and
 definition freeze that selection, so activating another validated set affects

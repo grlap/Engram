@@ -29,7 +29,7 @@ engram.db
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
   task_changes # dense task-local feed positions plus an internal global row sequence
   context_deliveries # target dense per-session delivery + exact source ranges
-  task_claims  # legacy whole-task advisory claim; removed after work-claim migration
+  task_claims  # historical whole-task advisory claim data; not an agent tool
   control_observations # non-authoritative, hash-verified shadow decisions
   control_sessions     # durable host routing, phase, cursors, epochs
   control_connections  # current host-process generation; fences predecessors
@@ -40,8 +40,8 @@ engram.db
   control_operation_results # begin/checkpoint/lease retry receipts
   control_policy_operation_results # store-scoped operator-policy receipts
   report_assemblies / report_assembly_claims # target post-completion authority
-  derived.*    # status, FTS5, usage counters — rebuildable cache
-  meta         # store schema version; guards old clients
+  projections  # exact-current heads/status plus rebuildable indexes and FTS5
+  meta         # current-build marker; refuses stores created by another build
 ```
 
 `control_observations` is the first observe/replay implementation slice. It
@@ -101,102 +101,93 @@ begin rechecks that basis and rejects intervening work, project-memory, or
 same-agent private-memory changes. Private revisions are keyed by project and
 agent and never publish private object identities to shared feeds.
 Exact work deltas and their staged/confirmed project cursor remain on the
-six-operation work protocol in V1. The legacy global row id remains internal
-and is never promoted into a work safety cursor.
+six-operation work protocol. A global row id is internal and never becomes a
+work safety cursor.
 
 ## Canonical-bytes contract
 
 Objects serialize as RFC 8785 (JCS) canonical JSON, UTF-8. An object's id is
 the SHA-256 of its canonical bytes (hash field excluded); the storage key is
 that hash; hashes are verified at read time so `engram doctor` distinguishes
-corruption from formatting drift. Unknown schema versions are retained but
-not activated; migrations mint new objects, never rewrite old ones. The
+corruption from formatting drift. Executable records require the exact current
+schema; state changes mint new objects and never rewrite old ones. The
 contract is substrate-neutral — it is what keeps the deferred Git backend a
 drop-in and gives reports stable provenance hashes.
 
-The first-class work schema currently advertises version 11. Open preflights
-that metadata before any DDL, refuses future or unversioned non-empty work
-schemas without mutation, and performs supported ALTER/backfill/version steps
-inside one `BEGIN IMMEDIATE` transaction. Handoff backfills must match their
-latest hash-verified work event before a projection can be activated.
-All schema generations emitted by the current binary are declared in
-`src/schema.rs`. Domain exports, canonical control-policy objects, the control
-selector, and local-work migration metadata consume those constants; a fresh-
-store regression test asserts that every persisted projection/object version
-matches the centralized declarations.
+Normal open remains fail-closed when the active control-policy selector or its
+immutable history is corrupt. `engram doctor --recover-policy` is a distinct
+diagnostics-only path for that condition. It uses an existing-file,
+read-only/query-only SQLite connection and returns a typed report rather than
+a `SqliteStore`, so no schema setup, host-path binding, service, grant, work,
+or mutation surface becomes reachable. It checks the active binding and every
+version's canonical policy, authority, and selected rule set, then names each
+invalid record and advises restore or explicit operator inspection. It never
+chooses, repairs, or rewrites the active head.
+
+The first-class work schema stores the current build marker declared in
+`src/schema.rs`. Open preflights that marker before any DDL and refuses a
+store created by a different build without mutation.
 Once both core and work schemas are current, open takes the read-only fast
-path: it verifies required objects, columns, indexes, policy rows, and host
-path identity without starting a write transaction. A current store can be
-opened through a SQLite read-only connection; only actual migration or repair
-needs the schema write lock. If a current-version state table is missing or
+path: it verifies required durable objects, columns, policy rows, and host
+path identity without starting a write transaction when every rebuildable
+projection is also present. A current store can be
+opened through a SQLite read-only connection; only explicit repair needs the
+schema write lock. If a current-version state table is missing or
 has the wrong SQLite object type, open refuses before any DDL rather than
 recreating erased claims, feeds, authority, idempotency, or delivery state.
-Declared indexes are rebuildable from retained table rows and may be recreated
-transactionally; a uniqueness violation makes that repair roll back.
+Missing or malformed declared indexes, triggers, or FTS tables also refuse
+ordinary open without mutation. `engram doctor --repair-projections` is the
+explicit operator path: it compares the live schema with a fresh in-memory
+schema created by the same running code, verifies control-policy bindings,
+recreates every declared rebuildable object, repopulates FTS from verified
+durable rows in one transaction, and runs full integrity verification
+afterward. Missing or malformed durable tables are never recreated, and a
+uniqueness violation makes the projection transaction roll back.
 
-Version 5 binds every pending project-feed cursor and opaque acknowledgement
-token to the exact canonical agent change page that was delivered. Replay
-returns those stored bytes even if work focus or legacy-task binding changes.
-Fresh staging is an exact compare-and-swap over the confirmed cursor, absence
-of another pending page, focused work id, and bound legacy task. A losing
-concurrent caller discards its local projection and returns the durable winning
-page; if focus or task binding won first, it reprojects against that new basis.
-Version 6 adds the redundant typed verification/environment evidence binding;
-version 7 adds rebuildable obligation state; version 8 adds the verification→
-environment reference and canonical environment-component projection; version
-9 adds the nullable rule-set hash that binds each obligation projection to its
-immutable definition. Version 10 adds normalized assignment/search columns,
-normalized label rows, and a trigram FTS catalog projection. Those structures
-are backfilled atomically from retained item and blocker projections and are
-checked by `engram doctor`, including a `MATCH` probe of the FTS inverted
-index; they never replace canonical work events for lifecycle mutation.
-Version 11 adds a verified work-id binding to each work-event feed entry, an
-item-local feed index, a projected latest-event hash on each item, and an
-indexed exact authority-revocation lookup. Migration backfills both event
-bindings from hash-verified canonical events in the same transaction as the
-schema-version change. A database trigger refuses every new work-event feed
-entry whose item binding is absent, including writes attempted by an older
-process. Operational reads require the item head to equal the latest indexed
-feed entry before they decode it. New `WorkEvent` objects also bind the
-complete post-transition prerequisite and active-blocker basis by hash.
-Operational reads verify that hash plus each active row's exact canonical
-event binding; `doctor`, migration, and recovery retain exhaustive replay of
-the full history. Every work mutation rechecks inside its write transaction
-that durable schema metadata still names the generation understood by that
-opener. A process kept alive across another process's migration therefore
-refuses instead of writing stale projections. The v1–v10 upgrade runs
-atomically and current-version open requires the V11 feed, head, trigger, and
-relation structures rather than silently interpreting a partial projection.
-`NULL` retains the stock V1 meaning for legacy obligation definitions.
-Upgrading an older store clears only an unacknowledged tentative page, because
-versions 1-4 did not retain enough information to reconstruct that exact
-projection; the confirmed cursor remains unchanged and the page is delivered
-again under a new token.
+The read-only `--recover-policy` path cannot run SQLite crash recovery. When a
+non-clean shutdown leaves a WAL that SQLite itself must recover, diagnostics
+fails without mutation; the operator must stop writers and preserve a
+byte-consistent database-plus-sidecar copy before retrying inspection.
+
+Pending project-feed cursors and opaque acknowledgement tokens bind the exact
+canonical agent change page that was delivered. Replay returns those stored
+bytes even if work focus or task binding changes. Fresh staging is an exact
+compare-and-swap over the confirmed cursor, absence of another pending page,
+focused work id, and bound task. The current schema also requires verified
+work-id and relation-fingerprint bindings on every work-event feed entry,
+normalized catalog projections, typed verification/environment evidence,
+obligation state, and exact authority-revocation lookup. Operational reads
+verify the item head, relation hash, and active projection rows before decoding
+them. Every work mutation rechecks inside its write transaction that durable
+schema metadata still names the generation understood by that opener.
 
 Projection blobs have an explicit per-column convention. Authority grant and
 revocation `*_json` columns contain canonical bytes because their binding
 verifiers call `CanonicalObject::verify` directly. Mutable work/run/item/seal
 projection blobs are semantic serde projections; their canonical source object
 is stored in `objects`, and integrity checks compare decoded meaning plus the
-bound object hash. Changing either convention requires changing its verifier in
-the same migration.
+bound object hash. Changing either convention requires changing its verifier at
+the same time.
 
-## Derived tables are disposable
+## Rebuildable and durable projections
 
-Status, full-text search (FTS5), and usage counters are disposable. Current
-work projections are checked by `engram doctor` against canonical typed work
-events: exact item/run/root/claim/handoff/blocker snapshots, prerequisite and
-blocker-event bindings, evidence/run bindings, completion seals, dense feed
-heads, typed feed membership, and cross-feed order. Canonical events plus feed
-ordering remain the recovery basis; the operator rebuild command is delivered
-with the recovery/portability slice rather than being silently implied here.
+Declared indexes, triggers, and full-text search (FTS5) content are disposable
+and rebuilt explicitly from verified durable rows. Runtime heads, status,
+claims, feeds, authority, ordering, and idempotency tables are durable parts of
+the exact-current SQLite store: current writers validate their canonical and
+relational bindings, but `--repair-projections` never reconstructs them from
+`objects`. Damage there requires restoring a verified current backup.
+
+Current work projections are checked by `engram doctor` against canonical typed
+work events: exact item/run/root/claim/handoff/blocker snapshots, prerequisite
+and blocker-event bindings, evidence/run bindings, completion seals, dense feed
+heads, typed feed membership, and cross-feed order.
 
 Ordinary lifecycle mutations validate the exact canonical item/run/root/claim,
 handoff, authority, and relation basis they consume under the write lock. A
 corrupt target projection therefore cannot be promoted into fresh canonical
 history, while unrelated project history does not make every mutation slower.
-The exhaustive reconstruction remains an operator `doctor`, migration, and
-recovery check.
+The exhaustive reconstruction remains an operator `doctor` and recovery check.
 
 Completed `work_protocol_attempts` retain their request hash and exact bounded
 caller-visible response, but discard the inferred basis. The 12 KiB protocol

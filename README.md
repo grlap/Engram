@@ -90,7 +90,7 @@ Start with the [vision](docs/vision.md) for the short version.
 ```
 optional source ─────────────────────┐
 Host + Enforcement SDK ── control ───┼──► Engram core ──► canonical local SQLite
-CLI / agent MCP ── work + memory ────┘       │
+CLI / agent MCP ── local work ───────┘       │
                                              ├─ optional backup/portable/sync
                                              └─ optional frozen publication
 ```
@@ -131,7 +131,7 @@ operation results, and canonical checkpoint events. A control-process restart
 invalidates every unbegun grant and resumes at `sync_required`; retry evidence
 remains durable without resurrecting authority.
 The active immutable control policy now selects a canonical, hash-addressed
-obligation rule set. The stock V1 set contains one typed rule: every host
+obligation rule set. The built-in set contains one typed rule: every host
 observation that reports `source_changed=true` opens an immutable test
 obligation on the exact run, even when the action failed or supplied no source
 basis. Each observation and resulting obligation freeze the selected rule-set
@@ -232,7 +232,11 @@ Initialize with `engram init` or make an attributed bootstrap choice with
 durable key replays the exact receipt after an uncertain response), or select a
 validated typed obligation set with
 `engram control-policy set-obligation-rule-set --input <JSON|@file>
---idempotency-key <key>`. Run the MCP server
+--idempotency-key <key>`. Ordinary open never repairs indexes, triggers, or FTS;
+the explicit `engram doctor --repair-projections` path recreates them and
+repopulates FTS from exact-current durable rows without rewriting those rows.
+Run the MCP
+server
 with `engram mcp --actor-id <agent> --session-id <session>`, or run the
 host-private service with `engram control --actor-id <agent> --session-id
 <session>`, or issue a bounded local work grant with `engram authority grant

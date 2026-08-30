@@ -293,7 +293,14 @@ function setObligationRuleSet(
   return spawnSync(binary, args, { cwd: root, encoding: "utf8" });
 }
 
-function cliWork(engramHome, actorId, grant, operation, input) {
+function cliWork(
+  engramHome,
+  actorId,
+  grant,
+  operation,
+  input,
+  expectedStatus = 0,
+) {
   const args = [
     "--home",
     engramHome,
@@ -312,7 +319,7 @@ function cliWork(engramHome, actorId, grant, operation, input) {
     cwd: root,
     encoding: "utf8",
   });
-  assert.equal(executed.status, 0, executed.stderr);
+  assert.equal(executed.status, expectedStatus, executed.stderr);
   return JSON.parse(executed.stdout);
 }
 
@@ -1232,6 +1239,128 @@ test("host control survives restart and gates turn dispatch", async () => {
   }
 });
 
+test("doctor recovery reports a corrupt policy through a read-only surface", () => {
+  const engramHome = mkdtempSync(
+    join(tmpdir(), "engram-control-policy-recovery-"),
+  );
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(built.status, 0, built.stderr);
+    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const healthy = spawnSync(
+      binary,
+      ["--home", engramHome, "doctor", "--json"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(healthy.status, 0, healthy.stderr);
+    const activePolicy = JSON.parse(healthy.stdout).control.policy;
+    const database = join(
+      engramHome,
+      "projects",
+      fingerprint(projectId),
+      "engram.db",
+    );
+    executeSql(
+      database,
+      "UPDATE control_policy_versions SET policy_json = X'7B7D' " +
+        `WHERE policy_hash = '${activePolicy}'`,
+    );
+    const before = readFileSync(database);
+
+    const ordinary = spawnSync(binary, ["--home", engramHome, "doctor"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.notEqual(ordinary.status, 0);
+    const recovery = spawnSync(
+      binary,
+      ["--home", engramHome, "doctor", "--recover-policy", "--json"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.notEqual(recovery.status, 0);
+    const report = JSON.parse(recovery.stdout);
+    assert.equal(report.mode, "control_policy_recovery");
+    assert.equal(report.mutation_enabled, false);
+    assert.equal(report.project_id, projectId);
+    assert.equal(report.control_policy.checked_control_records, 2);
+    assert.ok(
+      report.control_policy.invalid_control_records.some(
+        (finding) => finding.record === "control_policy_state:active",
+      ),
+    );
+    assert.ok(
+      report.control_policy.invalid_control_records.some(
+        (finding) =>
+          finding.record === `control_policy_version:${activePolicy}`,
+      ),
+    );
+    assert.match(recovery.stderr, /store remains fail-closed and unchanged/);
+    assert.deepEqual(readFileSync(database), before);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("projection repair is explicit and ordinary doctor never mutates", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-projection-repair-"));
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(built.status, 0, built.stderr);
+    const initialized = spawnSync(binary, ["--home", engramHome, "init"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(initialized.status, 0, initialized.stderr);
+    const database = join(
+      engramHome,
+      "projects",
+      fingerprint(projectId),
+      "engram.db",
+    );
+    executeSql(
+      database,
+      "DROP INDEX memory_heads_scope; DROP TABLE work_catalog_fts;",
+    );
+    const before = readFileSync(database);
+
+    const ordinary = spawnSync(binary, ["--home", engramHome, "doctor"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.notEqual(ordinary.status, 0);
+    assert.match(ordinary.stderr, /--repair-projections/u);
+    assert.deepEqual(readFileSync(database), before);
+
+    const repaired = spawnSync(
+      binary,
+      ["--home", engramHome, "doctor", "--repair-projections", "--json"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(repaired.status, 0, repaired.stderr);
+    const report = JSON.parse(repaired.stdout);
+    assert.equal(report.mode, "projection_repair");
+    assert.equal(report.mutation_enabled, true);
+    assert.equal(report.healthy, true);
+    const healthy = spawnSync(binary, ["--home", engramHome, "doctor"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.equal(healthy.status, 0, healthy.stderr);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("work-bound control records observations and rebinds after a stale fence", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-control-work-bound-"));
   const actor = "bound-runner";
@@ -1866,6 +1995,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       authorityGrant,
       "complete",
       refusedCompletionInput,
+      1,
     );
     assert.equal(refusedCompletion.code, "open_work_obligations");
     assert.equal(refusedCompletion.work_id, proposed.work.work_id);
@@ -1906,10 +2036,11 @@ test("work-bound control records observations and rebinds after a stale fence", 
         authorityGrant,
         "complete",
         refusedCompletionInput,
+        1,
       ),
       refusedCompletion,
     );
-    // The eight-word `done` answers the same typed refusal in words plus the
+    // The nine-word `done` answers the same typed refusal in words plus the
     // resolving command, prints no hash, and exits 2.
     const owed = spawnSync(
       binary,
@@ -2021,6 +2152,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
         ],
         idempotency_key: "bound-stale-obligation-completion",
       },
+      1,
     );
     assert.equal(staleRefusal.code, "open_work_obligations");
     assert.equal(staleRefusal.obligation_page.items[0].state, "open");

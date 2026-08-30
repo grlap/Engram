@@ -488,7 +488,6 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
 
 fn store_error_code(error: &StoreError) -> &'static str {
     match error {
-        StoreError::WorkCompletionWithRecovery { source, .. } => store_error_code(source),
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
@@ -545,7 +544,6 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::MemoryAccessDenied(_)
         | StoreError::PacketAccessDenied(_)
         | StoreError::TurnObservationIdempotencyConflict(_)
-        | StoreError::BackupNeedsMigration { .. }
         | StoreError::ControlPolicyConflict { .. }
         | StoreError::WorkNotFound(_)
         | StoreError::InvalidWork(_)

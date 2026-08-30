@@ -122,9 +122,8 @@ mutation also rechecks that all ancestors remain open and that the run still
 belongs to the one active `RootExecution`; a completed root therefore fences
 unfinished optional descendants even when their item lifecycle remains open.
 
-This separates durable planning identity from live execution authority. The
-current implementation's `task_id` maps temporarily to a run; new protocol
-records bind both `work_id` and `run_id` during migration.
+This separates durable planning identity from live execution authority.
+Protocol records bind both `work_id` and `run_id`.
 
 Memory scope does not recursively walk arbitrary ancestors. A shared
 `Scope::Work` records the focused work id for provenance and feed routing, but
@@ -186,18 +185,15 @@ work.
 Every new seal also declares completion-obligation schema V1 and records the
 exact `(definition, terminal resolution)` pairs applicable at its pre-seal
 dense run-feed cut. An open obligation refuses sealing before any terminal
-work mutation. A required child seal is decoded and checked recursively; a new
-parent cannot cite a legacy child seal when that child's cut already contained
-obligation definitions. Legacy terminal seals remain readable and are reported
-as legacy rather than treated as missing bindings.
+work mutation. A required child seal is decoded and checked recursively, and
+every accepted seal carries the current obligation-schema binding.
 
 New seals also declare environment schema V1 and bind the exact sorted,
 distinct set of environment-evidence hashes visible at the same dense cut.
 The set is capped at 64 and contains hashes only: canonical toolchain,
 sandbox/image, workspace, and capability-map components remain in their own
-evidence objects. Pre-environment seals retain their original canonical bytes,
-decode with an empty environment basis, and are surfaced as legacy by
-diagnostics rather than rewritten. Environment identity is currently audit
+evidence objects. Every accepted seal carries the current environment-schema
+binding. Environment identity is currently audit
 evidence; the built-in test obligation does not yet require a particular
 environment hash.
 
@@ -349,8 +345,8 @@ work-event append without an item id. Delivery pages have their own dense
 per-session sequence. A position is always carried with its feed kind and id.
 A delivery position is separate from the vector of source-feed positions
 represented by that delivery. A global database row id is not a cursor. Object
-hashes reproduce content but never order changes. `engram doctor`, migration,
-and recovery still replay retained history exhaustively and compare it with
+hashes reproduce content but never order changes. `engram doctor` and recovery
+still replay retained history exhaustively and compare it with
 those bindings. The serial scale regression covers claim, evidence,
 checkpoint, revision, block/unblock, handoff, completion, and `work_next` over
 500 items and 5,000 events, including one 500-event item, with a fixed
@@ -377,8 +373,8 @@ The hot agent protocol has six operations:
 
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for
-the process lifetime and shares it across the eight-word and legacy work
-handlers. That instance lazily retains one SQLite connection; cloning a
+the process lifetime and shares it across the ten agent tools. That instance
+lazily retains one SQLite connection; cloning a
 service explicitly creates an independent connection so concurrent delivery
 and CAS behavior remains real rather than process-local serialization. The
 serial scale benchmark samples that same retained-service lifecycle. The
@@ -431,7 +427,7 @@ revalidate their revision, claim, lease, authority, and canonical projection
 basis under the write lock. The exact projected change page and its byte-budget
 omission count are stored canonically beside the tentative cursor and opaque
 token. Staging compare-and-swaps the confirmed cursor, empty pending slot,
-focused work, and legacy-task binding under the SQLite write lock; a focus or
+focused work, and task binding under the SQLite write lock; a focus or
 task rebind that commits first forces projection to restart on the new read
 basis.
 
@@ -464,7 +460,12 @@ compact receipt, one bounded `obligation_page`, generic readiness obligations,
 and `allowed_next`, so hundreds of historical events cannot grow a mutation
 response. The same page field appears on `work_focus`, nested
 `work_next.focus`, and both completion outcomes. Its item count and canonical
-byte size are bounded independently, with an explicit `omitted_count`.
+byte size are bounded independently, with an explicit `omitted_count`. Open
+obligations sort ahead of terminal history under both count and byte trimming.
+The sibling focus-evidence selection retains environments required by visible
+open obligations and keeps each visible verification's referenced environment
+before that verification, so bounded summaries do not expose dangling typed
+evidence links.
 
 `work_complete` accepts either previously recorded evidence and checkpoint
 state or an optional `capture { summary, refs }`. The capture form records one
@@ -494,21 +495,21 @@ verification stale even when it came from another workspace with the same
 previous content fingerprint.
 
 Every execution observation freezes the canonical obligation-rule-set hash
-selected by the begun grant's project-policy epoch. The stock V1 set turns each
+selected by the begun grant's project-policy epoch. The built-in set turns each
 source-changing observation into one immutable test obligation on the run,
 independent of action outcome and source-basis availability. Each definition
 repeats the exact rule-set hash, rule identity/version, trigger, and requirement;
 changing the active policy affects only later observations and never
-reinterprets an existing definition. Legacy records without the hash retain
-the stock V1 meaning. Definitions and their later satisfied/waived resolutions
+reinterprets an existing definition. Definitions and their later
+satisfied/waived resolutions
 are direct dense feed objects; `work_run_obligations` is only their verified
 query projection. Satisfaction is evaluated against the latest mutation at an
 exact run-feed cut. A passed test for a later basis-bearing mutation may close
 earlier open definitions, but a basisless latest mutation makes the open set
 waiver-only until a newer basis-bearing mutation and passed test arrive.
 
-The page exposes immutable obligation and definition identities, the selected
-rule-set hash when present, rule, requirement, trigger, state, terminal
+The page exposes immutable obligation and definition identities, the required
+selected rule-set hash, rule, requirement, trigger, state, terminal
 evidence/resolution, and deterministic typed guidance. Agents cannot mint or
 waive obligations. Waiver is restricted
 to the host/operator CLI and the host-private `obligation_waive` operation
@@ -861,19 +862,14 @@ runtime dependency. The accurate V1 claim is "local-first Beads replacement
 with optional sequential portability"; teams needing a concurrently writable
 multi-machine backlog still need an external system or later Engram sync.
 
-Work-targeted `memory_note` calls bind directly to the persisted local work
-focus: shared notes enter project/root/run feeds and are root-visible to
-participating peers, while private notes remain exact-item actor-local scratch
-and never enter peer delivery. When a session is also task-bound, the caller
-must explicitly choose `target: work` or `target: task`; Engram does not change
-the capture scope implicitly. Work
-focus returns a bounded, actor-filtered memory summary, so the work graph and
-its execution memory do not require a legacy tracker task as an identity shim.
-Every `memory_note` mutation requires a caller-stable `idempotency_key`; an
-exact retry returns the first receipt and the same key with different prose is
-a conflict. A shared work-scoped capture also requires the focused session's
-exact live claim; a successful capture snapshots and renews that claim in its
-canonical work event, while replay and refusal do not renew it.
+The agent-facing `note` tool binds directly to persisted local work focus. It
+requires the session's exact live claim and records one shared finding plus its
+evidence/checkpoint state for peers, handoff, and report assembly. The service
+derives the idempotency key; an exact retry returns the first receipt while
+changed prose is a new intent. Generic task memory and private scratch are not
+separate MCP tools. Work focus still returns a bounded, actor-filtered memory
+summary built from authorized canonical state, so the work graph and its
+execution memory do not require an external tracker identity shim.
 Restricted-sensitivity bodies are omitted from task and work search/focus
 views and remain unavailable through direct show in V1. `work_next` also
 replaces restricted work memory and memory outside the currently focused root
@@ -884,7 +880,7 @@ exposing protected content.
 
 The smallest coherent implementation sequence is:
 
-1. Define/migrate dense per-feed cursor identity, then add canonical work
+1. Define dense per-feed cursor identity, then add canonical work
    items/events, graph projections, local roots, hierarchy, prerequisites,
    ready queries, claims, and evidence-gated completion.
 2. Bind the existing task/run, memory feed, resource leases, and turn grants to

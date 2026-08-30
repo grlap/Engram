@@ -83,7 +83,7 @@ comprehension.
 
 The normal pre-turn decision inlines any required bounded packet/delta and
 activates the turn only after the host confirms those exact tokens at
-`turn_begin`; it does not send the agent away to call `memory_delta`. Events
+`turn_begin`; it does not send the agent away to call another retrieval tool. Events
 carry `blocking`, `advisory`, or `informational` admission impact in their
 named dense feeds, so an unrelated feed cannot create phantom lag.
 Host-reported context

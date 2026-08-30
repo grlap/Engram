@@ -32,12 +32,13 @@ and stays visibly so until an attributed resolution version cites all
 conflicting parents. Conflicts between different memories get explicit
 `contradicts` edges — never last-writer-wins.
 
-The shipped coding-agent slice exposes that edge as `memory_contradict`: the
-caller supplies two visible shared version hashes plus an attributed reason.
-Engram does not pretend keyword or model inference can safely discover every
-semantic conflict. The edge makes both records visibly contested, and an
-applicable firm/hard pinned pair stops packet construction. Explicit merge or
-resolution actions remain part of the broader version-management surface.
+Engram represents that edge as a canonical contradiction event carrying two
+shared version hashes plus an attributed reason. The current agent MCP surface
+does not expose a memory-mutation tool. Engram does not pretend keyword or
+model inference can safely discover every semantic conflict. The edge makes
+both records visibly contested, and an applicable firm/hard pinned pair stops
+packet construction. Explicit contradiction, merge, and resolution operations
+remain host/operator work outside the current agent surface.
 
 ## Metadata that used to live in prose
 
@@ -48,8 +49,8 @@ derived-from), actor and assurance, confidence, sensitivity, validity window
 external refs, and tags. The `title` is separate from the `body` — one line
 that powers the cheap index tier in [context packets](context-packets.md).
 Low-friction capture also retains its classification basis and any delivery
-override reason, so a receipt or `memory_show` can explain exactly why prose
-became a particular typed record.
+override reason, so a receipt or authorized storage inspection can explain
+exactly why prose became a particular typed record.
 
 ## Derived status
 

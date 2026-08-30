@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Measured acceptance for the eight-word agent surface: on a fresh store, an
+// Measured acceptance for the nine-word agent surface: on a fresh store, an
 // agent goes from nothing to a sealed item with add -> claim -> done in at
 // most three commands and at most three agent-supplied fields, typing no
 // JSON, and never seeing a hash, fence, or idempotency key in text output.

@@ -101,7 +101,7 @@ store remains outside this coordination boundary.
 │ adapter        │──────►│ prompt + tool mediator    │
 └──────┬─────────┘       └──────┬───────────┬────────┘
        │                         │ control   │ agent-facing
-       ▼              before turn│ protocol  │ work + memory tools
+       ▼              before turn│ protocol  │ local-work tools
 ┌────────────────────────────────┴───────────▼────────┐
 │ Engram core                                         │
 │ work graph · control evaluator · memory/report      │
@@ -591,7 +591,7 @@ session, and times from that observation; a missing producer is a named
 environment object by hash or by same-request index. That object must name the
 same run and source revision.
 
-Environment evidence retains the opaque legacy fingerprint form. The stronger
+Environment evidence may use the opaque fingerprint form. The structured
 form supplies a closed, bounded component identity: `toolchain`, optional
 `sandbox` or image label, `workspace_id`, and the session's
 `capability_map_revision`. Engram derives the RFC 8785/SHA-256 fingerprint from
@@ -604,7 +604,7 @@ not authenticated attestation; the V1 no-op redactor is visible in
 diagnostics, and hosts must not place credentials or secrets in them.
 
 Only a typed, passed verification for the required check, exact run, and
-latest source revision may satisfy a verification obligation. The stock rule
+latest source revision may satisfy a verification obligation. The built-in rule
 leaves `check_fingerprint` and `required_environment` empty, so it accepts any
 passed test and treats an environment link as audit provenance. An
 operator-selected typed V1 set may instead pin both exact hashes. The matcher
@@ -614,15 +614,15 @@ agent-recorded `work_evidence` remains useful context but never verifies a
 check.
 
 The active immutable `ControlPolicy` selects a canonical
-`ObligationRuleSet` by hash. The stock V1 set contains the typed
+`ObligationRuleSet` by hash. The built-in set contains the typed
 `source_mutation_requires_test` rule, which evaluates every work-bound
 observation with `source_changed=true`, regardless of outcome or whether a
 source basis is present. The checkpoint resolves the rule set from the begun
 grant's frozen project-policy epoch and records its hash on the
 `ExecutionObservation`; every resulting `WorkObligation` repeats that exact
 selection. Activating another set affects only observations from later policy
-epochs and cannot reinterpret an old trigger, definition, or completion cut.
-Legacy observations without a rule-set field retain the stock V1 meaning.
+epochs and cannot reinterpret a prior trigger, definition, or completion cut.
+Every observation carries the exact selected rule-set hash.
 
 Each match appends one immutable `work_obligation` definition directly to the
 project, root-work, and run-execution feeds. A passed `test` verification
@@ -658,8 +658,8 @@ schema V1, and completion success reconstructs its page from that sealed basis.
 New seals separately declare environment schema V1 and bind the sorted,
 distinct environment-evidence hashes at or before the same dense run-feed cut.
 The seal carries hashes only, refuses more than 64 records, and never copies
-toolchain, sandbox, or image bytes. Pre-environment seals decode unchanged and
-are reported as legacy rather than rewritten.
+toolchain, sandbox, or image bytes. Every accepted seal carries the current
+environment-schema binding.
 
 An observation effect outside the frozen grant is rejected as
 `observation_scope_mismatch`. A checkpoint against an issued-but-not-begun
@@ -823,14 +823,11 @@ with `--authorized-by <actor> --reason <text>` installs a versioned built-in
 safe policy, records the explicit operator choice as asserted attribution, and
 atomically selects its hash. `turn_gated` is the default; plain `engram init`
 uses synthetic system attribution because no operator choice was made. Plain
-`engram init` preserves the selected policy
-on an existing store. A recognized pre-control-plane store—none of the policy,
-session, or turn-grant tables and no canonical policy objects—retains its
-ordinary objects while atomically installing the stock epoch-one policy. Once
-any control table or canonical policy object exists, a missing, unknown, or
-corrupt active policy fails store open for every surface; it never falls back
-to advisory memory or issues a grant. A future diagnostics-only repair mode may
-inspect such a store without enabling mutation, but is not shipped.
+`engram init` preserves the selected policy on an existing current store. Any
+missing, different-build, or corrupt schema or active policy fails store open for
+every service surface; it never falls back to advisory memory or issues a
+grant. `doctor --recover-policy` may inspect the policy family read-only but
+cannot return a usable store or enable mutation.
 On a cold store, core/control DDL, host path-policy binding, and the canonical
 policy selector/history commit in the same immediate transaction, so a crash
 cannot leave an empty policy table that later resembles established state.
@@ -871,26 +868,16 @@ the immutable chain or block activation.
 The bind/evaluate/begin/lease hot path verifies the selected version's
 canonical hash and projection bytes, matches its selector scalars, and uses an
 indexed successor probe to refuse a rolled-back head. It deliberately does not
-walk predecessor objects because historical versions do not participate in a
+walk predecessor objects because prior versions do not participate in a
 live decision. Store open, policy activation, `doctor`, and integrity
 verification additionally traverse and verify the complete authority-bound
-predecessor chain. Historical objects are checked against the structural
-contract declared by their own schema; only the active head must match the
-running binary's supported policy and control schemas. V1 keeps a static list
-of recognized built-in envelopes. Epoch one must use one of them, and the
-`set_required_assurance` operation may change only `required_assurance`,
-preserving the predecessor's supported effects, grant TTL, and selected
-obligation rule set. When a running binary widens the built-in envelope, store
-open appends a separate, system-attributed `upgrade_builtin_envelope` epoch
-that preserves assurance and rule selection and moves only between recognized
-envelopes. A legacy selector is first preserved as canonical epoch one, so
-adding `coordinate` is visible as epoch two and invalidates earlier session
-policy epochs exactly once.
+predecessor chain. Every object must use the current supported schema. Epoch
+one uses the built-in envelope, and `set_required_assurance` may change only
+`required_assurance`, preserving supported effects, grant TTL, and the selected
+obligation rule set.
 
-Current policy state schema V3 also requires one canonical obligation-rule-set
-selection. Opening a recognized schema-V2 policy appends one system-attributed
-`upgrade_builtin_obligation_rules` successor selecting the stock V1 set; it
-does not rewrite the predecessor. The operator-only
+Current policy state requires one canonical obligation-rule-set selection. The
+operator-only
 `engram control-policy set-obligation-rule-set` command may append an
 attributed successor under an epoch/hash compare-and-swap. It accepts bounded,
 strict JSON inline or through `@file`, and activates only the fully re-supplied
@@ -1087,9 +1074,8 @@ Before any new seal is frozen, every obligation definition whose trigger is at
 or before the completion cut must have a satisfied or host-authorized waived
 resolution at or before that same cut. The final checkpoint must acknowledge
 the typed verification evidence. Required child seals are decoded and checked
-recursively; a new parent refuses a legacy child seal if that child run already
-had obligation definitions at its cut. Old terminal legacy seals stay readable
-and diagnostics label them as legacy rather than fabricating bindings.
+recursively; every accepted child seal carries the exact current obligation
+and environment schema bindings.
 
 An executor may seal its run only after its last turn is checkpointed, all
 material outcomes are known, its host-confirmed source-feed progress reaches
@@ -1167,9 +1153,8 @@ session_heartbeat
 session_exit
 ```
 
-Agent-facing MCP keeps `memory_note`, `memory_context`, `memory_delta`, search,
-show, explanation, plus the bounded work create/plan/ready/claim/checkpoint/
-complete/handoff/query protocol. The host control
+Agent-facing MCP exposes exactly `next`, `ls`, `show`, `add`, `claim`,
+`update`, `note`, `done`, `search`, and `handoff`. The host control
 surface uses the stable spellings defined by `ControlRefusalCode`:
 `control_unavailable`, `store_corrupt`, `unknown_control_schema`,
 `control_policy_missing`, `control_assurance_insufficient`,

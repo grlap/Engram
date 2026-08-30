@@ -62,8 +62,8 @@ Everything canonical is an **immutable, content-addressed object**: memory
 versions, events (approve, retract, verify, tombstone, resolve), edges, and
 evidence. Objects serialize as RFC 8785 (JCS) canonical JSON; an object's id
 is the SHA-256 of its canonical bytes (hash field excluded), verified at read
-time. Unknown schema versions are retained but not activated; migrations mint
-new objects, never rewrite old ones.
+time. Readers accept the exact supported schema; policy changes append new
+objects and never rewrite an existing object.
 
 A **memory** is a stable id plus an append-only chain of versions with parent
 links. Multiple unsuperseded heads mean *contested*. Status (`proposed`,
@@ -86,9 +86,12 @@ report assembly uses a separate fenced assembly claim. See
 
 V1's canonical store is a **local SQLite database**: object rows keyed by
 content hash, written transactionally, append-only by core-enforced contract.
-Derived tables (heads, status, FTS5 full-text, usage counters) are a cache
-rebuilt deterministically from the objects (`engram rebuild-index`);
-`engram doctor` verifies hashes, graph references, projection rebuilds, and
+Exact-current durable tables include the active heads, status, authority,
+ordering, and idempotency projections consumed by runtime writes. Damage to
+those tables requires restoring a verified current backup. Declared indexes,
+triggers, and FTS5 content are separately rebuildable from verified durable rows
+with `engram doctor --repair-projections`; ordinary open never repairs them.
+`engram doctor` verifies hashes, graph references, projection bindings, and
 configured durability freshness. SQLite is canonical in `local` mode.
 Optional recovery snapshots produce `local_backed_up`; sequential
 cross-machine handoff produces `portable`; a later concurrent `Sync` backend

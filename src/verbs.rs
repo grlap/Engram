@@ -1,4 +1,4 @@
-//! Eight-word agent surface over the unchanged six-operation work core.
+//! Nine-word agent surface over the unchanged six-operation work core.
 //!
 //! Every word here is a thin translation of flat CLI flags or MCP arguments
 //! into existing [`LocalWorkService`] calls. The agent never supplies JSON,
@@ -1230,22 +1230,14 @@ impl AgentVerbs {
             }
             WorkCompleteResult::Refused(refusal) => {
                 let mut guidance = self.guidance(&after, "done", now);
-                if let Some(recovery) = &refusal.recovery {
-                    guidance
-                        .reminders
-                        .push(completion_recovery_reminder(recovery));
-                    guidance.next = vec![recovery.command.clone()];
-                }
+                guidance
+                    .reminders
+                    .push(completion_recovery_reminder(&refusal.recovery));
+                guidance.next = vec![refusal.recovery.command.clone()];
                 for reminder in obligation_reminders(&refusal.obligation_page) {
                     if !guidance.reminders.contains(&reminder) {
                         guidance.reminders.push(reminder);
                     }
-                }
-                if guidance.reminders.is_empty() {
-                    guidance.reminders.push(refusal.remedy.clone());
-                }
-                if refusal.recovery.is_none() {
-                    guidance.next = vec![format!("engram work done {work_ref}")];
                 }
                 (
                     vec![format!(
@@ -1599,7 +1591,7 @@ const NEXT_LIFECYCLE_LIMIT: usize = 3;
 /// (accept, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
 /// priority order — followed by `engram work show REF` for the rest. Planning
 /// edits (block, release, handoff offers, decomposition, revision, cancel) and
-/// entries the agent cannot run through the eight words stay in `allowed_next`
+/// entries the agent cannot run through the nine words stay in `allowed_next`
 /// on the structured receipt only.
 fn next_commands(
     allowed_next: &[String],
@@ -1983,7 +1975,7 @@ mod tests {
             items: vec![crate::WorkObligationSummary {
                 obligation_id: crate::WorkObligationId(uuid::Uuid::nil()),
                 definition: hash('a'),
-                rule_set: None,
+                rule_set: hash('c'),
                 state,
                 rule: BuiltinObligationRuleRef {
                     rule_id: "source_mutation_requires_test".into(),

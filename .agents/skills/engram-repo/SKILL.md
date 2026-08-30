@@ -33,7 +33,12 @@ contract and keep the change narrow.
 - Memory kind, authority, and delivery are orthogonal fields.
 - Immutable versions supersede; they are never edited in place.
 - Canonical object identity is SHA-256 over RFC 8785 UTF-8 JSON bytes.
-- Unknown schema versions may be retained but are never activated.
+- An established store opens only when every enforced schema marker and
+  durable shape exactly matches the current binary; stores created by a
+  different build are refused before mutation.
+- Never pin a digest in source or tests. References are derived at runtime
+  from the code that produces them; hashes remain only as computed canonical
+  object identity.
 - Applicable hard/firm pinned contradictions and pinned-budget overflow fail
   context assembly before an agent acts.
 - Local work needs no external reference. Explicit imports preserve immutable
@@ -81,8 +86,8 @@ contract and keep the change narrow.
 
 - `domain`: substrate-neutral meaning and state transitions.
 - `canonical`: serialization and content identity only.
-- `storage`: SQLite transactions, migrations, immutable rows, integrity, and
-  rebuildable indexes.
+- `storage`: exact-current SQLite validation, transactions, immutable rows,
+  integrity, and explicit rebuildable-index repair.
 - `storage/work`: local-work projections, typed feeds, claims, and seals.
 - `control`: pure control-policy evaluation without I/O.
 - `host`: host-private transport without policy forks.
@@ -91,7 +96,7 @@ contract and keep the change narrow.
 - external adapters: backend-neutral source snapshots, backup, portable
   handoff, later concurrent sync, frozen publication, idempotency, and receipt
   capabilities.
-- `verbs`: the eight-word agent surface; flat CLI flags and MCP arguments
+- `verbs`: the nine-word agent surface; flat CLI flags and MCP arguments
   translate into the unchanged six-operation core and every receipt gains
   `reminders` and `next` from fixed tables.
 - CLI/MCP front doors translate requests; they do not redefine domain rules.
@@ -101,7 +106,7 @@ policy outside the core. Extend ports using neutral request/response records.
 
 ## Using Engram as an agent
 
-Engram tracks the work of this repository. You use eight words; everything
+Engram tracks the work of this repository. You use nine words; everything
 else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
 `ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
 you type only the word.
@@ -135,9 +140,9 @@ Rules that matter:
   keys; if you see one, it is a bug.
 - Lost response? Run the same command again. Identical calls are safe.
 
-The same eight words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `note`, `done`) with the same flat arguments, plus `search` and
-`handoff`.
+The same nine words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `note`, `done`, `handoff`) with the same flat arguments, plus
+`search`.
 
 ## Verification
 

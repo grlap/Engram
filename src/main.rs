@@ -1,4 +1,4 @@
-//! Engram CLI: host/operator administration plus the eight-word agent surface.
+//! Engram CLI: host/operator administration plus the nine-word agent surface.
 
 use std::{
     env, fs,
@@ -19,10 +19,10 @@ use engram::{
     ProjectPolicyAuthorityDecision, SessionId, SqliteStore, StoreError, UpdateAction, UpdateInput,
     VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
     WorkAuthorityGrantStatus, WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability,
-    WorkCompleteInput, WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery,
-    WorkNextSection, WorkObligationId, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput,
-    describe_host_path_policy, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
-    probe_host_path_policy, project_database_path, store_error_value,
+    WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind, WorkLifecycle,
+    WorkNextQuery, WorkNextSection, WorkObligationId, WorkPlanningBudget, WorkProposeInput,
+    WorkUpdateInput, describe_host_path_policy, looks_like_work_ref, parse_defer_date,
+    parse_host_path_policy, probe_host_path_policy, project_database_path, store_error_value,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -77,7 +77,7 @@ fn resolve_host_path_identity(
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Create or migrate the local Engram database.
+    /// Create or verify the local Engram database.
     Init {
         /// Minimum host-control assurance required by the bootstrap policy.
         ///
@@ -104,6 +104,12 @@ enum Command {
         /// Emit the machine-readable host diagnostics contract on stdout.
         #[arg(long)]
         json: bool,
+        /// Inspect a refused control-policy store without opening or mutating it.
+        #[arg(long, conflicts_with = "repair_projections")]
+        recover_policy: bool,
+        /// Explicitly rebuild indexes, triggers, and full-text projections.
+        #[arg(long, conflicts_with = "recover_policy")]
+        repair_projections: bool,
     },
     /// Write a verified copy of the store into the host-local backup directory.
     ///
@@ -123,7 +129,7 @@ enum Command {
         #[arg(long)]
         replace: bool,
     },
-    /// Serve the coding-agent memory tools over MCP stdio.
+    /// Serve the coding-agent local-work tools over MCP stdio.
     Mcp {
         /// Actor identity asserted by the host integration.
         #[arg(long)]
@@ -140,10 +146,6 @@ enum Command {
         /// processes. An explicit flag takes precedence over the environment.
         #[arg(long, env = "ENGRAM_WORK_AUTHORITY_GRANT", hide_env_values = true)]
         work_authority_grant: Option<String>,
-        /// Also register the legacy `task_*`, `memory_*`, `context_explain`,
-        /// and `work_*` tools beside the eight agent words.
-        #[arg(long)]
-        legacy_tools: bool,
     },
     /// Serve the host-private behavioral-control protocol as JSON Lines.
     Control {
@@ -157,7 +159,8 @@ enum Command {
         #[arg(long)]
         source_skill: Option<String>,
     },
-    /// Track work with eight words: next, ls, show, add, claim, update, note, done.
+    /// Track work with nine words: next, ls, show, add, claim, update, note,
+    /// done, handoff.
     ///
     /// The host fixes actor, session, and authority through the environment
     /// so an agent types only the word and its arguments.
@@ -677,7 +680,18 @@ async fn main() -> Result<ExitCode> {
             authorized_by,
             reason,
         )?,
-        Command::Doctor { json } => doctor(&database, identity, &project_id, json)?,
+        Command::Doctor {
+            json,
+            recover_policy,
+            repair_projections,
+        } => doctor(
+            &database,
+            identity,
+            &project_id,
+            json,
+            recover_policy,
+            repair_projections,
+        )?,
         Command::Backup { out } => backup(&database, out)?,
         Command::Restore { from, replace } => restore(&database, &from, replace)?,
         Command::Mcp {
@@ -685,7 +699,6 @@ async fn main() -> Result<ExitCode> {
             session_id,
             source_skill,
             work_authority_grant,
-            legacy_tools,
         } => {
             let grant = parse_optional_hash(work_authority_grant)?;
             serve_mcp(
@@ -696,8 +709,7 @@ async fn main() -> Result<ExitCode> {
                     SessionId(session_id),
                     source_skill,
                 )
-                .with_work_authority_grant(grant)
-                .with_legacy_tools(legacy_tools),
+                .with_work_authority_grant(grant),
             )
             .await?;
         }
@@ -1071,7 +1083,7 @@ fn print_authority_grant_status(status: &WorkAuthorityGrantStatus) -> Result<()>
 
 #[allow(
     clippy::too_many_lines,
-    reason = "each word's flag translation stays beside the others so the eight-word surface is reviewable in one place"
+    reason = "each word's flag translation stays beside the others so the nine-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
     let verbs = AgentVerbs::new(
@@ -1308,6 +1320,7 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
         context.authority_grant,
     );
     let now = chrono::Utc::now();
+    let mut completion_refused = false;
     let result: Result<serde_json::Value, StoreError> = match operation {
         CoreWorkCommand::Next {
             limit,
@@ -1360,8 +1373,11 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
         CoreWorkCommand::Complete { work_ref, input } => {
             let input = parse_json_input::<WorkCompleteInput>(&input)?;
             service
-                .work_complete_core_on(work_ref.as_deref(), input, now)
-                .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
+                .work_complete_on(work_ref.as_deref(), input, now)
+                .and_then(|value| {
+                    completion_refused = matches!(&value, WorkCompleteResult::Refused(_));
+                    serde_json::to_value(value).map_err(StoreError::from)
+                })
         }
         CoreWorkCommand::Handoff { work_ref, input } => {
             let input = parse_json_input::<WorkHandoffInput>(&input)?;
@@ -1373,7 +1389,11 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
     match result {
         Ok(value) => {
             println!("{}", serde_json::to_string_pretty(&value)?);
-            Ok(ExitCode::SUCCESS)
+            Ok(if completion_refused {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            })
         }
         Err(error) => {
             eprintln!(
@@ -1604,15 +1624,8 @@ fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
 /// stale log can be applied to the restored file; no other Engram process
 /// may use the store while it is replaced.
 fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
-    // A backup from an older schema is still usable: it is migrated on the
-    // staged copy, never on the backup itself.
-    let manifest = match SqliteStore::verify_backup(from) {
-        Ok(manifest) => Some(manifest),
-        Err(engram::storage::StoreError::BackupNeedsMigration { .. }) => None,
-        Err(error) => {
-            return Err(error).with_context(|| format!("backup {} is not usable", from.display()));
-        }
-    };
+    let manifest = SqliteStore::verify_backup(from)
+        .with_context(|| format!("backup {} is not a current Engram store", from.display()))?;
     if let (Ok(source), Ok(target)) = (fs::canonicalize(from), fs::canonicalize(database))
         && source == target
     {
@@ -1637,14 +1650,10 @@ fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
     let _ = fs::remove_file(&staged);
     fs::copy(from, &staged)
         .with_context(|| format!("failed to stage {} beside the store", from.display()))?;
-    let mut migrated_from = None;
     let install = (|| -> Result<()> {
-        let (staged_manifest, from_version) = SqliteStore::prepare_restore_copy(&staged)
+        let staged_manifest = SqliteStore::verify_backup(&staged)
             .with_context(|| format!("staged copy {} failed verification", staged.display()))?;
-        migrated_from = from_version;
-        if let Some(manifest) = &manifest
-            && staged_manifest.file_sha256 != manifest.file_sha256
-        {
+        if staged_manifest.file_sha256 != manifest.file_sha256 {
             bail!("staged copy bytes differ from the backup");
         }
         if exists {
@@ -1694,15 +1703,8 @@ fn restore(database: &Path, from: &Path, replace: bool) -> Result<()> {
     }
     let restored = SqliteStore::verify_backup(database)
         .with_context(|| format!("restored store {} failed verification", database.display()))?;
-    if let Some(manifest) = &manifest
-        && restored.file_sha256 != manifest.file_sha256
-    {
+    if restored.file_sha256 != manifest.file_sha256 {
         bail!("restored store bytes differ from the backup");
-    }
-    if let Some(from_version) = migrated_from {
-        eprintln!(
-            "NOTE: the backup was written under work schema {from_version}; the restored store was migrated to the current schema before installation"
-        );
     }
     println!("{}", serde_json::to_string_pretty(&restored)?);
     Ok(())
@@ -1713,7 +1715,44 @@ fn doctor(
     identity: Option<HostPathPolicy>,
     project_id: &ProjectId,
     json: bool,
+    recover_policy: bool,
+    repair_projections: bool,
 ) -> Result<()> {
+    if recover_policy {
+        let report = SqliteStore::diagnose_control_policy_recovery(database)
+            .with_context(|| format!("failed to inspect {} read-only", database.display()))?;
+        if json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "mode": "control_policy_recovery",
+                    "mutation_enabled": false,
+                    "project_id": project_id,
+                    "database": canonical_database_path(database)?,
+                    "control_policy": report,
+                }))?
+            );
+        } else {
+            println!(
+                "Engram control-policy recovery diagnostics only ({} record(s) checked; mutation disabled)",
+                report.checked_control_records
+            );
+            for finding in &report.invalid_control_records {
+                println!("INVALID {}: {}", finding.record, finding.detail);
+            }
+            println!("Guidance: {}", report.guidance);
+        }
+        if !report.is_healthy() {
+            bail!(
+                "control-policy recovery diagnostics found {} invalid binding(s); the store remains fail-closed and unchanged",
+                report.invalid_control_records.len()
+            );
+        }
+        return Ok(());
+    }
+    if repair_projections {
+        return repair_store_projections(database, project_id, json);
+    }
     let store = SqliteStore::open_with_host_path_identity(database, identity)
         .with_context(|| format!("failed to open {}", database.display()))?;
     let report = store.verify_all()?;
@@ -1743,12 +1782,6 @@ fn doctor(
         "Engram store is healthy ({} immutable object(s), {} control record(s), {} work record(s) checked)",
         report.checked_objects, report.checked_control_records, report.checked_work_records
     );
-    if !report.legacy_work_records.is_empty() {
-        println!(
-            "Legacy work records retained without reinterpretation: {}",
-            report.legacy_work_records.join(", ")
-        );
-    }
     println!(
         "Control policy schema={} id={} epoch={} required={} obligation_rules={} supported={:?}; sessions={} issued={} begun={}",
         control.control_schema_version,
@@ -1779,6 +1812,35 @@ fn doctor(
         ),
     }
     emit_control_limitations(&control);
+    Ok(())
+}
+
+fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool) -> Result<()> {
+    let report = SqliteStore::repair_rebuildable_projections(database)
+        .with_context(|| format!("failed to repair {}", database.display()))?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "mode": "projection_repair",
+                "mutation_enabled": true,
+                "project_id": project_id,
+                "database": canonical_database_path(database)?,
+                "healthy": report.is_healthy(),
+                "checked_objects": report.checked_objects,
+                "checked_control_records": report.checked_control_records,
+                "checked_work_records": report.checked_work_records,
+                "invalid_objects": report.invalid_objects,
+                "invalid_control_records": report.invalid_control_records,
+                "invalid_work_records": report.invalid_work_records,
+            }))?
+        );
+    } else {
+        println!(
+            "Engram rebuildable projections repaired and verified ({} immutable object(s), {} control record(s), {} work record(s) checked)",
+            report.checked_objects, report.checked_control_records, report.checked_work_records
+        );
+    }
     Ok(())
 }
 

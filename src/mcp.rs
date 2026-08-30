@@ -1,7 +1,6 @@
-//! MCP stdio surface: the eight-word agent tools by default, and the legacy
-//! task/memory/work tools only when the host opts in.
+//! MCP stdio surface for the ten agent-facing work tools.
 
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use chrono::Utc;
 use rmcp::{
@@ -15,15 +14,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    ActorContext, AddInput, AgentVerbs, Authority, ChangeCursor, ClaimInput,
-    DevelopmentNoopRedactor, DoneInput, HandoffAction, HandoffInput, LocalWorkService, LsInput,
-    MemoryKind, NextInput, NoteInput, NoteRequest, NoteVisibility, ObjectHash, ProjectId, Receipt,
-    Sensitivity, SessionId, SqliteStore, TaskId, UpdateAction, UpdateInput, VerbError,
-    WorkAvailability, WorkCompleteInput, WorkHandoffInput, WorkItemKind, WorkLifecycle,
-    WorkNextQuery, WorkNextSection, WorkProposeInput, WorkUpdateInput,
-    domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation},
-    parse_defer_date,
-    storage::StoreError,
+    AddInput, AgentVerbs, ClaimInput, DoneInput, HandoffAction, HandoffInput, LocalWorkService,
+    LsInput, NextInput, NoteInput, ObjectHash, ProjectId, Receipt, SessionId, UpdateAction,
+    UpdateInput, VerbError, WorkItemKind, parse_defer_date, storage::StoreError,
 };
 
 /// Immutable host context asserted for one MCP connection.
@@ -39,9 +32,7 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// Creates a tools-only MCP service exposing the eight-word agent tools.
-    /// Task binding itself is stored in SQLite, so a new server process
-    /// resumes the session's active task.
+    /// Creates a tools-only MCP service exposing the ten agent work tools.
     #[must_use]
     pub fn new(
         database: PathBuf,
@@ -83,706 +74,11 @@ impl McpServer {
         self
     }
 
-    /// Also registers the legacy `task_*`, `memory_*`, `context_explain`, and
-    /// `work_*` tools beside the eight words.
-    #[must_use]
-    pub fn with_legacy_tools(mut self, enabled: bool) -> Self {
-        self.tool_router = if enabled {
-            Self::agent_tool_router() + Self::legacy_tool_router()
-        } else {
-            Self::agent_tool_router()
-        };
-        self
-    }
-
     fn verbs(&self) -> AgentVerbs {
         AgentVerbs::with_shared_service(
             Arc::clone(&self.work_service),
             self.actor_id.clone(),
             self.session_id.clone(),
-        )
-    }
-
-    fn store(&self) -> Result<SqliteStore, StoreError> {
-        SqliteStore::open_unresolved(&self.database)
-    }
-
-    fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {
-        ActorContext {
-            actor_id: self.actor_id.clone(),
-            actor_kind: "agent".into(),
-            assurance: AssuranceLevel::Asserted,
-            run_id: None,
-            session_id: Some(self.session_id.clone()),
-            source_tool: Some(format!("mcp:{tool_name}")),
-            source_skill: self.source_skill.clone(),
-            provenance_chain: vec![ProvenanceLink {
-                relation: ProvenanceRelation::AssertedBy,
-                source: self.actor_id.clone(),
-                reference: Some(self.session_id.0.clone()),
-            }],
-            reason: reason.into(),
-        }
-    }
-
-    fn bound_task(&self, store: &SqliteStore) -> Result<TaskId, StoreError> {
-        store.bound_task(&self.project_id, &self.session_id)
-    }
-
-    fn work_service(&self) -> &LocalWorkService {
-        self.work_service.as_ref()
-    }
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct TaskStartArgs {
-    /// Organizational ticket reference used by every session to rendezvous.
-    external_ref: String,
-    /// Short local execution title; the external tracker remains authoritative.
-    title: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct TaskJoinArgs {
-    /// Organizational ticket reference; no Engram UUID is required.
-    external_ref: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct MemoryNoteArgs {
-    /// Natural-language note. Labels such as `Decision:`, `Fact:`, and
-    /// `Constraint:` plus rule cues are optional hints.
-    prose: String,
-    /// Caller-stable key required for safe lost-response retry.
-    idempotency_key: String,
-    /// Required when both a legacy task and local work focus are active.
-    target: Option<MemoryNoteTarget>,
-    /// Keep this note private to the asserted agent rather than task-shared.
-    private: Option<bool>,
-    /// Optional explicit kind override; normal capture should omit it.
-    kind: Option<String>,
-    /// Optional explicit authority override; normal capture should omit it.
-    authority: Option<String>,
-    /// Optional external evidence or source references.
-    refs: Option<Vec<String>>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-enum MemoryNoteTarget {
-    Task,
-    Work,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct DeltaArgs {
-    /// Last processed task cursor; only strictly newer changes are returned.
-    after: i64,
-    /// Maximum changes to return (default 100, maximum 1000).
-    limit: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct SearchArgs {
-    /// Full-text query over visible memory titles and bodies.
-    query: String,
-    /// Maximum matches to return (default 20, maximum 1000).
-    limit: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct HashArgs {
-    /// Lowercase SHA-256 version hash from a memory write receipt.
-    hash: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct ContradictionArgs {
-    /// First memory version hash returned by `memory_note` or `memory_show`.
-    first_version: String,
-    /// Second memory version hash that cannot safely guide action with the first.
-    second_version: String,
-    /// Attributed explanation of the concrete conflict.
-    reason: String,
-    /// Stable key for safe retry. Omit for a new declaration.
-    idempotency_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct ClaimArgs {
-    /// Lease duration in seconds (1..86400).
-    ttl_seconds: i64,
-    /// Stable key for a safe acquisition retry; omit for a new attempt.
-    idempotency_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct WorkNextArgs {
-    /// Maximum ready candidates and feed changes to return (default 20, max 1000).
-    limit: Option<u32>,
-    /// Exact `delivered_through` value from the prior successfully received
-    /// page. Omit to replay any unacknowledged page. Before changing focus,
-    /// replay an unknown pending page first, then acknowledge the cursor that
-    /// was actually received while selecting sections that exclude `changes`.
-    acknowledge_through: Option<i64>,
-    /// Opaque `delivery_token` returned with the same successfully received
-    /// page. Required to advance a pending delivery cursor.
-    acknowledge_token: Option<String>,
-    /// Response sections to include: focus, ready, catalog, and/or changes.
-    /// Omit for all sections. Excluding changes never stages a delivery page.
-    #[serde(default)]
-    sections: Vec<String>,
-    /// Case-insensitive text search over refs, titles, outcomes, labels, and blockers.
-    search: Option<String>,
-    /// Lifecycle filters such as open, completed, cancelled, or superseded.
-    #[serde(default)]
-    lifecycles: Vec<String>,
-    /// Availability filters such as ready, claimed, active, blocked, deferred, or closed.
-    #[serde(default)]
-    availabilities: Vec<String>,
-    /// Return only work with an active graph/manual blocker.
-    #[serde(default)]
-    blocked_only: bool,
-    /// Exact case-insensitive assignee filter.
-    assigned_to: Option<String>,
-    /// Exact case-insensitive label filter.
-    label: Option<String>,
-    /// Continue catalog pagination after this short ref or full UUID.
-    catalog_after: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct WorkFocusArgs {
-    /// Short Engram work ref or full UUID; subsequent mutations use this focus.
-    work_ref: String,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct WorkProposeArgs {
-    /// Short ref or UUID of the parent to decompose; selects focus in the same call.
-    work_ref: Option<String>,
-    /// Root creation or atomic decomposition operation.
-    #[schemars(with = "WorkProposeInput")]
-    input: Value,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct WorkUpdateArgs {
-    /// Short ref or UUID to act on; selects focus in the same call.
-    work_ref: Option<String>,
-    /// Typed mutation against ambient focused work.
-    #[schemars(with = "WorkUpdateInput")]
-    input: Value,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct WorkCompleteArgs {
-    /// Short ref or UUID to complete; selects focus in the same call.
-    work_ref: Option<String>,
-    /// Evidence-backed acceptance against ambient focused work.
-    #[schemars(with = "WorkCompleteInput")]
-    input: Value,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-struct WorkHandoffArgs {
-    /// Short ref or UUID to hand off; selects focus in the same call.
-    work_ref: Option<String>,
-    /// Checkpoint-coupled offer, accept, or cancellation.
-    #[schemars(with = "WorkHandoffInput")]
-    input: Value,
-}
-
-#[tool_router(router = legacy_tool_router)]
-impl McpServer {
-    /// Start a local execution task or bind to the existing task with this ref.
-    #[tool(
-        name = "task_start",
-        description = "Start or ref-idempotently bind a local Engram task"
-    )]
-    fn task_start(&self, Parameters(args): Parameters<TaskStartArgs>) -> CallToolResult {
-        let mut store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        result(
-            store.start_task(
-                &self.project_id,
-                &args.external_ref,
-                &args.title,
-                &self.session_id,
-                self.actor("task_start", "bind this session to local task execution"),
-                Utc::now(),
-            ),
-            "task_start",
-        )
-    }
-
-    /// Join a local task using only the external tracker reference.
-    #[tool(
-        name = "task_join",
-        description = "Join an existing task by external reference only"
-    )]
-    fn task_join(&self, Parameters(args): Parameters<TaskJoinArgs>) -> CallToolResult {
-        let mut store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        result(
-            store.join_task(
-                &self.project_id,
-                &args.external_ref,
-                &self.session_id,
-                self.actor(
-                    "task_join",
-                    "join shared execution memory by external reference",
-                ),
-                Utc::now(),
-            ),
-            "task_join",
-        )
-    }
-
-    /// Capture one prose note into the active task's canonical working set.
-    #[tool(
-        name = "memory_note",
-        description = "Capture one classified task/work note; target is required when both contexts are active. Optional cues: Decision:, Fact:, Constraint:, Never, Always, Must, Do not, Only"
-    )]
-    fn memory_note(&self, Parameters(args): Parameters<MemoryNoteArgs>) -> CallToolResult {
-        let mut store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
-        {
-            Ok(state) => state.focused_work_id,
-            Err(error) => return store_error(&error),
-        };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => Some(task_id),
-            Err(StoreError::NoActiveTask(_)) => None,
-            Err(error) => return store_error(&error),
-        };
-        let (task_id, work_id) = match (args.target, task_id, work_id) {
-            (Some(MemoryNoteTarget::Task), Some(task_id), _) | (None, Some(task_id), None) => {
-                (Some(task_id), None)
-            }
-            (Some(MemoryNoteTarget::Task), None, _) => {
-                return invalid_argument("target", "no legacy task is active");
-            }
-            (Some(MemoryNoteTarget::Work), _, Some(work_id)) | (None, None, Some(work_id)) => {
-                (None, Some(work_id))
-            }
-            (Some(MemoryNoteTarget::Work), _, None) => {
-                return invalid_argument("target", "no local work item is focused");
-            }
-            (None, Some(_), Some(_)) => {
-                return invalid_argument(
-                    "target",
-                    "choose task or work when both a legacy task and local work focus are active",
-                );
-            }
-            (None, None, None) => {
-                return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
-            }
-        };
-        let kind = match args.kind.as_deref().map(parse_kind).transpose() {
-            Ok(kind) => kind,
-            Err(error) => return invalid_argument("kind", error),
-        };
-        let authority = match args.authority.as_deref().map(parse_authority).transpose() {
-            Ok(authority) => authority,
-            Err(error) => return invalid_argument("authority", error),
-        };
-        let request = NoteRequest {
-            project_id: self.project_id.clone(),
-            task_id,
-            work_id,
-            prose: args.prose,
-            visibility: if args.private.unwrap_or(false) {
-                NoteVisibility::Private
-            } else {
-                NoteVisibility::Shared
-            },
-            kind,
-            authority,
-            sensitivity: Some(Sensitivity::Internal),
-            title: None,
-            tags: Vec::new(),
-            evidence: Vec::new(),
-            refs: args.refs.unwrap_or_default(),
-            actor: self.actor(
-                "memory_note",
-                "record once for context, peer delta, handoff, and final report inputs",
-            ),
-            idempotency_key: args.idempotency_key,
-            created_at: Utc::now(),
-        };
-        result(
-            store.capture_note(&request, &DevelopmentNoopRedactor),
-            "memory_note",
-        )
-    }
-
-    /// Mark two visible task/work shared memory versions as contradictory.
-    #[tool(
-        name = "memory_contradict",
-        description = "Declare an attributed contradiction between two visible version hashes"
-    )]
-    fn memory_contradict(&self, Parameters(args): Parameters<ContradictionArgs>) -> CallToolResult {
-        let first = match ObjectHash::from_str(&args.first_version) {
-            Ok(hash) => hash,
-            Err(message) => return invalid_argument("first_version", message),
-        };
-        let second = match ObjectHash::from_str(&args.second_version) {
-            Ok(hash) => hash,
-            Err(message) => return invalid_argument("second_version", message),
-        };
-        let mut store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => Some(task_id),
-            Err(StoreError::NoActiveTask(_)) => None,
-            Err(error) => return store_error(&error),
-        };
-        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
-        {
-            Ok(state) => state.focused_work_id,
-            Err(error) => return store_error(&error),
-        };
-        if task_id.is_none() && work_id.is_none() {
-            return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
-        }
-        result(
-            store.record_memory_contradiction(
-                &self.project_id,
-                task_id,
-                work_id,
-                &self.session_id,
-                &self.actor_id,
-                &first,
-                &second,
-                &args.reason,
-                &args
-                    .idempotency_key
-                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
-                self.actor(
-                    "memory_contradict",
-                    "surface incompatible guidance before a peer acts",
-                ),
-                Utc::now(),
-            ),
-            "memory_contradict",
-        )
-    }
-
-    /// Build the bounded task/work context for this session and remember its packet.
-    #[tool(
-        name = "memory_context",
-        description = "Build a bounded context packet for the active task and focused local work"
-    )]
-    fn memory_context(&self) -> CallToolResult {
-        let mut store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => Some(task_id),
-            Err(StoreError::NoActiveTask(_)) => None,
-            Err(error) => return store_error(&error),
-        };
-        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
-        {
-            Ok(state) => state.focused_work_id,
-            Err(error) => return store_error(&error),
-        };
-        if task_id.is_none() && work_id.is_none() {
-            return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
-        }
-        result(
-            store.build_context(
-                &self.project_id,
-                task_id,
-                &self.session_id,
-                &self.actor_id,
-                Utc::now(),
-            ),
-            "memory_context",
-        )
-    }
-
-    /// Return only task-shared changes after a processed cursor.
-    #[tool(
-        name = "memory_delta",
-        description = "Read the authoritative task delta after a cursor"
-    )]
-    fn memory_delta(&self, Parameters(args): Parameters<DeltaArgs>) -> CallToolResult {
-        let store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => task_id,
-            Err(error) => return store_error(&error),
-        };
-        result(
-            store.task_delta(
-                &self.project_id,
-                task_id,
-                &self.session_id,
-                &self.actor_id,
-                ChangeCursor(args.after.max(0)),
-                args.limit.unwrap_or(100),
-            ),
-            "memory_delta",
-        )
-    }
-
-    /// Search only memory visible to this session's active task and work focus.
-    #[tool(
-        name = "memory_search",
-        description = "Full-text search visible memory without crossing private scope"
-    )]
-    fn memory_search(&self, Parameters(args): Parameters<SearchArgs>) -> CallToolResult {
-        let store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => Some(task_id),
-            Err(StoreError::NoActiveTask(_)) => None,
-            Err(error) => return store_error(&error),
-        };
-        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
-        {
-            Ok(state) => state.focused_work_id,
-            Err(error) => return store_error(&error),
-        };
-        if task_id.is_none() && work_id.is_none() {
-            return store_error(&StoreError::NoActiveTask(self.session_id.0.clone()));
-        }
-        result(
-            store.search_memories(
-                &self.project_id,
-                task_id,
-                work_id,
-                &self.session_id,
-                &self.actor_id,
-                Some(&args.query),
-                args.limit.unwrap_or(20),
-            ),
-            "memory_search",
-        )
-    }
-
-    /// Inspect a complete memory through the same scope checks as retrieval.
-    #[tool(
-        name = "memory_show",
-        description = "Verify and inspect an authorized memory by receipt hash"
-    )]
-    fn memory_show(&self, Parameters(args): Parameters<HashArgs>) -> CallToolResult {
-        let hash = match ObjectHash::from_str(&args.hash) {
-            Ok(hash) => hash,
-            Err(message) => return invalid_argument("hash", message),
-        };
-        let store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        let work_id = match store.work_session_state(&self.project_id, &self.session_id, Utc::now())
-        {
-            Ok(state) => state.focused_work_id,
-            Err(error) => return store_error(&error),
-        };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => Some(task_id),
-            Err(StoreError::NoActiveTask(_)) => None,
-            Err(error) => return store_error(&error),
-        };
-        result(
-            store.show_memory(
-                &hash,
-                &self.project_id,
-                task_id,
-                work_id,
-                &self.session_id,
-                &self.actor_id,
-            ),
-            "memory_show",
-        )
-    }
-
-    /// Explain all inclusion and omission decisions in a context packet.
-    #[tool(
-        name = "context_explain",
-        description = "Explain a context packet by its receipt hash"
-    )]
-    fn context_explain(&self, Parameters(args): Parameters<HashArgs>) -> CallToolResult {
-        let hash = match ObjectHash::from_str(&args.hash) {
-            Ok(hash) => hash,
-            Err(message) => return invalid_argument("hash", message),
-        };
-        let store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        result(
-            store.explain_context(&hash, &self.project_id, &self.session_id, &self.actor_id),
-            "context_explain",
-        )
-    }
-
-    /// Atomically claim the active task under a short, expiring lease.
-    #[tool(
-        name = "task_claim",
-        description = "Acquire an expiring task lease with typed conflict details"
-    )]
-    fn task_claim(&self, Parameters(args): Parameters<ClaimArgs>) -> CallToolResult {
-        if !(1..=86_400).contains(&args.ttl_seconds) {
-            return invalid_argument("ttl_seconds", "expected a value from 1 through 86400");
-        }
-        let mut store = match self.store() {
-            Ok(store) => store,
-            Err(error) => return store_error(&error),
-        };
-        let task_id = match self.bound_task(&store) {
-            Ok(task_id) => task_id,
-            Err(error) => return store_error(&error),
-        };
-        let now = Utc::now();
-        result(
-            store.claim_task(
-                task_id,
-                &self.session_id,
-                &args
-                    .idempotency_key
-                    .unwrap_or_else(|| uuid::Uuid::now_v7().to_string()),
-                now,
-                args.ttl_seconds,
-                self.actor("task_claim", "acquire exclusive execution ownership"),
-            ),
-            "task_claim",
-        )
-    }
-
-    /// Return ambient focus, obligations, ready candidates, and project changes.
-    #[tool(
-        name = "work_next",
-        description = "Return selected bounded focus, ready, catalog, and project-change sections. Each call returns the changes since this session's previous call; the previous page counts as delivered"
-    )]
-    fn work_next(&self, Parameters(args): Parameters<WorkNextArgs>) -> CallToolResult {
-        let sections = match parse_enum_values::<WorkNextSection>(&args.sections) {
-            Ok(values) => values,
-            Err(message) => return invalid_argument("sections", &message),
-        };
-        let lifecycles = match parse_enum_values::<WorkLifecycle>(&args.lifecycles) {
-            Ok(values) => values,
-            Err(message) => return invalid_argument("lifecycles", &message),
-        };
-        let availabilities = match parse_enum_values::<WorkAvailability>(&args.availabilities) {
-            Ok(values) => values,
-            Err(message) => return invalid_argument("availabilities", &message),
-        };
-        result(
-            self.work_service().work_next_with_delivery_token(
-                args.limit.unwrap_or(20),
-                args.acknowledge_through,
-                args.acknowledge_token.as_deref(),
-                WorkNextQuery {
-                    sections,
-                    search: args.search,
-                    lifecycles,
-                    availabilities,
-                    blocked_only: args.blocked_only,
-                    assigned_to: args.assigned_to,
-                    label: args.label,
-                    after: args.catalog_after,
-                },
-                Utc::now(),
-            ),
-            "work_next",
-        )
-    }
-
-    /// Select and fully inspect ambient work without claiming it.
-    #[tool(
-        name = "work_focus",
-        description = "Select work by short ref or UUID as ambient focus and return acceptance, graph, claim, handoff, evidence, and allowed-next state; never claims implicitly"
-    )]
-    fn work_focus(&self, Parameters(args): Parameters<WorkFocusArgs>) -> CallToolResult {
-        result(
-            self.work_service().work_focus(&args.work_ref, Utc::now()),
-            "work_focus",
-        )
-    }
-
-    /// Create a root or atomically decompose ambient work.
-    #[tool(
-        name = "work_propose",
-        description = "Create a local root or atomically decompose work. Optional work_ref selects the parent in the same call; idempotency_key may be omitted, in which case an identical call replays"
-    )]
-    fn work_propose(&self, Parameters(args): Parameters<WorkProposeArgs>) -> CallToolResult {
-        let input = match serde_json::from_value::<WorkProposeInput>(args.input) {
-            Ok(input) => input,
-            Err(error) => return invalid_argument("input", &error.to_string()),
-        };
-        result(
-            self.work_service()
-                .work_propose_on(args.work_ref.as_deref(), input, Utc::now()),
-            "work_propose",
-        )
-    }
-
-    /// Apply a typed mutation to ambient focused work.
-    #[tool(
-        name = "work_update",
-        description = "Apply one typed mutation to work. Optional work_ref selects the item in the same call; revision, run, claim, and fence are inferred; idempotency_key may be omitted, in which case an identical call replays"
-    )]
-    fn work_update(&self, Parameters(args): Parameters<WorkUpdateArgs>) -> CallToolResult {
-        let input = match serde_json::from_value::<WorkUpdateInput>(args.input) {
-            Ok(input) => input,
-            Err(error) => return invalid_argument("input", &error.to_string()),
-        };
-        result(
-            self.work_service()
-                .work_update_on(args.work_ref.as_deref(), input, Utc::now()),
-            "work_update",
-        )
-    }
-
-    /// Complete ambient work under inferred fences and explicit acceptance.
-    #[tool(
-        name = "work_complete",
-        description = "Complete work. Optional work_ref selects the item in the same call; omitted acceptance asserts every current criterion; fences, assurance, and host grant are inferred; idempotency_key may be omitted, in which case an identical call replays"
-    )]
-    fn work_complete(&self, Parameters(args): Parameters<WorkCompleteArgs>) -> CallToolResult {
-        let input = match serde_json::from_value::<WorkCompleteInput>(args.input) {
-            Ok(input) => input,
-            Err(error) => return invalid_argument("input", &error.to_string()),
-        };
-        result(
-            self.work_service()
-                .work_complete_core_on(args.work_ref.as_deref(), input, Utc::now()),
-            "work_complete",
-        )
-    }
-
-    /// Offer, accept, or cancel a checkpoint-coupled ambient claim handoff.
-    #[tool(
-        name = "work_handoff",
-        description = "Offer, accept, or cancel a handoff without lifecycle ids. Optional work_ref selects the item in the same call; the unique matching offer and claim fence are inferred; idempotency_key may be omitted, in which case an identical call replays"
-    )]
-    fn work_handoff(&self, Parameters(args): Parameters<WorkHandoffArgs>) -> CallToolResult {
-        let input = match serde_json::from_value::<WorkHandoffInput>(args.input) {
-            Ok(input) => input,
-            Err(error) => return invalid_argument("input", &error.to_string()),
-        };
-        result(
-            self.work_service()
-                .work_handoff_on(args.work_ref.as_deref(), input, Utc::now()),
-            "work_handoff",
         )
     }
 }
@@ -1120,7 +416,7 @@ impl McpServer {
     router = self.tool_router,
     name = "engram",
     version = "0.1.0",
-    instructions = "Eight words: next, ls, show, add, claim, update, note, done (plus search and handoff). add needs only a title; claim before you change anything; note findings once; done completes what you hold. Every answer ends with reminders (what is owed) and next (commands you can run now). Identical calls are safe to repeat."
+    instructions = "Nine words: next, ls, show, add, claim, update, note, done, handoff (plus search). add needs only a title; claim before you change anything; note findings once; done completes what you hold. Every answer ends with reminders (what is owed) and next (commands you can run now). Identical calls are safe to repeat."
 )]
 impl ServerHandler for McpServer {}
 
@@ -1137,26 +433,6 @@ fn verb(outcome: Result<Receipt, VerbError>) -> CallToolResult {
     }
 }
 
-fn result<T: serde::Serialize>(value: Result<T, StoreError>, operation: &str) -> CallToolResult {
-    match value {
-        Ok(value) => match serde_json::to_value(value) {
-            Ok(value) => CallToolResult::structured(value),
-            Err(error) => CallToolResult::structured_error(json!({
-                "error": {
-                    "code": "serialization_failed",
-                    "operation": operation,
-                    "message": error.to_string(),
-                }
-            })),
-        },
-        Err(error) => store_error(&error),
-    }
-}
-
-fn store_error(error: &StoreError) -> CallToolResult {
-    CallToolResult::structured_error(store_error_value(error))
-}
-
 /// Stable structured rendering shared by MCP and native JSON/core errors.
 #[must_use]
 #[allow(
@@ -1164,11 +440,6 @@ fn store_error(error: &StoreError) -> CallToolResult {
     reason = "one shared structured renderer keeps every CLI and MCP error surface identical"
 )]
 pub fn store_error_value(error: &StoreError) -> Value {
-    if let StoreError::WorkCompletionWithRecovery { source, recovery } = error {
-        let mut value = store_error_value(source);
-        value["error"]["details"]["recovery"] = json!(recovery);
-        return value;
-    }
     let details = match error {
         StoreError::TaskClaimHeld { holder, expires_at } => json!({
             "holder": holder,
@@ -1208,7 +479,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
         } => ambiguous_work_reference_details(reference, candidates, *more),
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
             "reason": message,
-            "remedy": "refresh with work_focus/work_next and follow allowed_next",
+            "remedy": "run next, then show the affected item and follow next",
         }),
         StoreError::WorkRevisionConflict {
             work,
@@ -1218,7 +489,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "work_id": work,
             "expected_revision": expected,
             "current_revision": current,
-            "remedy": "refresh the ambient item with work_focus before retrying with a new idempotency_key",
+            "remedy": "run show for the affected item before retrying with a new idempotency_key",
         }),
         StoreError::WorkOperationIdempotencyConflict { operation, key } => json!({
             "operation": operation,
@@ -1230,7 +501,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
         }),
         StoreError::WorkNotOpen(work) => json!({
             "work_id": work,
-            "remedy": "refresh with work_focus and follow allowed_next",
+            "remedy": "run show for the affected item and follow next",
         }),
         StoreError::WorkClaimHeld {
             work,
@@ -1246,13 +517,13 @@ pub fn store_error_value(error: &StoreError) -> Value {
         }),
         StoreError::WorkClaimMismatch { work } => json!({
             "work_id": work,
-            "remedy": "refresh with work_focus; reclaim or accept a handoff before mutating",
+            "remedy": "run show; claim the item again or accept its handoff before mutating",
         }),
         StoreError::WorkClaimLapsed { work, expired_at } => json!({
             "work_id": work,
             "expired_at_ms": expired_at.timestamp_millis(),
             "expired_at": expired_at.to_rfc3339(),
-            "remedy": "recover the lapsed claim with work_update claim and a recovery_reason before mutating",
+            "remedy": "run claim REF --recover \"why the expired claim is safe to recover\" before mutating",
         }),
         StoreError::WorkCompletionRefused { work, reason } => json!({
             "work_id": work,
@@ -1277,7 +548,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
 fn missing_work_details(work: crate::WorkId) -> Value {
     json!({
         "work_id": work,
-        "remedy": "call work_next to search/list work, then work_focus using a returned short_ref",
+        "remedy": "run search or ls, then show a returned short_ref",
     })
 }
 
@@ -1296,7 +567,6 @@ fn ambiguous_work_reference_details(
 
 fn error_code(error: &StoreError) -> &'static str {
     match error {
-        StoreError::WorkCompletionWithRecovery { source, .. } => error_code(source),
         StoreError::TaskClaimHeld { .. } => "task_claim_held",
         StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
         StoreError::ClaimIdempotencyConflict(_) => "claim_idempotency_conflict",
@@ -1341,7 +611,6 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidControlObservation(_)
         | StoreError::InvalidControlSession(_)
         | StoreError::HostPathIdentityUnresolved
-        | StoreError::BackupNeedsMigration { .. }
         | StoreError::ControlSessionNotBound(_)
         | StoreError::ControlSessionTokenMismatch(_)
         | StoreError::ControlConnectionSuperseded(_)
@@ -1375,40 +644,6 @@ fn invalid_argument(field: &str, message: &str) -> CallToolResult {
     }))
 }
 
-fn parse_enum_values<T>(values: &[String]) -> Result<Vec<T>, String>
-where
-    T: serde::de::DeserializeOwned,
-{
-    values
-        .iter()
-        .map(|value| {
-            serde_json::from_value(Value::String(value.trim().to_lowercase()))
-                .map_err(|error| error.to_string())
-        })
-        .collect()
-}
-
-fn parse_kind(value: &str) -> Result<MemoryKind, &'static str> {
-    match value {
-        "constraint" => Ok(MemoryKind::Constraint),
-        "decision" => Ok(MemoryKind::Decision),
-        "convention" => Ok(MemoryKind::Convention),
-        "fact" => Ok(MemoryKind::Fact),
-        "preference" => Ok(MemoryKind::Preference),
-        "episode" => Ok(MemoryKind::Episode),
-        _ => Err("expected constraint, decision, convention, fact, preference, or episode"),
-    }
-}
-
-fn parse_authority(value: &str) -> Result<Authority, &'static str> {
-    match value {
-        "hard" => Ok(Authority::Hard),
-        "firm" => Ok(Authority::Firm),
-        "soft" => Ok(Authority::Soft),
-        _ => Err("expected hard, firm, or soft"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1438,35 +673,7 @@ mod tests {
     }
 
     #[test]
-    fn completion_recovery_preserves_the_source_error_and_adds_typed_recovery() {
-        let work_id = crate::WorkId::new();
-        let expired_at = Utc::now();
-        let recovery = crate::WorkCompletionRecovery {
-            cause: crate::WorkCompletionRecoveryCause::LapsedClaim { expired_at },
-            item: crate::WorkReferenceCandidate {
-                work_id,
-                short_ref: "w-recover".into(),
-                title: "Recover completion".into(),
-                lifecycle: crate::WorkLifecycle::Open,
-            },
-            command: "engram work claim w-recover --recover --reason \"resume\"".into(),
-        };
-        let error = StoreError::WorkCompletionWithRecovery {
-            source: Box::new(StoreError::WorkClaimLapsed {
-                work: work_id,
-                expired_at,
-            }),
-            recovery: Box::new(recovery.clone()),
-        };
-
-        assert_eq!(error_code(&error), "work_claim_lapsed");
-        let value = store_error_value(&error);
-        assert_eq!(value["error"]["code"], "work_claim_lapsed");
-        assert_eq!(value["error"]["details"]["recovery"], json!(recovery));
-    }
-
-    #[test]
-    fn retained_work_service_survives_failure_and_serves_both_tool_sets() {
+    fn retained_work_service_survives_failure_for_agent_tools() {
         let directory = tempfile::tempdir().expect("temporary MCP home");
         let server = McpServer::new(
             directory.path().join("engram.sqlite3"),
@@ -1474,8 +681,7 @@ mod tests {
             "agent".into(),
             SessionId("mcp-retained-session".into()),
             Some("mcp-test".into()),
-        )
-        .with_legacy_tools(true);
+        );
 
         let refused = server.verbs().add(
             AddInput {
@@ -1491,18 +697,6 @@ mod tests {
             .verbs()
             .next(&NextInput { limit: Some(5) }, Utc::now())
             .expect("agent tool remains usable after refusal");
-        server
-            .work_service()
-            .work_next(
-                5,
-                WorkNextQuery {
-                    sections: vec![WorkNextSection::Catalog],
-                    ..WorkNextQuery::default()
-                },
-                Utc::now(),
-            )
-            .expect("legacy work tool shares the usable retained service");
-
         let cloned_handler = server.clone();
         assert!(Arc::ptr_eq(
             &server.work_service,

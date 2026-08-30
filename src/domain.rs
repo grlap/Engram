@@ -73,11 +73,7 @@ impl ControlAssurance {
 #[serde(rename_all = "snake_case")]
 pub enum ProjectPolicyOperation {
     SetRequiredAssurance,
-    UpgradeBuiltinEnvelope,
-    UpgradeBuiltinObligationRules,
     SetObligationRuleSet,
-    #[serde(other)]
-    Unknown,
 }
 
 /// Immutable operator/host attribution authorizing one project policy change.
@@ -91,8 +87,7 @@ pub struct ProjectPolicyAuthorityDecision {
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_policy: Option<ObjectHash>,
     pub required_assurance: ControlAssurance,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub obligation_rule_set: Option<ObjectHash>,
+    pub obligation_rule_set: ObjectHash,
     pub authorized_by: ActorContext,
     pub reason: String,
     pub decided_at: DateTime<Utc>,
@@ -108,8 +103,7 @@ pub struct ControlPolicy {
     pub required_assurance: ControlAssurance,
     pub supported_effects: Vec<EffectClass>,
     pub grant_ttl_seconds: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub obligation_rule_set: Option<ObjectHash>,
+    pub obligation_rule_set: ObjectHash,
     pub authority: ObjectHash,
     pub activated_at: DateTime<Utc>,
 }
@@ -414,7 +408,7 @@ pub struct TurnIntent {
 ///
 /// The binding is a frozen reference to a live claim. Storage revalidates it
 /// before granting or beginning ordinary work and never derives it from a
-/// legacy task id or ambient focus.
+/// task id or ambient focus.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlWorkBinding {
     pub root_execution_id: RootExecutionId,
@@ -480,9 +474,7 @@ pub struct ExecutionObservation {
     pub outcome: ExecutionOutcome,
     pub source_changed: bool,
     /// Exact immutable rule set selected by the frozen turn-policy basis.
-    /// Legacy observations omit this field and retain the stock V1 meaning.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub obligation_rule_set: Option<ObjectHash>,
+    pub obligation_rule_set: ObjectHash,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_basis: Option<ExecutionSourceBasis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -562,8 +554,8 @@ pub enum EnvironmentEvidenceReference {
 
 /// Host-private request to capture the environment identity used for one exact
 /// run and content state. When `components` is present, storage derives and
-/// compares `environment_fingerprint`; absence preserves the legacy opaque
-/// fingerprint contract.
+/// compares `environment_fingerprint`; absence selects the opaque fingerprint
+/// contract.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EnvironmentEvidenceInput {
     pub source_basis: ExecutionSourceBasis,
@@ -1956,10 +1948,8 @@ pub struct WorkObligation {
     pub work_id: WorkId,
     pub run_id: WorkRunId,
     pub work_revision: i64,
-    /// Exact rule-set identity selected by the triggering observation. Legacy
-    /// definitions omit it and retain the stock V1 rule meaning.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rule_set: Option<ObjectHash>,
+    /// Exact rule-set identity selected by the triggering observation.
+    pub rule_set: ObjectHash,
     pub rule: BuiltinObligationRuleRef,
     pub triggering_observation: ObjectHash,
     pub trigger_position: FeedPosition,
@@ -2116,14 +2106,10 @@ pub struct CompletionSeal {
     pub checkpoint: Option<ObjectHash>,
     pub evidence: Vec<ObjectHash>,
     pub acceptance: Vec<AcceptanceResult>,
-    /// Absent only on immutable pre-A3 seals.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub obligation_schema_version: Option<u16>,
+    pub obligation_schema_version: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub obligations: Vec<CompletionObligationBinding>,
-    /// Absent only on immutable pre-B seals.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub environment_schema_version: Option<u16>,
+    pub environment_schema_version: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub environment: Vec<ObjectHash>,
     pub required_child_seals: Vec<ObjectHash>,
@@ -2186,9 +2172,8 @@ pub struct WorkEvent {
     pub handoff_offer: Option<WorkHandoffOffer>,
     pub blocker: Option<WorkBlocker>,
     /// Hash of the exact prerequisite and active-blocker projection after this
-    /// transition. Older events omit it and require full-history validation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relation_fingerprint: Option<ObjectHash>,
+    /// transition.
+    pub relation_fingerprint: ObjectHash,
     pub transition: WorkTransition,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
@@ -2231,7 +2216,6 @@ pub enum WorkTransition {
     Released {
         claim_id: WorkClaimId,
         fence: i64,
-        #[serde(default)]
         reason: String,
     },
     Checkpointed {
@@ -2250,7 +2234,6 @@ pub enum WorkTransition {
     HandoffCancelled {
         offer_id: WorkHandoffOfferId,
         offer: ObjectHash,
-        #[serde(default)]
         reason: String,
     },
     HandedOff {
@@ -2293,7 +2276,6 @@ pub enum WorkTransition {
         run_id: WorkRunId,
         generation: i64,
         authority: LifecycleAuthorityDecision,
-        #[serde(default)]
         reason: String,
     },
 }
@@ -2960,8 +2942,7 @@ pub struct NoteReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MemoryContradictionEvent {
     pub schema_version: u16,
-    #[serde(default)]
-    pub project_id: Option<ProjectId>,
+    pub project_id: ProjectId,
     #[serde(default)]
     pub task_id: Option<TaskId>,
     #[serde(default)]
@@ -3350,43 +3331,6 @@ mod tests {
 
         assert!(barrier.is_satisfied());
         assert!(barrier.waiting_on().is_empty());
-    }
-
-    #[test]
-    fn legacy_work_transitions_without_audit_reasons_still_decode() {
-        let released = WorkTransition::Released {
-            claim_id: WorkClaimId::new(),
-            fence: 2,
-            reason: "intentional release".into(),
-        };
-        let cancelled = WorkTransition::HandoffCancelled {
-            offer_id: WorkHandoffOfferId::new(),
-            offer: hash("cancelled offer"),
-            reason: "recipient unavailable".into(),
-        };
-        let reopened = WorkTransition::Reopened {
-            run_id: WorkRunId::new(),
-            generation: 2,
-            authority: LifecycleAuthorityDecision {
-                grant: hash("reopen authority"),
-            },
-            reason: "new generation".into(),
-        };
-        for transition in [released, cancelled, reopened] {
-            let mut value = serde_json::to_value(transition).expect("serialize transition");
-            value
-                .as_object_mut()
-                .expect("tagged transition object")
-                .remove("reason");
-            let decoded: WorkTransition =
-                serde_json::from_value(value).expect("decode legacy transition");
-            match decoded {
-                WorkTransition::Released { reason, .. }
-                | WorkTransition::HandoffCancelled { reason, .. }
-                | WorkTransition::Reopened { reason, .. } => assert!(reason.is_empty()),
-                _ => panic!("unexpected legacy transition"),
-            }
-        }
     }
 
     #[test]

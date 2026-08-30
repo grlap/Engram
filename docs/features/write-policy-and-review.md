@@ -25,11 +25,10 @@ port before persistence ([security & trust](security-and-trust.md)).
 
 ## Capture without ceremony
 
-`engram note <prose>` and `memory_note` are the common write path. They infer
-kind, authority, delivery, and scope from the active task and asserted host
-context, then return those choices in the write receipt. A caller supplies
-flags only to override or resolve genuine ambiguity. The explicit `assert`
-surface remains available, and inference never bypasses the promotion matrix.
+`engram work note` and MCP `note` are the shipped low-friction work capture
+path. They bind the finding to held work and return the evidence/checkpoint
+receipt. Generic typed-memory capture and explicit assertion remain planned;
+no inference path may bypass the promotion matrix.
 
 Task scope is the default for execution findings; agent scope is reserved for
 genuinely private scratch. The captured object drives peer deltas, handoff

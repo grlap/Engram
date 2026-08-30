@@ -111,9 +111,8 @@ effects:
   original receipt; same key + different payload is a conflict.
 
 Because the finalization pipeline proves this neutral contract, a real adapter
-later swaps in without changing work or report semantics. The existing
-`DummyTrackerAdapter` name may remain during migration but implements this
-publication role, not external tracker ownership.
+later swaps in without changing work or report semantics. `DummyTrackerAdapter`
+implements this publication role, not external tracker ownership.
 
 ## Portable durability and deferred integrations
 

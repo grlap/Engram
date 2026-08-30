@@ -38,7 +38,7 @@ use crate::{
     },
     storage::{
         BeginWorkProtocolAttempt, CompleteWorkStorageResult, StageWorkSessionDelivery, StoreError,
-        normalize_completion_acceptance_shape,
+        WorkEvidenceProjectionSummary, normalize_completion_acceptance_shape,
     },
 };
 
@@ -283,7 +283,7 @@ pub struct WorkChange {
 
 /// Exact agent projection persisted beside an unacknowledged dense feed page.
 /// Replays decode these bytes instead of rebuilding against mutable focus or
-/// legacy-task bindings.
+/// task bindings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct StagedWorkChangePage {
     schema_version: u16,
@@ -483,9 +483,7 @@ pub struct WorkObligationSummary {
     pub obligation_id: crate::WorkObligationId,
     pub definition: ObjectHash,
     /// Exact immutable rule-set identity selected when the obligation opened.
-    /// Legacy stock-rule obligations omit it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rule_set: Option<ObjectHash>,
+    pub rule_set: ObjectHash,
     pub state: WorkObligationState,
     pub rule: crate::BuiltinObligationRuleRef,
     pub requirement: crate::VerificationRequirement,
@@ -865,10 +863,7 @@ pub struct WorkCompleteRefusal {
     pub work_id: WorkId,
     pub obligation_page: WorkObligationPage,
     pub remedy: String,
-    /// Present on receipts minted by current writers. Legacy persisted
-    /// open-obligation refusals replay without this additive field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recovery: Option<WorkCompletionRecovery>,
+    pub recovery: WorkCompletionRecovery,
 }
 
 impl LocalWorkService {
@@ -2154,40 +2149,6 @@ impl LocalWorkService {
         Ok(result)
     }
 
-    /// Legacy/core completion surface. Agent-native `done` returns typed
-    /// recovery as a successful refusal receipt, while older callers retain
-    /// their historical non-zero error class with recovery attached.
-    ///
-    /// # Errors
-    ///
-    /// Returns the historical completion error class with an additive frozen
-    /// recovery object, or any storage/protocol error from completion itself.
-    pub fn work_complete_core_on(
-        &self,
-        work_ref: Option<&str>,
-        input: WorkCompleteInput,
-        now: DateTime<Utc>,
-    ) -> Result<WorkCompleteResult, StoreError> {
-        let result = self.work_complete_on(work_ref, input, now)?;
-        let WorkCompleteResult::Refused(refusal) = &result else {
-            return Ok(result);
-        };
-        let Some(recovery) = refusal.recovery.clone() else {
-            return Ok(result);
-        };
-        if matches!(
-            recovery.cause,
-            WorkCompletionRecoveryCause::OpenObligation { .. }
-        ) {
-            return Ok(result);
-        }
-        let source = legacy_completion_source_error(refusal.work_id, &recovery.cause);
-        Err(StoreError::WorkCompletionWithRecovery {
-            source: Box::new(source),
-            recovery: Box::new(recovery),
-        })
-    }
-
     fn prepare_completion_evidence(
         &self,
         store: &mut SqliteStore,
@@ -2829,15 +2790,35 @@ impl LocalWorkService {
         } else {
             store.latest_work_run(work_id)?
         };
-        let mut evidence = run
+        let obligation_records = run
             .as_ref()
-            .map(|run| store.work_run_evidence(run.run_id))
+            .map(|run| store.work_run_obligations(run.run_id))
             .transpose()?
             .unwrap_or_default();
-        let evidence_total = evidence.len();
-        if evidence.len() > MAX_FOCUS_RELATIONS {
-            evidence = evidence.split_off(evidence.len() - MAX_FOCUS_RELATIONS);
-        }
+        let obligation_page = work_obligation_page_from_records(obligation_records)?;
+        let required_environments = obligation_page
+            .items
+            .iter()
+            .filter(|obligation| obligation.state == WorkObligationState::Open)
+            .filter_map(|obligation| obligation.requirement.required_environment.clone())
+            .collect::<Vec<_>>();
+        let evidence_total = run
+            .as_ref()
+            .map(|run| store.work_run_evidence_count(run.run_id))
+            .transpose()?
+            .unwrap_or_default();
+        let evidence_candidates = run
+            .as_ref()
+            .map(|run| {
+                store.work_run_evidence_projection(
+                    run.run_id,
+                    &required_environments,
+                    MAX_FOCUS_RELATIONS,
+                )
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let evidence = prioritized_focus_evidence(evidence_candidates, &obligation_page);
         let evidence_items = run
             .as_ref()
             .map(|run| {
@@ -2848,12 +2829,6 @@ impl LocalWorkService {
             })
             .transpose()?
             .unwrap_or_default();
-        let obligation_records = run
-            .as_ref()
-            .map(|run| store.work_run_obligations(run.run_id))
-            .transpose()?
-            .unwrap_or_default();
-        let obligation_page = work_obligation_page_from_records(obligation_records)?;
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {
@@ -3372,6 +3347,79 @@ fn count_omission(section: WorkNextSection, omitted_count: usize) -> WorkSection
     }
 }
 
+fn prioritized_focus_evidence(
+    candidates: Vec<WorkEvidenceProjectionSummary>,
+    obligation_page: &WorkObligationPage,
+) -> Vec<ObjectHash> {
+    let required_environments = obligation_page
+        .items
+        .iter()
+        .filter(|obligation| obligation.state == WorkObligationState::Open)
+        .filter_map(|obligation| obligation.requirement.required_environment.clone())
+        .collect();
+    prioritized_focus_evidence_hashes(candidates, required_environments)
+}
+
+fn prioritized_focus_evidence_hashes(
+    mut candidates: Vec<WorkEvidenceProjectionSummary>,
+    mut required_environments: Vec<ObjectHash>,
+) -> Vec<ObjectHash> {
+    candidates.sort_by(|left, right| left.hash.as_str().cmp(right.hash.as_str()));
+    required_environments.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    required_environments.dedup();
+    let environment_hashes = candidates
+        .iter()
+        .filter(|candidate| candidate.kind == WorkEvidenceKind::Environment)
+        .map(|candidate| candidate.hash.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut selected = Vec::new();
+    for environment in required_environments {
+        if environment_hashes.contains(&environment) {
+            push_focus_evidence(&mut selected, &environment);
+        }
+        if selected.len() == MAX_FOCUS_RELATIONS {
+            return selected;
+        }
+    }
+    for candidate in candidates
+        .iter()
+        .filter(|candidate| candidate.kind == WorkEvidenceKind::Verification)
+    {
+        match candidate.environment.as_ref() {
+            Some(environment) if environment_hashes.contains(environment) => {
+                let environment_is_visible = selected.contains(environment);
+                let needed = usize::from(!environment_is_visible) + 1;
+                if selected.len() + needed > MAX_FOCUS_RELATIONS {
+                    continue;
+                }
+                // Environment first means byte trimming pops its dependent
+                // verification before it can break visible typed closure.
+                push_focus_evidence(&mut selected, environment);
+                push_focus_evidence(&mut selected, &candidate.hash);
+            }
+            _ => push_focus_evidence(&mut selected, &candidate.hash),
+        }
+        if selected.len() == MAX_FOCUS_RELATIONS {
+            return selected;
+        }
+    }
+    for candidate in candidates {
+        if candidate.kind != WorkEvidenceKind::Verification {
+            push_focus_evidence(&mut selected, &candidate.hash);
+        }
+        if selected.len() == MAX_FOCUS_RELATIONS {
+            break;
+        }
+    }
+    selected
+}
+
+fn push_focus_evidence(selected: &mut Vec<ObjectHash>, hash: &ObjectHash) {
+    if selected.len() < MAX_FOCUS_RELATIONS && !selected.contains(hash) {
+        selected.push(hash.clone());
+    }
+}
+
 fn work_evidence_summary(
     store: &SqliteStore,
     run_id: WorkRunId,
@@ -3552,7 +3600,7 @@ fn sealed_work_obligation_page(
             .cmp(right.obligation_id.0.as_bytes())
             .then_with(|| left.definition.as_str().cmp(right.definition.as_str()))
     });
-    if seal.obligation_schema_version.is_some() && bindings != seal.obligations {
+    if bindings != seal.obligations {
         return Err(StoreError::InvalidWorkProjection(format!(
             "completion seal for run {:?} does not match its canonical obligation closure",
             seal.run_id
@@ -3562,8 +3610,18 @@ fn sealed_work_obligation_page(
 }
 
 fn work_obligation_page_from_records(
-    mut records: Vec<crate::storage::WorkObligationRecord>,
+    records: Vec<crate::storage::WorkObligationRecord>,
 ) -> Result<WorkObligationPage, StoreError> {
+    let mut page = count_bounded_work_obligation_page(records);
+    while serde_json::to_vec(&page)?.len() > MAX_OBLIGATION_PAGE_BYTES
+        && trim_obligation_page_once(&mut page)
+    {}
+    Ok(page)
+}
+
+fn count_bounded_work_obligation_page(
+    mut records: Vec<crate::storage::WorkObligationRecord>,
+) -> WorkObligationPage {
     records.sort_by(|left, right| {
         match (
             left.state == WorkObligationState::Open,
@@ -3606,14 +3664,10 @@ fn work_obligation_page_from_records(
     if omitted_count > 0 {
         records.truncate(MAX_FOCUS_RELATIONS);
     }
-    let mut page = WorkObligationPage {
+    WorkObligationPage {
         items: records.iter().map(work_obligation_summary).collect(),
         omitted_count,
-    };
-    while serde_json::to_vec(&page)?.len() > MAX_OBLIGATION_PAGE_BYTES
-        && trim_obligation_page_once(&mut page)
-    {}
-    Ok(page)
+    }
 }
 
 fn trim_obligation_page_once(page: &mut WorkObligationPage) -> bool {
@@ -3709,8 +3763,16 @@ fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
         || focus.prerequisites.pop().is_some()
         || focus.handoffs.pop().is_some()
         || trim_obligation_page_once(&mut focus.obligation_page)
-        || focus.evidence_items.pop().is_some()
-        || focus.evidence.pop().is_some()
+        || trim_focus_evidence_once(focus)
+}
+
+fn trim_focus_evidence_once(focus: &mut WorkFocusView) -> bool {
+    if focus.evidence_items.pop().is_some() {
+        focus.evidence.pop();
+        true
+    } else {
+        focus.evidence.pop().is_some()
+    }
 }
 
 fn ensure_agent_response_budget<T: Serialize>(
@@ -3809,38 +3871,6 @@ fn handoff_metadata(input: &WorkHandoffInput) -> (&'static str, &'static str, &s
     }
 }
 
-fn legacy_completion_source_error(work: WorkId, cause: &WorkCompletionRecoveryCause) -> StoreError {
-    match cause {
-        WorkCompletionRecoveryCause::LapsedClaim { expired_at } => StoreError::WorkClaimLapsed {
-            work,
-            expired_at: *expired_at,
-        },
-        WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => {
-            StoreError::WorkCompletionRefused {
-                work,
-                reason: "one or more required children are incomplete".into(),
-            }
-        }
-        WorkCompletionRecoveryCause::MissingContribution { .. } => {
-            StoreError::WorkCompletionRefused {
-                work,
-                reason: "the root participant roster has unaccounted contributions or waivers"
-                    .into(),
-            }
-        }
-        WorkCompletionRecoveryCause::MissingAcceptance { criterion } => {
-            StoreError::WorkCompletionRefused {
-                work,
-                reason: format!("acceptance criterion {criterion:?} is incomplete"),
-            }
-        }
-        WorkCompletionRecoveryCause::OpenObligation { .. } => StoreError::WorkCompletionRefused {
-            work,
-            reason: "completion has open work obligations".into(),
-        },
-    }
-}
-
 fn completion_result(
     store: &SqliteStore,
     seal: &CompletionSeal,
@@ -3885,7 +3915,7 @@ fn completion_recovery_result(
         work_id,
         obligation_page,
         remedy,
-        recovery: Some(recovery),
+        recovery,
     })
 }
 
@@ -4374,9 +4404,7 @@ fn agent_change_object(
                     WorkChangeOmissionReason::OutsideFocusedRoot => 1,
                     WorkChangeOmissionReason::OutsideBoundTask => 2,
                 });
-            if event.project_id.as_ref() != Some(project_id)
-                || event.work_root_id != focused_root_id
-            {
+            if event.project_id != *project_id || event.work_root_id != focused_root_id {
                 return Ok(omitted_work_change(
                     object_kind,
                     omission.unwrap_or(WorkChangeOmissionReason::OutsideFocusedRoot),
@@ -4735,6 +4763,300 @@ mod tests {
             + Duration::seconds(second)
     }
 
+    fn obligation_record(
+        identity: i64,
+        state: WorkObligationState,
+        trigger_position: i64,
+        resolution_position: Option<i64>,
+        rule_padding: usize,
+    ) -> crate::storage::WorkObligationRecord {
+        let run_id = WorkRunId(uuid::Uuid::from_u128(10));
+        crate::storage::WorkObligationRecord {
+            definition_hash: ObjectHash::from_canonical_bytes(
+                format!("definition-{identity}").as_bytes(),
+            ),
+            obligation: WorkObligation {
+                schema_version: SCHEMA_VERSION,
+                obligation_id: crate::WorkObligationId(uuid::Uuid::from_u128(
+                    u128::try_from(identity).expect("positive test identity"),
+                )),
+                project_id: ProjectId("obligation-page-project".into()),
+                root_execution_id: crate::RootExecutionId(uuid::Uuid::from_u128(20)),
+                root_id: WorkId(uuid::Uuid::from_u128(30)),
+                work_id: WorkId(uuid::Uuid::from_u128(31)),
+                run_id,
+                work_revision: 1,
+                rule_set: ObjectHash::from_canonical_bytes(b"obligation-rule-set"),
+                rule: crate::BuiltinObligationRuleRef {
+                    rule_id: format!("rule-{identity}-{}", "x".repeat(rule_padding)),
+                    rule_version: 1,
+                },
+                triggering_observation: ObjectHash::from_canonical_bytes(
+                    format!("observation-{identity}").as_bytes(),
+                ),
+                trigger_position: crate::FeedPosition {
+                    feed: FeedId::RunExecution(run_id),
+                    position: trigger_position,
+                },
+                requirement: crate::VerificationRequirement {
+                    check_kind: VerificationKind::Test,
+                    check_fingerprint: None,
+                    required_environment: None,
+                },
+                opened_at: at(trigger_position),
+            },
+            state,
+            resolution_hash: (state != WorkObligationState::Open).then(|| {
+                ObjectHash::from_canonical_bytes(format!("resolution-{identity}").as_bytes())
+            }),
+            resolution: None,
+            resolution_position: resolution_position.map(|position| crate::FeedPosition {
+                feed: FeedId::RunExecution(run_id),
+                position,
+            }),
+        }
+    }
+
+    #[test]
+    fn obligation_page_keeps_open_items_first_under_count_trimming() {
+        let mut records = Vec::new();
+        for identity in 1..=5_i64 {
+            records.push(obligation_record(
+                identity,
+                WorkObligationState::Open,
+                10 - identity,
+                None,
+                0,
+            ));
+        }
+        for identity in 6..=12_i64 {
+            records.push(obligation_record(
+                identity,
+                WorkObligationState::Satisfied,
+                identity,
+                Some(identity),
+                0,
+            ));
+        }
+        records.reverse();
+
+        let page = work_obligation_page_from_records(records).expect("bounded obligation page");
+        assert!(page.items.len() <= MAX_FOCUS_RELATIONS);
+        assert_eq!(page.omitted_count, 12 - page.items.len());
+        assert!(
+            page.items[..5]
+                .iter()
+                .all(|item| item.state == WorkObligationState::Open)
+        );
+        assert!(
+            page.items[5..]
+                .iter()
+                .all(|item| item.state == WorkObligationState::Satisfied)
+        );
+        let open_ids = page.items[..5]
+            .iter()
+            .map(|item| item.obligation_id.0.as_u128())
+            .collect::<Vec<_>>();
+        assert_eq!(open_ids, vec![5, 4, 3, 2, 1]);
+        let terminal_ids = page.items[5..]
+            .iter()
+            .map(|item| item.obligation_id.0.as_u128())
+            .collect::<Vec<_>>();
+        let expected_terminal = (6_u128..=12)
+            .rev()
+            .take(page.items.len() - 5)
+            .collect::<Vec<_>>();
+        assert_eq!(terminal_ids, expected_terminal);
+    }
+
+    #[test]
+    fn obligation_page_keeps_every_open_item_that_fits_under_byte_trimming() {
+        let mut records = (1..=4_i64)
+            .map(|identity| {
+                obligation_record(identity, WorkObligationState::Open, identity, None, 0)
+            })
+            .chain((5..=8_i64).map(|identity| {
+                obligation_record(
+                    identity,
+                    WorkObligationState::Waived,
+                    identity,
+                    Some(identity),
+                    3_000,
+                )
+            }))
+            .collect::<Vec<_>>();
+        let expected = work_obligation_page_from_records(records.clone())
+            .expect("byte-bounded obligation page");
+        records.reverse();
+        let reversed = work_obligation_page_from_records(records)
+            .expect("deterministic byte-bounded obligation page");
+
+        assert_eq!(
+            serde_json::to_vec(&expected).expect("serialize expected page"),
+            serde_json::to_vec(&reversed).expect("serialize reversed page")
+        );
+        assert!(serde_json::to_vec(&expected).unwrap().len() <= MAX_OBLIGATION_PAGE_BYTES);
+        assert!(expected.omitted_count > 0);
+        assert_eq!(expected.omitted_count, 8 - expected.items.len());
+        assert!(
+            expected.items[..4]
+                .iter()
+                .all(|item| item.state == WorkObligationState::Open)
+        );
+        assert_eq!(
+            expected.items[..4]
+                .iter()
+                .map(|item| item.obligation_id.0.as_u128())
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn focus_evidence_keeps_required_environment_and_verification_closure() {
+        for prefix in ["fixture-a", "fixture-b"] {
+            let hash = |label: &str| {
+                ObjectHash::from_canonical_bytes(format!("{prefix}:{label}").as_bytes())
+            };
+            let required = hash("required-environment");
+            let environment_a = hash("environment-a");
+            let environment_b = hash("environment-b");
+            let mut candidates = vec![
+                WorkEvidenceProjectionSummary {
+                    hash: required.clone(),
+                    kind: WorkEvidenceKind::Environment,
+                    environment: None,
+                },
+                WorkEvidenceProjectionSummary {
+                    hash: environment_a.clone(),
+                    kind: WorkEvidenceKind::Environment,
+                    environment: None,
+                },
+                WorkEvidenceProjectionSummary {
+                    hash: environment_b.clone(),
+                    kind: WorkEvidenceKind::Environment,
+                    environment: None,
+                },
+                WorkEvidenceProjectionSummary {
+                    hash: hash("verification-a"),
+                    kind: WorkEvidenceKind::Verification,
+                    environment: Some(environment_a.clone()),
+                },
+                WorkEvidenceProjectionSummary {
+                    hash: hash("verification-b"),
+                    kind: WorkEvidenceKind::Verification,
+                    environment: Some(environment_b.clone()),
+                },
+                WorkEvidenceProjectionSummary {
+                    hash: hash("verification-without-environment"),
+                    kind: WorkEvidenceKind::Verification,
+                    environment: None,
+                },
+            ];
+            candidates.extend((0..6).map(|index| WorkEvidenceProjectionSummary {
+                hash: hash(&format!("generic-{index}")),
+                kind: WorkEvidenceKind::Generic,
+                environment: None,
+            }));
+            let expected =
+                prioritized_focus_evidence_hashes(candidates.clone(), vec![required.clone()]);
+            candidates.reverse();
+            let reversed =
+                prioritized_focus_evidence_hashes(candidates.clone(), vec![required.clone()]);
+
+            assert_eq!(expected, reversed);
+            assert_eq!(expected.len(), MAX_FOCUS_RELATIONS);
+            assert_eq!(expected.first(), Some(&required));
+            for candidate in candidates
+                .iter()
+                .filter(|candidate| candidate.kind == WorkEvidenceKind::Verification)
+            {
+                let Some(verification_index) =
+                    expected.iter().position(|hash| hash == &candidate.hash)
+                else {
+                    continue;
+                };
+                if let Some(environment) = candidate.environment.as_ref() {
+                    let environment_index = expected
+                        .iter()
+                        .position(|hash| hash == environment)
+                        .expect("visible verification retains its environment");
+                    assert!(environment_index < verification_index);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn focus_evidence_prioritizes_environments_from_the_visible_obligation_page() {
+        let environment_hash = |identity: i64| {
+            let value = if identity <= 8 {
+                100 + identity
+            } else {
+                identity - 8
+            };
+            ObjectHash::from_stored(format!("{value:064x}")).expect("valid environment hash")
+        };
+        let count_records = (1..=10_i64)
+            .rev()
+            .map(|identity| {
+                obligation_record(identity, WorkObligationState::Open, identity, None, 0)
+            })
+            .collect::<Vec<_>>();
+        let mut count_page = count_bounded_work_obligation_page(count_records);
+        assert_eq!(count_page.items.len(), MAX_FOCUS_RELATIONS);
+        assert_eq!(count_page.omitted_count, 2);
+        for item in &mut count_page.items {
+            item.requirement.required_environment = Some(environment_hash(
+                i64::try_from(item.obligation_id.0.as_u128()).expect("small fixture identity"),
+            ));
+        }
+
+        let mut byte_records = (1..=10_i64)
+            .map(|identity| {
+                let mut record =
+                    obligation_record(identity, WorkObligationState::Open, identity, None, 0);
+                record.obligation.requirement.required_environment =
+                    Some(environment_hash(identity));
+                record
+            })
+            .collect::<Vec<_>>();
+        byte_records.reverse();
+        let byte_page = work_obligation_page_from_records(byte_records).expect("byte-bounded page");
+        assert!(byte_page.items.len() < MAX_FOCUS_RELATIONS);
+        assert_eq!(byte_page.omitted_count, 10 - byte_page.items.len());
+
+        let candidates = (1..=10_i64)
+            .rev()
+            .map(|identity| WorkEvidenceProjectionSummary {
+                hash: environment_hash(identity),
+                kind: WorkEvidenceKind::Environment,
+                environment: None,
+            })
+            .collect::<Vec<_>>();
+        let selected = prioritized_focus_evidence(candidates.clone(), &count_page);
+        for visible in &count_page.items {
+            let required = visible
+                .requirement
+                .required_environment
+                .as_ref()
+                .expect("visible obligation requires an environment");
+            assert!(selected.contains(required));
+        }
+        assert!(!selected.contains(&environment_hash(9)));
+        assert!(!selected.contains(&environment_hash(10)));
+
+        let selected_after_byte_trim = prioritized_focus_evidence(candidates, &byte_page);
+        for visible in &byte_page.items {
+            let required = visible
+                .requirement
+                .required_environment
+                .as_ref()
+                .expect("visible obligation requires an environment");
+            assert!(selected_after_byte_trim.contains(required));
+        }
+    }
+
     fn install_protocol_grant(
         database: &std::path::Path,
         project: &ProjectId,
@@ -4948,7 +5270,7 @@ mod tests {
             effect: crate::EffectClass::MutateLocal,
             outcome: crate::ExecutionOutcome::Succeeded,
             source_changed: true,
-            obligation_rule_set: None,
+            obligation_rule_set: ObjectHash::from_canonical_bytes(b"obligation-rule-set"),
             source_basis: Some(crate::ExecutionSourceBasis {
                 workspace_id: "workspace-a".into(),
                 source_revision: "revision-a".into(),
@@ -5163,7 +5485,7 @@ mod tests {
                 claim: Some(claim.clone()),
                 handoff_offer: None,
                 blocker: None,
-                relation_fingerprint: None,
+                relation_fingerprint: ObjectHash::from_canonical_bytes(b"projection-test"),
                 transition,
                 actor: actor.clone(),
                 created_at: at(1),
@@ -6128,7 +6450,7 @@ mod tests {
             panic!("explicit empty acceptance must not complete work with criteria");
         };
         assert_eq!(refusal.code, "missing_acceptance");
-        let recovery = refusal.recovery.expect("current recovery receipt");
+        let recovery = refusal.recovery;
         assert!(matches!(
             recovery.cause,
             WorkCompletionRecoveryCause::MissingAcceptance { ref criterion }
@@ -6158,23 +6480,6 @@ mod tests {
         else {
             panic!("completion must seal");
         };
-    }
-
-    #[test]
-    fn legacy_completion_refusal_without_recovery_still_replays() {
-        let work_id = WorkId::new();
-        let result: WorkCompleteResult = serde_json::from_value(serde_json::json!({
-            "code": "open_work_obligations",
-            "work_id": work_id,
-            "obligation_page": { "items": [], "omitted_count": 0 },
-            "remedy": "legacy remedy"
-        }))
-        .expect("legacy refusal remains decodable");
-        let WorkCompleteResult::Refused(refusal) = result else {
-            panic!("legacy refusal must not decode as completion");
-        };
-        assert_eq!(refusal.work_id, work_id);
-        assert!(refusal.recovery.is_none());
     }
 
     #[test]
@@ -6231,7 +6536,7 @@ mod tests {
             panic!("lapsed claim must not complete work");
         };
         assert_eq!(refusal.code, "lapsed_claim");
-        let recovery = refusal.recovery.expect("current recovery receipt");
+        let recovery = refusal.recovery;
         assert!(matches!(
             recovery.cause,
             WorkCompletionRecoveryCause::LapsedClaim { expired_at } if expired_at == at(2)
@@ -6353,15 +6658,14 @@ mod tests {
         let WorkCompleteResult::Refused(refusal) = replay else {
             panic!("replay must retain the prior refusal");
         };
-        assert_eq!(refusal.recovery.expect("recovery"), frozen);
-        let StoreError::WorkCompletionWithRecovery { source, recovery } = service
-            .work_complete_core_on(None, input, at(6))
-            .expect_err("legacy core retains its non-zero error envelope")
-        else {
-            panic!("legacy core must attach recovery to its historical error class");
+        assert_eq!(refusal.recovery, frozen);
+        let core_replay = service
+            .work_complete_on(None, input, at(6))
+            .expect("core completion replays the same typed refusal");
+        let WorkCompleteResult::Refused(core_refusal) = core_replay else {
+            panic!("core completion must retain the refusal");
         };
-        assert!(matches!(*source, StoreError::WorkClaimLapsed { .. }));
-        assert_eq!(*recovery, frozen);
+        assert_eq!(core_refusal.recovery, frozen);
     }
 
     #[test]
@@ -6389,42 +6693,6 @@ mod tests {
                 .expect("ambiguous recovery target uses its full id"),
             work_id.0.to_string()
         );
-    }
-
-    #[test]
-    fn legacy_completion_recoveries_keep_the_work_completion_refused_code() {
-        let work_id = WorkId::new();
-        let causes = [
-            WorkCompletionRecoveryCause::RequiredChildUnsealed {
-                child: WorkId::new(),
-            },
-            WorkCompletionRecoveryCause::MissingContribution {
-                participant: SessionId("missing-peer".into()),
-            },
-            WorkCompletionRecoveryCause::MissingAcceptance {
-                criterion: "document the result".into(),
-            },
-        ];
-
-        for cause in causes {
-            let source = legacy_completion_source_error(work_id, &cause);
-            assert!(matches!(source, StoreError::WorkCompletionRefused { .. }));
-            let recovery = WorkCompletionRecovery {
-                cause,
-                item: WorkReferenceCandidate {
-                    work_id,
-                    short_ref: "w-legacy".into(),
-                    title: "Legacy completion error".into(),
-                    lifecycle: WorkLifecycle::Open,
-                },
-                command: "engram work show w-legacy".into(),
-            };
-            let value = crate::store_error_value(&StoreError::WorkCompletionWithRecovery {
-                source: Box::new(source),
-                recovery: Box::new(recovery),
-            });
-            assert_eq!(value["error"]["code"], "work_completion_refused");
-        }
     }
 
     #[test]
@@ -6484,7 +6752,7 @@ mod tests {
         let WorkCompleteResult::Refused(refusal) = completion else {
             panic!("missing participant must block completion");
         };
-        let recovery = refusal.recovery.expect("typed recovery");
+        let recovery = refusal.recovery;
 
         assert_eq!(recovery.item.work_id, work.work_id);
         assert!(matches!(
@@ -6602,7 +6870,7 @@ mod tests {
             panic!("required child must block completion");
         };
         assert_eq!(refusal.code, "required_child_unsealed");
-        let recovery = refusal.recovery.expect("current recovery receipt");
+        let recovery = refusal.recovery;
         assert!(matches!(
             recovery.cause,
             WorkCompletionRecoveryCause::RequiredChildUnsealed { child: blocked }
@@ -7024,7 +7292,7 @@ mod tests {
                 };
                 assert_eq!(refusal.code, "missing_acceptance");
                 assert!(matches!(
-                    refusal.recovery.expect("current recovery receipt").cause,
+                    refusal.recovery.cause,
                     WorkCompletionRecoveryCause::MissingAcceptance { .. }
                 ));
             } else {
@@ -7805,7 +8073,7 @@ mod tests {
             .expect("peer-root contradiction");
         let restricted_contradiction = MemoryContradictionEvent {
             schema_version: SCHEMA_VERSION,
-            project_id: Some(project.clone()),
+            project_id: project.clone(),
             task_id: None,
             work_root_id: Some(focused_root.root_id),
             left_version: visible.version.clone(),
@@ -9103,7 +9371,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runs serially from scripts/test-rust.sh to keep the latency budget meaningful"]
+    #[ignore = "runs serially from the platform Rust gate to keep the latency budget meaningful"]
     #[allow(
         clippy::too_many_lines,
         reason = "one scale regression measures the complete claim-validated mutation family against one fixed project fixture"

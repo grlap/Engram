@@ -388,8 +388,9 @@ pinned context, lease fences, and outstanding checkpoints. It returns one of:
   from an authority or safety refusal.
 
 The common pre-turn path grants with missing context/deltas inlined; it does
-not refuse merely to tell the agent to call `memory_delta`. Immediately before
-prompt dispatch, `turn_begin` atomically rechecks grant expiry, project-policy
+not refuse merely to tell the agent to call another retrieval tool.
+Immediately before prompt dispatch, `turn_begin` atomically rechecks grant
+expiry, project-policy
 epoch, work-admission epoch, work revision, claim fence, resource-lease
 fences, the optional portable writer epoch/validation deadline, and the
 session blocking watermark,
@@ -482,8 +483,8 @@ interchangeable. Unknown safety-relevant schema or policy versions block
 admission rather than being ignored.
 
 State-changing control transitions are idempotent and emit immutable canonical
-events; current session, delivery, action, and lease records are rebuildable
-projections. Live grants and high-volume allow/refusal diagnostics are
+events; current session, delivery, action, and lease records are durable
+operational projections. Live grants and high-volume allow/refusal diagnostics are
 immutable operational records with bounded retention, not canonical memory;
 restart discards their authority. Compact durable request-key tombstones bind
 kind/key/intent/terminal state through work retention so pruning or expiry can
@@ -499,23 +500,21 @@ expected head returns the committed receipt before re-evaluating that now-stale
 compare-and-swap guard; same-key different-intent reuse is a conflict.
 
 Initialization installs and selects a versioned safe project-scoped
-`ControlPolicy`. A pre-control-plane database is recognized only when the
-entire policy/session/turn-grant table family and canonical policy objects are
-absent; its ordinary objects are preserved while the stock epoch-one policy is
-installed atomically. After any control artifact exists, a missing, unknown,
-corrupt, or ambiguous active policy fails the current store-open path for every
-surface; a diagnostics-only recovery mode is deferred. A new immutable version records a canonical
+`ControlPolicy` atomically in a new store. An existing store must match the
+complete current schema and policy chain exactly; missing, different-build,
+corrupt, or ambiguous state fails ordinary store open for every surface before
+DDL. `doctor --recover-policy` is a read-only diagnostics-only path:
+it exposes no service or mutation handle and never selects or rewrites policy.
+A new immutable version records a canonical
 `project_policy_admin`-shaped host/operator authority decision. V1 honestly
 records that attribution as asserted context, not authenticated identity;
 authenticated policy administration is deferred. The implicit bootstrap
 default uses synthetic system attribution; an explicit initial assurance
 requires and records an asserted operator plus reason. Selecting the new policy
 and advancing the project epoch is one transaction.
-The active policy also selects one canonical `ObligationRuleSet` hash. A
-recognized policy without that field is preserved and advanced by one
-system-attributed migration epoch selecting the stock V1 set; it is never
-rewritten in place. Assurance-only and built-in-envelope transitions preserve
-the selected set. A host/operator-only activation may append a validated
+The active policy also selects one canonical `ObligationRuleSet` hash.
+Assurance-only transitions preserve the selected set. A host/operator-only
+activation may append a validated
 `set_obligation_rule_set` successor under the same epoch/hash compare-and-swap.
 The shipped operator CLI accepts at most 64 KiB of strict nested V1 JSON inline
 or through `@file`; rollback re-supplies the desired typed JSON and never
@@ -583,7 +582,7 @@ Each project, root-work, and run-execution feed allocates its own dense
 `feed_position` inside the same transaction as the event append. Delivery has
 its own dense per-session sequence over emitted pages. "Contiguous" always means adjacent
 positions in one named feed; a global SQLite row id may be useful internally
-but is never a cursor. This identity is fixed before work-graph migration so
+but is never a cursor. This identity is fixed by the work graph so
 safety CAS never depends on sparse cross-feed numbering.
 Current sessions, delivery progress, leases, actions, finalization barriers,
 and indexes are mutable projections, but their safety-relevant transitions
@@ -595,14 +594,18 @@ stores as a global sequence number.
 ```
 engram.db
   objects      // content-addressed rows: versions, events, edges, evidence — write-once
-  derived.*    // heads, status, FTS5, usage counters — rebuildable, never truth
+  projections  // exact-current heads/status/order plus rebuildable indexes and FTS5
   control.*    // live grants + bounded diagnostics — operational, never memory
-  meta         // store schema version; guards old clients
+  meta         // current-build marker; refuses stores created by another build
 ```
 
-Derived tables are a cache rebuilt deterministically from `objects`
-(`engram rebuild-index`); `engram doctor` verifies hashes, graph references,
-and index freshness. `local` mode relies on SQLite transactions. An optional
+Runtime heads, status, ordering, authority, and idempotency tables are durable
+parts of the exact-current store and are recovered from a verified current
+backup. `engram doctor --repair-projections` rebuilds only declared indexes,
+triggers, and FTS5 content from those verified durable rows; it never recreates
+durable tables from `objects`. `engram doctor` verifies hashes, graph references,
+projection bindings, and index freshness. `local` mode relies on SQLite
+transactions. An optional
 deterministic recovery snapshot and verified restore provide
 `local_backed_up`. Sequential off-host transfer under one active host provides
 `portable`. A later concurrent `Sync` backend provides `synchronized`.
@@ -620,10 +623,9 @@ the contract is part of the spec, not an implementation detail:
   portable/shared backend (§3.2–3.3) — is that hash.
 - Hashes are **verified at read time**, so `engram doctor` distinguishes
   corruption from formatting drift.
-- Every object carries a schema version. Objects with an *unknown* schema
-  version are retained but not activated — a newer teammate's records never
-  break an older client, and never silently apply through it either.
-- Migrations mint new objects; they never rewrite old ones.
+- Every executable object carries the exact supported schema version.
+  State from a different build is refused rather than interpreted.
+- State changes mint new objects; they never rewrite old ones.
 
 Without this contract, two implementations could mint different hashes for
 semantically identical records, and integrity checking would be impossible to
@@ -729,7 +731,7 @@ existence, kind, and hashes; the portable target must be authorized for that
 metadata. If policy forbids even stubs, Engram can make a marked-truncated
 backup/export but cannot call it portable or activate it as a working store.
 Acquire requires the same recognized `export_policy_hash`; mismatch refuses
-`portable_policy_mismatch` until an attributed policy adoption/migration or a
+`portable_policy_mismatch` until an attributed policy adoption or a
 new lineage is chosen.
 
 The port is substrate-neutral. For a personal or small private Git transport,
@@ -855,13 +857,13 @@ immediately or awaits approval depends on **origin and authority**. Every
 promotion is its own attributed audit event. Writes pass through the
 `Redactor` port before persistence (§7).
 
-The common capture path is `engram note <prose>` / `memory_note`. Every call
-supplies a caller-stable idempotency key so a lost response can be retried
-without duplicating the note; reusing the key for different prose is a
-conflict. The path infers
-kind, authority, delivery, and scope from the active task plus asserted host
-context, returns the inference in its receipt, and asks only when genuinely
-ambiguous. The explicit `assert` surface remains for callers that need exact
+The shipped agent capture path is `engram work note` / MCP `note`. The core
+derives a stable idempotency key so a lost response can be retried without
+duplicating the finding; changed prose is a new intent. A future generic memory
+capture surface may infer kind, authority, delivery, and scope from the active
+task plus asserted host context, return the inference in its receipt, and ask
+only when genuinely ambiguous. The explicit `assert` surface remains for
+callers that need exact
 control. Inference never bypasses the activation matrix below.
 
 | Origin | soft | firm | hard |
@@ -1011,7 +1013,7 @@ engram context delta --task <id> --since <cursor>
 
 # curation & ops
 engram review               engram conflicts           engram compact --dry-run
-engram sync                 engram doctor              engram rebuild-index
+engram sync                 engram doctor              engram doctor --repair-projections
 engram export --jsonl       # purge: exceptional runbook, not a CLI verb (§6.5)
 
 # local work and reports (§2.6, §9.5)
@@ -1034,13 +1036,12 @@ engram export preview <adapter> <work-ref>   engram export apply <intent>
 
 ### 8.2 Agent-facing MCP server
 
-Memory tools mirror the CLI over the same core: `memory_context`,
-`memory_delta`, `memory_note`, `memory_search`, `memory_show`,
-`memory_history`, `memory_assert` (policy-gated per §5), and
-`memory_review_queue`. The hot work protocol is deliberately only
-`work_next`, `work_focus`, `work_propose`, `work_update`, `work_complete`, and
-`work_handoff`; the session binding supplies project, actor, current work, and
-cursors. Optional import, publication, and administrative queries remain
+Agent-facing MCP exposes exactly `next`, `ls`, `show`, `add`, `claim`,
+`update`, `note`, `done`, `search`, and `handoff`. Those tools translate into
+the six-operation work core: `work_next`, `work_focus`, `work_propose`,
+`work_update`, `work_complete`, and `work_handoff`; the session binding
+supplies project, actor, current work, and cursors. Optional generic memory
+capture, import, publication, and administrative queries remain
 separate tools rather than expanding every model turn.
 
 This surface is for capture, retrieval, explanation, and coordination
@@ -1090,7 +1091,7 @@ For a work-bound begun turn, the private checkpoint may atomically append up to
 mint up to four source-bound environment identities. Verification derives its
 source/run/session/check/result/time binding from a producer observation and
 may link an environment by object hash or same-request index. Environment
-evidence may retain an opaque legacy fingerprint or supply a bounded closed
+evidence may use an opaque fingerprint or supply a bounded closed
 component identity: toolchain, optional sandbox/image, workspace id, and the
 bound session's capability-map revision. Engram derives the component
 fingerprint and rejects a workspace, revision, run, or capability-map mismatch.
@@ -1102,12 +1103,13 @@ hash to the focused run.
 
 Every checkpoint resolves the obligation rule set selected by the begun
 grant's frozen project-policy epoch and records its hash on the canonical
-`ExecutionObservation`. The stock V1 set maps every observation with
+`ExecutionObservation`. The built-in set maps every observation with
 `source_changed=true` to one immutable test obligation regardless of outcome
 or source-basis presence. Each definition binds the same rule-set hash, rule
 identity/version, trigger, and requirement. A later policy activation applies
-only to later observations and cannot reinterpret existing history; legacy
-records without the hash retain the stock V1 meaning. Obligation definitions
+only to later observations and cannot reinterpret existing history. Every
+observation and obligation definition carries its exact rule-set hash.
+Obligation definitions
 and terminal satisfaction/waiver events are direct project, root-work, and
 run-execution feed objects; query rows are verified projections.
 A typed V1 requirement may leave the verification command and environment
@@ -1136,11 +1138,9 @@ matching typed verification evidence.
 The current built-in requirement does not pin an environment hash. New seals
 nevertheless declare environment schema V1 and bind the sorted, distinct
 environment-evidence hashes at or before the exact dense cut, with a maximum
-of 64 and without copying component bytes. Older seals decode unchanged and
-are reported as legacy.
-Required child seals are decoded and checked recursively. Legacy terminal
-seals remain readable, but a new parent refuses a legacy child whose cut
-already contained obligation definitions.
+of 64 and without copying component bytes. Required child seals are decoded
+and checked recursively; every accepted seal carries the current obligation
+and environment schema bindings.
 
 The transport may be an in-process API, native host integration, wrapper, or
 local gateway. It is never exposed as an agent-callable way to mint grants.
@@ -1233,8 +1233,8 @@ reproducible after the source changes or disappears.
   import/export; deterministic work-graph recovery snapshot/restore;
   sequential portable publish/handoff/restore with cadence, lag reporting,
   head CAS, and divergence refusal; a dummy publication adapter proving
-  frozen-payload idempotency with no external side effects. The existing
-  `DummyTrackerAdapter` name may remain temporarily during migration.
+  frozen-payload idempotency with no external side effects. The dummy adapter
+  remains explicitly side-effect free.
 - **Later optional modes:** live concurrent `Sync`, real GitHub/Jira/
   proprietary intake and publication, comments, and link-backs. Automatic
   tracker mirroring and autonomous reprioritization remain non-goals.
@@ -1324,7 +1324,7 @@ evaluation harness:
 
 | Phase | Contents |
 | --- | --- |
-| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from resource leases, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; scoped resource leases, handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts; deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / `rebuild-index`. |
+| **v1** | Rust core; stable project-id keyed active-host SQLite store (append-only canonical objects, WAL, multi-process access) with derived FTS5 tables; first-class local work items/root executions/single-executor runs, parent forest + combined completion-dependency DAG, assignment, priority, labels, deferral, derived ready views, fenced work claims distinct from resource leases, evidence-gated completion, human decision objects, and the six-operation ambient agent protocol; one-verb memory capture; context packets with fail-closed pinned tier, omission manifest, content hash, typed source-feed vectors, per-session delivery positions, peer deltas, and policy/admission epochs; deterministic turn admission and typed recovery; scoped resource leases, handoff, contributions/child seals, separate fenced report assembly and optional publication; single-use action grants and crash-safe receipts; deterministic recovery snapshot/restore, sequential portable push/handoff/restore with writer-epoch validation, closed shared-state projection, and divergence refusal, plus round-trip Beads compatibility; audit attribution at asserted-runtime-context assurance; visibly labeled no-op Redactor; CLI + agent MCP + host-private control transport over one core; integrity/preflight and hostile-process tests; `doctor` / explicit projection repair. |
 | **v1.x** | Session-end distillation into working memory (proposer + dedup); episodic compaction; completed-work retention compaction; budget and ready-ranking tuning; optional configured external backup automation. |
 | **v2+** | Optional live cross-host `Sync`/team backend; real GitHub/Jira/proprietary source and publication adapters; optional embeddings; comments/link-backs; real Redactor/DLP; Postgres/service `Store`; Signer-based attestation; envelope encryption for crypto-shredding. |
 

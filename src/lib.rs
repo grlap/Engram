@@ -79,9 +79,10 @@ pub use project::{
     HostPathProbeError, parse_host_path_policy, probe_host_path_policy, project_database_path,
 };
 pub use storage::{
-    BackupManifest, ControlDiagnostics, ControlPolicyUpdateReceipt, IntegrityReport,
-    ObligationRuleSetUpdateReceipt, SqliteStore, StoreError, TaskChange, WorkAuthorityGrantStatus,
-    describe_host_path_policy, install_store_copy_without_replacing,
+    BackupManifest, ControlDiagnostics, ControlPolicyRecoveryFinding, ControlPolicyRecoveryReport,
+    ControlPolicyUpdateReceipt, IntegrityReport, ObligationRuleSetUpdateReceipt, SqliteStore,
+    StoreError, TaskChange, WorkAuthorityGrantStatus, describe_host_path_policy,
+    install_store_copy_without_replacing,
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use verbs::{
