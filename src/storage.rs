@@ -50,10 +50,10 @@ use crate::{
         TaskJoinedEvent, TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision,
         TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
         TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
-        TurnGrantState, TurnIntent, TurnNextIntent, VerificationEvidence,
-        VerificationEvidenceInput, VerificationKind, VerificationResult, WorkAuthorityOperation,
-        WorkAuthorityScope, WorkLease, WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt,
-        WorkLeaseTransition,
+        TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
+        TurnNextIntent, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
+        VerificationResult, WorkAuthorityOperation, WorkAuthorityScope, WorkLease,
+        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
     },
     memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
 };
@@ -676,6 +676,22 @@ struct StoredControlGrantRow {
     expires_at_ms: i64,
 }
 
+struct PendingTurnGrantSupersession {
+    grant_id: String,
+    request_key: String,
+}
+
+struct StoredTurnGrantSupersession {
+    superseded_grant_id: String,
+    session_id: String,
+    task_id: String,
+    replacement_request_key: String,
+    replacement_decision_hash: String,
+    supersession_hash: String,
+    supersession_json: Vec<u8>,
+    superseded_at_ms: i64,
+}
+
 struct StoredControlOperation {
     sequence: i64,
     session_id: String,
@@ -1120,6 +1136,12 @@ impl SqliteStore {
         self.host_path_policy
     }
 
+    /// Active local-work projection schema verified when this store opened.
+    #[must_use]
+    pub const fn work_schema_version(&self) -> i64 {
+        self.work_schema_version
+    }
+
     /// Reads the policy persisted by the first resolved opener, if any.
     ///
     /// # Errors
@@ -1529,6 +1551,20 @@ impl SqliteStore {
                  completed_at_ms INTEGER,
                  UNIQUE(session_id, request_key)
              ) STRICT;
+             CREATE TABLE IF NOT EXISTS control_turn_grant_supersessions (
+                 superseded_grant_id TEXT PRIMARY KEY
+                     REFERENCES control_turn_grants(grant_id),
+                 session_id TEXT NOT NULL,
+                 task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                 replacement_request_key TEXT NOT NULL,
+                 replacement_decision_hash TEXT NOT NULL,
+                 supersession_hash TEXT NOT NULL,
+                 supersession_json BLOB NOT NULL,
+                 superseded_at_ms INTEGER NOT NULL,
+                 UNIQUE(session_id, replacement_request_key),
+                 FOREIGN KEY(session_id, replacement_request_key)
+                     REFERENCES control_turn_results(session_id, idempotency_key)
+             ) STRICT;
              CREATE TABLE IF NOT EXISTS control_work_leases (
                  lease_id TEXT PRIMARY KEY,
                  task_id TEXT NOT NULL REFERENCES tasks(task_id),
@@ -1671,6 +1707,7 @@ impl SqliteStore {
             "control_policy_operation_results",
             "control_sessions",
             "control_turn_grants",
+            "control_turn_grant_supersessions",
         ] {
             if Self::sqlite_table_exists(connection, table)? {
                 return Ok(true);
@@ -2681,6 +2718,7 @@ impl SqliteStore {
             "control_sessions",
             "control_turn_results",
             "control_turn_grants",
+            "control_turn_grant_supersessions",
             "control_work_leases",
             "control_work_leases_task_state",
             "control_operation_results",
@@ -4206,7 +4244,8 @@ impl SqliteStore {
             return Ok(decision);
         }
 
-        if Self::expire_unbegun_turn(&transaction, &session, now)? {
+        let superseded_grant = Self::supersede_issued_turn(&transaction, &session, now)?;
+        if superseded_grant.is_some() {
             session = Self::load_control_session_on(&transaction, session_id)?
                 .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         }
@@ -4428,6 +4467,37 @@ impl SqliteStore {
                 now.timestamp_millis(),
             ],
         )?;
+        if let Some(superseded) = superseded_grant {
+            let transition = TurnGrantSupersession {
+                control_schema_version: CONTROL_SCHEMA_VERSION,
+                session_id: session_id.clone(),
+                task_id: session.task_id,
+                superseded_grant_id: superseded.grant_id,
+                superseded_request_key: superseded.request_key,
+                replacement_request_key: intent.idempotency_key.clone(),
+                replacement_decision: decision_object.hash().clone(),
+                reason: TurnGrantSupersessionReason::FreshEvaluation,
+                superseded_at: now,
+            };
+            let transition_object = CanonicalObject::freeze(&transition)?;
+            transaction.execute(
+                "INSERT INTO control_turn_grant_supersessions (
+                     superseded_grant_id, session_id, task_id,
+                     replacement_request_key, replacement_decision_hash,
+                     supersession_hash, supersession_json, superseded_at_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    transition.superseded_grant_id,
+                    transition.session_id.0,
+                    transition.task_id.0.to_string(),
+                    transition.replacement_request_key,
+                    transition.replacement_decision.as_str(),
+                    transition_object.hash().as_str(),
+                    transition_object.bytes(),
+                    transition.superseded_at.timestamp_millis(),
+                ],
+            )?;
+        }
         transaction.commit()?;
         Ok(decision)
     }
@@ -5076,9 +5146,17 @@ impl SqliteStore {
                     },
                 }
             }
-            TurnCheckpointDecision::Refuse { code } => {
-                ControlTurnCheckpointDecision::Refuse { code }
-            }
+            TurnCheckpointDecision::Refuse { code } => ControlTurnCheckpointDecision::Refuse {
+                code,
+                directive: Some(crate::control::control_directive(
+                    &format!("turn_checkpoint:{idempotency_key}"),
+                    code,
+                    None,
+                    None,
+                    None,
+                    None,
+                )),
+            },
         };
         Self::persist_control_operation(
             &transaction,
@@ -6868,11 +6946,20 @@ impl SqliteStore {
                 object,
             });
         }
-        let expected = usize::try_from(through.0 - after.0).map_err(|_| {
+        let distance = through.0.checked_sub(after.0).ok_or_else(|| {
+            StoreError::InvalidTaskProjection("task delivery range overflowed".into())
+        })?;
+        let expected = usize::try_from(distance).map_err(|_| {
             StoreError::InvalidTaskProjection("task delivery range overflowed".into())
         })?;
         let dense = changes.iter().enumerate().all(|(offset, change)| {
-            i64::try_from(offset).is_ok_and(|offset| change.cursor.0 == after.0 + offset + 1)
+            i64::try_from(offset).is_ok_and(|offset| {
+                after
+                    .0
+                    .checked_add(offset)
+                    .and_then(|cursor| cursor.checked_add(1))
+                    .is_some_and(|cursor| change.cursor.0 == cursor)
+            })
         });
         if changes.len() != expected || !dense {
             return Err(StoreError::InvalidTaskProjection(format!(
@@ -7482,6 +7569,18 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when policy or control projections are invalid.
     pub fn control_diagnostics(&self) -> Result<ControlDiagnostics, StoreError> {
+        self.control_diagnostics_at(Utc::now())
+    }
+
+    /// Summarizes the control envelope at an injected instant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when policy or control projections are invalid.
+    pub fn control_diagnostics_at(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<ControlDiagnostics, StoreError> {
         let policy = if self.connection.is_autocommit() {
             let snapshot = self.connection.unchecked_transaction()?;
             let policy = Self::verify_control_policy_history(&snapshot)?;
@@ -7509,8 +7608,8 @@ impl SqliteStore {
         let issued_turns = self.connection.query_row(
             "SELECT COUNT(*) FROM control_turn_grants
              WHERE state = 'issued'
-               AND expires_at_ms > CAST(strftime('%s', 'now') AS INTEGER) * 1000",
-            [],
+               AND expires_at_ms > ?1",
+            [now.timestamp_millis()],
             |row| row.get::<_, i64>(0),
         )?;
         let begun_turns = self.connection.query_row(
@@ -7660,31 +7759,79 @@ impl SqliteStore {
             }
         }
 
-        let mut grant_statement = self.connection.prepare(
-            "SELECT grant_id, session_id, task_id, request_key, grant_hash,
-                    grant_json, state, issued_at_ms, expires_at_ms
-             FROM control_turn_grants ORDER BY issued_at_ms, grant_id",
-        )?;
-        let grant_rows = grant_statement.query_map([], |row| {
-            Ok(StoredControlGrantRow {
-                grant_id: row.get(0)?,
-                session_id: row.get(1)?,
-                task_id: row.get(2)?,
-                request_key: row.get(3)?,
-                grant_hash: row.get(4)?,
-                grant_json: row.get(5)?,
-                state: row.get(6)?,
-                issued_at_ms: row.get(7)?,
-                expires_at_ms: row.get(8)?,
-            })
-        })?;
-        for row in grant_rows {
-            let stored = row?;
+        let grant_rows = {
+            let mut grant_statement = self.connection.prepare(
+                "SELECT grant_id, session_id, task_id, request_key, grant_hash,
+                        grant_json, state, issued_at_ms, expires_at_ms
+                 FROM control_turn_grants ORDER BY issued_at_ms, grant_id",
+            )?;
+            grant_statement
+                .query_map([], |row| {
+                    Ok(StoredControlGrantRow {
+                        grant_id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        task_id: row.get(2)?,
+                        request_key: row.get(3)?,
+                        grant_hash: row.get(4)?,
+                        grant_json: row.get(5)?,
+                        state: row.get(6)?,
+                        issued_at_ms: row.get(7)?,
+                        expires_at_ms: row.get(8)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for stored in grant_rows {
             report.checked_control_records += 1;
-            if Self::verify_control_grant_row(&stored).is_err() {
+            let supersession_count = if stored.state == "superseded" {
+                self.connection.query_row(
+                    "SELECT COUNT(*) FROM control_turn_grant_supersessions
+                     WHERE superseded_grant_id = ?1",
+                    [&stored.grant_id],
+                    |row| row.get::<_, i64>(0),
+                )?
+            } else {
+                0
+            };
+            if Self::verify_control_grant_row(&stored).is_err()
+                || (stored.state == "superseded" && supersession_count != 1)
+            {
                 report
                     .invalid_control_records
                     .push(format!("control_turn_grant:{}", stored.grant_id));
+            }
+        }
+
+        let supersession_rows = {
+            let mut statement = self.connection.prepare(
+                "SELECT superseded_grant_id, session_id, task_id,
+                        replacement_request_key, replacement_decision_hash,
+                        supersession_hash, supersession_json, superseded_at_ms
+                 FROM control_turn_grant_supersessions
+                 ORDER BY superseded_at_ms, superseded_grant_id",
+            )?;
+            statement
+                .query_map([], |row| {
+                    Ok(StoredTurnGrantSupersession {
+                        superseded_grant_id: row.get(0)?,
+                        session_id: row.get(1)?,
+                        task_id: row.get(2)?,
+                        replacement_request_key: row.get(3)?,
+                        replacement_decision_hash: row.get(4)?,
+                        supersession_hash: row.get(5)?,
+                        supersession_json: row.get(6)?,
+                        superseded_at_ms: row.get(7)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for stored in supersession_rows {
+            report.checked_control_records += 1;
+            if Self::verify_turn_grant_supersession(&self.connection, &stored).is_err() {
+                report.invalid_control_records.push(format!(
+                    "control_turn_grant_supersession:{}",
+                    stored.superseded_grant_id
+                ));
             }
         }
 
@@ -7960,11 +8107,77 @@ impl SqliteStore {
                     | TurnGrantState::Begun
                     | TurnGrantState::Completed
                     | TurnGrantState::Expired
+                    | TurnGrantState::Superseded
             );
         if !row_matches || !delivery_matches {
             return Err(StoreError::InvalidControlProjection(format!(
                 "turn grant {:?} is not bound to its row",
                 stored.grant_id
+            )));
+        }
+        Ok(())
+    }
+
+    fn verify_turn_grant_supersession(
+        connection: &Connection,
+        stored: &StoredTurnGrantSupersession,
+    ) -> Result<(), StoreError> {
+        let transition: TurnGrantSupersession = Self::decode_canonical_projection(
+            &stored.supersession_hash,
+            stored.supersession_json.clone(),
+        )?;
+        let grant = connection
+            .query_row(
+                "SELECT session_id, task_id, request_key, state
+                 FROM control_turn_grants WHERE grant_id = ?1",
+                [&stored.superseded_grant_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::InvalidControlProjection(format!(
+                    "superseded turn grant {:?} is missing",
+                    stored.superseded_grant_id
+                ))
+            })?;
+        let replacement_decision = connection
+            .query_row(
+                "SELECT decision_hash FROM control_turn_results
+                 WHERE session_id = ?1 AND idempotency_key = ?2",
+                params![stored.session_id, stored.replacement_request_key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| {
+                StoreError::InvalidControlProjection(format!(
+                    "replacement turn result {:?} is missing",
+                    stored.replacement_request_key
+                ))
+            })?;
+        let row_matches = transition.control_schema_version == CONTROL_SCHEMA_VERSION
+            && transition.session_id.0 == stored.session_id
+            && transition.task_id.0.to_string() == stored.task_id
+            && transition.superseded_grant_id == stored.superseded_grant_id
+            && transition.superseded_request_key == grant.2
+            && transition.replacement_request_key == stored.replacement_request_key
+            && transition.replacement_decision.as_str() == stored.replacement_decision_hash
+            && transition.replacement_decision.as_str() == replacement_decision
+            && transition.reason == TurnGrantSupersessionReason::FreshEvaluation
+            && transition.superseded_at.timestamp_millis() == stored.superseded_at_ms
+            && grant.0 == stored.session_id
+            && grant.1 == stored.task_id
+            && grant.3 == "superseded";
+        if !row_matches {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "turn grant supersession {:?} is not bound to its grant and replacement",
+                stored.superseded_grant_id
             )));
         }
         Ok(())
@@ -8861,12 +9074,14 @@ impl SqliteStore {
         connection: &Connection,
         session: &StoredControlSession,
     ) -> Result<ControlSessionStatus, StoreError> {
-        let recoverable_grant = session
+        let open_grant = session
             .open_grant_id
             .as_deref()
             .map(|grant_id| Self::load_turn_grant(connection, &session.session_id, grant_id))
             .transpose()?
-            .flatten()
+            .flatten();
+        let open_grant_state = open_grant.as_ref().map(|stored| stored.state);
+        let recoverable_grant = open_grant
             .filter(|stored| {
                 matches!(stored.state, TurnGrantState::Begun)
                     && safely_redeliverable_partial_recovery(&stored.grant)
@@ -8888,6 +9103,7 @@ impl SqliteStore {
             capability_map_revision: session.capability_map_revision,
             revision: session.revision,
             open_grant_id: session.open_grant_id.clone(),
+            open_grant_state,
             recoverable_grant,
         })
     }
@@ -9194,6 +9410,76 @@ impl SqliteStore {
             return Ok(true);
         }
         Ok(false)
+    }
+
+    /// Supersedes any issued-but-unbegun grant before evaluating a fresh
+    /// request. Begun grants are deliberately untouched: their prompt outcome
+    /// remains checkpoint-required and the evaluator will refuse a second
+    /// turn as already open.
+    fn supersede_issued_turn(
+        transaction: &Transaction<'_>,
+        session: &StoredControlSession,
+        now: DateTime<Utc>,
+    ) -> Result<Option<PendingTurnGrantSupersession>, StoreError> {
+        let issued = {
+            let mut statement = transaction.prepare(
+                "SELECT grant_id, request_key FROM control_turn_grants
+                 WHERE session_id = ?1 AND state = 'issued'
+                 ORDER BY issued_at_ms, grant_id",
+            )?;
+            statement
+                .query_map([session.session_id.0.as_str()], |row| {
+                    Ok(PendingTurnGrantSupersession {
+                        grant_id: row.get(0)?,
+                        request_key: row.get(1)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let Some(superseded) = issued.into_iter().next() else {
+            return Ok(None);
+        };
+        let issued_count = transaction.query_row(
+            "SELECT COUNT(*) FROM control_turn_grants
+             WHERE session_id = ?1 AND state = 'issued'",
+            [session.session_id.0.as_str()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        if issued_count != 1 {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control session {:?} has {issued_count} issued turn grants",
+                session.session_id
+            )));
+        }
+        let changed = transaction.execute(
+            "UPDATE control_turn_grants SET state = 'superseded'
+             WHERE grant_id = ?1 AND session_id = ?2 AND state = 'issued'",
+            params![superseded.grant_id, session.session_id.0],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "issued turn grant {:?} changed during supersession",
+                superseded.grant_id
+            )));
+        }
+        let head = Self::latest_task_cursor(transaction, session.task_id)?;
+        let phase = if session.confirmed_cursor < head {
+            SessionPhase::SyncRequired
+        } else {
+            SessionPhase::Ready
+        };
+        transaction.execute(
+            "UPDATE control_sessions SET
+                 phase = ?2, tentative_cursor = NULL,
+                 revision = revision + 1, updated_at_ms = ?3
+             WHERE session_id = ?1",
+            params![
+                session.session_id.0,
+                enum_name(phase)?,
+                now.timestamp_millis()
+            ],
+        )?;
+        Ok(Some(superseded))
     }
 
     fn load_turn_grant(
@@ -9715,19 +10001,31 @@ impl SqliteStore {
                 MAX_TASK_CHANGE_OBJECT_BYTES
             )));
         }
-        transaction.execute(
-            "INSERT OR IGNORE INTO task_changes (
-                 task_id, task_cursor, object_kind, object_hash
-             )
-             SELECT ?1, COALESCE(MAX(task_cursor), 0) + 1, ?2, ?3
-             FROM task_changes WHERE task_id = ?1",
-            params![task_id.0.to_string(), object_kind, object.hash().as_str()],
-        )?;
-        let cursor = transaction.query_row(
-            "SELECT task_cursor FROM task_changes
+        let task_id_text = task_id.0.to_string();
+        if let Some(cursor) = transaction
+            .query_row(
+                "SELECT task_cursor FROM task_changes
              WHERE task_id = ?1 AND object_hash = ?2",
-            params![task_id.0.to_string(), object.hash().as_str()],
-            |row| row.get(0),
+                params![task_id_text, object.hash().as_str()],
+                |row| row.get(0),
+            )
+            .optional()?
+        {
+            return Ok(ChangeCursor(cursor));
+        }
+        let current = transaction.query_row(
+            "SELECT MAX(task_cursor) FROM task_changes WHERE task_id = ?1",
+            [&task_id_text],
+            |row| row.get::<_, Option<i64>>(0),
+        )?;
+        let cursor = current.unwrap_or(0).checked_add(1).ok_or_else(|| {
+            StoreError::InvalidTaskProjection("task change cursor overflowed".into())
+        })?;
+        transaction.execute(
+            "INSERT INTO task_changes (
+                 task_id, task_cursor, object_kind, object_hash
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![task_id_text, cursor, object_kind, object.hash().as_str()],
         )?;
         Ok(ChangeCursor(cursor))
     }
@@ -12349,7 +12647,8 @@ mod tests {
         store
             .connection
             .execute_batch(
-                "DROP TABLE control_turn_grants;
+                "DROP TABLE control_turn_grant_supersessions;
+                 DROP TABLE control_turn_grants;
                  DROP TABLE control_sessions;
                  DROP TABLE control_policy_operation_results;
                  DROP TABLE control_policy_versions;
@@ -12501,6 +12800,54 @@ mod tests {
             .expect("diagnostics reuse caller snapshot");
         assert_eq!(diagnostics.policy_epoch, ProjectPolicyEpoch(1));
         snapshot.rollback().expect("rollback caller snapshot");
+    }
+
+    #[test]
+    fn control_diagnostics_counts_issued_grants_at_the_injected_instant() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control(&mut store, now);
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "diagnostic-sync",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: "diagnostic-issued".into(),
+                    intent_fingerprint: ObjectHash::from_canonical_bytes(b"diagnostic-issued"),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: Vec::new(),
+                },
+                now + TimeDelta::seconds(2),
+            )
+            .expect("issue diagnostic grant");
+        let ControlTurnDecision::Grant { grant } = decision else {
+            panic!("diagnostic fixture must grant");
+        };
+        assert_eq!(
+            store
+                .control_diagnostics_at(grant.basis.expires_at - TimeDelta::milliseconds(1))
+                .expect("diagnostics before expiry")
+                .issued_turns,
+            1
+        );
+        assert_eq!(
+            store
+                .control_diagnostics_at(grant.basis.expires_at)
+                .expect("diagnostics at expiry")
+                .issued_turns,
+            0
+        );
     }
 
     #[test]
@@ -14164,6 +14511,283 @@ mod tests {
             ControlTurnCheckpointDecision::Checkpointed { .. }
         ));
         *grant
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the single grant lifecycle fixture keeps issued replacement and begun checkpoint recovery adjacent"
+    )]
+    fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control(&mut store, now);
+        complete_control_turn(
+            &mut store,
+            &binding,
+            "initial-sync",
+            vec![EffectClass::Observe],
+            Vec::new(),
+            now + TimeDelta::seconds(1),
+        );
+        let evaluate = |store: &mut SqliteStore, key: &str, at: DateTime<Utc>| {
+            store
+                .evaluate_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &TurnIntent {
+                        idempotency_key: key.into(),
+                        intent_fingerprint: ObjectHash::from_canonical_bytes(key.as_bytes()),
+                        purpose: TurnPurpose::Ordinary,
+                        requested_effects: vec![EffectClass::Observe],
+                        resource_intents: Vec::new(),
+                    },
+                    at,
+                )
+                .expect("evaluate turn")
+        };
+        let ControlTurnDecision::Grant { grant: first } = evaluate(
+            &mut store,
+            "replace-issued-first",
+            now + TimeDelta::seconds(2),
+        ) else {
+            panic!("first grant must issue");
+        };
+        let status = store
+            .control_status(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                now + TimeDelta::seconds(2),
+            )
+            .expect("issued status");
+        assert_eq!(
+            status.open_grant_id.as_deref(),
+            Some(first.grant_id.as_str())
+        );
+        assert_eq!(status.open_grant_state, Some(TurnGrantState::Issued));
+
+        let refused = store
+            .checkpoint_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &first.grant_id,
+                TurnNextIntent::Continue,
+                "checkpoint-issued",
+                now + TimeDelta::seconds(3),
+            )
+            .expect("issued checkpoint is a refusal");
+        assert!(matches!(
+            refused,
+            ControlTurnCheckpointDecision::Refuse {
+                code: ControlRefusalCode::GrantNotBegun,
+                directive: Some(crate::domain::ControlDirective {
+                    target: crate::domain::DirectiveTarget::Host,
+                    satisfaction: crate::domain::DirectiveSatisfaction::HostTransition,
+                    ..
+                })
+            }
+        ));
+
+        let ControlTurnDecision::Grant { grant: second } = evaluate(
+            &mut store,
+            "replace-issued-second",
+            now + TimeDelta::seconds(4),
+        ) else {
+            panic!("fresh evaluation must replace issued grant");
+        };
+        assert_ne!(first.grant_id, second.grant_id);
+        assert_eq!(
+            store
+                .connection
+                .query_row(
+                    "SELECT state FROM control_turn_grants WHERE grant_id = ?1",
+                    [&first.grant_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("superseded state"),
+            "superseded"
+        );
+        let (supersession_hash, supersession_json, replacement_decision_hash) = store
+            .connection
+            .query_row(
+                "SELECT supersession_hash, supersession_json, replacement_decision_hash
+                 FROM control_turn_grant_supersessions
+                 WHERE superseded_grant_id = ?1",
+                [&first.grant_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .expect("immutable supersession transition");
+        let supersession: TurnGrantSupersession =
+            SqliteStore::decode_canonical_projection(&supersession_hash, supersession_json)
+                .expect("verified supersession transition");
+        assert_eq!(supersession.superseded_grant_id, first.grant_id);
+        assert_eq!(supersession.superseded_request_key, first.request_key);
+        assert_eq!(supersession.replacement_request_key, second.request_key);
+        assert_eq!(
+            supersession.replacement_decision.as_str(),
+            replacement_decision_hash
+        );
+        assert_eq!(
+            supersession.reason,
+            TurnGrantSupersessionReason::FreshEvaluation
+        );
+        let status = store
+            .control_status(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                now + TimeDelta::seconds(4),
+            )
+            .expect("replacement status");
+        assert_eq!(
+            status.open_grant_id.as_deref(),
+            Some(second.grant_id.as_str())
+        );
+        assert_eq!(status.open_grant_state, Some(TurnGrantState::Issued));
+
+        assert!(matches!(
+            store
+                .begin_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &second.grant_id,
+                    &second
+                        .delivery
+                        .iter()
+                        .map(|delivery| delivery.page.delivery_token.clone())
+                        .collect::<Vec<_>>(),
+                    "begin-replacement",
+                    now + TimeDelta::seconds(5),
+                )
+                .expect("begin replacement"),
+            ControlTurnBeginDecision::Begin { .. }
+        ));
+        assert!(matches!(
+            evaluate(&mut store, "while-begun", now + TimeDelta::seconds(6)),
+            ControlTurnDecision::Refuse { directive }
+                if directive.code == ControlRefusalCode::TurnAlreadyOpen
+        ));
+        let status = store
+            .control_status(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                now + TimeDelta::seconds(6),
+            )
+            .expect("begun status");
+        assert_eq!(status.open_grant_state, Some(TurnGrantState::Begun));
+        assert!(matches!(
+            store
+                .checkpoint_control_turn(
+                    &ProjectId("project-a".into()),
+                    &binding.status.session_id,
+                    &binding.connection_token,
+                    &binding.routing_token,
+                    &second.grant_id,
+                    TurnNextIntent::Continue,
+                    "checkpoint-replacement",
+                    now + TimeDelta::seconds(40),
+                )
+                .expect("begun checkpoint survives grant expiry"),
+            ControlTurnCheckpointDecision::Checkpointed { .. }
+        ));
+        let report = store.verify_all().expect("verified grant supersession");
+        assert!(report.is_healthy(), "{report:?}");
+        store
+            .connection
+            .execute(
+                "DELETE FROM control_turn_grant_supersessions
+                 WHERE superseded_grant_id = ?1",
+                [&first.grant_id],
+            )
+            .expect("remove supersession audit fixture");
+        let report = store.verify_all().expect("missing supersession report");
+        assert!(
+            report
+                .invalid_control_records
+                .contains(&format!("control_turn_grant:{}", first.grant_id))
+        );
+    }
+
+    #[test]
+    fn task_cursor_arithmetic_refuses_overflow() {
+        let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let binding = bind_control(&mut store, now);
+        {
+            let transaction = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("cursor snapshot");
+            assert!(matches!(
+                SqliteStore::task_delta_range_on(
+                    &transaction,
+                    binding.status.task_id,
+                    ChangeCursor(i64::MIN),
+                    ChangeCursor(i64::MAX),
+                ),
+                Err(StoreError::InvalidTaskProjection(reason))
+                    if reason.contains("overflowed")
+            ));
+            transaction.rollback().expect("rollback cursor snapshot");
+        }
+
+        let (object_kind, object_hash) = store
+            .connection
+            .query_row(
+                "SELECT object_kind, object_hash FROM objects ORDER BY object_hash LIMIT 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .expect("existing canonical object");
+        store
+            .connection
+            .execute(
+                "DELETE FROM task_changes WHERE task_id = ?1",
+                [binding.status.task_id.0.to_string()],
+            )
+            .expect("clear task feed fixture");
+        store
+            .connection
+            .execute(
+                "INSERT INTO task_changes (task_id, task_cursor, object_kind, object_hash)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    binding.status.task_id.0.to_string(),
+                    i64::MAX,
+                    object_kind,
+                    object_hash
+                ],
+            )
+            .expect("install maximum cursor");
+        assert!(matches!(
+            store.append_task_object(
+                binding.status.task_id,
+                "cursor_overflow_event",
+                &Example {
+                    title: "overflow".into(),
+                    body: "must refuse".into(),
+                },
+            ),
+            Err(StoreError::InvalidTaskProjection(reason))
+                if reason.contains("cursor overflowed")
+        ));
     }
 
     #[test]

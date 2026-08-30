@@ -305,16 +305,22 @@ replayable case is a begun observe-only partial recovery page:
 host can redeliver it before checkpointing, while the confirmed cursor remains
 unchanged. Other begun turns expose only their id because replaying a prompt
 with possible effects would be unsafe.
+A fresh evaluation key likewise atomically supersedes an issued-but-unbegun
+grant. The same transaction records an immutable supersession transition that
+binds the old grant and request key to the replacement request and decision,
+with a typed reason and timestamp. It never replaces a begun grant: that
+session stays `turn_open`, reports `open_grant_state: begun`, and refuses the
+evaluation with `turn_already_open` until checkpoint/reconciliation completes.
 
 A grant is an immutable, fingerprinted operational record while live. It is
 bound to one task, session, turn intent, both control epochs, capability
 envelope, and lease fences; it is not a bearer token transferable to another
 session. Restart invalidates issued-but-unbegun authority. A begun grant stays
 durable only until checkpoint/reconciliation, including the narrowly
-redeliverable recovery case above, so completed and expired grants still need
-not become permanent canonical memory. State-changing delivery, checkpoint,
-lease, action, handoff, and finalization transitions emit immutable canonical
-events.
+redeliverable recovery case above, so completed, expired, and superseded grants
+still need not become permanent canonical memory. State-changing grant
+supersession, delivery, checkpoint, lease, action, handoff, and finalization
+transitions emit immutable canonical events.
 
 Evaluation order is fixed so refusals are deterministic and do not leak later
 state through an earlier failure:
@@ -656,8 +662,9 @@ toolchain, sandbox, or image bytes. Pre-environment seals decode unchanged and
 are reported as legacy rather than rewritten.
 
 An observation effect outside the frozen grant is rejected as
-`observation_scope_mismatch`; `grant_scope_mismatch` remains reserved for a
-checkpoint against an issued but not begun grant. An
+`observation_scope_mismatch`. A checkpoint against an issued-but-not-begun
+grant returns `grant_not_begun` with host bind/recovery guidance;
+`grant_scope_mismatch` remains the general frozen-basis mismatch. An
 exact retry replays the same observation and typed-evidence hashes, while a
 different ordered input under the same checkpoint key is an idempotency
 conflict. Task-only sessions cannot append run observations or typed run
@@ -1030,7 +1037,8 @@ pass.
 - Host or Engram restart invalidates unexpired in-memory delivery assumptions;
   the durable session resumes at `sync_required`.
 - Turn, lease, delivery, action, and checkpoint requests use independent
-  idempotency keys bound to canonical intent fingerprints.
+  idempotency keys bound to canonical intent fingerprints and, for begin and
+  checkpoint, the exact grant id.
 - Exact decision retries while the result is retained return that result.
   A refused `lease_acquire` is therefore sticky under its key even after an
   assurance or policy-epoch change; a fresh key re-evaluates current policy,
@@ -1172,7 +1180,7 @@ surface uses the stable spellings defined by `ControlRefusalCode`:
 `checkpoint_required`, `recovery_required`, `turn_already_open`,
 `turn_purpose_mismatch`, `lifecycle_hold`, `participant_not_ready`,
 `action_outcome_unknown`, `missing_authority`, `grant_expired`,
-`grant_scope_mismatch`, `stale_fence`, `resource_remapped`, and
+`grant_not_begun`, `grant_scope_mismatch`, `stale_fence`, `resource_remapped`, and
 `session_exited`. The current persisted alpha cannot yet emit
 `action_outcome_unknown` or `missing_authority`: action-outcome tracking and
 organizational authority mediation are not wired, and effects requiring them

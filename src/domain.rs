@@ -219,6 +219,7 @@ pub enum ControlRefusalCode {
     ActionOutcomeUnknown,
     MissingAuthority,
     GrantExpired,
+    GrantNotBegun,
     GrantScopeMismatch,
     StaleFence,
     ResourceRemapped,
@@ -255,6 +256,7 @@ impl ControlRefusalCode {
             Self::ActionOutcomeUnknown => "action_outcome_unknown",
             Self::MissingAuthority => "missing_authority",
             Self::GrantExpired => "grant_expired",
+            Self::GrantNotBegun => "grant_not_begun",
             Self::GrantScopeMismatch => "grant_scope_mismatch",
             Self::StaleFence => "stale_fence",
             Self::ResourceRemapped => "resource_remapped",
@@ -853,6 +855,9 @@ pub struct ControlSessionStatus {
     pub capability_map_revision: i64,
     pub revision: i64,
     pub open_grant_id: Option<String>,
+    /// Durable state of `open_grant_id`, when one is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_grant_state: Option<TurnGrantState>,
     /// Exact frozen grant that a replacement host may safely redeliver.
     ///
     /// This is present only for an already-begun, partial recovery page whose
@@ -911,6 +916,31 @@ pub enum TurnGrantState {
     Begun,
     Completed,
     Expired,
+    Superseded,
+}
+
+/// Immutable audit record for replacing issued-but-unbegun turn authority.
+///
+/// The mutable grant row makes the old authority unusable. This record binds
+/// that terminalization to the exact replacement decision so the transition
+/// can be reconstructed and integrity-checked after restart.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnGrantSupersessionReason {
+    FreshEvaluation,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TurnGrantSupersession {
+    pub control_schema_version: u16,
+    pub session_id: SessionId,
+    pub task_id: TaskId,
+    pub superseded_grant_id: String,
+    pub superseded_request_key: String,
+    pub replacement_request_key: String,
+    pub replacement_decision: ObjectHash,
+    pub reason: TurnGrantSupersessionReason,
+    pub superseded_at: DateTime<Utc>,
 }
 
 /// Durable facts rechecked immediately before the host dispatches a prompt.
@@ -1037,8 +1067,15 @@ pub struct TurnCheckpointReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "decision", rename_all = "snake_case")]
 pub enum ControlTurnCheckpointDecision {
-    Checkpointed { receipt: TurnCheckpointReceipt },
-    Refuse { code: ControlRefusalCode },
+    Checkpointed {
+        receipt: TurnCheckpointReceipt,
+    },
+    Refuse {
+        code: ControlRefusalCode,
+        /// Additive host transition/recovery guidance for this refusal.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directive: Option<ControlDirective>,
+    },
 }
 
 /// Component-boundary coverage of a canonical resource subject.

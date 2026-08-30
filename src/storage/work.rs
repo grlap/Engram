@@ -2771,6 +2771,7 @@ impl SqliteStore {
         let checkpoint: WorkCheckpoint =
             load_typed_work_object(&self.connection, &checkpoint_hash, "work_checkpoint")?;
         let current_cut = feed_head(&self.connection, &FeedId::RunExecution(run_id))?;
+        let checkpoint_cut = checkpoint_feed_end(checkpoint.acknowledged_run_position.position)?;
         Ok((
             true,
             checkpoint.work_id == work_id
@@ -2781,8 +2782,7 @@ impl SqliteStore {
                     .iter()
                     .all(|hash| checkpoint.evidence.contains(hash))
                 && checkpoint.acknowledged_run_position.feed == FeedId::RunExecution(run_id)
-                && checkpoint.acknowledged_run_position.position + CHECKPOINT_APPEND_COUNT
-                    == current_cut,
+                && checkpoint_cut == current_cut,
         ))
     }
 
@@ -2922,7 +2922,12 @@ impl SqliteStore {
         after: i64,
         through: i64,
     ) -> Result<Vec<WorkFeedEntry>, StoreError> {
-        if through < after || through - after > 1_000 {
+        let distance = through.checked_sub(after).ok_or_else(|| {
+            StoreError::InvalidWorkProjection(format!(
+                "staged feed interval ({after}, {through}] overflowed"
+            ))
+        })?;
+        if !(0..=1_000).contains(&distance) {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "invalid staged feed interval ({after}, {through}]"
             )));
@@ -2944,19 +2949,33 @@ impl SqliteStore {
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        let expected_count = usize::try_from(through - after).map_err(|_| {
+        let expected_count = usize::try_from(distance).map_err(|_| {
             StoreError::InvalidWorkProjection("staged feed interval size overflowed".into())
         })?;
-        if rows.len() != expected_count
-            || rows.iter().enumerate().any(|(offset, row)| {
-                i64::try_from(offset)
-                    .ok()
-                    .is_none_or(|offset| row.0 != after + offset + 1)
-            })
-        {
+        if rows.len() != expected_count {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "staged feed interval ({after}, {through}] is not dense"
             )));
+        }
+        for (offset, row) in rows.iter().enumerate() {
+            let offset = i64::try_from(offset).map_err(|_| {
+                StoreError::InvalidWorkProjection(
+                    "staged feed dense-position offset overflowed".into(),
+                )
+            })?;
+            let expected_position = after
+                .checked_add(offset)
+                .and_then(|position| position.checked_add(1))
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "staged feed dense-position arithmetic overflowed".into(),
+                    )
+                })?;
+            if row.0 != expected_position {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "staged feed interval ({after}, {through}] is not dense"
+                )));
+            }
         }
         rows.into_iter()
             .map(|(position, object_kind, hash)| {
@@ -3825,9 +3844,10 @@ impl SqliteStore {
             feed: FeedId::RunExecution(run.run_id),
             position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
         };
+        let checkpoint_cut =
+            checkpoint_feed_end(checkpoint_value.acknowledged_run_position.position)?;
         if checkpoint_value.acknowledged_run_position.feed != FeedId::RunExecution(run.run_id)
-            || checkpoint_value.acknowledged_run_position.position + CHECKPOINT_APPEND_COUNT
-                != completion_cut.position
+            || checkpoint_cut != completion_cut.position
         {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
@@ -8146,18 +8166,51 @@ fn reserve_feed_position(
     feed: &FeedId,
 ) -> Result<FeedPosition, StoreError> {
     let (feed_kind, feed_id) = feed_parts(feed);
-    let position = transaction.query_row(
-        "INSERT INTO work_feed_heads (feed_kind, feed_id, position)
-         VALUES (?1, ?2, 1)
-         ON CONFLICT(feed_kind, feed_id) DO UPDATE SET position = position + 1
-         RETURNING position",
-        params![feed_kind, feed_id],
-        |row| row.get::<_, i64>(0),
-    )?;
+    let current = transaction
+        .query_row(
+            "SELECT position FROM work_feed_heads
+             WHERE feed_kind = ?1 AND feed_id = ?2",
+            params![feed_kind, feed_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    let position = if let Some(current) = current {
+        let next = current.checked_add(1).ok_or_else(|| {
+            StoreError::InvalidWorkProjection(format!("work feed {feed:?} position overflowed"))
+        })?;
+        let changed = transaction.execute(
+            "UPDATE work_feed_heads SET position = ?3
+             WHERE feed_kind = ?1 AND feed_id = ?2 AND position = ?4",
+            params![feed_kind, feed_id, next, current],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "work feed {feed:?} head changed during allocation"
+            )));
+        }
+        next
+    } else {
+        transaction.execute(
+            "INSERT INTO work_feed_heads (feed_kind, feed_id, position)
+             VALUES (?1, ?2, 1)",
+            params![feed_kind, feed_id],
+        )?;
+        1
+    };
     Ok(FeedPosition {
         feed: feed.clone(),
         position,
     })
+}
+
+fn checkpoint_feed_end(position: i64) -> Result<i64, StoreError> {
+    position
+        .checked_add(CHECKPOINT_APPEND_COUNT)
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "checkpoint run-feed position arithmetic overflowed".into(),
+            )
+        })
 }
 
 fn insert_reserved_feed_entry(
@@ -13908,6 +13961,44 @@ mod tests {
                 .iter()
                 .any(|record| { record == &format!("work_catalog:{}:fts_index", item.work_id.0) })
         );
+    }
+
+    #[test]
+    fn work_feed_arithmetic_refuses_overflow() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let feed = FeedId::Project(ProjectId("project-feed-overflow".into()));
+
+        let interval = store.work_feed_between(&feed, i64::MIN, i64::MAX);
+        assert!(matches!(
+            interval,
+            Err(StoreError::InvalidWorkProjection(reason)) if reason.contains("overflowed")
+        ));
+
+        let (feed_kind, feed_id) = feed_parts(&feed);
+        store
+            .connection
+            .execute(
+                "INSERT INTO work_feed_heads (feed_kind, feed_id, position)
+                 VALUES (?1, ?2, ?3)",
+                params![feed_kind, feed_id, i64::MAX],
+            )
+            .expect("install saturated feed head");
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("overflow transaction");
+        let allocation = reserve_feed_position(&transaction, &feed);
+        assert!(matches!(
+            allocation,
+            Err(StoreError::InvalidWorkProjection(reason)) if reason.contains("position overflowed")
+        ));
+        transaction.rollback().expect("discard saturated feed head");
+
+        assert!(matches!(
+            checkpoint_feed_end(i64::MAX),
+            Err(StoreError::InvalidWorkProjection(reason))
+                if reason.contains("checkpoint run-feed position arithmetic overflowed")
+        ));
     }
 
     #[test]

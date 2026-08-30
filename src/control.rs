@@ -546,8 +546,17 @@ pub fn evaluate_turn_checkpoint(
         || grant.basis.task_id != snapshot.task_id
         || grant.basis.work_binding != snapshot.work_binding
         || !matches!(snapshot.phase, SessionPhase::TurnOpen)
-        || !matches!(snapshot.grant_state, TurnGrantState::Begun)
     {
+        return TurnCheckpointDecision::Refuse {
+            code: ControlRefusalCode::GrantScopeMismatch,
+        };
+    }
+    if matches!(snapshot.grant_state, TurnGrantState::Issued) {
+        return TurnCheckpointDecision::Refuse {
+            code: ControlRefusalCode::GrantNotBegun,
+        };
+    }
+    if !matches!(snapshot.grant_state, TurnGrantState::Begun) {
         return TurnCheckpointDecision::Refuse {
             code: ControlRefusalCode::GrantScopeMismatch,
         };
@@ -578,7 +587,10 @@ pub(crate) fn delivery_matches_grant(grant: &IssuedTurnGrant) -> bool {
 }
 
 fn delivery_delta_matches(page: &crate::domain::DeliveryPage, delta: &TaskDelta) -> bool {
-    let Ok(expected_count) = usize::try_from(page.to_cursor.0 - page.from_cursor.0) else {
+    let Some(distance) = page.to_cursor.0.checked_sub(page.from_cursor.0) else {
+        return false;
+    };
+    let Ok(expected_count) = usize::try_from(distance) else {
         return false;
     };
     page.has_more == (page.to_cursor < page.head_cursor)
@@ -587,7 +599,11 @@ fn delivery_delta_matches(page: &crate::domain::DeliveryPage, delta: &TaskDelta)
         && delta.changes.len() == expected_count
         && delta.changes.iter().enumerate().all(|(offset, change)| {
             i64::try_from(offset).is_ok_and(|offset| {
-                change.cursor.0 == page.from_cursor.0 + offset + 1
+                page.from_cursor
+                    .0
+                    .checked_add(offset)
+                    .and_then(|cursor| cursor.checked_add(1))
+                    .is_some_and(|cursor| change.cursor.0 == cursor)
                     && CanonicalObject::freeze(&change.object)
                         .is_ok_and(|object| object.hash() == &change.object_hash)
             })
@@ -1328,6 +1344,7 @@ fn directive_shape(
         | ControlRefusalCode::LifecycleHold
         | ControlRefusalCode::ParticipantNotReady
         | ControlRefusalCode::GrantExpired
+        | ControlRefusalCode::GrantNotBegun
         | ControlRefusalCode::GrantScopeMismatch
         | ControlRefusalCode::StaleFence
         | ControlRefusalCode::ResourceRemapped
@@ -1512,6 +1529,26 @@ mod tests {
             serde_json::to_vec(&replay).unwrap()
         );
         assert!(matches!(first.decision, TurnDecision::Grant { .. }));
+    }
+
+    #[test]
+    fn delivery_density_rejects_cursor_arithmetic_overflow() {
+        let task_id = TaskId::new();
+        let page = DeliveryPage {
+            from_cursor: ChangeCursor(i64::MIN),
+            to_cursor: ChangeCursor(i64::MAX),
+            head_cursor: ChangeCursor(i64::MAX),
+            has_more: false,
+            content_digest: hash("overflow-delivery"),
+            delivery_token: "overflow-delivery".into(),
+        };
+        let delta = TaskDelta {
+            task_id,
+            after: page.from_cursor,
+            cursor: page.to_cursor,
+            changes: Vec::new(),
+        };
+        assert!(!delivery_delta_matches(&page, &delta));
     }
 
     #[test]

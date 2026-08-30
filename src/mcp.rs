@@ -1286,7 +1286,42 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
-        _ => "engram_store_error",
+        StoreError::Json(_)
+        | StoreError::Sqlite(_)
+        | StoreError::NonCanonicalObject(_)
+        | StoreError::HashMismatch { .. }
+        | StoreError::ImmutableCollision(_)
+        | StoreError::ObjectKindMismatch { .. }
+        | StoreError::InvalidStoredHash(_)
+        | StoreError::InvalidStoredClaim(_)
+        | StoreError::InvalidMemoryProjection(_)
+        | StoreError::InvalidTaskBinding
+        | StoreError::InvalidTaskProjection(_)
+        | StoreError::TurnObservationIdempotencyConflict(_)
+        | StoreError::InvalidControlObservation(_)
+        | StoreError::InvalidControlSession(_)
+        | StoreError::HostPathIdentityUnresolved
+        | StoreError::BackupNeedsMigration { .. }
+        | StoreError::ControlSessionNotBound(_)
+        | StoreError::ControlSessionTokenMismatch(_)
+        | StoreError::ControlConnectionSuperseded(_)
+        | StoreError::ControlSessionBindConflict(_)
+        | StoreError::ControlTurnIdempotencyConflict(_)
+        | StoreError::ControlOperationIdempotencyConflict { .. }
+        | StoreError::ControlWorkBindingStale { .. }
+        | StoreError::ControlGrantScopeMismatch { .. }
+        | StoreError::ControlObservationScopeMismatch { .. }
+        | StoreError::VerificationProducerObservationNotFound(_)
+        | StoreError::EnvironmentFingerprintMismatch
+        | StoreError::EnvironmentEvidenceNotFound(_)
+        | StoreError::EnvironmentBasisMismatch(_)
+        | StoreError::ControlTurnGrantNotFound(_)
+        | StoreError::WorkLeaseNotFound(_)
+        | StoreError::WorkLeaseNotHeld { .. }
+        | StoreError::WorkLeaseExpired { .. }
+        | StoreError::InvalidControlProjection(_)
+        | StoreError::ControlPolicyConflict { .. }
+        | StoreError::OpenWorkObligations { .. } => "engram_store_error",
     }
 }
 

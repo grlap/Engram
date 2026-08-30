@@ -163,6 +163,15 @@ envelope, and live
 issued/begun turns, and visibly warns that action gating, organizational
 authority mediation, and action-outcome reconciliation are unavailable. V1's
 development no-op redactor provides no secret or PII protection.
+`engram doctor --json` performs the same checks and keeps those warnings on
+stderr while emitting a machine-readable report on stdout. Its `project_id`
+and canonical absolute `database` path give a host the stable pair used to key
+project-local authority queries. The database path is absolute with symlinks
+resolved. On Windows it never exposes the verbatim-path prefix (`\\?\`), and
+UNC paths use their ordinary `\\server\share` form. When integrity is
+unhealthy and the active control envelope cannot be decoded, the report still
+prints with `healthy: false`, `control: null`, and a `control_error`; independent
+limitations remain on stderr before the command exits nonzero.
 
 On a fresh store, plain `engram init` defaults to `turn_gated`;
 `--required-assurance` may instead select `advisory`, `turn_gated`, or
@@ -472,7 +481,7 @@ shipped operations are:
 | Operation | Durable effect |
 | --- | --- |
 | `session_bind` | Start/join the compatibility task, optionally bind an exact live `WorkRun` claim, rotate a routing token, reset to `sync_required` |
-| `session_status` | Read current phase, cursors, epochs, mediation declaration, optional work binding, revision, and any safely redeliverable partial recovery grant |
+| `session_status` | Read current phase, cursors, epochs, mediation declaration, optional work binding, revision, `open_grant_id` plus `open_grant_state`, and any safely redeliverable partial recovery grant |
 | `lease_acquire` | Atomically grant or defer a normalized resource lease and append its fenced task event |
 | `lease_release` | Release a lease held by this session and append its fenced task event |
 | `turn_evaluate` | Derive membership/context/head/policy from SQLite and persist a decision plus optional grant |
@@ -495,7 +504,11 @@ grants and returns the session to `sync_required`; old results never resurrect
 authority. The new connection also fences a still-live predecessor, whose next
 operation fails with `control_connection_superseded`. A begun grant is not
 silently replayed or discarded: `session_status.open_grant_id` identifies the
-required checkpoint. When the begun grant contains an observe-only partial
+required checkpoint and `open_grant_state` distinguishes `issued` from
+`begun`. A fresh `turn_evaluate` key atomically supersedes an
+issued-but-unbegun grant and records an immutable transition bound to the
+replacement decision; an already-begun grant instead refuses with
+`turn_already_open`. When the begun grant contains an observe-only partial
 recovery page, `session_status.recoverable_grant` returns the exact canonical
 grant and delivery bytes; the replacement host redelivers that payload and
 then checkpoints the already-begun grant. The confirmed cursor does not move
@@ -554,7 +567,8 @@ typed policies. Mismatched derived bytes, a missing reference, or a run/source/
 session basis mismatch return `environment_fingerprint_mismatch`,
 `environment_evidence_not_found`, or `environment_basis_mismatch`.
 
-The receipt returns all three typed hash lists. An exact retry returns those
+The receipt returns all three typed hash lists. Begin and checkpoint keys are
+each scoped to the exact grant and canonical request intent. An exact retry returns those
 hashes without another feed append; changing any ordered list under the same
 checkpoint key fails with `control_operation_idempotency_conflict`.
 
@@ -591,8 +605,10 @@ Pre-environment seals likewise decode with no environment bindings and are
 reported as legacy rather than rewritten.
 
 An observation effect absent from the frozen grant is a request error with
-code `observation_scope_mismatch`. `grant_scope_mismatch` instead identifies a
-checkpoint request whose grant was issued but never begun.
+code `observation_scope_mismatch`. Checkpointing an issued-but-unbegun grant
+returns `grant_not_begun` with host transition guidance: bind/recover the
+runtime as needed, evaluate a fresh turn, begin that exact grant, and only then
+checkpoint it. `grant_scope_mismatch` remains the general frozen-basis mismatch.
 Checkpointing an already-begun grant compares its frozen session/grant binding
 but deliberately does not recheck claim expiry or live ownership: begin already
 consumed authority, and checkpoint records what happened rather than granting a

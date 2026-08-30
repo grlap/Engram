@@ -3,7 +3,13 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -32,6 +38,45 @@ const manifestFile = {
 
 function fingerprint(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function executeSql(database, sql) {
+  const helper = String.raw`
+    import { DatabaseSync } from "node:sqlite";
+    const database = new DatabaseSync(process.argv.at(-2));
+    database.exec(process.argv.at(-1));
+    database.close();
+  `;
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--no-warnings",
+      "--input-type=module",
+      "--eval",
+      helper,
+      database,
+      sql,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+}
+
+function closeChild(child, label, stderr) {
+  if (child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolvePromise, reject) => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolvePromise();
+    };
+    const timer = setTimeout(() => {
+      child.removeListener("exit", onExit);
+      child.kill();
+      reject(new Error(`${label} shutdown timed out: ${stderr()}`));
+    }, 5000);
+    child.once("exit", onExit);
+    child.stdin.end();
+  });
 }
 
 async function holdSqliteWriter(database) {
@@ -78,11 +123,7 @@ async function holdSqliteWriter(database) {
   });
   return {
     close() {
-      if (child.exitCode !== null) return Promise.resolve();
-      return new Promise((resolvePromise) => {
-        child.once("exit", resolvePromise);
-        child.stdin.end();
-      });
+      return closeChild(child, "SQLite writer helper", () => stderr);
     },
   };
 }
@@ -173,11 +214,7 @@ class ControlClient {
   }
 
   close() {
-    if (this.child.exitCode !== null) return Promise.resolve();
-    return new Promise((resolvePromise) => {
-      this.child.once("exit", resolvePromise);
-      this.child.stdin.end();
-    });
+    return closeChild(this.child, "control server", () => this.stderr);
   }
 }
 
@@ -863,6 +900,27 @@ test("host control survives restart and gates turn dispatch", async () => {
       assert.equal(change.cursor, index + 1);
     });
     const grant = firstDecision.grant;
+    const issuedStatus = ok(
+      await client.request({
+        operation: "session_status",
+        routing_token: binding.routing_token,
+      }),
+    );
+    assert.equal(issuedStatus.open_grant_id, grant.grant_id);
+    assert.equal(issuedStatus.open_grant_state, "issued");
+    const issuedCheckpoint = ok(
+      await client.request({
+        operation: "turn_checkpoint",
+        routing_token: binding.routing_token,
+        grant_id: grant.grant_id,
+        next_intent: "continue",
+        idempotency_key: "checkpoint-issued-host-a",
+      }),
+    );
+    assert.equal(issuedCheckpoint.decision, "refuse");
+    assert.equal(issuedCheckpoint.code, "grant_not_begun");
+    assert.equal(issuedCheckpoint.directive.target, "host");
+    assert.equal(issuedCheckpoint.directive.satisfaction, "host_transition");
     await client.close();
 
     client = new ControlClient(engramHome, "host-a");
@@ -889,7 +947,22 @@ test("host control survives restart and gates turn dispatch", async () => {
       }),
     );
     assert.equal(resumedDecision.decision, "grant");
-    const resumedGrant = resumedDecision.grant;
+    const replacedDecision = ok(
+      await client.request({
+        operation: "turn_evaluate",
+        routing_token: binding.routing_token,
+        idempotency_key: "turn-host-replace-issued",
+        intent_fingerprint: fingerprint("turn-host-replace-issued"),
+        purpose: "ordinary",
+        requested_effects: ["observe", "communicate"],
+      }),
+    );
+    assert.equal(replacedDecision.decision, "grant");
+    assert.notEqual(
+      replacedDecision.grant.grant_id,
+      resumedDecision.grant.grant_id,
+    );
+    const resumedGrant = replacedDecision.grant;
     const begun = ok(
       await client.request({
         operation: "turn_begin",
@@ -910,6 +983,7 @@ test("host control survives restart and gates turn dispatch", async () => {
     );
     assert.equal(begunRestartStatus.phase, "turn_open");
     assert.equal(begunRestartStatus.open_grant_id, resumedGrant.grant_id);
+    assert.equal(begunRestartStatus.open_grant_state, "begun");
     assert.equal(begunRestartStatus.recoverable_grant, null);
     const checkpointed = ok(
       await client.request({
@@ -1122,6 +1196,32 @@ test("host control survives restart and gates turn dispatch", async () => {
     assert.equal(doctor.status, 0, doctor.stderr);
     await sqliteWriter.close();
     sqliteWriter = undefined;
+    const doctorJson = spawnSync(
+      binary,
+      ["--home", engramHome, "doctor", "--json"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.equal(doctorJson.status, 0, doctorJson.stderr);
+    const diagnostics = JSON.parse(doctorJson.stdout);
+    assert.equal(diagnostics.healthy, true);
+    assert.equal(diagnostics.project_id, projectId);
+    assert.equal(diagnostics.database, realpathSync(database));
+
+    executeSql(
+      database,
+      "UPDATE control_turn_results SET decision_json = X'7B7D' " +
+        "WHERE sequence = (SELECT MIN(sequence) FROM control_turn_results)",
+    );
+    const unhealthyDoctorJson = spawnSync(
+      binary,
+      ["--home", engramHome, "doctor", "--json"],
+      { cwd: root, encoding: "utf8" },
+    );
+    assert.notEqual(unhealthyDoctorJson.status, 0);
+    const unhealthyDiagnostics = JSON.parse(unhealthyDoctorJson.stdout);
+    assert.equal(unhealthyDiagnostics.healthy, false);
+    assert.match(unhealthyDoctorJson.stderr, /CONTROL LIMITATION:/);
+    assert.match(unhealthyDoctorJson.stderr, /development no-op redactor/);
   } finally {
     await sqliteWriter?.close();
     await advisory?.close();

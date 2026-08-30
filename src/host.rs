@@ -517,7 +517,43 @@ const fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
-        _ => "storage_error",
+        StoreError::Json(_)
+        | StoreError::Sqlite(_)
+        | StoreError::NonCanonicalObject(_)
+        | StoreError::HashMismatch { .. }
+        | StoreError::ImmutableCollision(_)
+        | StoreError::ObjectKindMismatch { .. }
+        | StoreError::InvalidStoredHash(_)
+        | StoreError::TaskClaimHeld { .. }
+        | StoreError::ClaimIdempotencyConflict(_)
+        | StoreError::ContradictionIdempotencyConflict(_)
+        | StoreError::InvalidContradiction(_)
+        | StoreError::ContradictionAlreadyRecorded(_)
+        | StoreError::InvalidStoredClaim(_)
+        | StoreError::NoteIdempotencyConflict(_)
+        | StoreError::EmptyNote
+        | StoreError::RedactionRefused(_)
+        | StoreError::InvalidMemoryProjection(_)
+        | StoreError::TaskReferenceNotFound(_)
+        | StoreError::InvalidTaskBinding
+        | StoreError::InvalidTaskProjection(_)
+        | StoreError::NoActiveTask(_)
+        | StoreError::MemoryNotFound(_)
+        | StoreError::MemoryAccessDenied(_)
+        | StoreError::PacketAccessDenied(_)
+        | StoreError::TurnObservationIdempotencyConflict(_)
+        | StoreError::BackupNeedsMigration { .. }
+        | StoreError::ControlPolicyConflict { .. }
+        | StoreError::WorkNotFound(_)
+        | StoreError::InvalidWork(_)
+        | StoreError::InvalidWorkProjection(_)
+        | StoreError::WorkRevisionConflict { .. }
+        | StoreError::WorkOperationIdempotencyConflict { .. }
+        | StoreError::WorkDependencyCycle
+        | StoreError::WorkNotOpen(_)
+        | StoreError::WorkClaimHeld { .. }
+        | StoreError::WorkCompletionRefused { .. }
+        | StoreError::OpenWorkObligations { .. } => "storage_error",
     }
 }
 

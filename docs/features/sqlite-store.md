@@ -35,6 +35,7 @@ engram.db
   control_connections  # current host-process generation; fences predecessors
   control_turn_results # idempotent enforced decisions
   control_turn_grants  # short-lived issued/begun/completed authority
+  control_turn_grant_supersessions # immutable old-grant -> replacement audit
   control_work_leases  # scoped live/released lease projection + fences
   control_operation_results # begin/checkpoint/lease retry receipts
   control_policy_operation_results # store-scoped operator-policy receipts
@@ -53,12 +54,15 @@ neither enters the canonical object graph nor grants a turn; authority is
 issued only through the separate host-control projections below.
 
 The host-private alpha adds `control_sessions`, `control_turn_results`,
-`control_turn_grants`, `control_work_leases`, and
+`control_turn_grants`, `control_turn_grant_supersessions`,
+`control_work_leases`, and
 `control_operation_results`. Their intent and result payloads use canonical
 bytes and hashes even though live grants and leases are operational rather
 than durable memory. Acquisition/release emits a canonical
 `work_lease_event`; a successful checkpoint emits a canonical
-`turn_checkpoint_event`. Each projection and its task event commit together.
+`turn_checkpoint_event`. Superseding an issued grant records exactly one
+immutable transition binding the old grant and request to the replacement
+decision, reason, and time. Each projection and its audit event commit together.
 Expired leases stop covering new grants without erasing their historical fence.
 Path resources are project-bound and normalized before they enter these rows;
 cross-task rebind is rejected while an active lease remains. Replacement host
