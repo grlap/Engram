@@ -878,8 +878,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       0,
     );
 
-    // The legacy-enabled host session captures work-scoped memory; the
-    // eight-word session sees shared memory and never the private scratch.
+    // The legacy-enabled peer may capture private scratch while focused, but
+    // shared work memory is fenced by the exact live claim holder.
     receipt(await b.call("show", { work_ref: workRef }));
     structured(
       await b.call("task_start", {
@@ -894,16 +894,14 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
       "invalid_argument",
     );
-    const sharedWorkMemory = structured(
+    structuredError(
       await b.call("memory_note", {
         prose: "Decision: the focused work uses one local identity for task tracking and shared execution memory.",
         idempotency_key: "work-shared-memory",
         target: "work",
       }),
+      "work_claim_mismatch",
     );
-    assert.equal(sharedWorkMemory.scope.kind, "work");
-    assert.equal(sharedWorkMemory.scope.work, added.work.work_id);
-    assert.ok(sharedWorkMemory.work_positions.length >= 2);
     const privateWorkMemory = structured(
       await b.call("memory_note", {
         prose: "scratch: private focused implementation hypothesis",
@@ -920,20 +918,10 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assert.ok(
       authorMemoryFocus.memories.some(
-        ({ version }) => version === sharedWorkMemory.version,
-      ),
-    );
-    assert.ok(
-      authorMemoryFocus.memories.some(
         ({ version }) => version === privateWorkMemory.version,
       ),
     );
     const peerMemoryFocus = receipt(await a.call("show", { work_ref: workRef }));
-    assert.ok(
-      peerMemoryFocus.memories.some(
-        ({ version }) => version === sharedWorkMemory.version,
-      ),
-    );
     assert.equal(
       peerMemoryFocus.memories.some(
         ({ version }) => version === privateWorkMemory.version,
@@ -941,22 +929,12 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       false,
     );
     const peerWorkChanges = receipt(await a.call("next", { limit: 100 })).changes;
-    assert.ok(
-      peerWorkChanges.some(
-        ({ entry }) => entry.object_hash === sharedWorkMemory.version,
-      ),
-    );
     assert.equal(
       peerWorkChanges.some(
         ({ entry }) => entry.object_hash === privateWorkMemory.version,
       ),
       false,
     );
-    const shownWorkMemory = structured(
-      await b.call("memory_show", { hash: sharedWorkMemory.version }),
-    );
-    assert.equal(shownWorkMemory.version.scope.work, added.work.work_id);
-    assert.equal(shownWorkMemory.version.authority, "firm");
 
     const held = structuredError(
       await b.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
@@ -991,6 +969,70 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(recipientFocus.next[0], `engram work handoff ${workRef} --accept`);
     const accepted = receipt(await b.call("handoff", { action: "accept" }));
     assert.equal(accepted.operation, "accept");
+    const sharedWorkMemory = structured(
+      await b.call("memory_note", {
+        prose: "Decision: the focused work uses one local identity for task tracking and shared execution memory.",
+        idempotency_key: "work-shared-memory",
+        target: "work",
+      }),
+    );
+    assert.equal(sharedWorkMemory.scope.kind, "work");
+    assert.equal(sharedWorkMemory.scope.work, added.work.work_id);
+    assert.ok(sharedWorkMemory.work_positions.length >= 3);
+    const holderMemoryFocus = structured(
+      await b.call("work_focus", { work_ref: workRef }),
+    );
+    assert.ok(
+      holderMemoryFocus.memories.some(
+        ({ version }) => version === sharedWorkMemory.version,
+      ),
+    );
+    assert.ok(
+      holderMemoryFocus.memories.some(
+        ({ version }) => version === privateWorkMemory.version,
+      ),
+    );
+    const formerHolderFocus = receipt(await a.call("show", { work_ref: workRef }));
+    assert.ok(
+      formerHolderFocus.memories.some(
+        ({ version }) => version === sharedWorkMemory.version,
+      ),
+    );
+    assert.equal(
+      formerHolderFocus.memories.some(
+        ({ version }) => version === privateWorkMemory.version,
+      ),
+      false,
+    );
+    const deliveredShared = [];
+    for (let page = 0; page < 8; page += 1) {
+      deliveredShared.push(
+        ...receipt(await a.call("next", { limit: 100 })).changes,
+      );
+      if (
+        deliveredShared.some(
+          ({ entry }) => entry.object_hash === sharedWorkMemory.version,
+        )
+      ) {
+        break;
+      }
+    }
+    assert.ok(
+      deliveredShared.some(
+        ({ entry }) => entry.object_hash === sharedWorkMemory.version,
+      ),
+    );
+    assert.equal(
+      deliveredShared.some(
+        ({ entry }) => entry.object_hash === privateWorkMemory.version,
+      ),
+      false,
+    );
+    const shownWorkMemory = structured(
+      await b.call("memory_show", { hash: sharedWorkMemory.version }),
+    );
+    assert.equal(shownWorkMemory.version.scope.work, added.work.work_id);
+    assert.equal(shownWorkMemory.version.authority, "firm");
     const stale = structuredError(
       await a.call("note", { text: "must be rejected after handoff" }),
       "work_claim_mismatch",

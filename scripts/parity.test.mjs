@@ -52,6 +52,97 @@ function hostSetup(engramHome, actor) {
   return JSON.parse(granted.stdout).grant;
 }
 
+test("authority show reports installed, revoked, and unknown hashes", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-authority-show-"));
+  try {
+    const grant = hostSetup(engramHome, "authority-status-agent");
+    const installed = run([
+      "--home",
+      engramHome,
+      "authority",
+      "show",
+      grant,
+      "--json",
+    ]);
+    assert.equal(installed.status, 0, installed.stderr);
+    const installedStatus = JSON.parse(installed.stdout);
+    assert.equal(installedStatus.installed, true);
+    assert.equal(installedStatus.subject_actor_id, "authority-status-agent");
+    assert.equal(installedStatus.issued_by, "parity-host");
+    assert.equal(typeof installedStatus.valid_from, "string");
+    assert.equal(typeof installedStatus.valid_until, "string");
+    assert.equal(installedStatus.revoked_at, null);
+    assert.ok(installedStatus.operations.includes("claim"));
+    assert.deepEqual(installedStatus.scope, { kind: "project" });
+    assert.equal(installed.stdout.includes(grant), false);
+
+    const text = run([
+      "--home",
+      engramHome,
+      "authority",
+      "show",
+      grant,
+    ]);
+    assert.equal(text.status, 0, text.stderr);
+    const lines = text.stdout.trim().split("\n");
+    assert.equal(lines.length, 8, text.stdout);
+    assert.equal(lines[0], "installed: true");
+    assert.equal(lines[1], "subject_actor_id: authority-status-agent");
+    assert.equal(lines[2], "issued_by: parity-host");
+    assert.match(lines[3], /^valid_from: \d{4}-/u);
+    assert.match(lines[4], /^valid_until: \d{4}-/u);
+    assert.equal(lines[5], "revoked_at: null");
+    assert.match(lines[6], /^operations: \[/u);
+    assert.equal(lines[7], 'scope: {"kind":"project"}');
+    assert.equal(text.stdout.includes(grant), false);
+
+    const revoked = run([
+      "--home",
+      engramHome,
+      "authority",
+      "revoke",
+      grant,
+      "--revoked-by",
+      "parity-host",
+      "--reason",
+      "authority status parity",
+    ]);
+    assert.equal(revoked.status, 0, revoked.stderr);
+    const revokedStatus = run([
+      "--home",
+      engramHome,
+      "authority",
+      "show",
+      grant,
+      "--json",
+    ]);
+    assert.equal(revokedStatus.status, 0, revokedStatus.stderr);
+    assert.equal(typeof JSON.parse(revokedStatus.stdout).revoked_at, "string");
+
+    const unknown = run([
+      "--home",
+      engramHome,
+      "authority",
+      "show",
+      "0".repeat(64),
+      "--json",
+    ]);
+    assert.equal(unknown.status, 0, unknown.stderr);
+    assert.deepEqual(JSON.parse(unknown.stdout), {
+      installed: false,
+      subject_actor_id: null,
+      issued_by: null,
+      valid_from: null,
+      valid_until: null,
+      revoked_at: null,
+      operations: null,
+      scope: null,
+    });
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("add -> claim -> done takes three commands and at most three fields", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-"));
   const actor = "parity-agent";
@@ -156,7 +247,10 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
     assert.doesNotMatch(bare.stdout + bare.stderr, HASH);
     const noted = run([...hostContext, "note", "found the missing piece", "--ref", "src/lib.rs"]);
     assert.equal(noted.status, 0, noted.stderr);
-    assert.match(noted.stdout, /^noted on w-[0-9a-f]{12} "Needs a note first": found the missing piece/u);
+    assert.match(
+      noted.stdout,
+      /^noted on w-[0-9a-f]{12} "Needs a note first": found the missing piece \(held by you until \d{2}:\d{2} UTC\)/u,
+    );
     assert.doesNotMatch(noted.stdout, HASH);
     const done = run([...hostContext, "done"]);
     assert.equal(done.status, 0, done.stderr);

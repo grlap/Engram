@@ -257,6 +257,15 @@ impl VerbError {
                 vec!["you do not hold this item; claim it before you note or complete it".into()],
                 vec![format!("engram work claim {target}")],
             ),
+            StoreError::WorkClaimLapsed { expired_at, .. } => (
+                vec![format!(
+                    "claim lapsed at {}",
+                    clock(*expired_at, Utc::now())
+                )],
+                vec![format!(
+                    "engram work claim {target} --recover \"explain why the lapsed claim is being recovered\""
+                )],
+            ),
             StoreError::WorkCompletionRefused { reason, .. } => {
                 let words = if reason.contains("at least one evidence")
                     || reason.contains("no checkpoint")
@@ -985,6 +994,7 @@ impl AgentVerbs {
             .work_update(core, now)
             .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(view, now)?;
+        let line = format!("{line}{}", held_suffix(self.holder(&after, now), now));
         let guidance = self.guidance(&after, "update", now);
         Ok(Receipt::assemble(
             vec![line],
@@ -1146,9 +1156,10 @@ impl AgentVerbs {
         value["operation"] = json!("note");
         value["evidence"] = serde_json::to_value(&evidence.receipt)?;
         let lines = vec![format!(
-            "noted on {work_ref} \"{}\": {}",
+            "noted on {work_ref} \"{}\": {}{}",
             short(&after.status.work.title),
-            short(&text)
+            short(&text),
+            held_suffix(self.holder(&after, now), now)
         )];
         Ok(Receipt::assemble(lines, guidance, value, false))
     }
@@ -1320,11 +1331,7 @@ impl AgentVerbs {
             .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(view, now)?;
         let holder = self.holder(&after, now);
-        let line = if result.operation == "accept" {
-            format!("{verb}{}", held_suffix(holder, now))
-        } else {
-            verb
-        };
+        let line = format!("{verb}{}", held_suffix(holder, now));
         let guidance = self.guidance(&after, "handoff", now);
         Ok(Receipt::assemble(
             vec![line],
@@ -2108,6 +2115,29 @@ mod tests {
         assert!(text.ends_with("next:\n  engram work note w-0123456789ab \"…\""));
         assert_eq!(receipt.value["reminders"].as_array().map(Vec::len), Some(1));
         assert_eq!(receipt.value["seal"], json!("a".repeat(64)));
+    }
+
+    #[test]
+    fn lapsed_claim_guidance_names_the_expiry_and_recovery_command() {
+        let expired_at = Utc::now();
+        let error = VerbError::at(
+            StoreError::WorkClaimLapsed {
+                work: crate::domain::WorkId::new(),
+                expired_at,
+            },
+            "w-0123456789ab",
+        );
+        let guidance = error.guidance();
+        assert_eq!(
+            guidance.reminders,
+            vec![format!("claim lapsed at {}", clock(expired_at, Utc::now()))]
+        );
+        assert_eq!(
+            guidance.next,
+            vec![String::from(
+                "engram work claim w-0123456789ab --recover \"explain why the lapsed claim is being recovered\""
+            )]
+        );
     }
 
     #[test]

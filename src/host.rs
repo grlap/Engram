@@ -516,6 +516,7 @@ const fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
+        StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         _ => "storage_error",
     }
 }

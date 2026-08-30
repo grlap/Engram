@@ -18,9 +18,9 @@ use engram::{
     NextInput, NoteInput, ObjectHash, ObligationRuleDefinition, ObligationRuleSet, ProjectId,
     ProjectPolicyAuthorityDecision, SessionId, SqliteStore, UpdateAction, UpdateInput,
     VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
-    WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability, WorkCompleteInput,
-    WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
-    WorkObligationId, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput,
+    WorkAuthorityGrantStatus, WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability,
+    WorkCompleteInput, WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery,
+    WorkNextSection, WorkObligationId, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput,
     describe_host_path_policy, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
     probe_host_path_policy, project_database_path,
 };
@@ -581,6 +581,14 @@ enum CoreWorkCommand {
 
 #[derive(Debug, Subcommand)]
 enum AuthorityCommand {
+    /// Show the public installation and revocation status of one grant hash.
+    Show {
+        /// Immutable grant hash to query.
+        grant: String,
+        /// Print the structured status object instead of line-oriented text.
+        #[arg(long)]
+        json: bool,
+    },
     /// Install a bounded standard local-agent grant and print its immutable hash.
     Grant {
         /// Exact actor id that may consume this grant.
@@ -855,6 +863,17 @@ fn run_authority(
         .with_context(|| format!("failed to open {}", database.display()))?;
     let now = chrono::Utc::now();
     let value = match operation {
+        AuthorityCommand::Show { grant, json } => {
+            let grant = ObjectHash::from_str(&grant)
+                .map_err(|message| anyhow::anyhow!("invalid grant hash: {message}"))?;
+            let status = store.work_authority_grant_status(&grant)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else {
+                print_authority_grant_status(&status)?;
+            }
+            return Ok(());
+        }
         AuthorityCommand::Grant {
             subject_actor_id,
             issued_by,
@@ -1003,6 +1022,48 @@ fn run_authority(
         }
     };
     println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
+fn print_authority_grant_status(status: &WorkAuthorityGrantStatus) -> Result<()> {
+    println!("installed: {}", status.installed);
+    println!(
+        "subject_actor_id: {}",
+        status.subject_actor_id.as_deref().unwrap_or("null")
+    );
+    println!(
+        "issued_by: {}",
+        status.issued_by.as_deref().unwrap_or("null")
+    );
+    println!(
+        "valid_from: {}",
+        status
+            .valid_from
+            .as_ref()
+            .map(chrono::DateTime::to_rfc3339)
+            .as_deref()
+            .unwrap_or("null")
+    );
+    println!(
+        "valid_until: {}",
+        status
+            .valid_until
+            .as_ref()
+            .map(chrono::DateTime::to_rfc3339)
+            .as_deref()
+            .unwrap_or("null")
+    );
+    println!(
+        "revoked_at: {}",
+        status
+            .revoked_at
+            .as_ref()
+            .map(chrono::DateTime::to_rfc3339)
+            .as_deref()
+            .unwrap_or("null")
+    );
+    println!("operations: {}", serde_json::to_string(&status.operations)?);
+    println!("scope: {}", serde_json::to_string(&status.scope)?);
     Ok(())
 }
 

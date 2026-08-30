@@ -20,6 +20,8 @@ pub const COMPLETION_OBLIGATION_SCHEMA_VERSION: u16 = 1;
 pub const COMPLETION_ENVIRONMENT_SCHEMA_VERSION: u16 = 1;
 /// Immutable obligation-rule-set schema emitted by C and later writers.
 pub const OBLIGATION_RULE_SET_SCHEMA_VERSION: u16 = 1;
+/// Sliding lease applied after every successful claim-holder work mutation.
+pub const DEFAULT_WORK_CLAIM_TTL_SECONDS: i64 = 3_600;
 
 /// Behavioral-control protocol version understood by this release.
 pub const CONTROL_SCHEMA_VERSION: u16 = 1;
@@ -2188,6 +2190,10 @@ pub enum WorkTransition {
     },
     EvidenceAdded {
         evidence: ObjectHash,
+    },
+    MemoryCaptured {
+        version: ObjectHash,
+        assertion: ObjectHash,
     },
     TypedEvidenceAdded {
         evidence: ObjectHash,

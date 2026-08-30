@@ -18,7 +18,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
-use super::{BeginWorkProtocolAttempt, SqliteStore, StoreError};
+use super::{BeginWorkProtocolAttempt, SqliteStore, StoreError, WorkAuthorityGrantStatus};
 use crate::{
     CanonicalObject, ObjectHash,
     domain::{
@@ -27,22 +27,23 @@ use crate::{
         CancelWorkHandoffRequest, ChangeWorkPrerequisiteRequest, ChildRequirement,
         ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest,
         CompletionObligationBinding, CompletionSeal, CompletionWaiver, ControlWorkBinding,
-        CreateWorkRequest, DecomposeWorkRequest, DisposeWorkRequest, EnvironmentEvidence,
-        ExecutionObservation, FeedId, FeedPosition, LifecycleAuthorityDecision,
-        MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest, OpenWorkObligation,
-        ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
-        RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution, RootExecutionId,
-        RootExecutionState, SCHEMA_VERSION, SessionId, TaskId, VerificationEvidence,
-        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkAuthorityGrant,
-        WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability,
-        WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId,
-        WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
-        WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId,
-        WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation, WorkObligationId,
-        WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState,
-        WorkObligationWaiverDecision, WorkObligationWaiverReceipt, WorkObligationWaiverRefusalCode,
-        WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason, WorkRun,
-        WorkRunId, WorkRunState, WorkSessionState, WorkSourceSnapshot, WorkTransition,
+        CreateWorkRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS, DecomposeWorkRequest,
+        DisposeWorkRequest, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
+        LifecycleAuthorityDecision, MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest,
+        OpenWorkObligation, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
+        ReopenWorkRequest, RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution,
+        RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId, TaskId,
+        VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest,
+        WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope,
+        WorkAvailability, WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint,
+        WorkClaim, WorkClaimId, WorkClaimState, WorkDecomposition, WorkDependencyRef,
+        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry,
+        WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
+        WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
+        WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
+        WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
+        WorkReadinessReason, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
+        WorkSourceSnapshot, WorkTransition,
     },
     memory::Redactor,
 };
@@ -1365,6 +1366,8 @@ struct WorkProtocolAttemptRow {
     result_json: Option<Vec<u8>>,
 }
 
+type WorkAuthorityGrantStatusRow = (String, String, String, i64, Vec<u8>, Option<i64>);
+
 impl SqliteStore {
     fn begin_work_mutation(&mut self) -> Result<Transaction<'_>, StoreError> {
         let expected_version = self.work_schema_version;
@@ -1445,6 +1448,82 @@ impl SqliteStore {
         )?;
         transaction.commit()?;
         Ok(object.hash().clone())
+    }
+
+    /// Reports whether one work-authority hash is installed and its public
+    /// validity envelope. Unknown hashes are a successful negative query.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when an installed grant or its immutable
+    /// revocation projection fails integrity verification.
+    pub fn work_authority_grant_status(
+        &self,
+        grant_hash: &ObjectHash,
+    ) -> Result<WorkAuthorityGrantStatus, StoreError> {
+        let stored: Option<WorkAuthorityGrantStatusRow> = self
+            .connection
+            .query_row(
+                "SELECT project_id, policy_ref, subject_actor_id, valid_until_ms,
+                        grant_json, revoked_at_ms
+                 FROM work_authority_grants WHERE grant_hash = ?1",
+                [grant_hash.as_str()],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((project_id, policy_ref, subject_actor_id, valid_until_ms, bytes, revoked_at_ms)) =
+            stored
+        else {
+            return Ok(WorkAuthorityGrantStatus {
+                installed: false,
+                subject_actor_id: None,
+                issued_by: None,
+                valid_from: None,
+                valid_until: None,
+                revoked_at: None,
+                operations: None,
+                scope: None,
+            });
+        };
+        let grant: WorkAuthorityGrant = CanonicalObject::verify(grant_hash, bytes)?.decode()?;
+        require_authority_revocation_integrity(&self.connection, grant_hash, revoked_at_ms)?;
+        if project_id != grant.project_id.0
+            || policy_ref != grant.policy_ref
+            || subject_actor_id != grant.subject_actor_id
+            || valid_until_ms != grant.valid_until.timestamp_millis()
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "authority grant {grant_hash} has an invalid installed projection"
+            )));
+        }
+        let revoked_at = revoked_at_ms
+            .map(|value| {
+                DateTime::from_timestamp_millis(value).ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(format!(
+                        "authority grant {grant_hash} has an invalid revocation time"
+                    ))
+                })
+            })
+            .transpose()?;
+        Ok(WorkAuthorityGrantStatus {
+            installed: true,
+            subject_actor_id: Some(grant.subject_actor_id),
+            issued_by: Some(grant.issued_by.actor_id),
+            valid_from: Some(grant.issued_at),
+            valid_until: Some(grant.valid_until),
+            revoked_at,
+            operations: Some(grant.operations),
+            scope: Some(grant.scope),
+        })
     }
 
     /// Revokes a host-issued work-authority grant through an immutable record.
@@ -3399,6 +3478,41 @@ impl SqliteStore {
                         _ => invalid.push(format!("{label}:invalid_evidence_binding")),
                     }
                 }
+                WorkTransition::MemoryCaptured { version, assertion } => {
+                    let binding = load_typed_work_object::<MemoryVersion>(
+                        connection,
+                        version,
+                        "memory_version",
+                    )
+                    .and_then(|memory| {
+                        let assertion_event = load_typed_work_object::<MemoryAssertionEvent>(
+                            connection,
+                            assertion,
+                            "memory_assertion_event",
+                        )?;
+                        Ok((memory, assertion_event))
+                    });
+                    let valid = binding.is_ok_and(|(memory, assertion_event)| {
+                        matches!(
+                            memory.scope,
+                            crate::domain::Scope::Work { ref project, work }
+                                if project == &event.project_id && work == event.work_id
+                        ) && memory.memory_id == assertion_event.memory_id
+                            && assertion_event.version == *version
+                            && memory.actor == event.actor
+                            && assertion_event.actor == event.actor
+                            && memory.created_at == event.created_at
+                            && assertion_event.created_at == event.created_at
+                            && event.claim.as_ref().is_some_and(|claim| {
+                                event.actor.session_id.as_ref() == Some(&claim.holder)
+                                    && claim.state == WorkClaimState::Active
+                                    && claim.expires_at > event.created_at
+                            })
+                    });
+                    if !valid {
+                        invalid.push(format!("{label}:invalid_memory_capture_binding"));
+                    }
+                }
                 WorkTransition::TypedEvidenceAdded {
                     evidence,
                     evidence_kind,
@@ -5177,7 +5291,7 @@ impl SqliteStore {
             request.checkpointed_at,
             &request.actor,
         )?;
-        let (item, mut run, claim) = validate_live_claim_on(
+        let (item, mut run, mut claim) = validate_live_claim_on(
             &transaction,
             request.work_id,
             request.run_id,
@@ -5193,6 +5307,7 @@ impl SqliteStore {
             None => work_run_evidence_on(&transaction, run.run_id)?,
         };
         ensure_run_evidence(&transaction, run.run_id, &evidence)?;
+        renew_holder_claim(&transaction, &mut claim, request.checkpointed_at)?;
         let acknowledged_run_position = FeedPosition {
             feed: FeedId::RunExecution(run.run_id),
             position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
@@ -5296,7 +5411,7 @@ impl SqliteStore {
             request.recorded_at,
             &request.actor,
         )?;
-        let (item, run, claim) = validate_live_claim_on(
+        let (item, run, mut claim) = validate_live_claim_on(
             &transaction,
             request.work_id,
             request.run_id,
@@ -5318,6 +5433,7 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.recorded_at,
         };
+        renew_holder_claim(&transaction, &mut claim, request.recorded_at)?;
         let object = CanonicalObject::freeze(&evidence)?;
         SqliteStore::insert_object(&transaction, "work_evidence", &object)?;
         transaction.execute(
@@ -5415,7 +5531,7 @@ impl SqliteStore {
             request.offered_at,
             &request.actor,
         )?;
-        let (item, mut run, claim) = validate_live_claim_on(
+        let (item, mut run, mut claim) = validate_live_claim_on(
             &transaction,
             request.work_id,
             request.run_id,
@@ -5426,6 +5542,7 @@ impl SqliteStore {
             request.offered_at,
             false,
         )?;
+        renew_holder_claim(&transaction, &mut claim, request.offered_at)?;
         let acknowledged_run_position = FeedPosition {
             feed: FeedId::RunExecution(run.run_id),
             position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
@@ -5739,7 +5856,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Err(StoreError::InvalidWork("handoff offer has expired".into()));
         }
-        let (item, run, claim) = validate_live_claim_on(
+        let (item, run, mut claim) = validate_live_claim_on(
             &transaction,
             request.work_id,
             request.run_id,
@@ -5750,6 +5867,7 @@ impl SqliteStore {
             request.cancelled_at,
             true,
         )?;
+        renew_holder_claim(&transaction, &mut claim, request.cancelled_at)?;
         offer.state = WorkHandoffState::Cancelled;
         let offer_object = CanonicalObject::freeze(&offer)?;
         SqliteStore::insert_object(&transaction, "work_handoff_offer", &offer_object)?;
@@ -8092,13 +8210,63 @@ fn append_to_work_feeds(
         .collect()
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the exact work, holder, time, actor, typed memory, and canonical objects form one audited capture binding"
+)]
 pub(super) fn append_memory_capture_to_work_feeds(
     transaction: &Transaction<'_>,
     work_id: WorkId,
-    version: &CanonicalObject,
-    assertion: &CanonicalObject,
+    holder: &SessionId,
+    captured_at: DateTime<Utc>,
+    actor: &crate::domain::ActorContext,
+    version: &MemoryVersion,
+    assertion: &MemoryAssertionEvent,
+    version_object: &CanonicalObject,
+    assertion_object: &CanonicalObject,
 ) -> Result<Vec<FeedPosition>, StoreError> {
-    let item = load_work_item(transaction, work_id)?;
+    let crate::domain::Scope::Work { project, work } = &version.scope else {
+        return Err(StoreError::InvalidMemoryProjection(
+            "shared work capture must carry work scope".into(),
+        ));
+    };
+    if *work != work_id
+        || assertion.memory_id != version.memory_id
+        || assertion.version != *version_object.hash()
+        || version.actor != *actor
+        || assertion.actor != *actor
+        || version.created_at != captured_at
+        || assertion.created_at != captured_at
+    {
+        return Err(StoreError::InvalidMemoryProjection(
+            "shared work capture is not bound to its note, actor, and timestamp".into(),
+        ));
+    }
+    assert_actor_session(actor, holder)?;
+    let projected_item = load_work_item(transaction, work_id)?;
+    if project != &projected_item.project_id {
+        return Err(StoreError::InvalidMemoryProjection(
+            "shared work capture project differs from the focused work".into(),
+        ));
+    }
+    let run_id = projected_item
+        .active_run_id
+        .ok_or(StoreError::WorkClaimMismatch { work: work_id })?;
+    let projected_claim = load_work_claim_optional(transaction, run_id)?
+        .ok_or(StoreError::WorkClaimMismatch { work: work_id })?;
+    let (item, run, mut claim) = validate_live_claim_on(
+        transaction,
+        work_id,
+        run_id,
+        projected_item.revision,
+        holder,
+        projected_claim.claim_id,
+        projected_claim.fence,
+        captured_at,
+        false,
+    )?;
+    renew_holder_claim(transaction, &mut claim, captured_at)?;
+    let root_execution = load_root_execution(transaction, run.root_execution_id)?;
     let mut positions = append_to_work_feeds(
         transaction,
         &item.project_id,
@@ -8106,7 +8274,7 @@ pub(super) fn append_memory_capture_to_work_feeds(
         item.active_run_id,
         None,
         "memory_version",
-        version,
+        version_object,
     )?;
     positions.extend(append_to_work_feeds(
         transaction,
@@ -8115,8 +8283,31 @@ pub(super) fn append_memory_capture_to_work_feeds(
         item.active_run_id,
         None,
         "memory_assertion_event",
-        assertion,
+        assertion_object,
     )?);
+    let event = WorkEvent {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id: Some(run.run_id),
+        revision: item.revision,
+        work: item,
+        run: Some(run),
+        root_execution: Some(root_execution),
+        claim: Some(claim),
+        handoff_offer: None,
+        blocker: None,
+        relation_fingerprint: None,
+        transition: WorkTransition::MemoryCaptured {
+            version: version_object.hash().clone(),
+            assertion: assertion_object.hash().clone(),
+        },
+        actor: actor.clone(),
+        created_at: captured_at,
+    };
+    let (_, event_positions) = append_work_event(transaction, &event)?;
+    positions.extend(event_positions);
     Ok(positions)
 }
 
@@ -10383,12 +10574,21 @@ fn rebase_planning_claim(
         .ok_or(StoreError::WorkClaimMismatch { work: item.work_id })?;
     let mut run = load_work_run(transaction, *run_id)?;
     claim.accepted_work_revision = item.revision;
-    claim.revision += 1;
+    renew_holder_claim(transaction, &mut claim, at)?;
     run.revision += 1;
     run.updated_at = at;
-    persist_claim(transaction, &claim)?;
     persist_work_run(transaction, &run, claim.fence)?;
     Ok((Some(claim), Some(run)))
+}
+
+fn renew_holder_claim(
+    transaction: &Transaction<'_>,
+    claim: &mut WorkClaim,
+    at: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    claim.expires_at = claim_expiry(at, DEFAULT_WORK_CLAIM_TTL_SECONDS)?;
+    claim.revision += 1;
+    persist_claim(transaction, claim)
 }
 
 fn normalize_work_catalog_key(value: &str) -> String {
@@ -10595,15 +10795,20 @@ fn validate_live_claim_on(
     }
     let claim = load_work_claim_optional(connection, run_id)?
         .ok_or(StoreError::WorkClaimMismatch { work: work_id })?;
-    if claim.work_id != work_id
-        || claim.run_id != run_id
-        || claim.claim_id != claim_id
-        || claim.accepted_work_revision != expected_work_revision
-        || claim.fence != claim_fence
-        || &claim.holder != holder
-        || claim.state != WorkClaimState::Active
-        || claim.expires_at <= now
-    {
+    let exact_authority_basis = claim.work_id == work_id
+        && claim.run_id == run_id
+        && claim.claim_id == claim_id
+        && claim.accepted_work_revision == expected_work_revision
+        && claim.fence == claim_fence
+        && &claim.holder == holder
+        && claim.state == WorkClaimState::Active;
+    if exact_authority_basis && claim.expires_at <= now {
+        return Err(StoreError::WorkClaimLapsed {
+            work: work_id,
+            expired_at: claim.expires_at,
+        });
+    }
+    if !exact_authority_basis {
         return Err(StoreError::WorkClaimMismatch { work: work_id });
     }
     if !allow_pending_handoff {
@@ -10662,6 +10867,7 @@ pub(super) fn validate_control_work_binding_on(
         Err(
             StoreError::WorkRevisionConflict { .. }
             | StoreError::WorkClaimMismatch { .. }
+            | StoreError::WorkClaimLapsed { .. }
             | StoreError::InvalidWork(_),
         ) => Err(StoreError::ControlWorkBindingStale {
             work: binding.work_id,
@@ -13922,6 +14128,7 @@ mod tests {
             .expect("root");
         let project = root.project_id.clone();
         let session = SessionId("contra-session".into());
+        claim(&mut store, &root, "contra-session", "contra-claim", 1, 300);
         store
             .focus_work_session(&project, &session, root.work_id, at(1))
             .expect("focus the root");
@@ -14803,6 +15010,7 @@ mod tests {
             )
             .expect("create root");
         let owner_session = SessionId("planner".into());
+        let work_claim = claim(&mut store, &root, "planner", "work-memory-claim", 1, 300);
         store
             .focus_work_session(&root.project_id, &owner_session, root.work_id, at(1))
             .expect("focus work before capture");
@@ -14836,7 +15044,7 @@ mod tests {
             }
         );
         assert_eq!(shared.cursor, None);
-        assert_eq!(shared.work_positions.len(), 6);
+        assert_eq!(shared.work_positions.len(), 9);
 
         let private = store
             .capture_note(
@@ -14997,7 +15205,13 @@ mod tests {
                         ),
                     ],
                     prerequisites: Vec::new(),
-                    authority: delegated("project-memory", "planner"),
+                    authority: WorkPlanningAuthority::Claim {
+                        run_id: work_claim.run_id,
+                        holder: work_claim.holder.clone(),
+                        claim_id: work_claim.claim_id,
+                        claim_fence: work_claim.fence,
+                        grant: authority("project-memory", "planner").grant,
+                    },
                     actor: actor("planner"),
                     idempotency_key: "memory-child-decompose".into(),
                     created_at: at(4),
@@ -15010,6 +15224,14 @@ mod tests {
         store
             .focus_work_session(&root.project_id, &peer_session, child_work.work_id, at(5))
             .expect("move peer focus to child work");
+        claim(
+            &mut store,
+            child_work,
+            "peer",
+            "child-work-memory-claim",
+            5,
+            300,
+        );
         let child_view = store
             .search_work_memories(
                 &root.project_id,
@@ -15508,6 +15730,70 @@ mod tests {
             claim_expiry(DateTime::<Utc>::MAX_UTC, 1),
             Err(StoreError::InvalidWork(_))
         ));
+    }
+
+    #[test]
+    fn work_authority_status_reports_installed_revoked_and_unknown_hashes() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let grant_hash = install_grant(&mut store, "project-authority-status", "holder");
+
+        let installed = store
+            .work_authority_grant_status(&grant_hash)
+            .expect("installed authority status");
+        assert!(installed.installed);
+        assert_eq!(installed.subject_actor_id.as_deref(), Some("holder"));
+        assert_eq!(installed.issued_by.as_deref(), Some("host-operator"));
+        assert_eq!(installed.valid_from, Some(at(-1_000)));
+        assert_eq!(installed.valid_until, Some(at(1_000)));
+        assert_eq!(installed.revoked_at, None);
+        assert!(
+            installed
+                .operations
+                .as_ref()
+                .is_some_and(|operations| operations.contains(&WorkAuthorityOperation::Claim))
+        );
+        assert_eq!(installed.scope, Some(WorkAuthorityScope::Project));
+
+        store
+            .revoke_work_authority_grant(
+                &grant_hash,
+                &actor("host-operator"),
+                "operator revoked the installed grant",
+                at(1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("revoke installed authority");
+        let revoked = store
+            .work_authority_grant_status(&grant_hash)
+            .expect("revoked authority status");
+        assert!(revoked.installed);
+        assert_eq!(revoked.revoked_at, Some(at(1)));
+
+        let unknown_hash = CanonicalObject::freeze(&test_grant(
+            "project-authority-status",
+            "unknown-holder",
+            default_budget(),
+            at(1_000),
+        ))
+        .expect("canonical unknown grant")
+        .hash()
+        .clone();
+        let unknown = store
+            .work_authority_grant_status(&unknown_hash)
+            .expect("unknown authority status is a successful query");
+        assert_eq!(
+            unknown,
+            WorkAuthorityGrantStatus {
+                installed: false,
+                subject_actor_id: None,
+                issued_by: None,
+                valid_from: None,
+                valid_until: None,
+                revoked_at: None,
+                operations: None,
+                scope: None,
+            }
+        );
     }
 
     #[test]
@@ -17510,6 +17796,292 @@ mod tests {
     }
 
     #[test]
+    fn holder_mutations_renew_the_claim_and_a_refusal_does_not() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-renewal", "planner");
+        let root = store
+            .create_work(
+                &root_request("project-renewal", "renewal-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root");
+        let initial = claim(&mut store, &root, "holder", "renewal-claim", 1, 10);
+        assert_eq!(initial.expires_at, at(11));
+
+        evidence(&mut store, &root, &initial, "holder", "renewal-evidence", 2);
+        let after_evidence = store
+            .current_work_claim(root.work_id)
+            .expect("claim after evidence")
+            .expect("live claim");
+        assert_eq!(
+            after_evidence.expires_at,
+            at(2) + Duration::seconds(DEFAULT_WORK_CLAIM_TTL_SECONDS)
+        );
+        assert_eq!(after_evidence.revision, initial.revision + 1);
+
+        checkpoint(
+            &mut store,
+            &root,
+            &after_evidence,
+            "holder",
+            "renewal-checkpoint",
+            3,
+            &[],
+        );
+        let after_checkpoint = store
+            .current_work_claim(root.work_id)
+            .expect("claim after checkpoint")
+            .expect("live claim");
+        assert_eq!(
+            after_checkpoint.expires_at,
+            at(3) + Duration::seconds(DEFAULT_WORK_CLAIM_TTL_SECONDS)
+        );
+        assert_eq!(after_checkpoint.revision, after_evidence.revision + 1);
+
+        let revised = store
+            .revise_work(
+                &ReviseWorkRequest {
+                    work_id: root.work_id,
+                    expected_revision: root.revision,
+                    patch: WorkRevisionPatch {
+                        priority: Some(2),
+                        ..WorkRevisionPatch::default()
+                    },
+                    authority: WorkPlanningAuthority::Claim {
+                        run_id: after_checkpoint.run_id,
+                        holder: after_checkpoint.holder.clone(),
+                        claim_id: after_checkpoint.claim_id,
+                        claim_fence: after_checkpoint.fence,
+                        grant: authority("project-renewal", "holder").grant,
+                    },
+                    actor: actor("holder"),
+                    idempotency_key: "renewal-revise".into(),
+                    updated_at: at(4),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("claim-bound revision");
+        let after_revision = store
+            .current_work_claim(root.work_id)
+            .expect("claim after revision")
+            .expect("live claim");
+        assert_eq!(
+            after_revision.expires_at,
+            at(4) + Duration::seconds(DEFAULT_WORK_CLAIM_TTL_SECONDS)
+        );
+        assert_eq!(after_revision.revision, after_checkpoint.revision + 1);
+        assert_eq!(after_revision.accepted_work_revision, revised.revision);
+
+        let offer = store
+            .offer_work_handoff(
+                &OfferWorkHandoffRequest {
+                    work_id: revised.work_id,
+                    run_id: after_revision.run_id,
+                    expected_work_revision: revised.revision,
+                    from: after_revision.holder.clone(),
+                    to: SessionId("next-holder".into()),
+                    claim_id: after_revision.claim_id,
+                    claim_fence: after_revision.fence,
+                    ttl_seconds: 30,
+                    checkpoint_summary: "handoff renewal checkpoint".into(),
+                    actor: actor("holder"),
+                    idempotency_key: "renewal-offer".into(),
+                    offered_at: at(5),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("handoff offer");
+        let after_offer = store
+            .current_work_claim(root.work_id)
+            .expect("claim after offer")
+            .expect("live claim");
+        assert_eq!(
+            after_offer.expires_at,
+            at(5) + Duration::seconds(DEFAULT_WORK_CLAIM_TTL_SECONDS)
+        );
+        assert_eq!(after_offer.revision, after_revision.revision + 1);
+        assert_eq!(offer.expires_at, at(35));
+
+        store
+            .cancel_work_handoff(
+                &CancelWorkHandoffRequest {
+                    work_id: revised.work_id,
+                    run_id: after_offer.run_id,
+                    expected_work_revision: revised.revision,
+                    holder: after_offer.holder.clone(),
+                    offer_id: offer.offer_id,
+                    claim_id: after_offer.claim_id,
+                    claim_fence: after_offer.fence,
+                    reason: "continue with the current holder".into(),
+                    actor: actor("holder"),
+                    idempotency_key: "renewal-cancel".into(),
+                    cancelled_at: at(6),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("cancel handoff");
+        let after_cancel = store
+            .current_work_claim(root.work_id)
+            .expect("claim after cancellation")
+            .expect("live claim");
+        assert_eq!(
+            after_cancel.expires_at,
+            at(6) + Duration::seconds(DEFAULT_WORK_CLAIM_TTL_SECONDS)
+        );
+        assert_eq!(after_cancel.revision, after_offer.revision + 1);
+
+        let refused_root = store
+            .create_work(
+                &root_request("project-renewal", "refused-renewal-root", 10),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("second root");
+        let lapsed = claim(
+            &mut store,
+            &refused_root,
+            "holder",
+            "lapsed-renewal-claim",
+            11,
+            2,
+        );
+        let refused = store.checkpoint_work(
+            &CheckpointWorkRequest {
+                work_id: refused_root.work_id,
+                run_id: lapsed.run_id,
+                expected_work_revision: refused_root.revision,
+                holder: lapsed.holder.clone(),
+                claim_id: lapsed.claim_id,
+                claim_fence: lapsed.fence,
+                summary: "must not renew".into(),
+                evidence: Some(Vec::new()),
+                actor: actor("holder"),
+                idempotency_key: "refused-renewal".into(),
+                checkpointed_at: at(13),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            refused,
+            Err(StoreError::WorkClaimLapsed { expired_at, .. }) if expired_at == at(13)
+        ));
+        assert_eq!(
+            store
+                .current_work_claim(refused_root.work_id)
+                .expect("claim after refusal"),
+            Some(lapsed)
+        );
+        assert!(store.verify_all().expect("integrity").is_healthy());
+    }
+
+    #[test]
+    fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let project = ProjectId("project-work-note-claim".into());
+        install_grant(&mut store, &project.0, "planner");
+        let root = store
+            .create_work(
+                &root_request(&project.0, "work-note-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root");
+        let initial = claim(&mut store, &root, "holder", "work-note-claim", 1, 10);
+        let holder = SessionId("holder".into());
+        let peer = SessionId("peer".into());
+        store
+            .focus_work_session(&project, &holder, root.work_id, at(1))
+            .expect("holder focus");
+        store
+            .focus_work_session(&project, &peer, root.work_id, at(1))
+            .expect("peer focus");
+
+        let request = NoteRequest {
+            project_id: project.clone(),
+            task_id: None,
+            work_id: Some(root.work_id),
+            prose: "Evidence: the exact claim holder captured shared work memory".into(),
+            visibility: NoteVisibility::Shared,
+            kind: None,
+            authority: None,
+            sensitivity: None,
+            title: None,
+            tags: Vec::new(),
+            evidence: Vec::new(),
+            refs: vec!["test:work-note-holder".into()],
+            actor: actor("holder"),
+            idempotency_key: "work-note-holder".into(),
+            created_at: at(2),
+        };
+        let receipt = store
+            .capture_note(&request, &DevelopmentNoopRedactor)
+            .expect("live holder capture");
+        assert_eq!(receipt.work_positions.len(), 9);
+        let renewed = store
+            .current_work_claim(root.work_id)
+            .expect("claim after capture")
+            .expect("live claim");
+        assert_eq!(renewed.revision, initial.revision + 1);
+        assert_eq!(
+            renewed.expires_at,
+            at(2) + Duration::seconds(DEFAULT_WORK_CLAIM_TTL_SECONDS)
+        );
+        let latest = canonical_work_events_for_item(&store.connection, root.work_id)
+            .expect("canonical work history")
+            .pop()
+            .expect("memory capture event");
+        assert_eq!(latest.claim.as_ref(), Some(&renewed));
+        assert!(matches!(
+            latest.transition,
+            WorkTransition::MemoryCaptured { version, assertion }
+                if version == receipt.version && assertion == receipt.assertion
+        ));
+
+        let replay = store
+            .capture_note(&request, &DevelopmentNoopRedactor)
+            .expect("exact replay");
+        assert!(replay.duplicate);
+        assert_eq!(
+            store
+                .current_work_claim(root.work_id)
+                .expect("claim after replay")
+                .expect("live claim"),
+            renewed
+        );
+
+        let mut foreign = request.clone();
+        foreign.actor = actor("peer");
+        foreign.idempotency_key = "work-note-peer".into();
+        foreign.created_at = at(3);
+        assert!(matches!(
+            store.capture_note(&foreign, &DevelopmentNoopRedactor),
+            Err(StoreError::WorkClaimMismatch { work }) if work == root.work_id
+        ));
+        assert_eq!(
+            store
+                .current_work_claim(root.work_id)
+                .expect("claim after foreign refusal")
+                .expect("live claim"),
+            renewed
+        );
+
+        let mut lapsed = request;
+        lapsed.idempotency_key = "work-note-lapsed".into();
+        lapsed.created_at = renewed.expires_at;
+        assert!(matches!(
+            store.capture_note(&lapsed, &DevelopmentNoopRedactor),
+            Err(StoreError::WorkClaimLapsed { work, expired_at })
+                if work == root.work_id && expired_at == renewed.expires_at
+        ));
+        assert_eq!(
+            store
+                .current_work_claim(root.work_id)
+                .expect("claim after lapse refusal")
+                .expect("lapsed claim"),
+            renewed
+        );
+        assert!(store.verify_all().expect("integrity").is_healthy());
+    }
+
+    #[test]
     fn release_requires_nonempty_waiver_reason_and_persists_audit_reasons() {
         let mut store = SqliteStore::open_in_memory().expect("store");
         install_grant(&mut store, "project-release-reason", "planner");
@@ -17633,20 +18205,23 @@ mod tests {
                 &DevelopmentNoopRedactor,
             )
             .expect("first offer");
-        let recovered = claim(&mut store, &root, "agent-c", "claim-c", 12, 30);
+        let renewed = store
+            .current_work_claim(root.work_id)
+            .expect("renewed claim")
+            .expect("current holder remains authoritative");
         let replacement = store
             .offer_work_handoff(
                 &OfferWorkHandoffRequest {
                     work_id: root.work_id,
-                    run_id: recovered.run_id,
+                    run_id: renewed.run_id,
                     expected_work_revision: root.revision,
-                    from: recovered.holder.clone(),
+                    from: renewed.holder.clone(),
                     to: SessionId("agent-d".into()),
-                    claim_id: recovered.claim_id,
-                    claim_fence: recovered.fence,
+                    claim_id: renewed.claim_id,
+                    claim_fence: renewed.fence,
                     ttl_seconds: 20,
                     checkpoint_summary: "replacement handoff".into(),
-                    actor: actor("agent-c"),
+                    actor: actor("agent-a"),
                     idempotency_key: "replacement-offer".into(),
                     offered_at: at(13),
                 },
@@ -18505,6 +19080,25 @@ mod tests {
                 &DevelopmentNoopRedactor,
             )
             .expect("release optional claim");
+        store
+            .release_work(
+                &ReleaseWorkRequest {
+                    work_id: idle_optional.work_id,
+                    run_id: expiring_claim.run_id,
+                    expected_work_revision: idle_optional.revision,
+                    holder: expiring_claim.holder.clone(),
+                    claim_id: expiring_claim.claim_id,
+                    claim_fence: expiring_claim.fence,
+                    reason: "handoff expired before root sealing".into(),
+                    waiver_authority: None,
+                    waiver_reason: None,
+                    actor: actor("expiring-agent"),
+                    idempotency_key: "release-expiring-optional".into(),
+                    released_at: at(9),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("release renewed claim after handoff expiry");
         let release_entry = store
             .work_event_tail(live_optional.work_id, 1)
             .expect("release event")
@@ -18545,10 +19139,7 @@ mod tests {
             },
             &DevelopmentNoopRedactor,
         );
-        assert!(matches!(
-            backdated_accept,
-            Err(StoreError::WorkClaimMismatch { .. })
-        ));
+        assert!(matches!(backdated_accept, Err(StoreError::InvalidWork(_))));
 
         let stale_checkpoint = store.checkpoint_work(
             &CheckpointWorkRequest {

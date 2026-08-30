@@ -156,6 +156,10 @@ These are deliberately different:
   and audit metadata. A mutation grant must bind the live lease fences. It says
   nothing about whether the overall work item is complete.
 
+A successful note, update, evidence, checkpoint, or handoff by the current
+holder slides the work-claim expiry to one hour after that mutation; a lapsed
+claim still requires explicit recovery.
+
 A session normally needs the work claim before an ordinary execution turn and
 the relevant resource lease immediately before mutation. Shared analysis may
 need a claim but no exclusive resource lease. Root-level observation and
@@ -440,6 +444,9 @@ becomes the ambient focus as a side effect. Durable attempts bind both caller
 intent and the exact focused work/claim/handoff basis. A lost-response retry
 may replay a committed result, but an interrupted attempt must revalidate live
 authority and cannot follow a changed ambient focus into another work item.
+The retry-stable basis deliberately ignores claim expiry, claim revision, and
+the canonical work head because every resumed substep re-reads evidence and
+revalidates the live claim identity and fence inside its commit transaction.
 
 `work_focus` is the explicit drill-down surface. It carries an exact history
 event count and only the newest bounded event summaries, plus body-free memory
@@ -846,7 +853,9 @@ focus returns a bounded, actor-filtered memory summary, so the work graph and
 its execution memory do not require a legacy tracker task as an identity shim.
 Every `memory_note` mutation requires a caller-stable `idempotency_key`; an
 exact retry returns the first receipt and the same key with different prose is
-a conflict.
+a conflict. A shared work-scoped capture also requires the focused session's
+exact live claim; a successful capture snapshots and renews that claim in its
+canonical work event, while replay and refusal do not renew it.
 Restricted-sensitivity bodies are omitted from task and work search/focus
 views and remain unavailable through direct show in V1. `work_next` also
 replaces restricted work memory and memory outside the currently focused root

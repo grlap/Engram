@@ -51,8 +51,9 @@ use crate::{
         TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent,
         TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
         TurnGrantState, TurnIntent, TurnNextIntent, VerificationEvidence,
-        VerificationEvidenceInput, VerificationKind, VerificationResult, WorkLease,
-        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
+        VerificationEvidenceInput, VerificationKind, VerificationResult, WorkAuthorityOperation,
+        WorkAuthorityScope, WorkLease, WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt,
+        WorkLeaseTransition,
     },
     memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
 };
@@ -362,6 +363,11 @@ pub enum StoreError {
     },
     #[error("claim authority for work {work:?} is stale or does not match the holder")]
     WorkClaimMismatch { work: crate::domain::WorkId },
+    #[error("claim for work {work:?} lapsed at {expired_at}")]
+    WorkClaimLapsed {
+        work: crate::domain::WorkId,
+        expired_at: DateTime<Utc>,
+    },
     #[error("completion for work {work:?} was refused: {reason}")]
     WorkCompletionRefused {
         work: crate::domain::WorkId,
@@ -430,6 +436,19 @@ pub struct ObligationRuleSetUpdateReceipt {
     pub previous_rule_set: Option<ObjectHash>,
     pub obligation_rule_set: ObjectHash,
     pub activated_at: DateTime<Utc>,
+}
+
+/// Host-facing installation and revocation status for one work-authority hash.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkAuthorityGrantStatus {
+    pub installed: bool,
+    pub subject_actor_id: Option<String>,
+    pub issued_by: Option<String>,
+    pub valid_from: Option<DateTime<Utc>>,
+    pub valid_until: Option<DateTime<Utc>>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub operations: Option<Vec<WorkAuthorityOperation>>,
+    pub scope: Option<WorkAuthorityScope>,
 }
 
 /// One ordered entry in a task's authoritative local change feed.
@@ -5082,6 +5101,10 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when inspection refuses the prose, an
     /// idempotency key changes meaning, or persistence fails.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "note objects, memory projections, claim renewal, work feeds, and the replay receipt remain one atomic transaction"
+    )]
     pub fn capture_note<R: Redactor>(
         &mut self,
         request: &NoteRequest,
@@ -5150,9 +5173,19 @@ impl SqliteStore {
             let work_id = prepared.version.scope.work_id().ok_or_else(|| {
                 StoreError::InvalidMemoryProjection("shared work scope has no work id".into())
             })?;
+            let holder = request.actor.session_id.as_ref().ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(
+                    "work-scoped memory requires an attributed session".into(),
+                )
+            })?;
             work::append_memory_capture_to_work_feeds(
                 &transaction,
                 work_id,
+                holder,
+                request.created_at,
+                &request.actor,
+                &prepared.version,
+                &prepared.assertion,
                 &prepared.version_object,
                 &prepared.assertion_object,
             )?
@@ -8914,6 +8947,7 @@ impl SqliteStore {
             Err(
                 StoreError::ControlWorkBindingStale { .. }
                 | StoreError::WorkClaimMismatch { .. }
+                | StoreError::WorkClaimLapsed { .. }
                 | StoreError::WorkRevisionConflict { .. }
                 | StoreError::WorkNotFound(_)
                 | StoreError::InvalidWork(_),

@@ -218,6 +218,13 @@ irreversibly revokes canonical work-authority grants; those commands are not
 MCP tools. Stats/import/export and the remaining broad administrative CLI in
 the specification are still planned.
 
+Host integrations can query a hash before binding it with
+`engram authority show <hash>` or request the same fields as JSON with
+`engram authority show <hash> --json`. Installed grants report their subject,
+issuer, validity window, revocation time, operations, and scope without
+printing grant bytes; an unknown hash returns `installed: false` with null
+details and exit status 0, while any integrity failure remains an error.
+
 The same host boundary can waive one exact open run obligation, but only with
 a separately admitted grant:
 
@@ -386,8 +393,10 @@ typed transition such as claim/release, checkpoint, blocker, cancel,
 supersede, deferral, assignment, revision, or prerequisite change. Update and
 handoff success responses contain only a compact receipt, one bounded
 `obligation_page`, generic readiness `obligations`, and `allowed_next`;
-their size does not grow with item history. Each entry
-names the exact tool and tagged operation. For example,
+their size does not grow with item history. A successful holder note, update,
+evidence, checkpoint, or handoff renews the claim for the one-hour default TTL;
+a lapsed claim still requires the explicit recovery path. Each entry names the
+exact tool and tagged operation. For example,
 `allowed_next: ["work_update:claim(recovery_reason_required)"]` directs the
 agent to submit the `work_update` claim variant with an attributed
 `recovery_reason` and a host grant that includes `claim_recovery`; ordinary

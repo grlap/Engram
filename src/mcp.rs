@@ -1235,6 +1235,12 @@ fn error_value(error: &StoreError) -> Value {
             "work_id": work,
             "remedy": "refresh with work_focus; reclaim or accept a handoff before mutating",
         }),
+        StoreError::WorkClaimLapsed { work, expired_at } => json!({
+            "work_id": work,
+            "expired_at_ms": expired_at.timestamp_millis(),
+            "expired_at": expired_at.to_rfc3339(),
+            "remedy": "recover the lapsed claim with work_update claim and a recovery_reason before mutating",
+        }),
         StoreError::WorkCompletionRefused { work, reason } => json!({
             "work_id": work,
             "reason": reason,
@@ -1278,6 +1284,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNotOpen(_) => "work_not_open",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
+        StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
         _ => "engram_store_error",
     }

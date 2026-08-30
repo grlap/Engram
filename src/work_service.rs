@@ -19,16 +19,16 @@ use crate::{
     CancelWorkHandoffRequest, CanonicalObject, ChangeWorkPrerequisiteRequest,
     CheckpointWorkRequest, ChildRequirement, ChildWorkDraft, ChildWorkPrerequisite,
     ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionDrainAttestation,
-    CompletionSeal, ControlWorkBinding, CreateWorkRequest, DecomposeWorkRequest,
-    DevelopmentNoopRedactor, DisposeWorkRequest, EnvironmentEvidence, ExecutionObservation, FeedId,
-    LifecycleAuthorityDecision, MemorySummary, MemoryVersion, ObjectHash, OfferWorkHandoffRequest,
-    ProjectId, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
-    ReviseWorkRequest, SessionId, SqliteStore, TaskId, VerificationEvidence, VerificationKind,
-    VerificationResult, WaiveRequiredChildRequest, WorkAuthorityOperation, WorkAvailability,
-    WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState,
-    WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence,
-    WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
-    WorkItemKind, WorkLifecycle, WorkObligation, WorkObligationResolution,
+    CompletionSeal, ControlWorkBinding, CreateWorkRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS,
+    DecomposeWorkRequest, DevelopmentNoopRedactor, DisposeWorkRequest, EnvironmentEvidence,
+    ExecutionObservation, FeedId, LifecycleAuthorityDecision, MemorySummary, MemoryVersion,
+    ObjectHash, OfferWorkHandoffRequest, ProjectId, ReadyWork, RecordWorkEvidenceRequest,
+    ReleaseWorkRequest, ReopenWorkRequest, ReviseWorkRequest, SessionId, SqliteStore, TaskId,
+    VerificationEvidence, VerificationKind, VerificationResult, WaiveRequiredChildRequest,
+    WorkAuthorityOperation, WorkAvailability, WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint,
+    WorkClaim, WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
+    WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId,
+    WorkItem, WorkItemKind, WorkLifecycle, WorkObligation, WorkObligationResolution,
     WorkObligationResolutionEvent, WorkObligationState, WorkOrigin, WorkPlanningAuthority,
     WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkTransition,
     domain::{
@@ -137,11 +137,25 @@ struct WorkProtocolIntent<'a, T> {
     input: &'a T,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 struct WorkProtocolBasis {
     focused_work: Option<WorkItem>,
     claim: Option<WorkClaim>,
     handoffs: Vec<WorkHandoffOffer>,
+}
+
+impl WorkProtocolBasis {
+    fn retry_stable(&self) -> Self {
+        let mut stable = self.clone();
+        if let Some(claim) = stable.claim.as_mut() {
+            // Holder activity slides these two projection fields without
+            // changing claim identity or authority. They must not turn an
+            // exact lost-response retry into a different protocol intent.
+            claim.expires_at = DateTime::<Utc>::UNIX_EPOCH;
+            claim.revision = 0;
+        }
+        stable
+    }
 }
 
 #[derive(Serialize)]
@@ -162,8 +176,8 @@ struct WorkDerivedKey<'a> {
     session_id: &'a SessionId,
     protocol_operation: &'a str,
     focused_work_id: Option<WorkId>,
-    /// Hash of the focused work/claim/handoff basis, so an identical call
-    /// replays only while nothing about the item changed in between.
+    /// Hash of the focused work/claim/handoff basis, excluding sliding claim
+    /// expiry and claim revision, so renewal does not defeat exact replay.
     basis: &'a ObjectHash,
     /// Whether the basis claim is still live at call time, so a repeated
     /// call after expiry is a new attempt even though the projection bytes
@@ -1252,10 +1266,12 @@ impl LocalWorkService {
             ensure_agent_response_budget(&replay, "work_propose")?;
             return Ok(replay);
         }
+        let basis_matches =
+            retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
         let scoped_key = self.core_operation_key(protocol_operation, &raw_key, core_operation)?;
         let core_result = store.work_operation_result_value(core_operation, &scoped_key)?;
         ensure_protocol_basis(
-            attempt.basis_matches,
+            basis_matches,
             protocol_operation,
             &raw_key,
             core_result.is_some(),
@@ -1460,6 +1476,8 @@ impl LocalWorkService {
         if let Some(result) = attempt.result {
             return serde_json::from_value(result).map_err(StoreError::from);
         }
+        let basis_matches =
+            retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
         let scoped_key = self.core_operation_key(&protocol_operation, &raw_key, core_operation)?;
         if let Some(receipt) = store.work_operation_result_value(core_operation, &scoped_key)? {
             let durable_basis: WorkProtocolBasis =
@@ -1492,7 +1510,7 @@ impl LocalWorkService {
             )?;
             return Ok(result);
         }
-        ensure_protocol_basis(attempt.basis_matches, &protocol_operation, &raw_key, false)?;
+        ensure_protocol_basis(basis_matches, &protocol_operation, &raw_key, false)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("update attempt has no bound focused work".into())
         })?;
@@ -1509,7 +1527,7 @@ impl LocalWorkService {
                         expected_work_revision: work.revision,
                         expected_run_id: run_id,
                         holder: self.session_id.clone(),
-                        ttl_seconds: ttl_seconds.unwrap_or(3_600),
+                        ttl_seconds: ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
                         authority: self.authority_decision()?,
                         recovery_authority: recovery_reason
                             .as_ref()
@@ -1940,6 +1958,8 @@ impl LocalWorkService {
         if let Some(result) = attempt.result {
             return serde_json::from_value(result).map_err(StoreError::from);
         }
+        let basis_matches =
+            retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
         let scoped_key = self.core_operation_key("work_complete", &raw_key, "complete_work")?;
         if let Some(value) = store.work_operation_result_value("complete_work", &scoped_key)? {
             let seal: CompletionSeal = serde_json::from_value(value)?;
@@ -1953,7 +1973,7 @@ impl LocalWorkService {
             )?;
             return Ok(result);
         }
-        ensure_protocol_basis(attempt.basis_matches, "work_complete", &raw_key, false)?;
+        ensure_protocol_basis(basis_matches, "work_complete", &raw_key, false)?;
         let WorkCompleteInput {
             capture,
             evidence: supplied_evidence,
@@ -2245,6 +2265,8 @@ impl LocalWorkService {
         if let Some(result) = attempt.result {
             return serde_json::from_value(result).map_err(StoreError::from);
         }
+        let basis_matches =
+            retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
         let scoped_key = self.core_operation_key(&protocol_operation, &raw_key, core_operation)?;
         if let Some(receipt) = store.work_operation_result_value(core_operation, &scoped_key)? {
             let durable_basis: WorkProtocolBasis =
@@ -2271,7 +2293,7 @@ impl LocalWorkService {
             )?;
             return Ok(result);
         }
-        ensure_protocol_basis(attempt.basis_matches, &protocol_operation, &raw_key, false)?;
+        ensure_protocol_basis(basis_matches, &protocol_operation, &raw_key, false)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("handoff attempt has no bound focused work".into())
         })?;
@@ -2333,7 +2355,7 @@ impl LocalWorkService {
                         to: SessionId(to),
                         claim_id: claim.claim_id,
                         claim_fence: claim.fence,
-                        ttl_seconds: ttl_seconds.unwrap_or(3_600),
+                        ttl_seconds: ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
                         checkpoint_summary,
                         actor: self.actor("work_handoff", "offer ambient work handoff"),
                         idempotency_key: scoped_key,
@@ -2497,7 +2519,7 @@ impl LocalWorkService {
             return Ok(caller_key.to_owned());
         }
         let intent = CanonicalObject::freeze(intent)?;
-        let basis_object = CanonicalObject::freeze(basis)?;
+        let basis_object = CanonicalObject::freeze(&basis.retry_stable())?;
         let object = CanonicalObject::freeze(&WorkDerivedKey {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -2593,10 +2615,19 @@ impl LocalWorkService {
             .claim
             .clone()
             .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?;
+        if claim.work_id == work.work_id
+            && claim.state == WorkClaimState::Active
+            && claim.holder == self.session_id
+            && claim.expires_at <= now
+        {
+            return Err(StoreError::WorkClaimLapsed {
+                work: work.work_id,
+                expired_at: claim.expires_at,
+            });
+        }
         if claim.work_id != work.work_id
             || claim.state != WorkClaimState::Active
             || claim.holder != self.session_id
-            || claim.expires_at <= now
         {
             return Err(StoreError::WorkClaimMismatch { work: work.work_id });
         }
@@ -3818,6 +3849,22 @@ fn ensure_protocol_basis(
     }
 }
 
+fn retry_stable_basis_matches(
+    exact_matches: bool,
+    stored: Option<&serde_json::Value>,
+    current: &WorkProtocolBasis,
+) -> Result<bool, StoreError> {
+    if exact_matches {
+        return Ok(true);
+    }
+    stored
+        .cloned()
+        .map(serde_json::from_value::<WorkProtocolBasis>)
+        .transpose()
+        .map(|stored| stored.is_some_and(|stored| stored.retry_stable() == current.retry_stable()))
+        .map_err(StoreError::from)
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "the exhaustive object-kind projection keeps every privacy boundary and compact summary shape in one audited match"
@@ -4287,6 +4334,7 @@ fn work_transition_kind(transition: &WorkTransition) -> &'static str {
         WorkTransition::HandoffCancelled { .. } => "handoff_cancelled",
         WorkTransition::HandedOff { .. } => "handed_off",
         WorkTransition::EvidenceAdded { .. } => "evidence_added",
+        WorkTransition::MemoryCaptured { .. } => "memory_captured",
         WorkTransition::TypedEvidenceAdded { .. } => "typed_evidence_added",
         WorkTransition::Completed { .. } => "completed",
         WorkTransition::Disposed { .. } => "disposed",
@@ -6041,6 +6089,25 @@ mod tests {
             WorkProposeResult::Root { work, .. } => work,
             WorkProposeResult::Decomposition(_) => panic!("expected root"),
         };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: None,
+                    recovery_reason: None,
+                    idempotency_key: "focus-race-original-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim original focus");
+        peer.work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: None,
+                recovery_reason: None,
+                idempotency_key: "focus-race-replacement-claim".into(),
+            },
+            at(1),
+        )
+        .expect("claim replacement focus");
         let mut memories = SqliteStore::open(&database).expect("memory store");
         for (work_id, prose, key, second, actor) in [
             (
@@ -6309,10 +6376,10 @@ mod tests {
         reason = "the crash-replay regression seeds each committed completion substep under the exact durable protocol attempt"
     )]
     fn capture_completion_replays_after_evidence_or_checkpoint_commit() {
-        for (scenario, checkpoint_committed, claim_expires_before_retry) in [
-            ("evidence", false, false),
-            ("checkpoint", true, false),
-            ("expired-claim", false, true),
+        for (scenario, checkpoint_committed, claim_ttl, retry_at) in [
+            ("evidence", false, 300, at(3)),
+            ("checkpoint", true, 300, at(3)),
+            ("short-claim-renewed", false, 2, at(4)),
         ] {
             let directory = tempdir().expect("temp directory");
             let database = directory.path().join("engram.sqlite3");
@@ -6340,7 +6407,7 @@ mod tests {
             service
                 .work_update(
                     WorkUpdateInput::Claim {
-                        ttl_seconds: Some(if claim_expires_before_retry { 2 } else { 300 }),
+                        ttl_seconds: Some(claim_ttl),
                         recovery_reason: None,
                         idempotency_key: "completion-claim".into(),
                     },
@@ -6443,42 +6510,230 @@ mod tests {
             }
             drop(store);
 
-            if claim_expires_before_retry {
-                assert!(matches!(
-                    service.work_complete(input.clone(), at(4)),
-                    Err(StoreError::WorkClaimMismatch { .. })
-                ));
-                let store = SqliteStore::open(&database).expect("inspect refused retry");
-                let checkpoint_key = service
-                    .core_operation_key("work_complete", &input.idempotency_key, "checkpoint_work")
-                    .expect("checkpoint key");
-                assert!(
-                    store
-                        .work_operation_result_value("checkpoint_work", &checkpoint_key)
-                        .expect("checkpoint lookup")
-                        .is_none(),
-                    "an expired retry must not commit its still-missing checkpoint"
-                );
-                continue;
-            }
-
             let completed = service
-                .work_complete(input.clone(), at(3))
+                .work_complete(input.clone(), retry_at)
                 .expect("retry resumes the durable attempt");
             let WorkCompleteResult::Completed(completed) = completed else {
                 panic!("retry must complete work");
             };
             assert_eq!(completed.work_id, root.work_id);
-            assert_eq!(completed.completed_at, at(3));
+            assert_eq!(completed.completed_at, retry_at);
             let replay = service
-                .work_complete(input.clone(), at(4))
+                .work_complete(input.clone(), retry_at + Duration::seconds(1))
                 .expect("completed outer attempt replays");
             let WorkCompleteResult::Completed(replay) = replay else {
                 panic!("completed outer attempt must replay completion");
             };
             assert_eq!(replay.seal, completed.seal);
-            assert_eq!(replay.completed_at, at(3));
+            assert_eq!(replay.completed_at, retry_at);
         }
+    }
+
+    #[test]
+    fn pending_completion_resumes_after_holder_evidence_and_seals_the_current_set() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("completion-retry-current-evidence".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let session = SessionId("completion-current-evidence-session".into());
+        let service = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            session.clone(),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let root = match service
+            .work_propose(
+                root_input("Seal current evidence", "current-evidence-root"),
+                at(0),
+            )
+            .expect("root proposal")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: None,
+                    recovery_reason: None,
+                    idempotency_key: "current-evidence-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim focused work");
+        let input = WorkCompleteInput {
+            capture: Some(WorkCompletionCaptureInput {
+                summary: "completion checkpoint includes current evidence".into(),
+                refs: vec!["test:current-evidence-completion".into()],
+            }),
+            evidence: Vec::new(),
+            acceptance: Some(vec![WorkAcceptanceInput {
+                criterion: None,
+                satisfied: true,
+                evidence: Vec::new(),
+                note: "the current evidence set is sealed".into(),
+            }]),
+            note: None,
+            idempotency_key: "current-evidence-completion".into(),
+        };
+
+        let mut store = SqliteStore::open(&database).expect("store");
+        let basis = service
+            .protocol_basis(&store, true, false, None, at(2))
+            .expect("completion basis");
+        let intent = service.protocol_intent(&input);
+        store
+            .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                project_id: &project,
+                session_id: &session,
+                operation: "work_complete",
+                idempotency_key: &input.idempotency_key,
+                intent: &intent,
+                basis: &basis,
+                now: at(2),
+            })
+            .expect("pending completion attempt");
+        let claim = basis.claim.as_ref().expect("completion claim");
+        let unrelated = store
+            .record_work_evidence(
+                &RecordWorkEvidenceRequest {
+                    work_id: root.work_id,
+                    run_id: claim.run_id,
+                    expected_work_revision: root.revision,
+                    holder: session.clone(),
+                    claim_id: claim.claim_id,
+                    claim_fence: claim.fence,
+                    summary: "independent holder evidence committed after attempt start".into(),
+                    refs: vec!["test:independent-evidence".into()],
+                    actor: service.actor("work_update", "record independent holder evidence"),
+                    idempotency_key: "independent-holder-evidence".into(),
+                    recorded_at: at(3),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("independent evidence");
+        drop(store);
+
+        let completed = service
+            .work_complete(input, at(4))
+            .expect("same-key retry resumes against current evidence");
+        let WorkCompleteResult::Completed(receipt) = completed else {
+            panic!("completion must seal");
+        };
+        let store = SqliteStore::open(&database).expect("sealed store");
+        let seal: CompletionSeal = store
+            .get(&receipt.seal)
+            .expect("load seal")
+            .expect("canonical seal");
+        assert!(seal.evidence.contains(&unrelated));
+        assert!(store.verify_all().expect("integrity").is_healthy());
+    }
+
+    #[test]
+    fn pending_completion_conflicts_after_foreign_claim_fence_change() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("completion-retry-foreign-fence".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let session = SessionId("completion-original-session".into());
+        let service = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            session.clone(),
+            Some("protocol-test".into()),
+            Some(grant.clone()),
+        );
+        let root = match service
+            .work_propose(
+                root_input("Reject foreign retry", "foreign-fence-root"),
+                at(0),
+            )
+            .expect("root proposal")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(2),
+                    recovery_reason: None,
+                    idempotency_key: "foreign-fence-original-claim".into(),
+                },
+                at(1),
+            )
+            .expect("short original claim");
+        let input = WorkCompleteInput {
+            capture: Some(WorkCompletionCaptureInput {
+                summary: "this stale attempt must never commit".into(),
+                refs: Vec::new(),
+            }),
+            evidence: Vec::new(),
+            acceptance: Some(vec![WorkAcceptanceInput {
+                criterion: None,
+                satisfied: true,
+                evidence: Vec::new(),
+                note: "stale completion".into(),
+            }]),
+            note: None,
+            idempotency_key: "foreign-fence-completion".into(),
+        };
+
+        let mut store = SqliteStore::open(&database).expect("store");
+        let basis = service
+            .protocol_basis(&store, true, false, None, at(2))
+            .expect("completion basis");
+        let intent = service.protocol_intent(&input);
+        store
+            .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                project_id: &project,
+                session_id: &session,
+                operation: "work_complete",
+                idempotency_key: &input.idempotency_key,
+                intent: &intent,
+                basis: &basis,
+                now: at(2),
+            })
+            .expect("pending completion attempt");
+        let run_id = root.active_run_id.expect("active run");
+        let peer = SessionId("completion-peer-session".into());
+        let mut peer_actor = service.actor("work_update", "recover expired foreign claim");
+        peer_actor.session_id = Some(peer.clone());
+        let recovered = store
+            .claim_work(
+                &ClaimWorkRequest {
+                    work_id: root.work_id,
+                    expected_work_revision: root.revision,
+                    expected_run_id: run_id,
+                    holder: peer,
+                    ttl_seconds: 300,
+                    authority: LifecycleAuthorityDecision {
+                        grant: grant.clone(),
+                    },
+                    recovery_authority: Some(LifecycleAuthorityDecision { grant }),
+                    recovery_reason: Some("the original holder claim expired".into()),
+                    actor: peer_actor,
+                    idempotency_key: "foreign-fence-recovery".into(),
+                    claimed_at: at(4),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("peer recovers claim");
+        assert_ne!(
+            recovered.fence,
+            basis.claim.as_ref().expect("old claim").fence
+        );
+        drop(store);
+
+        assert!(matches!(
+            service.work_complete(input, at(5)),
+            Err(StoreError::WorkOperationIdempotencyConflict { operation, key })
+                if operation == "work_complete" && key == "foreign-fence-completion"
+        ));
     }
 
     #[test]
@@ -6510,6 +6765,16 @@ mod tests {
             WorkProposeResult::Root { work, .. } => work,
             WorkProposeResult::Decomposition(_) => panic!("expected root"),
         };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: None,
+                    recovery_reason: None,
+                    idempotency_key: "contradiction-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim contradiction work");
         let mut store = SqliteStore::open(&database).expect("store");
         let task = store
             .start_task(
@@ -6661,38 +6926,42 @@ mod tests {
         assert!(store.verify_all().expect("integrity report").is_healthy());
         drop(store);
 
-        let page = service
+        let mut page = service
             .work_next(100, WorkNextQuery::default(), at(8))
             .expect("deliver contradiction event");
-        for hash in [
-            &contradiction.contradiction,
-            &project_contradiction.contradiction,
-            &task_contradiction.contradiction,
-        ] {
-            assert!(
-                page.changes
-                    .as_ref()
-                    .expect("changes")
-                    .iter()
-                    .any(|change| {
-                        change.entry.object_kind == "memory_contradiction_event"
-                            && &change.entry.object_hash == hash
-                            && matches!(change.delivery, WorkChangeProjection::Visible(_))
-                    })
-            );
+        let expected = [
+            contradiction.contradiction,
+            project_contradiction.contradiction,
+            task_contradiction.contradiction,
+        ];
+        let mut visible = std::collections::HashSet::new();
+        let mut confirmed = 0;
+        for offset in 0..8 {
+            for change in page.changes.as_deref().unwrap_or_default() {
+                if change.entry.object_kind == "memory_contradiction_event"
+                    && matches!(change.delivery, WorkChangeProjection::Visible(_))
+                {
+                    visible.insert(change.entry.object_hash.clone());
+                }
+            }
+            let delivered = page.delivered_through.expect("delivered cursor");
+            let delivery_token = page.delivery_token.as_deref().expect("delivery token");
+            page = service
+                .work_next_with_delivery_token(
+                    100,
+                    Some(delivered),
+                    Some(delivery_token),
+                    WorkNextQuery::default(),
+                    at(9 + offset),
+                )
+                .expect("acknowledge contradiction page");
+            confirmed = page.session.confirmed_project_cursor;
+            if expected.iter().all(|hash| visible.contains(hash)) {
+                break;
+            }
         }
-        let delivered = page.delivered_through.expect("delivered cursor");
-        let delivery_token = page.delivery_token.expect("delivery token");
-        let acknowledged = service
-            .work_next_with_delivery_token(
-                100,
-                Some(delivered),
-                Some(delivery_token.as_str()),
-                WorkNextQuery::default(),
-                at(9),
-            )
-            .expect("acknowledge contradiction page");
-        assert_eq!(acknowledged.session.confirmed_project_cursor, delivered);
+        assert!(expected.iter().all(|hash| visible.contains(hash)));
+        assert!(confirmed > 0);
         assert!(
             SqliteStore::open(&database)
                 .expect("reopen store")
@@ -6742,6 +7011,25 @@ mod tests {
             WorkProposeResult::Root { work, .. } => work,
             WorkProposeResult::Decomposition(_) => panic!("expected peer root"),
         };
+        focused
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: None,
+                    recovery_reason: None,
+                    idempotency_key: "focused-memory-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim focused root");
+        peer.work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: None,
+                recovery_reason: None,
+                idempotency_key: "peer-memory-claim".into(),
+            },
+            at(1),
+        )
+        .expect("claim peer root");
         let mut store = SqliteStore::open(&database).expect("store");
         let (visible, restricted, outside, outside_second) = {
             let mut capture = |work_id: WorkId,
@@ -6851,15 +7139,46 @@ mod tests {
         ));
         drop(store);
 
-        let page = focused
+        let mut page = focused
             .work_next(100, WorkNextQuery::default(), at(8))
             .expect("bounded project delta");
-        let delivered = page.delivered_through.expect("delivered cursor");
-        let changes = page.changes.as_ref().expect("changes section");
-        assert_eq!(
-            i64::try_from(changes.len()).expect("change count"),
-            delivered - page.session.confirmed_project_cursor
-        );
+        let expected_hashes = [
+            &visible.version,
+            &restricted.version,
+            &restricted.assertion,
+            &outside.version,
+            &outside.assertion,
+            &peer_contradiction.contradiction,
+        ];
+        let mut changes = Vec::new();
+        let mut final_confirmed = 0;
+        for offset in 0..8 {
+            let delivered = page.delivered_through.expect("delivered cursor");
+            let page_changes = page.changes.as_ref().expect("changes section");
+            assert_eq!(
+                i64::try_from(page_changes.len()).expect("change count"),
+                delivered - page.session.confirmed_project_cursor
+            );
+            changes.extend(page_changes.iter().cloned());
+            let delivery_token = page.delivery_token.as_deref().expect("delivery token");
+            page = focused
+                .work_next_with_delivery_token(
+                    100,
+                    Some(delivered),
+                    Some(delivery_token),
+                    WorkNextQuery::default(),
+                    at(9 + offset),
+                )
+                .expect("acknowledge protected delta page");
+            final_confirmed = page.session.confirmed_project_cursor;
+            if expected_hashes.iter().all(|hash| {
+                changes
+                    .iter()
+                    .any(|change| &change.entry.object_hash == *hash)
+            }) {
+                break;
+            }
+        }
         let projection_for = |hash: &ObjectHash| {
             &changes
                 .iter()
@@ -6896,7 +7215,7 @@ mod tests {
                 ..
             })
         ));
-        let serialized = serde_json::to_string(&page).expect("serialize work_next page");
+        let serialized = serde_json::to_string(&changes).expect("serialize work_next changes");
         assert!(serialized.contains("visible focused-root memory"));
         assert!(!serialized.contains("restricted focused-root secret"));
         assert!(!serialized.contains("unrelated root memory"));
@@ -6904,16 +7223,7 @@ mod tests {
         assert!(
             !serialized.contains("peer-root contradiction must remain outside focused delivery")
         );
-        let acknowledged = focused
-            .work_next_with_delivery_token(
-                100,
-                Some(delivered),
-                page.delivery_token.as_deref(),
-                WorkNextQuery::default(),
-                at(9),
-            )
-            .expect("acknowledge protected delta");
-        assert_eq!(acknowledged.session.confirmed_project_cursor, delivered);
+        assert!(final_confirmed > 0);
         assert!(
             SqliteStore::open(&database)
                 .expect("reopen store")
