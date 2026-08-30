@@ -11,20 +11,12 @@ use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use crate::ObjectHash;
-
-/// Schema version understood by this release.
-pub const SCHEMA_VERSION: u16 = 1;
-/// Completion-seal obligation basis emitted by A3 and later writers.
-pub const COMPLETION_OBLIGATION_SCHEMA_VERSION: u16 = 1;
-/// Completion-seal environment basis emitted by B and later writers.
-pub const COMPLETION_ENVIRONMENT_SCHEMA_VERSION: u16 = 1;
-/// Immutable obligation-rule-set schema emitted by C and later writers.
-pub const OBLIGATION_RULE_SET_SCHEMA_VERSION: u16 = 1;
+pub use crate::schema::{
+    COMPLETION_ENVIRONMENT_SCHEMA_VERSION, COMPLETION_OBLIGATION_SCHEMA_VERSION,
+    CONTROL_SCHEMA_VERSION, OBLIGATION_RULE_SET_SCHEMA_VERSION, SCHEMA_VERSION,
+};
 /// Sliding lease applied after every successful claim-holder work mutation.
 pub const DEFAULT_WORK_CLAIM_TTL_SECONDS: i64 = 3_600;
-
-/// Behavioral-control protocol version understood by this release.
-pub const CONTROL_SCHEMA_VERSION: u16 = 1;
 
 /// Stable host-local project identity shared by every session and worktree.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -1755,6 +1747,52 @@ pub struct WorkItem {
     pub created_by: ActorContext,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Bounded identity shown when a human-facing work reference is ambiguous.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkReferenceCandidate {
+    pub work_id: WorkId,
+    #[serde(rename = "ref")]
+    pub short_ref: String,
+    pub title: String,
+    #[serde(rename = "state")]
+    pub lifecycle: WorkLifecycle,
+}
+
+/// Exact condition that prevents a work run from crossing its completion
+/// barrier. Agent-facing receipts pair this typed cause with the affected
+/// item's bounded identity and one concrete recovery command.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkCompletionRecoveryCause {
+    LapsedClaim {
+        expired_at: DateTime<Utc>,
+    },
+    OpenObligation {
+        obligation_id: WorkObligationId,
+        definition: ObjectHash,
+        required_check: VerificationKind,
+    },
+    RequiredChildUnsealed {
+        child: WorkId,
+    },
+    MissingContribution {
+        participant: SessionId,
+    },
+    MissingAcceptance {
+        criterion: String,
+    },
+}
+
+/// Exact affected item and one executable command captured with a completion
+/// refusal. Writers freeze this value in the same transaction that decides
+/// the refusal so retries cannot observe a different recovery target.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WorkCompletionRecovery {
+    pub cause: WorkCompletionRecoveryCause,
+    pub item: WorkReferenceCandidate,
+    pub command: String,
 }
 
 /// Aggregate generation that owns the root completion barrier.

@@ -440,6 +440,21 @@ An interrupted capture-backed completion recovers committed evidence or
 checkpoint timestamps for exact replay, while missing substeps use current
 time and recheck the live claim.
 
+Recoverable completion refusals add `recovery { cause, item, command }` to the
+receipt. `cause` is a tagged value for `lapsed_claim`,
+`open_obligation`, `required_child_unsealed`, `missing_contribution`, or
+`missing_acceptance`, including the exact blocker identity. `item` carries the
+affected full id, short ref, title, and lifecycle-backed state. `command` is
+deliberately a single next command, and the `done` verb exposes exactly that
+one entry in its `next` list. The recovery snapshot commits in the same SQLite
+transaction that proves its cause, and an interrupted wrapper replays those
+exact cause/item/command bytes even if live work changes afterward. Native
+`done` and the eight-word MCP surface return this as a typed refusal receipt;
+the JSON core and legacy MCP surface retain their prior non-zero error code and
+attach the same recovery object. Short-ref ambiguity likewise returns a stable
+`work_reference_ambiguous` error with up to eight ordered candidates, an exact
+`more` count, and full-id retry guidance on every JSON front door.
+
 The MCP schemas for `work_propose`, `work_update`, `work_complete`, and
 `work_handoff` expose their typed discriminated inputs rather than opaque JSON.
 Each accepts an optional `work_ref`; the target is resolved and bound inside

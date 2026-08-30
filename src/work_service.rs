@@ -26,20 +26,24 @@ use crate::{
     ReleaseWorkRequest, ReopenWorkRequest, ReviseWorkRequest, SessionId, SqliteStore, TaskId,
     VerificationEvidence, VerificationKind, VerificationResult, WaiveRequiredChildRequest,
     WorkAuthorityOperation, WorkAvailability, WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint,
-    WorkClaim, WorkClaimState, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
-    WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId,
-    WorkItem, WorkItemKind, WorkLifecycle, WorkObligation, WorkObligationResolution,
-    WorkObligationResolutionEvent, WorkObligationState, WorkOrigin, WorkPlanningAuthority,
-    WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkTransition,
+    WorkClaim, WorkClaimState, WorkCompletionRecovery, WorkDecomposition, WorkDependencyRef,
+    WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
+    WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLifecycle, WorkObligation,
+    WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkOrigin,
+    WorkPlanningAuthority, WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
+    WorkTransition,
     domain::{
         AssuranceLevel, MemoryAssertionEvent, MemoryContradictionEvent, ProvenanceLink,
-        ProvenanceRelation, SCHEMA_VERSION, Scope, Sensitivity,
+        ProvenanceRelation, SCHEMA_VERSION, Scope, Sensitivity, WorkCompletionRecoveryCause,
     },
     storage::{
-        BeginWorkProtocolAttempt, StageWorkSessionDelivery, StoreError,
+        BeginWorkProtocolAttempt, CompleteWorkStorageResult, StageWorkSessionDelivery, StoreError,
         normalize_completion_acceptance_shape,
     },
 };
+
+#[cfg(test)]
+use crate::WorkReferenceCandidate;
 
 /// Hard ceiling for every successful agent-facing work response.
 pub const MAX_AGENT_WORK_RESPONSE_BYTES: usize = 12 * 1024;
@@ -861,6 +865,10 @@ pub struct WorkCompleteRefusal {
     pub work_id: WorkId,
     pub obligation_page: WorkObligationPage,
     pub remedy: String,
+    /// Present on receipts minted by current writers. Legacy persisted
+    /// open-obligation refusals replay without this additive field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<WorkCompletionRecovery>,
 }
 
 impl LocalWorkService {
@@ -1924,20 +1932,6 @@ impl LocalWorkService {
         let mut store = self.store()?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
-        // Completing work that is already sealed returns its seal: a retry
-        // after a lost response, or a second `done`, is not a refusal.
-        if let Some(work) = basis.focused_work.as_ref()
-            && work.lifecycle == WorkLifecycle::Completed
-            && let Some(run) = store.latest_work_run(work.work_id)?
-            && let Some(seal_hash) = run.completion_seal
-        {
-            let seal: CompletionSeal = store.get(&seal_hash)?.ok_or_else(|| {
-                StoreError::InvalidWorkProjection(
-                    "completed work has no canonical completion seal".into(),
-                )
-            })?;
-            return completion_result(&store, &seal);
-        }
         let intent = self.protocol_intent(&input);
         let raw_key = self.effective_idempotency_key(
             &input.idempotency_key,
@@ -1961,8 +1955,54 @@ impl LocalWorkService {
         let basis_matches =
             retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
         let scoped_key = self.core_operation_key("work_complete", &raw_key, "complete_work")?;
+        if let Some(value) =
+            store.work_operation_result_value("complete_work_recovery", &scoped_key)?
+        {
+            let recovery: WorkCompletionRecovery = serde_json::from_value(value)?;
+            let replay_work_id = attempt
+                .basis
+                .as_ref()
+                .map(|value| serde_json::from_value::<WorkProtocolBasis>(value.clone()))
+                .transpose()?
+                .and_then(|basis| basis.focused_work.map(|work| work.work_id))
+                .or_else(|| basis.focused_work.as_ref().map(|work| work.work_id))
+                .unwrap_or(recovery.item.work_id);
+            let obligation_page = work_completion_recovery_page(&store, replay_work_id, &recovery)?;
+            let result = completion_recovery_result(replay_work_id, recovery, obligation_page);
+            store.finish_work_protocol_attempt(
+                &self.project_id,
+                &self.session_id,
+                "work_complete",
+                &raw_key,
+                &result,
+            )?;
+            return Ok(result);
+        }
         if let Some(value) = store.work_operation_result_value("complete_work", &scoped_key)? {
             let seal: CompletionSeal = serde_json::from_value(value)?;
+            let result = completion_result(&store, &seal)?;
+            store.finish_work_protocol_attempt(
+                &self.project_id,
+                &self.session_id,
+                "work_complete",
+                &raw_key,
+                &result,
+            )?;
+            return Ok(result);
+        }
+        // A new call against already sealed work returns its seal, but only
+        // after an interrupted earlier attempt had the chance to replay its
+        // exact committed recovery or completion result.
+        if let Some(work) = basis.focused_work.as_ref()
+            && work.lifecycle == WorkLifecycle::Completed
+            && let Some(run) = store.latest_work_run(work.work_id)?
+            && let Some(seal_hash) = run.completion_seal
+        {
+            let seal: CompletionSeal = store.get(&seal_hash)?.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "completed work has no canonical completion seal".into(),
+                )
+            })?;
             let result = completion_result(&store, &seal)?;
             store.finish_work_protocol_attempt(
                 &self.project_id,
@@ -1984,17 +2024,83 @@ impl LocalWorkService {
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("completion attempt has no bound focused work".into())
         })?;
-        let claim = self.live_protocol_claim(&basis, &work, now)?;
+        let claim = match self.live_protocol_claim(&basis, &work, now) {
+            Ok(claim) => claim,
+            Err(StoreError::WorkClaimLapsed { expired_at, .. }) => {
+                let recovery = store.persist_preflight_completion_recovery(
+                    work.work_id,
+                    basis
+                        .claim
+                        .as_ref()
+                        .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?
+                        .run_id,
+                    work.revision,
+                    &self.session_id,
+                    basis
+                        .claim
+                        .as_ref()
+                        .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?
+                        .claim_id,
+                    basis
+                        .claim
+                        .as_ref()
+                        .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?
+                        .fence,
+                    &WorkCompletionRecoveryCause::LapsedClaim { expired_at },
+                    &scoped_key,
+                    now,
+                )?;
+                let obligation_page =
+                    work_completion_recovery_page(&store, work.work_id, &recovery)?;
+                let result = completion_recovery_result(work.work_id, recovery, obligation_page);
+                store.finish_work_protocol_attempt(
+                    &self.project_id,
+                    &self.session_id,
+                    "work_complete",
+                    &raw_key,
+                    &result,
+                )?;
+                return Ok(result);
+            }
+            Err(error) => return Err(error),
+        };
         let actor = self.actor("work_complete", "complete ambient local work");
         let evidence_basis = Self::completion_evidence_basis(&store, &claim, &supplied_evidence)?;
-        let acceptance = Self::prevalidate_completion_acceptance(
+        let acceptance = match Self::prevalidate_completion_acceptance(
             &work,
             supplied_acceptance.as_deref(),
             note.as_deref(),
             &evidence_basis,
             actor.assurance,
             &actor.actor_id,
-        )?;
+        ) {
+            Ok(acceptance) => acceptance,
+            Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) => {
+                let recovery = store.persist_preflight_completion_recovery(
+                    work.work_id,
+                    claim.run_id,
+                    work.revision,
+                    &self.session_id,
+                    claim.claim_id,
+                    claim.fence,
+                    &cause,
+                    &scoped_key,
+                    now,
+                )?;
+                let obligation_page =
+                    work_completion_recovery_page(&store, work.work_id, &recovery)?;
+                let result = completion_recovery_result(work.work_id, recovery, obligation_page);
+                store.finish_work_protocol_attempt(
+                    &self.project_id,
+                    &self.session_id,
+                    "work_complete",
+                    &raw_key,
+                    &result,
+                )?;
+                return Ok(result);
+            }
+            Err(error) => return Err(error),
+        };
         let evidence = self.prepare_completion_evidence(
             &mut store,
             CompletionEvidencePlan {
@@ -2008,7 +2114,7 @@ impl LocalWorkService {
         )?;
         let acceptance = bind_completion_acceptance_evidence(acceptance, &evidence);
         let decision = self.authority_decision()?;
-        let completion = store.complete_work(
+        let completion = store.complete_work_for_protocol(
             &CompleteWorkRequest {
                 work_id: work.work_id,
                 run_id: claim.run_id,
@@ -2030,7 +2136,14 @@ impl LocalWorkService {
             },
             &DevelopmentNoopRedactor,
         );
-        let result = completion_protocol_result(&store, claim.run_id, completion)?;
+        let result = match completion? {
+            CompleteWorkStorageResult::Completed(seal) => completion_result(&store, &seal)?,
+            CompleteWorkStorageResult::Recovery(recovery) => {
+                let obligation_page =
+                    work_completion_recovery_page_for_run(&store, claim.run_id, &recovery)?;
+                completion_recovery_result(work.work_id, recovery, obligation_page)
+            }
+        };
         store.finish_work_protocol_attempt(
             &self.project_id,
             &self.session_id,
@@ -2039,6 +2152,40 @@ impl LocalWorkService {
             &result,
         )?;
         Ok(result)
+    }
+
+    /// Legacy/core completion surface. Agent-native `done` returns typed
+    /// recovery as a successful refusal receipt, while older callers retain
+    /// their historical non-zero error class with recovery attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns the historical completion error class with an additive frozen
+    /// recovery object, or any storage/protocol error from completion itself.
+    pub fn work_complete_core_on(
+        &self,
+        work_ref: Option<&str>,
+        input: WorkCompleteInput,
+        now: DateTime<Utc>,
+    ) -> Result<WorkCompleteResult, StoreError> {
+        let result = self.work_complete_on(work_ref, input, now)?;
+        let WorkCompleteResult::Refused(refusal) = &result else {
+            return Ok(result);
+        };
+        let Some(recovery) = refusal.recovery.clone() else {
+            return Ok(result);
+        };
+        if matches!(
+            recovery.cause,
+            WorkCompletionRecoveryCause::OpenObligation { .. }
+        ) {
+            return Ok(result);
+        }
+        let source = legacy_completion_source_error(refusal.work_id, &recovery.cause);
+        Err(StoreError::WorkCompletionWithRecovery {
+            source: Box::new(source),
+            recovery: Box::new(recovery),
+        })
     }
 
     fn prepare_completion_evidence(
@@ -3340,6 +3487,30 @@ fn work_obligation_page(
     work_obligation_page_from_records(store.work_run_obligations(run.run_id)?)
 }
 
+fn work_completion_recovery_page(
+    store: &SqliteStore,
+    work_id: WorkId,
+    recovery: &WorkCompletionRecovery,
+) -> Result<WorkObligationPage, StoreError> {
+    let Some(run) = store.latest_work_run(work_id)? else {
+        return Ok(WorkObligationPage::default());
+    };
+    work_completion_recovery_page_for_run(store, run.run_id, recovery)
+}
+
+fn work_completion_recovery_page_for_run(
+    store: &SqliteStore,
+    run_id: WorkRunId,
+    recovery: &WorkCompletionRecovery,
+) -> Result<WorkObligationPage, StoreError> {
+    let state = matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::OpenObligation { .. }
+    )
+    .then_some(WorkObligationState::Open);
+    work_obligation_page_for_run(store, run_id, state)
+}
+
 fn work_obligation_page_for_run(
     store: &SqliteStore,
     run_id: WorkRunId,
@@ -3638,6 +3809,38 @@ fn handoff_metadata(input: &WorkHandoffInput) -> (&'static str, &'static str, &s
     }
 }
 
+fn legacy_completion_source_error(work: WorkId, cause: &WorkCompletionRecoveryCause) -> StoreError {
+    match cause {
+        WorkCompletionRecoveryCause::LapsedClaim { expired_at } => StoreError::WorkClaimLapsed {
+            work,
+            expired_at: *expired_at,
+        },
+        WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => {
+            StoreError::WorkCompletionRefused {
+                work,
+                reason: "one or more required children are incomplete".into(),
+            }
+        }
+        WorkCompletionRecoveryCause::MissingContribution { .. } => {
+            StoreError::WorkCompletionRefused {
+                work,
+                reason: "the root participant roster has unaccounted contributions or waivers"
+                    .into(),
+            }
+        }
+        WorkCompletionRecoveryCause::MissingAcceptance { criterion } => {
+            StoreError::WorkCompletionRefused {
+                work,
+                reason: format!("acceptance criterion {criterion:?} is incomplete"),
+            }
+        }
+        WorkCompletionRecoveryCause::OpenObligation { .. } => StoreError::WorkCompletionRefused {
+            work,
+            reason: "completion has open work obligations".into(),
+        },
+    }
+}
+
 fn completion_result(
     store: &SqliteStore,
     seal: &CompletionSeal,
@@ -3651,38 +3854,53 @@ fn completion_result(
     }))
 }
 
-fn completion_protocol_result(
-    store: &SqliteStore,
-    run_id: WorkRunId,
-    completion: Result<CompletionSeal, StoreError>,
-) -> Result<WorkCompleteResult, StoreError> {
-    match completion {
-        Ok(seal) => completion_result(store, &seal),
-        Err(StoreError::OpenWorkObligations {
-            work,
-            obligations,
-            omitted_count,
-        }) => {
-            let obligation_page =
-                work_obligation_page_for_run(store, run_id, Some(WorkObligationState::Open))?;
-            if obligation_page
-                .items
-                .len()
-                .saturating_add(obligation_page.omitted_count)
-                != obligations.len().saturating_add(omitted_count)
-            {
-                return Err(StoreError::InvalidWorkProjection(
-                    "completion refusal does not match the canonical open-obligation set".into(),
-                ));
-            }
-            Ok(WorkCompleteResult::Refused(WorkCompleteRefusal {
-                code: "open_work_obligations".into(),
-                work_id: work,
-                obligation_page,
-                remedy: "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
-                    .into(),
-            }))
-        }
+fn completion_recovery_result(
+    work_id: WorkId,
+    recovery: WorkCompletionRecovery,
+    obligation_page: WorkObligationPage,
+) -> WorkCompleteResult {
+    let code = match &recovery.cause {
+        WorkCompletionRecoveryCause::LapsedClaim { .. } => "lapsed_claim",
+        WorkCompletionRecoveryCause::OpenObligation { .. } => "open_work_obligations",
+        WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => "required_child_unsealed",
+        WorkCompletionRecoveryCause::MissingContribution { .. } => "missing_contribution",
+        WorkCompletionRecoveryCause::MissingAcceptance { .. } => "missing_acceptance",
+    };
+    let remedy = if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::OpenObligation { .. }
+    ) {
+        "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
+            .into()
+    } else {
+        format!(
+            "resolve {} for {} {:?}, then retry completion",
+            code.replace('_', " "),
+            recovery.item.short_ref,
+            recovery.item.title
+        )
+    };
+    WorkCompleteResult::Refused(WorkCompleteRefusal {
+        code: code.into(),
+        work_id,
+        obligation_page,
+        remedy,
+        recovery: Some(recovery),
+    })
+}
+
+#[cfg(test)]
+fn completion_command_ref_from_resolution(
+    item: &WorkReferenceCandidate,
+    resolution: Result<WorkItem, StoreError>,
+) -> Result<String, StoreError> {
+    match resolution {
+        Ok(resolved) if resolved.work_id == item.work_id => Ok(item.short_ref.clone()),
+        Ok(resolved) => Err(StoreError::InvalidWorkProjection(format!(
+            "short reference {:?} resolved to work {:?} instead of {:?}",
+            item.short_ref, resolved.work_id.0, item.work_id.0
+        ))),
+        Err(StoreError::WorkReferenceAmbiguous { .. }) => Ok(item.work_id.0.to_string()),
         Err(error) => Err(error),
     }
 }
@@ -5716,7 +5934,7 @@ mod tests {
         let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
-            project,
+            project.clone(),
             "agent".into(),
             SessionId("safe-defaults-session".into()),
             Some("protocol-test".into()),
@@ -5903,12 +6121,21 @@ mod tests {
                     idempotency_key: key.into(),
                 }
             };
-        assert!(
-            service
-                .work_complete(complete(Some(Vec::new()), None, "strict-empty"), at(2))
-                .is_err(),
-            "explicit empty acceptance must not complete work with criteria"
-        );
+        let refused = service
+            .work_complete(complete(Some(Vec::new()), None, "strict-empty"), at(2))
+            .expect("missing acceptance is a typed protocol refusal");
+        let WorkCompleteResult::Refused(refusal) = refused else {
+            panic!("explicit empty acceptance must not complete work with criteria");
+        };
+        assert_eq!(refusal.code, "missing_acceptance");
+        let recovery = refusal.recovery.expect("current recovery receipt");
+        assert!(matches!(
+            recovery.cause,
+            WorkCompletionRecoveryCause::MissingAcceptance { ref criterion }
+                if criterion == "Strict acceptance accepted"
+        ));
+        assert_eq!(recovery.item.title, "Strict acceptance");
+        assert!(recovery.command.starts_with("engram work done "));
         assert!(matches!(
             service.work_complete(
                 complete(
@@ -5931,6 +6158,462 @@ mod tests {
         else {
             panic!("completion must seal");
         };
+    }
+
+    #[test]
+    fn legacy_completion_refusal_without_recovery_still_replays() {
+        let work_id = WorkId::new();
+        let result: WorkCompleteResult = serde_json::from_value(serde_json::json!({
+            "code": "open_work_obligations",
+            "work_id": work_id,
+            "obligation_page": { "items": [], "omitted_count": 0 },
+            "remedy": "legacy remedy"
+        }))
+        .expect("legacy refusal remains decodable");
+        let WorkCompleteResult::Refused(refusal) = result else {
+            panic!("legacy refusal must not decode as completion");
+        };
+        assert_eq!(refusal.work_id, work_id);
+        assert!(refusal.recovery.is_none());
+    }
+
+    #[test]
+    fn completion_lapsed_claim_refusal_names_item_and_one_recovery_command() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("completion-lapsed-claim".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("completion-lapsed-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(
+                root_input("Lapsed completion", "lapsed-completion-root"),
+                at(0),
+            )
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(1),
+                    recovery_reason: None,
+                    idempotency_key: "lapsed-completion-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+
+        let result = service
+            .work_complete(
+                WorkCompleteInput {
+                    capture: Some(WorkCompletionCaptureInput {
+                        summary: "delivered".into(),
+                        refs: Vec::new(),
+                    }),
+                    evidence: Vec::new(),
+                    acceptance: None,
+                    note: None,
+                    idempotency_key: "lapsed-completion".into(),
+                },
+                at(3),
+            )
+            .expect("lapsed claim is a typed completion refusal");
+        let WorkCompleteResult::Refused(refusal) = result else {
+            panic!("lapsed claim must not complete work");
+        };
+        assert_eq!(refusal.code, "lapsed_claim");
+        let recovery = refusal.recovery.expect("current recovery receipt");
+        assert!(matches!(
+            recovery.cause,
+            WorkCompletionRecoveryCause::LapsedClaim { expired_at } if expired_at == at(2)
+        ));
+        assert_eq!(recovery.item.work_id, work.work_id);
+        assert_eq!(recovery.item.lifecycle, WorkLifecycle::Open);
+        assert_eq!(
+            recovery.command,
+            format!(
+                "engram work claim {} --recover \"resume after lapsed claim\"",
+                work.short_ref
+            )
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the crash-window regression explicitly constructs the pending wrapper and committed recovery substep"
+    )]
+    fn completion_recovery_replays_the_deciding_snapshot_after_claim_state_changes() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("completion-atomic-recovery".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("completion-atomic-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(root_input("Atomic recovery", "atomic-recovery-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(1),
+                    recovery_reason: None,
+                    idempotency_key: "atomic-recovery-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+        let input = WorkCompleteInput {
+            capture: Some(WorkCompletionCaptureInput {
+                summary: "delivered".into(),
+                refs: Vec::new(),
+            }),
+            evidence: Vec::new(),
+            acceptance: None,
+            note: None,
+            idempotency_key: "atomic-recovery-complete".into(),
+        };
+
+        let frozen = {
+            let mut store = service.store().expect("store");
+            let basis = service
+                .protocol_basis(&store, true, false, None, at(3))
+                .expect("completion basis");
+            let intent = service.protocol_intent(&input);
+            let raw_key = service
+                .effective_idempotency_key(
+                    &input.idempotency_key,
+                    "work_complete",
+                    &basis,
+                    &intent,
+                    at(3),
+                )
+                .expect("raw key");
+            store
+                .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                    project_id: &service.project_id,
+                    session_id: &service.session_id,
+                    operation: "work_complete",
+                    idempotency_key: &raw_key,
+                    intent: &intent,
+                    basis: &basis,
+                    now: at(3),
+                })
+                .expect("durable pending protocol attempt");
+            let scoped_key = service
+                .core_operation_key("work_complete", &raw_key, "complete_work")
+                .expect("scoped key");
+            store
+                .persist_preflight_completion_recovery(
+                    work.work_id,
+                    work.active_run_id.expect("active run"),
+                    work.revision,
+                    &service.session_id,
+                    basis.claim.as_ref().expect("claim basis").claim_id,
+                    basis.claim.as_ref().expect("claim basis").fence,
+                    &WorkCompletionRecoveryCause::LapsedClaim { expired_at: at(2) },
+                    &scoped_key,
+                    at(3),
+                )
+                .expect("freeze recovery in deciding transaction")
+        };
+
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: Some("resume after lapsed claim".into()),
+                    idempotency_key: "atomic-recovery-reclaim".into(),
+                },
+                at(4),
+            )
+            .expect("claim state changes after frozen recovery");
+        let replay = service
+            .work_complete(input.clone(), at(5))
+            .expect("pending wrapper replays frozen recovery");
+        let WorkCompleteResult::Refused(refusal) = replay else {
+            panic!("replay must retain the prior refusal");
+        };
+        assert_eq!(refusal.recovery.expect("recovery"), frozen);
+        let StoreError::WorkCompletionWithRecovery { source, recovery } = service
+            .work_complete_core_on(None, input, at(6))
+            .expect_err("legacy core retains its non-zero error envelope")
+        else {
+            panic!("legacy core must attach recovery to its historical error class");
+        };
+        assert!(matches!(*source, StoreError::WorkClaimLapsed { .. }));
+        assert_eq!(*recovery, frozen);
+    }
+
+    #[test]
+    fn completion_recovery_command_uses_full_id_when_target_is_beyond_ambiguity_page() {
+        let work_id = WorkId::new();
+        let item = WorkReferenceCandidate {
+            work_id,
+            short_ref: "w-collision".into(),
+            title: "Ambiguous recovery target".into(),
+            lifecycle: WorkLifecycle::Open,
+        };
+        let resolution = Err(StoreError::WorkReferenceAmbiguous {
+            reference: item.short_ref.clone(),
+            candidates: vec![WorkReferenceCandidate {
+                work_id: WorkId::new(),
+                short_ref: item.short_ref.clone(),
+                title: "Earlier target".into(),
+                lifecycle: WorkLifecycle::Open,
+            }],
+            more: 1,
+        });
+
+        assert_eq!(
+            completion_command_ref_from_resolution(&item, resolution)
+                .expect("ambiguous recovery target uses its full id"),
+            work_id.0.to_string()
+        );
+    }
+
+    #[test]
+    fn legacy_completion_recoveries_keep_the_work_completion_refused_code() {
+        let work_id = WorkId::new();
+        let causes = [
+            WorkCompletionRecoveryCause::RequiredChildUnsealed {
+                child: WorkId::new(),
+            },
+            WorkCompletionRecoveryCause::MissingContribution {
+                participant: SessionId("missing-peer".into()),
+            },
+            WorkCompletionRecoveryCause::MissingAcceptance {
+                criterion: "document the result".into(),
+            },
+        ];
+
+        for cause in causes {
+            let source = legacy_completion_source_error(work_id, &cause);
+            assert!(matches!(source, StoreError::WorkCompletionRefused { .. }));
+            let recovery = WorkCompletionRecovery {
+                cause,
+                item: WorkReferenceCandidate {
+                    work_id,
+                    short_ref: "w-legacy".into(),
+                    title: "Legacy completion error".into(),
+                    lifecycle: WorkLifecycle::Open,
+                },
+                command: "engram work show w-legacy".into(),
+            };
+            let value = crate::store_error_value(&StoreError::WorkCompletionWithRecovery {
+                source: Box::new(source),
+                recovery: Box::new(recovery),
+            });
+            assert_eq!(value["error"]["code"], "work_completion_refused");
+        }
+    }
+
+    #[test]
+    fn missing_contribution_recovery_names_the_participant_and_root() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("completion-missing-contribution".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            SessionId("completion-contribution-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(
+                root_input("Contribution barrier", "contribution-barrier-root"),
+                at(0),
+            )
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let participant = SessionId("missing-participant".into());
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "contribution-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim root");
+        SqliteStore::open(&database)
+            .expect("fixture store")
+            .add_expected_root_contributor_fixture(work.work_id, &participant, at(2))
+            .expect("seed an unaccounted expected participant");
+        let completion = service
+            .work_complete(
+                WorkCompleteInput {
+                    capture: Some(WorkCompletionCaptureInput {
+                        summary: "root implementation complete".into(),
+                        refs: Vec::new(),
+                    }),
+                    evidence: Vec::new(),
+                    acceptance: None,
+                    note: None,
+                    idempotency_key: "contribution-completion".into(),
+                },
+                at(3),
+            )
+            .expect("missing contribution is a typed refusal");
+        let WorkCompleteResult::Refused(refusal) = completion else {
+            panic!("missing participant must block completion");
+        };
+        let recovery = refusal.recovery.expect("typed recovery");
+
+        assert_eq!(recovery.item.work_id, work.work_id);
+        assert!(matches!(
+            recovery.cause,
+            WorkCompletionRecoveryCause::MissingContribution { participant: missing }
+                if missing == participant
+        ));
+        assert_eq!(
+            recovery.command,
+            format!(
+                "engram work handoff {} --to {} --summary \"transfer root so the missing participant can contribute\"",
+                work.short_ref, participant.0
+            )
+        );
+        let handoff = service
+            .work_handoff(
+                WorkHandoffInput::Offer {
+                    to: participant.0.clone(),
+                    ttl_seconds: None,
+                    checkpoint_summary: "transfer root so the missing participant can contribute"
+                        .into(),
+                    idempotency_key: "contribution-recovery-handoff".into(),
+                },
+                at(4),
+            )
+            .expect("recovery command maps to a real handoff operation");
+        assert_eq!(handoff.operation, "offer");
+        let store = SqliteStore::open(&database).expect("inspect offered handoff");
+        let offers = store
+            .work_handoff_offers(work.work_id)
+            .expect("load handoff history");
+        assert!(
+            offers.iter().any(|offer| {
+                offer.state == WorkHandoffState::Offered && offer.to == participant
+            })
+        );
+    }
+
+    #[test]
+    fn completion_required_child_refusal_names_the_unsealed_child() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("completion-unsealed-child".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("completion-unsealed-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let root = match service
+            .work_propose(root_input("Parent barrier", "parent-barrier-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let decomposition = service
+            .work_propose(
+                WorkProposeInput::Decompose {
+                    children: vec![WorkChildInput {
+                        key: "required-child".into(),
+                        title: "Required child".into(),
+                        outcome: "Child outcome".into(),
+                        acceptance: vec!["Child accepted".into()],
+                        requirement: Some(ChildRequirement::Required),
+                        kind: None,
+                        priority: None,
+                        labels: Vec::new(),
+                        assigned_to: None,
+                        deferred_until: None,
+                    }],
+                    prerequisites: Vec::new(),
+                    idempotency_key: "parent-decomposition".into(),
+                },
+                at(1),
+            )
+            .expect("decompose");
+        let WorkProposeResult::Decomposition(decomposition) = decomposition else {
+            panic!("expected decomposition");
+        };
+        let child = decomposition.children[0].work_id;
+        service
+            .work_focus(&root.work_id.0.to_string(), at(2))
+            .expect("refocus parent");
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "parent-claim".into(),
+                },
+                at(3),
+            )
+            .expect("claim parent");
+
+        let result = service
+            .work_complete(
+                WorkCompleteInput {
+                    capture: Some(WorkCompletionCaptureInput {
+                        summary: "parent delivered".into(),
+                        refs: Vec::new(),
+                    }),
+                    evidence: Vec::new(),
+                    acceptance: None,
+                    note: None,
+                    idempotency_key: "parent-completion".into(),
+                },
+                at(4),
+            )
+            .expect("unsealed child is a typed completion refusal");
+        let WorkCompleteResult::Refused(refusal) = result else {
+            panic!("required child must block completion");
+        };
+        assert_eq!(refusal.code, "required_child_unsealed");
+        let recovery = refusal.recovery.expect("current recovery receipt");
+        assert!(matches!(
+            recovery.cause,
+            WorkCompletionRecoveryCause::RequiredChildUnsealed { child: blocked }
+                if blocked == child
+        ));
+        assert_eq!(recovery.item.work_id, child);
+        assert_eq!(recovery.item.title, "Required child");
+        assert_eq!(
+            recovery.command,
+            format!("engram work claim {}", recovery.item.short_ref)
+        );
     }
 
     #[test]
@@ -6329,14 +7012,24 @@ mod tests {
                 note: None,
                 idempotency_key: key.clone(),
             };
-            assert!(
-                service
-                    .work_complete(
-                        input.clone(),
-                        at(2 + i64::try_from(index).expect("bounded case index")),
-                    )
-                    .is_err()
+            let completion = service.work_complete(
+                input.clone(),
+                at(2 + i64::try_from(index).expect("bounded case index")),
             );
+            if matches!(name, "missing" | "unknown" | "unsatisfied") {
+                let WorkCompleteResult::Refused(refusal) =
+                    completion.expect("missing acceptance is a typed refusal")
+                else {
+                    panic!("{name} acceptance must not complete work");
+                };
+                assert_eq!(refusal.code, "missing_acceptance");
+                assert!(matches!(
+                    refusal.recovery.expect("current recovery receipt").cause,
+                    WorkCompletionRecoveryCause::MissingAcceptance { .. }
+                ));
+            } else {
+                assert!(completion.is_err(), "{name} must be rejected");
+            }
 
             let after = SqliteStore::open(&database).expect("after store");
             assert_eq!(

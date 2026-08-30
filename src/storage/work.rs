@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{
     Connection, OptionalExtension, Transaction, TransactionBehavior, params, types::Value,
 };
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
@@ -36,21 +36,22 @@ use crate::{
         VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest,
         WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope,
         WorkAvailability, WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint,
-        WorkClaim, WorkClaimId, WorkClaimState, WorkDecomposition, WorkDependencyRef,
-        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry,
-        WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
-        WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
+        WorkClaim, WorkClaimId, WorkClaimState, WorkCompletionRecovery,
+        WorkCompletionRecoveryCause, WorkDecomposition, WorkDependencyRef, WorkDisposition,
+        WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
+        WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation,
+        WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
         WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
         WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
-        WorkReadinessReason, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
-        WorkSourceSnapshot, WorkTransition,
+        WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId, WorkRunState,
+        WorkSessionState, WorkSourceSnapshot, WorkTransition,
     },
     memory::Redactor,
+    schema::WORK_SCHEMA_VERSION as CURRENT_WORK_SCHEMA_VERSION,
 };
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
-const CURRENT_WORK_SCHEMA_VERSION: i64 = 11;
 const REQUIRED_WORK_TABLES: &[&str] = &[
     "work_authority_grants",
     "work_authority_revocations",
@@ -1358,6 +1359,25 @@ pub(crate) struct WorkProtocolAttempt {
     pub(crate) basis: Option<serde_json::Value>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) enum CompleteWorkStorageResult {
+    Completed(Box<CompletionSeal>),
+    Recovery(WorkCompletionRecovery),
+}
+
+#[derive(Serialize)]
+struct WorkCompletionRecoveryFingerprint<'a> {
+    schema_version: u16,
+    work_id: WorkId,
+    run_id: WorkRunId,
+    expected_work_revision: i64,
+    holder: &'a SessionId,
+    claim_id: WorkClaimId,
+    claim_fence: i64,
+    cause: &'a WorkCompletionRecoveryCause,
+    idempotency_key: &'a str,
+}
+
 struct WorkProtocolAttemptRow {
     request_hash: String,
     basis_hash: Option<String>,
@@ -1662,33 +1682,110 @@ impl SqliteStore {
         project_id: &crate::domain::ProjectId,
         work_ref: &str,
     ) -> Result<WorkItem, StoreError> {
-        let work_ref = work_ref.trim();
-        if work_ref.is_empty() {
-            return Err(StoreError::InvalidWork(
-                "work reference must not be empty".into(),
-            ));
+        resolve_work_ref_on(&self.connection, project_id, work_ref)
+    }
+
+    /// Freezes a pre-completion recovery snapshot under the same SQLite
+    /// snapshot that proves the lapsed claim or missing acceptance criterion.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the exact claim fence and protocol replay key are explicit recovery evidence"
+    )]
+    pub(crate) fn persist_preflight_completion_recovery(
+        &mut self,
+        work_id: WorkId,
+        run_id: WorkRunId,
+        expected_work_revision: i64,
+        holder: &SessionId,
+        claim_id: WorkClaimId,
+        claim_fence: i64,
+        cause: &WorkCompletionRecoveryCause,
+        idempotency_key: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkCompletionRecovery, StoreError> {
+        let fingerprint = WorkCompletionRecoveryFingerprint {
+            schema_version: SCHEMA_VERSION,
+            work_id,
+            run_id,
+            expected_work_revision,
+            holder,
+            claim_id,
+            claim_fence,
+            cause,
+            idempotency_key,
+        };
+        let request_object = request_object(&fingerprint)?;
+        let transaction = self.begin_work_mutation()?;
+        if let Some(recovery) = replay_operation::<WorkCompletionRecovery>(
+            &transaction,
+            "complete_work_recovery",
+            idempotency_key,
+            request_object.hash(),
+        )? {
+            transaction.commit()?;
+            return Ok(recovery);
         }
-        let mut statement = self.connection.prepare(
-            "SELECT work_id FROM work_items
-             WHERE project_id = ?1 AND (short_ref = ?2 OR work_id = ?2)
-             ORDER BY work_id LIMIT 2",
+        let work = match cause {
+            WorkCompletionRecoveryCause::LapsedClaim { expired_at } => {
+                match validate_live_claim_on(
+                    &transaction,
+                    work_id,
+                    run_id,
+                    expected_work_revision,
+                    holder,
+                    claim_id,
+                    claim_fence,
+                    now,
+                    false,
+                ) {
+                    Err(StoreError::WorkClaimLapsed {
+                        expired_at: observed,
+                        ..
+                    }) if observed == *expired_at => load_work_item(&transaction, work_id)?,
+                    Err(error) => return Err(error),
+                    Ok(_) => {
+                        return Err(StoreError::InvalidWorkProjection(
+                            "completion recovery no longer has a lapsed claim basis".into(),
+                        ));
+                    }
+                }
+            }
+            WorkCompletionRecoveryCause::MissingAcceptance { criterion } => {
+                let (work, _, _) = validate_live_claim_on(
+                    &transaction,
+                    work_id,
+                    run_id,
+                    expected_work_revision,
+                    holder,
+                    claim_id,
+                    claim_fence,
+                    now,
+                    false,
+                )?;
+                if !work.acceptance.contains(criterion) {
+                    return Err(StoreError::InvalidWorkProjection(
+                        "completion recovery criterion is not in the deciding work revision".into(),
+                    ));
+                }
+                work
+            }
+            _ => {
+                return Err(StoreError::InvalidWork(
+                    "preflight completion recovery accepts only lapsed claims or missing acceptance"
+                        .into(),
+                ));
+            }
+        };
+        let recovery = persist_completion_recovery_on(
+            &transaction,
+            &work,
+            cause.clone(),
+            "complete_work_recovery",
+            idempotency_key,
+            request_object.hash(),
         )?;
-        let matches = statement
-            .query_map(params![project_id.0, work_ref], |row| {
-                row.get::<_, String>(0)
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        match matches.as_slice() {
-            [work_id] => load_work_item(&self.connection, parse_work_id(work_id)?),
-            [] => Err(StoreError::InvalidWork(format!(
-                "work reference {work_ref:?} does not exist in project {:?}",
-                project_id.0
-            ))),
-            _ => Err(StoreError::InvalidWork(format!(
-                "work reference {work_ref:?} is ambiguous in project {:?}",
-                project_id.0
-            ))),
-        }
+        transaction.commit()?;
+        Ok(recovery)
     }
 
     /// Returns ambient navigation state, defaulting to no focus and cursor zero.
@@ -2568,6 +2665,32 @@ impl SqliteStore {
             .collect()
     }
 
+    #[cfg(test)]
+    pub(crate) fn add_expected_root_contributor_fixture(
+        &mut self,
+        work_id: WorkId,
+        participant: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        let transaction = self.begin_work_mutation()?;
+        let item = load_work_item(&transaction, work_id)?;
+        let run = active_run_snapshot(&transaction, &item)?.ok_or_else(|| {
+            StoreError::InvalidWorkProjection("fixture work has no active run".into())
+        })?;
+        let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
+        if expect_root_contributor(&mut root_execution, participant) {
+            root_execution.revision += 1;
+            root_execution.updated_at = now;
+            persist_root_execution(&transaction, &root_execution)?;
+        }
+        let mut event = latest_canonical_work_event_for_item(&transaction, work_id)?;
+        event.root_execution = Some(root_execution);
+        event.created_at = now;
+        append_work_event(&transaction, &event)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Returns canonical evidence hashes recorded for one run.
     ///
     /// # Errors
@@ -3127,6 +3250,194 @@ impl SqliteStore {
         }
         transaction.commit()?;
         Ok(())
+    }
+}
+
+const MAX_AMBIGUOUS_WORK_CANDIDATES: usize = 8;
+
+fn resolve_work_ref_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    work_ref: &str,
+) -> Result<WorkItem, StoreError> {
+    let work_ref = work_ref.trim();
+    if work_ref.is_empty() {
+        return Err(StoreError::InvalidWork(
+            "work reference must not be empty".into(),
+        ));
+    }
+    let mut statement = connection.prepare(
+        "SELECT work_id, COUNT(*) OVER()
+         FROM work_items
+         WHERE project_id = ?1 AND (short_ref = ?2 OR work_id = ?2)
+         ORDER BY work_id LIMIT ?3",
+    )?;
+    let matches = statement
+        .query_map(
+            params![
+                project_id.0,
+                work_ref,
+                i64::try_from(MAX_AMBIGUOUS_WORK_CANDIDATES).map_err(|_| {
+                    StoreError::InvalidWorkProjection(
+                        "ambiguous-work candidate limit overflowed SQLite".into(),
+                    )
+                })?
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    match matches.as_slice() {
+        [(work_id, _)] => load_work_item(connection, parse_work_id(work_id)?),
+        [] => Err(StoreError::InvalidWork(format!(
+            "work reference {work_ref:?} does not exist in project {:?}",
+            project_id.0
+        ))),
+        _ => {
+            let total = usize::try_from(matches[0].1).map_err(|_| {
+                StoreError::InvalidWorkProjection(
+                    "ambiguous-work candidate count overflowed usize".into(),
+                )
+            })?;
+            let candidates = matches
+                .iter()
+                .map(|(work_id, _)| load_work_item(connection, parse_work_id(work_id)?))
+                .collect::<Result<Vec<_>, StoreError>>()?;
+            let more = total.saturating_sub(candidates.len());
+            Err(ambiguous_work_reference_error(work_ref, candidates, more))
+        }
+    }
+}
+
+fn command_work_ref_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    item: &WorkReferenceCandidate,
+) -> Result<String, StoreError> {
+    match resolve_work_ref_on(connection, project_id, &item.short_ref) {
+        Ok(resolved) if resolved.work_id == item.work_id => Ok(item.short_ref.clone()),
+        Ok(resolved) => Err(StoreError::InvalidWorkProjection(format!(
+            "short reference {:?} resolved to work {:?} instead of {:?}",
+            item.short_ref, resolved.work_id.0, item.work_id.0
+        ))),
+        Err(StoreError::WorkReferenceAmbiguous { .. }) => Ok(item.work_id.0.to_string()),
+        Err(error) => Err(error),
+    }
+}
+
+fn persist_completion_recovery_on(
+    transaction: &Transaction<'_>,
+    work: &WorkItem,
+    cause: WorkCompletionRecoveryCause,
+    operation: &str,
+    idempotency_key: &str,
+    request_hash: &ObjectHash,
+) -> Result<WorkCompletionRecovery, StoreError> {
+    let recovery = completion_recovery_on(transaction, work, cause)?;
+    persist_operation_result(
+        transaction,
+        operation,
+        idempotency_key,
+        request_hash,
+        &recovery,
+    )?;
+    Ok(recovery)
+}
+
+fn completion_recovery_on(
+    connection: &Connection,
+    work: &WorkItem,
+    cause: WorkCompletionRecoveryCause,
+) -> Result<WorkCompletionRecovery, StoreError> {
+    let affected_id = match &cause {
+        WorkCompletionRecoveryCause::RequiredChildUnsealed { child } => *child,
+        _ => work.work_id,
+    };
+    let affected = if affected_id == work.work_id {
+        work.clone()
+    } else {
+        load_work_item(connection, affected_id)?
+    };
+    let item = WorkReferenceCandidate {
+        work_id: affected.work_id,
+        short_ref: affected.short_ref.clone(),
+        title: affected.title,
+        lifecycle: affected.lifecycle,
+    };
+    let command_ref = command_work_ref_on(connection, &affected.project_id, &item)?;
+    let command = match &cause {
+        WorkCompletionRecoveryCause::LapsedClaim { .. } => {
+            format!("engram work claim {command_ref} --recover \"resume after lapsed claim\"")
+        }
+        WorkCompletionRecoveryCause::OpenObligation { obligation_id, .. } => format!(
+            "engram work done {command_ref} --note \"retry after host verification for obligation {}\"",
+            obligation_id.0
+        ),
+        WorkCompletionRecoveryCause::RequiredChildUnsealed { .. }
+            if item.lifecycle == WorkLifecycle::Open =>
+        {
+            format!("engram work claim {command_ref}")
+        }
+        WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => {
+            let parent = WorkReferenceCandidate {
+                work_id: work.work_id,
+                short_ref: work.short_ref.clone(),
+                title: work.title.clone(),
+                lifecycle: work.lifecycle,
+            };
+            let parent_ref = command_work_ref_on(connection, &work.project_id, &parent)?;
+            format!(
+                "engram work core update --work-ref {parent_ref} --input '{{\"kind\":\"waive_required_child\",\"child\":\"{command_ref}\",\"reason\":\"account for disposed required child\"}}'"
+            )
+        }
+        WorkCompletionRecoveryCause::MissingContribution { participant } => {
+            let participant = recovery_command_atom(&participant.0)?;
+            format!(
+                "engram work handoff {command_ref} --to {participant} --summary \"transfer root so the missing participant can contribute\""
+            )
+        }
+        WorkCompletionRecoveryCause::MissingAcceptance { .. } => {
+            format!("engram work done {command_ref} --note \"acceptance verified\"")
+        }
+    };
+    Ok(WorkCompletionRecovery {
+        cause,
+        item,
+        command,
+    })
+}
+
+fn recovery_command_atom(value: &str) -> Result<&str, StoreError> {
+    if !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':' | b'@')
+        })
+    {
+        return Ok(value);
+    }
+    Err(StoreError::InvalidWorkProjection(
+        "completion recovery target contains characters that cannot be rendered as a shell-safe CLI argument"
+            .into(),
+    ))
+}
+
+fn ambiguous_work_reference_error(
+    reference: &str,
+    mut items: Vec<WorkItem>,
+    more: usize,
+) -> StoreError {
+    items.sort_by(|left, right| left.work_id.0.as_bytes().cmp(right.work_id.0.as_bytes()));
+    StoreError::WorkReferenceAmbiguous {
+        reference: reference.to_owned(),
+        candidates: items
+            .into_iter()
+            .map(|item| WorkReferenceCandidate {
+                work_id: item.work_id,
+                short_ref: item.short_ref,
+                title: item.title,
+                lifecycle: item.lifecycle,
+            })
+            .collect(),
+        more,
     }
 }
 
@@ -3694,6 +4005,28 @@ impl SqliteStore {
         request: &CompleteWorkRequest,
         redactor: &R,
     ) -> Result<CompletionSeal, StoreError> {
+        match self.complete_work_internal(request, redactor, false)? {
+            CompleteWorkStorageResult::Completed(seal) => Ok(*seal),
+            CompleteWorkStorageResult::Recovery(_) => Err(StoreError::InvalidWorkProjection(
+                "core completion unexpectedly returned an ambient recovery receipt".into(),
+            )),
+        }
+    }
+
+    pub(crate) fn complete_work_for_protocol<R: Redactor>(
+        &mut self,
+        request: &CompleteWorkRequest,
+        redactor: &R,
+    ) -> Result<CompleteWorkStorageResult, StoreError> {
+        self.complete_work_internal(request, redactor, true)
+    }
+
+    fn complete_work_internal<R: Redactor>(
+        &mut self,
+        request: &CompleteWorkRequest,
+        redactor: &R,
+        persist_recovery: bool,
+    ) -> Result<CompleteWorkStorageResult, StoreError> {
         inspect_work_request(redactor, request)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let request_object = request_object(request)?;
@@ -3705,7 +4038,18 @@ impl SqliteStore {
             request_object.hash(),
         )? {
             transaction.commit()?;
-            return Ok(seal);
+            return Ok(CompleteWorkStorageResult::Completed(Box::new(seal)));
+        }
+        if persist_recovery
+            && let Some(recovery) = replay_operation::<WorkCompletionRecovery>(
+                &transaction,
+                "complete_work_recovery",
+                &request.idempotency_key,
+                request_object.hash(),
+            )?
+        {
+            transaction.commit()?;
+            return Ok(CompleteWorkStorageResult::Recovery(recovery));
         }
         expire_handoff_offers(
             &transaction,
@@ -3713,7 +4057,7 @@ impl SqliteStore {
             request.completed_at,
             &request.actor,
         )?;
-        let (mut item, mut run, mut claim) = validate_live_claim_on(
+        let (mut item, mut run, mut claim) = match validate_live_claim_on(
             &transaction,
             request.work_id,
             request.run_id,
@@ -3723,7 +4067,23 @@ impl SqliteStore {
             request.claim_fence,
             request.completed_at,
             false,
-        )?;
+        ) {
+            Ok(value) => value,
+            Err(StoreError::WorkClaimLapsed { expired_at, .. }) if persist_recovery => {
+                let work = load_work_item(&transaction, request.work_id)?;
+                let recovery = persist_completion_recovery_on(
+                    &transaction,
+                    &work,
+                    WorkCompletionRecoveryCause::LapsedClaim { expired_at },
+                    "complete_work_recovery",
+                    &request.idempotency_key,
+                    request_object.hash(),
+                )?;
+                transaction.commit()?;
+                return Ok(CompleteWorkStorageResult::Recovery(recovery));
+            }
+            Err(error) => return Err(error),
+        };
         let offered_handoffs = transaction.query_row(
             "SELECT COUNT(*) FROM work_handoff_offers WHERE run_id = ?1 AND state = 'offered'",
             [run.run_id.0.to_string()],
@@ -3780,14 +4140,29 @@ impl SqliteStore {
                         .into(),
             });
         }
-        let acceptance = validate_acceptance(
+        let acceptance = match validate_acceptance(
             &transaction,
             &item,
             run.run_id,
             &evidence,
             &request.acceptance,
             request.actor.assurance,
-        )?;
+        ) {
+            Ok(value) => value,
+            Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) if persist_recovery => {
+                let recovery = persist_completion_recovery_on(
+                    &transaction,
+                    &item,
+                    cause,
+                    "complete_work_recovery",
+                    &request.idempotency_key,
+                    request_object.hash(),
+                )?;
+                transaction.commit()?;
+                return Ok(CompleteWorkStorageResult::Recovery(recovery));
+            }
+            Err(error) => return Err(error),
+        };
         resolve_work_authority(
             &transaction,
             &request.drain.decision,
@@ -3835,9 +4210,60 @@ impl SqliteStore {
         if usize::try_from(required_child_count).ok()
             != Some(required_child_seals.len() + required_child_waivers.len())
         {
-            return Err(StoreError::WorkCompletionRefused {
+            let sealed_children = required_child_seals
+                .iter()
+                .map(|hash| {
+                    load_typed_work_object::<CompletionSeal>(&transaction, hash, "completion_seal")
+                        .map(|seal| seal.work_id)
+                })
+                .collect::<Result<HashSet<_>, StoreError>>()?;
+            let waived_children = required_child_waivers
+                .iter()
+                .map(|waiver| waiver.work_id)
+                .collect::<HashSet<_>>();
+            let mut statement = transaction.prepare(
+                "SELECT work_id FROM work_items
+                 WHERE parent_id = ?1 AND child_requirement = 'required'
+                 ORDER BY work_id",
+            )?;
+            let required_children = statement
+                .query_map([item.work_id.0.to_string()], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(statement);
+            let child = required_children
+                .into_iter()
+                .map(|value| parse_work_id(&value))
+                .collect::<Result<Vec<_>, StoreError>>()?
+                .into_iter()
+                .find(|child| !sealed_children.contains(child) && !waived_children.contains(child))
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "required-child barrier count disagrees with its accounted identities"
+                            .into(),
+                    )
+                })?;
+            let child_item = load_work_item(&transaction, child)?;
+            if child_item.lifecycle == WorkLifecycle::Completed {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "completed required child {child:?} has no completion seal in the active root execution"
+                )));
+            }
+            let cause = WorkCompletionRecoveryCause::RequiredChildUnsealed { child };
+            if persist_recovery {
+                let recovery = persist_completion_recovery_on(
+                    &transaction,
+                    &item,
+                    cause,
+                    "complete_work_recovery",
+                    &request.idempotency_key,
+                    request_object.hash(),
+                )?;
+                transaction.commit()?;
+                return Ok(CompleteWorkStorageResult::Recovery(recovery));
+            }
+            return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
-                reason: "one or more required children are incomplete".into(),
+                cause,
             });
         }
         let completion_cut = FeedPosition {
@@ -3855,12 +4281,37 @@ impl SqliteStore {
                     .into(),
             });
         }
-        let obligations = completion_obligation_basis_on(
+        let obligations = match completion_obligation_basis_on(
             &transaction,
             item.work_id,
             run.run_id,
             &completion_cut,
-        )?;
+        ) {
+            Ok(value) => value,
+            Err(StoreError::OpenWorkObligations { obligations, .. }) if persist_recovery => {
+                let obligation = obligations.first().ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "open-obligation refusal contains no exact obligation".into(),
+                    )
+                })?;
+                let cause = WorkCompletionRecoveryCause::OpenObligation {
+                    obligation_id: obligation.obligation_id,
+                    definition: obligation.definition.clone(),
+                    required_check: obligation.required_check,
+                };
+                let recovery = persist_completion_recovery_on(
+                    &transaction,
+                    &item,
+                    cause,
+                    "complete_work_recovery",
+                    &request.idempotency_key,
+                    request_object.hash(),
+                )?;
+                transaction.commit()?;
+                return Ok(CompleteWorkStorageResult::Recovery(recovery));
+            }
+            Err(error) => return Err(error),
+        };
         let environment =
             completion_environment_basis_on(&transaction, run.run_id, &completion_cut)?;
         if environment.len() > MAX_COMPLETION_ENVIRONMENT_EVIDENCE {
@@ -3905,11 +4356,25 @@ impl SqliteStore {
                 },
                 request.completed_at,
             )?;
-            if !root_roster_is_accounted(&root_execution) {
-                return Err(StoreError::WorkCompletionRefused {
+            if let Some(participant) = first_unaccounted_root_contributor(&root_execution) {
+                let cause = WorkCompletionRecoveryCause::MissingContribution {
+                    participant: participant.clone(),
+                };
+                if persist_recovery {
+                    let recovery = persist_completion_recovery_on(
+                        &transaction,
+                        &item,
+                        cause,
+                        "complete_work_recovery",
+                        &request.idempotency_key,
+                        request_object.hash(),
+                    )?;
+                    transaction.commit()?;
+                    return Ok(CompleteWorkStorageResult::Recovery(recovery));
+                }
+                return Err(StoreError::WorkCompletionRecoveryRequired {
                     work: item.work_id,
-                    reason: "the root participant roster has unaccounted contributions or waivers"
-                        .into(),
+                    cause,
                 });
             }
             Some(decision.clone())
@@ -4032,7 +4497,7 @@ impl SqliteStore {
             &seal,
         )?;
         transaction.commit()?;
-        Ok(seal)
+        Ok(CompleteWorkStorageResult::Completed(Box::new(seal)))
     }
 
     /// Reopens completed work as a clean run generation without reviving authority.
@@ -11034,11 +11499,11 @@ fn waive_root_contributor(
     true
 }
 
-fn root_roster_is_accounted(execution: &RootExecution) -> bool {
+fn first_unaccounted_root_contributor(execution: &RootExecution) -> Option<&SessionId> {
     execution
         .expected_contributors
         .iter()
-        .all(|participant| root_participant_is_accounted(execution, participant))
+        .find(|participant| !root_participant_is_accounted(execution, participant))
 }
 
 fn root_participant_is_accounted(execution: &RootExecution, participant: &SessionId) -> bool {
@@ -11211,6 +11676,19 @@ pub(crate) fn normalize_completion_acceptance_shape(
     actor_assurance: crate::domain::AssuranceLevel,
 ) -> Result<Vec<AcceptanceResult>, StoreError> {
     if item.acceptance.len() != results.len() {
+        let missing = item.acceptance.iter().find(|criterion| {
+            !results
+                .iter()
+                .any(|result| result.criterion.trim() == criterion.as_str())
+        });
+        if let Some(criterion) = missing {
+            return Err(StoreError::WorkCompletionRecoveryRequired {
+                work: item.work_id,
+                cause: WorkCompletionRecoveryCause::MissingAcceptance {
+                    criterion: criterion.clone(),
+                },
+            });
+        }
         return Err(StoreError::WorkCompletionRefused {
             work: item.work_id,
             reason: "acceptance results do not cover every current criterion".into(),
@@ -11235,15 +11713,19 @@ pub(crate) fn normalize_completion_acceptance_shape(
     let mut normalized = Vec::with_capacity(item.acceptance.len());
     for criterion in &item.acceptance {
         let Some(result) = by_criterion.get(criterion) else {
-            return Err(StoreError::WorkCompletionRefused {
+            return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
-                reason: format!("acceptance criterion {criterion:?} was not evaluated"),
+                cause: WorkCompletionRecoveryCause::MissingAcceptance {
+                    criterion: criterion.clone(),
+                },
             });
         };
         if !result.satisfied {
-            return Err(StoreError::WorkCompletionRefused {
+            return Err(StoreError::WorkCompletionRecoveryRequired {
                 work: item.work_id,
-                reason: format!("acceptance criterion {criterion:?} is not satisfied"),
+                cause: WorkCompletionRecoveryCause::MissingAcceptance {
+                    criterion: criterion.clone(),
+                },
             });
         }
         normalized.push(AcceptanceResult {
@@ -13429,6 +13911,148 @@ mod tests {
             + Duration::seconds(second)
     }
 
+    #[test]
+    fn resolver_sql_bounds_collisions_and_recovers_an_omitted_target_by_full_id() {
+        let mut store = SqliteStore::open_in_memory().expect("collision fixture");
+        install_grant(&mut store, "ambiguous-project", "planner");
+        let mut items = (0..9)
+            .map(|index| {
+                store
+                    .create_work(
+                        &root_request("ambiguous-project", &format!("candidate-{index}"), index),
+                        &DevelopmentNoopRedactor,
+                    )
+                    .expect("candidate")
+            })
+            .collect::<Vec<_>>();
+
+        // Production enforces uniqueness. This deliberately corrupt-shaped
+        // fixture replaces the constrained table with an unconstrained copy so
+        // the real resolver SQL and canonical projection loader exercise the
+        // defensive ambiguity path.
+        store
+            .connection
+            .execute_batch(
+                "PRAGMA foreign_keys = OFF;
+                 CREATE TABLE work_items_collision AS SELECT * FROM work_items;
+                 DROP TABLE work_items;
+                 ALTER TABLE work_items_collision RENAME TO work_items;",
+            )
+            .expect("remove short-ref uniqueness for collision fixture");
+        let transaction = store
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("collision transaction");
+        for (index, item) in items.iter_mut().enumerate() {
+            let mut event = latest_canonical_work_event_for_item(&transaction, item.work_id)
+                .expect("latest candidate event");
+            item.short_ref = "w-collision".into();
+            item.title = format!("Collision candidate {index}");
+            item.revision += 1;
+            item.updated_at = at(10 + i64::try_from(index).expect("small index"));
+            transaction
+                .execute(
+                    "UPDATE work_items SET short_ref = ?2 WHERE work_id = ?1",
+                    params![item.work_id.0.to_string(), item.short_ref],
+                )
+                .expect("persist colliding short ref");
+            persist_work_item(&transaction, item).expect("persist colliding candidate");
+            event.revision = item.revision;
+            event.work.clone_from(item);
+            event.created_at = item.updated_at;
+            append_work_event(&transaction, &event).expect("append colliding candidate event");
+        }
+        transaction.commit().expect("commit collision fixture");
+        store
+            .connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("restore foreign-key enforcement after collision fixture");
+
+        let error = store
+            .resolve_work_ref(&ProjectId("ambiguous-project".into()), "w-collision")
+            .expect_err("nine matching rows must be ambiguous");
+        let StoreError::WorkReferenceAmbiguous {
+            reference,
+            candidates,
+            more,
+        } = error
+        else {
+            panic!("expected typed ambiguous-reference error, got {error:?}");
+        };
+        assert_eq!(reference, "w-collision");
+        assert_eq!(candidates.len(), MAX_AMBIGUOUS_WORK_CANDIDATES);
+        assert_eq!(more, 1);
+        let mut expected = items.iter().map(|item| item.work_id).collect::<Vec<_>>();
+        expected.sort_by_key(|work_id| work_id.0);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.work_id)
+                .collect::<Vec<_>>(),
+            expected[..MAX_AMBIGUOUS_WORK_CANDIDATES]
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.title.as_str())
+                .collect::<Vec<_>>(),
+            expected[..MAX_AMBIGUOUS_WORK_CANDIDATES]
+                .iter()
+                .map(|work_id| {
+                    items
+                        .iter()
+                        .find(|item| item.work_id == *work_id)
+                        .expect("expected item")
+                        .title
+                        .as_str()
+                })
+                .collect::<Vec<_>>()
+        );
+        let omitted_id = expected[MAX_AMBIGUOUS_WORK_CANDIDATES];
+        let omitted = items
+            .iter()
+            .find(|item| item.work_id == omitted_id)
+            .expect("omitted target");
+        let omitted_candidate = WorkReferenceCandidate {
+            work_id: omitted.work_id,
+            short_ref: omitted.short_ref.clone(),
+            title: omitted.title.clone(),
+            lifecycle: omitted.lifecycle,
+        };
+        assert_eq!(
+            command_work_ref_on(
+                &store.connection,
+                &ProjectId("ambiguous-project".into()),
+                &omitted_candidate,
+            )
+            .expect("known omitted target uses its full id"),
+            omitted_id.0.to_string()
+        );
+    }
+
+    #[test]
+    fn completion_recovery_rejects_a_shell_unsafe_participant_id() {
+        let mut store = SqliteStore::open_in_memory().expect("recovery fixture");
+        install_grant(&mut store, "unsafe-recovery-project", "planner");
+        let work = store
+            .create_work(
+                &root_request("unsafe-recovery-project", "unsafe-recovery", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root work");
+        let error = completion_recovery_on(
+            &store.connection,
+            &work,
+            WorkCompletionRecoveryCause::MissingContribution {
+                participant: SessionId("peer; Remove-Item important".into()),
+            },
+        )
+        .expect_err("shell metacharacters must not enter executable recovery guidance");
+        assert!(
+            matches!(error, StoreError::InvalidWorkProjection(reason) if reason.contains("shell-safe CLI argument"))
+        );
+    }
+
     fn restore_savepoint(store: &SqliteStore) {
         store
             .connection
@@ -14709,7 +15333,12 @@ mod tests {
                 "root-without-waiver",
                 6,
             ),
-            Err(StoreError::WorkCompletionRefused { .. })
+            Err(StoreError::WorkCompletionRecoveryRequired {
+                cause: WorkCompletionRecoveryCause::RequiredChildUnsealed {
+                    child: blocked_child,
+                },
+                ..
+            }) if blocked_child == child.work_id
         ));
 
         let waiver_request = WaiveRequiredChildRequest {
@@ -14928,7 +15557,10 @@ mod tests {
                 "supersede-root-without-waiver",
                 10,
             ),
-            Err(StoreError::WorkCompletionRefused { .. })
+            Err(StoreError::WorkCompletionRecoveryRequired {
+                cause: WorkCompletionRecoveryCause::RequiredChildUnsealed { child },
+                ..
+            }) if child == required.work_id
         ));
         let waiver = store
             .waive_required_child(
@@ -18637,7 +19269,10 @@ mod tests {
             );
             assert!(matches!(
                 early,
-                Err(StoreError::WorkCompletionRefused { .. })
+                Err(StoreError::WorkCompletionRecoveryRequired {
+                    cause: WorkCompletionRecoveryCause::RequiredChildUnsealed { child },
+                    ..
+                }) if child == required.work_id
             ));
 
             let child_claim = claim(&mut store, &required, "child-agent", "child-claim", 6, 100);
@@ -19560,9 +20195,10 @@ mod tests {
             9,
         )
         .expect("complete after terminal obligation and acknowledging checkpoint");
+        assert_eq!(seal.schema_version, crate::schema::SCHEMA_VERSION);
         assert_eq!(
             seal.obligation_schema_version,
-            Some(COMPLETION_OBLIGATION_SCHEMA_VERSION)
+            Some(crate::schema::COMPLETION_OBLIGATION_SCHEMA_VERSION)
         );
         assert_eq!(
             seal.obligations,
@@ -19577,7 +20213,7 @@ mod tests {
         );
         assert_eq!(
             seal.environment_schema_version,
-            Some(COMPLETION_ENVIRONMENT_SCHEMA_VERSION)
+            Some(crate::schema::COMPLETION_ENVIRONMENT_SCHEMA_VERSION)
         );
         assert_eq!(seal.environment, vec![environment_hash.clone()]);
         assert_eq!(
@@ -19987,6 +20623,23 @@ mod tests {
             VerificationKind::Test
         );
         assert_eq!(refusal.obligation_page.omitted_count, 0);
+        let recovery = refusal.recovery.as_ref().expect("current recovery receipt");
+        assert!(matches!(
+            &recovery.cause,
+            WorkCompletionRecoveryCause::OpenObligation {
+                obligation_id,
+                definition,
+                required_check: VerificationKind::Test,
+            } if *obligation_id == expected_obligation.obligation.obligation_id
+                && *definition == expected_obligation.definition_hash
+        ));
+        assert_eq!(recovery.item.work_id, work.work_id);
+        assert_eq!(recovery.item.title, work.title);
+        assert!(
+            recovery
+                .command
+                .starts_with(&format!("engram work done {}", work.short_ref))
+        );
         assert_eq!(
             refusal.remedy,
             "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"

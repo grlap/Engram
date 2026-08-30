@@ -119,6 +119,11 @@ that metadata before any DDL, refuses future or unversioned non-empty work
 schemas without mutation, and performs supported ALTER/backfill/version steps
 inside one `BEGIN IMMEDIATE` transaction. Handoff backfills must match their
 latest hash-verified work event before a projection can be activated.
+All schema generations emitted by the current binary are declared in
+`src/schema.rs`. Domain exports, canonical control-policy objects, the control
+selector, and local-work migration metadata consume those constants; a fresh-
+store regression test asserts that every persisted projection/object version
+matches the centralized declarations.
 Once both core and work schemas are current, open takes the read-only fast
 path: it verifies required objects, columns, indexes, policy rows, and host
 path identity without starting a write transaction. A current store can be

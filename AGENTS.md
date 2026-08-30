@@ -100,6 +100,10 @@ node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
+On Windows, use `pwsh -File scripts/test-rust.ps1` in place of
+`scripts/test-rust.sh`; it preserves the same ordinary and performance-test
+phases without the Unix-only file-descriptor-limit adjustment.
+
 After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
 acceptable flaky test.

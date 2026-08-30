@@ -1876,6 +1876,29 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     assert.equal(refusedCompletion.obligation_page.omitted_count, 0);
     assert.match(refusedCompletion.remedy, /checkpoint_work acknowledging it/);
+    assert.equal(refusedCompletion.recovery.cause.kind, "open_obligation");
+    assert.equal(
+      refusedCompletion.recovery.cause.obligation_id,
+      refusedCompletion.obligation_page.items[0].obligation_id,
+    );
+    assert.equal(
+      refusedCompletion.recovery.cause.definition,
+      refusedCompletion.obligation_page.items[0].definition,
+    );
+    assert.equal(refusedCompletion.recovery.cause.required_check, "test");
+    assert.equal(
+      refusedCompletion.recovery.item.work_id,
+      proposed.work.work_id,
+    );
+    assert.equal(refusedCompletion.recovery.item.ref, proposed.work.short_ref);
+    assert.equal(refusedCompletion.recovery.item.state, "open");
+    assert.match(
+      refusedCompletion.recovery.command,
+      new RegExp(
+        `^engram work done ${proposed.work.short_ref} --note "retry after host verification for obligation ${refusedCompletion.obligation_page.items[0].obligation_id}"$`,
+        "u",
+      ),
+    );
     assert.deepEqual(
       cliWork(
         engramHome,
@@ -1913,7 +1936,12 @@ test("work-bound control records observations and rebinds after a stale fence", 
       owed.stdout,
       /- tests have not run since your last source change — run them; the host records the result/u,
     );
-    assert.match(owed.stdout, /next:\n\s+engram work done w-[0-9a-f]{12}\s*$/u);
+    assert.ok(
+      owed.stdout.endsWith(
+        `next:\n  ${refusedCompletion.recovery.command}\n`,
+      ),
+      owed.stdout,
+    );
     assert.doesNotMatch(owed.stdout, /\b[0-9a-f]{64}\b/u);
 
     const staleVerificationTurn = ok(

@@ -764,7 +764,7 @@ impl McpServer {
         };
         result(
             self.work_service()
-                .work_complete_on(args.work_ref.as_deref(), input, Utc::now()),
+                .work_complete_core_on(args.work_ref.as_deref(), input, Utc::now()),
             "work_complete",
         )
     }
@@ -1129,7 +1129,7 @@ fn verb(outcome: Result<Receipt, VerbError>) -> CallToolResult {
         Ok(receipt) => CallToolResult::structured(receipt.value),
         Err(error) => {
             let guidance = error.guidance();
-            let mut value = error_value(&error.error);
+            let mut value = store_error_value(&error.error);
             value["error"]["reminders"] = json!(guidance.reminders);
             value["error"]["next"] = json!(guidance.next);
             CallToolResult::structured_error(value)
@@ -1154,10 +1154,21 @@ fn result<T: serde::Serialize>(value: Result<T, StoreError>, operation: &str) ->
 }
 
 fn store_error(error: &StoreError) -> CallToolResult {
-    CallToolResult::structured_error(error_value(error))
+    CallToolResult::structured_error(store_error_value(error))
 }
 
-fn error_value(error: &StoreError) -> Value {
+/// Stable structured rendering shared by MCP and native JSON/core errors.
+#[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one shared structured renderer keeps every CLI and MCP error surface identical"
+)]
+pub fn store_error_value(error: &StoreError) -> Value {
+    if let StoreError::WorkCompletionWithRecovery { source, recovery } = error {
+        let mut value = store_error_value(source);
+        value["error"]["details"]["recovery"] = json!(recovery);
+        return value;
+    }
     let details = match error {
         StoreError::TaskClaimHeld { holder, expires_at } => json!({
             "holder": holder,
@@ -1189,10 +1200,12 @@ fn error_value(error: &StoreError) -> Value {
         StoreError::MemoryAccessDenied(hash)
         | StoreError::MemoryNotFound(hash)
         | StoreError::PacketAccessDenied(hash) => json!({ "object_hash": hash }),
-        StoreError::WorkNotFound(work) => json!({
-            "work_id": work,
-            "remedy": "call work_next to search/list work, then work_focus using a returned short_ref",
-        }),
+        StoreError::WorkNotFound(work) => missing_work_details(*work),
+        StoreError::WorkReferenceAmbiguous {
+            reference,
+            candidates,
+            more,
+        } => ambiguous_work_reference_details(reference, candidates, *more),
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
             "reason": message,
             "remedy": "refresh with work_focus/work_next and follow allowed_next",
@@ -1246,6 +1259,10 @@ fn error_value(error: &StoreError) -> Value {
             "reason": reason,
             "remedy": "record evidence, checkpoint the current feed cut, and satisfy every current acceptance criterion",
         }),
+        StoreError::WorkCompletionRecoveryRequired { work, cause } => json!({
+            "work_id": work,
+            "cause": cause,
+        }),
         _ => Value::Null,
     };
     json!({
@@ -1257,8 +1274,29 @@ fn error_value(error: &StoreError) -> Value {
     })
 }
 
+fn missing_work_details(work: crate::WorkId) -> Value {
+    json!({
+        "work_id": work,
+        "remedy": "call work_next to search/list work, then work_focus using a returned short_ref",
+    })
+}
+
+fn ambiguous_work_reference_details(
+    reference: &str,
+    candidates: &[crate::WorkReferenceCandidate],
+    more: usize,
+) -> Value {
+    json!({
+        "reference": reference,
+        "candidates": candidates,
+        "more": more,
+        "remedy": "repeat the operation with one candidate's full work_id",
+    })
+}
+
 fn error_code(error: &StoreError) -> &'static str {
     match error {
+        StoreError::WorkCompletionWithRecovery { source, .. } => error_code(source),
         StoreError::TaskClaimHeld { .. } => "task_claim_held",
         StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
         StoreError::ClaimIdempotencyConflict(_) => "claim_idempotency_conflict",
@@ -1276,6 +1314,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::EmptyNote => "empty_note",
         StoreError::RedactionRefused(_) => "redaction_refused",
         StoreError::WorkNotFound(_) => "work_not_found",
+        StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
         StoreError::InvalidWork(_) => "work_invalid",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
@@ -1286,6 +1325,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
+        StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
         | StoreError::NonCanonicalObject(_)
@@ -1372,6 +1412,58 @@ fn parse_authority(value: &str) -> Result<Authority, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ambiguous_work_reference_has_a_stable_mcp_error_code() {
+        let work_id = crate::WorkId::new();
+        let error = StoreError::WorkReferenceAmbiguous {
+            reference: "w-collision".into(),
+            candidates: vec![crate::WorkReferenceCandidate {
+                work_id,
+                short_ref: "w-collision".into(),
+                title: "Collision candidate".into(),
+                lifecycle: crate::WorkLifecycle::Open,
+            }],
+            more: 2,
+        };
+        assert_eq!(error_code(&error), "work_reference_ambiguous");
+        let value = store_error_value(&error);
+        let details = &value["error"]["details"];
+        assert_eq!(details["reference"], "w-collision");
+        assert_eq!(details["candidates"][0]["work_id"], work_id.0.to_string());
+        assert_eq!(details["candidates"][0]["ref"], "w-collision");
+        assert_eq!(details["candidates"][0]["title"], "Collision candidate");
+        assert_eq!(details["candidates"][0]["state"], "open");
+        assert_eq!(details["more"], 2);
+    }
+
+    #[test]
+    fn completion_recovery_preserves_the_source_error_and_adds_typed_recovery() {
+        let work_id = crate::WorkId::new();
+        let expired_at = Utc::now();
+        let recovery = crate::WorkCompletionRecovery {
+            cause: crate::WorkCompletionRecoveryCause::LapsedClaim { expired_at },
+            item: crate::WorkReferenceCandidate {
+                work_id,
+                short_ref: "w-recover".into(),
+                title: "Recover completion".into(),
+                lifecycle: crate::WorkLifecycle::Open,
+            },
+            command: "engram work claim w-recover --recover --reason \"resume\"".into(),
+        };
+        let error = StoreError::WorkCompletionWithRecovery {
+            source: Box::new(StoreError::WorkClaimLapsed {
+                work: work_id,
+                expired_at,
+            }),
+            recovery: Box::new(recovery.clone()),
+        };
+
+        assert_eq!(error_code(&error), "work_claim_lapsed");
+        let value = store_error_value(&error);
+        assert_eq!(value["error"]["code"], "work_claim_lapsed");
+        assert_eq!(value["error"]["details"]["recovery"], json!(recovery));
+    }
 
     #[test]
     fn retained_work_service_survives_failure_and_serves_both_tool_sets() {

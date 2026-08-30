@@ -33,6 +33,12 @@ node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
+On Windows, run `pwsh -File scripts/test-rust.ps1` in place of
+`scripts/test-rust.sh`. Both entry points run the ordinary Rust suite with
+bounded test concurrency and then the ignored claim-mutation scale test with
+one thread. The shell entry point also raises the Unix file-descriptor soft
+limit when the host permits it; that step is not applicable on Windows.
+
 Every gate must pass. A failure is investigated and classified as a product,
 test, or environment defect; it is never normalized by retrying until green.
 

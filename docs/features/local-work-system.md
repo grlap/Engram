@@ -78,7 +78,12 @@ WorkItem {
 `short_ref` is human- and model-friendly display syntax; `work_id` is the
 stable collision-resistant identity. Titles, outcomes, priority, and
 acceptance criteria change through attributed revision events rather than
-in-place history loss.
+in-place history loss. A corrupted or imported store that contains a short-ref
+collision fails selection with a typed candidate list containing each full
+work id, short ref, title, and lifecycle-backed `state`. CLI/MCP guidance names
+up to eight ordered candidates, reports how many additional matches exist, and
+requires the caller to retry with one full id; it never picks a candidate
+implicitly.
 
 `parent_id` expresses decomposition. A child is part of its parent's outcome;
 it is not automatically a prerequisite of every sibling. Each child is
@@ -518,6 +523,19 @@ shared page and remedy: record matching host verification, checkpoint it, then
 complete; or request a host/operator waiver. A successful seal stores only
 canonical hashes; its page and a fresh session's later focus are reconstructed
 from that immutable basis.
+
+Every recoverable completion refusal also carries a typed `recovery` object.
+It identifies the exact cause, affected item's full id/short ref/title/current
+state, and one `command` string. Shipped causes cover a lapsed claim, the
+first exact open obligation, an unsealed required child, an unaccounted root
+participant, and the first missing acceptance criterion. The singular command
+keeps CLI and MCP recovery deterministic while the surrounding typed cause
+retains the obligation, child, participant, criterion, or expiry identity.
+That object is frozen and persisted inside the transaction that decides the
+refusal, so a lost-response retry cannot combine its cause with a newer item or
+command. Missing-contribution recovery hands the root to the named participant;
+the participant must then checkpoint/handoff or complete their own work rather
+than relying on a no-op claim by the current holder.
 
 The operator-only `engram authority grant|revoke` commands are the current
 host boundary for local use. They are deliberately absent from agent-facing

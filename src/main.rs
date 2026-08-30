@@ -16,13 +16,13 @@ use engram::{
     ClaimInput, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, DoneInput, HandoffAction,
     HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService, LsInput, McpServer,
     NextInput, NoteInput, ObjectHash, ObligationRuleDefinition, ObligationRuleSet, ProjectId,
-    ProjectPolicyAuthorityDecision, SessionId, SqliteStore, UpdateAction, UpdateInput,
+    ProjectPolicyAuthorityDecision, SessionId, SqliteStore, StoreError, UpdateAction, UpdateInput,
     VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
     WorkAuthorityGrantStatus, WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability,
     WorkCompleteInput, WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery,
     WorkNextSection, WorkObligationId, WorkPlanningBudget, WorkProposeInput, WorkUpdateInput,
     describe_host_path_policy, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
-    probe_host_path_policy, project_database_path,
+    probe_host_path_policy, project_database_path, store_error_value,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -730,9 +730,7 @@ async fn main() -> Result<ExitCode> {
                 authority_grant: parse_optional_hash(authority_grant)?,
             };
             return match operation {
-                WorkCommand::Core { operation } => {
-                    run_core_work(context, operation).map(|()| ExitCode::SUCCESS)
-                }
+                WorkCommand::Core { operation } => run_core_work(context, operation),
                 operation => run_work(context, json, operation),
             };
         }
@@ -1276,13 +1274,12 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             if json {
                 eprintln!(
                     "{}",
-                    serde_json::to_string_pretty(&serde_json::json!({
-                        "error": {
-                            "message": error.to_string(),
-                            "reminders": guidance.reminders,
-                            "next": guidance.next,
-                        }
-                    }))?
+                    serde_json::to_string_pretty(&{
+                        let mut value = store_error_value(&error.error);
+                        value["error"]["reminders"] = serde_json::json!(guidance.reminders);
+                        value["error"]["next"] = serde_json::json!(guidance.next);
+                        value
+                    })?
                 );
             } else {
                 eprintln!("error: {error}");
@@ -1301,7 +1298,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     }
 }
 
-fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<()> {
+fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<ExitCode> {
     let service = LocalWorkService::new(
         context.database,
         context.project_id,
@@ -1311,7 +1308,7 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<()>
         context.authority_grant,
     );
     let now = chrono::Utc::now();
-    let value = match operation {
+    let result: Result<serde_json::Value, StoreError> = match operation {
         CoreWorkCommand::Next {
             limit,
             acknowledge_through,
@@ -1324,59 +1321,68 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<()>
             assigned_to,
             label,
             catalog_after,
-        } => serde_json::to_value(service.work_next_with_delivery_token(
-            limit,
-            acknowledge_through,
-            acknowledge_token.as_deref(),
-            WorkNextQuery {
-                sections: parse_enum_values::<WorkNextSection>(&sections, "--sections")?,
-                search,
-                lifecycles: parse_enum_values::<WorkLifecycle>(&lifecycles, "--lifecycles")?,
-                availabilities: parse_enum_values::<WorkAvailability>(
-                    &availabilities,
-                    "--availabilities",
-                )?,
-                blocked_only,
-                assigned_to,
-                label,
-                after: catalog_after,
-            },
-            now,
-        )?)?,
-        CoreWorkCommand::Focus { work_ref } => {
-            serde_json::to_value(service.work_focus(&work_ref, now)?)?
-        }
-        CoreWorkCommand::Propose { work_ref, input } => {
-            serde_json::to_value(service.work_propose_on(
-                work_ref.as_deref(),
-                parse_json_input::<WorkProposeInput>(&input)?,
+        } => service
+            .work_next_with_delivery_token(
+                limit,
+                acknowledge_through,
+                acknowledge_token.as_deref(),
+                WorkNextQuery {
+                    sections: parse_enum_values::<WorkNextSection>(&sections, "--sections")?,
+                    search,
+                    lifecycles: parse_enum_values::<WorkLifecycle>(&lifecycles, "--lifecycles")?,
+                    availabilities: parse_enum_values::<WorkAvailability>(
+                        &availabilities,
+                        "--availabilities",
+                    )?,
+                    blocked_only,
+                    assigned_to,
+                    label,
+                    after: catalog_after,
+                },
                 now,
-            )?)?
+            )
+            .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
+        CoreWorkCommand::Focus { work_ref } => service
+            .work_focus(&work_ref, now)
+            .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
+        CoreWorkCommand::Propose { work_ref, input } => {
+            let input = parse_json_input::<WorkProposeInput>(&input)?;
+            service
+                .work_propose_on(work_ref.as_deref(), input, now)
+                .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
         }
         CoreWorkCommand::Update { work_ref, input } => {
-            serde_json::to_value(service.work_update_on(
-                work_ref.as_deref(),
-                parse_json_input::<WorkUpdateInput>(&input)?,
-                now,
-            )?)?
+            let input = parse_json_input::<WorkUpdateInput>(&input)?;
+            service
+                .work_update_on(work_ref.as_deref(), input, now)
+                .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
         }
         CoreWorkCommand::Complete { work_ref, input } => {
-            serde_json::to_value(service.work_complete_on(
-                work_ref.as_deref(),
-                parse_json_input::<WorkCompleteInput>(&input)?,
-                now,
-            )?)?
+            let input = parse_json_input::<WorkCompleteInput>(&input)?;
+            service
+                .work_complete_core_on(work_ref.as_deref(), input, now)
+                .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
         }
         CoreWorkCommand::Handoff { work_ref, input } => {
-            serde_json::to_value(service.work_handoff_on(
-                work_ref.as_deref(),
-                parse_json_input::<WorkHandoffInput>(&input)?,
-                now,
-            )?)?
+            let input = parse_json_input::<WorkHandoffInput>(&input)?;
+            service
+                .work_handoff_on(work_ref.as_deref(), input, now)
+                .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
         }
     };
-    println!("{}", serde_json::to_string_pretty(&value)?);
-    Ok(())
+    match result {
+        Ok(value) => {
+            println!("{}", serde_json::to_string_pretty(&value)?);
+            Ok(ExitCode::SUCCESS)
+        }
+        Err(error) => {
+            eprintln!(
+                "{}",
+                serde_json::to_string_pretty(&store_error_value(&error))?
+            );
+            Ok(ExitCode::FAILURE)
+        }
+    }
 }
 
 fn parse_optional_hash(value: Option<String>) -> Result<Option<ObjectHash>> {

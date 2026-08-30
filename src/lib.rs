@@ -11,6 +11,7 @@ pub mod host;
 pub mod mcp;
 pub mod memory;
 pub mod project;
+pub mod schema;
 pub mod storage;
 pub mod tracker;
 pub mod verbs;
@@ -61,25 +62,25 @@ pub use domain::{
     WaiveWorkObligationRequest, WorkAuthorityGrant, WorkAuthorityOperation,
     WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability, WorkBlocker, WorkBlockerKind,
     WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState,
-    WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent, WorkEvidence,
-    WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
-    WorkId, WorkItem, WorkItemKind, WorkLease, WorkLeaseDecision, WorkLeaseEvent,
-    WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkLifecycle, WorkObligation, WorkObligationId,
-    WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState,
-    WorkObligationWaiverDecision, WorkObligationWaiverReceipt, WorkObligationWaiverRefusalCode,
-    WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget, WorkReadinessReason, WorkRevisionPatch,
-    WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot,
-    WorkTransition,
+    WorkCompletionRecovery, WorkCompletionRecoveryCause, WorkDecomposition, WorkDependencyRef,
+    WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
+    WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLease,
+    WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkLifecycle,
+    WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
+    WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
+    WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
+    WorkReadinessReason, WorkReferenceCandidate, WorkRevisionPatch, WorkRun, WorkRunId,
+    WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot, WorkTransition,
 };
 pub use host::{HostControlRequest, HostControlServer};
-pub use mcp::McpServer;
+pub use mcp::{McpServer, store_error_value};
 pub use memory::{DevelopmentNoopRedactor, Redactor};
 pub use project::{
     HostPathProbeError, parse_host_path_policy, probe_host_path_policy, project_database_path,
 };
 pub use storage::{
     BackupManifest, ControlDiagnostics, ControlPolicyUpdateReceipt, IntegrityReport,
-    ObligationRuleSetUpdateReceipt, SqliteStore, TaskChange, WorkAuthorityGrantStatus,
+    ObligationRuleSetUpdateReceipt, SqliteStore, StoreError, TaskChange, WorkAuthorityGrantStatus,
     describe_host_path_policy, install_store_copy_without_replacing,
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};

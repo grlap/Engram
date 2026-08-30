@@ -282,6 +282,10 @@ impl VerbError {
                     ],
                 )
             }
+            StoreError::WorkCompletionRecoveryRequired { cause, .. } => (
+                vec![format!("completion recovery is required: {cause:?}")],
+                vec![format!("engram work show {target}")],
+            ),
             StoreError::WorkNotOpen(_) => (
                 vec!["this item is not open".into()],
                 vec![format!("engram work show {target}")],
@@ -289,6 +293,9 @@ impl VerbError {
             StoreError::WorkNotFound(_) => {
                 (vec!["no such item".into()], vec!["engram work ls".into()])
             }
+            StoreError::WorkReferenceAmbiguous {
+                candidates, more, ..
+            } => ambiguous_reference_guidance(candidates, *more),
             StoreError::InvalidWork(reason) if reason.contains("does not exist") => {
                 (vec!["no such item".into()], vec!["engram work ls".into()])
             }
@@ -1223,6 +1230,12 @@ impl AgentVerbs {
             }
             WorkCompleteResult::Refused(refusal) => {
                 let mut guidance = self.guidance(&after, "done", now);
+                if let Some(recovery) = &refusal.recovery {
+                    guidance
+                        .reminders
+                        .push(completion_recovery_reminder(recovery));
+                    guidance.next = vec![recovery.command.clone()];
+                }
                 for reminder in obligation_reminders(&refusal.obligation_page) {
                     if !guidance.reminders.contains(&reminder) {
                         guidance.reminders.push(reminder);
@@ -1231,7 +1244,9 @@ impl AgentVerbs {
                 if guidance.reminders.is_empty() {
                     guidance.reminders.push(refusal.remedy.clone());
                 }
-                guidance.next = vec![format!("engram work done {work_ref}")];
+                if refusal.recovery.is_none() {
+                    guidance.next = vec![format!("engram work done {work_ref}")];
+                }
                 (
                     vec![format!(
                         "not done {work_ref} \"{title}\": something is still owed"
@@ -1422,6 +1437,73 @@ impl AgentVerbs {
             view.status.work.lifecycle == WorkLifecycle::Open,
         );
         Guidance { reminders, next }
+    }
+}
+
+fn ambiguous_reference_guidance(
+    candidates: &[crate::WorkReferenceCandidate],
+    more: usize,
+) -> (Vec<String>, Vec<String>) {
+    let mut reminders = candidates
+        .iter()
+        .map(|candidate| {
+            format!(
+                "{} \"{}\" is {:?}; use its full id {}",
+                candidate.short_ref,
+                short(&candidate.title),
+                candidate.lifecycle,
+                candidate.work_id.0
+            )
+        })
+        .collect::<Vec<_>>();
+    if more > 0 {
+        reminders.push(format!(
+            "{more} additional ambiguous candidates were omitted"
+        ));
+    }
+    let next = candidates
+        .iter()
+        .map(|candidate| format!("engram work show {}", candidate.work_id.0))
+        .collect();
+    (reminders, next)
+}
+
+fn completion_recovery_reminder(recovery: &crate::WorkCompletionRecovery) -> String {
+    let item = &recovery.item;
+    match &recovery.cause {
+        crate::WorkCompletionRecoveryCause::LapsedClaim { expired_at } => format!(
+            "{} \"{}\" has a claim that lapsed at {expired_at}",
+            item.short_ref,
+            short(&item.title)
+        ),
+        crate::WorkCompletionRecoveryCause::OpenObligation {
+            obligation_id,
+            required_check,
+            ..
+        } => format!(
+            "{} \"{}\" still owes {required_check:?} for obligation {}",
+            item.short_ref,
+            short(&item.title),
+            obligation_id.0
+        ),
+        crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => format!(
+            "required child {} \"{}\" is {:?} without a completion seal or waiver",
+            item.short_ref,
+            short(&item.title),
+            item.lifecycle
+        ),
+        crate::WorkCompletionRecoveryCause::MissingContribution { participant } => format!(
+            "{} \"{}\" is missing the contribution or waiver for participant {}",
+            item.short_ref,
+            short(&item.title),
+            participant.0
+        ),
+        crate::WorkCompletionRecoveryCause::MissingAcceptance { criterion } => format!(
+            "{} \"{}\" is missing acceptance for \"{}\"",
+            item.short_ref,
+            short(&item.title),
+            short(criterion)
+        ),
     }
 }
 
@@ -2137,6 +2219,54 @@ mod tests {
             vec![String::from(
                 "engram work claim w-0123456789ab --recover \"explain why the lapsed claim is being recovered\""
             )]
+        );
+    }
+
+    #[test]
+    fn ambiguous_reference_guidance_names_candidates_and_uses_full_ids() {
+        let first = crate::WorkId::new();
+        let second = crate::WorkId::new();
+        let error = VerbError::at(
+            StoreError::WorkReferenceAmbiguous {
+                reference: "w-collision".into(),
+                candidates: vec![
+                    crate::WorkReferenceCandidate {
+                        work_id: first,
+                        short_ref: "w-collision".into(),
+                        title: "First candidate".into(),
+                        lifecycle: WorkLifecycle::Open,
+                    },
+                    crate::WorkReferenceCandidate {
+                        work_id: second,
+                        short_ref: "w-collision".into(),
+                        title: "Second candidate".into(),
+                        lifecycle: WorkLifecycle::Completed,
+                    },
+                ],
+                more: 3,
+            },
+            "w-collision",
+        );
+        let guidance = error.guidance();
+        assert_eq!(guidance.reminders.len(), 3);
+        assert!(guidance.reminders[0].contains("First candidate"));
+        assert!(guidance.reminders[1].contains("Second candidate"));
+        assert_eq!(
+            guidance.reminders[2],
+            "3 additional ambiguous candidates were omitted"
+        );
+        assert!(
+            error
+                .error
+                .to_string()
+                .contains("3 additional candidates omitted")
+        );
+        assert_eq!(
+            guidance.next,
+            vec![
+                format!("engram work show {}", first.0),
+                format!("engram work show {}", second.0),
+            ]
         );
     }
 

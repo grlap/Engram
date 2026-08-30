@@ -91,6 +91,10 @@ node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
+On Windows, use `pwsh -File scripts/test-rust.ps1` in place of
+`scripts/test-rust.sh`; it preserves the same ordinary and performance-test
+phases without the Unix-only file-descriptor-limit adjustment.
+
 Investigate every failure. Intermittence is a symptom to diagnose, not a
 reason to retry until green or quarantine a test.
 

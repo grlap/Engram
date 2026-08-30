@@ -3,7 +3,9 @@
 mod work;
 pub(crate) use work::WorkObligationRecord;
 
-pub(crate) use work::{StageWorkSessionDelivery, normalize_completion_acceptance_shape};
+pub(crate) use work::{
+    CompleteWorkStorageResult, StageWorkSessionDelivery, normalize_completion_acceptance_shape,
+};
 
 #[cfg(test)]
 pub(crate) use work::{
@@ -52,10 +54,19 @@ use crate::{
         TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput,
         TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent,
         TurnNextIntent, VerificationEvidence, VerificationEvidenceInput, VerificationKind,
-        VerificationResult, WorkAuthorityOperation, WorkAuthorityScope, WorkLease,
-        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
+        VerificationResult, WorkAuthorityOperation, WorkAuthorityScope,
+        WorkCompletionRecoveryCause, WorkLease, WorkLeaseDecision, WorkLeaseEvent,
+        WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkReferenceCandidate,
     },
     memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
+    schema::{
+        CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1, CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1,
+        CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION, CONTROL_POLICY_SCHEMA_VERSION_V1,
+        CONTROL_POLICY_STATE_SCHEMA_VERSION, LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION,
+        LEGACY_STOCK_CONTROL_POLICY_STATE_SCHEMA_VERSION,
+        LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION,
+        WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION,
+    },
 };
 
 #[derive(Serialize)]
@@ -339,6 +350,14 @@ pub enum StoreError {
     WorkNotFound(crate::domain::WorkId),
     #[error("local work input is invalid: {0}")]
     InvalidWork(String),
+    #[error(
+        "work reference {reference:?} is ambiguous; use a full work id for one of {candidates:?}; {more} additional candidates omitted"
+    )]
+    WorkReferenceAmbiguous {
+        reference: String,
+        candidates: Vec<WorkReferenceCandidate>,
+        more: usize,
+    },
     #[error("work projection contains invalid data: {0}")]
     InvalidWorkProjection(String),
     #[error(
@@ -373,11 +392,21 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         reason: String,
     },
+    #[error("completion for work {work:?} requires recovery: {cause:?}")]
+    WorkCompletionRecoveryRequired {
+        work: crate::domain::WorkId,
+        cause: WorkCompletionRecoveryCause,
+    },
     #[error("completion for work {work:?} has open work obligations")]
     OpenWorkObligations {
         work: crate::domain::WorkId,
         obligations: Vec<OpenWorkObligation>,
         omitted_count: usize,
+    },
+    #[error("{source}")]
+    WorkCompletionWithRecovery {
+        source: Box<StoreError>,
+        recovery: Box<crate::domain::WorkCompletionRecovery>,
     },
 }
 
@@ -500,12 +529,6 @@ const MAX_TYPED_EVIDENCE_REFS: usize = 64;
 const MAX_TYPED_EVIDENCE_REF_BYTES: usize = 1_024;
 const MAX_TASK_CHANGE_OBJECT_BYTES: usize = 64 * 1_024;
 const MAX_EXACT_CONTEXT_OMISSIONS: usize = 128;
-const CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 4;
-const LEGACY_REPLAYLESS_CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 3;
-const LEGACY_VERSIONED_CONTROL_POLICY_STATE_SCHEMA_VERSION: i64 = 2;
-const CONTROL_POLICY_SCHEMA_VERSION_V1: u16 = 1;
-const CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION_V1: u16 = 1;
-const CONTROL_POLICY_CONTROL_SCHEMA_VERSION_V1: u16 = 1;
 const BUILTIN_CONTROL_GRANT_TTL_SECONDS: i64 = 30;
 const CONTROL_POLICY_V1_MAX_GRANT_TTL_SECONDS: i64 = 300;
 const MAX_CONTROL_GRANT_TTL_SECONDS: i64 = CONTROL_POLICY_V1_MAX_GRANT_TTL_SECONDS;
@@ -515,8 +538,6 @@ const MAX_CONTROL_POLICY_AUTHORITY_BYTES: usize = 72 * 1_024;
 const MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES: usize = 96 * 1_024;
 const MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES: usize = 16 * 1_024;
 const MAX_CONTROL_POLICY_IDEMPOTENCY_KEY_BYTES: usize = 512;
-const CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION: u16 = 1;
-const WORK_LEASE_ACQUIRE_FINGERPRINT_SCHEMA_VERSION: u16 = 2;
 
 #[cfg(test)]
 thread_local! {
@@ -1834,7 +1855,7 @@ impl SqliteStore {
             },
         )?;
         match schema_version {
-            1 => {
+            LEGACY_STOCK_CONTROL_POLICY_STATE_SCHEMA_VERSION => {
                 let effects: Vec<EffectClass> = serde_json::from_str(&supported_effects_json)?;
                 if epoch != 1
                     || required_assurance != "turn_gated"
@@ -2046,7 +2067,9 @@ impl SqliteStore {
                 }
                 Ok(OpenMigrationNeed::NeedsWrite)
             }
-            Some(1) => Ok(OpenMigrationNeed::NeedsWrite),
+            Some(LEGACY_STOCK_CONTROL_POLICY_STATE_SCHEMA_VERSION) => {
+                Ok(OpenMigrationNeed::NeedsWrite)
+            }
             None if !policy_preexisted => Ok(OpenMigrationNeed::NeedsWrite),
             None => Err(StoreError::InvalidControlProjection(
                 "control policy singleton disappeared from an established store".into(),
@@ -2114,15 +2137,16 @@ impl SqliteStore {
                     "INSERT INTO control_policy_state (
                          singleton, schema_version, policy_epoch, required_assurance,
                          supported_effects_json, grant_ttl_seconds
-                     ) VALUES (1, 1, 1, ?1, ?2, ?3)",
+                     ) VALUES (1, ?1, 1, ?2, ?3, ?4)",
                     params![
+                        LEGACY_STOCK_CONTROL_POLICY_STATE_SCHEMA_VERSION,
                         assurance_name,
                         effects_json,
                         BUILTIN_CONTROL_GRANT_TTL_SECONDS,
                     ],
                 )?;
                 (
-                    1,
+                    LEGACY_STOCK_CONTROL_POLICY_STATE_SCHEMA_VERSION,
                     assurance_name,
                     serde_json::to_string(&Self::builtin_control_effects())?,
                     BUILTIN_CONTROL_GRANT_TTL_SECONDS,
@@ -2164,7 +2188,7 @@ impl SqliteStore {
             Self::verify_control_policy_history(connection)?;
             return Ok(());
         }
-        if schema_version != 1 {
+        if schema_version != LEGACY_STOCK_CONTROL_POLICY_STATE_SCHEMA_VERSION {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy state schema {schema_version} is not supported"
             )));
@@ -10821,6 +10845,77 @@ mod tests {
         fn description(&self) -> &'static str {
             "test sentinel redactor"
         }
+    }
+
+    #[test]
+    fn centralized_schema_versions_match_fresh_store_projections_and_policy_objects() {
+        let mut store = SqliteStore::open_in_memory().expect("fresh store");
+        let work_schema: i64 = store
+            .connection
+            .query_row(
+                "SELECT schema_version FROM work_schema_metadata WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("work schema projection");
+        let control_state_schema: i64 = store
+            .connection
+            .query_row(
+                "SELECT schema_version FROM control_policy_state WHERE singleton = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("control policy state projection");
+        let (_, policy, authority) =
+            SqliteStore::load_control_policy_head(&store.connection).expect("active policy");
+
+        assert_eq!(work_schema, crate::schema::WORK_SCHEMA_VERSION);
+        assert_eq!(
+            control_state_schema,
+            crate::schema::CONTROL_POLICY_STATE_SCHEMA_VERSION
+        );
+        assert_eq!(
+            policy.schema_version,
+            crate::schema::CONTROL_POLICY_SCHEMA_VERSION
+        );
+        assert_eq!(
+            policy.control_schema_version,
+            crate::schema::CONTROL_SCHEMA_VERSION
+        );
+        assert_eq!(
+            authority.schema_version,
+            crate::schema::CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION
+        );
+        let rule_set_hash = policy
+            .obligation_rule_set
+            .as_ref()
+            .expect("fresh policy binds an obligation rule set");
+        let rule_set = SqliteStore::load_obligation_rule_set_on(&store.connection, rule_set_hash)
+            .expect("live obligation rule set");
+        assert_eq!(
+            rule_set.schema_version,
+            crate::schema::OBLIGATION_RULE_SET_SCHEMA_VERSION
+        );
+
+        let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["schema-agent"]);
+        let receipt = store
+            .capture_note(
+                &note_request(
+                    task_id,
+                    "schema-agent",
+                    "Fact: live memory schema marker",
+                    "schema-memory",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("capture live memory");
+        let version: MemoryVersion = store
+            .get(&receipt.version)
+            .expect("load live memory")
+            .expect("memory object exists");
+        assert_eq!(version.schema_version, crate::schema::SCHEMA_VERSION);
     }
 
     #[test]

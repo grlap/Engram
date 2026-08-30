@@ -486,8 +486,9 @@ fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
     }
 }
 
-const fn store_error_code(error: &StoreError) -> &'static str {
+fn store_error_code(error: &StoreError) -> &'static str {
     match error {
+        StoreError::WorkCompletionWithRecovery { source, .. } => store_error_code(source),
         StoreError::InvalidControlSession(_) => "invalid_control_session",
         StoreError::HostPathIdentityUnresolved => "host_path_identity_unresolved",
         StoreError::ControlSessionNotBound(_) => "control_session_not_bound",
@@ -517,6 +518,8 @@ const fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
+        StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
+        StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
         | StoreError::NonCanonicalObject(_)
