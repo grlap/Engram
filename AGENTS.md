@@ -84,7 +84,19 @@ backup/portable/sync, and publication are independent optional capabilities.
 - Track this repository's implementation work in Beads until an explicit
   Engram dogfood cutover; never use Markdown TODO lists as a tracker.
 
-### Required Quality Gates
+### Pre-Release Discipline
+
+There is no released product, therefore there is no legacy: no
+compatibility shims, no old-version support, no migration chains for our
+own history. Every schema marker stays 1 until release; change schemas in
+place, guarded by one generic different-build refusal. No pinned hashes
+anywhere in source or tests — a check derives its reference at runtime
+from the same code it checks; the only hashes in the product are canonical
+object identity computed at runtime. The only stability contracts are live
+external consumers (today: TermAl's host protocol). Ceremony is the enemy;
+speed of change is the point.
+
+## Required Quality Gates
 
 Run these before handing off code changes:
 

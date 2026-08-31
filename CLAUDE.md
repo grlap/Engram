@@ -77,6 +77,18 @@ are independent optional capabilities.
   Codex and one Claude `/review-code` reviewer through TermAl in read-only mode.
 - `/review-code` is inspection-only and never edits, runs gates, or calls `bd`.
 
+## Pre-Release Discipline
+
+There is no released product, therefore there is no legacy: no
+compatibility shims, no old-version support, no migration chains for our
+own history. Every schema marker stays 1 until release; change schemas in
+place, guarded by one generic different-build refusal. No pinned hashes
+anywhere in source or tests — a check derives its reference at runtime
+from the same code it checks; the only hashes in the product are canonical
+object identity computed at runtime. The only stability contracts are live
+external consumers (today: TermAl's host protocol). Ceremony is the enemy;
+speed of change is the point.
+
 ## Required Quality Gates
 
 ```bash
