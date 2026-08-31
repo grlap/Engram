@@ -145,10 +145,13 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Work Tracking
 
-This repository tracks its work in Engram. The host sets `ENGRAM_HOME`,
-`ENGRAM_ACTOR_ID`, `ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT`
-(the grant value comes from a host-private file and is never typed or
-logged); you use only the words:
+This repository tracks its work in Engram. In a TermAl-hosted session the
+injected `engram` MCP tools (next, ls, show, add, claim, update, note,
+done, handoff, search) ARE the words — use them directly. The shell form
+below serves humans and hosts; it needs `engram` on PATH and the host
+environment (`ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, `ENGRAM_SESSION_ID`,
+`ENGRAM_WORK_AUTHORITY_GRANT` — the grant value comes from a host-private
+file and is never typed or logged):
 
 ```bash
 engram work next                  # what you hold, what is ready, what changed
