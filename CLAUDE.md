@@ -8,14 +8,11 @@ are independent optional capabilities.
 
 ## Authority and Git
 
-- Never commit, push, rebase, force-push, or run remote Beads sync without
-  explicit user permission. Read-only Git commands are allowed.
-- `bd init` created the initial Git commit automatically. It grants no ongoing
-  commit authority.
-- Implementers claim their own beads and leave completed work `in_progress`
-  with completion/validation comments. Greg owns final `bd close` actions.
-- Never place Beads ids in source comments, identifiers, docs prose, or
-  user-facing output.
+- Never commit, push, rebase, or force-push without explicit user
+  permission. Read-only Git commands are allowed.
+- Implementers claim their own Engram items and complete them with the
+  words; never place work refs in source comments, identifiers, docs
+  prose, or user-facing output.
 
 ## Architecture Boundaries
 
@@ -71,11 +68,12 @@ are independent optional capabilities.
 - Architecture and behavior live under `docs/`; feature briefs live under
   `docs/features/` and should be cross-linked when related.
 - Read `.agents/skills/engram-repo/SKILL.md` before changing core behavior.
-- This repository tracks its work in Engram (see Work Tracking below);
-  Beads is read-only history. Do not create Markdown TODO lists.
+- This repository tracks its work in Engram (see Work Tracking below).
+  Do not create Markdown TODO lists.
 - `/review-changes` runs gates in the writable parent and delegates exactly one
   Codex and one Claude `/review-code` reviewer through TermAl in read-only mode.
-- `/review-code` is inspection-only and never edits, runs gates, or calls `bd`.
+- `/review-code` is inspection-only and never edits, runs gates, or
+  mutates the tracker.
 
 ## Pre-Release Discipline
 
@@ -132,9 +130,8 @@ engram work done ["what was delivered"]
 - Claim before you change anything; note decisions and evidence once;
   `done` tells you what is still owed. Receipts carry `next:` commands —
   follow them.
-- Beads (`bd`) is read-only history and persistent memories
-  (`bd remember` / `bd memories`). Do not create, update, or close beads;
-  file follow-up work with `engram work add` instead.
+- File follow-up work with `engram work add`; findings and decisions go
+  into `note` on the item they concern.
 - Never place work refs in source comments, identifiers, or docs prose.
 
 At session end: run the quality gates if code changed, update your Engram

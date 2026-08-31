@@ -9,15 +9,11 @@ backup/portable/sync, and publication are independent optional capabilities.
 
 ### Authority and Git
 
-- Never commit, push, rebase, force-push, or run `bd dolt push/pull` without
-  explicit user permission. Read-only Git inspection is always allowed.
-- The initial `bd init` command created the repository's first Git commit
-  automatically. Do not treat that as standing commit authority.
-- Implementers claim their own beads. When implementation is complete, leave
-  the bead `in_progress` with a completion and validation comment; Greg owns
-  final `bd close` actions.
-- Beads ids belong in tracker metadata, commits, and review notes—not source
-  comments, identifiers, documentation prose, or user-facing output.
+- Never commit, push, rebase, or force-push without explicit user
+  permission. Read-only Git inspection is always allowed.
+- Implementers claim their own Engram items and complete them with the
+  words; never place work refs in source comments, identifiers,
+  documentation prose, or user-facing output.
 
 ### Architecture Boundaries
 
@@ -81,8 +77,8 @@ backup/portable/sync, and publication are independent optional capabilities.
   `docs/features/` and should be cross-linked when they overlap.
 - Use the project skill at `.agents/skills/engram-repo/SKILL.md` before changing
   Engram domain, persistence, publication, or review behavior.
-- Track this repository's implementation work in Beads until an explicit
-  Engram dogfood cutover; never use Markdown TODO lists as a tracker.
+- Track this repository's implementation work in Engram (see Work
+  Tracking below); never use Markdown TODO lists as a tracker.
 
 ### Pre-Release Discipline
 
@@ -126,10 +122,9 @@ acceptable flaky test.
   delegates exactly one Codex and one Claude `/review-code` reviewer through
   TermAl with `writePolicy: readOnly`.
 - `/review-code` is a read-only, non-nesting leaf. It does not edit files, run
-  quality gates, inspect Beads, or mutate the tracker.
+  quality gates, or mutate the tracker.
 
-This repository tracks its work in Engram (see Work Tracking below);
-Beads (`bd`) is read-only history and persistent memories.
+This repository tracks its work in Engram (see Work Tracking below).
 
 ## Non-Interactive Shell Commands
 
@@ -177,9 +172,8 @@ engram work done ["what was delivered"]
 - Claim before you change anything; note decisions and evidence once;
   `done` tells you what is still owed. Receipts carry `next:` commands —
   follow them.
-- Beads (`bd`) is read-only history and persistent memories
-  (`bd remember` / `bd memories`). Do not create, update, or close beads;
-  file follow-up work with `engram work add` instead.
+- File follow-up work with `engram work add`; findings and decisions go
+  into `note` on the item they concern.
 - Never place work refs in source comments, identifiers, or docs prose.
 
 At session end: run the quality gates if code changed, update your Engram
