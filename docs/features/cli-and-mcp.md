@@ -73,9 +73,24 @@ what is missing instead of closing anyway.
 
 ## Host integration
 
+Integration has two tiers, and a host picks per project:
+
+- **Base** — the tracker for agents: the `engram mcp` server injected into
+  every session of a declared project (the repository declares with its
+  tracked `.engram-project`; the host authorizes with one project grant
+  carried in the MCP child's environment), plus a start-of-session nudge
+  that runs `engram work next` on session start and after compaction and
+  injects its text as context. Any host that can register an MCP server
+  and run a hook can do this. It carried every benefit measured so far.
+- **Premium** — behavioral control: the host-private JSON-lines turn
+  channel below (bind, evaluate, begin, checkpoint), dispatch withheld
+  until a turn is granted, resource leases for writers, obligations before
+  completion. Opt-in per project, off by default, for hosts that need
+  enforcement rather than coordination.
+
 The agent-facing MCP interface is **advisory**. A model can omit an MCP call,
 so that surface alone cannot enforce synchronization, ownership, or
-finalization. A separate host-private JSON-lines channel implements the turn
+finalization. The separate host-private JSON-lines channel implements the turn
 lifecycle; grants are not exposed as tools with which the agent can authorize
 itself. Everything below is the host's and operator's business: the agent
 words above never require it.
