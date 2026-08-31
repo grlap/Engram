@@ -411,7 +411,7 @@ enum WorkCommand {
         /// Claim lifetime in seconds (default one hour).
         #[arg(long, value_name = "SECONDS")]
         ttl: Option<i64>,
-        /// Attributed reason for recovering a lapsed prior claim.
+        /// Attributed reason for taking over a different holder's lapsed claim.
         #[arg(long, value_name = "REASON")]
         recover: Option<String>,
     },

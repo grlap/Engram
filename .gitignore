@@ -1,6 +1,8 @@
 
-# Rust build output
+# Rust build output (target-verify is the isolated CARGO_TARGET_DIR used by
+# verification runs while live MCP processes hold target/debug binaries)
 /target/
+/target-verify/
 
 # Local Engram state. Exports intended for sharing must be written elsewhere.
 /.engram/

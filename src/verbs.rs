@@ -30,6 +30,7 @@ use crate::{
 
 const DEFAULT_LIMIT: u32 = 20;
 const MAX_TEXT_LINE_BYTES: usize = 96;
+const MAX_TEXT_NEXT_COMMANDS: usize = 4;
 /// How many change pages one `next` reads past pages that held only the
 /// actor's own actions.
 const MAX_NEXT_PAGES: usize = 8;
@@ -89,7 +90,7 @@ pub struct AddInput {
 pub struct ClaimInput {
     pub work_ref: String,
     pub ttl_seconds: Option<i64>,
-    /// Attributed reason for recovering a lapsed prior claim.
+    /// Attributed reason for taking over a different holder's lapsed claim.
     pub recover: Option<String>,
 }
 
@@ -199,8 +200,9 @@ impl Receipt {
         }
     }
 
-    /// Shell rendering: the receipt lines, then `reminders:` and `next:`.
-    /// Never contains object hashes, fences, or idempotency keys.
+    /// Shell rendering: the receipt lines, then `reminders:` and at most four
+    /// `next:` commands plus an explicit omission marker. Never contains
+    /// object hashes, fences, or idempotency keys.
     #[must_use]
     pub fn text(&self) -> String {
         let mut out = self.lines.join("\n");
@@ -216,9 +218,16 @@ impl Receipt {
         if self.next.is_empty() {
             out.push_str(" none");
         }
-        for command in &self.next {
+        for command in self.next.iter().take(MAX_TEXT_NEXT_COMMANDS) {
             out.push_str("\n  ");
             out.push_str(command);
+        }
+        if self.next.len() > MAX_TEXT_NEXT_COMMANDS {
+            let _ = write!(
+                &mut out,
+                "\n  (+{} more)",
+                self.next.len() - MAX_TEXT_NEXT_COMMANDS
+            );
         }
         out
     }
@@ -262,9 +271,7 @@ impl VerbError {
                     "claim lapsed at {}",
                     clock(*expired_at, Utc::now())
                 )],
-                vec![format!(
-                    "engram work claim {target} --recover \"explain why the lapsed claim is being recovered\""
-                )],
+                vec![format!("engram work claim {target}")],
             ),
             StoreError::WorkCompletionRefused { reason, .. } => {
                 let words = if reason.contains("at least one evidence")
@@ -302,6 +309,10 @@ impl VerbError {
             StoreError::InvalidWork(reason) if reason.contains("no focused work") => (
                 vec!["no item is selected; name one or claim one first".into()],
                 vec!["engram work next".into()],
+            ),
+            StoreError::InvalidWork(reason) if reason.starts_with("work is not ready:") => (
+                vec!["this item is not ready; inspect its blockers or deferral".into()],
+                vec![format!("engram work show {target}")],
             ),
             StoreError::InvalidWork(reason)
                 if reason.starts_with("work authority grant expired at") =>
@@ -484,25 +495,7 @@ impl AgentVerbs {
             not_delivered = changes_not_delivered(&more);
             pages += 1;
         }
-        if not_delivered > 0 && changes.is_empty() {
-            lines.push(format!(
-                "changes by others (none on this page; {not_delivered} more arrive with your next call):"
-            ));
-        } else if not_delivered > 0 {
-            lines.push(format!(
-                "changes by others ({} shown, {} more arrive with your next call):",
-                changes.len(),
-                not_delivered
-            ));
-        } else {
-            lines.push(format!(
-                "changes by others ({} since your last call):",
-                changes.len()
-            ));
-        }
-        for change in &changes {
-            lines.push(format!("  {change}"));
-        }
+        append_changes_lines(&mut lines, &changes, not_delivered);
         for omission in view
             .omissions
             .iter()
@@ -1432,6 +1425,29 @@ impl AgentVerbs {
     }
 }
 
+fn append_changes_lines(lines: &mut Vec<String>, changes: &[String], not_delivered: usize) {
+    if changes.is_empty() && not_delivered == 0 {
+        return;
+    }
+    if not_delivered > 0 && changes.is_empty() {
+        lines.push(format!(
+            "changes by others (none on this page; {not_delivered} more arrive with your next call):"
+        ));
+    } else if not_delivered > 0 {
+        lines.push(format!(
+            "changes by others ({} shown, {} more arrive with your next call):",
+            changes.len(),
+            not_delivered
+        ));
+    } else {
+        lines.push(format!(
+            "changes by others ({} since your last call):",
+            changes.len()
+        ));
+    }
+    lines.extend(changes.iter().map(|change| format!("  {change}")));
+}
+
 fn ambiguous_reference_guidance(
     candidates: &[crate::WorkReferenceCandidate],
     more: usize,
@@ -1463,11 +1479,6 @@ fn ambiguous_reference_guidance(
 fn completion_recovery_reminder(recovery: &crate::WorkCompletionRecovery) -> String {
     let item = &recovery.item;
     match &recovery.cause {
-        crate::WorkCompletionRecoveryCause::LapsedClaim { expired_at } => format!(
-            "{} \"{}\" has a claim that lapsed at {expired_at}",
-            item.short_ref,
-            short(&item.title)
-        ),
         crate::WorkCompletionRecoveryCause::OpenObligation {
             obligation_id,
             required_check,
@@ -2192,7 +2203,38 @@ mod tests {
     }
 
     #[test]
-    fn lapsed_claim_guidance_names_the_expiry_and_recovery_command() {
+    fn text_receipts_disclose_capped_next_commands_without_truncating_json() {
+        let commands = (1..=5)
+            .map(|number| format!("engram work show w-{number:012}"))
+            .collect::<Vec<_>>();
+        let receipt = Receipt::assemble(
+            vec!["ready".into()],
+            Guidance {
+                reminders: Vec::new(),
+                next: commands.clone(),
+            },
+            json!({}),
+            false,
+        );
+
+        let text = receipt.text();
+        for command in &commands[..MAX_TEXT_NEXT_COMMANDS] {
+            assert!(text.contains(command));
+        }
+        assert!(!text.contains(&commands[MAX_TEXT_NEXT_COMMANDS]));
+        assert!(text.contains("(+1 more)"));
+        assert_eq!(receipt.value["next"], json!(commands));
+    }
+
+    #[test]
+    fn empty_changes_section_is_omitted_from_text() {
+        let mut lines = vec!["ready w-0123456789ab".into()];
+        append_changes_lines(&mut lines, &[], 0);
+        assert_eq!(lines, vec!["ready w-0123456789ab"]);
+    }
+
+    #[test]
+    fn lapsed_holder_guidance_names_the_expiry_and_plain_retake_command() {
         let expired_at = Utc::now();
         let error = VerbError::at(
             StoreError::WorkClaimLapsed {
@@ -2208,10 +2250,41 @@ mod tests {
         );
         assert_eq!(
             guidance.next,
-            vec![String::from(
-                "engram work claim w-0123456789ab --recover \"explain why the lapsed claim is being recovered\""
-            )]
+            vec![String::from("engram work claim w-0123456789ab")]
         );
+    }
+
+    #[test]
+    fn missing_host_grant_guidance_names_the_host_action() {
+        let error = VerbError::at(
+            StoreError::InvalidWork(
+                "the host did not bind a work-authority grant to this service".into(),
+            ),
+            "w-0123456789ab",
+        );
+        let guidance = error.guidance();
+        assert_eq!(
+            guidance.reminders,
+            vec!["the host has not granted this session work authority"]
+        );
+        assert!(
+            guidance.next.is_empty(),
+            "the agent must not be given a command that cannot create host authority"
+        );
+    }
+
+    #[test]
+    fn not_ready_guidance_names_the_inspection_command() {
+        let error = VerbError::at(
+            StoreError::InvalidWork("work is not ready: Blocked".into()),
+            "w-0123456789ab",
+        );
+        let guidance = error.guidance();
+        assert_eq!(
+            guidance.reminders,
+            vec!["this item is not ready; inspect its blockers or deferral"]
+        );
+        assert_eq!(guidance.next, vec!["engram work show w-0123456789ab"]);
     }
 
     #[test]

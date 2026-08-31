@@ -523,7 +523,7 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "work_id": work,
             "expired_at_ms": expired_at.timestamp_millis(),
             "expired_at": expired_at.to_rfc3339(),
-            "remedy": "run claim REF --recover \"why the expired claim is safe to recover\" before mutating",
+            "remedy": "run claim REF before mutating",
         }),
         StoreError::WorkCompletionRefused { work, reason } => json!({
             "work_id": work,

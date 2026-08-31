@@ -1758,9 +1758,6 @@ pub struct WorkReferenceCandidate {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkCompletionRecoveryCause {
-    LapsedClaim {
-        expired_at: DateTime<Utc>,
-    },
     OpenObligation {
         obligation_id: WorkObligationId,
         definition: ObjectHash,

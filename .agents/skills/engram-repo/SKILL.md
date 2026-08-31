@@ -116,7 +116,7 @@ engram work next                  # what is ready, what you hold, what others ch
 engram work ls [--search TEXT] [--blocked] [--mine]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
-engram work claim REF [--recover "why"]   # you now hold it; later commands default to it
+engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..."]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]

@@ -13,7 +13,8 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const root = resolve(import.meta.dirname, "..");
-const binary = join(root, "target", "debug", "engram");
+const target = resolve(root, process.env.CARGO_TARGET_DIR || "target");
+const binary = join(target, "debug", "engram");
 
 const MAX_COMMANDS = 3;
 const MAX_FIELDS = 3;

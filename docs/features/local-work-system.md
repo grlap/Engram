@@ -161,8 +161,14 @@ These are deliberately different:
   nothing about whether the overall work item is complete.
 
 A successful note, update, evidence, checkpoint, or handoff by the current
-holder slides the work-claim expiry to one hour after that mutation; a lapsed
-claim still requires explicit recovery.
+holder slides the work-claim expiry to one hour after that mutation. Successful
+completion instead terminalizes the claim at the completion timestamp. A
+holder mutation on a lapsed claim is refused with one recovery command:
+`engram work claim <ref>`. When the work is ready, that ordinary claim command
+retakes the same holder's claim using the exact host-bound claim grant, advances
+the fence, preserves an active run, and needs no recovery reason. Every handoff
+offer expires no later than its source claim. Taking over from a different,
+unaccounted holder still requires attributed recovery.
 
 A session normally needs the work claim before an ordinary execution turn and
 the relevant resource lease immediately before mutation. Shared analysis may
@@ -308,8 +314,9 @@ revision and idempotency key.
   session may inspect or hold claims on multiple items under policy, but each
   ordinary turn grant binds exactly one focused, claimed work item. Parallel
   executors claim distinct child runs. Changing focus never releases a claim.
-- Claim handoff and recovery increment a monotonic claim fence. Old sessions
-  cannot complete or mutate after transfer even if their process resumes.
+- Claim handoff, same-holder retake, and foreign-holder recovery increment a
+  monotonic claim fence. Old sessions cannot complete or mutate after transfer
+  even if their process resumes.
 - Work created below a parent inherits its project, root, sensitivity floor,
   authority ceiling, non-waivable constraints, and publication restrictions.
   A child cannot relax its parent.
@@ -445,9 +452,10 @@ becomes the ambient focus as a side effect. Durable attempts bind both caller
 intent and the exact focused work/claim/handoff basis. A lost-response retry
 may replay a committed result, but an interrupted attempt must revalidate live
 authority and cannot follow a changed ambient focus into another work item.
-The retry-stable basis deliberately ignores claim expiry, claim revision, and
-the canonical work head because every resumed substep re-reads evidence and
-revalidates the live claim identity and fence inside its commit transaction.
+The retry-stable basis deliberately ignores only sliding claim expiry and
+claim revision. It retains the canonical work head and claim fence, which
+distinguish work and claim epochs; every resumed substep also re-reads evidence
+and revalidates the live claim inside its commit transaction.
 
 `work_focus` is the explicit drill-down surface. It carries an exact history
 event count and only the newest bounded event summaries, plus body-free memory
@@ -527,11 +535,11 @@ from that immutable basis.
 
 Every recoverable completion refusal also carries a typed `recovery` object.
 It identifies the exact cause, affected item's full id/short ref/title/current
-state, and one `command` string. Shipped causes cover a lapsed claim, the
-first exact open obligation, an unsealed required child, an unaccounted root
-participant, and the first missing acceptance criterion. The singular command
+state, and one `command` string. Shipped causes cover the first exact open
+obligation, an unsealed required child, an unaccounted root participant, and
+the first missing acceptance criterion. The singular command
 keeps CLI and MCP recovery deterministic while the surrounding typed cause
-retains the obligation, child, participant, criterion, or expiry identity.
+retains the obligation, child, participant, or criterion identity.
 That object is frozen and persisted inside the transaction that decides the
 refusal, so a lost-response retry cannot combine its cause with a newer item or
 command. Missing-contribution recovery hands the root to the named participant;

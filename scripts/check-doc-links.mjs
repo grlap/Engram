@@ -9,7 +9,12 @@ function markdownFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) {
-      if ([".git", ".beads", "target", "node_modules"].includes(entry.name)) return [];
+      if (
+        [".git", ".beads", "target", "target-verify", "node_modules"].includes(
+          entry.name,
+        )
+      )
+        return [];
       return markdownFiles(path);
     }
     return entry.isFile() && extname(entry.name) === ".md" ? [path] : [];

@@ -24,7 +24,7 @@ engram work next                  # what is ready, what you hold, what others ch
 engram work ls [--search TEXT] [--blocked] [--mine]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
-engram work claim REF [--recover "why"]   # you now hold it; later commands default to it
+engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..."]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
@@ -45,7 +45,9 @@ Rules that matter:
   `done` again.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Nothing asks you to copy hashes, fences, or
-  keys; if you see one, it is a bug.
+  keys; if you see one, it is a bug. JSON retains the complete command list;
+  the text renderer shows at most four and prints `(+N more)` when it omits
+  any.
 - Lost response? Run the same command again. Identical calls are safe.
 
 The same nine words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
@@ -395,8 +397,13 @@ handoff success responses contain only a compact receipt, one bounded
 `obligation_page`, generic readiness `obligations`, and `allowed_next`;
 their size does not grow with item history. A successful holder note, update,
 evidence, checkpoint, or handoff renews the claim for the one-hour default TTL;
-a lapsed claim still requires the explicit recovery path. Each entry names the
-exact tool and tagged operation. For example,
+successful completion terminalizes it. A holder mutation on a lapsed claim is
+refused with exactly one next command: `engram work claim <ref>`. Once the work
+is ready, that ordinary claim command retakes the same holder's claim under the
+exact host-bound grant, advances the fence, preserves an active run, and needs
+no recovery reason. Every handoff offer expires no later than its source claim.
+A different prior holder still requires the explicit recovery path. Each entry
+names the exact tool and tagged operation. For example,
 `allowed_next: ["work_update:claim(recovery_reason_required)"]` directs the
 agent to submit the `work_update` claim variant with an attributed
 `recovery_reason` and a host grant that includes `claim_recovery`; ordinary
@@ -438,9 +445,9 @@ checkpoint timestamps for exact replay, while missing substeps use current
 time and recheck the live claim.
 
 Recoverable completion refusals add `recovery { cause, item, command }` to the
-receipt. `cause` is a tagged value for `lapsed_claim`,
-`open_obligation`, `required_child_unsealed`, `missing_contribution`, or
-`missing_acceptance`, including the exact blocker identity. `item` carries the
+receipt. `cause` is a tagged value for `open_obligation`,
+`required_child_unsealed`, `missing_contribution`, or `missing_acceptance`,
+including the exact blocker identity. `item` carries the
 affected full id, short ref, title, and lifecycle-backed state. `command` is
 deliberately a single next command, and the `done` verb exposes exactly that
 one entry in its `next` list. The recovery snapshot commits in the same SQLite

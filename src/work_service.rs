@@ -152,9 +152,9 @@ impl WorkProtocolBasis {
     fn retry_stable(&self) -> Self {
         let mut stable = self.clone();
         if let Some(claim) = stable.claim.as_mut() {
-            // Holder activity slides these two projection fields without
-            // changing claim identity or authority. They must not turn an
-            // exact lost-response retry into a different protocol intent.
+            // Holder activity slides these projection fields without changing
+            // claim identity or authority. The fence remains part of retry
+            // identity because it distinguishes claim epochs.
             claim.expires_at = DateTime::<Utc>::UNIX_EPOCH;
             claim.revision = 0;
         }
@@ -2019,47 +2019,8 @@ impl LocalWorkService {
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("completion attempt has no bound focused work".into())
         })?;
-        let claim = match self.live_protocol_claim(&basis, &work, now) {
-            Ok(claim) => claim,
-            Err(StoreError::WorkClaimLapsed { expired_at, .. }) => {
-                let recovery = store.persist_preflight_completion_recovery(
-                    work.work_id,
-                    basis
-                        .claim
-                        .as_ref()
-                        .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?
-                        .run_id,
-                    work.revision,
-                    &self.session_id,
-                    basis
-                        .claim
-                        .as_ref()
-                        .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?
-                        .claim_id,
-                    basis
-                        .claim
-                        .as_ref()
-                        .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?
-                        .fence,
-                    &WorkCompletionRecoveryCause::LapsedClaim { expired_at },
-                    &scoped_key,
-                    now,
-                )?;
-                let obligation_page =
-                    work_completion_recovery_page(&store, work.work_id, &recovery)?;
-                let result = completion_recovery_result(work.work_id, recovery, obligation_page);
-                store.finish_work_protocol_attempt(
-                    &self.project_id,
-                    &self.session_id,
-                    "work_complete",
-                    &raw_key,
-                    &result,
-                )?;
-                return Ok(result);
-            }
-            Err(error) => return Err(error),
-        };
         let actor = self.actor("work_complete", "complete ambient local work");
+        let claim = self.live_protocol_claim(&basis, &work, now)?;
         let evidence_basis = Self::completion_evidence_basis(&store, &claim, &supplied_evidence)?;
         let acceptance = match Self::prevalidate_completion_acceptance(
             &work,
@@ -2504,7 +2465,6 @@ impl LocalWorkService {
                 reason,
                 idempotency_key: _,
             } => {
-                let claim = self.live_protocol_claim(basis, work, now)?;
                 let offer = unique_offer(
                     basis
                         .handoffs
@@ -2517,6 +2477,7 @@ impl LocalWorkService {
                         .cloned(),
                     "outgoing",
                 )?;
+                let claim = self.live_protocol_claim(basis, work, now)?;
                 let offer = store.cancel_work_handoff(
                     &CancelWorkHandoffRequest {
                         work_id: work.work_id,
@@ -3890,7 +3851,6 @@ fn completion_recovery_result(
     obligation_page: WorkObligationPage,
 ) -> WorkCompleteResult {
     let code = match &recovery.cause {
-        WorkCompletionRecoveryCause::LapsedClaim { .. } => "lapsed_claim",
         WorkCompletionRecoveryCause::OpenObligation { .. } => "open_work_obligations",
         WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => "required_child_unsealed",
         WorkCompletionRecoveryCause::MissingContribution { .. } => "missing_contribution",
@@ -4650,18 +4610,106 @@ struct AllowedNextContext<'a> {
     completion_preflight_ready: bool,
 }
 
-fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<String> {
+fn append_holder_execution_actions(
+    allowed: &mut Vec<String>,
+    status: &ReadyWork,
+    authority_operations: &[WorkAuthorityOperation],
+    completion_capture_ready: bool,
+    completion_preflight_ready: bool,
+    handoff_action: &str,
+) {
+    allowed.extend([
+        "work_update:checkpoint".into(),
+        "work_update:evidence".into(),
+        "work_update:release".into(),
+        handoff_action.into(),
+    ]);
+    let can_drain = authority_operations.contains(&WorkAuthorityOperation::CompletionDrain);
+    let can_complete_root = status.work.work_id != status.work.root_id
+        || authority_operations.contains(&WorkAuthorityOperation::RootComplete);
+    if can_drain && can_complete_root && (completion_capture_ready || completion_preflight_ready) {
+        allowed.push("work_complete".into());
+    }
+}
+
+fn append_claim_actions(
+    allowed: &mut Vec<String>,
+    status: &ReadyWork,
+    context: AllowedNextContext<'_>,
+) {
     let AllowedNextContext {
         claim,
         handoffs,
         session,
         now,
         authority_operations,
-        can_waive_required_child,
         claim_recovery_required,
         completion_capture_ready,
         completion_preflight_ready,
+        ..
     } = context;
+    match claim {
+        Some(claim)
+            if claim.state == WorkClaimState::Active
+                && claim.holder == *session
+                && claim.expires_at > now =>
+        {
+            let outgoing_offer = handoffs.iter().any(|offer| {
+                offer.state == WorkHandoffState::Offered
+                    && offer.from == *session
+                    && offer.expires_at > now
+            });
+            append_holder_execution_actions(
+                allowed,
+                status,
+                authority_operations,
+                completion_capture_ready,
+                completion_preflight_ready,
+                if outgoing_offer {
+                    "work_handoff:cancel"
+                } else {
+                    "work_handoff:offer"
+                },
+            );
+        }
+        Some(claim)
+            if claim.state == WorkClaimState::Active
+                && claim.holder == *session
+                && claim.expires_at <= now
+                && status.availability == WorkAvailability::Ready
+                && authority_operations.contains(&WorkAuthorityOperation::Claim) =>
+        {
+            allowed.push("work_update:claim".into());
+        }
+        Some(claim)
+            if claim.state == WorkClaimState::Active
+                && claim.holder == *session
+                && claim.expires_at <= now => {}
+        Some(claim)
+            if claim.state == WorkClaimState::Active
+                && claim.holder != *session
+                && claim.expires_at > now => {}
+        _ if authority_operations.contains(&WorkAuthorityOperation::Claim) => {
+            if claim_recovery_required {
+                if authority_operations.contains(&WorkAuthorityOperation::ClaimRecovery) {
+                    allowed.push("work_update:claim(recovery_reason_required)".into());
+                }
+            } else {
+                allowed.push("work_update:claim".into());
+            }
+        }
+        _ => {}
+    }
+    if handoffs.iter().any(|offer| {
+        offer.state == WorkHandoffState::Offered && offer.to == *session && offer.expires_at > now
+    }) && authority_operations.contains(&WorkAuthorityOperation::Claim)
+    {
+        allowed.push("work_handoff:accept".into());
+    }
+}
+
+fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<String> {
+    let authority_operations = context.authority_operations;
     let mut allowed = vec!["work_focus".into()];
     if status.work.lifecycle == WorkLifecycle::Completed {
         if authority_operations.contains(&WorkAuthorityOperation::Reopen) {
@@ -4685,61 +4733,10 @@ fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<Stri
     if authority_operations.contains(&WorkAuthorityOperation::Dispose) {
         allowed.extend(["work_update:cancel".into(), "work_update:supersede".into()]);
     }
-    if can_waive_required_child {
+    if context.can_waive_required_child {
         allowed.push("work_update:waive_required_child".into());
     }
-    match claim {
-        Some(claim)
-            if claim.state == WorkClaimState::Active
-                && claim.holder == *session
-                && claim.expires_at > now =>
-        {
-            allowed.extend([
-                "work_update:checkpoint".into(),
-                "work_update:evidence".into(),
-                "work_update:release".into(),
-            ]);
-            let outgoing_offer = handoffs.iter().any(|offer| {
-                offer.state == WorkHandoffState::Offered
-                    && offer.from == *session
-                    && offer.expires_at > now
-            });
-            allowed.push(if outgoing_offer {
-                "work_handoff:cancel".into()
-            } else {
-                "work_handoff:offer".into()
-            });
-            let can_drain = authority_operations.contains(&WorkAuthorityOperation::CompletionDrain);
-            let can_complete_root = status.work.work_id != status.work.root_id
-                || authority_operations.contains(&WorkAuthorityOperation::RootComplete);
-            if can_drain
-                && can_complete_root
-                && (completion_capture_ready || completion_preflight_ready)
-            {
-                allowed.push("work_complete".into());
-            }
-        }
-        Some(claim)
-            if claim.state == WorkClaimState::Active
-                && claim.holder != *session
-                && claim.expires_at > now => {}
-        _ if authority_operations.contains(&WorkAuthorityOperation::Claim) => {
-            if claim_recovery_required {
-                if authority_operations.contains(&WorkAuthorityOperation::ClaimRecovery) {
-                    allowed.push("work_update:claim(recovery_reason_required)".into());
-                }
-            } else {
-                allowed.push("work_update:claim".into());
-            }
-        }
-        _ => {}
-    }
-    if handoffs.iter().any(|offer| {
-        offer.state == WorkHandoffState::Offered && offer.to == *session && offer.expires_at > now
-    }) && authority_operations.contains(&WorkAuthorityOperation::Claim)
-    {
-        allowed.push("work_handoff:accept".into());
-    }
+    append_claim_actions(&mut allowed, status, context);
     allowed.sort();
     allowed.dedup();
     allowed
@@ -6483,7 +6480,7 @@ mod tests {
     }
 
     #[test]
-    fn completion_lapsed_claim_refusal_names_item_and_one_recovery_command() {
+    fn completion_on_a_lapsed_claim_refuses_without_retaking() {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completion-lapsed-claim".into());
@@ -6517,76 +6514,6 @@ mod tests {
             )
             .expect("claim");
 
-        let result = service
-            .work_complete(
-                WorkCompleteInput {
-                    capture: Some(WorkCompletionCaptureInput {
-                        summary: "delivered".into(),
-                        refs: Vec::new(),
-                    }),
-                    evidence: Vec::new(),
-                    acceptance: None,
-                    note: None,
-                    idempotency_key: "lapsed-completion".into(),
-                },
-                at(3),
-            )
-            .expect("lapsed claim is a typed completion refusal");
-        let WorkCompleteResult::Refused(refusal) = result else {
-            panic!("lapsed claim must not complete work");
-        };
-        assert_eq!(refusal.code, "lapsed_claim");
-        let recovery = refusal.recovery;
-        assert!(matches!(
-            recovery.cause,
-            WorkCompletionRecoveryCause::LapsedClaim { expired_at } if expired_at == at(2)
-        ));
-        assert_eq!(recovery.item.work_id, work.work_id);
-        assert_eq!(recovery.item.lifecycle, WorkLifecycle::Open);
-        assert_eq!(
-            recovery.command,
-            format!(
-                "engram work claim {} --recover \"resume after lapsed claim\"",
-                work.short_ref
-            )
-        );
-    }
-
-    #[test]
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the crash-window regression explicitly constructs the pending wrapper and committed recovery substep"
-    )]
-    fn completion_recovery_replays_the_deciding_snapshot_after_claim_state_changes() {
-        let directory = tempdir().expect("temp directory");
-        let database = directory.path().join("engram.sqlite3");
-        let project = ProjectId("completion-atomic-recovery".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
-        let service = LocalWorkService::new(
-            database,
-            project,
-            "agent".into(),
-            SessionId("completion-atomic-session".into()),
-            Some("protocol-test".into()),
-            Some(grant),
-        );
-        let work = match service
-            .work_propose(root_input("Atomic recovery", "atomic-recovery-root"), at(0))
-            .expect("root")
-        {
-            WorkProposeResult::Root { work, .. } => work,
-            WorkProposeResult::Decomposition(_) => panic!("expected root"),
-        };
-        service
-            .work_update(
-                WorkUpdateInput::Claim {
-                    ttl_seconds: Some(1),
-                    recovery_reason: None,
-                    idempotency_key: "atomic-recovery-claim".into(),
-                },
-                at(1),
-            )
-            .expect("claim");
         let input = WorkCompleteInput {
             capture: Some(WorkCompletionCaptureInput {
                 summary: "delivered".into(),
@@ -6595,77 +6522,316 @@ mod tests {
             evidence: Vec::new(),
             acceptance: None,
             note: None,
-            idempotency_key: "atomic-recovery-complete".into(),
+            idempotency_key: "lapsed-completion".into(),
         };
+        let store = service.store().expect("store before refusal");
+        let claim = store
+            .current_work_claim(work.work_id)
+            .expect("claim projection")
+            .expect("lapsed claim");
+        let event_count = store
+            .work_event_tail(work.work_id, 64)
+            .expect("events")
+            .len();
+        drop(store);
 
-        let frozen = {
-            let mut store = service.store().expect("store");
-            let basis = service
-                .protocol_basis(&store, true, false, None, at(3))
-                .expect("completion basis");
-            let intent = service.protocol_intent(&input);
-            let raw_key = service
-                .effective_idempotency_key(
-                    &input.idempotency_key,
-                    "work_complete",
-                    &basis,
-                    &intent,
-                    at(3),
-                )
-                .expect("raw key");
+        assert!(matches!(
+            service.work_complete(input, at(3)),
+            Err(StoreError::WorkClaimLapsed { work: refused, .. }) if refused == work.work_id
+        ));
+        let store = service.store().expect("store after refusal");
+        assert_eq!(
             store
-                .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
-                    project_id: &service.project_id,
-                    session_id: &service.session_id,
-                    operation: "work_complete",
-                    idempotency_key: &raw_key,
-                    intent: &intent,
-                    basis: &basis,
-                    now: at(3),
-                })
-                .expect("durable pending protocol attempt");
-            let scoped_key = service
-                .core_operation_key("work_complete", &raw_key, "complete_work")
-                .expect("scoped key");
+                .current_work_claim(work.work_id)
+                .expect("claim projection after refusal"),
+            Some(claim),
+            "a lapsed completion refusal must not renew or retake the claim"
+        );
+        assert_eq!(
             store
-                .persist_preflight_completion_recovery(
-                    work.work_id,
-                    work.active_run_id.expect("active run"),
-                    work.revision,
-                    &service.session_id,
-                    basis.claim.as_ref().expect("claim basis").claim_id,
-                    basis.claim.as_ref().expect("claim basis").fence,
-                    &WorkCompletionRecoveryCause::LapsedClaim { expired_at: at(2) },
-                    &scoped_key,
-                    at(3),
-                )
-                .expect("freeze recovery in deciding transaction")
+                .work_event_tail(work.work_id, 64)
+                .expect("events after refusal")
+                .len(),
+            event_count,
+            "a lapsed completion refusal must not append a claim event"
+        );
+    }
+
+    #[test]
+    fn completed_explicit_update_replays_after_expiry_without_retaking() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("completed-update-after-expiry".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("completed-update-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(
+                root_input("Completed update replay", "completed-update-root"),
+                at(0),
+            )
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
         };
-
         service
             .work_update(
                 WorkUpdateInput::Claim {
-                    ttl_seconds: Some(300),
-                    recovery_reason: Some("resume after lapsed claim".into()),
-                    idempotency_key: "atomic-recovery-reclaim".into(),
+                    ttl_seconds: Some(60),
+                    recovery_reason: None,
+                    idempotency_key: "completed-update-claim".into(),
                 },
-                at(4),
+                at(1),
             )
-            .expect("claim state changes after frozen recovery");
+            .expect("claim");
+        let input = WorkUpdateInput::Checkpoint {
+            summary: "checkpoint once".into(),
+            evidence: Some(Vec::new()),
+            idempotency_key: "completed-update-key".into(),
+        };
+        let completed = service
+            .work_update(input.clone(), at(2))
+            .expect("checkpoint");
+        let store = service.store().expect("store after checkpoint");
+        let claim = store
+            .current_work_claim(work.work_id)
+            .expect("claim projection")
+            .expect("live claim");
+        let event_count = store
+            .work_event_tail(work.work_id, 64)
+            .expect("events")
+            .len();
+        drop(store);
+
         let replay = service
-            .work_complete(input.clone(), at(5))
-            .expect("pending wrapper replays frozen recovery");
-        let WorkCompleteResult::Refused(refusal) = replay else {
-            panic!("replay must retain the prior refusal");
+            .work_update(input, at(4_000))
+            .expect("completed explicit key replays after claim expiry");
+        assert_eq!(
+            serde_json::to_value(replay).expect("replay JSON"),
+            serde_json::to_value(completed).expect("completed JSON")
+        );
+        let store = service.store().expect("store after replay");
+        assert_eq!(
+            store
+                .current_work_claim(work.work_id)
+                .expect("claim projection")
+                .expect("retained claim"),
+            claim,
+            "a completed replay must not advance or renew claim authority"
+        );
+        assert_eq!(
+            store
+                .work_event_tail(work.work_id, 64)
+                .expect("events after replay")
+                .len(),
+            event_count,
+            "a completed replay must not append a retake event"
+        );
+    }
+
+    #[test]
+    fn outgoing_handoff_expires_no_later_than_its_source_claim() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("lapsed-cancel".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("lapsed-cancel-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(root_input("Lapsed cancel", "lapsed-cancel-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
         };
-        assert_eq!(refusal.recovery, frozen);
-        let core_replay = service
-            .work_complete_on(None, input, at(6))
-            .expect("core completion replays the same typed refusal");
-        let WorkCompleteResult::Refused(core_refusal) = core_replay else {
-            panic!("core completion must retain the refusal");
-        };
-        assert_eq!(core_refusal.recovery, frozen);
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(60),
+                    recovery_reason: None,
+                    idempotency_key: "lapsed-cancel-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+        service
+            .work_handoff(
+                WorkHandoffInput::Offer {
+                    to: "successor".into(),
+                    ttl_seconds: Some(7_200),
+                    checkpoint_summary: "handoff is bounded by claim expiry".into(),
+                    idempotency_key: "lapsed-cancel-offer".into(),
+                },
+                at(2),
+            )
+            .expect("offer");
+        let store = service.store().expect("store after offer");
+        let claim = store
+            .current_work_claim(work.work_id)
+            .expect("claim projection")
+            .expect("offering claim");
+        let offer = store
+            .work_handoff_offers(work.work_id)
+            .expect("handoffs")
+            .into_iter()
+            .find(|offer| offer.state == WorkHandoffState::Offered)
+            .expect("stored offer");
+        assert_eq!(
+            offer.expires_at, claim.expires_at,
+            "an outgoing offer cannot outlive its source claim"
+        );
+        let event_count = store
+            .work_event_tail(work.work_id, 64)
+            .expect("events")
+            .len();
+        drop(store);
+
+        let focus = service
+            .work_focus(&work.short_ref, at(4_000))
+            .expect("focus after claim and offer expiry");
+        assert!(!focus.allowed_next.contains(&"work_handoff:cancel".into()));
+        let refused = service
+            .work_handoff(
+                WorkHandoffInput::Cancel {
+                    reason: "cancel after lapse".into(),
+                    idempotency_key: "lapsed-cancel-attempt".into(),
+                },
+                at(4_000),
+            )
+            .expect_err("expired offer is not cancellable");
+        assert!(matches!(
+            &refused,
+            StoreError::InvalidWork(reason)
+                if reason == "ambient work has no live outgoing handoff offer"
+        ));
+        let store = service.store().expect("store after refusal");
+        assert_eq!(
+            store
+                .current_work_claim(work.work_id)
+                .expect("claim projection")
+                .expect("retained claim"),
+            claim
+        );
+        assert_eq!(
+            store
+                .work_event_tail(work.work_id, 64)
+                .expect("events after refusal")
+                .len(),
+            event_count,
+            "cancel refusal must not append a retake event"
+        );
+    }
+
+    fn assert_lapsed_completion_refuses_without_mutation(
+        service: &LocalWorkService,
+        work: &WorkItemSummary,
+        input: &WorkCompleteInput,
+        now: DateTime<Utc>,
+    ) {
+        let store = service.store().expect("store before refusal");
+        let claim = store
+            .current_work_claim(work.work_id)
+            .expect("claim projection")
+            .expect("lapsed claim");
+        let events = store
+            .work_event_tail(work.work_id, 64)
+            .expect("events before refusal")
+            .len();
+        let evidence = store
+            .work_run_evidence(claim.run_id)
+            .expect("evidence before refusal");
+        drop(store);
+
+        assert!(matches!(
+            service.work_complete(input.clone(), now),
+            Err(StoreError::WorkClaimLapsed { work: refused, .. }) if refused == work.work_id
+        ));
+        let store = service.store().expect("store after refusal");
+        assert_eq!(
+            store
+                .current_work_claim(work.work_id)
+                .expect("claim after refusal"),
+            Some(claim.clone())
+        );
+        assert_eq!(
+            store
+                .work_event_tail(work.work_id, 64)
+                .expect("events after refusal")
+                .len(),
+            events
+        );
+        assert_eq!(
+            store
+                .work_run_evidence(claim.run_id)
+                .expect("evidence after refusal"),
+            evidence
+        );
+    }
+
+    #[test]
+    fn lapsed_completion_refuses_before_capture_for_explicit_and_derived_keys() {
+        for (case, caller_key) in [("explicit", "lapsed-explicit"), ("derived", "")] {
+            let directory = tempdir().expect("temp directory");
+            let database = directory.path().join("engram.sqlite3");
+            let project = ProjectId(format!("completion-lapsed-{case}"));
+            let grant = install_protocol_grant(&database, &project, "agent");
+            let service = LocalWorkService::new(
+                database,
+                project,
+                "agent".into(),
+                SessionId(format!("completion-lapsed-{case}-session")),
+                Some("protocol-test".into()),
+                Some(grant),
+            );
+            let work = match service
+                .work_propose(
+                    root_input(
+                        &format!("Lapsed completion {case}"),
+                        &format!("lapsed-completion-{case}-root"),
+                    ),
+                    at(0),
+                )
+                .expect("root")
+            {
+                WorkProposeResult::Root { work, .. } => work,
+                WorkProposeResult::Decomposition(_) => panic!("expected root"),
+            };
+            service
+                .work_update(
+                    WorkUpdateInput::Claim {
+                        ttl_seconds: Some(1),
+                        recovery_reason: None,
+                        idempotency_key: format!("lapsed-completion-{case}-claim"),
+                    },
+                    at(1),
+                )
+                .expect("claim");
+            let input = WorkCompleteInput {
+                capture: Some(WorkCompletionCaptureInput {
+                    summary: "delivered once".into(),
+                    refs: Vec::new(),
+                }),
+                evidence: Vec::new(),
+                acceptance: None,
+                note: None,
+                idempotency_key: caller_key.into(),
+            };
+
+            assert_lapsed_completion_refuses_without_mutation(&service, &work, &input, at(3));
+        }
     }
 
     #[test]
@@ -8782,6 +8948,95 @@ mod tests {
                 at(4),
             )
             .expect("typed recovery guidance maps to an executable claim");
+    }
+
+    #[test]
+    fn allowed_next_advertises_only_plain_claim_for_a_ready_lapsed_holder() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("retake-readiness-guidance".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("retake-readiness-session".into()),
+            Some("protocol-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(
+                root_input(
+                    "Retake readiness guidance",
+                    "retake-readiness-guidance-root",
+                ),
+                at(0),
+            )
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(1),
+                    recovery_reason: None,
+                    idempotency_key: "retake-readiness-guidance-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+        let store = service.store().expect("store");
+        let guidance = service
+            .work_guidance(&store, work.work_id, at(3))
+            .expect("lapsed holder guidance basis");
+        let claim = guidance.claim.as_ref().expect("lapsed holder claim");
+        let authority_operations = [
+            WorkAuthorityOperation::Claim,
+            WorkAuthorityOperation::CompletionDrain,
+            WorkAuthorityOperation::RootComplete,
+        ];
+        let ready = allowed_next(
+            &guidance.status,
+            AllowedNextContext {
+                claim: Some(claim),
+                handoffs: &[],
+                session: &service.session_id,
+                now: at(3),
+                authority_operations: &authority_operations,
+                can_waive_required_child: false,
+                claim_recovery_required: false,
+                completion_capture_ready: true,
+                completion_preflight_ready: true,
+            },
+        );
+        assert_eq!(
+            ready,
+            vec![
+                String::from("work_focus"),
+                String::from("work_update:claim")
+            ]
+        );
+        for availability in [WorkAvailability::Blocked, WorkAvailability::Deferred] {
+            let mut status = guidance.status.clone();
+            status.availability = availability;
+            let next = allowed_next(
+                &status,
+                AllowedNextContext {
+                    claim: Some(claim),
+                    handoffs: &[],
+                    session: &service.session_id,
+                    now: at(3),
+                    authority_operations: &authority_operations,
+                    can_waive_required_child: false,
+                    claim_recovery_required: false,
+                    completion_capture_ready: true,
+                    completion_preflight_ready: true,
+                },
+            );
+            assert_eq!(next, vec![String::from("work_focus")]);
+        }
     }
 
     #[test]
