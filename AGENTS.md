@@ -116,6 +116,21 @@ After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
 acceptable flaky test.
 
+A failed gate is an investigation, never a stop. For every failing test
+or check, classify the cause and act in the same session:
+
+- **Test or environment defect** (wrong assertion, stale fixture, host
+  contention, missing prerequisite): fix it in the current changeset and
+  rerun the gates.
+- **Product defect**: file one Engram item per defect with the failing
+  test named as the acceptance criterion (`engram work add "…" --accept
+  "<test> passes" --label bug --under <current item>`), mark the current
+  item blocked on it if landing depends on it, and fix it now when it is in
+  scope. Never delete, skip, or loosen the test to pass.
+
+Report the classification for every failure before asking for a decision;
+"the suite failed" alone is not a report.
+
 ### Review Cadence
 
 - `/review-changes` runs parent-owned quality gates, freezes the worktree, and

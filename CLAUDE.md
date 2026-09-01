@@ -108,6 +108,21 @@ phases without the Unix-only file-descriptor-limit adjustment.
 Investigate every failure. Intermittence is a symptom to diagnose, not a
 reason to retry until green or quarantine a test.
 
+A failed gate is an investigation, never a stop. For every failing test
+or check, classify the cause and act in the same session:
+
+- **Test or environment defect** (wrong assertion, stale fixture, host
+  contention, missing prerequisite): fix it in the current changeset and
+  rerun the gates.
+- **Product defect**: file one Engram item per defect with the failing
+  test named as the acceptance criterion (`engram work add "…" --accept
+  "<test> passes" --label bug --under <current item>`), mark the current
+  item blocked on it if landing depends on it, and fix it now when it is in
+  scope. Never delete, skip, or loosen the test to pass.
+
+Report the classification for every failure before asking for a decision;
+"the suite failed" alone is not a report.
+
 ## Work Tracking
 
 This repository tracks its work in Engram. In a TermAl-hosted session the

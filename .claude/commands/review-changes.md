@@ -11,11 +11,12 @@ Review all staged, unstaged, and untracked changes from the existing writable
 parent session.
 
 **Do not delegate `/review-changes` itself.** The parent owns build artifacts,
-quality gates, the worktree freeze, fan-in, and Beads reconciliation. Only the
-two `/review-code` children are delegated, both with `writePolicy: readOnly`.
+quality gates, the worktree freeze, fan-in, and recording findings in
+Engram. Only the two `/review-code` children are delegated, both with
+`writePolicy: readOnly`.
 
-**Never commit, push, rebase, sync remotes, or close beads without explicit
-user authority.**
+**Never commit, push, rebase, or sync remotes without explicit user
+authority.**
 
 This workflow requires TermAl MCP delegation tools. Attempt exactly two child
 spawns: one Codex and one Claude. Do not substitute platform subagents, shell
@@ -47,10 +48,19 @@ node --test scripts/review-freeze-fingerprint.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
-On any failure, stop the review workflow and immediately investigate the
-failing path. Classify and fix the product/test/environment defect or create or
-update a Beads item with evidence. Do not spawn reviewers until every gate
-passes.
+On any failure, do not spawn reviewers. A failed gate is an investigation,
+never a stop: classify every failing test or check in this same turn.
+
+- Test or environment defect (wrong assertion, stale fixture, host
+  contention, missing prerequisite): fix it in the current changeset, rerun
+  the gates, and continue the review.
+- Product defect: file one Engram item per defect with the failing test as
+  its acceptance criterion (`engram work add "…" --accept "<test> passes"
+  --label bug --under <current item>`), mark the current item blocked on it
+  when landing depends on it, and fix it now when it is in scope.
+
+End the turn with the classification of every failure (test name, cause,
+action); "the suite failed" alone is not a report.
 
 ## 3. Freeze the review input
 
@@ -123,12 +133,15 @@ Present:
 
 Deduplicate overlapping findings and tracker suggestions.
 
-## 7. Reconcile Beads in the parent
+## 7. Record findings in Engram from the parent
 
-Only after consolidation, search Beads for each actionable finding. Create a
-bug/task only when it is not already tracked; otherwise update or comment on
-the existing bead. Do not close implementation beads—record evidence and leave
-final closure to Greg. Informational notes need no tracker mutation.
+Only after consolidation, search Engram for each actionable finding
+(`engram work ls --search "<phrase>" --all`). Add an item only when it is
+not already tracked (`engram work add "<finding>" --label bug --label
+review --priority <0 for Critical … 3 for Low> --under <item under
+review>`); otherwise `note` the evidence on the existing item. Do not
+complete implementation items here — record evidence and leave `done` to
+the implementer. Informational notes need no tracker mutation.
 
 Do not fix source files during this command. Review findings begin a separate
 implementation iteration followed by fresh gates and review.
