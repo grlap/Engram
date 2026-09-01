@@ -10,8 +10,8 @@ metadata:
 Inspect staged, unstaged, and untracked changes. This is a read-only,
 non-nesting review leaf.
 
-**Do not edit files, mutate Git, run build/test/lint/format gates, inspect or
-call Beads, spawn agents, or launch nested review commands.** The writable
+**Do not edit files, mutate Git, run build/test/lint/format gates, mutate the
+tracker, spawn agents, or launch nested review commands.** The writable
 `/review-changes` parent owns all of those actions.
 
 ## 1. Discover the change set
@@ -86,10 +86,11 @@ Return one consolidated review:
 - Security:
 - Testing:
 
-## Suggested beads updates
+## Suggested Engram updates
 - Proposals only; the parent must deduplicate against the tracker.
 ```
 
 For every finding include severity, `file:line`, why it matters, and a fix
 direction. Merge duplicate findings and name all lenses that caught them. If
-clean, say `No tracker follow-up suggested.` Do not claim Beads is up to date.
+clean, say `No tracker follow-up suggested.` Do not claim the tracker is up
+to date.

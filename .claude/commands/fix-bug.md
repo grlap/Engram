@@ -1,6 +1,6 @@
 ---
 name: fix-bug
-description: Diagnose and fix an Engram bug tracked in Beads.
+description: Diagnose and fix an Engram bug tracked in Engram.
 metadata:
   termal:
     title:
@@ -8,11 +8,11 @@ metadata:
       prefix: Fix bug
 ---
 
-Fix the Beads issue id supplied in `$ARGUMENTS`.
+Fix the Engram work item whose ref is supplied in `$ARGUMENTS`.
 
-1. Run `bd show $ARGUMENTS`. If missing or closed, report and stop.
-2. Claim it with `bd update $ARGUMENTS --claim` unless already assigned to the
-   current implementer.
+1. Run `engram work show $ARGUMENTS`. If missing or completed, report and
+   stop.
+2. Claim it with `engram work claim $ARGUMENTS`.
 3. Read the referenced code, tests, docs, and relevant Engram skill sections.
    Confirm the defect and priority from evidence before editing.
 4. If the report is a false positive, already fixed, or materially mis-scoped,
@@ -25,7 +25,8 @@ Fix the Beads issue id supplied in `$ARGUMENTS`.
 7. Run the required gates from `AGENTS.md`, then invoke `/review-changes`.
 8. Resolve Critical/High review findings and repeat gates/review. Present lower
    severities for user judgment.
-9. Leave the bead `in_progress` with a completion and validation comment. Greg
-   owns final closure. Never commit, push, or sync without explicit authority.
+9. `engram work note` the validation evidence, then `engram work done` with
+   what was delivered; it tells you if anything is still owed. Never commit,
+   push, or sync without explicit authority.
 
-If `$ARGUMENTS` is omitted, run `bd ready` and ask which bug to take.
+If `$ARGUMENTS` is omitted, run `engram work next` and ask which bug to take.
