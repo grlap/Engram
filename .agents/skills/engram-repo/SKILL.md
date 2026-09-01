@@ -164,4 +164,4 @@ node scripts/check-doc-links.mjs
 ```
 
 Use `/review-changes` for the two-agent read-only review after the gates pass.
-Do not commit, push, close beads, or sync remotes without explicit authority.
+Do not commit, push, or sync remotes without explicit authority.
