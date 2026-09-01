@@ -87,6 +87,8 @@ impl McpServer {
 struct NextArgs {
     /// Maximum ready items and changes to return (default 20).
     limit: Option<u32>,
+    /// Return the full structured projection instead of compact rows.
+    verbose: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -103,6 +105,8 @@ struct LsArgs {
     label: Option<String>,
     /// Maximum items to return (default 20).
     limit: Option<u32>,
+    /// Return the full structured projection instead of compact rows.
+    verbose: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -167,6 +171,12 @@ struct UpdateArgs {
     priority: Option<i32>,
     /// Defer until: RFC 3339, YYYY-MM-DD, or YYYY-MM-DDTHH:MM:SS (UTC).
     defer: Option<String>,
+    /// task, bug, feature, epic, chore, or research.
+    kind: Option<WorkItemKind>,
+    /// Labels to add.
+    labels: Option<Vec<String>>,
+    /// Labels to remove.
+    unlabels: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -229,10 +239,13 @@ impl McpServer {
         description = "What is ready, what you hold, and what changed since your last call"
     )]
     fn next(&self, Parameters(args): Parameters<NextArgs>) -> CallToolResult {
-        verb(
-            self.verbs()
-                .next(&NextInput { limit: args.limit }, Utc::now()),
-        )
+        verb(self.verbs().next(
+            &NextInput {
+                limit: args.limit,
+                verbose: args.verbose.unwrap_or(false),
+            },
+            Utc::now(),
+        ))
     }
 
     /// List open work with flat filters.
@@ -249,6 +262,7 @@ impl McpServer {
                 all: args.all.unwrap_or(false),
                 label: args.label,
                 limit: args.limit,
+                verbose: args.verbose.unwrap_or(false),
             },
             Utc::now(),
         ))
@@ -303,7 +317,7 @@ impl McpServer {
     /// Apply exactly one planning or claim action.
     #[tool(
         name = "update",
-        description = "One action: release, blocked (text), unblock, revise (title, outcome, assignee, priority, defer), or cancel (reason)"
+        description = "One action: release, blocked (text), unblock, revise (title, outcome, assignee, priority, defer, kind, labels), or cancel (reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
         let action = match args.action {
@@ -325,6 +339,9 @@ impl McpServer {
                     assignee: args.assignee,
                     priority: args.priority,
                     defer,
+                    kind: args.kind,
+                    labels: args.labels.unwrap_or_default(),
+                    unlabels: args.unlabels.unwrap_or_default(),
                 }
             }
             UpdateActionArg::Cancel => UpdateAction::Cancel {
@@ -695,7 +712,13 @@ mod tests {
 
         server
             .verbs()
-            .next(&NextInput { limit: Some(5) }, Utc::now())
+            .next(
+                &NextInput {
+                    limit: Some(5),
+                    verbose: false,
+                },
+                Utc::now(),
+            )
             .expect("agent tool remains usable after refusal");
         let cloned_handler = server.clone();
         assert!(Arc::ptr_eq(

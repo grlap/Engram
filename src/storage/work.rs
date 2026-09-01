@@ -2180,6 +2180,49 @@ impl SqliteStore {
         Ok(held)
     }
 
+    /// Lists every live project claim needed to render compact catalog rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when a projected work id or expiry is invalid.
+    pub fn live_work_claims(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<(WorkId, SessionId, DateTime<Utc>)>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT claim.work_id, claim.holder_session_id, claim.expires_at_ms
+             FROM work_claims claim
+             JOIN work_items item ON item.work_id = claim.work_id
+             WHERE item.project_id = ?1
+               AND claim.state = 'active' AND claim.expires_at_ms > ?2
+             ORDER BY claim.work_id",
+        )?;
+        let rows = statement.query_map(
+            params![project_id.0.as_str(), now.timestamp_millis()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )?;
+        let mut claims = Vec::new();
+        for row in rows {
+            let (work_id, holder, expires_at_ms) = row?;
+            let work_id = uuid::Uuid::parse_str(&work_id).map(WorkId).map_err(|_| {
+                StoreError::InvalidWorkProjection(format!("claim has invalid work id {work_id}"))
+            })?;
+            let expires_at =
+                DateTime::<Utc>::from_timestamp_millis(expires_at_ms).ok_or_else(|| {
+                    StoreError::InvalidWorkProjection("claim has an invalid expiry".into())
+                })?;
+            claims.push((work_id, SessionId(holder), expires_at));
+        }
+        Ok(claims)
+    }
+
     /// Reports whether taking the current run from another prior holder needs
     /// an attributed claim-recovery waiver.
     ///
@@ -6534,6 +6577,28 @@ impl SqliteStore {
                 "deferral cannot be set and cleared in one revision".into(),
             ));
         }
+        if request.patch.labels.is_some()
+            && (!request.patch.add_labels.is_empty() || !request.patch.remove_labels.is_empty())
+        {
+            return Err(StoreError::InvalidWork(
+                "labels cannot be replaced and incrementally changed in one revision".into(),
+            ));
+        }
+        let add_labels = normalize_strings(&request.patch.add_labels);
+        let remove_labels = normalize_strings(&request.patch.remove_labels);
+        let add_label_keys = add_labels
+            .iter()
+            .map(|label| normalize_work_catalog_key(label))
+            .collect::<HashSet<_>>();
+        let remove_label_keys = remove_labels
+            .iter()
+            .map(|label| normalize_work_catalog_key(label))
+            .collect::<HashSet<_>>();
+        if !add_label_keys.is_disjoint(&remove_label_keys) {
+            return Err(StoreError::InvalidWork(
+                "the same label cannot be added and removed in one revision".into(),
+            ));
+        }
         if request
             .patch
             .priority
@@ -6546,8 +6611,11 @@ impl SqliteStore {
         let changed = request.patch.title.is_some()
             || request.patch.outcome.is_some()
             || request.patch.acceptance.is_some()
+            || request.patch.kind.is_some()
             || request.patch.priority.is_some()
             || request.patch.labels.is_some()
+            || !add_labels.is_empty()
+            || !remove_labels.is_empty()
             || request.patch.assigned_to.is_some()
             || request.patch.clear_assignment
             || request.patch.deferred_until.is_some()
@@ -6590,11 +6658,29 @@ impl SqliteStore {
         if let Some(acceptance) = request.patch.acceptance.as_ref() {
             item.acceptance = normalize_strings(acceptance);
         }
+        if let Some(kind) = request.patch.kind {
+            item.kind = kind;
+        }
         if let Some(priority) = request.patch.priority {
             item.priority = priority;
         }
         if let Some(labels) = request.patch.labels.as_ref() {
             item.labels = normalize_strings(labels);
+        } else if !add_labels.is_empty() || !remove_labels.is_empty() {
+            item.labels.retain(|current| {
+                !remove_label_keys.contains(&normalize_work_catalog_key(current))
+            });
+            let mut current_label_keys = item
+                .labels
+                .iter()
+                .map(|label| normalize_work_catalog_key(label))
+                .collect::<HashSet<_>>();
+            for label in add_labels {
+                if current_label_keys.insert(normalize_work_catalog_key(&label)) {
+                    item.labels.push(label);
+                }
+            }
+            item.labels = normalize_strings(&item.labels);
         }
         if request.patch.clear_assignment {
             item.assigned_to = None;
@@ -13447,6 +13533,57 @@ mod tests {
             .expect("canonical built-in obligation rule set")
             .hash()
             .clone()
+    }
+
+    #[test]
+    fn revision_kind_and_label_deltas_preserve_unmentioned_labels() {
+        let project = "revision-metadata";
+        let mut store = SqliteStore::open_in_memory().expect("metadata fixture");
+        install_grant(&mut store, project, "planner");
+        let mut request = root_request(project, "metadata-root", 1);
+        request.labels = (0..12).map(|index| format!("label-{index:02}")).collect();
+        request.labels.push("Straße".into());
+        let root = store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect("metadata root");
+
+        let revised = store
+            .revise_work(
+                &ReviseWorkRequest {
+                    work_id: root.work_id,
+                    expected_revision: root.revision,
+                    patch: WorkRevisionPatch {
+                        kind: Some(WorkItemKind::Bug),
+                        add_labels: vec!["phoenix".into()],
+                        remove_labels: vec!["LABEL-00".into(), "STRASSE".into()],
+                        ..WorkRevisionPatch::default()
+                    },
+                    authority: delegated(project, "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "revise-metadata".into(),
+                    updated_at: at(2),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("revise metadata");
+
+        assert_eq!(revised.kind, WorkItemKind::Bug);
+        assert_eq!(revised.labels.len(), 12);
+        assert!(!revised.labels.iter().any(|label| label == "label-00"));
+        assert!(!revised.labels.iter().any(|label| label == "Straße"));
+        assert!(revised.labels.iter().any(|label| label == "label-11"));
+        assert!(revised.labels.iter().any(|label| label == "phoenix"));
+        let latest = latest_canonical_work_event_for_item(&store.connection, root.work_id)
+            .expect("latest revised event");
+        assert_eq!(latest.work.kind, WorkItemKind::Bug);
+        assert_eq!(latest.work.labels, revised.labels);
+        assert!(
+            store
+                .verify_all()
+                .expect("metadata integrity")
+                .invalid_work_records
+                .is_empty()
+        );
     }
 
     #[test]

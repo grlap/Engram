@@ -213,6 +213,178 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
   }
 });
 
+test("list words stay compact while verbose and update metadata remain explicit", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-compact-"));
+  const actor = "compact-agent";
+  try {
+    const grant = hostSetup(engramHome, actor);
+    const hostContext = [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      actor,
+      "--session-id",
+      actor,
+      "--authority-grant",
+      grant,
+    ];
+    const refs = [];
+    for (let index = 0; index < 34; index += 1) {
+      const added = run([
+        ...hostContext,
+        "add",
+        `Budget item ${String(index).padStart(2, "0")}`,
+        "--kind",
+        "task",
+        "--label",
+        "initial",
+        "--json",
+      ]);
+      assert.equal(added.status, 0, added.stderr);
+      refs.push(JSON.parse(added.stdout).work.short_ref);
+    }
+    const child = run([
+      ...hostContext,
+      "add",
+      "Measured child",
+      "--under",
+      refs[0],
+      "--kind",
+      "task",
+      "--label",
+      "initial",
+      "--json",
+    ]);
+    assert.equal(child.status, 0, child.stderr);
+    refs.push(JSON.parse(child.stdout).work.short_ref);
+
+    assert.equal(run([...hostContext, "claim", refs[0]]).status, 0);
+    const updated = run([
+      ...hostContext,
+      "update",
+      refs[0],
+      "--kind",
+      "bug",
+      "--label",
+      "phoenix",
+      "--label",
+      "triaged",
+      "--unlabel",
+      "initial",
+    ]);
+    assert.equal(updated.status, 0, updated.stderr);
+    assert.match(updated.stdout, /\(kind, labels\)/u);
+    const shown = run([...hostContext, "show", refs[0], "--json"]);
+    assert.equal(shown.status, 0, shown.stderr);
+    assert.equal(JSON.parse(shown.stdout).status.work.kind, "bug");
+    assert.deepEqual(JSON.parse(shown.stdout).status.work.labels, [
+      "phoenix",
+      "triaged",
+    ]);
+    const blocked = run([
+      ...hostContext,
+      "update",
+      refs[1],
+      "--blocked",
+      "review budget blocker",
+    ]);
+    assert.equal(blocked.status, 0, blocked.stderr);
+
+    const listed = run([...hostContext, "ls", "--limit", "100", "--json"]);
+    assert.equal(listed.status, 0, listed.stderr);
+    const compactList = JSON.parse(listed.stdout);
+    assert.equal(compactList.items.length, 35);
+    const itemBytes = compactList.items.map((row) =>
+      Buffer.byteLength(JSON.stringify(row), "utf8"),
+    );
+    const maxItemBytes = Math.max(...itemBytes);
+    const maxItem = compactList.items[itemBytes.indexOf(maxItemBytes)];
+    assert.ok(
+      maxItemBytes <= 200,
+      `${maxItemBytes} max bytes/item: ${JSON.stringify(maxItem)}`,
+    );
+    for (const row of compactList.items) {
+      assert.equal(typeof row.ref, "string");
+      assert.equal(typeof row.title, "string");
+      assert.equal(typeof row.lifecycle, "string");
+      assert.equal(typeof row.state, "string");
+      assert.equal(typeof row.blocked, "boolean");
+      assert.equal(row.blocked, row.state === "blocked");
+      for (const forbidden of [
+        "acceptance",
+        "active_run_id",
+        "revision",
+        "root_id",
+        "updated_at",
+        "work_id",
+      ]) {
+        assert.equal(forbidden in row, false, `${forbidden} leaked into compact row`);
+      }
+    }
+    const heldRow = compactList.items.find(({ ref }) => ref === refs[0]);
+    assert.equal(heldRow.holder, actor);
+    assert.equal(typeof heldRow.held_until, "string");
+    const childRow = compactList.items.find(({ ref }) => ref === refs.at(-1));
+    assert.equal(childRow.parent_ref, refs[0]);
+    const listedText = run([...hostContext, "ls", "--limit", "100"]);
+    assert.equal(listedText.status, 0, listedText.stderr);
+    assert.ok(listedText.stdout.includes(`${refs[0]} [bug]`));
+    assert.ok(listedText.stdout.includes(`held by ${actor} until`));
+    const blockedLine = listedText.stdout
+      .split(/\r?\n/u)
+      .find((line) => line.includes(refs[1]));
+    assert.ok(blockedLine?.includes("[task]"));
+    assert.ok(blockedLine?.includes("open/blocked"));
+    assert.ok(blockedLine?.endsWith(" blocked"));
+    assert.ok(listedText.stdout.includes(`${refs.at(-1)} [task]`));
+    assert.ok(listedText.stdout.includes(`← ${refs[0]}`));
+
+    const verbose = run([
+      ...hostContext,
+      "ls",
+      "--limit",
+      "1",
+      "--verbose",
+      "--json",
+    ]);
+    assert.equal(verbose.status, 0, verbose.stderr);
+    assert.ok(Array.isArray(JSON.parse(verbose.stdout).items[0].work.acceptance));
+
+    const next = run([...hostContext, "next", "--limit", "20", "--json"]);
+    assert.equal(next.status, 0, next.stderr);
+    assert.ok(
+      Buffer.byteLength(next.stdout, "utf8") <= 4 * 1024,
+      `${Buffer.byteLength(next.stdout, "utf8")} byte next receipt`,
+    );
+    const compactNext = JSON.parse(next.stdout);
+    assert.equal("session" in compactNext, false);
+    assert.equal("delivery_token" in compactNext, false);
+    assert.ok(Array.isArray(compactNext.changes));
+    const nextText = run([...hostContext, "next", "--limit", "20"]);
+    assert.equal(nextText.status, 0, nextText.stderr);
+    assert.ok(
+      Buffer.byteLength(nextText.stdout, "utf8") <= 4 * 1024,
+      `${Buffer.byteLength(nextText.stdout, "utf8")} byte text next receipt`,
+    );
+    assert.ok(nextText.stdout.includes(`${refs[0]} [bug]`));
+    assert.ok(nextText.stdout.includes(`held by ${actor} until`));
+
+    const verboseNext = run([
+      ...hostContext,
+      "next",
+      "--limit",
+      "1",
+      "--verbose",
+      "--json",
+    ]);
+    assert.equal(verboseNext.status, 0, verboseNext.stderr);
+    assert.ok(JSON.parse(verboseNext.stdout).session);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("done says what is owed and exits 2 when the item cannot seal yet", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-owed-"));
   const actor = "parity-agent";
@@ -250,7 +422,7 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
     assert.equal(noted.status, 0, noted.stderr);
     assert.match(
       noted.stdout,
-      /^noted on w-[0-9a-f]{12} "Needs a note first": found the missing piece \(held by you until \d{2}:\d{2} UTC\)/u,
+      /^noted on w-[0-9a-f]{12} "Needs a note first": found the missing piece \(held by you until (?:\d{4}-\d{2}-\d{2} )?\d{2}:\d{2} UTC\)/u,
     );
     assert.doesNotMatch(noted.stdout, HASH);
     const done = run([...hostContext, "done"]);

@@ -184,7 +184,7 @@ enum Command {
         #[arg(long, global = true)]
         json: bool,
         #[command(subcommand)]
-        operation: WorkCommand,
+        operation: Box<WorkCommand>,
     },
     /// Host-operator work-authority administration; never exposed through MCP.
     Authority {
@@ -355,6 +355,9 @@ enum WorkCommand {
     Next {
         #[arg(long, default_value_t = 20)]
         limit: u32,
+        /// Return the full structured projection instead of compact rows.
+        #[arg(long)]
+        verbose: bool,
     },
     /// List open work.
     Ls {
@@ -375,6 +378,9 @@ enum WorkCommand {
         label: Option<String>,
         #[arg(long, default_value_t = 20)]
         limit: u32,
+        /// Return the full structured projection instead of compact rows.
+        #[arg(long)]
+        verbose: bool,
     },
     /// One item: outcome, acceptance, holder, blockers, reminders.
     Show {
@@ -415,7 +421,7 @@ enum WorkCommand {
         #[arg(long, value_name = "REASON")]
         recover: Option<String>,
     },
-    /// Exactly one action: --release, --blocked, --unblock, --cancel, or field changes.
+    /// Exactly one action: lifecycle change or one audited field revision.
     Update {
         /// Item to act on; defaults to the focus.
         work_ref: Option<String>,
@@ -443,6 +449,15 @@ enum WorkCommand {
         title: Option<String>,
         #[arg(long)]
         outcome: Option<String>,
+        /// Replace the work kind.
+        #[arg(long, value_enum)]
+        kind: Option<WorkKindArg>,
+        /// Add a label; repeatable.
+        #[arg(long = "label", value_name = "LABEL")]
+        labels: Vec<String>,
+        /// Remove a label; repeatable.
+        #[arg(long = "unlabel", value_name = "LABEL")]
+        unlabels: Vec<String>,
         /// Cancel the item and say why.
         #[arg(long, value_name = "REASON")]
         cancel: Option<String>,
@@ -741,7 +756,7 @@ async fn main() -> Result<ExitCode> {
                 source_skill,
                 authority_grant: parse_optional_hash(authority_grant)?,
             };
-            return match operation {
+            return match *operation {
                 WorkCommand::Core { operation } => run_core_work(context, operation),
                 operation => run_work(context, json, operation),
             };
@@ -1096,7 +1111,13 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     );
     let now = chrono::Utc::now();
     let outcome = match operation {
-        WorkCommand::Next { limit } => verbs.next(&NextInput { limit: Some(limit) }, now),
+        WorkCommand::Next { limit, verbose } => verbs.next(
+            &NextInput {
+                limit: Some(limit),
+                verbose,
+            },
+            now,
+        ),
         WorkCommand::Ls {
             search,
             blocked,
@@ -1104,6 +1125,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             all,
             label,
             limit,
+            verbose,
         } => verbs.ls(
             &LsInput {
                 search,
@@ -1112,6 +1134,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 all,
                 label,
                 limit: Some(limit),
+                verbose,
             },
             now,
         ),
@@ -1161,13 +1184,19 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             defer,
             title,
             outcome,
+            kind,
+            labels,
+            unlabels,
             cancel,
         } => {
             let revise = assignee.is_some()
                 || priority.is_some()
                 || defer.is_some()
                 || title.is_some()
-                || outcome.is_some();
+                || outcome.is_some()
+                || kind.is_some()
+                || !labels.is_empty()
+                || !unlabels.is_empty();
             let selected = usize::from(release)
                 + usize::from(blocked.is_some())
                 + usize::from(unblock)
@@ -1175,7 +1204,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, or field changes (--title, --outcome, --assignee, --priority, --defer)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, or field changes (--title, --outcome, --assignee, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1198,6 +1227,9 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                     assignee,
                     priority,
                     defer,
+                    kind: kind.map(Into::into),
+                    labels,
+                    unlabels,
                 }
             };
             verbs.update(UpdateInput { work_ref, action }, now)

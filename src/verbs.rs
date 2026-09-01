@@ -8,6 +8,7 @@
 //! the core's readiness strings, obligation page, and `allowed_next` tags.
 
 use std::{
+    collections::HashMap,
     fmt::{self, Write as _},
     path::PathBuf,
     sync::Arc,
@@ -21,16 +22,23 @@ use crate::{
     ChildRequirement, LocalWorkService, ObjectHash, ProjectId, SessionId, VerificationKind,
     WorkAvailability, WorkBlockerKind, WorkChildInput, WorkClaim, WorkClaimState,
     WorkCompleteInput, WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView,
-    WorkHandoffInput, WorkHandoffState, WorkItemKind, WorkLifecycle, WorkNextQuery,
+    WorkHandoffInput, WorkHandoffState, WorkId, WorkItemKind, WorkLifecycle, WorkNextQuery,
     WorkNextSection, WorkNextView, WorkObligationPage, WorkObligationState, WorkProposeInput,
     WorkProposeResult, WorkRevisionPatch, WorkUpdateInput,
     storage::StoreError,
-    work_service::{ReadyWorkSummary, WorkChange, WorkChangeProjection},
+    work_service::{ReadyWorkSummary, WorkChange, WorkChangeProjection, WorkSectionOmissionReason},
 };
 
 const DEFAULT_LIMIT: u32 = 20;
 const MAX_TEXT_LINE_BYTES: usize = 96;
 const MAX_TEXT_NEXT_COMMANDS: usize = 4;
+const MAX_COMPACT_NEXT_JSON_BYTES: usize = 4 * 1024 - 1;
+const MAX_COMPACT_CHANGE_ITEMS: u32 = 8;
+const MAX_COMPACT_TITLE_BYTES: usize = 32;
+const MAX_COMPACT_LABEL_ITEMS: usize = 2;
+const MAX_COMPACT_LABEL_BYTES: usize = 24;
+const MAX_COMPACT_HOLDER_BYTES: usize = 48;
+const MAX_COMPACT_REMINDER_ITEMS: usize = 4;
 /// How many change pages one `next` reads past pages that held only the
 /// actor's own actions.
 const MAX_NEXT_PAGES: usize = 8;
@@ -57,10 +65,17 @@ pub struct AgentVerbs {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct NextInput {
     pub limit: Option<u32>,
+    /// Return the full host-oriented projection instead of compact rows.
+    #[serde(default)]
+    pub verbose: bool,
 }
 
 /// `ls` / `search`: catalog listing with flat filters.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the four booleans are independent flat CLI/MCP list switches"
+)]
 pub struct LsInput {
     pub search: Option<String>,
     pub blocked: bool,
@@ -70,6 +85,52 @@ pub struct LsInput {
     pub all: bool,
     pub label: Option<String>,
     pub limit: Option<u32>,
+    /// Return the full host-oriented projection instead of compact rows.
+    #[serde(default)]
+    pub verbose: bool,
+}
+
+/// Short list row used by the agent words. `show` remains the full-object
+/// boundary; absent claim and parent fields are omitted to keep repeated
+/// navigation inexpensive.
+#[derive(Clone, Debug, Serialize)]
+struct CompactWorkRow {
+    #[serde(rename = "ref")]
+    work_ref: String,
+    title: String,
+    lifecycle: WorkLifecycle,
+    state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    holder: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    held_until: Option<String>,
+    priority: i32,
+    kind: WorkItemKind,
+    labels: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    labels_omitted: Option<usize>,
+    blocked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_ref: Option<String>,
+}
+
+/// One deliberately bounded part of a compact `next` response. This mirrors
+/// the core omission shape while adding the verb-owned `held`, `reminders`,
+/// and `next` sections that do not exist in [`WorkNextSection`].
+#[derive(Clone, Debug, Serialize)]
+struct CompactSectionOmission {
+    section: String,
+    reason: WorkSectionOmissionReason,
+    omitted_count: usize,
+}
+
+struct CompactNextReceipt {
+    focus: Option<CompactWorkRow>,
+    held: Vec<CompactWorkRow>,
+    ready: Vec<CompactWorkRow>,
+    changes: Vec<String>,
+    omissions: Vec<CompactSectionOmission>,
+    guidance: Guidance,
 }
 
 /// `add`: a root, or one required child under `under`.
@@ -119,6 +180,11 @@ pub enum UpdateAction {
         assignee: Option<String>,
         priority: Option<i32>,
         defer: Option<DateTime<Utc>>,
+        kind: Option<WorkItemKind>,
+        #[serde(default)]
+        labels: Vec<String>,
+        #[serde(default)]
+        unlabels: Vec<String>,
     },
     Cancel {
         reason: String,
@@ -434,8 +500,13 @@ impl AgentVerbs {
     )]
     pub fn next(&self, input: &NextInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
+        let change_limit = if input.verbose {
+            limit
+        } else {
+            limit.min(MAX_COMPACT_CHANGE_ITEMS)
+        };
         let view = self.service.work_next(
-            limit,
+            change_limit,
             WorkNextQuery {
                 sections: vec![WorkNextSection::Focus, WorkNextSection::Changes],
                 ..WorkNextQuery::default()
@@ -454,27 +525,6 @@ impl AgentVerbs {
             limit,
             now,
         )?;
-        let mut lines = Vec::new();
-        match &view.focus {
-            Some(focus) => lines.push(format!(
-                "focus: {}",
-                item_line(&focus.status, self.holder(focus, now), now)
-            )),
-            None => lines.push("focus: none".into()),
-        }
-        lines.push(format!("held by you ({}):", held.len()));
-        for (item, expires_at) in &held {
-            lines.push(format!(
-                "  {} \"{}\" until {}",
-                item.work.short_ref,
-                short(&item.work.title),
-                clock(*expires_at, now)
-            ));
-        }
-        lines.push(format!("ready ({}):", ready.len()));
-        for item in &ready {
-            lines.push(format!("  {}", ready_line(item)));
-        }
         let mut changes =
             collapse_changes(view.changes.as_deref().unwrap_or_default(), &self.actor_id);
         let mut not_delivered = changes_not_delivered(&view);
@@ -484,7 +534,7 @@ impl AgentVerbs {
         let mut pages = 1;
         while changes.is_empty() && not_delivered > 0 && pages < MAX_NEXT_PAGES {
             let more = self.service.work_next(
-                limit,
+                change_limit,
                 WorkNextQuery {
                     sections: vec![WorkNextSection::Changes],
                     ..WorkNextQuery::default()
@@ -494,18 +544,6 @@ impl AgentVerbs {
             changes = collapse_changes(more.changes.as_deref().unwrap_or_default(), &self.actor_id);
             not_delivered = changes_not_delivered(&more);
             pages += 1;
-        }
-        append_changes_lines(&mut lines, &changes, not_delivered);
-        for omission in view
-            .omissions
-            .iter()
-            .filter(|omission| omission.section != WorkNextSection::Changes)
-        {
-            lines.push(format!(
-                "  ({} more {} not shown)",
-                omission.omitted_count,
-                section_word(omission.section)
-            ));
         }
         let mut guidance = view
             .focus
@@ -537,15 +575,72 @@ impl AgentVerbs {
         if guidance.next.is_empty() {
             guidance.next.push("engram work add \"…\"".into());
         }
-        let mut value = serde_json::to_value(&view)?;
-        value["ready"] = serde_json::to_value(&ready)?;
-        value["changes_by_others"] = json!(changes);
-        value["held"] = serde_json::to_value(
-            held.iter()
-                .map(|(item, expires_at)| json!({ "work": item.work, "expires_at": expires_at }))
-                .collect::<Vec<_>>(),
-        )?;
+        let (lines, value, guidance) = if input.verbose {
+            let mut lines = Vec::new();
+            match &view.focus {
+                Some(focus) => lines.push(format!(
+                    "focus: {}",
+                    item_line(&focus.status, self.holder(focus, now), now)
+                )),
+                None => lines.push("focus: none".into()),
+            }
+            lines.push(format!("held by you ({}):", held.len()));
+            for (item, expires_at) in &held {
+                lines.push(format!(
+                    "  {} \"{}\" until {}",
+                    item.work.short_ref,
+                    short(&item.work.title),
+                    clock(*expires_at, now)
+                ));
+            }
+            lines.push(format!("ready ({}):", ready.len()));
+            for item in &ready {
+                lines.push(format!("  {}", ready_line(item)));
+            }
+            append_changes_lines(&mut lines, &changes, not_delivered);
+            for omission in view
+                .omissions
+                .iter()
+                .filter(|omission| omission.section != WorkNextSection::Changes)
+            {
+                lines.push(format!(
+                    "  ({} more {} not shown)",
+                    omission.omitted_count,
+                    section_word(omission.section)
+                ));
+            }
+            let mut value = serde_json::to_value(&view)?;
+            value["ready"] = serde_json::to_value(&ready)?;
+            value["changes_by_others"] = json!(changes);
+            value["held"] = serde_json::to_value(
+                held.iter()
+                    .map(
+                        |(item, expires_at)| json!({ "work": item.work, "expires_at": expires_at }),
+                    )
+                    .collect::<Vec<_>>(),
+            )?;
+            (lines, value, guidance)
+        } else {
+            let claims = self.live_claim_map(now)?;
+            let compact = compact_next_receipt(&view, &held, &ready, &changes, &claims, &guidance)?;
+            let lines = compact_next_lines(&compact);
+            let value = compact_next_value(&compact);
+            (lines, value, compact.guidance)
+        };
         Ok(Receipt::assemble(lines, guidance, value, false))
+    }
+
+    fn live_claim_map(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<HashMap<WorkId, (SessionId, DateTime<Utc>)>, VerbError> {
+        Ok(self.service.live_work_claims(now)?.into_iter().fold(
+            HashMap::new(),
+            |mut claims, (work_id, holder, expires_at)| {
+                claims.insert(work_id, (holder, expires_at));
+                claims
+            },
+        ))
     }
 
     /// Open items this session holds under a live claim, in catalog order.
@@ -661,9 +756,14 @@ impl AgentVerbs {
                 }
             }
         }
+        let claims = self.live_claim_map(now)?;
+        let compact_items = items
+            .iter()
+            .map(|item| compact_row(item, &claims))
+            .collect::<Vec<_>>();
         let mut lines = vec![format!("{} item(s):", items.len())];
-        for item in &items {
-            lines.push(format!("  {}", catalog_line(item)));
+        for item in &compact_items {
+            lines.push(format!("  {}", compact_row_line(item)));
         }
         if more {
             lines.push(format!(
@@ -689,7 +789,14 @@ impl AgentVerbs {
                 reminders: Vec::new(),
                 next,
             },
-            json!({ "items": items, "more": more }),
+            if input.verbose {
+                json!({ "items": items, "more": more })
+            } else {
+                json!({
+                    "items": compact_items,
+                    "more": more,
+                })
+            },
             false,
         ))
     }
@@ -1006,6 +1113,10 @@ impl AgentVerbs {
 
     /// Maps one flat `update` action onto the typed core update and the
     /// receipt line the shell prints.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the five flat update actions stay together so the agent-to-core mapping remains reviewable"
+    )]
     fn update_translation(
         &self,
         action: UpdateAction,
@@ -1053,13 +1164,21 @@ impl AgentVerbs {
                 assignee,
                 priority,
                 defer,
+                kind,
+                labels,
+                unlabels,
             } => {
+                let add_labels = trimmed(&labels);
+                let remove_labels = trimmed(&unlabels);
                 let patch = WorkRevisionPatch {
                     title: nonempty(new_title),
                     outcome: nonempty(outcome),
                     acceptance: None,
+                    kind,
                     priority: validate_priority(priority)?,
                     labels: None,
+                    add_labels,
+                    remove_labels,
                     assigned_to: nonempty(assignee),
                     clear_assignment: false,
                     deferred_until: defer,
@@ -1077,6 +1196,12 @@ impl AgentVerbs {
                 }
                 if patch.priority.is_some() {
                     fields.push("priority");
+                }
+                if patch.kind.is_some() {
+                    fields.push("kind");
+                }
+                if !patch.add_labels.is_empty() || !patch.remove_labels.is_empty() {
+                    fields.push("labels");
                 }
                 if patch.deferred_until.is_some() {
                     fields.push("deferral");
@@ -1684,6 +1809,247 @@ fn catalog_filters_admit(status: &ReadyWorkSummary, input: &LsInput) -> bool {
     true
 }
 
+fn compact_row(
+    status: &ReadyWorkSummary,
+    claims: &HashMap<WorkId, (SessionId, DateTime<Utc>)>,
+) -> CompactWorkRow {
+    let work = &status.work;
+    let (holder, held_until) =
+        claims
+            .get(&work.work_id)
+            .map_or((None, None), |(holder, expires_at)| {
+                (
+                    Some(short_with_limit(&holder.0, MAX_COMPACT_HOLDER_BYTES)),
+                    Some(expires_at.format("%H:%M").to_string()),
+                )
+            });
+    let (labels, labels_omitted) = compact_labels(&work.labels);
+    let title_bytes = if holder.is_some() {
+        12
+    } else {
+        MAX_COMPACT_TITLE_BYTES
+    };
+    CompactWorkRow {
+        work_ref: work.short_ref.clone(),
+        title: short_with_limit(&work.title, title_bytes),
+        lifecycle: work.lifecycle,
+        state: availability_word(status.availability).into(),
+        holder,
+        held_until,
+        priority: work.priority,
+        kind: work.kind,
+        labels,
+        labels_omitted,
+        blocked: status.availability == WorkAvailability::Blocked,
+        parent_ref: work.parent_id.map(short_ref_for_work_id),
+    }
+}
+
+fn compact_labels(labels: &[String]) -> (Vec<String>, Option<usize>) {
+    let compact = labels
+        .iter()
+        .take(MAX_COMPACT_LABEL_ITEMS)
+        .map(|label| short_with_limit(label, MAX_COMPACT_LABEL_BYTES))
+        .collect::<Vec<_>>();
+    let omitted = labels.len().saturating_sub(compact.len());
+    (compact, (omitted > 0).then_some(omitted))
+}
+
+fn compact_next_receipt(
+    view: &WorkNextView,
+    held: &[(ReadyWorkSummary, DateTime<Utc>)],
+    ready: &[ReadyWorkSummary],
+    changes: &[String],
+    claims: &HashMap<WorkId, (SessionId, DateTime<Utc>)>,
+    guidance: &Guidance,
+) -> Result<CompactNextReceipt, VerbError> {
+    let mut compact = CompactNextReceipt {
+        focus: view
+            .focus
+            .as_ref()
+            .map(|focus| compact_row(&focus.status, claims)),
+        held: held
+            .iter()
+            .map(|(item, _)| compact_row(item, claims))
+            .collect(),
+        ready: ready.iter().map(|item| compact_row(item, claims)).collect(),
+        changes: changes.iter().map(|change| short(change)).collect(),
+        omissions: view
+            .omissions
+            .iter()
+            .map(|omission| CompactSectionOmission {
+                section: compact_section_name(omission.section).into(),
+                reason: omission.reason,
+                omitted_count: omission.omitted_count,
+            })
+            .collect(),
+        guidance: Guidance {
+            reminders: guidance
+                .reminders
+                .iter()
+                .map(|reminder| short(reminder))
+                .collect(),
+            next: guidance.next.clone(),
+        },
+    };
+    if compact.guidance.reminders.len() > MAX_COMPACT_REMINDER_ITEMS {
+        let omitted = compact.guidance.reminders.len() - MAX_COMPACT_REMINDER_ITEMS;
+        compact
+            .guidance
+            .reminders
+            .truncate(MAX_COMPACT_REMINDER_ITEMS);
+        record_compact_omission(&mut compact.omissions, "reminders", omitted);
+    }
+    if compact.guidance.next.len() > MAX_TEXT_NEXT_COMMANDS {
+        let omitted = compact.guidance.next.len() - MAX_TEXT_NEXT_COMMANDS;
+        compact.guidance.next.truncate(MAX_TEXT_NEXT_COMMANDS);
+        record_compact_omission(&mut compact.omissions, "next", omitted);
+    }
+    fit_compact_next(compact)
+}
+
+fn fit_compact_next(mut compact: CompactNextReceipt) -> Result<CompactNextReceipt, VerbError> {
+    loop {
+        let value = compact_next_value(&compact);
+        if serde_json::to_vec_pretty(&value)?.len() < MAX_COMPACT_NEXT_JSON_BYTES {
+            return Ok(compact);
+        }
+        if compact.changes.pop().is_some() {
+            record_compact_omission(&mut compact.omissions, "changes", 1);
+            continue;
+        }
+        if compact.ready.pop().is_some() {
+            record_compact_omission(&mut compact.omissions, "ready", 1);
+            continue;
+        }
+        if compact.held.pop().is_some() {
+            record_compact_omission(&mut compact.omissions, "held", 1);
+            continue;
+        }
+        if compact.guidance.reminders.pop().is_some() {
+            record_compact_omission(&mut compact.omissions, "reminders", 1);
+            continue;
+        }
+        if compact.guidance.next.len() > 1 {
+            compact.guidance.next.pop();
+            record_compact_omission(&mut compact.omissions, "next", 1);
+            continue;
+        }
+        if compact.focus.take().is_some() {
+            record_compact_omission(&mut compact.omissions, "focus", 1);
+            continue;
+        }
+        // Every remaining string is fixed or explicitly byte-bounded. This
+        // final value is therefore below the budget without making a valid
+        // `next` call fail merely because advisory sections were large.
+        return Ok(compact);
+    }
+}
+
+fn compact_next_value(compact: &CompactNextReceipt) -> Value {
+    json!({
+        "focus": compact.focus,
+        "held": compact.held,
+        "ready": compact.ready,
+        "changes": compact.changes,
+        "omissions": compact.omissions,
+        "reminders": compact.guidance.reminders,
+        "next": compact.guidance.next,
+    })
+}
+
+fn record_compact_omission(
+    omissions: &mut Vec<CompactSectionOmission>,
+    section: &str,
+    omitted_count: usize,
+) {
+    if let Some(omission) = omissions
+        .iter_mut()
+        .find(|omission| omission.section == section)
+    {
+        omission.omitted_count += omitted_count;
+        omission.reason = WorkSectionOmissionReason::ByteBudget;
+    } else {
+        omissions.push(CompactSectionOmission {
+            section: section.into(),
+            reason: WorkSectionOmissionReason::ByteBudget,
+            omitted_count,
+        });
+    }
+}
+
+fn compact_section_name(section: WorkNextSection) -> &'static str {
+    match section {
+        WorkNextSection::Focus => "focus",
+        WorkNextSection::Ready => "ready",
+        WorkNextSection::Catalog => "catalog",
+        WorkNextSection::Changes => "changes",
+    }
+}
+
+fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
+    let mut lines = Vec::new();
+    match &compact.focus {
+        Some(focus) => lines.push(format!("focus: {}", compact_row_line(focus))),
+        None if compact_omitted(compact, "focus") > 0 => {
+            lines.push("focus: omitted (byte budget)".into());
+        }
+        None => lines.push("focus: none".into()),
+    }
+    lines.push(format!("held by you ({} shown):", compact.held.len()));
+    for held in &compact.held {
+        lines.push(format!("  {}", compact_row_line(held)));
+    }
+    lines.push(format!("ready ({} shown):", compact.ready.len()));
+    for ready in &compact.ready {
+        lines.push(format!("  {}", compact_row_line(ready)));
+    }
+    append_changes_lines(
+        &mut lines,
+        &compact.changes,
+        compact_omitted(compact, "changes"),
+    );
+    for omission in compact
+        .omissions
+        .iter()
+        .filter(|omission| omission.section != "changes" && omission.section != "focus")
+    {
+        lines.push(format!(
+            "  ({} more {} not shown)",
+            omission.omitted_count,
+            compact_section_word(&omission.section)
+        ));
+    }
+    lines
+}
+
+fn compact_omitted(compact: &CompactNextReceipt, section: &str) -> usize {
+    compact
+        .omissions
+        .iter()
+        .filter(|omission| omission.section == section)
+        .map(|omission| omission.omitted_count)
+        .sum()
+}
+
+fn compact_section_word(section: &str) -> &'static str {
+    match section {
+        "focus" => "focus items",
+        "held" => "held items",
+        "ready" => "ready items",
+        "catalog" => "catalog items",
+        "changes" => "changes",
+        "reminders" => "reminders",
+        "next" => "next commands",
+        _ => "items",
+    }
+}
+
+fn short_ref_for_work_id(work_id: WorkId) -> String {
+    let simple = work_id.0.simple().to_string();
+    format!("w-{}", simple.get(20..).unwrap_or(&simple))
+}
+
 fn live(claim: &WorkClaim, now: DateTime<Utc>) -> bool {
     claim.state == WorkClaimState::Active && claim.expires_at > now
 }
@@ -1701,30 +2067,33 @@ fn item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) 
 }
 
 fn ready_line(item: &ReadyWorkSummary) -> String {
-    let work = &item.work;
-    format!(
-        "{} \"{}\" p{} {}",
-        work.short_ref,
-        short(&work.title),
-        work.priority,
-        availability_words(item)
-    )
+    compact_row_line(&compact_row(item, &HashMap::new()))
 }
 
-fn catalog_line(item: &ReadyWorkSummary) -> String {
-    let work = &item.work;
+fn compact_row_line(item: &CompactWorkRow) -> String {
     let mut line = format!(
-        "{}  p{}  {:<9} \"{}\"",
-        work.short_ref,
-        work.priority,
-        availability_words(item),
-        short(&work.title)
+        "{} [{}] p{} {}/{} \"{}\"",
+        item.work_ref,
+        kind_word(item.kind),
+        item.priority,
+        lifecycle_word(item.lifecycle),
+        item.state,
+        item.title,
     );
-    if !work.labels.is_empty() {
-        let _ = write!(line, "  [{}]", work.labels.join(", "));
+    if !item.labels.is_empty() {
+        let _ = write!(line, " labels:{}", item.labels.join(","));
     }
-    if let Some(assignee) = &work.assigned_to {
-        let _ = write!(line, "  @{assignee}");
+    if let Some(omitted) = item.labels_omitted {
+        let _ = write!(line, " (+{omitted} labels)");
+    }
+    if item.blocked {
+        line.push_str(" blocked");
+    }
+    if let Some(parent_ref) = &item.parent_ref {
+        let _ = write!(line, " ← {parent_ref}");
+    }
+    if let (Some(holder), Some(held_until)) = (&item.holder, &item.held_until) {
+        let _ = write!(line, " held by {holder} until {held_until}");
     }
     line
 }
@@ -1811,13 +2180,20 @@ fn strip_kind_prefix(summary: &str, kind: &str) -> String {
 
 fn availability_words(status: &ReadyWorkSummary) -> &'static str {
     match status.availability {
+        WorkAvailability::Closed => lifecycle_word(status.work.lifecycle),
+        availability => availability_word(availability),
+    }
+}
+
+fn availability_word(availability: WorkAvailability) -> &'static str {
+    match availability {
         WorkAvailability::Ready => "ready",
         WorkAvailability::Claimed => "held",
         WorkAvailability::Active => "active",
         WorkAvailability::Blocked => "blocked",
         WorkAvailability::Deferred => "deferred",
         WorkAvailability::Waiting => "waiting",
-        WorkAvailability::Closed => lifecycle_word(status.work.lifecycle),
+        WorkAvailability::Closed => "closed",
     }
 }
 
@@ -1879,11 +2255,15 @@ fn clock(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
 }
 
 fn short(text: &str) -> String {
+    short_with_limit(text, MAX_TEXT_LINE_BYTES)
+}
+
+fn short_with_limit(text: &str, max_bytes: usize) -> String {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if text.len() <= MAX_TEXT_LINE_BYTES {
+    if text.len() <= max_bytes {
         return text;
     }
-    let mut end = MAX_TEXT_LINE_BYTES;
+    let mut end = max_bytes.saturating_sub('…'.len_utf8());
     while !text.is_char_boundary(end) {
         end -= 1;
     }
@@ -1974,6 +2354,60 @@ mod tests {
 
     fn hash(fill: char) -> ObjectHash {
         ObjectHash::from_str(&fill.to_string().repeat(64)).expect("hash")
+    }
+
+    fn compact_test_row(index: usize) -> CompactWorkRow {
+        CompactWorkRow {
+            work_ref: format!("w-{index:012x}"),
+            title: "A compact but deliberately full title".into(),
+            lifecycle: WorkLifecycle::Open,
+            state: "blocked".into(),
+            holder: Some("session-with-a-readable-name".into()),
+            held_until: Some("01:45".into()),
+            priority: 1,
+            kind: WorkItemKind::Bug,
+            labels: vec!["first-label".into(), "second-label".into()],
+            labels_omitted: Some(6),
+            blocked: true,
+            parent_ref: Some("w-000000000000".into()),
+        }
+    }
+
+    #[test]
+    fn compact_next_trims_every_advisory_section_instead_of_failing() {
+        let row = compact_test_row(0);
+        let receipt = CompactNextReceipt {
+            focus: Some(row.clone()),
+            held: (1..=20).map(compact_test_row).collect(),
+            ready: (21..=40).map(compact_test_row).collect(),
+            changes: (0..8)
+                .map(|index| format!("change {index}: {}", "x".repeat(90)))
+                .collect(),
+            omissions: Vec::new(),
+            guidance: Guidance {
+                reminders: (0..4)
+                    .map(|index| format!("reminder {index}: {}", "r".repeat(90)))
+                    .collect(),
+                next: vec!["engram work show w-000000000000".into()],
+            },
+        };
+
+        let fitted = fit_compact_next(receipt).expect("compact next fits");
+        assert!(
+            serde_json::to_vec_pretty(&compact_next_value(&fitted))
+                .expect("compact JSON")
+                .len()
+                < MAX_COMPACT_NEXT_JSON_BYTES
+        );
+        assert!(compact_omitted(&fitted, "changes") > 0);
+        assert!(compact_omitted(&fitted, "ready") > 0);
+        assert!(!fitted.guidance.next.is_empty());
+        let line = compact_row_line(&row);
+        assert!(line.contains("[bug]"));
+        assert!(line.contains("open/blocked"));
+        assert!(line.contains("blocked"));
+        assert!(line.contains("← w-000000000000"));
+        assert!(line.contains("held by session-with-a-readable-name until 01:45"));
     }
 
     fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPage {

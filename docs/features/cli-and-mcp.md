@@ -20,24 +20,33 @@ else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
 you type only the word.
 
 ```bash
-engram work next                  # what is ready, what you hold, what others changed
-engram work ls [--search TEXT] [--blocked] [--mine]
+engram work next [--verbose]      # what is ready, what you hold, what others changed
+engram work ls [--search TEXT] [--blocked] [--mine] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..."]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
 ```
 
-Add `--json` to any word for the exact structured receipt.
+Add `--json` to any word for its structured receipt. Lists are short by
+default in text, JSON, and MCP: `next` and `ls` return only navigation rows
+and one-line changes. `show REF` is the detail boundary. Humans and hosts that
+really need the prior full list projection can add `--verbose` to `next` or
+`ls` (or set the equivalent MCP argument); host-only `work core` reads remain
+full. Compact rows cap labels and report `labels_omitted`; `next` trims any
+oversized advisory section into explicit `omissions` instead of failing.
 
 Rules that matter:
 
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against.
 - `claim` before you change anything. Only the holder can `note` and `done`.
+- `update --kind`, repeatable `--label`, and repeatable `--unlabel` revise
+  indexed planning metadata through the same audited holder path as the other
+  update fields.
 - `note` is for decisions, findings, and evidence pointers. One note feeds
   peers, handoff, and the final report; never repeat it elsewhere.
 - `done` completes the item you hold. If something is still owed, the answer

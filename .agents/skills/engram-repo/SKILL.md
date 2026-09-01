@@ -112,18 +112,21 @@ else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
 you type only the word.
 
 ```bash
-engram work next                  # what is ready, what you hold, what others changed
-engram work ls [--search TEXT] [--blocked] [--mine]
+engram work next [--verbose]      # what is ready, what you hold, what others changed
+engram work ls [--search TEXT] [--blocked] [--mine] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..."]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
 ```
 
-Add `--json` to any word for the exact structured receipt.
+Add `--json` to any word for its structured receipt. `next` and `ls` stay
+short in text, JSON, and MCP; use `show REF` for detail. `--verbose` restores
+the full structured list projection for a human or host that explicitly needs
+it. Host-only `work core` reads remain full.
 
 Rules that matter:
 

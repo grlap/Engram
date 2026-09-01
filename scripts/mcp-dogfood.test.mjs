@@ -293,12 +293,15 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.match(added, /reminders:\n\s+- unclaimed: claim it before you change anything/u);
     assert.match(added, new RegExp(`next:\\n(?:.*\\n)*\\s+engram work claim ${workRef}`, "u"));
 
-    const next = cliJson(engramHome, actor, grant, "next");
+    const next = cliJson(engramHome, actor, grant, "next", "--verbose");
     assert.equal(next.session.focused_work_id, next.focus.status.work.work_id);
     assert.equal(next.focus.status.work.short_ref, workRef);
     assert.ok(Array.isArray(next.changes));
     const listed = cliText(engramHome, actor, grant, "ls", "--label", "dogfood");
-    assert.match(listed, /^1 item\(s\):\n\s+w-[0-9a-f]{12}\s+p1\s+ready\s+"Dogfood work CLI"\s+\[dogfood\]/u);
+    assert.match(
+      listed,
+      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 open\/ready "Dogfood work CLI" labels:dogfood/u,
+    );
     const nothingMine = cliText(engramHome, actor, grant, "ls", "--mine");
     assert.match(nothingMine, /^0 item\(s\):/u);
 
@@ -394,7 +397,10 @@ test("CLI words translate the same ambient lifecycle service", () => {
     const closedList = cliText(engramHome, actor, grant, "ls");
     assert.match(closedList, /^0 item\(s\):/u);
     const allList = cliText(engramHome, actor, grant, "ls", "--all", "--search", "dogfood work");
-    assert.match(allList, /^1 item\(s\):\n\s+w-[0-9a-f]{12}\s+p1\s+completed/u);
+    assert.match(
+      allList,
+      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 completed\/closed/u,
+    );
 
     // `add --under` translates to a one-child decomposition and focuses the
     // new child; the text receipt names both items and no hash.
@@ -533,6 +539,20 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
         `${tool.name} exposes a host-owned protocol field`,
       );
     }
+    assert.ok(
+      aToolDefinitions.find(({ name }) => name === "next").inputSchema.properties
+        .verbose,
+    );
+    assert.ok(
+      aToolDefinitions.find(({ name }) => name === "ls").inputSchema.properties
+        .verbose,
+    );
+    const updateProperties = aToolDefinitions.find(
+      ({ name }) => name === "update",
+    ).inputSchema.properties;
+    for (const field of ["kind", "labels", "unlabels"]) {
+      assert.ok(updateProperties[field], `update is missing ${field}`);
+    }
 
     const added = receipt(
       await a.call("add", {
@@ -549,17 +569,27 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.ok(added.reminders.includes("unclaimed: claim it before you change anything"));
     assert.ok(added.next.includes(`engram work claim ${workRef}`));
 
-    const next = receipt(await a.call("next", { limit: 20 }));
+    const next = receipt(await a.call("next", { limit: 20, verbose: true }));
     assert.equal(next.session.focused_work_id, added.work.work_id);
     assert.ok(next.delivered_through > 0);
     assert.match(next.delivery_token, /^[0-9a-f-]{36}$/u);
     assert.equal(next.session.confirmed_project_cursor, 0);
     // The previous page counts as delivered once the session asks again; no
     // agent-side acknowledgement exists.
-    const following = receipt(await a.call("next", { limit: 20 }));
+    const following = receipt(
+      await a.call("next", { limit: 20, verbose: true }),
+    );
     assert.equal(following.session.confirmed_project_cursor, next.delivered_through);
     assert.equal(following.delivered_through, next.delivered_through);
     assert.deepEqual(following.changes, []);
+    const compactNext = receipt(await a.call("next", { limit: 20 }));
+    assert.equal(compactNext.focus.ref, workRef);
+    assert.equal(compactNext.focus.title, "Dogfood local work");
+    assert.equal(compactNext.focus.lifecycle, "open");
+    assert.equal("acceptance" in compactNext.focus, false);
+    assert.equal("work_id" in compactNext.focus, false);
+    assert.equal("session" in compactNext, false);
+    assert.equal("delivery_token" in compactNext, false);
     // An identical keyless call replays instead of duplicating.
     const keyless = receipt(await a.call("add", { title: "Keyless root" }));
     assert.equal(keyless.kind, "root");
@@ -569,6 +599,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(keylessReplay.work.work_id, keyless.work.work_id);
     const keylessCatalog = receipt(await a.call("ls", { search: "keyless root" }));
     assert.equal(keylessCatalog.items.length, 1);
+    assert.equal(keylessCatalog.items[0].ref, keyless.work.short_ref);
+    assert.equal("work" in keylessCatalog.items[0], false);
     assert.ok(next.focus.allowed_next.includes("work_update:claim"));
 
     // work_ref selects the target in the same call: focus is still the keyless
@@ -592,6 +624,18 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal("focus" in replayedClaim, false);
     assert.ok(Array.isArray(replayedClaim.obligations));
     assert.ok(Array.isArray(replayedClaim.allowed_next));
+    const metadataRevised = receipt(
+      await a.call("update", {
+        action: "revise",
+        kind: "bug",
+        labels: ["triaged", "phoenix"],
+        unlabels: ["dogfood"],
+      }),
+    );
+    assert.equal(metadataRevised.operation, "revise");
+    const metadataShow = receipt(await a.call("show", { work_ref: workRef }));
+    assert.equal(metadataShow.status.work.kind, "bug");
+    assert.deepEqual(metadataShow.status.work.labels, ["phoenix", "triaged"]);
     receipt(
       await a.call("update", {
         action: "blocked",
@@ -672,10 +716,23 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       await b.call("ls", { search: "dogfood local work", all: true }),
     );
     assert.equal(completedCatalog.items.length, 1);
-    assert.equal(completedCatalog.items[0].work.work_id, added.work.work_id);
+    assert.equal(completedCatalog.items[0].ref, workRef);
+    assert.equal(completedCatalog.items[0].lifecycle, "completed");
+    assert.equal("work" in completedCatalog.items[0], false);
     assert.equal(JSON.stringify(completedCatalog).includes(grantB), false);
     assert.equal("changes" in completedCatalog, false);
     assert.equal("delivered_through" in completedCatalog, false);
+    const verboseCompletedCatalog = receipt(
+      await b.call("ls", {
+        search: "dogfood local work",
+        all: true,
+        verbose: true,
+      }),
+    );
+    assert.equal(
+      verboseCompletedCatalog.items[0].work.work_id,
+      added.work.work_id,
+    );
     const searched = receipt(await b.call("search", { query: "dogfood local work" }));
     assert.equal(searched.items.length, 1);
 

@@ -1179,6 +1179,20 @@ impl LocalWorkService {
         store.work_held_by(&self.session_id, now)
     }
 
+    /// Every live claim in this project, used only to annotate compact agent
+    /// catalog rows without constructing one focus packet per item.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the live-claim projection is invalid.
+    pub fn live_work_claims(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<(WorkId, SessionId, DateTime<Utc>)>, StoreError> {
+        let store = self.store()?;
+        store.live_work_claims(&self.project_id, now)
+    }
+
     /// Inspects work by reference without changing ambient focus or staging
     /// any delivery.
     ///

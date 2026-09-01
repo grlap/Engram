@@ -2357,8 +2357,13 @@ pub struct WorkRevisionPatch {
     pub title: Option<String>,
     pub outcome: Option<String>,
     pub acceptance: Option<Vec<String>>,
+    pub kind: Option<WorkItemKind>,
     pub priority: Option<i32>,
     pub labels: Option<Vec<String>>,
+    #[serde(default)]
+    pub add_labels: Vec<String>,
+    #[serde(default)]
+    pub remove_labels: Vec<String>,
     pub assigned_to: Option<String>,
     #[serde(default)]
     pub clear_assignment: bool,
