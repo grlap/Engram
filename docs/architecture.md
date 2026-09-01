@@ -38,7 +38,7 @@ Ports (Rust traits) keep domain semantics independent of backends:
 | --- | --- | --- |
 | `Store` | append / get / list-heads over immutable objects | SQLite (canonical) |
 | `Index` | rebuild / search derived state | SQLite + FTS5 tables (disposable cache) |
-| `WorkSourceAdapter` | explicit external snapshot intake | optional; Beads compatibility first |
+| `WorkSourceAdapter` | explicit external snapshot intake | optional; Beads snapshot import first, other trackers by immutable snapshot |
 | `BackupAdapter` | store/retrieve verified recovery snapshots | optional |
 | `PortableStoreAdapter` | sequential publish/handoff/restore under remote-head CAS | optional V1 |
 | `Sync` | concurrent fetch / push / verify between active stores | dormant until later |

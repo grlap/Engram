@@ -21,14 +21,27 @@ you type only the word.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
-engram work ls [--search TEXT] [--blocked] [--mine] [--verbose]
+engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
-engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
+engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
+```
+
+Planned, not yet shipped (the contract is specified in
+[local work system](local-work-system.md#gates-prerequisites-supersession-and-project-memories-planned)
+and lands with its code; gate names follow the repository's
+[quality gates](../development.md#quality-gates)):
+
+```bash
+engram work gate NAME [--failed TEST...] [--ref path-or-url]   # audit: bare = pass; --failed records the failures as evidence
+engram work remember "Project note" [--key KEY]
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
+engram work forget KEY
+engram work update REF --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why"
 ```
 
 Add `--json` to any word for its structured receipt. Lists are short by
@@ -58,10 +71,27 @@ Rules that matter:
   the text renderer shows at most four and prints `(+N more)` when it omits
   any.
 - Lost response? Run the same command again. Identical calls are safe.
+- Planned: a failed gate is work, not a stop — `gate NAME --failed TEST...`
+  records the failures as evidence on what you hold, nothing more.
+  Classification stays your judgment: a product defect gets a required
+  child through the ordinary `add … --accept "<test> passes" --kind bug
+  --label gate`, and test or environment findings go into the durable note.
+  `gate NAME` alone records a pass.
+- Planned: `remember` a retrievable project note — an attributed
+  observation, never a rule or a decision record, kept in full until an
+  explicit `forget`. `next` only signals how many notes exist and whether
+  any changed; `memories` is the source of truth.
 
 The same nine words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
 `update`, `note`, `done`, `handoff`) with the same flat arguments, plus
-`search`.
+`search` — ten tools today. The planned cut adds `gate`, `remember`,
+`memories`, and `forget`: thirteen words plus `search`, fourteen tools,
+with no new core operation — `gate` wraps the existing evidence path, and
+`remember`/`memories`/`forget` are a thin project-memory surface
+with project-policy authorization and hidden idempotency, outside the
+six-operation work core (no focus mutation, no claim renewal). The
+implementation updates the normative spec/tool count and every agent
+instruction file atomically with the code.
 
 If you know Beads, the words map one to one:
 

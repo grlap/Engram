@@ -108,13 +108,16 @@ node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
-On Windows, use `pwsh -File scripts/test-rust.ps1` in place of
+On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 `scripts/test-rust.sh`; it preserves the same ordinary and performance-test
 phases without the Unix-only file-descriptor-limit adjustment.
 
 After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
 acceptable flaky test.
+For the timing-sensitive scale gate, use the evidence-backed product-versus-
+environment classification in [Quality gates](docs/development.md#quality-gates);
+that procedure is not permission to retry until green.
 
 A failed gate is an investigation, never a stop. For every failing test
 or check, classify the cause and act in the same session:
@@ -124,9 +127,9 @@ or check, classify the cause and act in the same session:
   rerun the gates.
 - **Product defect**: file one Engram item per defect with the failing
   test named as the acceptance criterion (`engram work add "…" --accept
-  "<test> passes" --label bug --under <current item>`), mark the current
-  item blocked on it if landing depends on it, and fix it now when it is in
-  scope. Never delete, skip, or loosen the test to pass.
+  "<test> passes" --kind bug --label gate --under <current item>`), mark the
+  current item blocked on it if landing depends on it, and fix it now when it
+  is in scope. Never delete, skip, or loosen the test to pass.
 
 Report the classification for every failure before asking for a decision;
 "the suite failed" alone is not a report.
@@ -178,7 +181,7 @@ file and is never typed or logged):
 ```bash
 engram work next                  # what you hold, what is ready, what changed
 engram work ls | show REF
-engram work add "Title" [--under REF]
+engram work add "Title" [--under REF] [--kind KIND] [--label L]
 engram work claim REF
 engram work note "what you found or decided"
 engram work done ["what was delivered"]

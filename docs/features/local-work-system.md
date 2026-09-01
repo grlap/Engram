@@ -5,7 +5,9 @@
 > Related briefs: [behavioral control plane](behavioral-control-plane.md),
 > [local tasks & reports](local-tasks-and-reports.md),
 > [tracker adapter](tracker-adapter.md),
-> [CLI & MCP](cli-and-mcp.md), and
+> [CLI & MCP](cli-and-mcp.md),
+> [write policy & review](write-policy-and-review.md),
+> [security & trust](security-and-trust.md), and
 > [execution pipeline](execution-pipeline.md).
 
 Engram's target is a first-class, host-local graph of work. A user or model can open
@@ -598,6 +600,160 @@ Model-visible success is terse—often only changed obligations—while the host
 retains the full durable receipt. Every refusal includes a stable code and a
 satisfiable next action.
 
+### Gates, prerequisites, supersession, and project memories (planned)
+
+Four planned additions make the agent surface strictly stronger than the
+tracker it replaced. None has shipped; each lands with its code, tests, and
+the matching agent-word documentation. None adds a canonical object kind, a
+completion barrier, or a review queue: everything rides the existing
+evidence, decomposition, episode-memory, and idempotency machinery, changed
+in place at schema marker 1. The agent-facing syntax is summarized in
+[CLI & MCP](cli-and-mcp.md#using-engram-as-an-agent); the memory rules
+cross-link [security & trust](security-and-trust.md).
+
+**Gate results become auditable evidence.** `gate NAME [--failed TEST...]
+[--ref path-or-url]` records exactly one bounded pass or fail evidence
+entry on the held item (otherwise the typed claim guidance) — gate name,
+the bounded failure list, any `--ref` — through the ordinary `WorkEvidence`
+path with the ordinary exact-retry protocol. That is all it does: no extra
+completion barrier, no children, no obligation, no waiver — the entry rides
+the ordinary evidence feed, contribution, and `CompletionSeal` binding like
+any other evidence, and completion semantics do not change. The workflow
+rule stays where it belongs, in the instruction
+files: the agent classifies every failure, and a product defect gets a
+required child through the ordinary `add` command with kind `bug`, label
+`gate`, and the failing test as acceptance — existing required-child
+machinery enforces that work; test and environment classifications go into
+the durable note with their evidence.
+
+Gate input is bounded after normalization: the name is trimmed,
+NFC-normalized, and case-folded; each test is trimmed and NFC-normalized
+with case kept (test identifiers are case-sensitive) and duplicates are
+deduplicated; then the name must fit 128 UTF-8 bytes and the failure set
+4096 total bytes — the dominant bound — with a 256-byte per-entry sanity
+cap and at most 64 distinct failures. `--ref` is a bounded path or URL and
+never ingests log bytes; oversize input is refused with the
+one-aggregate-entry remedy. The bounds and the pass/fail/replay behavior
+are planned test targets.
+
+**Prerequisites between arbitrary items.** `update REF --after OTHER` records
+that `REF` must not become ready until `OTHER` is complete; `--drop-after
+OTHER` removes it. The relation and its readiness semantics already exist
+in the graph (`ls --blocked` reports "one or more prerequisites are
+incomplete"), but exposing the word adds real core validation: `REF` must
+be open for add and drop, `OTHER` must be open for add — proposed,
+completed, cancelled, or superseded targets are refused with the item
+named — `OTHER` must not be `REF`, both must share the project, and cycle
+prevention rejects any prerequisite cycle and simply refuses an `OTHER`
+that is an ancestor of `REF`, keeping decomposition deadlocks impossible
+without graph gymnastics. Dropping stays allowed
+after `OTHER` becomes terminal so stale edges can be cleaned, and dropping an
+absent edge is an idempotent no-op. A cancelled `OTHER` does not satisfy the
+edge: `REF` stays blocked, and the blocked reason surfaced by `next`/`ls
+--blocked` carries the planned `update REF --drop-after OTHER` guidance — a
+guide, not a refusal; a superseded `OTHER` follows the shipped one-hop
+superseded-replacement readiness rule.
+Each flag takes one ref and is mutually exclusive with every other `update`
+action. An edge is not a required child: a
+prerequisite orders readiness and can be dropped again, while a required
+child binds parent completion and is accounted only by seal or waiver. The
+admission, cycle, and refusal boundaries above are planned test targets.
+
+**Supersession.** `update REF --supersede-with NEW --reason "why"` exposes
+the existing dispose-as-superseded path with the caller's attributed reason —
+the CLI/MCP contract requires `--reason` and never invents one: `REF` leaves
+the ready list, `show REF` names its successor, `ls --all` still lists it,
+the caller's own claim on `REF` is released with that audited reason.
+`REF`-side refusals: not open, open descendants, held by another session.
+`NEW`-side refusals, as storage already enforces: `NEW` is `REF` itself, lives
+in another project, or is cancelled or superseded; a completed `NEW` is
+allowed. The word exposes only the existing dispose path with its existing
+validation; the only planned front-end changes are the flag itself, the
+shared update action group replacing today's `--reason requires --release`
+clap coupling, and the extended action-enumeration error. Superseding a
+required child never satisfies its parent by itself: the parent's `done`
+still reports the unsealed required child, and the deliberate replacement
+is accounted by the existing grant-backed required-child waiver. Automatic
+successor accounting is not in this cut; the REF/NEW refusal matrix is a
+planned test target.
+
+**Project memories.** `remember "text" [--key KEY]` stores one attributed,
+retrievable project note — an ordinary Episode in the existing memory
+model: soft authority, `internal` sensitivity, on-demand delivery, no
+automatic decay in V1 (episodic compaction stays a V1.x roadmap item),
+never a rule or a fact authority, active through the
+existing episode exception (see
+[write policy & review](write-policy-and-review.md)). There is no Proposed
+slot, no review queue, and no host review operation: what you write is
+what project peers can list, attributed to your session. A note stays full
+until an explicit `forget`: `memories` lists it and `--full` returns the
+full body until the tombstone; a retired key answers with the typed
+`memory_retired` and the satisfiable next action to pick or list another
+key. Authorization in V1 is cooperative project binding: any session
+asserted-bound to the same stable project may `remember`, list, read, and
+`forget`, and an explicit project-policy denial refuses;
+`memory_not_authorized` means no project binding or that denial. This is
+an asserted host-context policy guard for cooperating sessions, not
+authenticated security — no per-note ownership and no policy-epoch
+machinery. Writes pass the
+configured Redactor, which in V1 is the visibly labeled no-op
+`DevelopmentNoopRedactor` that filters nothing; see
+[security & trust](security-and-trust.md#redaction-the-real-control).
+Engram promises no automatic secret prevention, so credentials and secrets
+must never be placed in a memory body, and a write that policy would make
+undeliverable is refused before persistence — no write-only sink. The key
+is a safe token: 1–64 ASCII bytes matching `[a-z0-9][a-z0-9._-]*` — no
+leading dash, no control or shell metacharacters — supplied explicitly or
+defaulted to a slug of the first words, so generated commands are always
+safe. A defaulted slug that collides with a used key — live or
+tombstoned — is refused and asks for `--key`. `forget KEY` appends an
+attributed tombstone — not erasure, the version history stays canonical —
+and is idempotent; the key is then retired for good. A raw body is at most
+8 KiB (8192 UTF-8 bytes) and is accepted
+only when the exact serialized full-read envelope also fits the 12 KiB
+ceiling; anything larger is rejected before persistence, with escape-heavy
+boundary tests among the named targets.
+
+The mutation contract is create/refuse/forget — no update-in-place:
+`remember` creates only when the safe key has never been used; a live key
+is the typed `memory_exists` refusal, and a tombstoned key is the typed
+`memory_retired` refusal whose satisfiable next action is choosing another
+key (`memories` lists what is taken) — tombstoned keys are permanently
+reserved, never recreated. `forget` tombstones idempotently. The durable
+representation is the simplest one: the safe key lives in the existing
+`MemoryVersion` shape, changed in place at marker 1, unique per project,
+with `Tombstoned` as the terminal status; the keyed head and history are
+rebuildable and portable from canonical versions, and no new canonical
+object kind exists. With one create and one idempotent tombstone per key
+forever, ordinary argument-derived operation idempotency is generation-safe
+by construction; `next` installs no per-key session state, and no hash or
+id is ever model-visible. Create/refuse/forget and listing continuation
+are planned test targets.
+
+`memories` is the source of truth; `next` only advertises. The positional
+argument is a query unless `--full` names a key, and `--after` always
+takes a key. Unfiltered `memories` lists compact rows (key, bounded first
+line, remembered-at) in key order and may continue with the shell-safe
+`memories --after KEY`; an exhausted listing says so. Filtered `memories
+QUERY` returns a bounded set of top matches only and never emits a
+continuation — its omission note tells the agent to refine the query.
+Neither returns bodies; `memories KEY --full` resolves exactly one key —
+typed `memory_not_found`, `memory_not_authorized`, or `memory_retired` for
+a tombstoned key — and returns the full body as a dedicated response, at
+most 8 KiB in a bounded envelope under the 12 KiB ceiling, never inlined
+into `next`. The `next.memories` signal is content-free: a
+count of retained project notes and a changed-since-last-call flag — no
+keys, no first lines, no body-derived text — falling back to the existing
+omission mechanism when even that does not fit. Delivery is advisory: no
+per-session authoritative delivery stream, no dedicated acknowledgement
+token, no exactly-once guarantee; a host-passed `context_generation` marks
+a fresh or compacted context and may reannounce the count. An agent that
+wants the notes runs `memories`. The existing `work_next` decode, latency,
+and 12 KiB response targets stay as acceptance tests. Rules that must
+survive every session belong in the instruction files; memories are for
+attributed notes and observations that change more often than the files
+do.
+
 ## Human authority and model autonomy
 
 Authority is operation-specific, not a single `human`/`agent` trust bit.
@@ -846,29 +1002,37 @@ in a shared code repository: execution state needs an access-controlled store
 whose lifetime and privacy are independent of the code remote. Cross-host live
 coordination remains a later optional mode.
 
-## Beads replacement and interoperability
+## Tracker replacement and interoperability
 
-Engram must cover the daily local workflow before claiming Beads replacement:
+The local workflow dogfood has cut this repository and one migrated project
+over to Engram as their only writable local tracker. The broader replacement
+claim still waits for the off-host durability and control-binding
+[roadmap](../roadmap.md#v1--close-the-loop) gates. The mapping below is the
+daily workflow it covers, kept for anyone arriving from the previous tracker
+(Beads):
 
 | Beads workflow | Engram equivalent |
 | --- | --- |
 | `bd create`, parent/child | `work_propose` |
 | `bd ready` | `work_next` with typed readiness reasons |
 | `bd show`, search/list | `work_focus` plus query views |
-| `bd dep add`, blocked | prerequisite edges and typed blockers |
+| `bd dep add`, blocked | prerequisite edges and typed blockers (agent flags `--after`/`--drop-after` planned; the core relation ships) |
 | assignee vs. `bd update --claim` | durable assignment vs. fenced live claim; resource mutation still needs leases |
 | notes/design/acceptance | typed work fields plus work-scoped shared/private memory and evidence |
 | comments and handoff | one checkpoint feeding deltas, handoff, and report input |
-| `bd close`, reopen, supersede | one-call evidence capture/seal when compact, or explicit evidence/checkpoint steps; audited reopen/cancel/supersede events |
-| `bd remember` | Engram's typed durable memory, not a pseudo-task |
+| `bd close`, reopen, supersede | one-call evidence capture/seal when compact, or explicit evidence/checkpoint steps; audited reopen/cancel/supersede events (agent flag `--supersede-with` planned) |
+| `bd remember` | Engram's typed durable memory, not a pseudo-task (`remember`/`memories`/`forget` planned) |
 | `bd stats`, stale/orphans/preflight | rebuildable operational indexes and integrity diagnostics |
 | Dolt cross-machine sync | V1 sequential `portable` handoff; later concurrent Engram `Sync` backend |
 
 A Beads adapter imports selected issues as source snapshots and may optionally
 publish an explicit projection. It does not make `.beads`, Dolt, or `bd` a
-runtime dependency. The accurate V1 claim is "local-first Beads replacement
-with optional sequential portability"; teams needing a concurrently writable
-multi-machine backlog still need an external system or later Engram sync.
+runtime dependency. The accurate current claim matches the
+[roadmap](../roadmap.md#v1--close-the-loop): a writable local tracker in a
+running dogfood, with the broader replacement declared only after the
+off-host durability and control-binding gates; teams needing a concurrently
+writable multi-machine backlog still need an external system or later
+Engram sync.
 
 The agent-facing `note` tool binds directly to persisted local work focus. It
 requires the session's exact live claim and records one shared finding plus its

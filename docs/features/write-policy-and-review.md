@@ -2,6 +2,7 @@
 
 > Normative reference: [spec §5–6](../spec.md#5-write-path). Related briefs:
 > [typed memory model](typed-memory-model.md),
+> [local work system](local-work-system.md), and
 > [security & trust](security-and-trust.md).
 
 Anyone — human or agent — can assert a memory. Whether it activates

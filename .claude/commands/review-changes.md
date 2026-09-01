@@ -45,19 +45,30 @@ cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
 node --test scripts/review-freeze-fingerprint.test.mjs
+node --test scripts/mcp-dogfood.test.mjs
+node --test scripts/control-dogfood.test.mjs
+node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
+On Windows, run `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
+`scripts/test-rust.sh`; it runs the same ordinary and serial performance-test
+phases without the Unix-only file-descriptor-limit adjustment.
+
 On any failure, do not spawn reviewers. A failed gate is an investigation,
 never a stop: classify every failing test or check in this same turn.
+For the timing-sensitive scale gate, follow the evidence-backed classification
+in [Quality gates](../../docs/development.md#quality-gates); it is not a
+retry-until-green exception.
 
 - Test or environment defect (wrong assertion, stale fixture, host
   contention, missing prerequisite): fix it in the current changeset, rerun
   the gates, and continue the review.
 - Product defect: file one Engram item per defect with the failing test as
   its acceptance criterion (`engram work add "…" --accept "<test> passes"
-  --label bug --under <current item>`), mark the current item blocked on it
-  when landing depends on it, and fix it now when it is in scope.
+  --kind bug --label gate --under <current item>`), mark the current item
+  blocked on it when landing depends on it, and fix it now when it is in
+  scope.
 
 End the turn with the classification of every failure (test name, cause,
 action); "the suite failed" alone is not a report.
@@ -137,9 +148,9 @@ Deduplicate overlapping findings and tracker suggestions.
 
 Only after consolidation, search Engram for each actionable finding
 (`engram work ls --search "<phrase>" --all`). Add an item only when it is
-not already tracked (`engram work add "<finding>" --label bug --label
-review --priority <0 for Critical … 3 for Low> --under <item under
-review>`); otherwise `note` the evidence on the existing item. Do not
+not already tracked (`engram work add "<finding>" --kind bug --label review
+--priority <0 for Critical … 3 for Low> --under <item under review>`);
+otherwise `note` the evidence on the existing item. Do not
 complete implementation items here — record evidence and leave `done` to
 the implementer. Informational notes need no tracker mutation.
 

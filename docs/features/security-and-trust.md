@@ -3,7 +3,8 @@
 > Normative reference: [spec §7](../spec.md#7-audit-security--compliance).
 > Related briefs: [write policy & review](write-policy-and-review.md),
 > [sqlite store](sqlite-store.md),
-> [behavioral control plane](behavioral-control-plane.md), and
+> [behavioral control plane](behavioral-control-plane.md),
+> [local work system](local-work-system.md), and
 > [execution pipeline](execution-pipeline.md).
 
 Engram is designed for a work deployment, so audit and security properties

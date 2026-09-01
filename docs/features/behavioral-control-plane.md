@@ -1100,8 +1100,8 @@ abort before `report_ready` abandons only assembly; it does not reopen the
 completed run. `report_ready` remains the irreversible bytes/hash freeze
 boundary, and revisions supersede rather than reopen the frozen report.
 
-No final assistant message, process exit, or Beads issue closure implicitly
-completes Engram work or marks a report published.
+No final assistant message, process exit, or external tracker closure
+implicitly completes Engram work or marks a report published.
 
 ## Host integration contract
 

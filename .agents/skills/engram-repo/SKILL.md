@@ -113,9 +113,9 @@ you type only the word.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
-engram work ls [--search TEXT] [--blocked] [--mine] [--verbose]
+engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
-engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--label L]
+engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work note "What you found or decided" [--ref path-or-url]
@@ -162,6 +162,12 @@ node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
+
+On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
+`scripts/test-rust.sh`. Classify timing-sensitive scale-gate failures with the
+evidence-backed procedure in
+[Quality gates](../../../docs/development.md#quality-gates); it is not a
+retry-until-green exception.
 
 Use `/review-changes` for the two-agent read-only review after the gates pass.
 Do not commit, push, or sync remotes without explicit authority.

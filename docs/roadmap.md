@@ -53,6 +53,15 @@ on the V1 path below.
   [context packets](features/context-packets.md)
 - `engram work note` / MCP `note`: one work finding feeds peer, handoff,
   evidence, and report views
+- Planned agent-surface additions: gate results as auditable evidence,
+  prerequisites and supersession as `update` flags, and project memories
+  advertised by a content-free `next` signal —
+  [local work system](features/local-work-system.md#gates-prerequisites-supersession-and-project-memories-planned)
+- Planned contention-robust scale gate: replace the absolute wall-clock
+  assertion with a measurement that does not fail under foreign host load;
+  the concrete design is decided at implementation. Until then the current
+  measured gates and the evidence-backed contention classification stand —
+  [development workflow](development.md#quality-gates)
 - Write policy matrix, proposal/approval, review queue,
   supersede/contradict/contested, tombstones —
   [write policy & review](features/write-policy-and-review.md)
@@ -76,12 +85,19 @@ on the V1 path below.
   claims/leases/grants/private scratch. `doctor` reports `local`,
   `local_backed_up`, `portable`, or later `synchronized` honestly.
 
-The replacement acceptance test is operational: run one real multi-session
-project with Engram as its only writable local tracker and Beads available
-read-only for fallback comparison. Every fallback becomes a missing-primitive
-finding. Cut over this repository only after the work graph, agent protocol,
-restore path for the selected durability mode, and control binding pass that
-dogfood without an unmodeled workflow.
+The local-work acceptance test is operational and running: this repository
+and one migrated project use Engram as their only writable local tracker,
+with the previous tracker's archive kept for comparison. The second project
+was migrated by hand with the ordinary agent words — no adapter was
+involved. Every fallback
+becomes a missing-primitive finding. The broader replacement claim — off-host
+durability through the selected mode's restore path, plus control binding —
+is declared only after that dogfood passes without an unmodeled workflow.
+Accepted risk while the dogfood runs: manual backup/restore exists, but
+backups stay host-local unless copied off-host by hand, `doctor` reports no
+backup freshness, and nothing runs automatically — so there is no off-host
+recovery guarantee until `local_backed_up` ships, and losing the active
+host can lose local work state.
 
 ## V1.x — improve the loop
 

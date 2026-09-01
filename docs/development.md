@@ -6,16 +6,17 @@ the human-readable overview and the documentation conventions.
 
 ## Task tracking
 
-This project uses **beads** (`bd`) for all task tracking — run `bd prime` for
-the full workflow context.
+This project tracks its work in Engram — the nine agent words, documented in
+[CLI & MCP](features/cli-and-mcp.md#using-engram-as-an-agent).
 
-- `bd ready` — find available work; `bd show <id>` — detail;
-  `bd update <id> --claim` — claim before starting.
-- Implementers claim beads, work them, and leave completed implementation
-  beads **in_progress with a completion/validation comment**. Final `bd
-  close` belongs to Greg.
-- No TODO lists in markdown; no ad hoc memory files — durable insights go
-  through `bd remember`.
+- `engram work next` — what you hold, what is ready, what others changed;
+  `engram work show REF` — detail; `engram work claim REF` — claim before
+  changing anything.
+- Implementers `note` decisions and validation evidence once and `done` the
+  item they hold; `done` says what is still owed instead of closing anyway.
+- No TODO lists in markdown; no ad hoc memory files — durable rules live in
+  the instruction files, and project memories arrive with the planned
+  `remember` word.
 
 ## Quality gates
 
@@ -33,7 +34,7 @@ node --test scripts/parity.test.mjs
 node scripts/check-doc-links.mjs
 ```
 
-On Windows, run `pwsh -File scripts/test-rust.ps1` in place of
+On Windows, run `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 `scripts/test-rust.sh`. Both entry points run the ordinary Rust suite with
 bounded test concurrency and then the ignored claim-mutation scale test with
 one thread. The shell entry point also raises the Unix file-descriptor soft
@@ -41,6 +42,24 @@ limit when the host permits it; that step is not applicable on Windows.
 
 Every gate must pass. A failure is investigated and classified as a product,
 test, or environment defect; it is never normalized by retrying until green.
+
+The claim-mutation scale test today asserts absolute p95 latencies plus a
+canonical-decode maximum per operation; work-event and item decode counts are
+printed for the record, not asserted (the separate `work_next` scale test
+asserts those counts without timing). On a shared host another agent's build
+can push the latency assertion over its budget; such a failure is classified
+as an environment defect only with observed contention evidence (the foreign
+process named) and a quiet-host rerun that passes. A failure that repeats on
+a quiet host is a product defect. The evidence-backed quiet rerun is a
+classification step, not a retry-until-green exception, and the contention
+evidence plus the rerun result are recorded as a durable note on the
+affected work item.
+
+Planned: a contention-robust scale gate replaces the absolute wall-clock
+assertion so the test measures work, not the host's mood; the concrete
+design is decided at implementation
+([roadmap](roadmap.md#v1--close-the-loop)). The classification rule above
+is the discipline until it lands.
 
 Documentation-only changes: verify all relative links resolve and that docs
 stay consistent with the [specification](spec.md) — the spec is normative;
@@ -56,8 +75,8 @@ proposed next commands, then wait.
 
 Changes are reviewed through the delegated review workflow (one Codex and one
 Claude review pass over staged, unstaged, and untracked changes) before any
-commit is proposed. Review findings that warrant follow-up work become beads,
-not inline TODOs.
+commit is proposed. Review findings that warrant follow-up work become Engram
+items, not inline TODOs.
 
 ## Documentation conventions
 
@@ -65,9 +84,9 @@ not inline TODOs.
   [`docs/features/`](features/README.md) explain single pillars and defer to
   the spec on conflict.
 - Cross-link documents both ways when one references another.
-- Never put beads task IDs in source-code comments, identifiers, or
-  user-facing copy — code comments explain the invariant in self-contained
-  language. Task IDs live in beads, commits, and review notes.
+- Never put work refs in source-code comments, identifiers, or user-facing
+  copy — code comments explain the invariant in self-contained language.
+  Work refs live in Engram, commits, and review notes.
 - Deferred capabilities (see [roadmap](roadmap.md)) are documented where they
   belong and clearly marked deferred — never silently omitted, never
   presented as shipping.

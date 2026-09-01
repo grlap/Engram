@@ -155,9 +155,10 @@ The two lifecycle layers contain three visibility rings. **Agent scope** is
 private scratch: hypotheses, incomplete reasoning, and preferences that never
 enter peer packets. **Task scope** is the default working scope: decisions,
 constraints, findings, evidence, status, and handoffs visible to every task
-participant. **Project scope** holds reviewed knowledge that should outlive a
-single task. The published ring is the frozen report, not another memory
-scope.
+participant. **Project scope** holds reviewed knowledge that should outlive
+a single task, plus explicitly attributed active Episodes/notes admitted by
+the existing episode exception. The published ring is the frozen report,
+not another memory scope.
 
 A caller working on a task receives applicable project + task + its own agent
 records. Scopes never shadow silently: pinned constraints from every
@@ -317,6 +318,15 @@ acceptance results, and evidence hashes; a root seal also binds those child
 seals and aggregate contributions. The seal makes the work `completed`; an
 attributed abort before it returns to `open`. Reopen preserves root-work
 memory but creates a clean run generation.
+
+The planned gate word is an audit wrapper over existing machinery: one
+pass/fail `WorkEvidence` entry on the held item (gate name, bounded failure
+list, optional reference) through the ordinary evidence path and
+exact-retry protocol — nothing else. It adds no canonical kind, no
+obligation, no completion barrier, and no waiver; a product defect becomes
+a required child through the ordinary propose path, which existing
+completion machinery already enforces. The feature brief defines the input
+bounds.
 
 Optional report state is separate from work completion:
 
@@ -1044,6 +1054,23 @@ supplies project, actor, current work, and cursors. Optional generic memory
 capture, import, publication, and administrative queries remain
 separate tools rather than expanding every model turn.
 
+The planned local-work cut described in the feature briefs adds `gate`,
+`remember`, `memories`, and `forget`. When it ships, the agent surface
+becomes thirteen words plus `search` — fourteen MCP tools, with no new
+core operation: `gate` wraps the existing evidence path, and
+`remember`, `memories`, and `forget` are a thin project-memory surface with
+project-policy authorization and hidden idempotency, outside the
+six-operation work core — no focus mutation, no claim renewal. The
+implementation updates this tool count, the MCP registration and
+instructions, and every agent instruction file atomically with the code;
+until then the ten tools above are the complete shipped surface.
+
+Project-memory advertisement in planned `next` is advisory and
+content-free: a count of retained project notes and a changed flag, with
+no exactly-once guarantee. `memories` is the source of truth, and a
+host-passed `context_generation` marks a fresh or compacted context and
+may reannounce the count.
+
 This surface is for capture, retrieval, explanation, and coordination
 requests. It is not a self-authorization channel: a model-callable MCP tool
 cannot prove that the host withheld a turn or a side effect. Replayable grant
@@ -1082,8 +1109,9 @@ predecessors; begun grants remain checkpoint-required and discoverable, with
 the exact frozen grant returned only for safely replayable observe-only partial
 recovery. Path
 subjects are bound to the project and conservatively NFC/case normalized,
-and cross-task rebind is rejected while active leases remain. The remaining operations and all individual
-action/shared/external/lifecycle authority are not yet shipped;
+and cross-task rebind is rejected while active leases remain. The remaining
+operations and all individual action/shared/external/lifecycle authority are
+not yet shipped;
 `action_gated` declarations are rejected.
 
 For a work-bound begun turn, the private checkpoint may atomically append up to

@@ -47,8 +47,8 @@ Engram V1 is a Rust, host-local concurrent execution-memory system:
 - Claims are idempotent leases; immutable task events and monotonic cursors
   drive peer deltas.
 - Final report freeze requires participant contributions or explicit waivers.
-- One capture feeds task delta, handoff, and report views; the external
-  tracker remains the backlog of record.
+- One capture feeds task delta, handoff, and report views; Engram owns
+  host-local work, and external trackers are immutable snapshot references.
 - Local tasks reference but never mirror external organizational tickets.
 - `report_ready` freezes bytes, hash, and idempotency key.
 - Publication requires an adapter receipt; retry reuses the frozen payload.
