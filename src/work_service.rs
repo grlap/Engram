@@ -1,7 +1,7 @@
 //! Ambient six-operation protocol over the local work lifecycle.
 
 use std::{
-    fmt,
+    fmt::{self, Write as _},
     path::PathBuf,
     str::FromStr,
     sync::{Mutex, MutexGuard, OnceLock},
@@ -21,26 +21,28 @@ use crate::{
     ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionDrainAttestation,
     CompletionSeal, ControlWorkBinding, CreateWorkRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS,
     DecomposeWorkRequest, DevelopmentNoopRedactor, DisposeWorkRequest, EnvironmentEvidence,
-    ExecutionObservation, FeedId, LifecycleAuthorityDecision, MemorySummary, MemoryVersion,
-    ObjectHash, OfferWorkHandoffRequest, ProjectId, ReadyWork, RecordWorkEvidenceRequest,
-    ReleaseWorkRequest, ReopenWorkRequest, ReviseWorkRequest, SessionId, SqliteStore, TaskId,
-    VerificationEvidence, VerificationKind, VerificationResult, WaiveRequiredChildRequest,
-    WorkAuthorityOperation, WorkAvailability, WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint,
-    WorkClaim, WorkClaimState, WorkCompletionRecovery, WorkDecomposition, WorkDependencyRef,
-    WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
-    WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLifecycle, WorkObligation,
-    WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkOrigin,
-    WorkPlanningAuthority, WorkPrerequisiteState, WorkRevisionPatch, WorkRun, WorkRunId,
-    WorkRunState, WorkSessionState, WorkTransition,
+    ExecutionObservation, FeedId, MemorySummary, MemoryVersion, ObjectHash,
+    OfferWorkHandoffRequest, ProjectId, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
+    ReopenWorkRequest, ReviseWorkRequest, SessionId, SqliteStore, TaskId, VerificationEvidence,
+    VerificationKind, VerificationResult, WaiveRequiredChildRequest, WorkAvailability,
+    WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState,
+    WorkCompletionRecovery, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
+    WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkHandoffState, WorkId,
+    WorkItem, WorkItemKind, WorkLifecycle, WorkObligation, WorkObligationResolution,
+    WorkObligationResolutionEvent, WorkObligationState, WorkOrigin, WorkPlanningAuthority,
+    WorkPrerequisiteState, WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
+    WorkTransition,
     domain::{
-        AssuranceLevel, MemoryAssertionEvent, MemoryContradictionEvent, ProvenanceLink,
-        ProvenanceRelation, RecordGateEvidenceRequest, RecordWorkNoteRequest, SCHEMA_VERSION,
-        Scope, Sensitivity, WorkCompletionRecoveryCause, validate_gate_evidence_payload,
+        AssuranceLevel, ForgetProjectMemoryRequest, MemoryAssertionEvent, MemoryContradictionEvent,
+        ProjectMemoryFull, ProjectMemoryList, ProjectMemoryMutationReceipt, ProvenanceLink,
+        ProvenanceRelation, RecordGateEvidenceRequest, RecordWorkNoteRequest,
+        RememberProjectMemoryRequest, SCHEMA_VERSION, Scope, Sensitivity,
+        WorkCompletionRecoveryCause, is_unsafe_rendered_text_char, validate_gate_evidence_payload,
     },
     storage::{
         BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, CompleteWorkStorageResult,
-        StageWorkSessionDelivery, StoreError, WorkEvidenceProjectionSummary, WorkNoteCapture,
-        normalize_completion_acceptance_shape,
+        ProjectMemoryAdvertisement, StageWorkSessionDelivery, StoreError,
+        WorkEvidenceProjectionSummary, WorkNoteCapture, normalize_completion_acceptance_shape,
     },
 };
 
@@ -49,6 +51,9 @@ use crate::WorkReferenceCandidate;
 
 /// Hard ceiling for every successful agent-facing work response.
 pub const MAX_AGENT_WORK_RESPONSE_BYTES: usize = 12 * 1024;
+
+const MAX_PROJECT_MEMORY_FULL_BYTES: usize = 12 * 1024;
+const _: () = assert!(MAX_PROJECT_MEMORY_FULL_BYTES <= MAX_AGENT_WORK_RESPONSE_BYTES);
 
 const MAX_CHANGE_SECTION_BYTES: usize = 4 * 1024;
 const MAX_READY_SECTION_BYTES: usize = 2 * 1024;
@@ -61,6 +66,115 @@ const MAX_SUMMARY_BYTES: usize = 192;
 const MAX_ACCEPTANCE_ITEMS: usize = 6;
 const MAX_LABEL_ITEMS: usize = 8;
 const MAX_DELIVERY_STAGE_RETRIES: usize = 8;
+pub(crate) const MAX_TEXT_NEXT_COMMANDS: usize = 4;
+
+/// Exact structured agent response for one full project-memory read.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct ProjectMemoryFullResponse {
+    #[serde(flatten)]
+    pub memory: ProjectMemoryFull,
+    pub reminders: Vec<String>,
+    pub next: Vec<String>,
+}
+
+impl ProjectMemoryFullResponse {
+    #[must_use]
+    pub(crate) fn new(memory: ProjectMemoryFull) -> Self {
+        Self {
+            memory,
+            reminders: Vec::new(),
+            next: vec!["engram work memories".into()],
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn terminal_lines(&self) -> Vec<String> {
+        vec![
+            format!("memory {}:", self.memory.key),
+            terminal_safe_data_block(&self.memory.body),
+        ]
+    }
+}
+
+pub(crate) fn project_memory_full_response(
+    memory: ProjectMemoryFull,
+) -> Result<ProjectMemoryFullResponse, StoreError> {
+    let response = ProjectMemoryFullResponse::new(memory);
+    let bytes = serde_json::to_vec(&response)?.len();
+    if bytes > MAX_PROJECT_MEMORY_FULL_BYTES {
+        return Err(StoreError::InvalidProjectMemory(format!(
+            "serialized full memory response requires {bytes} bytes, exceeding the {MAX_PROJECT_MEMORY_FULL_BYTES}-byte limit"
+        )));
+    }
+    let terminal_bytes = render_agent_receipt_text(
+        &response.terminal_lines(),
+        &response.reminders,
+        &response.next,
+    )
+    .len();
+    if terminal_bytes > MAX_PROJECT_MEMORY_FULL_BYTES {
+        return Err(StoreError::InvalidProjectMemory(format!(
+            "terminal-safe full memory response requires {terminal_bytes} bytes, exceeding the {MAX_PROJECT_MEMORY_FULL_BYTES}-byte limit"
+        )));
+    }
+    Ok(response)
+}
+
+pub(crate) fn render_agent_receipt_text(
+    lines: &[String],
+    reminders: &[String],
+    next: &[String],
+) -> String {
+    let mut out = lines.join("\n");
+    out.push_str("\nreminders:");
+    if reminders.is_empty() {
+        out.push_str(" none");
+    }
+    for reminder in reminders {
+        out.push_str("\n  - ");
+        out.push_str(reminder);
+    }
+    out.push_str("\nnext:");
+    if next.is_empty() {
+        out.push_str(" none");
+    }
+    for command in next.iter().take(MAX_TEXT_NEXT_COMMANDS) {
+        out.push_str("\n  ");
+        out.push_str(command);
+    }
+    if next.len() > MAX_TEXT_NEXT_COMMANDS {
+        let _ = write!(
+            &mut out,
+            "\n  (+{} more)",
+            next.len() - MAX_TEXT_NEXT_COMMANDS
+        );
+    }
+    out
+}
+
+pub(crate) fn terminal_safe_multiline(text: &str) -> String {
+    let mut safe = String::with_capacity(text.len());
+    for character in text.chars() {
+        if character == '\n' || character == '\t' || !is_unsafe_rendered_text_char(character) {
+            safe.push(character);
+        } else {
+            safe.extend(character.escape_default());
+        }
+    }
+    safe
+}
+
+fn terminal_safe_data_block(text: &str) -> String {
+    terminal_safe_multiline(text)
+        .split('\n')
+        .map(|line| format!("  | {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn ensure_project_memory_full_is_admissible(memory: &ProjectMemoryFull) -> Result<(), StoreError> {
+    project_memory_full_response(memory.clone()).map(drop)
+}
 
 /// Immutable host context for one CLI or MCP work-service connection.
 pub struct LocalWorkService {
@@ -69,7 +183,6 @@ pub struct LocalWorkService {
     actor_id: String,
     session_id: SessionId,
     source_skill: Option<String>,
-    authority_grant: Option<ObjectHash>,
     cached_store: OnceLock<Mutex<SqliteStore>>,
     #[cfg(test)]
     delivery_stage_hook: Option<DeliveryStageTestHook>,
@@ -83,7 +196,6 @@ impl Clone for LocalWorkService {
             actor_id: self.actor_id.clone(),
             session_id: self.session_id.clone(),
             source_skill: self.source_skill.clone(),
-            authority_grant: self.authority_grant.clone(),
             // A clone is a separate protocol connection. Keeping its SQLite
             // handle independent preserves the real cross-connection CAS and
             // delivery-race semantics exercised by hosts and tests.
@@ -103,7 +215,6 @@ impl fmt::Debug for LocalWorkService {
             .field("actor_id", &self.actor_id)
             .field("session_id", &self.session_id)
             .field("source_skill", &self.source_skill)
-            .field("authority_grant", &self.authority_grant)
             .field("store_initialized", &self.cached_store.get().is_some())
             .finish_non_exhaustive()
     }
@@ -139,7 +250,6 @@ struct WorkProtocolIntent<'a, T> {
     session_id: &'a SessionId,
     actor_id: &'a str,
     source_skill: Option<&'a str>,
-    authority_grant: Option<&'a ObjectHash>,
     input: &'a T,
 }
 
@@ -214,6 +324,8 @@ pub struct WorkNextView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<Vec<WorkChange>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub memories: Option<ProjectMemorySignal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub delivered_through: Option<i64>,
     /// Opaque capability required with `delivered_through` to acknowledge a
     /// staged page. Replay returns the same token; it is never exposed by an
@@ -222,6 +334,10 @@ pub struct WorkNextView {
     pub delivery_token: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omissions: Vec<WorkSectionOmission>,
+    /// Exact advisory candidate retained only until the outer agent renderer
+    /// confirms that the signal survived its tighter byte budget.
+    #[serde(skip)]
+    pub(crate) memory_advertisement: Option<ProjectMemoryAdvertisement>,
 }
 
 /// Agent-safe navigation state. The tentative cursor and acknowledgement token
@@ -240,8 +356,9 @@ pub struct AgentWorkSession {
 /// seventh protocol verb.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct WorkNextQuery {
-    /// Sections to return. Empty means the normal focus, ready, catalog, and
-    /// changes packet. A changes-free query never stages or advances delivery.
+    /// Sections to return. Empty means the normal focus, ready, catalog,
+    /// changes, and project-memory signal packet. A changes-free query never
+    /// stages or advances delivery.
     #[serde(default)]
     pub sections: Vec<WorkNextSection>,
     pub search: Option<String>,
@@ -254,6 +371,16 @@ pub struct WorkNextQuery {
     pub assigned_to: Option<String>,
     pub label: Option<String>,
     pub after: Option<String>,
+    /// Asserted host/client context generation. A changed value may reannounce
+    /// the content-free project-memory signal without creating a delivery cursor.
+    pub context_generation: Option<String>,
+}
+
+/// Advisory, content-free project-memory advertisement carried by next.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemorySignal {
+    pub count: usize,
+    pub changed: bool,
 }
 
 /// Selectable `work_next` response section.
@@ -264,6 +391,7 @@ pub enum WorkNextSection {
     Ready,
     Catalog,
     Changes,
+    Memories,
 }
 
 impl FromStr for WorkNextSection {
@@ -275,7 +403,8 @@ impl FromStr for WorkNextSection {
             "ready" => Ok(Self::Ready),
             "catalog" => Ok(Self::Catalog),
             "changes" => Ok(Self::Changes),
-            _ => Err("expected focus, ready, catalog, or changes"),
+            "memories" => Ok(Self::Memories),
+            _ => Err("expected focus, ready, catalog, changes, or memories"),
         }
     }
 }
@@ -454,8 +583,8 @@ pub struct WorkFocusView {
     #[serde(default)]
     pub memories: Vec<WorkMemoryIndexEntry>,
     pub history: WorkHistoryView,
-    /// Direct disposed required children for which the current host grant can
-    /// execute `work_update:waive_required_child` now.
+    /// Direct disposed required children for which the current project-bound
+    /// caller can execute `work_update:waive_required_child` now.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waivable_required_children: Vec<RequiredChildWaiverCandidate>,
     pub allowed_next: Vec<String>,
@@ -515,8 +644,8 @@ pub struct WorkObligationSummary {
     pub resolution: Option<ObjectHash>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<ObjectHash>,
-    /// Asserted human operator attribution for a waiver. The authority grant
-    /// and free-form waiver reason remain host-private.
+    /// Asserted human operator attribution for a waiver. The free-form waiver
+    /// reason remains host-private.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub waived_by: Option<String>,
     pub guidance: WorkObligationGuidance,
@@ -596,7 +725,6 @@ pub enum WorkProposeInput {
         labels: Vec<String>,
         assigned_to: Option<String>,
         deferred_until: Option<DateTime<Utc>>,
-        authority_policy_ref: Option<String>,
         #[serde(default)]
         idempotency_key: String,
     },
@@ -672,16 +800,18 @@ pub struct WorkDecompositionChildSummary {
 pub enum WorkUpdateInput {
     Claim {
         ttl_seconds: Option<i64>,
-        /// Explicit host-authorized reason for recovering an unaccounted prior
-        /// claimant. Omit for an ordinary claim.
+        /// Attributed audit reason for recovering an unaccounted prior
+        /// claimant. It records why the project-bound session took over; it is
+        /// not permission-bearing. Omit for an ordinary claim.
         recovery_reason: Option<String>,
         #[serde(default)]
         idempotency_key: String,
     },
     Release {
         reason: String,
-        /// Explicit host-authorized reason for waiving a missing contribution.
-        /// Omit when the current holder has already contributed.
+        /// Attributed audit reason for waiving a missing contribution. It is
+        /// not permission-bearing. Omit when the current holder has already
+        /// contributed.
         waiver_reason: Option<String>,
         #[serde(default)]
         idempotency_key: String,
@@ -879,7 +1009,7 @@ pub enum WorkCompleteResult {
 }
 
 /// Successful completion receipt. The canonical seal remains queryable by
-/// hash, while host-bound grant references never cross the protocol boundary.
+/// hash, while host-private waiver reasons never cross the protocol boundary.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkCompletedReceipt {
     pub seal: ObjectHash,
@@ -900,8 +1030,7 @@ pub struct WorkCompleteRefusal {
 }
 
 impl LocalWorkService {
-    /// Constructs a service whose authority is fixed by its host, never by an
-    /// agent request body.
+    /// Constructs a project-bound local-work service.
     #[must_use]
     pub fn new(
         database: PathBuf,
@@ -909,7 +1038,6 @@ impl LocalWorkService {
         actor_id: String,
         session_id: SessionId,
         source_skill: Option<String>,
-        authority_grant: Option<ObjectHash>,
     ) -> Self {
         Self {
             database,
@@ -917,7 +1045,6 @@ impl LocalWorkService {
             actor_id,
             session_id,
             source_skill,
-            authority_grant,
             cached_store: OnceLock::new(),
             #[cfg(test)]
             delivery_stage_hook: None,
@@ -946,10 +1073,6 @@ impl LocalWorkService {
     ///
     /// Returns [`StoreError`] under the same conditions as [`Self::work_next`],
     /// or when the acknowledgement capability does not bind the pending page.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "section selection, exact delivery staging, and final byte fitting stay together so cursor advancement is auditable"
-    )]
     pub fn work_next_with_delivery_token(
         &self,
         limit: u32,
@@ -957,6 +1080,40 @@ impl LocalWorkService {
         acknowledge_token: Option<&str>,
         query: WorkNextQuery,
         now: DateTime<Utc>,
+    ) -> Result<WorkNextView, StoreError> {
+        self.work_next_internal(
+            limit,
+            acknowledge_through,
+            acknowledge_token,
+            query,
+            now,
+            false,
+        )
+    }
+
+    /// Builds an agent-rendered view while deferring the memory-signal
+    /// acknowledgement until the outer renderer proves that it was delivered.
+    pub(crate) fn work_next_for_agent(
+        &self,
+        limit: u32,
+        query: WorkNextQuery,
+        now: DateTime<Utc>,
+    ) -> Result<WorkNextView, StoreError> {
+        self.work_next_internal(limit, None, None, query, now, true)
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "section selection, exact delivery staging, and final byte fitting stay together so cursor advancement is auditable"
+    )]
+    fn work_next_internal(
+        &self,
+        limit: u32,
+        acknowledge_through: Option<i64>,
+        acknowledge_token: Option<&str>,
+        query: WorkNextQuery,
+        now: DateTime<Utc>,
+        defer_memory_acknowledgement: bool,
     ) -> Result<WorkNextView, StoreError> {
         let mut store = self.store()?;
         if let Some(through) = acknowledge_through {
@@ -977,6 +1134,19 @@ impl LocalWorkService {
         let wants_ready = sections.contains(&WorkNextSection::Ready);
         let wants_catalog = sections.contains(&WorkNextSection::Catalog);
         let wants_changes = sections.contains(&WorkNextSection::Changes);
+        let wants_memories = sections.contains(&WorkNextSection::Memories);
+        // Validate and read the advisory memory signal before changing the
+        // exact work-change delivery state. An advisory refusal must not make
+        // an unseen tentative page look delivered on the caller's next try.
+        let memory_advertisement = if wants_memories {
+            Some(store.project_memory_advertisement_candidate(
+                &self.project_id,
+                &self.session_id,
+                query.context_generation.as_deref(),
+            )?)
+        } else {
+            None
+        };
         let project_feed = FeedId::Project(self.project_id.clone());
         if acknowledge_through.is_none() && wants_changes {
             // The page returned by the previous call counts as delivered once
@@ -1169,21 +1339,153 @@ impl LocalWorkService {
         } else {
             None
         };
+        let memories = memory_advertisement
+            .as_ref()
+            .map(|advertisement| ProjectMemorySignal {
+                count: advertisement.count,
+                changed: advertisement.changed,
+            });
         let mut response = WorkNextView {
             session: agent_work_session(&session),
             focus,
             ready,
             catalog,
             changes,
+            memories,
             delivered_through: wants_changes.then_some(delivered_through),
             delivery_token: wants_changes
                 .then(|| session.tentative_delivery_token.clone())
                 .flatten(),
             omissions,
+            memory_advertisement: None,
         };
         fit_work_next_response(&mut response)?;
         ensure_agent_response_budget(&response, "work_next")?;
+        if response.memories.is_some()
+            && let Some(advertisement) = memory_advertisement
+            && advertisement.changed
+        {
+            if defer_memory_acknowledgement {
+                response.memory_advertisement = Some(advertisement);
+            } else {
+                acknowledge_project_memory_advertisement_best_effort(
+                    &mut store,
+                    &self.project_id,
+                    &self.session_id,
+                    &advertisement,
+                );
+            }
+        }
         Ok(response)
+    }
+
+    /// Acknowledges the exact project-memory advisory candidate retained in an
+    /// agent response after its final byte shedding and rendering pass.
+    pub(crate) fn acknowledge_work_next_memories(&self, view: &WorkNextView) {
+        let Some(advertisement) = &view.memory_advertisement else {
+            return;
+        };
+        let Ok(mut store) = self.store() else {
+            return;
+        };
+        acknowledge_project_memory_advertisement_best_effort(
+            &mut store,
+            &self.project_id,
+            &self.session_id,
+            advertisement,
+        );
+    }
+
+    /// Creates one attributed project memory without changing work focus or
+    /// renewing a work claim.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed storage refusal when authorization, normalization,
+    /// size, redaction, or create-only lifecycle admission fails.
+    pub fn remember_project_memory(
+        &self,
+        body: String,
+        key: Option<String>,
+        now: DateTime<Utc>,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        self.store()?.remember_project_memory_with_admission(
+            &RememberProjectMemoryRequest {
+                project_id: self.project_id.clone(),
+                session_id: self.session_id.clone(),
+                key,
+                body,
+                actor: self.actor("remember", "record attributed project memory"),
+                created_at: now,
+            },
+            &DevelopmentNoopRedactor,
+            ensure_project_memory_full_is_admissible,
+        )
+    }
+
+    /// Lists live project memories without exposing body text.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed storage refusal when authorization, query, cursor, or
+    /// stored-projection validation fails.
+    pub fn project_memories(
+        &self,
+        query: Option<&str>,
+        after: Option<&str>,
+    ) -> Result<ProjectMemoryList, StoreError> {
+        self.store()?.project_memories(
+            &self.project_id,
+            &self.session_id,
+            &self.actor("memories", "list attributed project memories"),
+            query,
+            after,
+        )
+    }
+
+    /// Reads one live project memory through its dedicated bounded envelope.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed storage refusal when authorization, key resolution,
+    /// lifecycle, or stored-envelope validation fails.
+    pub(crate) fn project_memory_full(
+        &self,
+        key: &str,
+    ) -> Result<ProjectMemoryFullResponse, StoreError> {
+        let full = self.store()?.project_memory_full(
+            &self.project_id,
+            &self.session_id,
+            &self.actor("memories", "read attributed project memory"),
+            key,
+        )?;
+        project_memory_full_response(full).map_err(|error| match error {
+            StoreError::InvalidProjectMemory(detail) => StoreError::InvalidMemoryProjection(detail),
+            other => other,
+        })
+    }
+
+    /// Appends an attributed terminal project-memory tombstone.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed storage refusal when authorization, key resolution, or
+    /// terminal lifecycle validation fails.
+    pub fn forget_project_memory(
+        &self,
+        key: String,
+        now: DateTime<Utc>,
+    ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        self.store()?.forget_project_memory(
+            &ForgetProjectMemoryRequest {
+                project_id: self.project_id.clone(),
+                session_id: self.session_id.clone(),
+                key,
+                actor: self.actor("forget", "retire attributed project memory"),
+                created_at: now,
+            },
+            &DevelopmentNoopRedactor,
+        )
     }
 
     /// Makes `work_ref` the session's ambient focus without inspecting it, so a
@@ -1268,8 +1570,8 @@ impl LocalWorkService {
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError`] when host authority is absent/stale, input is
-    /// invalid, or the underlying lifecycle transaction refuses admission.
+    /// Returns [`StoreError`] when project binding or lifecycle admission is
+    /// invalid, or the underlying transaction refuses the request.
     pub fn work_propose(
         &self,
         input: WorkProposeInput,
@@ -1332,7 +1634,6 @@ impl LocalWorkService {
             &raw_key,
             core_result.is_some(),
         )?;
-        let grant = self.authority_decision()?;
         let result = match input {
             WorkProposeInput::Root {
                 title,
@@ -1343,7 +1644,6 @@ impl LocalWorkService {
                 labels,
                 assigned_to,
                 deferred_until,
-                authority_policy_ref,
                 idempotency_key: _,
             } => {
                 if let Some(value) = core_result {
@@ -1384,9 +1684,6 @@ impl LocalWorkService {
                         deferred_until,
                         origin: WorkOrigin::Local,
                         source_snapshot_id: None,
-                        authority_policy_ref: authority_policy_ref
-                            .unwrap_or_else(|| "project-default".into()),
-                        authority: grant,
                         actor: self.actor("work_propose", "create local root work"),
                         idempotency_key: scoped_key,
                         created_at: now,
@@ -1452,7 +1749,7 @@ impl LocalWorkService {
                             prerequisite,
                         });
                     }
-                    let authority = self.planning_authority(basis.claim.as_ref(), &parent, now)?;
+                    let authority = self.planning_authority(basis.claim.as_ref(), &parent, now);
                     let decomposition = store.decompose_work(
                         &DecomposeWorkRequest {
                             parent_id: parent.work_id,
@@ -1797,11 +2094,6 @@ impl LocalWorkService {
                         expected_run_id: run_id,
                         holder: self.session_id.clone(),
                         ttl_seconds: ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
-                        authority: self.authority_decision()?,
-                        recovery_authority: recovery_reason
-                            .as_ref()
-                            .map(|_| self.authority_decision())
-                            .transpose()?,
                         recovery_reason,
                         actor: self.actor("work_update", "claim ambient local work"),
                         idempotency_key: scoped_key,
@@ -1826,10 +2118,6 @@ impl LocalWorkService {
                         claim_id: claim.claim_id,
                         claim_fence: claim.fence,
                         reason,
-                        waiver_authority: waiver_reason
-                            .as_ref()
-                            .map(|_| self.authority_decision())
-                            .transpose()?,
                         waiver_reason,
                         actor: self.actor("work_update", "release ambient local work"),
                         idempotency_key: scoped_key,
@@ -1918,7 +2206,7 @@ impl LocalWorkService {
                 detail,
                 idempotency_key: _,
             } => {
-                let authority = self.planning_authority(basis.claim.as_ref(), &work, now)?;
+                let authority = self.planning_authority(basis.claim.as_ref(), &work, now);
                 let blocker = store.add_work_blocker(
                     &AddWorkBlockerRequest {
                         work_id: work.work_id,
@@ -1938,7 +2226,7 @@ impl LocalWorkService {
                 blocker_id,
                 idempotency_key: _,
             } => {
-                let authority = self.planning_authority(basis.claim.as_ref(), &work, now)?;
+                let authority = self.planning_authority(basis.claim.as_ref(), &work, now);
                 let blocker_id = match blocker_id {
                     Some(blocker_id) if !blocker_id.trim().is_empty() => blocker_id,
                     Some(_) => {
@@ -1967,7 +2255,7 @@ impl LocalWorkService {
                 patch,
                 idempotency_key: _,
             } => {
-                let authority = self.planning_authority(basis.claim.as_ref(), &work, now)?;
+                let authority = self.planning_authority(basis.claim.as_ref(), &work, now);
                 let item = store.revise_work(
                     &ReviseWorkRequest {
                         work_id: work.work_id,
@@ -1987,7 +2275,7 @@ impl LocalWorkService {
                 idempotency_key: _,
             } => {
                 let prerequisite = store.resolve_work_ref(&self.project_id, &prerequisite)?;
-                let authority = self.planning_authority(basis.claim.as_ref(), &work, now)?;
+                let authority = self.planning_authority(basis.claim.as_ref(), &work, now);
                 let item = store.add_work_prerequisite(
                     &ChangeWorkPrerequisiteRequest {
                         work_id: work.work_id,
@@ -2007,7 +2295,7 @@ impl LocalWorkService {
                 idempotency_key: _,
             } => {
                 let prerequisite = store.resolve_work_ref(&self.project_id, &prerequisite)?;
-                let authority = self.planning_authority(basis.claim.as_ref(), &work, now)?;
+                let authority = self.planning_authority(basis.claim.as_ref(), &work, now);
                 let item = store.remove_work_prerequisite(
                     &ChangeWorkPrerequisiteRequest {
                         work_id: work.work_id,
@@ -2031,7 +2319,6 @@ impl LocalWorkService {
                         work_id: work.work_id,
                         expected_work_revision: work.revision,
                         reason,
-                        authority: self.authority_decision()?,
                         actor: self.actor("work_update", "reopen ambient completed work"),
                         idempotency_key: scoped_key,
                         reopened_at: now,
@@ -2051,7 +2338,6 @@ impl LocalWorkService {
                         disposition: WorkDisposition::Cancelled,
                         replacement_id: None,
                         reason,
-                        authority: self.authority_decision()?,
                         actor: self.actor("work_update", "cancel ambient local work"),
                         idempotency_key: scoped_key,
                         disposed_at: now,
@@ -2073,7 +2359,6 @@ impl LocalWorkService {
                         disposition: WorkDisposition::Superseded,
                         replacement_id: Some(replacement.work_id),
                         reason,
-                        authority: self.authority_decision()?,
                         actor: self.actor("work_update", "supersede ambient local work"),
                         idempotency_key: scoped_key,
                         disposed_at: now,
@@ -2094,7 +2379,6 @@ impl LocalWorkService {
                         child_id: child.work_id,
                         expected_parent_revision: work.revision,
                         reason,
-                        authority: self.authority_decision()?,
                         actor: self.actor(
                             "work_update",
                             "waive a cancelled required child from the completion barrier",
@@ -2335,7 +2619,6 @@ impl LocalWorkService {
             },
         )?;
         let acceptance = bind_completion_acceptance_evidence(acceptance, &evidence);
-        let decision = self.authority_decision()?;
         let completion = store.complete_work_for_protocol(
             &CompleteWorkRequest {
                 work_id: work.work_id,
@@ -2349,9 +2632,7 @@ impl LocalWorkService {
                 drain: CompletionDrainAttestation {
                     reconciled_action_outcomes: Vec::new(),
                     released_resource_leases: Vec::new(),
-                    decision: decision.clone(),
                 },
-                root_authority: (work.work_id == work.root_id).then_some(decision),
                 actor,
                 idempotency_key: scoped_key,
                 completed_at: now,
@@ -2718,7 +2999,6 @@ impl LocalWorkService {
                         work_id: work.work_id,
                         offer_id: offer.offer_id,
                         to: self.session_id.clone(),
-                        authority: self.authority_decision()?,
                         actor: self.actor("work_handoff", "accept ambient work handoff"),
                         idempotency_key: scoped_key,
                         accepted_at: now,
@@ -2766,6 +3046,11 @@ impl LocalWorkService {
     }
 
     fn store(&self) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+        if self.actor_id.trim().is_empty() || self.session_id.0.trim().is_empty() {
+            return Err(StoreError::InvalidWork(
+                "local work requires a non-empty asserted actor and session binding".into(),
+            ));
+        }
         if self.cached_store.get().is_none() {
             let opened = SqliteStore::open_unresolved(&self.database)?;
             // A simultaneous first call may win initialization. Dropping this
@@ -2790,7 +3075,6 @@ impl LocalWorkService {
             session_id: &self.session_id,
             actor_id: &self.actor_id,
             source_skill: self.source_skill.as_deref(),
-            authority_grant: self.authority_grant.as_ref(),
             input,
         }
     }
@@ -2905,17 +3189,6 @@ impl LocalWorkService {
         }
     }
 
-    fn authority_decision(&self) -> Result<LifecycleAuthorityDecision, StoreError> {
-        self.authority_grant
-            .clone()
-            .map(|grant| LifecycleAuthorityDecision { grant })
-            .ok_or_else(|| {
-                StoreError::InvalidWork(
-                    "the host did not bind a work-authority grant to this service".into(),
-                )
-            })
-    }
-
     fn focused_item(
         &self,
         store: &SqliteStore,
@@ -2974,23 +3247,21 @@ impl LocalWorkService {
         claim: Option<&WorkClaim>,
         work: &WorkItem,
         now: DateTime<Utc>,
-    ) -> Result<WorkPlanningAuthority, StoreError> {
-        let grant = self.authority_decision()?.grant;
+    ) -> WorkPlanningAuthority {
         if let Some(claim) = claim
             && claim.work_id == work.work_id
             && claim.state == WorkClaimState::Active
             && claim.holder == self.session_id
             && claim.expires_at > now
         {
-            return Ok(WorkPlanningAuthority::Claim {
+            return WorkPlanningAuthority::Claim {
                 run_id: claim.run_id,
                 holder: claim.holder.clone(),
                 claim_id: claim.claim_id,
                 claim_fence: claim.fence,
-                grant,
-            });
+            };
         }
-        Ok(WorkPlanningAuthority::Delegated { grant })
+        WorkPlanningAuthority::Project
     }
 
     #[allow(
@@ -3194,29 +3465,11 @@ impl LocalWorkService {
         let status = store.inspect_work(work_id, now)?;
         let claim = store.current_work_claim_for_item(&status.work)?;
         let handoffs = store.work_handoff_offers(work_id)?;
-        let actor = self.actor("work_focus", "inspect ambient local work");
-        let (authority_operations, waivable_required_children) =
-            if let Some(grant) = self.authority_grant.as_ref() {
-                let decision = LifecycleAuthorityDecision {
-                    grant: grant.clone(),
-                };
-                let operations =
-                    store.allowed_work_authority_operations(&decision, &actor, &status.work, now);
-                let candidates = store
-                    .waivable_required_children(
-                        &decision,
-                        &actor,
-                        &status.work,
-                        now,
-                        MAX_FOCUS_RELATIONS,
-                    )?
-                    .into_iter()
-                    .map(required_child_waiver_candidate)
-                    .collect();
-                (operations, candidates)
-            } else {
-                (Vec::new(), Vec::new())
-            };
+        let waivable_required_children = store
+            .waivable_required_children(&status.work, MAX_FOCUS_RELATIONS)?
+            .into_iter()
+            .map(required_child_waiver_candidate)
+            .collect::<Vec<_>>();
         let (completion_capture_ready, completion_preflight_ready) = store
             .work_completion_readiness_for_item(
                 &status.work,
@@ -3236,7 +3489,6 @@ impl LocalWorkService {
                 handoffs: &handoffs,
                 session: &self.session_id,
                 now,
-                authority_operations: &authority_operations,
                 can_waive_required_child: !waivable_required_children.is_empty(),
                 claim_recovery_required,
                 completion_capture_ready,
@@ -3253,6 +3505,26 @@ impl LocalWorkService {
     }
 }
 
+fn acknowledge_project_memory_advertisement_best_effort(
+    store: &mut SqliteStore,
+    project_id: &ProjectId,
+    session_id: &SessionId,
+    advertisement: &ProjectMemoryAdvertisement,
+) {
+    // Delivery is advisory. Any failure leaves the candidate unacknowledged,
+    // so it safely reannounces without turning a staged work page into an
+    // error that the next call would mistake for a delivered page.
+    ignore_project_memory_advertisement_acknowledgement(|| {
+        store.acknowledge_project_memory_advertisement(project_id, session_id, advertisement)
+    });
+}
+
+fn ignore_project_memory_advertisement_acknowledgement(
+    acknowledge: impl FnOnce() -> Result<(), StoreError>,
+) {
+    let _ = acknowledge();
+}
+
 fn selected_work_next_sections(requested: &[WorkNextSection]) -> Vec<WorkNextSection> {
     let mut sections = if requested.is_empty() {
         vec![
@@ -3260,6 +3532,7 @@ fn selected_work_next_sections(requested: &[WorkNextSection]) -> Vec<WorkNextSec
             WorkNextSection::Ready,
             WorkNextSection::Catalog,
             WorkNextSection::Changes,
+            WorkNextSection::Memories,
         ]
     } else {
         requested.to_vec()
@@ -3269,6 +3542,7 @@ fn selected_work_next_sections(requested: &[WorkNextSection]) -> Vec<WorkNextSec
         WorkNextSection::Ready => 1,
         WorkNextSection::Catalog => 2,
         WorkNextSection::Changes => 3,
+        WorkNextSection::Memories => 4,
     });
     sections.dedup();
     sections
@@ -3992,6 +4266,12 @@ fn record_byte_omission(response: &mut WorkNextView, section: WorkNextSection) {
 
 fn fit_work_next_response(response: &mut WorkNextView) -> Result<(), StoreError> {
     while serde_json::to_vec(response)?.len() > MAX_AGENT_WORK_RESPONSE_BYTES {
+        if response.memories.take().is_some() {
+            // The fixed-size signal is advisory and reannounces until it is
+            // delivered. Recording a larger omission row here would increase
+            // the response that this pass is trying to fit.
+            continue;
+        }
         if let Some(catalog) = response
             .catalog
             .as_mut()
@@ -4587,19 +4867,10 @@ fn agent_change_object(
                     "work obligation resolution is bound outside its project".into(),
                 ));
             }
-            let (change_kind, summary) = match event.resolution {
-                WorkObligationResolution::Satisfied { evidence, .. } => (
-                    "obligation_satisfied",
-                    format!("{} satisfied by {evidence}", record.obligation.rule.rule_id),
-                ),
-                WorkObligationResolution::Waived { .. } => (
-                    "obligation_waived",
-                    format!(
-                        "{} waived by host authority",
-                        record.obligation.rule.rule_id
-                    ),
-                ),
-            };
+            let (change_kind, summary) = obligation_resolution_change_summary(
+                &record.obligation.rule.rule_id,
+                &event.resolution,
+            );
             Ok(WorkChangeProjection::Visible(WorkChangeSummary {
                 schema_version: event.schema_version,
                 object_kind: object_kind.into(),
@@ -4726,6 +4997,22 @@ fn agent_change_object(
         other => Err(StoreError::InvalidWorkProjection(format!(
             "project work feed contains unsupported agent object kind {other:?}"
         ))),
+    }
+}
+
+fn obligation_resolution_change_summary(
+    rule_id: &str,
+    resolution: &WorkObligationResolution,
+) -> (&'static str, String) {
+    match resolution {
+        WorkObligationResolution::Satisfied { evidence, .. } => (
+            "obligation_satisfied",
+            format!("{rule_id} satisfied by {evidence}"),
+        ),
+        WorkObligationResolution::Waived { waived_by, .. } => (
+            "obligation_waived",
+            format!("{rule_id} waiver attributed to {}", compact_text(waived_by)),
+        ),
     }
 }
 
@@ -4939,7 +5226,6 @@ struct AllowedNextContext<'a> {
     handoffs: &'a [WorkHandoffOffer],
     session: &'a SessionId,
     now: DateTime<Utc>,
-    authority_operations: &'a [WorkAuthorityOperation],
     can_waive_required_child: bool,
     claim_recovery_required: bool,
     completion_capture_ready: bool,
@@ -4948,8 +5234,6 @@ struct AllowedNextContext<'a> {
 
 fn append_holder_execution_actions(
     allowed: &mut Vec<String>,
-    status: &ReadyWork,
-    authority_operations: &[WorkAuthorityOperation],
     completion_capture_ready: bool,
     completion_preflight_ready: bool,
     handoff_action: &str,
@@ -4960,10 +5244,7 @@ fn append_holder_execution_actions(
         "work_update:release".into(),
         handoff_action.into(),
     ]);
-    let can_drain = authority_operations.contains(&WorkAuthorityOperation::CompletionDrain);
-    let can_complete_root = status.work.work_id != status.work.root_id
-        || authority_operations.contains(&WorkAuthorityOperation::RootComplete);
-    if can_drain && can_complete_root && (completion_capture_ready || completion_preflight_ready) {
+    if completion_capture_ready || completion_preflight_ready {
         allowed.push("work_complete".into());
     }
 }
@@ -4978,7 +5259,6 @@ fn append_claim_actions(
         handoffs,
         session,
         now,
-        authority_operations,
         claim_recovery_required,
         completion_capture_ready,
         completion_preflight_ready,
@@ -4997,8 +5277,6 @@ fn append_claim_actions(
             });
             append_holder_execution_actions(
                 allowed,
-                status,
-                authority_operations,
                 completion_capture_ready,
                 completion_preflight_ready,
                 if outgoing_offer {
@@ -5012,8 +5290,7 @@ fn append_claim_actions(
             if claim.state == WorkClaimState::Active
                 && claim.holder == *session
                 && claim.expires_at <= now
-                && status.availability == WorkAvailability::Ready
-                && authority_operations.contains(&WorkAuthorityOperation::Claim) =>
+                && status.availability == WorkAvailability::Ready =>
         {
             allowed.push("work_update:claim".into());
         }
@@ -5025,11 +5302,9 @@ fn append_claim_actions(
             if claim.state == WorkClaimState::Active
                 && claim.holder != *session
                 && claim.expires_at > now => {}
-        _ if authority_operations.contains(&WorkAuthorityOperation::Claim) => {
+        _ if status.availability == WorkAvailability::Ready => {
             if claim_recovery_required {
-                if authority_operations.contains(&WorkAuthorityOperation::ClaimRecovery) {
-                    allowed.push("work_update:claim(recovery_reason_required)".into());
-                }
+                allowed.push("work_update:claim(recovery_reason_required)".into());
             } else {
                 allowed.push("work_update:claim".into());
             }
@@ -5038,25 +5313,26 @@ fn append_claim_actions(
     }
     if handoffs.iter().any(|offer| {
         offer.state == WorkHandoffState::Offered && offer.to == *session && offer.expires_at > now
-    }) && authority_operations.contains(&WorkAuthorityOperation::Claim)
-    {
+    }) {
         allowed.push("work_handoff:accept".into());
     }
 }
 
 fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<String> {
-    let authority_operations = context.authority_operations;
     let mut allowed = vec!["work_focus".into()];
     if status.work.lifecycle == WorkLifecycle::Completed {
-        if authority_operations.contains(&WorkAuthorityOperation::Reopen) {
-            allowed.push("work_update:reopen".into());
-        }
+        allowed.push("work_update:reopen".into());
         return allowed;
     }
     if status.work.lifecycle != WorkLifecycle::Open {
         return allowed;
     }
-    if authority_operations.contains(&WorkAuthorityOperation::Plan) {
+    let another_session_holds_live_claim = context.claim.is_some_and(|claim| {
+        claim.state == WorkClaimState::Active
+            && claim.holder != *context.session
+            && claim.expires_at > context.now
+    });
+    if !another_session_holds_live_claim {
         allowed.extend([
             "work_update:revise".into(),
             "work_update:block".into(),
@@ -5064,10 +5340,9 @@ fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<Stri
             "work_update:add_prerequisite".into(),
             "work_update:remove_prerequisite".into(),
             "work_propose:decompose".into(),
+            "work_update:cancel".into(),
+            "work_update:supersede".into(),
         ]);
-    }
-    if authority_operations.contains(&WorkAuthorityOperation::Dispose) {
-        allowed.extend(["work_update:cancel".into(), "work_update:supersede".into()]);
     }
     if context.can_waive_required_child {
         allowed.push("work_update:waive_required_child".into());
@@ -5084,16 +5359,50 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::{
-        WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityScope, WorkPlanningBudget,
-        domain::{GATE_EVIDENCE_SUMMARY, SCHEMA_VERSION},
-    };
+    use crate::domain::{GATE_EVIDENCE_SUMMARY, SCHEMA_VERSION};
 
     fn at(second: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 8, 27, 3, 0, 0)
             .single()
             .expect("fixed timestamp")
             + Duration::seconds(second)
+    }
+
+    #[test]
+    fn advisory_memory_acknowledgement_swallows_every_failure_class() {
+        for error in [
+            StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+                None,
+            )),
+            StoreError::InvalidProjectMemory("non-contention refusal".into()),
+        ] {
+            let mut attempted = false;
+            ignore_project_memory_advertisement_acknowledgement(|| {
+                attempted = true;
+                Err(error)
+            });
+            assert!(attempted);
+        }
+    }
+
+    #[test]
+    fn obligation_waiver_projection_names_asserted_attribution_not_authority() {
+        for waived_by in ["shell-operator", "bound-host-session"] {
+            let (kind, summary) = obligation_resolution_change_summary(
+                "required-check",
+                &WorkObligationResolution::Waived {
+                    waived_by: waived_by.into(),
+                    reason: "explicit exception".into(),
+                },
+            );
+            assert_eq!(kind, "obligation_waived");
+            assert_eq!(
+                summary,
+                format!("required-check waiver attributed to {waived_by}")
+            );
+            assert!(!summary.contains("authority"));
+        }
     }
 
     #[test]
@@ -5448,71 +5757,6 @@ mod tests {
         }
     }
 
-    fn install_protocol_grant(
-        database: &std::path::Path,
-        project: &ProjectId,
-        actor_id: &str,
-    ) -> ObjectHash {
-        install_protocol_grant_with_budget(
-            database,
-            project,
-            actor_id,
-            WorkPlanningBudget {
-                max_depth: 4,
-                max_open_descendants: 32,
-                max_children_per_decomposition: 8,
-            },
-        )
-    }
-
-    fn install_protocol_grant_with_budget(
-        database: &std::path::Path,
-        project: &ProjectId,
-        actor_id: &str,
-        budget: WorkPlanningBudget,
-    ) -> ObjectHash {
-        SqliteStore::open(database)
-            .expect("store")
-            .install_work_authority_grant(
-                WorkAuthorityGrant {
-                    schema_version: SCHEMA_VERSION,
-                    project_id: project.clone(),
-                    policy_ref: "project-default".into(),
-                    subject_actor_id: actor_id.into(),
-                    issued_by: ActorContext {
-                        actor_id: "test-host".into(),
-                        actor_kind: "host_operator".into(),
-                        assurance: AssuranceLevel::Asserted,
-                        run_id: None,
-                        session_id: None,
-                        source_tool: Some("test".into()),
-                        source_skill: None,
-                        provenance_chain: Vec::new(),
-                        reason: "issue test authority".into(),
-                    },
-                    assurance: AssuranceLevel::Asserted,
-                    operations: vec![
-                        WorkAuthorityOperation::RootCreate,
-                        WorkAuthorityOperation::Plan,
-                        WorkAuthorityOperation::Claim,
-                        WorkAuthorityOperation::Dispose,
-                        WorkAuthorityOperation::RootComplete,
-                        WorkAuthorityOperation::Reopen,
-                        WorkAuthorityOperation::ClaimRecovery,
-                        WorkAuthorityOperation::CompletionWaiver,
-                        WorkAuthorityOperation::CompletionDrain,
-                    ],
-                    scope: WorkAuthorityScope::Project,
-                    planning_budget: Some(budget),
-                    issued_at: at(-1),
-                    valid_until: at(3_600),
-                    reason: "test host delegation".into(),
-                },
-                &DevelopmentNoopRedactor,
-            )
-            .expect("grant")
-    }
-
     fn root_input(title: &str, key: &str) -> WorkProposeInput {
         WorkProposeInput::Root {
             title: title.into(),
@@ -5523,7 +5767,6 @@ mod tests {
             labels: Vec::new(),
             assigned_to: None,
             deferred_until: None,
-            authority_policy_ref: None,
             idempotency_key: key.into(),
         }
     }
@@ -5561,7 +5804,6 @@ mod tests {
                 deferred_until: None,
                 origin: WorkOrigin::Local,
                 source_snapshot_id: None,
-                authority_policy_ref: "project-default".into(),
                 lifecycle: WorkLifecycle::Open,
                 revision: 1,
                 active_run_id: None,
@@ -5662,7 +5904,6 @@ mod tests {
             "agent".into(),
             SessionId("key-session".into()),
             None,
-            None,
         );
         let cancel = service
             .core_operation_key("work_update:cancel", "same-key", "dispose_work")
@@ -5687,6 +5928,27 @@ mod tests {
     }
 
     #[test]
+    fn local_work_service_rejects_blank_asserted_identity() {
+        let directory = tempdir().expect("temporary directory");
+        for (actor_id, session_id) in [("   ", "session"), ("agent", "\t")] {
+            let service = LocalWorkService::new(
+                directory
+                    .path()
+                    .join(format!("{}.sqlite3", session_id.len())),
+                ProjectId("blank-identity-project".into()),
+                actor_id.into(),
+                SessionId(session_id.into()),
+                None,
+            );
+            assert!(matches!(
+                service.work_next(1, WorkNextQuery::default(), at(0)),
+                Err(StoreError::InvalidWork(detail))
+                    if detail.contains("non-empty asserted actor and session")
+            ));
+        }
+    }
+
+    #[test]
     fn work_update_does_not_admit_obligation_waivers() {
         let attempted = serde_json::json!({
             "kind": "waive_obligation",
@@ -5703,14 +5965,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("execution-observation-projection".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(root_input("Observe execution", "root"), at(0))
@@ -5777,147 +6037,32 @@ mod tests {
     }
 
     #[test]
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the exhaustive security regression enumerates every transition variant"
-    )]
-    fn agent_work_projections_exclude_authority_from_every_transition_and_waiver_receipt() {
-        let grant = ObjectHash::from_canonical_bytes(b"host-only-grant");
-        let work_id = WorkId::new();
-        let run_id = crate::WorkRunId::new();
-        let claim_id = crate::WorkClaimId::new();
-        let offer_id = crate::WorkHandoffOfferId::new();
-        let planning = WorkPlanningAuthority::Delegated {
-            grant: grant.clone(),
-        };
-        let claim = WorkClaim {
-            claim_id,
-            work_id,
-            run_id,
-            accepted_work_revision: 1,
-            holder: SessionId("holder".into()),
-            expires_at: at(60),
-            revision: 1,
-            fence: 1,
-            state: WorkClaimState::Active,
-        };
-        let transitions = vec![
-            WorkTransition::Created {
-                prerequisites: vec![WorkId::new()],
-                authority_grant: grant.clone(),
-            },
-            WorkTransition::Decomposed {
-                children: vec![WorkId::new()],
-                authority: planning.clone(),
-            },
-            WorkTransition::Revised {
-                authority: planning.clone(),
-            },
-            WorkTransition::PrerequisiteAdded {
-                prerequisite_id: WorkId::new(),
-                authority: planning.clone(),
-            },
-            WorkTransition::PrerequisiteRemoved {
-                prerequisite_id: WorkId::new(),
-                authority: planning,
-            },
-            WorkTransition::Blocked {
-                blocker_id: "blocker".into(),
-            },
-            WorkTransition::Unblocked {
-                blocker_id: "blocker".into(),
-            },
-            WorkTransition::Claimed {
-                claim: claim.clone(),
-                recovered: false,
-                authority_grant: grant.clone(),
-            },
-            WorkTransition::Released {
-                claim_id,
-                fence: 2,
-                reason: "released intentionally".into(),
-            },
-            WorkTransition::Checkpointed {
-                checkpoint: ObjectHash::from_canonical_bytes(b"checkpoint"),
-            },
-            WorkTransition::HandoffOffered {
-                offer_id,
-                to: SessionId("recipient".into()),
-                checkpoint: ObjectHash::from_canonical_bytes(b"handoff-checkpoint"),
-                offer: ObjectHash::from_canonical_bytes(b"offer"),
-            },
-            WorkTransition::HandoffExpired {
-                offer_id,
-                offer: ObjectHash::from_canonical_bytes(b"expired-offer"),
-            },
-            WorkTransition::HandoffCancelled {
-                offer_id,
-                offer: ObjectHash::from_canonical_bytes(b"cancelled-offer"),
-                reason: "recipient unavailable".into(),
-            },
-            WorkTransition::HandedOff {
-                offer_id,
-                claim_id,
-                from: SessionId("holder".into()),
-                to: SessionId("recipient".into()),
-                fence: 2,
-                checkpoint: ObjectHash::from_canonical_bytes(b"accepted-checkpoint"),
-                authority_grant: grant.clone(),
-                offer: ObjectHash::from_canonical_bytes(b"accepted-offer"),
-            },
-            WorkTransition::EvidenceAdded {
-                evidence: ObjectHash::from_canonical_bytes(b"evidence"),
-            },
-            WorkTransition::TypedEvidenceAdded {
-                evidence: ObjectHash::from_canonical_bytes(b"typed-evidence"),
-                evidence_kind: WorkEvidenceKind::Verification,
-            },
-            WorkTransition::Completed {
-                seal: ObjectHash::from_canonical_bytes(b"seal"),
-            },
-            WorkTransition::Disposed {
-                lifecycle: WorkLifecycle::Cancelled,
-                replacement_id: None,
-                reason: "cancelled".into(),
-                authority_grant: grant.clone(),
-            },
-            WorkTransition::RequiredChildWaived {
-                child_id: WorkId::new(),
-                child_revision: 2,
-                reason: "waived".into(),
-                authority_grant: grant.clone(),
-            },
-            WorkTransition::Reopened {
-                run_id,
-                generation: 2,
-                authority: LifecycleAuthorityDecision {
-                    grant: grant.clone(),
-                },
-                reason: "new execution generation".into(),
-            },
-        ];
+    fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
+        let work_id = WorkId(uuid::Uuid::from_u128(11));
+        let run_id = WorkRunId(uuid::Uuid::from_u128(12));
+        let claim_id = crate::WorkClaimId(uuid::Uuid::from_u128(13));
         let actor = ActorContext {
             actor_id: "agent".into(),
-            actor_kind: "coding_agent".into(),
+            actor_kind: "agent".into(),
             assurance: AssuranceLevel::Asserted,
-            run_id: None,
-            session_id: Some(SessionId("holder".into())),
+            run_id: Some(run_id.0.to_string()),
+            session_id: Some(SessionId("projection-session".into())),
             source_tool: Some("test".into()),
             source_skill: None,
             provenance_chain: Vec::new(),
-            reason: "exercise agent projection".into(),
+            reason: "pin the agent projection boundary".into(),
         };
         let work = WorkItem {
             schema_version: SCHEMA_VERSION,
             project_id: ProjectId("projection-project".into()),
             work_id,
-            short_ref: "projection-ref".into(),
+            short_ref: "w-projection".into(),
             root_id: work_id,
             parent_id: None,
             child_requirement: ChildRequirement::Required,
-            title: "Projection test".into(),
-            outcome: "No authority crosses the agent boundary".into(),
-            acceptance: vec!["all transitions are covered".into()],
+            title: "Projection boundary".into(),
+            outcome: "No transition secrets".into(),
+            acceptance: vec!["Only compact fields are visible".into()],
             kind: WorkItemKind::Task,
             priority: 1,
             labels: Vec::new(),
@@ -5925,7 +6070,6 @@ mod tests {
             deferred_until: None,
             origin: WorkOrigin::Local,
             source_snapshot_id: None,
-            authority_policy_ref: "project-default".into(),
             lifecycle: WorkLifecycle::Open,
             revision: 1,
             active_run_id: Some(run_id),
@@ -5934,55 +6078,56 @@ mod tests {
             created_at: at(0),
             updated_at: at(0),
         };
-        let mut authority_bearing_transitions = 0;
-        for transition in transitions {
-            let raw = serde_json::to_string(&transition).expect("serialize raw transition");
-            if raw.contains(grant.as_str()) {
-                authority_bearing_transitions += 1;
-            }
-            let event = WorkEvent {
-                schema_version: SCHEMA_VERSION,
-                project_id: work.project_id.clone(),
-                root_id: work.root_id,
-                work_id,
-                run_id: Some(run_id),
-                revision: work.revision,
-                work: work.clone(),
-                run: None,
-                root_execution: None,
-                claim: Some(claim.clone()),
-                handoff_offer: None,
-                blocker: None,
-                relation_fingerprint: ObjectHash::from_canonical_bytes(b"projection-test"),
-                transition,
-                actor: actor.clone(),
-                created_at: at(1),
-            };
-            let projected = serde_json::to_string(&agent_work_event_summary(&event))
-                .expect("serialize projected transition");
-            assert!(!projected.contains(grant.as_str()));
-            assert!(!projected.contains("authority_grant"));
-            assert!(!projected.contains("\"authority\""));
-        }
-        assert!(authority_bearing_transitions > 0);
+        let claim = WorkClaim {
+            claim_id,
+            work_id,
+            run_id,
+            accepted_work_revision: 1,
+            holder: SessionId("projection-session".into()),
+            expires_at: at(60),
+            revision: 1,
+            fence: 77,
+            state: WorkClaimState::Active,
+        };
+        let mut event = WorkEvent {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            root_id: work_id,
+            work_id,
+            run_id: Some(run_id),
+            revision: 1,
+            work,
+            run: None,
+            root_execution: None,
+            claim: Some(claim.clone()),
+            handoff_offer: None,
+            blocker: None,
+            relation_fingerprint: ObjectHash::from_canonical_bytes(b"relations"),
+            transition: WorkTransition::Claimed {
+                claim: claim.clone(),
+                recovered: false,
+            },
+            actor,
+            created_at: at(1),
+        };
+        let claimed = serde_json::to_string(&agent_work_event_summary(&event))
+            .expect("serialize claimed summary");
+        assert!(!claimed.contains(&claim_id.0.to_string()));
+        assert!(!claimed.contains("\"fence\""));
 
-        let receipt = agent_update_receipt(
-            "waive_required_child",
-            serde_json::to_value(crate::RequiredChildWaiver {
-                work_id,
-                work_revision: 2,
-                authority_grant: grant.clone(),
-                waived_by: "host".into(),
-                reason: "explicit omission".into(),
-            })
-            .expect("waiver receipt"),
-        )
-        .expect("agent waiver receipt");
-        assert!(
-            !serde_json::to_string(&receipt)
-                .expect("serialize receipt")
-                .contains(grant.as_str())
-        );
+        let checkpoint = ObjectHash::from_canonical_bytes(b"private-checkpoint-marker");
+        let offer = ObjectHash::from_canonical_bytes(b"private-offer-marker");
+        event.transition = WorkTransition::HandoffOffered {
+            offer_id: crate::WorkHandoffOfferId(uuid::Uuid::from_u128(14)),
+            to: SessionId("next-session".into()),
+            checkpoint: checkpoint.clone(),
+            offer: offer.clone(),
+        };
+        let offered = serde_json::to_string(&agent_work_event_summary(&event))
+            .expect("serialize handoff summary");
+        assert!(!offered.contains(&checkpoint.to_string()));
+        assert!(!offered.contains(&offer.to_string()));
+        assert!(!offered.contains("offer_id"));
     }
 
     #[test]
@@ -6019,7 +6164,6 @@ mod tests {
             deferred_until: None,
             origin: WorkOrigin::Local,
             source_snapshot_id: None,
-            authority_policy_ref: "project-default".into(),
             lifecycle: WorkLifecycle::Open,
             revision: 1,
             active_run_id: None,
@@ -6056,14 +6200,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("ambient-blockers".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let root = match service
             .work_propose(root_input("Resolve blockers", "root"), at(0))
@@ -6138,66 +6280,16 @@ mod tests {
     }
 
     #[test]
-    fn interrupted_attempt_revalidates_authority() {
-        let directory = tempdir().expect("temp directory");
-        let database = directory.path().join("engram.sqlite3");
-
-        let revoked_project = ProjectId("revoked-attempt".into());
-        let revoked_grant = install_protocol_grant(&database, &revoked_project, "agent");
-        let revoked_service = LocalWorkService::new(
-            database.clone(),
-            revoked_project.clone(),
-            "agent".into(),
-            SessionId("revoked-session".into()),
-            Some("protocol-test".into()),
-            Some(revoked_grant.clone()),
-        );
-        let never_executed = root_input("Never executed", "interrupted-root");
-        let mut store = SqliteStore::open(&database).expect("store");
-        let basis = revoked_service
-            .protocol_basis(&store, false, false, None, at(0))
-            .expect("empty root basis");
-        let intent = revoked_service.protocol_intent(&never_executed);
-        store
-            .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
-                project_id: &revoked_project,
-                session_id: &SessionId("revoked-session".into()),
-                operation: "work_propose:root",
-                idempotency_key: "interrupted-root",
-                intent: &intent,
-                basis: &basis,
-                now: at(0),
-            })
-            .expect("persist interrupted attempt");
-        store
-            .revoke_work_authority_grant(
-                &revoked_grant,
-                &revoked_service.actor("test", "revoke interrupted authority"),
-                "authority was withdrawn before execution",
-                at(1),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("revoke grant");
-        drop(store);
-        assert!(matches!(
-            revoked_service.work_propose(never_executed, at(2)),
-            Err(StoreError::InvalidWork(_))
-        ));
-    }
-
-    #[test]
     fn interrupted_attempt_cannot_follow_changed_focus() {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let focus_project = ProjectId("focus-attempt".into());
-        let focus_grant = install_protocol_grant(&database, &focus_project, "agent");
         let focus_service = LocalWorkService::new(
             database.clone(),
             focus_project.clone(),
             "agent".into(),
             SessionId("focus-session".into()),
             Some("protocol-test".into()),
-            Some(focus_grant),
         );
         let first = match focus_service
             .work_propose(root_input("First target", "first-root"), at(3))
@@ -6258,7 +6350,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("committed-update-focus".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("committed-update-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -6266,7 +6357,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let first = match service
             .work_propose(root_input("Original focus", "committed-first"), at(0))
@@ -6300,9 +6390,7 @@ mod tests {
             })
             .expect("begin durable attempt");
         let original = basis.focused_work.clone().expect("original focus");
-        let authority = service
-            .planning_authority(basis.claim.as_ref(), &original, at(1))
-            .expect("planning authority");
+        let authority = service.planning_authority(basis.claim.as_ref(), &original, at(1));
         store
             .revise_work(
                 &ReviseWorkRequest {
@@ -6359,7 +6447,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("committed-handoff-focus".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("committed-handoff-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -6367,7 +6454,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let first = match service
             .work_propose(root_input("Handoff original", "handoff-first"), at(0))
@@ -6467,7 +6553,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("implicit-delivery".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("implicit-delivery-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -6475,7 +6560,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let peer = LocalWorkService::new(
             database.clone(),
@@ -6483,7 +6567,6 @@ mod tests {
             "agent".into(),
             SessionId("implicit-delivery-peer".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         service
             .work_propose(root_input("First root", "implicit-first"), at(0))
@@ -6584,14 +6667,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("derived-keys".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("derived-keys-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let root_of = |result: WorkProposeResult| match result {
             WorkProposeResult::Root { work, .. } => work,
@@ -6673,14 +6754,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("select-work".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("select-work-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let first = match service
             .work_propose(root_input("Select first", "select-first"), at(0))
@@ -6721,14 +6800,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("safe-defaults".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("safe-defaults-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         service
             .work_propose(
@@ -6741,7 +6818,6 @@ mod tests {
                     labels: Vec::new(),
                     assigned_to: None,
                     deferred_until: None,
-                    authority_policy_ref: None,
                     idempotency_key: "defaults-root".into(),
                 },
                 at(0),
@@ -6876,14 +6952,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("strict-acceptance".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("strict-acceptance-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         service
             .work_propose(root_input("Strict acceptance", "strict-root"), at(0))
@@ -6955,14 +7029,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completion-lapsed-claim".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("completion-lapsed-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(
@@ -7033,14 +7105,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completed-update-after-expiry".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("completed-update-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(
@@ -7112,14 +7182,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("lapsed-cancel".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("lapsed-cancel-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(root_input("Lapsed cancel", "lapsed-cancel-root"), at(0))
@@ -7258,14 +7326,12 @@ mod tests {
             let directory = tempdir().expect("temp directory");
             let database = directory.path().join("engram.sqlite3");
             let project = ProjectId(format!("completion-lapsed-{case}"));
-            let grant = install_protocol_grant(&database, &project, "agent");
             let service = LocalWorkService::new(
                 database,
                 project,
                 "agent".into(),
                 SessionId(format!("completion-lapsed-{case}-session")),
                 Some("protocol-test".into()),
-                Some(grant),
             );
             let work = match service
                 .work_propose(
@@ -7337,14 +7403,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completion-missing-contribution".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("completion-contribution-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(
@@ -7433,14 +7497,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completion-unsealed-child".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("completion-unsealed-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let root = match service
             .work_propose(root_input("Parent barrier", "parent-barrier-root"), at(0))
@@ -7530,7 +7592,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("concurrent-delivery-cas".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("shared-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -7538,7 +7599,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let peer = LocalWorkService::new(
             database.clone(),
@@ -7546,7 +7606,6 @@ mod tests {
             "agent".into(),
             SessionId("seed-peer".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         service
             .work_propose(root_input("Shared focus", "shared-focus"), at(0))
@@ -7642,7 +7701,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("focus-delivery-cas".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("focus-race-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -7650,7 +7708,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let peer = LocalWorkService::new(
             database.clone(),
@@ -7658,7 +7715,6 @@ mod tests {
             "agent".into(),
             SessionId("focus-race-peer".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let original = match service
             .work_propose(root_input("Original focus", "focus-race-original"), at(0))
@@ -7814,14 +7870,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completion-prevalidation".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
             project,
             "agent".into(),
             SessionId("completion-prevalidation-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let root = match service
             .work_propose(
@@ -7834,7 +7888,6 @@ mod tests {
                     labels: Vec::new(),
                     assigned_to: None,
                     deferred_until: None,
-                    authority_policy_ref: None,
                     idempotency_key: "prevalidation-root".into(),
                 },
                 at(0),
@@ -7982,7 +8035,6 @@ mod tests {
             let directory = tempdir().expect("temp directory");
             let database = directory.path().join("engram.sqlite3");
             let project = ProjectId(format!("completion-replay-{scenario}"));
-            let grant = install_protocol_grant(&database, &project, "agent");
             let session = SessionId("completion-session".into());
             let service = LocalWorkService::new(
                 database.clone(),
@@ -7990,7 +8042,6 @@ mod tests {
                 "agent".into(),
                 session.clone(),
                 Some("protocol-test".into()),
-                Some(grant),
             );
             let root = match service
                 .work_propose(
@@ -8132,7 +8183,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completion-retry-current-evidence".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("completion-current-evidence-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -8140,7 +8190,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let root = match service
             .work_propose(
@@ -8235,7 +8284,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("completion-retry-foreign-fence".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("completion-original-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -8243,7 +8291,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let root = match service
             .work_propose(
@@ -8309,10 +8356,6 @@ mod tests {
                     expected_run_id: run_id,
                     holder: peer,
                     ttl_seconds: 300,
-                    authority: LifecycleAuthorityDecision {
-                        grant: grant.clone(),
-                    },
-                    recovery_authority: Some(LifecycleAuthorityDecision { grant }),
                     recovery_reason: Some("the original holder claim expired".into()),
                     actor: peer_actor,
                     idempotency_key: "foreign-fence-recovery".into(),
@@ -8343,7 +8386,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("contradiction-delivery".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("contradiction-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -8351,7 +8393,6 @@ mod tests {
             "agent".into(),
             session.clone(),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let root = match service
             .work_propose(
@@ -8578,14 +8619,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("feed-boundary-project".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let focused = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("focused-session".into()),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let peer = LocalWorkService::new(
             database.clone(),
@@ -8593,7 +8632,6 @@ mod tests {
             "agent".into(),
             SessionId("peer-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let focused_root = match focused
             .work_propose(root_input("Focused root", "focused-root"), at(0))
@@ -8840,7 +8878,6 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("concurrent-gate".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let session = SessionId("gate-session".into());
         let service = LocalWorkService::new(
             database.clone(),
@@ -8848,7 +8885,6 @@ mod tests {
             "agent".into(),
             session,
             Some("gate-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(root_input("Concurrent gate", "concurrent-gate-root"), at(0))
@@ -8964,14 +9000,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("explicit-update-target".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("shared-session".into()),
             Some("explicit-target-test".into()),
-            Some(grant),
         );
         let create = |title: &str, key: &str| match service
             .work_propose(root_input(title, key), at(0))
@@ -9028,14 +9062,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("pending-note-attempt".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
             project,
             "agent".into(),
             SessionId("pending-note-session".into()),
             Some("pending-note-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(root_input("Pending note", "pending-note-root"), at(0))
@@ -9140,14 +9172,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("pending-gate-attempt".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
             project,
             "agent".into(),
             SessionId("pending-gate-session".into()),
             Some("pending-gate-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(root_input("Pending gate", "pending-gate-root"), at(0))
@@ -9234,14 +9264,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("handoff-gate-observation".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let first = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("gate-holder-a".into()),
             Some("gate-handoff-test".into()),
-            Some(grant.clone()),
         );
         let second = LocalWorkService::new(
             database.clone(),
@@ -9249,7 +9277,6 @@ mod tests {
             "agent".into(),
             SessionId("gate-holder-b".into()),
             Some("gate-handoff-test".into()),
-            Some(grant),
         );
         let work = match first
             .work_propose(root_input("Handoff gate", "handoff-gate-root"), at(0))
@@ -9385,14 +9412,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("explicit-gate-target".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database.clone(),
             project,
             "agent".into(),
             SessionId("shared-gate-session".into()),
             Some("explicit-gate-test".into()),
-            Some(grant),
         );
         let create = |title: &str, key: &str| match service
             .work_propose(root_input(title, key), at(0))
@@ -9447,14 +9472,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("gate-storage-boundary".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("gate-storage-session".into()),
             Some("gate-storage-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(root_input("Gate storage", "gate-storage-root"), at(0))
@@ -9582,14 +9605,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("protocol-project".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let a = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("session-a".into()),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let b = LocalWorkService::new(
             database.clone(),
@@ -9597,7 +9618,6 @@ mod tests {
             "agent".into(),
             SessionId("session-b".into()),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
 
         let root = match a
@@ -9611,7 +9631,6 @@ mod tests {
                     labels: vec!["protocol".into()],
                     assigned_to: None,
                     deferred_until: None,
-                    authority_policy_ref: None,
                     idempotency_key: "root".into(),
                 },
                 at(0),
@@ -9628,11 +9647,6 @@ mod tests {
         let first_delivered = first.delivered_through.expect("first delivered cursor");
         let first_delivery_token = first.delivery_token.clone().expect("first delivery token");
         assert!(first_delivered > 0);
-        assert!(
-            !serde_json::to_string(&first.changes)
-                .expect("serialize agent changes")
-                .contains(grant.as_str())
-        );
         assert_eq!(first.session.confirmed_project_cursor, 0);
         assert!(first.session.pending_delivery);
         let concurrent = match b
@@ -9646,7 +9660,6 @@ mod tests {
                     labels: Vec::new(),
                     assigned_to: None,
                     deferred_until: None,
-                    authority_policy_ref: None,
                     idempotency_key: "concurrent-root".into(),
                 },
                 at(2),
@@ -9789,11 +9802,6 @@ mod tests {
         assert_eq!(
             exact_result,
             serde_json::to_value(&claimed).expect("serialize exact replay basis")
-        );
-        assert!(
-            !serde_json::to_string(&exact_result)
-                .expect("serialize exact result")
-                .contains(grant.as_str())
         );
         drop(attempt_connection);
         let conflict = a.work_update(
@@ -10005,7 +10013,6 @@ mod tests {
                     labels: Vec::new(),
                     assigned_to: None,
                     deferred_until: None,
-                    authority_policy_ref: None,
                     idempotency_key: "replacement-root".into(),
                 },
                 at(51),
@@ -10026,7 +10033,6 @@ mod tests {
                     labels: Vec::new(),
                     assigned_to: None,
                     deferred_until: None,
-                    authority_policy_ref: None,
                     idempotency_key: "obsolete-root".into(),
                 },
                 at(52),
@@ -10104,14 +10110,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("claim-recovery-guidance".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let first = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("first-holder".into()),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let successor = LocalWorkService::new(
             database,
@@ -10119,7 +10123,6 @@ mod tests {
             "agent".into(),
             SessionId("successor".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let root = match first
             .work_propose(
@@ -10141,6 +10144,11 @@ mod tests {
                 at(1),
             )
             .expect("initial claim");
+
+        let live_foreign_guidance = successor
+            .work_focus(&root.short_ref, at(2))
+            .expect("focus while another session holds the live claim");
+        assert_eq!(live_foreign_guidance.allowed_next, vec!["work_focus"]);
 
         let guidance = successor
             .work_focus(&root.short_ref, at(4))
@@ -10164,18 +10172,16 @@ mod tests {
     }
 
     #[test]
-    fn allowed_next_advertises_only_plain_claim_for_a_ready_lapsed_holder() {
+    fn allowed_next_advertises_plain_claim_without_recovery_for_a_ready_lapsed_holder() {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("retake-readiness-guidance".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("retake-readiness-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let work = match service
             .work_propose(
@@ -10205,11 +10211,6 @@ mod tests {
             .work_guidance(&store, work.work_id, at(3))
             .expect("lapsed holder guidance basis");
         let claim = guidance.claim.as_ref().expect("lapsed holder claim");
-        let authority_operations = [
-            WorkAuthorityOperation::Claim,
-            WorkAuthorityOperation::CompletionDrain,
-            WorkAuthorityOperation::RootComplete,
-        ];
         let ready = allowed_next(
             &guidance.status,
             AllowedNextContext {
@@ -10217,38 +10218,50 @@ mod tests {
                 handoffs: &[],
                 session: &service.session_id,
                 now: at(3),
-                authority_operations: &authority_operations,
                 can_waive_required_child: false,
                 claim_recovery_required: false,
                 completion_capture_ready: true,
                 completion_preflight_ready: true,
             },
         );
-        assert_eq!(
-            ready,
-            vec![
-                String::from("work_focus"),
-                String::from("work_update:claim")
-            ]
-        );
-        for availability in [WorkAvailability::Blocked, WorkAvailability::Deferred] {
+        let without_claim = vec![
+            "work_focus",
+            "work_propose:decompose",
+            "work_update:add_prerequisite",
+            "work_update:block",
+            "work_update:cancel",
+            "work_update:remove_prerequisite",
+            "work_update:revise",
+            "work_update:supersede",
+            "work_update:unblock",
+        ];
+        let mut with_claim = without_claim.clone();
+        with_claim.push("work_update:claim");
+        with_claim.sort_unstable();
+        assert_eq!(ready, with_claim);
+        for availability in [
+            WorkAvailability::Blocked,
+            WorkAvailability::Deferred,
+            WorkAvailability::Waiting,
+        ] {
             let mut status = guidance.status.clone();
             status.availability = availability;
-            let next = allowed_next(
-                &status,
-                AllowedNextContext {
-                    claim: Some(claim),
-                    handoffs: &[],
-                    session: &service.session_id,
-                    now: at(3),
-                    authority_operations: &authority_operations,
-                    can_waive_required_child: false,
-                    claim_recovery_required: false,
-                    completion_capture_ready: true,
-                    completion_preflight_ready: true,
-                },
-            );
-            assert_eq!(next, vec![String::from("work_focus")]);
+            for claim in [Some(claim), None] {
+                let next = allowed_next(
+                    &status,
+                    AllowedNextContext {
+                        claim,
+                        handoffs: &[],
+                        session: &service.session_id,
+                        now: at(3),
+                        can_waive_required_child: false,
+                        claim_recovery_required: false,
+                        completion_capture_ready: true,
+                        completion_preflight_ready: true,
+                    },
+                );
+                assert_eq!(next, without_claim);
+            }
         }
     }
 
@@ -10261,14 +10274,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("waiver-guidance".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let service = LocalWorkService::new(
             database,
             project,
             "agent".into(),
             SessionId("waiver-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let (root, fresh_focus) = match service
             .work_propose(root_input("Waiver guidance", "waiver-root"), at(0))
@@ -10325,72 +10336,6 @@ mod tests {
             )
             .expect("cancel required child");
 
-        let install_scoped_waiver = |scope: WorkAuthorityScope| {
-            SqliteStore::open(&service.database)
-                .expect("scoped grant store")
-                .install_work_authority_grant(
-                    WorkAuthorityGrant {
-                        schema_version: SCHEMA_VERSION,
-                        project_id: service.project_id.clone(),
-                        policy_ref: "project-default".into(),
-                        subject_actor_id: "agent".into(),
-                        issued_by: ActorContext {
-                            actor_id: "test-host".into(),
-                            actor_kind: "host_operator".into(),
-                            assurance: AssuranceLevel::Asserted,
-                            run_id: None,
-                            session_id: None,
-                            source_tool: Some("test".into()),
-                            source_skill: None,
-                            provenance_chain: Vec::new(),
-                            reason: "issue scoped waiver authority".into(),
-                        },
-                        assurance: AssuranceLevel::Asserted,
-                        operations: vec![WorkAuthorityOperation::CompletionWaiver],
-                        scope,
-                        planning_budget: None,
-                        issued_at: at(0),
-                        valid_until: at(3_600),
-                        reason: "test exact child-scoped waiver guidance".into(),
-                    },
-                    &DevelopmentNoopRedactor,
-                )
-                .expect("install scoped waiver grant")
-        };
-        let parent_grant = install_scoped_waiver(WorkAuthorityScope::Work(root.work_id));
-        let child_grant = install_scoped_waiver(WorkAuthorityScope::Work(disposed.work_id));
-        let parent_scoped = LocalWorkService::new(
-            service.database.clone(),
-            service.project_id.clone(),
-            "agent".into(),
-            SessionId("parent-scope".into()),
-            Some("protocol-test".into()),
-            Some(parent_grant),
-        )
-        .work_focus(&root.short_ref, at(4))
-        .expect("parent-scoped guidance");
-        assert!(
-            !parent_scoped
-                .allowed_next
-                .contains(&"work_update:waive_required_child".into())
-        );
-        let child_scoped = LocalWorkService::new(
-            service.database.clone(),
-            service.project_id.clone(),
-            "agent".into(),
-            SessionId("child-scope".into()),
-            Some("protocol-test".into()),
-            Some(child_grant),
-        )
-        .work_focus(&root.short_ref, at(4))
-        .expect("child-scoped guidance");
-        assert!(
-            child_scoped
-                .allowed_next
-                .contains(&"work_update:waive_required_child".into())
-        );
-        assert_eq!(child_scoped.waivable_required_children.len(), 1);
-
         let parent = service
             .work_focus(&root.short_ref, at(4))
             .expect("focus parent with one waivable child");
@@ -10430,33 +10375,172 @@ mod tests {
     }
 
     #[test]
-    fn maximum_fanout_decomposition_receipt_is_bounded_and_replays_exactly() {
+    fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("deferred-memory-advertisement".into());
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("deferred-memory-session".into()),
+            Some("memory-advertisement-test".into()),
+        );
+        service
+            .remember_project_memory("retained fact".into(), Some("retained-fact".into()), at(0))
+            .expect("remember fixture");
+        let query = WorkNextQuery {
+            sections: vec![WorkNextSection::Memories],
+            ..WorkNextQuery::default()
+        };
+        let first = service
+            .work_next_for_agent(20, query.clone(), at(1))
+            .expect("first deferred signal");
+        assert!(first.memories.as_ref().is_some_and(|signal| signal.changed));
+        assert!(first.memory_advertisement.is_some());
+        let repeated = service
+            .work_next_for_agent(20, query.clone(), at(2))
+            .expect("unacknowledged signal repeats");
+        assert!(
+            repeated
+                .memories
+                .as_ref()
+                .is_some_and(|signal| signal.changed)
+        );
+        service.acknowledge_work_next_memories(&first);
+        let stable = service
+            .work_next_for_agent(20, query, at(3))
+            .expect("acknowledged signal is stable");
+        assert!(
+            stable
+                .memories
+                .as_ref()
+                .is_some_and(|signal| !signal.changed)
+        );
+        assert!(stable.memory_advertisement.is_none());
+    }
+
+    #[test]
+    fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("memory-advisory-delivery-order".into());
+        let session = SessionId("memory-advisory-delivery-session".into());
+        let reader = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "reader".into(),
+            session.clone(),
+            Some("memory-advisory-test".into()),
+        );
+        let writer = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "writer".into(),
+            SessionId("memory-advisory-writer".into()),
+            Some("memory-advisory-test".into()),
+        );
+        let created = match writer
+            .work_propose(
+                root_input("Peer change", "memory-advisory-peer-change"),
+                at(0),
+            )
+            .expect("create peer change")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+
+        assert!(matches!(
+            reader.work_next_for_agent(
+                20,
+                WorkNextQuery {
+                    context_generation: Some("invalid\ncontext".into()),
+                    ..WorkNextQuery::default()
+                },
+                at(1),
+            ),
+            Err(StoreError::InvalidProjectMemory(_))
+        ));
+        let after_refusal = SqliteStore::open(&database)
+            .expect("store")
+            .work_session_state(&project, &session, at(1))
+            .expect("session state after refusal");
+        assert_eq!(after_refusal.project_cursor, 0);
+        assert_eq!(after_refusal.tentative_project_cursor, None);
+
+        let replayed = reader
+            .work_next_for_agent(20, WorkNextQuery::default(), at(2))
+            .expect("corrected call delivers unseen page");
+        assert!(replayed.changes.as_ref().is_some_and(|changes| {
+            changes.iter().any(|change| {
+                matches!(
+                    &change.delivery,
+                    WorkChangeProjection::Visible(summary)
+                        if summary.work_id == Some(created.work_id)
+                )
+            })
+        }));
+        assert!(replayed.delivered_through.is_some());
+    }
+
+    #[test]
+    fn project_memory_advisory_is_constant_decode_at_scale() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("project-memory-advisory-scale".into());
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("memory-scale-session".into()),
+            Some("project-memory-scale-test".into()),
+        );
+        for index in 0..256 {
+            service
+                .remember_project_memory(
+                    format!("retained project observation {index}"),
+                    Some(format!("memory-{index:03}")),
+                    at(index),
+                )
+                .expect("remember scale fixture");
+        }
+        crate::canonical::reset_canonical_decode_count();
+        let next = service
+            .work_next_for_agent(
+                20,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Memories],
+                    ..WorkNextQuery::default()
+                },
+                at(300),
+            )
+            .expect("read O(1) advisory state");
+        assert_eq!(next.memories.as_ref().map(|signal| signal.count), Some(256));
+        assert_eq!(
+            crate::canonical::canonical_decode_count(),
+            0,
+            "the advisory hot path must not walk canonical memory history"
+        );
+    }
+
+    #[test]
+    fn maximum_default_fanout_decomposition_receipt_is_bounded_and_replays_exactly() {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("maximum-fanout".into());
-        let grant = install_protocol_grant_with_budget(
-            &database,
-            &project,
-            "agent",
-            WorkPlanningBudget {
-                max_depth: 4,
-                max_open_descendants: 64,
-                max_children_per_decomposition: 64,
-            },
-        );
         let service = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("fanout-session".into()),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         service
             .work_propose(root_input("Maximum fanout", "fanout-root"), at(0))
             .expect("root proposal");
         let input = WorkProposeInput::Decompose {
-            children: (0..64)
+            children: (0..16)
                 .map(|index| WorkChildInput {
                     key: format!("child-{index:02}"),
                     title: format!("Child {index:02} {}", "x".repeat(256)),
@@ -10479,8 +10563,8 @@ mod tests {
         let WorkProposeResult::Decomposition(summary) = &first else {
             panic!("expected decomposition");
         };
-        assert_eq!(summary.child_count, 64);
-        assert_eq!(summary.children.len(), 64);
+        assert_eq!(summary.child_count, 16);
+        assert_eq!(summary.children.len(), 16);
         assert!(summary.details_omitted);
         assert_eq!(
             summary
@@ -10489,7 +10573,7 @@ mod tests {
                 .map(|child| child.work_id)
                 .collect::<std::collections::HashSet<_>>()
                 .len(),
-            64
+            16
         );
         assert!(
             serde_json::to_vec(&first)
@@ -10504,7 +10588,6 @@ mod tests {
             "agent".into(),
             SessionId("fanout-session".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
         let replay = restarted
             .work_propose(input, at(2))
@@ -10540,14 +10623,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("bounded-work-project".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let writer = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("writer".into()),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let reader = LocalWorkService::new(
             database.clone(),
@@ -10555,7 +10636,6 @@ mod tests {
             "agent".into(),
             SessionId("reader".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
 
         let mut work_ids = Vec::new();
@@ -10856,14 +10936,12 @@ mod tests {
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("claim-mutation-scale".into());
-        let grant = install_protocol_grant(&database, &project, "agent");
         let writer = LocalWorkService::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("mutation-writer".into()),
             Some("protocol-test".into()),
-            Some(grant.clone()),
         );
         let reader = LocalWorkService::new(
             database.clone(),
@@ -10871,7 +10949,6 @@ mod tests {
             "agent".into(),
             SessionId("mutation-reader".into()),
             Some("protocol-test".into()),
-            Some(grant),
         );
 
         let mut work_items = Vec::with_capacity(ITEM_COUNT);

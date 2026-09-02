@@ -72,7 +72,6 @@ WorkItem {
   kind, priority, labels[], assigned_to?, deferred_until?
   origin: local | imported
   source_snapshot_id?
-  authority_policy_ref
   revision, created_by, created_at
 }
 ```
@@ -102,7 +101,7 @@ are typed/indexed fields, and children inherit configured labels.
 
 A `RootExecution` is the aggregate execution generation for one root work
 item. It owns the expected contributor roster, membership of current child
-runs, required child `CompletionSeal` hashes, grant-backed waivers for
+runs, required child `CompletionSeal` hashes, reason-attributed waivers for
 cancelled or superseded required children, root-level decisions and other
 waivers, and the root completion barrier. It does not own working memory.
 Each capture retains its focused `WorkItem` as the provenance subject, while
@@ -167,10 +166,10 @@ holder slides the work-claim expiry to one hour after that mutation. Successful
 completion instead terminalizes the claim at the completion timestamp. A
 holder mutation on a lapsed claim is refused with one recovery command:
 `engram work claim <ref>`. When the work is ready, that ordinary claim command
-retakes the same holder's claim using the exact host-bound claim grant, advances
-the fence, preserves an active run, and needs no recovery reason. Every handoff
-offer expires no later than its source claim. Taking over from a different,
-unaccounted holder still requires attributed recovery.
+retakes the same holder's claim under the stable project/session binding,
+advances the fence, preserves an active run, and needs no recovery reason.
+Every handoff offer expires no later than its source claim. Taking over from a
+different, unaccounted holder still requires attributed recovery.
 
 A session normally needs the work claim before an ordinary execution turn and
 the relevant resource lease immediately before mutation. Shared analysis may
@@ -281,7 +280,7 @@ seal also carries the exact bounded environment-evidence hash set at that cut.
 `work_complete` requires the linked
 action-outcome and resource-lease drain sets to be empty, terminalizes the work
 claim, and seals atomically. A root seal also consumes each required child seal
-or explicit grant-backed disposed-child waiver and all root contributions.
+or explicit reason-attributed disposed-child waiver and all root contributions.
 Before that seal can land, every descendant claim and handoff offer must be
 released, completed, cancelled, or expired. Unfinished optional children are
 recorded in the seal and remain non-executable audit records under the closed
@@ -322,19 +321,19 @@ revision and idempotency key.
 - Work created below a parent inherits its project, root, sensitivity floor,
   authority ceiling, non-waivable constraints, and publication restrictions.
   A child cannot relax its parent.
-- Decomposition requires the parent's claim or a bounded planning delegation.
-  Model-created non-leaf work is proposed by default; evidence-backed leaf
-  children within the parent's authority and decomposition budget may activate
-  immediately. A one-child "decomposition" revises the parent instead.
-- Root completion, waivers, cancellation, reopen, policy changes, and external
-  publication require explicit authority named by policy. Model identity by
-  itself grants none of them.
+- Decomposition requires the parent's claim or the ordinary project-bound
+  planning path. Children activate under the same project lifecycle rules. A
+  one-child "decomposition" revises the parent instead.
+- Project-bound sessions may complete, waive, cancel, reopen, and recover
+  local work; exception paths retain attributed reasons and immutable audit
+  events. External publication still requires an explicit human decision, and
+  an optional host control plane may independently mediate turns or actions.
 - Exact duplicate creation is prevented by idempotency. A normalized
   parent/outcome fingerprint surfaces likely semantic duplicates before
   admission; it warns or creates a proposal rather than silently merging.
-- Decomposition is bounded by policy: maximum depth, children per atomic plan,
+- Decomposition is bounded in code: maximum depth, children per atomic plan,
   and open descendants per root. Hitting a bound returns a typed directive to
-  consolidate or request an attributed override.
+  consolidate the plan; there is no grant or override token.
 - Cross-project hierarchy and prerequisites are out of V1. An external or
   cross-project dependency is represented as a typed blocker with provenance,
   not a fake local edge.
@@ -373,7 +372,7 @@ The hot agent protocol has six operations:
 
 | Operation | Purpose |
 | --- | --- |
-| `work_next` | Return selected compact focus, ready, catalog, and change sections under a 12 KiB ceiling; each call returns the changes since the session's previous call |
+| `work_next` | Return selected compact focus, ready, catalog, change, and content-free project-memory advisory sections under a 12 KiB ceiling; each call returns the changes since the session's previous call |
 | `work_focus` | Select/inspect one item as the ambient binding and return bounded acceptance, relations, memory index, history count/tail, and allowed-next state; never claim or release implicitly |
 | `work_propose` | Open a root or atomically create a bounded decomposition and prerequisites; each result is active, proposed, duplicate, or refused |
 | `work_update` | Apply a typed union such as claim/release, checkpoint, block/unblock, defer, revise, assign, or dependency change to ambient work |
@@ -382,23 +381,22 @@ The hot agent protocol has six operations:
 
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for
-the process lifetime and shares it across the eleven MCP tools. That instance
+the process lifetime and shares it across the fourteen MCP tools. That instance
 lazily retains one SQLite connection; cloning a
 service explicitly creates an independent connection so concurrent delivery
 and CAS behavior remains real rather than process-local serialization. The
 serial scale benchmark samples that same retained-service lifecycle. The
 ambient SQLite row binds only project, session, focused work, and the
-processed project-feed cursor. It never stores authority. A host or operator
-starts the service with one immutable `WorkAuthorityGrant` hash;
-every mutation resolves that canonical grant and its live revocation marker
-inside the lifecycle transaction. `work_focus` accepts a short ref or UUID,
+processed project-feed cursor. It never stores authority. Agent-facing work is
+bound by the stable project plus asserted actor/session context and carries no
+grant token or grant timeout. `work_focus` accepts a short ref or UUID,
 while update, completion, and handoff infer the current revision, run, claim,
 fence, evidence set, and unique matching offer. `work_next` exposes an optional
-section selector over `focus`, `ready`, `catalog`, and `changes`; excluding
-`changes` performs no delivery staging. Ready and catalog candidate selection
+section selector over `focus`, `ready`, `catalog`, `changes`, and `memories`;
+excluding `changes` performs no delivery staging. Ready and catalog candidate selection
 uses bounded, maintained SQLite projections and decodes only the rows selected
 by the requested limit and filters. Those two sections are advisory: lifecycle
-mutations still verify the exact hash-bound item, run, claim, lease, authority,
+mutations still verify the exact hash-bound item, run, claim, lease,
 and relation basis they consume under their write transaction, while `engram
 doctor` exhaustively verifies the derived catalog and relation indexes against
 retained canonical history. For change delivery it verifies
@@ -520,14 +518,16 @@ waiver-only until a newer basis-bearing mutation and passed test arrive.
 
 The page exposes immutable obligation and definition identities, the required
 selected rule-set hash, rule, requirement, trigger, state, terminal
-evidence/resolution, and deterministic typed guidance. Agents cannot mint or
-waive obligations. Waiver is restricted
-to the host/operator CLI and the host-private `obligation_waive` operation
-under a dedicated `ObligationWaiver` authority grant; neither MCP nor
-`work_update` accepts that operation. The native host session must be bound to
-the same live run. Canonical resolution preserves its server-fixed actor and
-the asserted human `waived_by`, while agent pages and the receipt omit the
-grant and reason. At the exact pre-seal cut, every applicable definition must
+evidence/resolution, and deterministic typed guidance. Neither MCP nor
+`work_update` accepts a waiver. The `engram authority waive-obligation` shell
+command is an operator-intended convention, not an authenticated boundary: it
+has no grant token or run-binding check, so any local process with the binary
+and store access can invoke it. The host-private `obligation_waive` operation
+is the enforced alternative; its native control session must be bound to the
+same live run. Canonical resolution records asserted `waived_by` attribution
+and either the shell caller's asserted actor or the private session's
+server-fixed actor, while agent pages and the receipt omit the reason. At the
+exact pre-seal cut, every applicable definition must
 have a satisfied or waived resolution at or before that cut. Otherwise
 `work_complete` returns the typed `open_work_obligations` result with the
 shared page and remedy: record matching host verification, checkpoint it, then
@@ -548,25 +548,18 @@ command. Missing-contribution recovery hands the root to the named participant;
 the participant must then checkpoint/handoff or complete their own work rather
 than relying on a no-op claim by the current holder.
 
-The operator-only `engram authority grant|revoke` commands are the current
-host boundary for local use. They are deliberately absent from agent-facing
-MCP. `engram mcp --work-authority-grant <hash>` fixes the grant for one MCP
-process; a host that must keep the hash out of the observable argument list may
-instead set `ENGRAM_WORK_AUTHORITY_GRANT`. The explicit flag wins, while an
-unset, empty, or whitespace-only variable preserves grant-less MCP startup and
-a malformed nonempty value fails closed. Hosts must not log either source.
-`engram work --authority-grant <hash> ...` does the same for a shell operation.
-Grant text remains asserted context in this slice, not
-authenticated identity. The Host Enforcement SDK replaces manual process
-binding and couples the work envelope to turn/action authority in the next
-slice.
+Agent-facing MCP and shell work use only the stable project plus non-empty
+asserted actor/session binding. There is no work grant file, hash, environment
+variable, flag, validity window, or revocation operation. The host-private
+behavioral-control channel may still use its separate turn/action grants; those
+tokens never authorize or appear in the local-work word surface.
 
 `work_propose` is the low-ceremony decomposition path: an agent can submit a
 small plan in one call and either all children/edges appear or none do. The
 decomposition receipt returns the complete ordered child identity set as
 fixed-size `work_id`/`short_ref`/revision records plus an exact child count;
 full child details are obtained by focusing a returned short ref. This keeps
-even the maximum 64-child admitted plan below the agent response ceiling and
+even the maximum 16-child admitted plan below the agent response ceiling and
 makes the exact durable replay returnable after restart.
 
 Administrative CLI/query views additionally expose search, history, stats,
@@ -602,9 +595,9 @@ satisfiable next action.
 
 ### Gates, prerequisites, supersession, and project memories
 
-The shipped `gate` word and prerequisite/supersession update flags make the
-agent surface strictly stronger than the tracker it replaced. The project
-memory words remain planned. These additions add no canonical object kind,
+The shipped `gate` word, prerequisite/supersession update flags, and project
+memory words make the agent surface strictly stronger than the tracker it
+replaced. These additions add no canonical object kind,
 completion barrier, or review queue: they ride the existing evidence, graph,
 dispose, episode-memory, and idempotency machinery at schema marker 1. The
 agent-facing syntax is summarized in
@@ -736,7 +729,7 @@ supersession, and the action-enumeration error names all three new flags.
 Superseding a
 required child never satisfies its parent by itself: the parent's `done`
 still reports the unsealed required child, and the deliberate replacement
-is accounted by the existing grant-backed required-child waiver. Automatic
+is accounted by the existing reason-attributed required-child waiver. Automatic
 successor accounting is not in this cut; tests cover the REF/NEW refusal
 matrix and the front-end translation.
 
@@ -752,13 +745,13 @@ what project peers can list, attributed to your session. A note stays full
 until an explicit `forget`: `memories` lists it and `--full` returns the
 full body until the tombstone; a retired key answers with the typed
 `memory_retired` and the satisfiable next action to pick or list another
-key. Authorization in V1 is cooperative project binding: any session
-asserted-bound to the same stable project may `remember`, list, read, and
-`forget`, and an explicit project-policy denial refuses;
-`memory_not_authorized` means no project binding or that denial. This is
-an asserted host-context policy guard for cooperating sessions, not
-authenticated security — no per-note ownership and no policy-epoch
-machinery. Writes pass the
+key. Reads and writes in V1 use cooperative project binding: any session
+asserted-bound to the same stable project may list, read, remember, and forget.
+Before persistence, the mutation path validates a non-empty consistent
+actor/session binding. `memory_binding_invalid` means that binding is absent
+or inconsistent.
+This is asserted host context rather than authenticated identity,
+with no per-note ownership or separate memory-policy operation. Writes pass the
 configured Redactor, which in V1 is the visibly labeled no-op
 `DevelopmentNoopRedactor` that filters nothing; see
 [security & trust](security-and-trust.md#redaction-the-real-control).
@@ -768,14 +761,15 @@ undeliverable is refused before persistence — no write-only sink. The key
 is a safe token: 1–64 ASCII bytes matching `[a-z0-9][a-z0-9._-]*` — no
 leading dash, no control or shell metacharacters — supplied explicitly or
 defaulted to a slug of the first words, so generated commands are always
-safe. A defaulted slug that collides with a used key — live or
-tombstoned — is refused and asks for `--key`. `forget KEY` appends an
+safe. An identical retry from the same actor/session replays; any other
+defaulted slug collision with a live or tombstoned key is refused and the
+guidance names an explicit `--key`. `forget KEY` appends an
 attributed tombstone — not erasure, the version history stays canonical —
 and is idempotent; the key is then retired for good. A raw body is at most
-8 KiB (8192 UTF-8 bytes) and is accepted
-only when the exact serialized full-read envelope also fits the 12 KiB
-ceiling; anything larger is rejected before persistence, with escape-heavy
-boundary tests among the named targets.
+8 KiB (8192 UTF-8 bytes) and is accepted only when both the exact structured
+full-read envelope and terminal-safe shell rendering fit the 12 KiB ceiling;
+anything larger is rejected before persistence, with escape-heavy boundary
+tests among the named targets.
 
 The mutation contract is create/refuse/forget — no update-in-place:
 `remember` creates only when the safe key has never been used; a live key
@@ -785,13 +779,16 @@ key (`memories` lists what is taken) — tombstoned keys are permanently
 reserved, never recreated. `forget` tombstones idempotently. The durable
 representation is the simplest one: the safe key lives in the existing
 `MemoryVersion` shape, changed in place at marker 1, unique per project,
-with `Tombstoned` as the terminal status; the keyed head and history are
-rebuildable and portable from canonical versions, and no new canonical
-object kind exists. With one create and one idempotent tombstone per key
+with `Tombstoned` as the terminal status. The existing durable memory head
+carries that terminal state and is verified against canonical history; key
+uniqueness is rebuildable from canonical versions, and no new canonical object
+kind exists. Keyed project memories cannot be contradiction endpoints; their
+narrow lifecycle is remember, optional full read, then forget. With one create
+and one idempotent tombstone per key
 forever, ordinary argument-derived operation idempotency is generation-safe
 by construction; `next` installs no per-key session state, and no hash or
-id is ever model-visible. Create/refuse/forget and listing continuation
-are planned test targets.
+id is ever model-visible. Tests cover create/refuse/forget, listing
+continuation, escape-heavy size boundaries, and ordinary idempotency.
 
 `memories` is the source of truth; `next` only advertises. The positional
 argument is a query unless `--full` names a key, and `--after` always
@@ -799,45 +796,55 @@ takes a key. Unfiltered `memories` lists compact rows (key, bounded first
 line, remembered-at) in key order and may continue with the shell-safe
 `memories --after KEY`; an exhausted listing says so. Filtered `memories
 QUERY` returns a bounded set of top matches only and never emits a
-continuation — its omission note tells the agent to refine the query.
+continuation — its omission note tells the agent to refine the query. Final
+structured and terminal-safe list receipts also share the 12 KiB agent
+response ceiling; rows are shed with an omission count or continuation before
+either representation can exceed it. The filtered path uses the Unicode-aware
+memory full-text index for keys/titles
+and bodies rather than SQLite's ASCII-only `lower()` matching. Search input is
+bounded before FTS expansion to 256 raw UTF-8 bytes and 16 normalized tokens.
 Neither returns bodies; `memories KEY --full` resolves exactly one key —
-typed `memory_not_found`, `memory_not_authorized`, or `memory_retired` for
-a tombstoned key — and returns the full body as a dedicated response, at
-most 8 KiB in a bounded envelope under the 12 KiB ceiling, never inlined
-into `next`. The `next.memories` signal is content-free: a
-count of retained project notes and a changed-since-last-call flag — no
-keys, no first lines, no body-derived text — falling back to the existing
-omission mechanism when even that does not fit. Delivery is advisory: no
+typed `memory_not_found`, `memory_binding_invalid`, or `memory_retired` for
+a tombstoned key — and returns the full body as a dedicated response, at most
+8 KiB only when both its structured and terminal-safe envelopes remain under
+the 12 KiB ceiling, never inlined into `next`. The `next.memories` signal is content-free: a
+count of retained project notes and a changed-since-last-call flag, read in
+O(1) from a rebuildable per-project count and change position — no
+keys, no first lines, no body-derived text. When even that does not fit, the
+signal is omitted without acknowledgement and reannounces later. Delivery is
+advisory: no
 per-session authoritative delivery stream, no dedicated acknowledgement
 token, no exactly-once guarantee; a host-passed `context_generation` marks
-a fresh or compacted context and may reannounce the count. An agent that
+a fresh or compacted context and may reannounce the count. Only a
+domain-separated digest of that asserted value is persisted; its raw text is
+never retained. The discardable
+acknowledgement table is bounded per project; evicting an old session can only
+cause one harmless reannouncement. SQLite busy/locked contention while writing
+that advisory acknowledgement does not fail `next`; the signal simply
+reannounces. An agent that
 wants the notes runs `memories`. The existing `work_next` decode, latency,
 and 12 KiB response targets stay as acceptance tests. Rules that must
 survive every session belong in the instruction files; memories are for
 attributed notes and observations that change more often than the files
 do.
 
-## Human authority and model autonomy
+## Audited waivers and model autonomy
 
-Authority is operation-specific, not a single `human`/`agent` trust bit.
-A project policy names who may create roots, admit proposed children, change
-priority, waive acceptance, cancel, recover claims, complete roots, and
-publish externally. Actor text supplied by a host remains asserted context
-unless a stronger mechanism verifies it.
+Agent-facing local-work words are not grant-gated. A stable project binding,
+non-empty asserted actor/session context, the current lifecycle, and fenced
+claim/handoff state determine whether a word can run. Actor text remains
+asserted context unless a stronger host mechanism verifies it.
 
-The useful default for a local coding project is:
-
-- a host may seed a user-requested root with an authority reference to that
-  request;
-- an agent may create bounded children, dependencies, checkpoints, and
-  evidence within the root's inherited envelope;
-- an agent may complete leaves when objective acceptance predicates pass and
-  the completion records whether acceptance was self-attested or independent;
-- root completion becomes a durable proposal for human approval by default;
-  a bounded, expiring standing delegation may authorize autonomous root
-  completion without changing the global policy;
-- required-child waivers, destructive non-leaf cancellation/reopen, authority
-  changes, and all external publication require explicit human authority.
+The default local planning envelope is bounded in code: depth 4, 128 open
+descendants per root, and 16 children per decomposition. Agents may create and
+revise work, claim/recover, cancel/reopen, complete, and record explicit
+waivers within those lifecycle rules. Recovery, cancellation, reopen, and
+waiver paths require attributed reasons where their audit contracts call for
+one. The project-bound session may record the waiver; the reason and immutable
+event make the exception attributable and auditable, not permission-bearing.
+External publication still requires an explicit human decision. A host that
+runs the optional behavioral-control plane may independently raise the bar for
+model turns or material external actions.
 
 Engram must show `allowed_next` and a typed recovery directive rather than
 making a model infer permissions by trial and error.
@@ -846,40 +853,27 @@ making a model infer permissions by trial and error.
 `work_update:claim`, `work_propose:decompose`, or `work_handoff:accept`.
 `work_update:claim(recovery_reason_required)` means a different prior holder is
 still unaccounted and the caller must submit the `claim` variant with an
-attributed `recovery_reason`; the host grant must also include
-`claim_recovery`. A prior contribution or persisted participant waiver makes
+attributed `recovery_reason`. A prior contribution or persisted participant waiver makes
 the holder accounted, so a successor receives ordinary `work_update:claim`
 instead of being asked to waive the same omission twice.
 
 `work_update:waive_required_child` appears only when at least one direct,
-required, cancelled-or-superseded, not-yet-waived child is covered by the
-current grant against that exact child target. `work_focus` carries a bounded
-typed `waivable_required_children` list with the executable child short refs;
-parent-scoped authority alone never produces false guidance.
-
-The implemented authority boundary uses canonical host-installed
-`WorkAuthorityGrant` objects. Agent-visible lifecycle and planning requests
-carry only a grant hash; the SQLite transaction resolves that durable object
-and checks project, policy, subject actor, assurance, operation, scope,
-issuance, expiry, and the grant-owned planning budget. Children copy the
-parent's authority policy exactly. Root and child creation events retain the
-admission grant hash, and host revocation creates an immutable attributed
-revocation object before all later live use fails closed, regardless of a
-caller-supplied backdated operation time; future-dated revocations are refused.
-Installing or revoking a
-grant is a Host Enforcement SDK operation, not an MCP capability.
+required, cancelled-or-superseded, not-yet-waived child exists.
+`work_focus` carries a bounded typed `waivable_required_children` list with
+the executable child short refs. The mutation rechecks the exact parent and
+child state before recording the attributed waiver.
 
 Until action outcomes and resource leases are linked to `WorkRun`, V1 accepts
-only a grant-backed **zero-linked-state** completion-drain attestation. An
+only a **zero-linked-state** completion-drain attestation. An
 agent cannot complete by supplying arbitrary action hashes or lease names.
 The later host-enforcement slice replaces that temporary empty attestation
 with exact reconciled action and released/transferred lease projections.
 
 ## Behavioral-control integration
 
-Work calls describe intent; the host-private channel carries authority.
-Before a model turn, the Host Enforcement SDK resolves the selected work and
-asks Engram for a grant. A grant binds:
+Work calls describe intent. Separately, the host-private behavioral-control
+channel may mediate a model turn or material external action with its own
+short-lived grant. That control-plane grant binds:
 
 ```text
 work_id + work_revision + run_id
@@ -975,7 +969,7 @@ the source without silent loss. This is interoperability, not mirroring.
 
 ## Durability modes and integrity
 
-Engram reports durability separately from work authority and from external
+Engram reports durability separately from behavioral control and from external
 publication:
 
 | Mode | Off-host copy | Writer model | Normal remote reads |
@@ -1084,7 +1078,7 @@ daily workflow it covers, kept for anyone arriving from the previous tracker
 | notes/design/acceptance | typed work fields plus work-scoped shared/private memory and evidence |
 | comments and handoff | one checkpoint feeding deltas, handoff, and report input |
 | `bd close`, reopen, supersede | one-call evidence capture/seal when compact, or explicit evidence/checkpoint steps; audited reopen/cancel/supersede events through `update --supersede-with` |
-| `bd remember` | Engram's typed durable memory, not a pseudo-task (`remember`/`memories`/`forget` planned) |
+| `bd remember` | Engram's typed durable memory, not a pseudo-task (`remember`/`memories`/`forget`) |
 | `bd stats`, stale/orphans/preflight | rebuildable operational indexes and integrity diagnostics |
 | Dolt cross-machine sync | V1 sequential `portable` handoff; later concurrent Engram `Sync` backend |
 
@@ -1138,11 +1132,9 @@ deterministic core rules admit, order, explain, and enforce them.
 
 ## Decisions still needed
 
-The design can proceed with recommended defaults, but product policy must
-eventually select:
+The design can proceed with the fixed project-bound work limits described
+above, but product policy must eventually select:
 
-- the scope and expiry defaults for standing root-completion delegations;
-- the default decomposition depth/open-descendant budgets;
 - the completed-work retention and compaction period when nothing is
   published;
 - the recovery snapshot format and acceptable recovery-point objective;

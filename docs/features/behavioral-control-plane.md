@@ -642,16 +642,15 @@ and deterministic typed guidance. Generic readiness strings remain separate.
 A fresh session reconstructs the same summaries from canonical history rather
 than trusting a prior response.
 
-A waiver requires a dedicated
-`WorkAuthorityOperation::ObligationWaiver` grant. It may be requested through
-the operator CLI or the host-private `obligation_waive` JSON-lines operation,
-never through MCP or `work_update`. The private request is bound to the
+A waiver may be requested through the operator CLI or the host-private
+`obligation_waive` JSON-lines operation, never through MCP or `work_update`.
+It carries an attributed reason but no work grant. The private request is bound to the
 session's exact live `WorkRun` and expected definition. Its canonical
 resolution records the server-fixed session actor beside the asserted
-`waived_by` human; neither that assertion nor the grant is authentication.
+`waived_by` human; that assertion is not authentication.
 Policy refusals are typed as `waiver_not_admitted`, `obligation_not_open`, or
 `definition_changed`, and exact retries replay exactly. Agent-facing pages and
-the host receipt omit the authority grant and reason. Completion evaluates the
+the host receipt omit the reason. Completion evaluates the
 cut-aware open set at the exact pre-seal run-feed cut. Terminal definitions are
 frozen into the seal as exact definition/resolution hash pairs under obligation
 schema V1, and completion success reconstructs its page from that sealed basis.
@@ -1058,7 +1057,7 @@ new ordinary execution mutation grants. Engram then drains in-flight actions,
 releases or transfers every resource lease, and terminalizes the work claim
 while allowing reconciliation and abort. Root completion additionally
 freezes the `RootExecution` contributor roster and every required child seal
-or explicit grant-backed disposed-child waiver. Only
+or explicit reason-attributed disposed-child waiver. Only
 after the drain succeeds does a
 `completion_seal` transaction capture a dense run-feed cut and bind the work
 revision, run/claim fences, executor checkpoint, action outcomes, acceptance

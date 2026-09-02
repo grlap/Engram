@@ -34,11 +34,14 @@ conflicting parents. Conflicts between different memories get explicit
 
 Engram represents that edge as a canonical contradiction event carrying two
 shared version hashes plus an attributed reason. The current agent MCP surface
-does not expose a memory-mutation tool. Engram does not pretend keyword or
-model inference can safely discover every semantic conflict. The edge makes
-both records visibly contested, and an applicable firm/hard pinned pair stops
-packet construction. Explicit contradiction, merge, and resolution operations
-remain host/operator work outside the current agent surface.
+does not expose general-purpose version, contradiction, merge, or resolution
+mutation. Its constrained `remember`/`forget` exception creates attributed
+project-scoped Episodes under permanent safe keys and can only append a
+terminal tombstone. Engram does not pretend keyword or model inference can
+safely discover every semantic conflict. The edge makes both records visibly
+contested, and an applicable firm/hard pinned pair stops packet construction.
+Explicit contradiction, merge, and resolution operations remain host/operator
+work outside the current agent surface.
 
 ## Metadata that used to live in prose
 
@@ -57,7 +60,10 @@ exactly why prose became a particular typed record.
 `proposed`, `active`, `contested`, `stale`, `expired`, `retracted`,
 `tombstoned` — all derived from the object graph (versions + events), never
 stored as a mutable column. See [spec §2.4](../spec.md#24-version-schema) for
-the full schema and status table.
+the full schema and status table. Generic search and context assembly expose
+only `proposed`, `active`, `contested`, and `stale` heads; `expired`,
+`retracted`, and `tombstoned` facts remain canonical history but are not
+retrieval candidates.
 
 ## Scope
 

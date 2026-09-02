@@ -23,12 +23,14 @@ const AGENT_TOOLS = [
   "done",
   "search",
   "handoff",
+  "remember",
+  "memories",
+  "forget",
 ];
 const HASH = /\b[0-9a-f]{64}\b/u;
 
 class McpClient {
-  constructor(engramHome, sessionId, options = {}) {
-    const { workAuthorityGrant, environmentAuthorityGrant } = options;
+  constructor(engramHome, sessionId) {
     this.nextId = 1;
     this.pending = new Map();
     this.stderr = "";
@@ -44,18 +46,10 @@ class McpClient {
       "--source-skill",
       "engram-dogfood",
     ];
-    if (workAuthorityGrant) {
-      args.push("--work-authority-grant", workAuthorityGrant);
-    }
-    const environment = { ...process.env };
-    delete environment.ENGRAM_WORK_AUTHORITY_GRANT;
-    if (environmentAuthorityGrant !== undefined) {
-      environment.ENGRAM_WORK_AUTHORITY_GRANT = environmentAuthorityGrant;
-    }
     this.args = [...args];
     this.child = spawn(binary, args, {
       cwd: root,
-      env: environment,
+      env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child.stderr.on("data", (chunk) => {
@@ -215,28 +209,7 @@ function buildAndInit(engramHome) {
   assert.equal(initialized.status, 0, initialized.stderr);
 }
 
-function installWorkGrant(engramHome, actorId) {
-  const granted = spawnSync(
-    binary,
-    [
-      "--home",
-      engramHome,
-      "authority",
-      "grant",
-      "--subject-actor-id",
-      actorId,
-      "--issued-by",
-      "dogfood-host",
-      "--reason",
-      "MCP local-work dogfood",
-    ],
-    { cwd: root, encoding: "utf8" },
-  );
-  assert.equal(granted.status, 0, granted.stderr);
-  return JSON.parse(granted.stdout).grant;
-}
-
-function cliWord(engramHome, actorId, grant, word, ...agentArgs) {
+function cliWord(engramHome, actorId, word, ...agentArgs) {
   const args = [
     "--home",
     engramHome,
@@ -245,24 +218,22 @@ function cliWord(engramHome, actorId, grant, word, ...agentArgs) {
     actorId,
     "--session-id",
     actorId,
-    "--authority-grant",
-    grant,
     word,
     ...agentArgs,
   ];
   return spawnSync(binary, args, { cwd: root, encoding: "utf8" });
 }
 
-function cliText(engramHome, actorId, grant, word, ...agentArgs) {
-  const executed = cliWord(engramHome, actorId, grant, word, ...agentArgs);
+function cliText(engramHome, actorId, word, ...agentArgs) {
+  const executed = cliWord(engramHome, actorId, word, ...agentArgs);
   assert.equal(executed.status, 0, executed.stderr);
   assert.doesNotMatch(executed.stdout, HASH, executed.stdout);
   assert.doesNotMatch(executed.stdout, /fence|idempotency/iu, executed.stdout);
   return executed.stdout;
 }
 
-function cliJson(engramHome, actorId, grant, word, ...agentArgs) {
-  const executed = cliWord(engramHome, actorId, grant, word, ...agentArgs, "--json");
+function cliJson(engramHome, actorId, word, ...agentArgs) {
+  const executed = cliWord(engramHome, actorId, word, ...agentArgs, "--json");
   assert.equal(executed.status, 0, executed.stderr);
   return JSON.parse(executed.stdout);
 }
@@ -272,11 +243,9 @@ test("CLI words translate the same ambient lifecycle service", () => {
   try {
     buildAndInit(engramHome);
     const actor = "cli-work-agent";
-    const grant = installWorkGrant(engramHome, actor);
     const added = cliText(
       engramHome,
       actor,
-      grant,
       "add",
       "Dogfood work CLI",
       "--outcome",
@@ -294,19 +263,19 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.match(added, /reminders:\n\s+- unclaimed: claim it before you change anything/u);
     assert.match(added, new RegExp(`next:\\n(?:.*\\n)*\\s+engram work claim ${workRef}`, "u"));
 
-    const next = cliJson(engramHome, actor, grant, "next", "--verbose");
+    const next = cliJson(engramHome, actor, "next", "--verbose");
     assert.equal(next.session.focused_work_id, next.focus.status.work.work_id);
     assert.equal(next.focus.status.work.short_ref, workRef);
     assert.ok(Array.isArray(next.changes));
-    const listed = cliText(engramHome, actor, grant, "ls", "--label", "dogfood");
+    const listed = cliText(engramHome, actor, "ls", "--label", "dogfood");
     assert.match(
       listed,
       /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 open\/ready "Dogfood work CLI" labels:dogfood/u,
     );
-    const nothingMine = cliText(engramHome, actor, grant, "ls", "--mine");
+    const nothingMine = cliText(engramHome, actor, "ls", "--mine");
     assert.match(nothingMine, /^0 item\(s\):/u);
 
-    const claimed = cliText(engramHome, actor, grant, "claim", workRef, "--ttl", "300");
+    const claimed = cliText(engramHome, actor, "claim", workRef, "--ttl", "300");
     assert.match(claimed, /^claimed w-[0-9a-f]{12} "Dogfood work CLI" \(held by you until \d{2}:\d{2} UTC\)/u);
     const coreRefusal = spawnSync(
       binary,
@@ -318,8 +287,6 @@ test("CLI words translate the same ambient lifecycle service", () => {
         actor,
         "--session-id",
         actor,
-        "--authority-grant",
-        grant,
         "core",
         "complete",
         "--work-ref",
@@ -341,10 +308,10 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.equal(coreRefusalReceipt.work_id, coreRefusalReceipt.recovery.item.work_id);
     assert.equal(coreRefusalReceipt.recovery.cause.kind, "missing_acceptance");
     assert.equal(coreRefusalReceipt.recovery.item.ref, workRef);
-    const mine = cliText(engramHome, actor, grant, "ls", "--mine");
+    const mine = cliText(engramHome, actor, "ls", "--mine");
     assert.match(mine, /^1 item\(s\):/u);
 
-    const shown = cliText(engramHome, actor, grant, "show", workRef);
+    const shown = cliText(engramHome, actor, "show", workRef);
     assert.match(shown, /^w-[0-9a-f]{12} "Dogfood work CLI" — held by you until/u);
     assert.match(shown, /kind: chore  priority: 1  labels: dogfood/u);
     assert.match(shown, /outcome: The shell completes an ambient local lifecycle/u);
@@ -353,19 +320,18 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.match(shown, new RegExp(`\\s+engram work note ${workRef} "…"`, "u"));
     assert.doesNotMatch(shown, new RegExp(`engram work show ${workRef}`, "u"));
 
-    const blocked = cliText(engramHome, actor, grant, "update", "--blocked", "waiting on a review");
+    const blocked = cliText(engramHome, actor, "update", "--blocked", "waiting on a review");
     assert.match(blocked, /^blocked w-[0-9a-f]{12} "Dogfood work CLI": waiting on a review/u);
     assert.match(blocked, /reminders:\n(?:.*\n)*\s+- blocked: waiting on a review/u);
     assert.match(blocked, new RegExp(`\\s+engram work update ${workRef} --unblock`, "u"));
-    const blockedList = cliText(engramHome, actor, grant, "ls", "--blocked");
+    const blockedList = cliText(engramHome, actor, "ls", "--blocked");
     assert.match(blockedList, /^1 item\(s\):/u);
-    const unblocked = cliText(engramHome, actor, grant, "update", workRef, "--unblock");
+    const unblocked = cliText(engramHome, actor, "update", workRef, "--unblock");
     assert.match(unblocked, /^unblocked w-/u);
 
     const noted = cliText(
       engramHome,
       actor,
-      grant,
       "note",
       "CLI lifecycle assertions passed",
       "--ref",
@@ -376,7 +342,6 @@ test("CLI words translate the same ambient lifecycle service", () => {
     const notedJson = cliJson(
       engramHome,
       actor,
-      grant,
       "note",
       workRef,
       "CLI lifecycle assertions passed",
@@ -387,17 +352,17 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.match(notedJson.evidence.result, HASH);
     assert.ok(Array.isArray(notedJson.allowed_next));
 
-    const done = cliText(engramHome, actor, grant, "done");
+    const done = cliText(engramHome, actor, "done");
     assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI"\nreminders: none\nnext:\n/u);
     assert.match(done, /\s+engram work next/u);
-    const doneJson = cliJson(engramHome, actor, grant, "done");
+    const doneJson = cliJson(engramHome, actor, "done");
     assert.match(doneJson.seal, HASH);
-    const focused = cliJson(engramHome, actor, grant, "show", workRef);
+    const focused = cliJson(engramHome, actor, "show", workRef);
     assert.equal(focused.status.work.lifecycle, "completed");
     assert.equal(focused.evidence.length, 1);
-    const closedList = cliText(engramHome, actor, grant, "ls");
+    const closedList = cliText(engramHome, actor, "ls");
     assert.match(closedList, /^0 item\(s\):/u);
-    const allList = cliText(engramHome, actor, grant, "ls", "--all", "--search", "dogfood work");
+    const allList = cliText(engramHome, actor, "ls", "--all", "--search", "dogfood work");
     assert.match(
       allList,
       /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 completed\/closed/u,
@@ -405,13 +370,12 @@ test("CLI words translate the same ambient lifecycle service", () => {
 
     // `add --under` translates to a one-child decomposition and focuses the
     // new child; the text receipt names both items and no hash.
-    const parentPlan = cliText(engramHome, actor, grant, "add", "Parent plan");
+    const parentPlan = cliText(engramHome, actor, "add", "Parent plan");
     const parentRef = parentPlan.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
     assert.ok(parentRef, parentPlan);
     const child = cliWord(
       engramHome,
       actor,
-      grant,
       "add",
       "Follow-up step",
       "--under",
@@ -452,84 +416,16 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
   let b;
   try {
     buildAndInit(engramHome);
-    const grantA = installWorkGrant(engramHome, "work-agent-a");
-    const grantB = installWorkGrant(engramHome, "work-agent-b");
-
-    const mcpArgs = (sessionId) => [
-      "--home",
-      engramHome,
-      "mcp",
-      "--actor-id",
-      sessionId,
-      "--session-id",
-      sessionId,
-    ];
-    const grantlessError = async (environmentAuthorityGrant, suffix) => {
-      const client = new McpClient(engramHome, `grantless-${suffix}`, {
-        environmentAuthorityGrant,
-      });
-      try {
-        await client.initialize();
-        return structuredError(
-          await client.call("add", { title: "Grantless environment probe" }),
-          "work_invalid",
-        );
-      } finally {
-        await client.close();
-      }
-    };
-    const unsetError = await grantlessError(undefined, "unset");
-    assert.match(unsetError.details.reason, /did not bind a work-authority grant/u);
-    assert.deepEqual(unsetError.reminders, [
-      "the host has not granted this session work authority",
-    ]);
-    for (const [suffix, emptyGrant] of [
-      ["empty", ""],
-      ["whitespace", " \t "],
-    ]) {
-      const emptyError = await grantlessError(emptyGrant, suffix);
-      assert.deepEqual(emptyError, unsetError);
-    }
-    const malformedValue = "not-a-work-authority-secret";
-    const malformed = spawnSync(binary, mcpArgs("malformed-env"), {
-      cwd: root,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        ENGRAM_WORK_AUTHORITY_GRANT: malformedValue,
-      },
-      input: "",
-    });
-    assert.notEqual(malformed.status, 0);
-    assert.match(malformed.stderr, /invalid work-authority grant/u);
-    assert.equal(malformed.stderr.includes(malformedValue), false);
-    const helpSecret = "secret-help-value-that-must-not-appear";
-    const help = spawnSync(binary, ["mcp", "--help"], {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...process.env, ENGRAM_WORK_AUTHORITY_GRANT: helpSecret },
-    });
-    assert.equal(help.status, 0, help.stderr);
-    assert.match(help.stdout, /ENGRAM_WORK_AUTHORITY_GRANT/u);
-    assert.equal(help.stdout.includes(helpSecret), false);
-
-    // Both sessions receive the same eleven-tool MCP surface. `b` passes its
-    // grant through argv over a malformed environment value.
-    a = new McpClient(engramHome, "work-agent-a", {
-      environmentAuthorityGrant: grantA,
-    });
-    b = new McpClient(engramHome, "work-agent-b", {
-      workAuthorityGrant: grantB,
-      environmentAuthorityGrant: malformedValue,
-    });
-    assert.equal(a.args.includes(grantA), false);
-    assert.equal(b.args.includes(grantB), true);
+    // Both sessions receive the same fourteen-tool MCP surface with only
+    // project and asserted actor/session bindings.
+    a = new McpClient(engramHome, "work-agent-a");
+    b = new McpClient(engramHome, "work-agent-b");
     await Promise.all([a.initialize(), b.initialize()]);
     assert.match(
       a.instructions,
-      /Ten words: next, ls, show, add, claim, update, gate, note, done, handoff \(plus search\)/u,
+      /Thirteen words: next, ls, show, add, claim, update, gate, note, done, handoff, remember, memories, forget \(plus search\)/u,
     );
-    assert.doesNotMatch(a.instructions, /Nine words/u);
+    assert.doesNotMatch(a.instructions, /Ten words/u);
     const aToolDefinitions = await a.tools();
     const aTools = new Set(aToolDefinitions.map(({ name }) => name));
     assert.deepEqual([...aTools].sort(), [...AGENT_TOOLS].sort());
@@ -540,10 +436,11 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
         `${tool.name} exposes a host-owned protocol field`,
       );
     }
-    assert.ok(
-      aToolDefinitions.find(({ name }) => name === "next").inputSchema.properties
-        .verbose,
-    );
+    const nextProperties = aToolDefinitions.find(
+      ({ name }) => name === "next",
+    ).inputSchema.properties;
+    assert.ok(nextProperties.verbose);
+    assert.equal(nextProperties.context_generation.maxLength, 256);
     assert.ok(
       aToolDefinitions.find(({ name }) => name === "ls").inputSchema.properties
         .verbose,
@@ -569,6 +466,59 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.match(
       gateProperties.evidence_ref.description,
       /opaque external-evidence reference/u,
+    );
+    const memoriesProperties = aToolDefinitions.find(
+      ({ name }) => name === "memories",
+    ).inputSchema.properties;
+    const rememberProperties = aToolDefinitions.find(
+      ({ name }) => name === "remember",
+    ).inputSchema.properties;
+    const forgetProperties = aToolDefinitions.find(
+      ({ name }) => name === "forget",
+    ).inputSchema.properties;
+    assert.equal(rememberProperties.text.maxLength, 8192);
+    assert.equal(rememberProperties.key.maxLength, 64);
+    assert.equal(memoriesProperties.query.maxLength, 256);
+    assert.equal(memoriesProperties.after.maxLength, 64);
+    assert.equal(forgetProperties.key.maxLength, 64);
+
+    const remembered = receipt(
+      await a.call("remember", {
+        text: "MCP project observation\nfull body",
+        key: "mcp-project-note",
+      }),
+    );
+    assert.equal(remembered.key, "mcp-project-note");
+    assert.equal(remembered.duplicate, false);
+    const memorySignal = receipt(
+      await a.call("next", { context_generation: "mcp-context-1" }),
+    ).memories;
+    assert.equal(memorySignal.count, 1);
+    assert.equal(memorySignal.changed, true);
+    const peerMemories = receipt(await b.call("memories", {}));
+    assert.equal(peerMemories.memories[0].key, "mcp-project-note");
+    assert.equal(peerMemories.memories[0].body, undefined);
+    const fullMemory = receipt(
+      await b.call("memories", { query: "mcp-project-note", full: true }),
+    );
+    assert.equal(fullMemory.body, "MCP project observation\nfull body");
+    structuredError(
+      await a.call("remember", {
+        text: "different content",
+        key: "mcp-project-note",
+      }),
+      "memory_exists",
+    );
+    assert.equal(
+      receipt(await a.call("forget", { key: "mcp-project-note" })).duplicate,
+      false,
+    );
+    structuredError(
+      await b.call("memories", {
+        query: "mcp-project-note",
+        full: true,
+      }),
+      "memory_retired",
     );
 
     const mcpDependent = receipt(
@@ -836,7 +786,6 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(completedCatalog.items[0].ref, workRef);
     assert.equal(completedCatalog.items[0].lifecycle, "completed");
     assert.equal("work" in completedCatalog.items[0], false);
-    assert.equal(JSON.stringify(completedCatalog).includes(grantB), false);
     assert.equal("changes" in completedCatalog, false);
     assert.equal("delivered_through" in completedCatalog, false);
     const verboseCompletedCatalog = receipt(

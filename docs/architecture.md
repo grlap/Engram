@@ -166,7 +166,7 @@ values never enter any shared history—vault references only.
 6. **Coordinate and complete**: each session claims its own child `WorkRun`,
    separately claims resource leases for mutation, appends decisions/evidence
    to root-shared memory, checkpoints, and explicitly hands off. A
-   `RootExecution` consumes required child seals, explicit grant-backed
+   `RootExecution` consumes required child seals, explicit reason-attributed
    waivers for disposed required children, and contributions. Host
    mailboxes may wake peers, but Engram's ordered work/run feeds remain
    authoritative.

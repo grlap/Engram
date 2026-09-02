@@ -17,9 +17,10 @@ freshness, and only then enable a replay-proven refusal set and action gates.
 This keeps false refusals and hook latency measurable before Engram can block
 work.
 
-Current milestone: agents use ten words — `next`, `ls`, `show`, `add`,
-`claim`, `update`, `gate`, `note`, `done`, `handoff` — as flat CLI commands
-and MCP tools over the unchanged six-operation core; `add → claim → done` is
+Current milestone: agents use thirteen words — `next`, `ls`, `show`, `add`,
+`claim`, `update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`,
+`forget` — as flat CLI commands and MCP tools over the unchanged six-operation
+core; `add → claim → done` is
 measured at three commands and no JSON, hashes, fences, or keys, and every
 receipt ends with `reminders` and `next`. The separate JSON-lines host service
 process-tests a
@@ -54,9 +55,10 @@ on the V1 path below.
   [context packets](features/context-packets.md)
 - `engram work note` / MCP `note`: one work finding feeds peer, handoff,
   evidence, and report views
-- Agent-surface Cut A: gate results are auditable evidence, and prerequisites
-  and supersession are `update` flags. Project memories remain planned and
-  are advertised by a content-free `next` signal —
+- Agent-surface Cuts A and B: gate results are auditable evidence,
+  prerequisites and supersession are `update` flags, and attributed project
+  episodes ship through `remember` / `memories` / `forget` with a content-free
+  `next` signal —
   [local work
   system](features/local-work-system.md#gates-prerequisites-supersession-and-project-memories)
 - The contention-robust scale gate asserts canonical, work-event, and item
@@ -138,6 +140,5 @@ host can lose local work state.
 
 - Default grace period for post-publication retention — pick during V1
   implementation.
-- Default decomposition budgets, standing-delegation expiry, optional backup
-  recovery-point objective, and portable push cadence.
+- Optional backup recovery-point objective and portable push cadence.
 - See [spec §12](spec.md#12-decisions) for the resolved decision record.

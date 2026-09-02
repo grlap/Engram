@@ -24,12 +24,14 @@ use crate::{
 };
 
 const MAX_HOST_CONTROL_FRAME_BYTES: usize = 256 * 1_024;
+const MAX_HOST_CONTROL_OPERATION_BYTES: usize = 64;
+const MAX_HOST_CONTROL_ERROR_DETAIL_BYTES: usize = 384;
 
 /// One host-private control operation. The runtime session and asserted actor
 /// are fixed by process arguments instead of repeated in agent-controlled
 /// request payloads.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum HostControlRequest {
     SessionBind {
         external_ref: String,
@@ -63,7 +65,6 @@ pub enum HostControlRequest {
         routing_token: String,
         obligation_id: String,
         expected_definition: String,
-        authority_grant: String,
         waived_by: String,
         reason: String,
         idempotency_key: String,
@@ -262,7 +263,6 @@ impl HostControlServer {
                 routing_token,
                 obligation_id,
                 expected_definition,
-                authority_grant,
                 waived_by,
                 reason,
                 idempotency_key,
@@ -277,11 +277,6 @@ impl HostControlServer {
                             "expected_definition must be a lowercase SHA-256 digest".into(),
                         )
                     })?;
-                let authority_grant = ObjectHash::from_str(&authority_grant).map_err(|_| {
-                    StoreError::InvalidControlSession(
-                        "authority_grant must be a lowercase SHA-256 digest".into(),
-                    )
-                })?;
                 let actor = self.actor(
                     "obligation_waive",
                     "present a host-authorized human obligation waiver",
@@ -293,7 +288,6 @@ impl HostControlServer {
                     &routing_token,
                     obligation_id,
                     &expected_definition,
-                    &authority_grant,
                     &waived_by,
                     &reason,
                     &actor,
@@ -398,7 +392,7 @@ impl HostControlServer {
                         ),
                     },
                 },
-                Ok(frame) => match serde_json::from_slice::<HostControlRequest>(&frame) {
+                Ok(frame) => match parse_host_control_request(&frame) {
                     Ok(request) => match self.handle(request) {
                         Ok(result) => HostControlResponse::Ok { result },
                         Err(error) => HostControlResponse::Error {
@@ -411,7 +405,7 @@ impl HostControlServer {
                     Err(error) => HostControlResponse::Error {
                         error: HostControlErrorBody {
                             code: "invalid_request",
-                            message: error.to_string(),
+                            message: error,
                         },
                     },
                 },
@@ -471,6 +465,43 @@ fn read_control_frame(reader: &mut impl BufRead) -> std::io::Result<Option<Resul
     }
 }
 
+fn parse_host_control_request(frame: &[u8]) -> Result<HostControlRequest, String> {
+    serde_json::from_slice(frame).map_err(|error| {
+        let operation = host_control_operation_hint(frame);
+        let detail = bounded_host_control_error_detail(&error.to_string());
+        format!("host control request {operation:?} is invalid: {detail}")
+    })
+}
+
+fn host_control_operation_hint(frame: &[u8]) -> String {
+    let Ok(value) = serde_json::from_slice::<Value>(frame) else {
+        return "<invalid-json>".into();
+    };
+    let Some(operation) = value.get("operation").and_then(Value::as_str) else {
+        return "<missing>".into();
+    };
+    if operation.is_empty()
+        || operation.len() > MAX_HOST_CONTROL_OPERATION_BYTES
+        || !operation
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return "<invalid>".into();
+    }
+    operation.to_owned()
+}
+
+fn bounded_host_control_error_detail(detail: &str) -> String {
+    if detail.len() <= MAX_HOST_CONTROL_ERROR_DETAIL_BYTES {
+        return detail.to_owned();
+    }
+    let mut end = MAX_HOST_CONTROL_ERROR_DETAIL_BYTES.saturating_sub('…'.len_utf8());
+    while !detail.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &detail[..end])
+}
+
 fn drain_control_frame(reader: &mut impl BufRead) -> std::io::Result<()> {
     loop {
         let available = reader.fill_buf()?;
@@ -515,6 +546,11 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::PinnedContradiction { .. } => "pinned_contradiction",
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
+        StoreError::ProjectMemoryExists(_) => "memory_exists",
+        StoreError::ProjectMemoryRetired(_) => "memory_retired",
+        StoreError::ProjectMemoryNotFound(_) => "memory_not_found",
+        StoreError::ProjectMemoryBindingInvalid => "memory_binding_invalid",
+        StoreError::InvalidProjectMemory(_) => "memory_invalid",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
@@ -595,5 +631,125 @@ mod tests {
                 .is_some_and(|message| message.contains("exceeds"))
         );
         assert_eq!(responses[1]["error"]["code"], "invalid_request");
+    }
+
+    #[test]
+    fn obligation_waiver_frames_reject_removed_or_unknown_fields() {
+        let clean = serde_json::json!({
+            "operation": "obligation_waive",
+            "routing_token": "routing-token",
+            "obligation_id": uuid::Uuid::nil().to_string(),
+            "expected_definition": "a".repeat(64),
+            "waived_by": "operator",
+            "reason": "reviewed exception",
+            "idempotency_key": "waive-once"
+        });
+        assert!(matches!(
+            parse_host_control_request(&serde_json::to_vec(&clean).expect("encode clean frame")),
+            Ok(HostControlRequest::ObligationWaive { .. })
+        ));
+
+        let mut legacy = clean;
+        legacy["authority_grant"] = Value::String("b".repeat(64));
+        let error =
+            parse_host_control_request(&serde_json::to_vec(&legacy).expect("encode legacy frame"))
+                .expect_err("removed authority field must fail closed");
+        assert!(error.contains("obligation_waive"));
+        assert!(error.contains("authority_grant"));
+    }
+
+    #[test]
+    fn host_control_frames_reject_duplicate_fields_without_unbounded_diagnostics() {
+        let duplicate_top_level = br#"{
+            "operation":"session_status",
+            "operation":"session_status",
+            "routing_token":"routing-token"
+        }"#;
+        let error = parse_host_control_request(duplicate_top_level)
+            .expect_err("duplicate top-level field must fail closed");
+        assert!(error.contains("duplicate field"));
+
+        let duplicate_nested = br#"{
+            "operation":"lease_acquire",
+            "routing_token":"routing-token",
+            "kind":"execution",
+            "mode":"exclusive",
+            "subject":{
+                "kind":"logical",
+                "namespace":"workspace",
+                "namespace":"other-workspace",
+                "segments":["src"],
+                "coverage":"exact"
+            },
+            "ttl_seconds":60,
+            "idempotency_key":"lease-once"
+        }"#;
+        let error = parse_host_control_request(duplicate_nested)
+            .expect_err("duplicate nested field must fail closed");
+        assert!(error.contains("duplicate field"));
+
+        let oversized_operation = serde_json::json!({
+            "operation": "x".repeat(MAX_HOST_CONTROL_OPERATION_BYTES + 1),
+        });
+        let error = parse_host_control_request(
+            &serde_json::to_vec(&oversized_operation).expect("encode oversized operation"),
+        )
+        .expect_err("unknown oversized operation must fail closed");
+        assert!(error.contains("<invalid>"));
+        assert!(error.len() < 512);
+    }
+
+    #[test]
+    fn host_control_frames_reject_unknown_nested_fields() {
+        let misspelled_components = serde_json::json!({
+            "operation": "turn_checkpoint",
+            "routing_token": "routing-token",
+            "grant_id": "grant-id",
+            "next_intent": "continue",
+            "observations": [],
+            "verification_evidence": [],
+            "environment_evidence": [{
+                "source_basis": {
+                    "workspace_id": "workspace",
+                    "source_revision": "revision"
+                },
+                "environment_fingerprint": "a".repeat(64),
+                "componentz": {
+                    "toolchain": "stable",
+                    "workspace_id": "workspace",
+                    "capability_map_revision": 1
+                },
+                "observed_at": "2026-09-02T00:00:00Z"
+            }],
+            "idempotency_key": "checkpoint-once"
+        });
+        let error = parse_host_control_request(
+            &serde_json::to_vec(&misspelled_components).expect("encode nested typo"),
+        )
+        .expect_err("misspelled optional components field must fail closed");
+        assert!(error.contains("turn_checkpoint"));
+        assert!(error.contains("componentz"));
+
+        let extra_resource_field = serde_json::json!({
+            "operation": "lease_acquire",
+            "routing_token": "routing-token",
+            "kind": "execution",
+            "mode": "exclusive",
+            "subject": {
+                "kind": "logical",
+                "namespace": "workspace",
+                "segments": ["src"],
+                "coverage": "exact",
+                "unexpected": true
+            },
+            "ttl_seconds": 60,
+            "idempotency_key": "lease-once"
+        });
+        let error = parse_host_control_request(
+            &serde_json::to_vec(&extra_resource_field).expect("encode extra resource field"),
+        )
+        .expect_err("unknown resource-subject field must fail closed");
+        assert!(error.contains("lease_acquire"));
+        assert!(error.contains("unexpected"));
     }
 }

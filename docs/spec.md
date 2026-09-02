@@ -178,6 +178,7 @@ team scope activate with a shared backend later (§3.2–3.3, §12).
 Version {
   version_id      // sha-256 of canonical serialization
   memory_id       // stable identity: mem-<hash>
+  project_key?    // safe permanent key for the constrained project-episode surface
   parents[]       // prior version ids; >1 = conflict resolution (§6.3)
 
   kind, authority, delivery      // §2.2 (delivery may be "derived")
@@ -234,8 +235,9 @@ Engram is the system of record for a host-local graph of `WorkItem`s. A work
 item has a stable collision-resistant id plus a short display ref, project and
 root ids, optional parent, kind, title, intended outcome, acceptance criteria,
 integer priority, labels, optional assignment and deferral, origin/provenance,
-authority policy, and immutable revision history. No external reference is
-required.
+stable project binding, and immutable revision history. Local-work exception
+reasons are attributed audit facts rather than permission-bearing authority.
+No external reference is required.
 
 Parent/child decomposition is a forest. Explicit prerequisite edges plus the
 implicit completion edge `parent requires required-child` form one
@@ -272,12 +274,11 @@ nonempty drain until controlled `completion_pending` ships. Availability
 `waiting`) is a derived projection. Completion binds the accepted work
 revision, run generation, claim fence, checkpoint position, acceptance
 results, and evidence hashes. Required children and prerequisites must be
-complete or an explicitly authorized waiver must account for them. Root
-completion additionally binds required child seals or grant-backed waivers for
+complete or an explicit reason-attributed waiver must account for them. Root
+completion additionally binds required child seals or reason-attributed waivers for
 disposed required children, plus the `RootExecution`
-roster/contributions. Root completion is a human decision by default; a
-bounded, expiring delegation may authorize an agent. Acceptance records
-whether evidence was independently verified or self-attested.
+roster/contributions. Acceptance records whether evidence was independently
+verified or self-attested.
 
 Every claimed mutation revalidates the full ancestor chain and the run's
 membership in the currently active `RootExecution`. Root completion refuses
@@ -311,8 +312,8 @@ terminalizes the run claim, releases or transfers every dependent resource
 lease, and waits for its executor checkpoint or an authorized decision. A
 root barrier additionally freezes the expected `RootExecution` contributor
 roster and waits for required child seals or explicit disposed-child waivers,
-plus contributions or
-human-authorized waivers. `completion_seal` captures one dense run-feed cut
+plus contributions or attributed, audited waivers by a project-bound session.
+`completion_seal` captures one dense run-feed cut
 plus the accepted work revision, run/claim fences, action reconciliation,
 acceptance results, and evidence hashes; a root seal also binds those child
 seals and aggregate contributions. The seal makes the work `completed`; an
@@ -345,7 +346,7 @@ not_requested → finalization_pending → report_ready → publishing → publi
 
 Optional report finalization consumes the completed run's `CompletionSeal`;
 it never quiesces or drains execution a second time. Participant completion
-contributions and human-authorized waivers are already bound to the cut. The
+contributions and attributed, audited waivers are already bound to the cut. The
 host creates a `ReportAssembly` anchored to the root seal and acquires a
 fenced `ReportAssemblyClaim` for its designated finalizer. This post-completion
 claim is neither a `WorkClaim` nor a `ResourceLease`, requires no live work
@@ -1055,29 +1056,40 @@ engram export preview <adapter> <work-ref>   engram export apply <intent>
 ### 8.2 Agent-facing MCP server
 
 Agent-facing MCP exposes exactly `next`, `ls`, `show`, `add`, `claim`,
-`update`, `gate`, `note`, `done`, `search`, and `handoff`. Those tools
-translate into the six-operation work core: `work_next`, `work_focus`,
+`update`, `gate`, `note`, `done`, `search`, `handoff`, `remember`, `memories`,
+and `forget`. The work tools translate into the six-operation work core:
+`work_next`, `work_focus`,
 `work_propose`, `work_update`, `work_complete`, and `work_handoff`; the
 session binding supplies project, actor, current work, and cursors. Optional
 generic memory capture, import, publication, and administrative queries remain
 separate tools rather than expanding every model turn.
 
-The planned project-memory cut described in the feature briefs adds
-`remember`, `memories`, and `forget`. When it ships, the agent surface
-becomes thirteen words plus `search` — fourteen MCP tools, with no new
+The agent surface is thirteen words plus `search` — fourteen MCP tools, with no new
 work-core operation: `gate` already wraps the existing evidence path, and
-`remember`, `memories`, and `forget` are a thin project-memory surface with
-project-policy authorization and hidden idempotency, outside the
-six-operation work core — no focus mutation, no claim renewal. The
-implementation updates this tool count, the MCP registration and
-instructions, and every agent instruction file atomically with the code;
-until then the eleven tools above are the complete shipped surface.
+`remember`, `memories`, and `forget` are a thin project-memory surface outside
+the six-operation work core — no focus mutation, no claim renewal. Reads use
+the cooperative asserted project binding. `remember` and `forget` validate the
+same non-empty actor/session binding inside the memory mutation transaction.
+`memory_binding_invalid` means that binding is absent or inconsistent. The
+implementation keeps this tool count, the MCP registration and instructions,
+and every agent instruction file atomic with the code.
 
-Project-memory advertisement in planned `next` is advisory and
+Project-memory list/search and full-read receipts fit both their structured
+JSON/MCP representation and terminal-safe shell rendering under the 12 KiB
+agent response ceiling. A full body is admitted before persistence only when
+both exact envelopes fit; list/search sheds rows with an omission or
+continuation signal when escaping would otherwise exceed the ceiling.
+
+Agent-facing work has no grant token, validity window, revocation object, or
+routine remint requirement. Its lifecycle mutations are governed by project
+binding, current item state, fenced claims, and reason-attributed audit records.
+
+Project-memory advertisement in `next` is advisory and
 content-free: a count of retained project notes and a changed flag, with
 no exactly-once guarantee. `memories` is the source of truth, and a
 host-passed `context_generation` marks a fresh or compacted context and
-may reannounce the count.
+may reannounce the count. Only a domain-separated digest of that asserted
+value is persisted; its raw text is never retained.
 
 This surface is for capture, retrieval, explanation, and coordination
 requests. It is not a self-authorization channel: a model-callable MCP tool
@@ -1121,6 +1133,14 @@ and cross-task rebind is rejected while active leases remain. The remaining
 operations and all individual action/shared/external/lifecycle authority are
 not yet shipped;
 `action_gated` declarations are rejected.
+Every `HostControlRequest` variant is strict: the paired consumer must send
+exactly the current field set for every operation. Any additive, unknown, or
+removed request field is an `invalid_request` refusal that names the request
+kind and offending field, including the former grant field on
+`obligation_waive`. This pre-release request-shape revision is coordinated
+atomically with the live TermAl consumer. There is deliberately no
+version-negotiation or legacy-frame shim: the paired consumer must update all
+host-frame shapes before this Engram build lands.
 
 For a work-bound begun turn, the private checkpoint may atomically append up to
 64 host execution observations, mint up to 16 typed verification objects, and
@@ -1159,14 +1179,15 @@ open set waiver-only until a later basis-bearing mutation and passed test; that
 test may satisfy earlier definitions too. Focus, nested next views, updates,
 and both completion outcomes expose one count- and byte-bounded,
 authority-redacted `obligation_page` with an explicit omission count and
-deterministic typed guidance. Waiver is host/operator private, requires the
-dedicated `ObligationWaiver` authority operation, and is absent from MCP and
-`work_update`. The private JSON-lines request is bound to the session's exact
-run and records the server-fixed actor beside an asserted `waived_by` human;
-typed policy refusals are replayable while grant, token, and transport faults
-remain request errors. Completion evaluates the cut-aware set at the exact
-pre-seal run-feed position. Open definitions return a bounded, durably
-replayable `open_work_obligations` protocol result. A new seal declares
+deterministic typed guidance. Waiver is absent from MCP and `work_update`.
+The operator-intended shell command has no credential or run-binding check;
+its separation is a local convention, not an authenticated boundary. The
+private JSON-lines request is the enforced alternative: it is bound to the
+session's exact run and records the server-fixed actor beside an asserted
+`waived_by` human and reason. Typed binding refusals are replayable while token
+and transport faults remain request errors. Completion evaluates the cut-aware
+set at the exact pre-seal run-feed position. Open definitions return a bounded,
+durably replayable `open_work_obligations` protocol result. A new seal declares
 obligation schema V1 and binds every applicable definition to its
 satisfied/waived resolution; success and fresh-session focus reconstruct their
 pages from canonical history, and the final checkpoint acknowledges the
@@ -1285,8 +1306,9 @@ execution again. The root seal already proves every expected contributor
 supplied a required child seal or authorized omission, reconciled every action
 outcome, released or transferred resource leases, contributed, and satisfied
 acceptance, and closed every obligation applicable at the exact completion cut
-with a bound terminal resolution—or a human-authorized waiver records the
-omission. New seals also cite the exact bounded environment-evidence hash set
+with a bound terminal resolution—or an attributed, audited waiver by a
+project-bound session records the omission. New seals also cite the exact
+bounded environment-evidence hash set
 at that cut; the component objects remain separate canonical evidence.
 Reopening the root before report
 freeze supersedes that run and aborts assembly; reopening after `report_ready`
@@ -1398,8 +1420,6 @@ Codex::AgentMemory):
   coordinate live; same-host sessions do not trigger it.
 - Timing of the proprietary tracker adapter — when work authorizes real
   publication.
-- Default decomposition depth/fanout/open-descendant budgets and standing
-  delegation expiry.
 - Recovery snapshot format and recovery-point defaults for optional
   `local_backed_up` mode; portable push cadence and first transport substrate
   (recommended: a private dedicated Git ref, not a branch; internal object

@@ -1,4 +1,4 @@
-//! MCP stdio surface for the eleven agent-facing work tools.
+//! MCP stdio surface for the fourteen agent-facing work tools.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -14,25 +14,23 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, GateInput, HandoffAction, HandoffInput,
-    LocalWorkService, LsInput, NextInput, NoteInput, ObjectHash, ProjectId, Receipt, SessionId,
-    UpdateAction, UpdateInput, VerbError, WorkItemKind, parse_defer_date, storage::StoreError,
+    AddInput, AgentVerbs, ClaimInput, DoneInput, ForgetInput, GateInput, HandoffAction,
+    HandoffInput, LocalWorkService, LsInput, MemoriesInput, NextInput, NoteInput, ProjectId,
+    Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError, WorkItemKind,
+    parse_defer_date, storage::StoreError,
 };
 
 /// Immutable host context asserted for one MCP connection.
 #[derive(Clone, Debug)]
 pub struct McpServer {
-    database: PathBuf,
-    project_id: ProjectId,
     actor_id: String,
     session_id: SessionId,
-    source_skill: Option<String>,
     work_service: Arc<LocalWorkService>,
     tool_router: ToolRouter<Self>,
 }
 
 impl McpServer {
-    /// Creates a tools-only MCP service exposing the eleven agent work tools.
+    /// Creates a tools-only MCP service exposing the fourteen agent tools.
     #[must_use]
     pub fn new(
         database: PathBuf,
@@ -42,36 +40,18 @@ impl McpServer {
         source_skill: Option<String>,
     ) -> Self {
         let work_service = Arc::new(LocalWorkService::new(
-            database.clone(),
-            project_id.clone(),
-            actor_id.clone(),
-            session_id.clone(),
-            source_skill.clone(),
-            None,
-        ));
-        Self {
             database,
             project_id,
+            actor_id.clone(),
+            session_id.clone(),
+            source_skill,
+        ));
+        Self {
             actor_id,
             session_id,
-            source_skill,
             work_service,
             tool_router: Self::agent_tool_router(),
         }
-    }
-
-    /// Binds one host-selected grant to this connection's work mutations.
-    #[must_use]
-    pub fn with_work_authority_grant(mut self, grant: Option<ObjectHash>) -> Self {
-        self.work_service = Arc::new(LocalWorkService::new(
-            self.database.clone(),
-            self.project_id.clone(),
-            self.actor_id.clone(),
-            self.session_id.clone(),
-            self.source_skill.clone(),
-            grant,
-        ));
-        self
     }
 
     fn verbs(&self) -> AgentVerbs {
@@ -89,6 +69,9 @@ struct NextArgs {
     limit: Option<u32>,
     /// Return the full structured projection instead of compact rows.
     verbose: Option<bool>,
+    /// Asserted host/client context generation; a new value may reannounce project memories.
+    #[schemars(length(max = 256))]
+    context_generation: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -198,6 +181,35 @@ struct GateArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct RememberArgs {
+    /// Project note or observation. Never include credentials or secrets.
+    #[schemars(length(max = 8192))]
+    text: String,
+    /// Safe permanent key; omitted to derive a slug from the first words.
+    #[schemars(length(max = 64))]
+    key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct MemoriesArgs {
+    /// Search text, or the exact key when full is true.
+    #[schemars(length(max = 256))]
+    query: Option<String>,
+    /// Continue an unfiltered key-ordered listing.
+    #[schemars(length(max = 64))]
+    after: Option<String>,
+    /// Return one dedicated full body for the positional key.
+    full: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ForgetArgs {
+    /// Permanently reserved project-memory key to tombstone.
+    #[schemars(length(max = 64))]
+    key: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct NoteArgs {
     /// Item to note on; defaults to the focus.
     work_ref: Option<String>,
@@ -261,6 +273,7 @@ impl McpServer {
             &NextInput {
                 limit: args.limit,
                 verbose: args.verbose.unwrap_or(false),
+                context_generation: args.context_generation,
             },
             Utc::now(),
         ))
@@ -401,6 +414,46 @@ impl McpServer {
         ))
     }
 
+    /// Store one attributed project memory.
+    #[tool(
+        name = "remember",
+        description = "Store one attributed project note under a safe permanent key; no work focus or claim changes"
+    )]
+    fn remember(&self, Parameters(args): Parameters<RememberArgs>) -> CallToolResult {
+        verb(self.verbs().remember(
+            RememberInput {
+                text: args.text,
+                key: args.key,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// List, search, or fully read project memories.
+    #[tool(
+        name = "memories",
+        description = "List compact project-memory rows, search them, or set full with an exact key to read one body"
+    )]
+    fn memories(&self, Parameters(args): Parameters<MemoriesArgs>) -> CallToolResult {
+        verb(self.verbs().memories(&MemoriesInput {
+            query: args.query,
+            after: args.after,
+            full: args.full.unwrap_or(false),
+        }))
+    }
+
+    /// Permanently retire one project-memory key.
+    #[tool(
+        name = "forget",
+        description = "Append an attributed tombstone for one project-memory key; this is not erasure"
+    )]
+    fn forget(&self, Parameters(args): Parameters<ForgetArgs>) -> CallToolResult {
+        verb(
+            self.verbs()
+                .forget(ForgetInput { key: args.key }, Utc::now()),
+        )
+    }
+
     /// Record one finding once.
     #[tool(
         name = "note",
@@ -477,7 +530,7 @@ impl McpServer {
     router = self.tool_router,
     name = "engram",
     version = "0.1.0",
-    instructions = "Ten words: next, ls, show, add, claim, update, gate, note, done, handoff (plus search). add needs only a title; claim before you change anything; gate records bounded pass/fail evidence; note findings once; done completes what you hold. Every answer ends with reminders (what is owed) and next (commands you can run now). Identical calls are safe to repeat."
+    instructions = "Thirteen words: next, ls, show, add, claim, update, gate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before changing work; gate records bounded pass/fail evidence; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer ends with reminders and runnable next commands. Identical calls are safe to repeat."
 )]
 impl ServerHandler for McpServer {}
 
@@ -532,6 +585,31 @@ pub fn store_error_value(error: &StoreError) -> Value {
         StoreError::MemoryAccessDenied(hash)
         | StoreError::MemoryNotFound(hash)
         | StoreError::PacketAccessDenied(hash) => json!({ "object_hash": hash }),
+        StoreError::ProjectMemoryExists(key) => json!({
+            "key": key,
+            "remedy": format!("run memories {key} --full or choose another --key"),
+        }),
+        StoreError::ProjectMemoryRetired(key) => json!({
+            "key": key,
+            "remedy": "run memories and choose a key that has never been used",
+        }),
+        StoreError::ProjectMemoryNotFound(key) => json!({
+            "key": key,
+            "remedy": "run memories to list retained project memories",
+        }),
+        StoreError::ProjectMemoryBindingInvalid => json!({
+            "remedy": "use a non-empty asserted actor/session binding for this project",
+        }),
+        StoreError::InvalidProjectMemory(reason) if reason.contains("context_generation") => {
+            json!({
+                "reason": reason,
+                "remedy": "omit context_generation or use at most 256 bytes without control characters",
+            })
+        }
+        StoreError::InvalidProjectMemory(reason) => json!({
+            "reason": reason,
+            "remedy": "follow the key and size bounds, or run memories for valid keys",
+        }),
         StoreError::WorkNotFound(work) => missing_work_details(*work),
         StoreError::WorkReferenceAmbiguous {
             reference,
@@ -643,7 +721,11 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::TaskReferenceNotFound(_) => "task_reference_not_found",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::MemoryAccessDenied(_) => "memory_access_denied",
-        StoreError::MemoryNotFound(_) => "memory_not_found",
+        StoreError::MemoryNotFound(_) | StoreError::ProjectMemoryNotFound(_) => "memory_not_found",
+        StoreError::ProjectMemoryExists(_) => "memory_exists",
+        StoreError::ProjectMemoryRetired(_) => "memory_retired",
+        StoreError::ProjectMemoryBindingInvalid => "memory_binding_invalid",
+        StoreError::InvalidProjectMemory(_) => "memory_invalid",
         StoreError::PacketAccessDenied(_) => "packet_access_denied",
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::EmptyNote => "empty_note",
@@ -753,6 +835,18 @@ mod tests {
     }
 
     #[test]
+    fn invalid_context_generation_has_a_specific_mcp_remedy() {
+        let error = StoreError::InvalidProjectMemory(
+            "context_generation must be at most 256 bytes without control characters".into(),
+        );
+        let value = store_error_value(&error);
+        assert_eq!(
+            value["error"]["details"]["remedy"],
+            "omit context_generation or use at most 256 bytes without control characters"
+        );
+    }
+
+    #[test]
     fn retained_work_service_survives_failure_for_agent_tools() {
         let directory = tempfile::tempdir().expect("temporary MCP home");
         let server = McpServer::new(
@@ -763,9 +857,21 @@ mod tests {
             Some("mcp-test".into()),
         );
 
+        server
+            .verbs()
+            .next(
+                &NextInput {
+                    limit: Some(5),
+                    verbose: false,
+                    context_generation: None,
+                },
+                Utc::now(),
+            )
+            .expect("agent tool initializes the retained service");
+
         let refused = server.verbs().add(
             AddInput {
-                title: "requires host authority".into(),
+                title: " ".into(),
                 ..AddInput::default()
             },
             Utc::now(),
@@ -779,6 +885,7 @@ mod tests {
                 &NextInput {
                     limit: Some(5),
                     verbose: false,
+                    context_generation: None,
                 },
                 Utc::now(),
             )

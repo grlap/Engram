@@ -60,8 +60,9 @@ not_requested → finalization_pending → report_ready → publishing → publi
   requires empty action-outcome and resource-lease drain sets, terminalizes the
   work claim, and seals in one transaction. A root barrier also freezes the
   `RootExecution` contributor roster and waits for each required child seal or
-  explicit grant-backed disposed-child waiver, plus contributions or a
-  human-authorized participant waiver. The target controlled path enters
+  explicit reason-attributed disposed-child waiver, plus contributions or a
+  reason-attributed, audited participant waiver by a project-bound session.
+  The target controlled path enters
   `completion_pending` to deny new ordinary mutation while the host reconciles
   actions and releases/transfers linked leases; nonempty drains are refused in
   the current alpha.

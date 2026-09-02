@@ -1,4 +1,4 @@
-//! Engram CLI: host/operator administration plus the ten-word agent surface.
+//! Engram CLI: host/operator administration plus the thirteen-word agent surface.
 
 use std::{
     env, fs,
@@ -10,20 +10,19 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
-use engram::domain::{AssuranceLevel, SCHEMA_VERSION};
+use engram::domain::AssuranceLevel;
 use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
-    ClaimInput, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, DoneInput, GateInput,
-    HandoffAction, HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService, LsInput,
-    McpServer, NextInput, NoteInput, ObjectHash, ObligationRuleDefinition, ObligationRuleSet,
-    ProjectId, ProjectPolicyAuthorityDecision, SessionId, SqliteStore, StoreError, UpdateAction,
-    UpdateInput, VerificationKind, VerificationRequirement, WaiveWorkObligationRequest,
-    WorkAuthorityGrant, WorkAuthorityGrantStatus, WorkAuthorityOperation, WorkAuthorityScope,
-    WorkAvailability, WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind,
-    WorkLifecycle, WorkNextQuery, WorkNextSection, WorkObligationId, WorkPlanningBudget,
-    WorkProposeInput, WorkUpdateInput, describe_host_path_policy, looks_like_work_ref,
-    parse_defer_date, parse_host_path_policy, probe_host_path_policy, project_database_path,
-    store_error_value,
+    ClaimInput, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, DoneInput, ForgetInput,
+    GateInput, HandoffAction, HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService,
+    LsInput, McpServer, MemoriesInput, NextInput, NoteInput, ObjectHash, ObligationRuleDefinition,
+    ObligationRuleSet, ProjectId, ProjectPolicyAuthorityDecision, RememberInput, SessionId,
+    SqliteStore, StoreError, UpdateAction, UpdateInput, VerificationKind, VerificationRequirement,
+    WaiveWorkObligationRequest, WorkAvailability, WorkCompleteInput, WorkCompleteResult,
+    WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
+    WorkObligationId, WorkProposeInput, WorkUpdateInput, describe_host_path_policy,
+    looks_like_work_ref, parse_defer_date, parse_host_path_policy, probe_host_path_policy,
+    project_database_path, store_error_value,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -141,12 +140,6 @@ enum Command {
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long)]
         source_skill: Option<String>,
-        /// Host-selected immutable authority grant for work mutations.
-        ///
-        /// Prefer the environment source when argv may be observable to peer
-        /// processes. An explicit flag takes precedence over the environment.
-        #[arg(long, env = "ENGRAM_WORK_AUTHORITY_GRANT", hide_env_values = true)]
-        work_authority_grant: Option<String>,
     },
     /// Serve the host-private behavioral-control protocol as JSON Lines.
     Control {
@@ -160,10 +153,10 @@ enum Command {
         #[arg(long)]
         source_skill: Option<String>,
     },
-    /// Track work with ten words: next, ls, show, add, claim, update, gate,
-    /// note, done, handoff.
+    /// Track work with thirteen words: next, ls, show, add, claim, update,
+    /// gate, note, done, handoff, remember, memories, forget.
     ///
-    /// The host fixes actor, session, and authority through the environment
+    /// The host fixes actor and session through the environment
     /// so an agent types only the word and its arguments.
     Work {
         /// Actor identity asserted by the invoking host or operator wrapper.
@@ -175,19 +168,13 @@ enum Command {
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long, env = "ENGRAM_SOURCE_SKILL")]
         source_skill: Option<String>,
-        /// Host-selected immutable authority grant for mutations.
-        ///
-        /// Prefer the environment source when argv may be observable to peer
-        /// processes. An explicit flag takes precedence over the environment.
-        #[arg(long, env = "ENGRAM_WORK_AUTHORITY_GRANT", hide_env_values = true)]
-        authority_grant: Option<String>,
         /// Print the exact structured receipt instead of text.
         #[arg(long, global = true)]
         json: bool,
         #[command(subcommand)]
         operation: Box<WorkCommand>,
     },
-    /// Host-operator work-authority administration; never exposed through MCP.
+    /// Host-operator audited lifecycle exceptions; never exposed through MCP.
     Authority {
         #[command(subcommand)]
         operation: AuthorityCommand,
@@ -359,6 +346,9 @@ enum WorkCommand {
         /// Return the full structured projection instead of compact rows.
         #[arg(long)]
         verbose: bool,
+        /// Asserted host/client context generation; a new value may reannounce project memories.
+        #[arg(long)]
+        context_generation: Option<String>,
     },
     /// List open work.
     Ls {
@@ -488,6 +478,26 @@ enum WorkCommand {
         #[arg(long = "ref", value_name = "OPAQUE_REFERENCE")]
         evidence_ref: Option<String>,
     },
+    /// Store one attributed project memory.
+    Remember {
+        text: String,
+        /// Safe permanent project-memory key.
+        #[arg(long)]
+        key: Option<String>,
+    },
+    /// List/search project memories, or read one key in full.
+    Memories {
+        /// Query text, or the exact key when --full is present.
+        query: Option<String>,
+        /// Continue an unfiltered key-ordered listing.
+        #[arg(long, conflicts_with = "full")]
+        after: Option<String>,
+        /// Return the dedicated full body for the positional key.
+        #[arg(long)]
+        full: bool,
+    },
+    /// Permanently retire one project-memory key.
+    Forget { key: String },
     /// Record one finding, decision, or evidence pointer on the item you hold.
     Note {
         /// An optional item ref, then the note text.
@@ -526,7 +536,7 @@ enum WorkCommand {
     /// Six-operation JSON protocol for hosts and operators.
     Core {
         #[command(subcommand)]
-        operation: CoreWorkCommand,
+        operation: Box<CoreWorkCommand>,
     },
 }
 
@@ -565,7 +575,7 @@ enum CoreWorkCommand {
         /// Opaque `delivery_token` returned with that same prior page.
         #[arg(long)]
         acknowledge_token: Option<String>,
-        /// Comma-separated response sections: focus,ready,catalog,changes.
+        /// Comma-separated response sections: focus,ready,catalog,changes,memories.
         /// Omit for all sections.
         #[arg(long, value_delimiter = ',')]
         sections: Vec<String>,
@@ -583,6 +593,8 @@ enum CoreWorkCommand {
         label: Option<String>,
         #[arg(long)]
         catalog_after: Option<String>,
+        #[arg(long)]
+        context_generation: Option<String>,
     },
     /// Select and inspect ambient work without claiming it.
     Focus {
@@ -629,72 +641,12 @@ enum CoreWorkCommand {
 
 #[derive(Debug, Subcommand)]
 enum AuthorityCommand {
-    /// Show the public installation and revocation status of one grant hash.
-    Show {
-        /// Immutable grant hash to query.
-        grant: String,
-        /// Print the structured status object instead of line-oriented text.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Install a bounded standard local-agent grant and print its immutable hash.
-    Grant {
-        /// Exact actor id that may consume this grant.
-        #[arg(long)]
-        subject_actor_id: String,
-        /// Host/operator actor id attributed as the grant issuer.
-        #[arg(long)]
-        issued_by: String,
-        /// Work policy reference roots and children must match.
-        #[arg(long, default_value = "project-default")]
-        policy_ref: String,
-        /// Grant lifetime in seconds (1..86400).
-        #[arg(long, default_value_t = 3_600)]
-        valid_seconds: i64,
-        /// Maximum decomposition depth.
-        #[arg(long, default_value_t = 4)]
-        max_depth: u32,
-        /// Maximum open descendants beneath one root.
-        #[arg(long, default_value_t = 256)]
-        max_open_descendants: u32,
-        /// Maximum children admitted in one decomposition.
-        #[arg(long, default_value_t = 16)]
-        max_children_per_decomposition: u32,
-        /// Attributed reason for this host-local delegation.
-        #[arg(long, default_value = "operator enabled bounded local work execution")]
-        reason: String,
-        /// Admit reopening completed work (operator-sensitive).
-        #[arg(long)]
-        allow_reopen: bool,
-        /// Admit recovery that waives an unaccounted prior claimant.
-        #[arg(long)]
-        allow_claim_recovery: bool,
-        /// Admit release/cancellation waivers for missing contributions.
-        #[arg(long)]
-        allow_completion_waiver: bool,
-        /// Admit host/operator waiver of an exact open execution obligation.
-        #[arg(long)]
-        allow_obligation_waiver: bool,
-    },
-    /// Irreversibly revoke an installed grant and print the revocation hash.
-    Revoke {
-        /// Immutable grant hash to revoke.
-        grant: String,
-        /// Host/operator actor id attributed to the revocation.
-        #[arg(long)]
-        revoked_by: String,
-        /// Attributed reason for revocation.
-        #[arg(long)]
-        reason: String,
-    },
-    /// Waive one exact open execution obligation under dedicated authority.
+    /// Waive one exact open execution obligation with attributed reason.
     WaiveObligation {
         #[arg(long)]
         obligation_id: String,
         #[arg(long)]
         expected_definition: String,
-        #[arg(long)]
-        authority_grant: String,
         #[arg(long)]
         waived_by: String,
         #[arg(long)]
@@ -704,8 +656,26 @@ enum AuthorityCommand {
     },
 }
 
+const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
+
+fn main() -> Result<ExitCode> {
+    // The combined clap command graph is parsed and driven on this named
+    // thread because Windows' default main-thread stack is too small for the
+    // full CLI enum. Tokio worker futures are not affected; only parse and
+    // `block_on` stay on the enlarged stack.
+    match std::thread::Builder::new()
+        .name("engram-cli".into())
+        .stack_size(CLI_STACK_BYTES)
+        .spawn(run_cli)?
+        .join()
+    {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
 #[tokio::main]
-async fn main() -> Result<ExitCode> {
+async fn run_cli() -> Result<ExitCode> {
     let cli = Cli::parse();
     let (project_id, database, root) = resolve_project(&cli.project_file, cli.home)?;
     let identity = resolve_host_path_identity(&root, cli.host_path_policy);
@@ -739,19 +709,14 @@ async fn main() -> Result<ExitCode> {
             actor_id,
             session_id,
             source_skill,
-            work_authority_grant,
         } => {
-            let grant = parse_optional_hash(work_authority_grant)?;
-            serve_mcp(
-                McpServer::new(
-                    database,
-                    project_id,
-                    actor_id,
-                    SessionId(session_id),
-                    source_skill,
-                )
-                .with_work_authority_grant(grant),
-            )
+            serve_mcp(McpServer::new(
+                database,
+                project_id,
+                actor_id,
+                SessionId(session_id),
+                source_skill,
+            ))
             .await?;
         }
         Command::Control {
@@ -770,7 +735,6 @@ async fn main() -> Result<ExitCode> {
             actor_id,
             session_id,
             source_skill,
-            authority_grant,
             json,
             operation,
         } => {
@@ -780,15 +744,14 @@ async fn main() -> Result<ExitCode> {
                 actor_id,
                 session_id: SessionId(session_id),
                 source_skill,
-                authority_grant: parse_optional_hash(authority_grant)?,
             };
             return match *operation {
-                WorkCommand::Core { operation } => run_core_work(context, operation),
+                WorkCommand::Core { operation } => run_core_work(context, *operation),
                 operation => run_work(context, json, operation),
             };
         }
         Command::Authority { operation } => {
-            run_authority(&database, identity, project_id, operation)?;
+            run_authority(&database, identity, operation)?;
         }
         Command::ControlPolicy { operation } => {
             run_control_policy(&database, identity, project_id, operation)?;
@@ -797,14 +760,13 @@ async fn main() -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Host-fixed identity and authority for one shell work invocation.
+/// Host-fixed project, actor, and session for one shell work invocation.
 struct WorkContext {
     database: PathBuf,
     project_id: ProjectId,
     actor_id: String,
     session_id: SessionId,
     source_skill: Option<String>,
-    authority_grant: Option<ObjectHash>,
 }
 
 fn run_control_policy(
@@ -904,160 +866,36 @@ fn parse_expected_policy_hash(value: Option<String>) -> Result<Option<ObjectHash
         .transpose()
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "authority administration keeps grant and irreversible revocation behavior together"
-)]
 fn run_authority(
     database: &Path,
     identity: Option<HostPathPolicy>,
-    project_id: ProjectId,
     operation: AuthorityCommand,
 ) -> Result<()> {
     let mut store = SqliteStore::open_with_host_path_identity(database, identity)
         .with_context(|| format!("failed to open {}", database.display()))?;
     let now = chrono::Utc::now();
     let value = match operation {
-        AuthorityCommand::Show { grant, json } => {
-            let grant = ObjectHash::from_str(&grant)
-                .map_err(|message| anyhow::anyhow!("invalid grant hash: {message}"))?;
-            let status = store.work_authority_grant_status(&grant)?;
-            if json {
-                println!("{}", serde_json::to_string_pretty(&status)?);
-            } else {
-                print_authority_grant_status(&status)?;
-            }
-            return Ok(());
-        }
-        AuthorityCommand::Grant {
-            subject_actor_id,
-            issued_by,
-            policy_ref,
-            valid_seconds,
-            max_depth,
-            max_open_descendants,
-            max_children_per_decomposition,
-            reason,
-            allow_reopen,
-            allow_claim_recovery,
-            allow_completion_waiver,
-            allow_obligation_waiver,
-        } => {
-            if !(1..=86_400).contains(&valid_seconds) {
-                bail!("--valid-seconds must be from 1 through 86400");
-            }
-            eprintln!(
-                "WARNING: authority issuer and subject identities are asserted host context, not authenticated identities"
-            );
-            let mut operations = vec![
-                WorkAuthorityOperation::RootCreate,
-                WorkAuthorityOperation::Plan,
-                WorkAuthorityOperation::Claim,
-                WorkAuthorityOperation::Dispose,
-                WorkAuthorityOperation::RootComplete,
-                WorkAuthorityOperation::CompletionDrain,
-            ];
-            if allow_reopen {
-                operations.push(WorkAuthorityOperation::Reopen);
-            }
-            if allow_claim_recovery {
-                operations.push(WorkAuthorityOperation::ClaimRecovery);
-            }
-            if allow_completion_waiver {
-                operations.push(WorkAuthorityOperation::CompletionWaiver);
-            }
-            if allow_obligation_waiver {
-                operations.push(WorkAuthorityOperation::ObligationWaiver);
-            }
-            let hash = store.install_work_authority_grant(
-                WorkAuthorityGrant {
-                    schema_version: SCHEMA_VERSION,
-                    project_id,
-                    policy_ref,
-                    subject_actor_id,
-                    issued_by: ActorContext {
-                        actor_id: issued_by,
-                        actor_kind: "host_operator".into(),
-                        assurance: AssuranceLevel::Asserted,
-                        run_id: None,
-                        session_id: None,
-                        source_tool: Some("cli:authority_grant".into()),
-                        source_skill: None,
-                        provenance_chain: Vec::new(),
-                        reason: "issue a bounded host-local work authority grant".into(),
-                    },
-                    assurance: AssuranceLevel::Asserted,
-                    operations,
-                    scope: WorkAuthorityScope::Project,
-                    planning_budget: Some(WorkPlanningBudget {
-                        max_depth,
-                        max_open_descendants,
-                        max_children_per_decomposition,
-                    }),
-                    issued_at: now,
-                    valid_until: now + chrono::Duration::seconds(valid_seconds),
-                    reason,
-                },
-                &DevelopmentNoopRedactor,
-            )?;
-            serde_json::json!({ "grant": hash })
-        }
-        AuthorityCommand::Revoke {
-            grant,
-            revoked_by,
-            reason,
-        } => {
-            eprintln!(
-                "WARNING: authority revoker identity is asserted host context, not an authenticated identity"
-            );
-            let grant = ObjectHash::from_str(&grant)
-                .map_err(|message| anyhow::anyhow!("invalid grant hash: {message}"))?;
-            let revocation = store.revoke_work_authority_grant(
-                &grant,
-                &ActorContext {
-                    actor_id: revoked_by,
-                    actor_kind: "host_operator".into(),
-                    assurance: AssuranceLevel::Asserted,
-                    run_id: None,
-                    session_id: None,
-                    source_tool: Some("cli:authority_revoke".into()),
-                    source_skill: None,
-                    provenance_chain: Vec::new(),
-                    reason: "revoke a host-local work authority grant".into(),
-                },
-                &reason,
-                now,
-                &DevelopmentNoopRedactor,
-            )?;
-            serde_json::json!({ "grant": grant, "revocation": revocation })
-        }
         AuthorityCommand::WaiveObligation {
             obligation_id,
             expected_definition,
-            authority_grant,
             waived_by,
             reason,
             idempotency_key,
         } => {
             eprintln!(
-                "WARNING: obligation waiver identity is asserted host context, not an authenticated identity"
+                "WARNING: obligation waiver identity is asserted context; this shell path is neither authenticated nor bound to a live control session/run"
             );
             let obligation_id = WorkObligationId(
                 uuid::Uuid::parse_str(&obligation_id).context("invalid work obligation id")?,
             );
             let expected_definition = ObjectHash::from_str(&expected_definition)
                 .map_err(|message| anyhow::anyhow!("invalid definition hash: {message}"))?;
-            let authority_grant = ObjectHash::from_str(&authority_grant)
-                .map_err(|message| anyhow::anyhow!("invalid authority grant hash: {message}"))?;
             serde_json::to_value(store.waive_work_obligation(
                 &WaiveWorkObligationRequest {
                     obligation_id,
                     expected_definition,
                     waived_by: waived_by.clone(),
                     reason,
-                    authority: engram::LifecycleAuthorityDecision {
-                        grant: authority_grant,
-                    },
                     actor: ActorContext {
                         actor_id: waived_by,
                         actor_kind: "host_operator".into(),
@@ -1080,51 +918,9 @@ fn run_authority(
     Ok(())
 }
 
-fn print_authority_grant_status(status: &WorkAuthorityGrantStatus) -> Result<()> {
-    println!("installed: {}", status.installed);
-    println!(
-        "subject_actor_id: {}",
-        status.subject_actor_id.as_deref().unwrap_or("null")
-    );
-    println!(
-        "issued_by: {}",
-        status.issued_by.as_deref().unwrap_or("null")
-    );
-    println!(
-        "valid_from: {}",
-        status
-            .valid_from
-            .as_ref()
-            .map(chrono::DateTime::to_rfc3339)
-            .as_deref()
-            .unwrap_or("null")
-    );
-    println!(
-        "valid_until: {}",
-        status
-            .valid_until
-            .as_ref()
-            .map(chrono::DateTime::to_rfc3339)
-            .as_deref()
-            .unwrap_or("null")
-    );
-    println!(
-        "revoked_at: {}",
-        status
-            .revoked_at
-            .as_ref()
-            .map(chrono::DateTime::to_rfc3339)
-            .as_deref()
-            .unwrap_or("null")
-    );
-    println!("operations: {}", serde_json::to_string(&status.operations)?);
-    println!("scope: {}", serde_json::to_string(&status.scope)?);
-    Ok(())
-}
-
 #[allow(
     clippy::too_many_lines,
-    reason = "each word's flag translation stays beside the others so the ten-word surface is reviewable in one place"
+    reason = "each word's flag translation stays beside the others so the thirteen-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
     let verbs = AgentVerbs::new(
@@ -1133,14 +929,18 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         context.actor_id,
         context.session_id,
         context.source_skill,
-        context.authority_grant,
     );
     let now = chrono::Utc::now();
     let outcome = match operation {
-        WorkCommand::Next { limit, verbose } => verbs.next(
+        WorkCommand::Next {
+            limit,
+            verbose,
+            context_generation,
+        } => verbs.next(
             &NextInput {
                 limit: Some(limit),
                 verbose,
+                context_generation,
             },
             now,
         ),
@@ -1293,6 +1093,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             },
             now,
         ),
+        WorkCommand::Remember { text, key } => verbs.remember(RememberInput { text, key }, now),
+        WorkCommand::Memories { query, after, full } => {
+            verbs.memories(&MemoriesInput { query, after, full })
+        }
+        WorkCommand::Forget { key } => verbs.forget(ForgetInput { key }, now),
         WorkCommand::Note { mut args, refs } => {
             let (work_ref, text) = if args.len() >= 2 {
                 let text = args.remove(1);
@@ -1362,7 +1167,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     match outcome {
         Ok(receipt) => {
             if json {
-                println!("{}", serde_json::to_string_pretty(&receipt.value)?);
+                println!("{}", serialize_agent_receipt(&receipt.value)?);
             } else {
                 println!("{}", receipt.text());
             }
@@ -1401,6 +1206,12 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     }
 }
 
+fn serialize_agent_receipt(value: &serde_json::Value) -> serde_json::Result<String> {
+    // Agent response budgets are measured against compact JSON. Emitting that
+    // exact representation keeps the CLI transport inside the same hard bound.
+    serde_json::to_string(value)
+}
+
 fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<ExitCode> {
     let service = LocalWorkService::new(
         context.database,
@@ -1408,7 +1219,6 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
         context.actor_id,
         context.session_id,
         context.source_skill,
-        context.authority_grant,
     );
     let now = chrono::Utc::now();
     let mut completion_refused = false;
@@ -1425,6 +1235,7 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
             assigned_to,
             label,
             catalog_after,
+            context_generation,
         } => service
             .work_next_with_delivery_token(
                 limit,
@@ -1442,6 +1253,7 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
                     assigned_to,
                     label,
                     after: catalog_after,
+                    context_generation,
                 },
                 now,
             )
@@ -1494,19 +1306,6 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
             Ok(ExitCode::FAILURE)
         }
     }
-}
-
-fn parse_optional_hash(value: Option<String>) -> Result<Option<ObjectHash>> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let value = value.trim();
-    if value.is_empty() {
-        return Ok(None);
-    }
-    ObjectHash::from_str(value)
-        .map(Some)
-        .map_err(|message| anyhow::anyhow!("invalid work-authority grant: {message}"))
 }
 
 fn parse_enum_values<T>(values: &[String], field: &str) -> Result<Vec<T>>
@@ -1703,7 +1502,7 @@ fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
         .with_context(|| format!("failed to back up {}", database.display()))?;
     println!("{}", serde_json::to_string_pretty(&manifest)?);
     eprintln!(
-        "WARNING: a backup is a complete store, host grants and private scratch included; keep it where the store may be kept"
+        "WARNING: a backup is a complete store, host-private state and private scratch included; keep it where the store may be kept"
     );
     Ok(())
 }
@@ -2080,7 +1879,76 @@ async fn serve_mcp(server: McpServer) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use clap::CommandFactory;
+
     use super::*;
+
+    #[test]
+    fn complete_cli_command_graph_fits_the_configured_parse_stack() {
+        std::thread::Builder::new()
+            .stack_size(CLI_STACK_BYTES)
+            .spawn(|| Cli::command().debug_assert())
+            .expect("spawn CLI command-graph test")
+            .join()
+            .expect("CLI command graph remains valid");
+    }
+
+    #[test]
+    fn agent_json_emission_uses_the_response_budget_representation() {
+        let limit = engram::work_service::MAX_AGENT_WORK_RESPONSE_BYTES;
+        let value = serde_json::json!({ "a": "x".repeat(limit - 8) });
+        let emitted = serialize_agent_receipt(&value).expect("serialize agent receipt");
+        assert_eq!(emitted.len(), limit);
+        assert!(
+            serde_json::to_string_pretty(&value)
+                .expect("serialize pretty comparison")
+                .len()
+                > limit
+        );
+        assert!(!emitted.contains('\n'));
+    }
+
+    #[test]
+    fn agent_work_cli_has_no_grant_surface() {
+        assert!(
+            Cli::try_parse_from([
+                "engram",
+                "work",
+                "--actor-id",
+                "agent",
+                "--session-id",
+                "session",
+                "--authority-grant",
+                "not-a-token",
+                "next",
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "engram",
+                "mcp",
+                "--actor-id",
+                "agent",
+                "--session-id",
+                "session",
+                "--work-authority-grant",
+                "not-a-token",
+            ])
+            .is_err()
+        );
+        let command = Cli::command();
+        let authority = command
+            .find_subcommand("authority")
+            .expect("authority command remains for obligation waiver");
+        assert_eq!(
+            authority
+                .get_subcommands()
+                .map(|subcommand| subcommand.get_name().to_owned())
+                .collect::<Vec<_>>(),
+            vec!["waive-obligation"]
+        );
+    }
 
     #[test]
     fn work_cli_parses_cut_a_update_flags_and_gate() {

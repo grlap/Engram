@@ -412,13 +412,14 @@ pub struct TurnIntent {
     pub resource_intents: Vec<ResourceSubject>,
 }
 
-/// Exact local-work authority basis selected by the embedding host for one
-/// control session.
+/// Exact local-work claim basis selected by the embedding host for one control
+/// session.
 ///
 /// The binding is a frozen reference to a live claim. Storage revalidates it
 /// before granting or beginning ordinary work and never derives it from a
 /// task id or ambient focus.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ControlWorkBinding {
     pub root_execution_id: RootExecutionId,
     pub work_id: WorkId,
@@ -443,6 +444,7 @@ pub enum ExecutionOutcome {
 /// A0 preserves this optional basis without treating it as verification. A1
 /// requires and validates it against the verification evidence state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionSourceBasis {
     pub workspace_id: String,
     pub source_revision: String,
@@ -452,6 +454,7 @@ pub struct ExecutionSourceBasis {
 /// checkpoint. Storage supplies the bound run, claim, session, grant, actor,
 /// and recording timestamp.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExecutionObservationInput {
     pub observation_id: String,
     pub action_fingerprint: ObjectHash,
@@ -495,7 +498,7 @@ pub struct ExecutionObservation {
 /// Stable host-private reference to a previously recorded execution
 /// observation or to one observation in the same checkpoint request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionObservationReference {
     ObjectHash { object_hash: ObjectHash },
     ObservationId { observation_id: String },
@@ -528,6 +531,7 @@ pub enum VerificationResult {
 /// the run, workspace/source basis, command fingerprint, result, producer
 /// session, and timestamps from `producer_observation`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerificationEvidenceInput {
     pub producer_observation: ExecutionObservationReference,
     pub check_kind: VerificationKind,
@@ -544,6 +548,7 @@ pub struct VerificationEvidenceInput {
 /// These are asserted audit labels, not authenticated attestation, and must
 /// never contain credentials or other secret material.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EnvironmentComponents {
     pub toolchain: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -555,7 +560,7 @@ pub struct EnvironmentComponents {
 /// Host-private reference to environment evidence already stored or supplied
 /// earlier in the same checkpoint request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EnvironmentEvidenceReference {
     ObjectHash { object_hash: ObjectHash },
     Index { index: usize },
@@ -566,6 +571,7 @@ pub enum EnvironmentEvidenceReference {
 /// compares `environment_fingerprint`; absence selects the opaque fingerprint
 /// contract.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EnvironmentEvidenceInput {
     pub source_basis: ExecutionSourceBasis,
     pub environment_fingerprint: ObjectHash,
@@ -1099,7 +1105,7 @@ impl HostPathPolicy {
 
 /// Substrate-neutral resource identity used for conflicts and action grants.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ResourceSubject {
     Path {
         project_id: ProjectId,
@@ -1576,8 +1582,9 @@ pub struct WorkFeedEntry {
 
 /// Mutable, host-local navigation state for one agent session.
 ///
-/// Authority is deliberately absent: a host binds authority to the service
-/// process and every mutation resolves that immutable grant again.
+/// Authority is deliberately absent: local work uses the stable project plus
+/// asserted actor/session binding, while lifecycle mutations recheck their
+/// current item and fenced claim basis.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkSessionState {
     pub project_id: ProjectId,
@@ -1752,7 +1759,6 @@ pub struct WorkItem {
     pub deferred_until: Option<DateTime<Utc>>,
     pub origin: WorkOrigin,
     pub source_snapshot_id: Option<ObjectHash>,
-    pub authority_policy_ref: String,
     pub lifecycle: WorkLifecycle,
     pub revision: i64,
     pub active_run_id: Option<WorkRunId>,
@@ -1919,7 +1925,7 @@ pub(crate) fn normalize_gate_evidence_input(
     if name.len() > MAX_GATE_NAME_BYTES {
         return Err(gate_input_too_large("gate name exceeds 128 UTF-8 bytes"));
     }
-    if name.chars().any(is_unsafe_gate_text_char) {
+    if name.chars().any(is_unsafe_rendered_text_char) {
         return Err("gate name must not contain control or format characters".into());
     }
 
@@ -1939,7 +1945,7 @@ pub(crate) fn normalize_gate_evidence_input(
                 "one gate failure label exceeds 256 UTF-8 bytes",
             ));
         }
-        if failure.chars().any(is_unsafe_gate_text_char) {
+        if failure.chars().any(is_unsafe_rendered_text_char) {
             return Err("gate failure labels must not contain control or format characters".into());
         }
         normalized_failed.push(failure);
@@ -1967,7 +1973,7 @@ pub(crate) fn normalize_gate_evidence_input(
         (!value.is_empty()).then_some(value)
     });
     if let Some(value) = evidence_ref.as_deref()
-        && (value.len() > MAX_GATE_REF_BYTES || value.chars().any(is_unsafe_gate_text_char))
+        && (value.len() > MAX_GATE_REF_BYTES || value.chars().any(is_unsafe_rendered_text_char))
     {
         return Err(
             "gate --ref must be a control- and format-free opaque reference of at most 2048 UTF-8 bytes"
@@ -1982,7 +1988,7 @@ pub(crate) fn normalize_gate_evidence_input(
     })
 }
 
-fn is_unsafe_gate_text_char(ch: char) -> bool {
+pub(crate) fn is_unsafe_rendered_text_char(ch: char) -> bool {
     matches!(
         get_general_category(ch),
         GeneralCategory::Control
@@ -2102,7 +2108,6 @@ pub struct RootContribution {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionWaiver {
     pub participant: SessionId,
-    pub authority_grant: ObjectHash,
     pub waived_by: String,
     pub reason: String,
 }
@@ -2113,33 +2118,8 @@ pub struct CompletionWaiver {
 pub struct RequiredChildWaiver {
     pub work_id: WorkId,
     pub work_revision: i64,
-    pub authority_grant: ObjectHash,
     pub waived_by: String,
     pub reason: String,
-}
-
-/// Bounded decomposition envelope carried by planning authority.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WorkPlanningBudget {
-    pub max_depth: u32,
-    pub max_open_descendants: u32,
-    pub max_children_per_decomposition: u32,
-}
-
-/// Operation admitted by one durable work-authority grant.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkAuthorityOperation {
-    RootCreate,
-    Plan,
-    Claim,
-    Dispose,
-    RootComplete,
-    Reopen,
-    ClaimRecovery,
-    CompletionWaiver,
-    CompletionDrain,
-    ObligationWaiver,
 }
 
 /// Immutable requirement opened by one exact run-bound execution fact.
@@ -2179,7 +2159,6 @@ pub enum WorkObligationResolution {
         evaluated_cut: FeedPosition,
     },
     Waived {
-        authority_grant: ObjectHash,
         waived_by: String,
         reason: String,
     },
@@ -2207,52 +2186,7 @@ pub enum WorkObligationState {
     Waived,
 }
 
-/// Durable scope within which a work-authority grant may be consumed.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
-pub enum WorkAuthorityScope {
-    Project,
-    Root(WorkId),
-    Work(WorkId),
-    Run(WorkRunId),
-}
-
-/// Canonical host-issued authority resolved by hash inside lifecycle transactions.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WorkAuthorityGrant {
-    pub schema_version: u16,
-    pub project_id: ProjectId,
-    pub policy_ref: String,
-    pub subject_actor_id: String,
-    /// Host/operator that issued the decision. This is attribution, not an
-    /// authenticated identity claim unless its assurance says otherwise.
-    pub issued_by: ActorContext,
-    pub assurance: AssuranceLevel,
-    pub operations: Vec<WorkAuthorityOperation>,
-    pub scope: WorkAuthorityScope,
-    pub planning_budget: Option<WorkPlanningBudget>,
-    pub issued_at: DateTime<Utc>,
-    pub valid_until: DateTime<Utc>,
-    pub reason: String,
-}
-
-/// Immutable host-attributed revocation of one durable work-authority grant.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WorkAuthorityRevocation {
-    pub schema_version: u16,
-    pub grant: ObjectHash,
-    pub revoked_by: ActorContext,
-    pub reason: String,
-    pub revoked_at: DateTime<Utc>,
-}
-
-/// Reference to a canonical, persisted lifecycle authority grant.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct LifecycleAuthorityDecision {
-    pub grant: ObjectHash,
-}
-
-/// Planning authority is either the exact live claim or an explicit delegation.
+/// Planning context is either the exact live claim or the project binding.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkPlanningAuthority {
@@ -2261,11 +2195,8 @@ pub enum WorkPlanningAuthority {
         holder: SessionId,
         claim_id: WorkClaimId,
         claim_fence: i64,
-        grant: ObjectHash,
     },
-    Delegated {
-        grant: ObjectHash,
-    },
+    Project,
 }
 
 /// Attributed host statement that action and resource authority is drained.
@@ -2273,7 +2204,6 @@ pub enum WorkPlanningAuthority {
 pub struct CompletionDrainAttestation {
     pub reconciled_action_outcomes: Vec<ObjectHash>,
     pub released_resource_leases: Vec<String>,
-    pub decision: LifecycleAuthorityDecision,
 }
 
 /// One acceptance criterion evaluated at the immutable completion cut.
@@ -2324,7 +2254,6 @@ pub struct CompletionSeal {
     pub expected_contributors: Vec<SessionId>,
     pub contributions: Vec<RootContribution>,
     pub waivers: Vec<CompletionWaiver>,
-    pub root_authority: Option<LifecycleAuthorityDecision>,
     pub drain: CompletionDrainAttestation,
     pub actor: ActorContext,
     pub completed_at: DateTime<Utc>,
@@ -2390,7 +2319,6 @@ pub struct WorkEvent {
 pub enum WorkTransition {
     Created {
         prerequisites: Vec<WorkId>,
-        authority_grant: ObjectHash,
     },
     Decomposed {
         children: Vec<WorkId>,
@@ -2416,7 +2344,6 @@ pub enum WorkTransition {
     Claimed {
         claim: WorkClaim,
         recovered: bool,
-        authority_grant: ObjectHash,
     },
     Released {
         claim_id: WorkClaimId,
@@ -2448,7 +2375,6 @@ pub enum WorkTransition {
         to: SessionId,
         fence: i64,
         checkpoint: ObjectHash,
-        authority_grant: ObjectHash,
         offer: ObjectHash,
     },
     EvidenceAdded {
@@ -2469,18 +2395,15 @@ pub enum WorkTransition {
         lifecycle: WorkLifecycle,
         replacement_id: Option<WorkId>,
         reason: String,
-        authority_grant: ObjectHash,
     },
     RequiredChildWaived {
         child_id: WorkId,
         child_revision: i64,
         reason: String,
-        authority_grant: ObjectHash,
     },
     Reopened {
         run_id: WorkRunId,
         generation: i64,
-        authority: LifecycleAuthorityDecision,
         reason: String,
     },
 }
@@ -2501,8 +2424,6 @@ pub struct CreateWorkRequest {
     pub deferred_until: Option<DateTime<Utc>>,
     pub origin: WorkOrigin,
     pub source_snapshot_id: Option<ObjectHash>,
-    pub authority_policy_ref: String,
-    pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub created_at: DateTime<Utc>,
@@ -2637,8 +2558,6 @@ pub struct ClaimWorkRequest {
     pub expected_run_id: WorkRunId,
     pub holder: SessionId,
     pub ttl_seconds: i64,
-    pub authority: LifecycleAuthorityDecision,
-    pub recovery_authority: Option<LifecycleAuthorityDecision>,
     pub recovery_reason: Option<String>,
     pub actor: ActorContext,
     pub idempotency_key: String,
@@ -2655,7 +2574,6 @@ pub struct ReleaseWorkRequest {
     pub claim_id: WorkClaimId,
     pub claim_fence: i64,
     pub reason: String,
-    pub waiver_authority: Option<LifecycleAuthorityDecision>,
     pub waiver_reason: Option<String>,
     pub actor: ActorContext,
     pub idempotency_key: String,
@@ -2705,7 +2623,6 @@ pub struct AcceptWorkHandoffRequest {
     pub work_id: WorkId,
     pub offer_id: WorkHandoffOfferId,
     pub to: SessionId,
-    pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub accepted_at: DateTime<Utc>,
@@ -2788,7 +2705,6 @@ pub struct CompleteWorkRequest {
     pub evidence: Vec<ObjectHash>,
     pub acceptance: Vec<AcceptanceResult>,
     pub drain: CompletionDrainAttestation,
-    pub root_authority: Option<LifecycleAuthorityDecision>,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub completed_at: DateTime<Utc>,
@@ -2800,7 +2716,6 @@ pub struct ReopenWorkRequest {
     pub work_id: WorkId,
     pub expected_work_revision: i64,
     pub reason: String,
-    pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub reopened_at: DateTime<Utc>,
@@ -2822,7 +2737,6 @@ pub struct DisposeWorkRequest {
     pub disposition: WorkDisposition,
     pub replacement_id: Option<WorkId>,
     pub reason: String,
-    pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub disposed_at: DateTime<Utc>,
@@ -2835,7 +2749,6 @@ pub struct WaiveRequiredChildRequest {
     pub child_id: WorkId,
     pub expected_parent_revision: i64,
     pub reason: String,
-    pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub waived_at: DateTime<Utc>,
@@ -2846,11 +2759,10 @@ pub struct WaiveRequiredChildRequest {
 pub struct WaiveWorkObligationRequest {
     pub obligation_id: WorkObligationId,
     pub expected_definition: ObjectHash,
-    /// Human operator identity asserted by the host. The request actor remains
-    /// the server-fixed control session that presented this authority.
+    /// Human/operator identity asserted for immutable audit attribution.
+    /// This text is not authenticated and does not itself grant permission.
     pub waived_by: String,
     pub reason: String,
-    pub authority: LifecycleAuthorityDecision,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub waived_at: DateTime<Utc>,
@@ -3089,6 +3001,10 @@ pub struct ActorContext {
 pub struct MemoryVersion {
     pub schema_version: u16,
     pub memory_id: MemoryId,
+    /// Stable project-memory key. Ordinary typed memories omit it, preserving
+    /// their canonical bytes; project episodes reserve it permanently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
     pub parents: Vec<ObjectHash>,
     pub kind: MemoryKind,
     pub authority: Authority,
@@ -3124,6 +3040,80 @@ pub struct MemoryAssertionEvent {
     pub policy_reason: String,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
+}
+
+/// Maximum admitted UTF-8 body bytes for one project memory.
+pub const MAX_PROJECT_MEMORY_BODY_BYTES: usize = 8 * 1024;
+/// Maximum safe project-memory key length in ASCII bytes.
+pub const MAX_PROJECT_MEMORY_KEY_BYTES: usize = 64;
+/// Maximum raw UTF-8 bytes accepted for one project-memory search query.
+pub const MAX_PROJECT_MEMORY_QUERY_BYTES: usize = 256;
+/// Maximum normalized full-text tokens accepted in one project-memory query.
+pub const MAX_PROJECT_MEMORY_QUERY_TOKENS: usize = 16;
+
+/// Create request for one immutable project episode.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RememberProjectMemoryRequest {
+    pub project_id: ProjectId,
+    pub session_id: SessionId,
+    pub key: Option<String>,
+    pub body: String,
+    pub actor: ActorContext,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Tombstone request for one permanently reserved project-memory key.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ForgetProjectMemoryRequest {
+    pub project_id: ProjectId,
+    pub session_id: SessionId,
+    pub key: String,
+    pub actor: ActorContext,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Model-visible mutation receipt. Canonical hashes and UUIDs stay hidden.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryMutationReceipt {
+    pub key: String,
+    pub remembered_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forgotten_at: Option<DateTime<Utc>>,
+    pub duplicate: bool,
+}
+
+/// Compact project-memory row; the full body is available only through a
+/// dedicated full read.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryListRow {
+    pub key: String,
+    pub first_line: String,
+    pub remembered_at: DateTime<Utc>,
+}
+
+/// Bounded listing result. Filtered queries omit continuation and report how
+/// many additional matches were not returned.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryList {
+    pub memories: Vec<ProjectMemoryListRow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_after: Option<String>,
+    /// Additional matches omitted from a filtered result. Unfiltered keyset
+    /// listings use `next_after` instead and leave this at zero.
+    pub omitted_count: usize,
+    pub exhausted: bool,
+}
+
+/// Dedicated full-read envelope whose exact serialized size is checked before
+/// the corresponding memory is persisted.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ProjectMemoryFull {
+    pub key: String,
+    pub body: String,
+    pub remembered_at: DateTime<Utc>,
+    pub actor_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<SessionId>,
 }
 
 /// Visibility override for low-friction prose capture.

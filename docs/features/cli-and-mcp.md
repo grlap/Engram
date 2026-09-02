@@ -9,15 +9,14 @@
 One core library owns classification, object storage, scope authorization,
 task binding, deltas, and context-packet construction. The CLI and MCP server
 are thin faces over it; transport code does not redefine memory policy. The
-agent sees ten words; every host and operator control lives under
+agent sees thirteen words; every host and operator control lives under
 [Host integration](#host-integration).
 
 ## Using Engram as an agent
 
-Engram tracks the work of this repository. You use ten words; everything
+Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
-`ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
-you type only the word.
+and `ENGRAM_SESSION_ID` in your environment; you type only the word.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
@@ -30,12 +29,6 @@ engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
-```
-
-Project memories remain planned (the contract is specified in
-[local work system](local-work-system.md#gates-prerequisites-supersession-and-project-memories)):
-
-```bash
 engram work remember "Project note" [--key KEY]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
 engram work forget KEY
@@ -64,9 +57,10 @@ Rules that matter:
   `done` again.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Nothing asks you to copy hashes, fences, or
-  keys; if you see one, it is a bug. JSON retains the complete command list;
-  the text renderer shows at most four and prints `(+N more)` when it omits
-  any.
+  idempotency keys; if you see one, it is a bug. Safe project-memory keys are
+  intentional navigation tokens for `memories` and `forget`. JSON retains the
+  complete command list; the text renderer shows at most four and prints
+  `(+N more)` when it omits any.
 - Lost response? Run the same command again. Identical calls are safe.
 - A failed gate is work, not a stop — `gate NAME --failed FAILURE`
   records the failures as evidence on the focused item you hold, nothing more.
@@ -80,21 +74,22 @@ Rules that matter:
   check name. A consecutive identical result replays;
   the same result after an intervening different result records a fresh gate
   transition.
-- Planned: `remember` a retrievable project note — an attributed
+- `remember` stores a retrievable project note — an attributed
   observation, never a rule or a decision record, kept in full until an
   explicit `forget`. `next` only signals how many notes exist and whether
   any changed; `memories` is the source of truth.
 
-The same ten words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `gate`, `note`, `done`, `handoff`) with the same flat arguments,
-plus `search` — eleven tools today. The planned memory cut adds `remember`,
-`memories`, and `forget`: thirteen words plus `search`, fourteen tools,
+The same thirteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`, and
+`forget`) with the same flat arguments, plus `search` — fourteen tools,
 with no new work-core operation — `gate` wraps the existing evidence path, and
-`remember`/`memories`/`forget` are a thin project-memory surface
-with project-policy authorization and hidden idempotency, outside the
-six-operation work core (no focus mutation, no claim renewal). The
-implementation updates the normative spec/tool count and every agent
-instruction file atomically with the code.
+`remember`/`memories`/`forget` are a thin project-memory surface outside the
+six-operation work core (no focus mutation, no claim renewal). Reads require
+the cooperative asserted project binding. `remember` and `forget` validate the
+same non-empty actor/session binding inside the write transaction;
+`memory_binding_invalid` means that binding is absent or inconsistent. The normative
+spec, tool count, and every agent instruction file move atomically with the
+code.
 
 If you know Beads, the words map one to one:
 
@@ -119,11 +114,12 @@ Integration has two tiers, and a host picks per project:
 
 - **Base** — the tracker for agents: the `engram mcp` server injected into
   every session of a declared project (the repository declares with its
-  tracked `.engram-project`; the host authorizes with one project grant
-  carried in the MCP child's environment), plus a start-of-session nudge
-  that runs `engram work next` on session start and after compaction and
-  injects its text as context. Any host that can register an MCP server
-  and run a hook can do this. It carried every benefit measured so far.
+  tracked `.engram-project`; the host supplies the stable project identity
+  and asserted actor/session binding to the MCP child), plus a
+  start-of-session nudge that runs `engram work next` on session start and
+  after compaction and injects its text as context. Any host that can register
+  an MCP server and run a hook can do this. It carried every benefit measured
+  so far.
 - **Premium** — behavioral control: the host-private JSON-lines turn
   channel below (bind, evaluate, begin, checkpoint), dispatch withheld
   until a turn is granted, resource leases for writers, obligations before
@@ -183,39 +179,24 @@ engram control \
   --source-skill engram-repo
 
 # Host-local loss recovery: a verified full copy of the store, and the way
-# back. A backup carries host grants and private scratch, so it is exactly as
+# back. A backup carries host-private state and private scratch, so it is exactly as
 # sensitive as the store; schedule it on the host, never publish it.
 engram backup                      # → <home>/backups/<project>/engram-<utc>.db + manifest
 engram restore --from <backup-file> [--replace]   # stop other Engram processes first
 
-# Host/operator boundary: mint a bounded, expiring grant for one exact actor.
-# Grants expire after one hour by default (--valid-seconds, at most one day);
-# a word run under an expired grant answers with the expiry time.
-GRANT=$(engram authority grant \
-  --subject-actor-id codex \
-  --issued-by host-operator | jq -r .grant)
-
-# Read-only words need no grant. Mutations resolve this host-bound hash.
+# Agent words use the stable project plus asserted actor/session binding.
 engram work --actor-id codex --session-id session-unique-id next
 engram work --actor-id codex --session-id session-unique-id \
-  --authority-grant "$GRANT" claim <short-ref>
-engram mcp --actor-id codex --session-id session-unique-id \
-  --work-authority-grant "$GRANT"
+  claim <short-ref>
+engram mcp --actor-id codex --session-id session-unique-id
 
 # Host/operator escape hatch: the six-operation JSON protocol from the shell.
 engram work --actor-id codex --session-id session-unique-id \
-  --authority-grant "$GRANT" core focus <short-ref>
+  core focus <short-ref>
 ```
 
-For a long-lived MCP process, the host may set
-`ENGRAM_WORK_AUTHORITY_GRANT` instead of placing the host-bound grant hash in
-the process argument list. An explicit `--work-authority-grant` takes
-precedence. An unset, empty, or whitespace-only variable starts the same
-grant-less MCP service as today; a nonempty malformed value fails startup and
-never falls back silently. The value must not be logged or copied into MCP
-traffic, agent-visible receipts, or configuration committed to the repository.
 The MCP process retains one `LocalWorkService` and its lazily opened SQLite
-connection for its lifetime. All eleven MCP tools use that service. A failed
+connection for its lifetime. All fourteen MCP tools use that service. A failed
 operation rolls back before the next call uses the connection.
 
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
@@ -298,7 +279,7 @@ setter prints a warning that no V1 host can bind at that level plus the
 `set-required-assurance turn_gated` recovery command. The operator identity is
 asserted host context, not authenticated administration.
 
-`engram work` exposes the eight agent words plus `handoff`; `--json` after any
+`engram work` exposes the thirteen agent words; `--json` after any
 word prints the exact structured receipt (the existing shape plus `reminders`
 and `next`) instead of text, and `done` exits with status 2 when the typed
 `open_work_obligations` refusal says something is still owed. The
@@ -307,32 +288,16 @@ six-operation JSON protocol stays reachable for hosts and operators as
 mutation payloads accept an inline JSON object or `@path`; that host/operator
 surface carries explicit delivery acknowledgement, typed evidence attach,
 prerequisite edits, supersede, reopen, and required-child waivers. All words
-and core operations call the same service core as MCP. The operator CLI also
-installs and
-irreversibly revokes canonical work-authority grants; those commands are not
-MCP tools. Stats/import/export and the remaining broad administrative CLI in
-the specification are still planned.
+and core operations call the same service core as MCP. Stats/import/export and
+the remaining broad administrative CLI in the specification are still planned.
 
-Host integrations can query a hash before binding it with
-`engram authority show <hash>` or request the same fields as JSON with
-`engram authority show <hash> --json`. Installed grants report their subject,
-issuer, validity window, revocation time, operations, and scope without
-printing grant bytes; an unknown hash returns `installed: false` with null
-details and exit status 0, while any integrity failure remains an error.
-
-The same host boundary can waive one exact open run obligation, but only with
-a separately admitted grant:
+The operator-intended shell command can waive one exact open run obligation
+with an attributed reason and retry key:
 
 ```bash
-WAIVER_GRANT=$(engram authority grant \
-  --subject-actor-id host-operator \
-  --issued-by project-owner \
-  --allow-obligation-waiver | jq -r .grant)
-
 engram authority waive-obligation \
   --obligation-id <uuid> \
   --expected-definition <hash> \
-  --authority-grant "$WAIVER_GRANT" \
   --waived-by host-operator \
   --reason "accepted without the required test" \
   --idempotency-key <retry-key>
@@ -340,22 +305,24 @@ engram authority waive-obligation \
 
 The equivalent native-host operation is `obligation_waive` on the private
 JSON-lines channel. Its request names the routing token, exact obligation and
-definition hashes, dedicated grant, asserted `waived_by` human, bounded reason,
+definition hashes, asserted `waived_by` human, bounded reason,
 and idempotency key. The control session must be bound to that obligation's
 live run. Policy outcomes are typed as `waiver_not_admitted`,
 `obligation_not_open`, or `definition_changed`; transport, token, and
 same-key/different-intent faults remain request errors. A committed retry
 replays the exact result. The canonical resolution keeps the server-fixed
 session actor beside the asserted human attribution, while the receipt omits
-the authority hash and reason.
+the reason.
 
-Both waiver surfaces are host/operator private. MCP and `work_update` cannot
-request a waiver, and agent-facing projections omit its authority grant and
-reason.
+MCP and `work_update` cannot request a waiver, and agent-facing projections
+omit its reason. That surface separation is not authentication: the shell
+command has no credential or run-binding check, so any local process with the
+binary and store access can invoke it. Only the private JSON-lines operation
+enforces the live control-session/run binding described above.
 
 ### MCP tools
 
-`engram mcp` registers exactly the eleven agent-facing tools below.
+`engram mcp` registers exactly the fourteen agent-facing tools below.
 
 | Tool | Purpose |
 | --- | --- |
@@ -370,6 +337,9 @@ reason.
 | `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |
 | `search` | `ls` over every lifecycle |
 | `handoff` | `offer`, `accept`, or `cancel` the unique checkpoint-coupled handoff |
+| `remember` | Store one attributed project episode under a safe permanent key |
+| `memories` | List/search compact rows or fully read one exact live key |
+| `forget` | Append an attributed terminal tombstone; never erase or reuse the key |
 
 Every agent tool result keeps its structured shape and adds two fields.
 `reminders` holds words only, derived by a fixed table from the readiness
@@ -393,7 +363,7 @@ most three agent-supplied fields.
 `ls --mine` returns items assigned to the actor plus the session's focused
 item when this session holds it; claims on other items are visible through
 `show`. `add --under` selects the parent and submits one required child
-through `work_propose:decompose` (a decomposition admits one through 64
+through `work_propose:decompose` (a decomposition admits one through 16
 children), then focuses that child exactly as a root `add` focuses the new
 root. `note`
 records evidence and then checkpoints the run's current evidence set;
@@ -402,16 +372,19 @@ because the core derives the idempotency key.
 
 ### Work protocol contract
 
-The eleven tools translate into six ambient operations: `work_next`,
+The fourteen tools use the six ambient work operations: `work_next`,
 `work_focus`, `work_propose`, `work_update`, `work_complete`, and
-`work_handoff`. Hosts and operators may call them directly through
-`engram work core`; they are not additional MCP tools. Session binding supplies
+`work_handoff`. `remember`, `memories`, and `forget` are a separate thin
+project-memory surface, not new work-core operations. Hosts and operators may
+call the six work operations directly through `engram work core`; they are not
+additional MCP tools. Session binding supplies
 project, actor, current work,
-and cursors, so update/complete/handoff do not repeatedly shuttle ids. Ambient state contains no authority;
-the host fixes a canonical grant hash for the MCP process and each mutation
-rechecks that grant and revocation state. `work_next` returns only the selected
-`focus`, `ready`, `catalog`, and/or `changes` sections; omitting `sections`
-selects all four. CLI callers use `--sections focus,ready,catalog,changes` and
+and cursors, so update/complete/handoff do not repeatedly shuttle ids. Ambient
+state contains no authority token; each mutation rechecks the project, item,
+claim, and fence state. `work_next` returns only the selected
+`focus`, `ready`, `catalog`, `changes`, and/or `memories` sections; omitting
+`sections` selects all five. CLI callers use
+`--sections focus,ready,catalog,changes,memories` and
 MCP callers pass a string array. Selecting no `changes` section never stages or
 advances project delivery, including when a prior page remains pending.
 Ready and catalog candidates are filtered and limited by maintained SQLite
@@ -458,14 +431,14 @@ their size does not grow with item history. A successful holder note, update,
 evidence, checkpoint, or handoff renews the claim for the one-hour default TTL;
 successful completion terminalizes it. A holder mutation on a lapsed claim is
 refused with exactly one next command: `engram work claim <ref>`. Once the work
-is ready, that ordinary claim command retakes the same holder's claim under the
-exact host-bound grant, advances the fence, preserves an active run, and needs
+is ready, that ordinary claim command retakes the same holder's claim, advances
+the fence, preserves an active run, and needs
 no recovery reason. Every handoff offer expires no later than its source claim.
 A different prior holder still requires the explicit recovery path. Each entry
 names the exact tool and tagged operation. For example,
 `allowed_next: ["work_update:claim(recovery_reason_required)"]` directs the
 agent to submit the `work_update` claim variant with an attributed
-`recovery_reason` and a host grant that includes `claim_recovery`; ordinary
+`recovery_reason`; ordinary
 claiming is `work_update:claim`. A successful claim receipt includes
 `control_binding { root_execution_id, work_id, run_id, work_revision,
 claim_id, claim_fence }`, ready to pass unchanged to host-private
@@ -512,7 +485,7 @@ deliberately a single next command, and the `done` verb exposes exactly that
 one entry in its `next` list. The recovery snapshot commits in the same SQLite
 transaction that proves its cause, and an interrupted wrapper replays those
 exact cause/item/command bytes even if live work changes afterward. Native
-`done` and the eleven-tool MCP surface return this as a typed refusal receipt. The
+`done` and the fourteen-tool MCP surface return this as a typed refusal receipt. The
 JSON core prints the same typed refusal receipt on stdout and exits with status
 1; it does not wrap the refusal in an error envelope. Short-ref ambiguity
 likewise returns a stable
@@ -531,7 +504,7 @@ nothing about the item changed and is a new attempt once it moved; a supplied
 key keeps the explicit contract. Durable
 attempts bind caller intent separately from the current focused work/claim/
 handoff basis, so committed retries replay while interrupted attempts
-revalidate authority and cannot mutate a newly focused item. Omitting
+revalidate that basis and cannot mutate a newly focused item. Omitting
 `work_complete.acceptance` asserts every current criterion with the note
 `accepted by <actor_id> via work done` (or the supplied `note`); omitting
 `work_update:checkpoint.evidence` acknowledges every evidence object already on
@@ -542,9 +515,8 @@ the ambient query/focus views. Stats, stale/orphan diagnostics, approval
 decisions, import/export, and report publication remain administrative tools
 over the same core. Successful model responses are terse; refusals return a
 stable code plus a satisfiable remedy. Full durable receipts go to the host. No
-replayable turn/action grant token appears in model-visible MCP output. The
-work-authority hash is a host process argument, not a request field or tool
-result.
+replayable control-plane turn/action grant token appears in model-visible MCP
+output. Agent-facing work itself has no grant token.
 
 One capture powers peer context and the ordered feed. The host may use a
 mailbox as a doorbell, but must not relay full state or make the agent repeat
@@ -797,19 +769,14 @@ Build an executable and configure one stdio MCP process per agent session:
         "replace-with-this-runtime-session-id",
         "--source-skill",
         "engram-repo"
-      ],
-      "env": {
-        "ENGRAM_WORK_AUTHORITY_GRANT": "replace-with-host-installed-grant-hash"
-      }
+      ]
     }
   }
 }
 ```
 
-The proprietary runtime supplies actor/session/tool/skill instruction context
-and injects the host-bound grant as process-local environment rather than
-placing it in argv. The same precedence and malformed-value rules described
-above apply. This process exposes exactly the eleven MCP tools. V1 records host
+The proprietary runtime supplies actor/session/tool/skill instruction context.
+This process exposes exactly the fourteen MCP tools. V1 records host
 context with `asserted` assurance; configuration text is not authentication.
 Distinct concurrent sessions need distinct `--session-id` values. The database
 is shared; the MCP processes are not.
@@ -817,7 +784,7 @@ is shared; the MCP processes are not.
 ### Dogfood contract
 
 `scripts/parity.test.mjs` runs the real binary against a fresh home with
-`engram init` and `engram authority grant` as host setup outside the count,
+`engram init` as host setup outside the count,
 then drives `add → claim → done` and fails if the agent needed more than three
 commands or three supplied fields, typed JSON, or saw a hash, fence, or key in
 text output. It also checks that an unheld `note` and an unnoted `done` answer

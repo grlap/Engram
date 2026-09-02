@@ -23,7 +23,6 @@ engram.db
   work_items / work_prerequisites / work_blockers # shipped work graph projections
   work_root_executions / work_runs / work_claims  # shipped execution projections
   work_handoff_offers / work_run_evidence / work_completion_seals
-  work_authority_grants / work_authority_revocations # host-installed authority
   work_feed_heads / work_feed_entries # shipped typed dense project/root/run feeds
   work_operation_results # local-work idempotency receipts
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
@@ -155,25 +154,23 @@ bytes even if work focus or task binding changes. Fresh staging is an exact
 compare-and-swap over the confirmed cursor, absence of another pending page,
 focused work id, and bound task. The current schema also requires verified
 work-id and relation-fingerprint bindings on every work-event feed entry,
-normalized catalog projections, typed verification/environment evidence,
-obligation state, and exact authority-revocation lookup. Operational reads
+normalized catalog projections, typed verification/environment evidence, and
+obligation state. Operational reads
 verify the item head, relation hash, and active projection rows before decoding
 them. Every work mutation rechecks inside its write transaction that durable
 schema metadata still names the generation understood by that opener.
 
-Projection blobs have an explicit per-column convention. Authority grant and
-revocation `*_json` columns contain canonical bytes because their binding
-verifiers call `CanonicalObject::verify` directly. Mutable work/run/item/seal
-projection blobs are semantic serde projections; their canonical source object
-is stored in `objects`, and integrity checks compare decoded meaning plus the
-bound object hash. Changing either convention requires changing its verifier at
-the same time.
+Projection blobs have an explicit per-column convention. Mutable
+work/run/item/seal projection blobs are semantic serde projections; their
+canonical source object is stored in `objects`, and integrity checks compare
+decoded meaning plus the bound object hash. Changing that convention requires
+changing its verifier at the same time.
 
 ## Rebuildable and durable projections
 
 Declared indexes, triggers, and full-text search (FTS5) content are disposable
 and rebuilt explicitly from verified durable rows. Runtime heads, status,
-claims, feeds, authority, ordering, and idempotency tables are durable parts of
+claims, feeds, ordering, and idempotency tables are durable parts of
 the exact-current SQLite store: current writers validate their canonical and
 relational bindings, but `--repair-projections` never reconstructs them from
 `objects`. Damage there requires restoring a verified current backup.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Measured acceptance for the ten-word agent surface: on a fresh store, an
+// Measured acceptance for the thirteen-word agent surface: on a fresh store, an
 // agent goes from nothing to a sealed item with add -> claim -> done in at
 // most three commands and at most three agent-supplied fields, typing no
 // JSON, and never seeing a hash, fence, or idempotency key in text output.
@@ -29,7 +29,7 @@ function run(args, options = {}) {
   return executed;
 }
 
-function hostSetup(engramHome, actor) {
+function hostSetup(engramHome) {
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
     cwd: root,
     encoding: "utf8",
@@ -37,118 +37,13 @@ function hostSetup(engramHome, actor) {
   assert.equal(built.status, 0, built.stderr);
   const initialized = run(["--home", engramHome, "init"]);
   assert.equal(initialized.status, 0, initialized.stderr);
-  const granted = run([
-    "--home",
-    engramHome,
-    "authority",
-    "grant",
-    "--subject-actor-id",
-    actor,
-    "--issued-by",
-    "parity-host",
-    "--reason",
-    "parity acceptance",
-  ]);
-  assert.equal(granted.status, 0, granted.stderr);
-  return JSON.parse(granted.stdout).grant;
 }
-
-test("authority show reports installed, revoked, and unknown hashes", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-authority-show-"));
-  try {
-    const grant = hostSetup(engramHome, "authority-status-agent");
-    const installed = run([
-      "--home",
-      engramHome,
-      "authority",
-      "show",
-      grant,
-      "--json",
-    ]);
-    assert.equal(installed.status, 0, installed.stderr);
-    const installedStatus = JSON.parse(installed.stdout);
-    assert.equal(installedStatus.installed, true);
-    assert.equal(installedStatus.subject_actor_id, "authority-status-agent");
-    assert.equal(installedStatus.issued_by, "parity-host");
-    assert.equal(typeof installedStatus.valid_from, "string");
-    assert.equal(typeof installedStatus.valid_until, "string");
-    assert.equal(installedStatus.revoked_at, null);
-    assert.ok(installedStatus.operations.includes("claim"));
-    assert.deepEqual(installedStatus.scope, { kind: "project" });
-    assert.equal(installed.stdout.includes(grant), false);
-
-    const text = run([
-      "--home",
-      engramHome,
-      "authority",
-      "show",
-      grant,
-    ]);
-    assert.equal(text.status, 0, text.stderr);
-    const lines = text.stdout.trim().split("\n");
-    assert.equal(lines.length, 8, text.stdout);
-    assert.equal(lines[0], "installed: true");
-    assert.equal(lines[1], "subject_actor_id: authority-status-agent");
-    assert.equal(lines[2], "issued_by: parity-host");
-    assert.match(lines[3], /^valid_from: \d{4}-/u);
-    assert.match(lines[4], /^valid_until: \d{4}-/u);
-    assert.equal(lines[5], "revoked_at: null");
-    assert.match(lines[6], /^operations: \[/u);
-    assert.equal(lines[7], 'scope: {"kind":"project"}');
-    assert.equal(text.stdout.includes(grant), false);
-
-    const revoked = run([
-      "--home",
-      engramHome,
-      "authority",
-      "revoke",
-      grant,
-      "--revoked-by",
-      "parity-host",
-      "--reason",
-      "authority status parity",
-    ]);
-    assert.equal(revoked.status, 0, revoked.stderr);
-    const revokedStatus = run([
-      "--home",
-      engramHome,
-      "authority",
-      "show",
-      grant,
-      "--json",
-    ]);
-    assert.equal(revokedStatus.status, 0, revokedStatus.stderr);
-    assert.equal(typeof JSON.parse(revokedStatus.stdout).revoked_at, "string");
-
-    const unknown = run([
-      "--home",
-      engramHome,
-      "authority",
-      "show",
-      "0".repeat(64),
-      "--json",
-    ]);
-    assert.equal(unknown.status, 0, unknown.stderr);
-    assert.deepEqual(JSON.parse(unknown.stdout), {
-      installed: false,
-      subject_actor_id: null,
-      issued_by: null,
-      valid_from: null,
-      valid_until: null,
-      revoked_at: null,
-      operations: null,
-      scope: null,
-    });
-  } finally {
-    rmSync(engramHome, { recursive: true, force: true });
-  }
-});
 
 test("add -> claim -> done takes three commands and at most three fields", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-"));
   const actor = "parity-agent";
   try {
-    const grant = hostSetup(engramHome, actor);
+    hostSetup(engramHome);
     // Host context is fixed by the wrapper, not typed by the agent.
     const hostContext = [
       "--home",
@@ -158,8 +53,6 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
       actor,
       "--session-id",
       actor,
-      "--authority-grant",
-      grant,
     ];
     let commands = 0;
     let fields = 0;
@@ -213,11 +106,11 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
   }
 });
 
-test("list words stay compact while verbose and update metadata remain explicit", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-compact-"));
-  const actor = "compact-agent";
+test("project memory words create list read and permanently retire a safe key", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-memory-"));
+  const actor = "memory-parity-agent";
   try {
-    const grant = hostSetup(engramHome, actor);
+    hostSetup(engramHome);
     const hostContext = [
       "--home",
       engramHome,
@@ -226,8 +119,72 @@ test("list words stay compact while verbose and update metadata remain explicit"
       actor,
       "--session-id",
       actor,
-      "--authority-grant",
-      grant,
+    ];
+    const remembered = run([
+      ...hostContext,
+      "remember",
+      "CLI project observation\nfull body",
+      "--key",
+      "cli-project-note",
+      "--json",
+    ]);
+    assert.equal(remembered.status, 0, remembered.stderr);
+    assert.equal(JSON.parse(remembered.stdout).key, "cli-project-note");
+
+    const listed = run([...hostContext, "memories", "--json"]);
+    assert.equal(listed.status, 0, listed.stderr);
+    const listedValue = JSON.parse(listed.stdout);
+    assert.equal(listedValue.memories[0].key, "cli-project-note");
+    assert.equal(listedValue.memories[0].body, undefined);
+
+    const full = run([
+      ...hostContext,
+      "memories",
+      "cli-project-note",
+      "--full",
+      "--json",
+    ]);
+    assert.equal(full.status, 0, full.stderr);
+    assert.equal(
+      JSON.parse(full.stdout).body,
+      "CLI project observation\nfull body",
+    );
+
+    const forgotten = run([
+      ...hostContext,
+      "forget",
+      "cli-project-note",
+      "--json",
+    ]);
+    assert.equal(forgotten.status, 0, forgotten.stderr);
+    assert.equal(JSON.parse(forgotten.stdout).duplicate, false);
+    const retired = run([
+      ...hostContext,
+      "memories",
+      "cli-project-note",
+      "--full",
+      "--json",
+    ]);
+    assert.notEqual(retired.status, 0);
+    assert.equal(JSON.parse(retired.stderr).error.code, "memory_retired");
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("list words stay compact while verbose and update metadata remain explicit", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-compact-"));
+  const actor = "compact-agent";
+  try {
+    hostSetup(engramHome);
+    const hostContext = [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      actor,
+      "--session-id",
+      actor,
     ];
     const refs = [];
     for (let index = 0; index < 34; index += 1) {
@@ -389,7 +346,7 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-owed-"));
   const actor = "parity-agent";
   try {
-    const grant = hostSetup(engramHome, actor);
+    hostSetup(engramHome);
     const hostContext = [
       "--home",
       engramHome,
@@ -398,8 +355,6 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
       actor,
       "--session-id",
       actor,
-      "--authority-grant",
-      grant,
     ];
     const added = run([...hostContext, "add", "Needs a note first"]);
     assert.equal(added.status, 0, added.stderr);
@@ -441,7 +396,7 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-cut-a-"));
   const actor = "cut-a-agent";
   try {
-    const grant = hostSetup(engramHome, actor);
+    hostSetup(engramHome);
     const hostContext = [
       "--home",
       engramHome,
@@ -450,8 +405,6 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
       actor,
       "--session-id",
       actor,
-      "--authority-grant",
-      grant,
     ];
     const add = (title) => {
       const added = run([...hostContext, "add", title, "--json"]);
@@ -641,6 +594,32 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
     const textGate = run([...hostContext, "gate", "cargo-fmt"]);
     assert.equal(textGate.status, 0, textGate.stderr);
     assert.match(textGate.stdout, /recorded gate cargo-fmt passed/u);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("blank asserted work identities are refused at the shared service boundary", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-blank-identity-"));
+  try {
+    hostSetup(engramHome);
+    for (const [actor, session] of [
+      ["", "session"],
+      ["agent", "   "],
+    ]) {
+      const refused = run([
+        "--home",
+        engramHome,
+        "work",
+        "--actor-id",
+        actor,
+        "--session-id",
+        session,
+        "next",
+      ]);
+      assert.notEqual(refused.status, 0);
+      assert.match(refused.stderr, /non-empty asserted actor and session/u);
+    }
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }

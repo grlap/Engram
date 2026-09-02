@@ -224,49 +224,6 @@ function ok(response) {
   return response.result;
 }
 
-function installWorkGrant(engramHome, actorId) {
-  const granted = spawnSync(
-    binary,
-    [
-      "--home",
-      engramHome,
-      "authority",
-      "grant",
-      "--subject-actor-id",
-      actorId,
-      "--issued-by",
-      "control-dogfood-host",
-      "--reason",
-      "work-bound host-control dogfood",
-    ],
-    { cwd: root, encoding: "utf8" },
-  );
-  assert.equal(granted.status, 0, granted.stderr);
-  return JSON.parse(granted.stdout).grant;
-}
-
-function installObligationWaiverGrant(engramHome, waivedBy) {
-  const granted = spawnSync(
-    binary,
-    [
-      "--home",
-      engramHome,
-      "authority",
-      "grant",
-      "--subject-actor-id",
-      waivedBy,
-      "--issued-by",
-      "control-dogfood-host",
-      "--allow-obligation-waiver",
-      "--reason",
-      "authorize one reviewed host-private obligation waiver",
-    ],
-    { cwd: root, encoding: "utf8" },
-  );
-  assert.equal(granted.status, 0, granted.stderr);
-  return JSON.parse(granted.stdout).grant;
-}
-
 function setObligationRuleSet(
   engramHome,
   input,
@@ -297,7 +254,6 @@ function setObligationRuleSet(
 function cliWork(
   engramHome,
   actorId,
-  grant,
   operation,
   input,
   expectedStatus = 0,
@@ -310,8 +266,6 @@ function cliWork(
     actorId,
     "--session-id",
     actorId,
-    "--authority-grant",
-    grant,
     "core",
     operation,
   ];
@@ -324,7 +278,7 @@ function cliWork(
   return JSON.parse(executed.stdout);
 }
 
-function cliWorkFocus(engramHome, actorId, grant, workRef) {
+function cliWorkFocus(engramHome, actorId, workRef) {
   const focused = spawnSync(
     binary,
     [
@@ -335,8 +289,6 @@ function cliWorkFocus(engramHome, actorId, grant, workRef) {
       actorId,
       "--session-id",
       actorId,
-      "--authority-grant",
-      grant,
       "core",
       "focus",
       workRef,
@@ -347,7 +299,7 @@ function cliWorkFocus(engramHome, actorId, grant, workRef) {
   return JSON.parse(focused.stdout);
 }
 
-function cliWorkAcknowledge(engramHome, actorId, grant, page) {
+function cliWorkAcknowledge(engramHome, actorId, page) {
   if (page.delivery_token === undefined) return;
   const acknowledged = spawnSync(
     binary,
@@ -359,8 +311,6 @@ function cliWorkAcknowledge(engramHome, actorId, grant, page) {
       actorId,
       "--session-id",
       actorId,
-      "--authority-grant",
-      grant,
       "core",
       "next",
       "--acknowledge-through",
@@ -1386,8 +1336,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=turn_gated obligation_rules=([0-9a-f]{64})/,
     );
     assert.ok(boundInitialPolicy, boundDoctor.stdout);
-    const authorityGrant = installWorkGrant(engramHome, actor);
-    const proposed = cliWork(engramHome, actor, authorityGrant, "propose", {
+    const proposed = cliWork(engramHome, actor, "propose", {
       kind: "root",
       title: "Exercise work-bound control",
       outcome: "Host observations follow the exact live run claim",
@@ -1395,7 +1344,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       work_kind: "chore",
       idempotency_key: "bound-root",
     });
-    const claimed = cliWork(engramHome, actor, authorityGrant, "update", {
+    const claimed = cliWork(engramHome, actor, "update", {
       kind: "claim",
       ttl_seconds: 300,
       idempotency_key: "bound-claim-1",
@@ -1407,7 +1356,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const focused = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       proposed.work.short_ref,
     );
     assert.deepEqual(focused.control_binding, originalBinding);
@@ -1617,7 +1565,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const obligationFocus = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       proposed.work.short_ref,
     );
     assert.equal(obligationFocus.obligation_page.items.length, 1);
@@ -1654,7 +1601,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const attachedEvidence = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "update",
       {
         kind: "evidence",
@@ -1665,7 +1611,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(attachedEvidence.attached, true);
     assert.equal(attachedEvidence.evidence, verificationEvidence);
     assert.equal(attachedEvidence.evidence_kind, "verification");
-    cliWork(engramHome, actor, authorityGrant, "update", {
+    cliWork(engramHome, actor, "update", {
       kind: "checkpoint",
       summary: "record a contribution before releasing the claim",
       evidence: [verificationEvidence],
@@ -1680,7 +1626,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       }),
     );
     assert.equal(releasedBoundLease.lease_id, boundLease.lease.lease_id);
-    cliWork(engramHome, actor, authorityGrant, "update", {
+    cliWork(engramHome, actor, "update", {
       kind: "release",
       reason: "exercise stale control binding",
       idempotency_key: "bound-release-1",
@@ -1698,7 +1644,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(stale.decision, "refuse");
     assert.equal(stale.directive.code, "stale_fence");
 
-    const reclaimed = cliWork(engramHome, actor, authorityGrant, "update", {
+    const reclaimed = cliWork(engramHome, actor, "update", {
       kind: "claim",
       ttl_seconds: 300,
       idempotency_key: "bound-claim-2",
@@ -1789,7 +1735,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const pinnedEnvironmentFocus = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       proposed.work.short_ref,
     );
     assert.deepEqual(
@@ -1945,7 +1890,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const openNext = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "next",
     );
     const openNextItem = openNext.focus.obligation_page.items.find(
@@ -1956,18 +1900,16 @@ test("work-bound control records observations and rebinds after a stale fence", 
       openNextItem.guidance.action,
       "record_verification_then_checkpoint",
     );
-    cliWorkAcknowledge(engramHome, actor, authorityGrant, openNext);
+    cliWorkAcknowledge(engramHome, actor, openNext);
     const openFocus = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       proposed.work.short_ref,
     );
     assert.deepEqual(openFocus.obligation_page, openNext.focus.obligation_page);
     const openUpdate = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "update",
       {
         kind: "checkpoint",
@@ -1993,7 +1935,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const refusedCompletion = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "complete",
       refusedCompletionInput,
       1,
@@ -2034,14 +1975,13 @@ test("work-bound control records observations and rebinds after a stale fence", 
       cliWork(
         engramHome,
         actor,
-        authorityGrant,
         "complete",
         refusedCompletionInput,
         1,
       ),
       refusedCompletion,
     );
-    // The ten-word `done` answers the same typed refusal in words plus the
+    // The agent-word `done` answers the same typed refusal in words plus the
     // resolving command, prints no hash, and exits 2.
     const owed = spawnSync(
       binary,
@@ -2053,8 +1993,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
         actor,
         "--session-id",
         actor,
-        "--authority-grant",
-        authorityGrant,
         "done",
       ],
       { cwd: root, encoding: "utf8" },
@@ -2140,7 +2078,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const staleRefusal = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "complete",
       {
         capture: {
@@ -2243,7 +2180,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const pinnedOpenFocus = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       proposed.work.short_ref,
     );
     const pinnedOpenItem = pinnedOpenFocus.obligation_page.items.find(
@@ -2325,7 +2261,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
     );
     const finalVerification =
       finalVerificationCheckpoint.receipt.verification_evidence[0];
-    cliWork(engramHome, actor, authorityGrant, "update", {
+    cliWork(engramHome, actor, "update", {
       kind: "checkpoint",
       summary: "acknowledge the final typed verification",
       evidence: [finalVerification],
@@ -2334,7 +2270,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const completed = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "complete",
       {
         evidence: [finalVerification],
@@ -2408,7 +2343,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const historicalPinnedFocus = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       proposed.work.short_ref,
     );
     const historicalPinnedItem = historicalPinnedFocus.obligation_page.items.find(
@@ -2431,7 +2365,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const waiverProposed = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "propose",
       {
         kind: "root",
@@ -2445,7 +2378,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const waiverClaimed = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "update",
       {
         kind: "claim",
@@ -2571,7 +2503,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const waiverOpenFocus = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       waiverProposed.work.short_ref,
     );
     const waiverOpen = waiverOpenFocus.obligation_page.items.find(
@@ -2592,8 +2523,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
         actor,
         "--session-id",
         actor,
-        "--authority-grant",
-        authorityGrant,
         "core",
         "update",
         "--input",
@@ -2609,31 +2538,12 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.match(forbiddenAgentWaiver.stderr, /unknown variant|waive_obligation/);
 
     const humanOperator = "dogfood-human-operator";
-    const waiverAuthority = installObligationWaiverGrant(
-      engramHome,
-      humanOperator,
-    );
-    const notAdmittedWaiver = ok(
-      await client.request({
-        operation: "obligation_waive",
-        routing_token: waiverBound.routing_token,
-        obligation_id: waiverOpen.obligation_id,
-        expected_definition: waiverOpen.definition,
-        authority_grant: authorityGrant,
-        waived_by: humanOperator,
-        reason: "human reviewed the exact final mutation",
-        idempotency_key: "host-waiver-not-admitted",
-      }),
-    );
-    assert.equal(notAdmittedWaiver.decision, "refused");
-    assert.equal(notAdmittedWaiver.code, "waiver_not_admitted");
     const wrongDefinitionWaiver = ok(
       await client.request({
         operation: "obligation_waive",
         routing_token: waiverBound.routing_token,
         obligation_id: waiverOpen.obligation_id,
         expected_definition: fingerprint("wrong-obligation-definition"),
-        authority_grant: waiverAuthority,
         waived_by: humanOperator,
         reason: "human reviewed the exact final mutation",
         idempotency_key: "host-waiver-wrong-definition",
@@ -2650,7 +2560,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
       routing_token: waiverBound.routing_token,
       obligation_id: waiverOpen.obligation_id,
       expected_definition: waiverOpen.definition,
-      authority_grant: waiverAuthority,
       waived_by: humanOperator,
       reason: "human reviewed the exact final mutation",
       idempotency_key: "host-waiver-success",
@@ -2659,7 +2568,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     assert.equal(waived.decision, "waived");
     assert.equal(waived.receipt.waived_by, humanOperator);
     assert.equal(waived.receipt.state, "waived");
-    assert.equal(JSON.stringify(waived).includes(waiverAuthority), false);
     assert.equal(
       JSON.stringify(waived).includes(waiverRequest.reason),
       false,
@@ -2677,7 +2585,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const waivedFocus = cliWorkFocus(
       engramHome,
       actor,
-      authorityGrant,
       waiverProposed.work.short_ref,
     );
     assert.equal(waivedFocus.obligation_page.items[0].state, "waived");
@@ -2685,18 +2592,13 @@ test("work-bound control records observations and rebinds after a stale fence", 
       waivedFocus.obligation_page.items[0].waived_by,
       humanOperator,
     );
-    assert.equal(
-      JSON.stringify(waivedFocus.obligation_page).includes(waiverAuthority),
-      false,
-    );
     const waiverCompleted = cliWork(
       engramHome,
       actor,
-      authorityGrant,
       "complete",
       {
         capture: {
-          summary: "capture completion after the authorized waiver",
+          summary: "capture completion after the attributed waiver",
           refs: ["test:control-dogfood-host-waiver"],
         },
         acceptance: [
@@ -2726,7 +2628,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const freshSatisfied = cliWorkFocus(
       engramHome,
       "fresh-obligation-explainer",
-      authorityGrant,
       proposed.work.short_ref,
     );
     assert.equal(
@@ -2738,7 +2639,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const freshWaived = cliWorkFocus(
       engramHome,
       "fresh-obligation-explainer",
-      authorityGrant,
       waiverProposed.work.short_ref,
     );
     assert.equal(freshWaived.obligation_page.items[0].state, "waived");

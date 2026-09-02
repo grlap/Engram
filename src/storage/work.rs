@@ -20,7 +20,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use super::{
     BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, SchemaDurability, SchemaOwner,
-    SqliteStore, StoreError, WorkAuthorityGrantStatus,
+    SqliteStore, StoreError,
 };
 use crate::{
     CanonicalObject, ObjectHash,
@@ -32,24 +32,22 @@ use crate::{
         CompletionObligationBinding, CompletionSeal, CompletionWaiver, ControlWorkBinding,
         CreateWorkRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS, DecomposeWorkRequest,
         DisposeWorkRequest, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
-        GATE_EVIDENCE_SUMMARY, GateEvidenceRecord, LifecycleAuthorityDecision,
-        MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest, OpenWorkObligation,
-        ReadyWork, RecordGateEvidenceRequest, RecordWorkEvidenceRequest, RecordWorkNoteRequest,
-        ReleaseWorkRequest, ReopenWorkRequest, RequiredChildWaiver, ReviseWorkRequest,
-        RootContribution, RootExecution, RootExecutionId, RootExecutionState, SCHEMA_VERSION,
-        SessionId, TaskId, VerificationEvidence, WaiveRequiredChildRequest,
-        WaiveWorkObligationRequest, WorkAuthorityGrant, WorkAuthorityOperation,
-        WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability, WorkBlocker,
+        GATE_EVIDENCE_SUMMARY, GateEvidenceRecord, MemoryAssertionEvent, MemoryVersion,
+        OfferWorkHandoffRequest, OpenWorkObligation, ReadyWork, RecordGateEvidenceRequest,
+        RecordWorkEvidenceRequest, RecordWorkNoteRequest, ReleaseWorkRequest, ReopenWorkRequest,
+        RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution, RootExecutionId,
+        RootExecutionState, SCHEMA_VERSION, SessionId, TaskId, VerificationEvidence,
+        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkAvailability, WorkBlocker,
         WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState,
         WorkCompletionRecovery, WorkCompletionRecoveryCause, WorkDecomposition, WorkDependencyRef,
         WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry,
         WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
         WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
         WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
-        WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
-        WorkPrerequisiteState, WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId,
-        WorkRunState, WorkSessionState, WorkSourceSnapshot, WorkTransition,
-        normalize_gate_evidence_input, validate_gate_evidence_payload,
+        WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPrerequisiteState,
+        WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId, WorkRunState,
+        WorkSessionState, WorkSourceSnapshot, WorkTransition, normalize_gate_evidence_input,
+        validate_gate_evidence_payload,
     },
     memory::Redactor,
     schema::WORK_SCHEMA_VERSION as CURRENT_WORK_SCHEMA_VERSION,
@@ -57,14 +55,15 @@ use crate::{
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
+const MAX_WORK_DEPTH: u32 = 4;
+const MAX_OPEN_WORK_DESCENDANTS: u32 = 128;
+const MAX_CHILDREN_PER_DECOMPOSITION: usize = 16;
 const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_catalog_fts",
-    "objects_work_authority_revocation_grant",
     "objects_work_evidence_gate_name",
     "objects_work_event_work_id",
     "work_feed_entries_work_event_item",
     "work_feed_entries_environment_cut",
-    "work_authority_grants_active",
     "work_blockers_active",
     "work_claims_live",
     "work_handoff_offer_active",
@@ -243,7 +242,6 @@ struct WorkObligationWaiverFingerprint<'a> {
     expected_definition: &'a ObjectHash,
     waived_by: &'a str,
     reason: &'a str,
-    authority: &'a LifecycleAuthorityDecision,
     actor: &'a crate::domain::ActorContext,
     idempotency_key: &'a str,
 }
@@ -255,7 +253,6 @@ struct ControlWorkObligationWaiverFingerprint<'a> {
     bind_intent_hash: &'a str,
     obligation_id: WorkObligationId,
     expected_definition: &'a ObjectHash,
-    authority_grant: &'a ObjectHash,
     waived_by: &'a str,
     reason: &'a str,
     idempotency_key: &'a str,
@@ -512,24 +509,6 @@ pub(super) fn initialize_schema(
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
              schema_version INTEGER NOT NULL CHECK(schema_version > 0)
          ) STRICT;
-         CREATE TABLE IF NOT EXISTS work_authority_grants (
-             grant_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
-             project_id TEXT NOT NULL,
-             policy_ref TEXT NOT NULL,
-             subject_actor_id TEXT NOT NULL,
-             valid_until_ms INTEGER NOT NULL,
-             revoked_at_ms INTEGER,
-             grant_json BLOB NOT NULL
-         ) STRICT;
-         CREATE INDEX IF NOT EXISTS work_authority_grants_active
-             ON work_authority_grants(project_id, policy_ref, subject_actor_id, valid_until_ms)
-             WHERE revoked_at_ms IS NULL;
-         CREATE TABLE IF NOT EXISTS work_authority_revocations (
-             grant_hash TEXT PRIMARY KEY REFERENCES work_authority_grants(grant_hash),
-             revocation_hash TEXT NOT NULL UNIQUE REFERENCES objects(object_hash),
-             revoked_at_ms INTEGER NOT NULL,
-             revocation_json BLOB NOT NULL
-         ) STRICT;
          CREATE TABLE IF NOT EXISTS work_items (
              work_id TEXT PRIMARY KEY,
              project_id TEXT NOT NULL,
@@ -735,9 +714,6 @@ pub(super) fn initialize_schema(
              )
              WHERE object_kind = 'work_evidence'
                AND json_type(canonical_json, '$.gate') = 'object';
-         CREATE INDEX IF NOT EXISTS objects_work_authority_revocation_grant
-             ON objects(json_extract(canonical_json, '$.grant'))
-             WHERE object_kind = 'work_authority_revocation';
          CREATE TABLE IF NOT EXISTS work_operation_results (
              operation TEXT NOT NULL,
              idempotency_key TEXT NOT NULL,
@@ -814,9 +790,6 @@ pub(super) fn repair_rebuildable_schema_on(connection: &Connection) -> Result<bo
              search_text,
              tokenize='trigram'
          );
-         CREATE INDEX IF NOT EXISTS work_authority_grants_active
-             ON work_authority_grants(project_id, policy_ref, subject_actor_id, valid_until_ms)
-             WHERE revoked_at_ms IS NULL;
          CREATE INDEX IF NOT EXISTS work_items_ready
              ON work_items(project_id, lifecycle, priority, deferred_until_ms, created_at_ms);
          CREATE INDEX IF NOT EXISTS work_items_parent
@@ -851,9 +824,6 @@ pub(super) fn repair_rebuildable_schema_on(connection: &Connection) -> Result<bo
              )
              WHERE object_kind = 'work_evidence'
                AND json_type(canonical_json, '$.gate') = 'object';
-         CREATE INDEX IF NOT EXISTS objects_work_authority_revocation_grant
-             ON objects(json_extract(canonical_json, '$.grant'))
-             WHERE object_kind = 'work_authority_revocation';
          CREATE INDEX IF NOT EXISTS work_feed_entries_work_event_item
              ON work_feed_entries(feed_kind, work_id, position DESC)
              WHERE object_kind = 'work_event' AND work_id IS NOT NULL;
@@ -1039,8 +1009,6 @@ struct WorkProtocolAttemptRow {
     result_json: Option<Vec<u8>>,
 }
 
-type WorkAuthorityGrantStatusRow = (String, String, String, i64, Vec<u8>, Option<i64>);
-
 fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
     connection: &Connection,
     request: &BeginWorkProtocolAttempt<'_, T, B>,
@@ -1147,241 +1115,6 @@ impl SqliteStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_work_schema_version(&transaction, expected_version)?;
         Ok(transaction)
-    }
-
-    /// Installs one canonical host-resolved work authority grant.
-    ///
-    /// This host-SDK boundary is intentionally not exposed through the agent
-    /// protocol. Host adapters resolve identity and organizational policy, then
-    /// persist the resulting asserted/authenticated/signed grant here.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when grant content, redaction, canonicalization,
-    /// or persistence validation fails.
-    pub fn install_work_authority_grant<R: Redactor>(
-        &mut self,
-        mut grant: WorkAuthorityGrant,
-        redactor: &R,
-    ) -> Result<ObjectHash, StoreError> {
-        inspect_work_request(redactor, &grant)?;
-        grant.policy_ref = normalize_text(&grant.policy_ref, "authority policy reference")?;
-        grant.subject_actor_id = normalize_text(&grant.subject_actor_id, "authority subject")?;
-        grant.issued_by.actor_id =
-            normalize_text(&grant.issued_by.actor_id, "authority issuer actor")?;
-        grant.issued_by.reason =
-            normalize_text(&grant.issued_by.reason, "authority issuer reason")?;
-        grant.reason = normalize_text(&grant.reason, "authority grant reason")?;
-        grant.operations.sort();
-        grant.operations.dedup();
-        if grant.schema_version != SCHEMA_VERSION
-            || grant.operations.is_empty()
-            || grant.valid_until <= grant.issued_at
-        {
-            return Err(StoreError::InvalidWork(
-                "authority grant schema, operations, or validity window is invalid".into(),
-            ));
-        }
-        if grant.operations.contains(&WorkAuthorityOperation::Plan)
-            != grant.planning_budget.is_some()
-        {
-            return Err(StoreError::InvalidWork(
-                "planning authority grants must carry exactly one planning budget".into(),
-            ));
-        }
-        if let Some(budget) = grant.planning_budget.as_ref()
-            && (budget.max_depth == 0
-                || budget.max_open_descendants < 2
-                || budget.max_children_per_decomposition < 1
-                || budget.max_children_per_decomposition > 64)
-        {
-            return Err(StoreError::InvalidWork(
-                "authority planning budget is invalid".into(),
-            ));
-        }
-        let object = CanonicalObject::freeze(&grant)?;
-        let transaction = self.begin_work_mutation()?;
-        SqliteStore::insert_object(&transaction, "work_authority_grant", &object)?;
-        transaction.execute(
-            "INSERT INTO work_authority_grants (
-                 grant_hash, project_id, policy_ref, subject_actor_id,
-                 valid_until_ms, revoked_at_ms, grant_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)
-             ON CONFLICT(grant_hash) DO NOTHING",
-            params![
-                object.hash().as_str(),
-                grant.project_id.0,
-                grant.policy_ref,
-                grant.subject_actor_id,
-                grant.valid_until.timestamp_millis(),
-                object.bytes()
-            ],
-        )?;
-        transaction.commit()?;
-        Ok(object.hash().clone())
-    }
-
-    /// Reports whether one work-authority hash is installed and its public
-    /// validity envelope. Unknown hashes are a successful negative query.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when an installed grant or its immutable
-    /// revocation projection fails integrity verification.
-    pub fn work_authority_grant_status(
-        &self,
-        grant_hash: &ObjectHash,
-    ) -> Result<WorkAuthorityGrantStatus, StoreError> {
-        let stored: Option<WorkAuthorityGrantStatusRow> = self
-            .connection
-            .query_row(
-                "SELECT project_id, policy_ref, subject_actor_id, valid_until_ms,
-                        grant_json, revoked_at_ms
-                 FROM work_authority_grants WHERE grant_hash = ?1",
-                [grant_hash.as_str()],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                    ))
-                },
-            )
-            .optional()?;
-        let Some((project_id, policy_ref, subject_actor_id, valid_until_ms, bytes, revoked_at_ms)) =
-            stored
-        else {
-            return Ok(WorkAuthorityGrantStatus {
-                installed: false,
-                subject_actor_id: None,
-                issued_by: None,
-                valid_from: None,
-                valid_until: None,
-                revoked_at: None,
-                operations: None,
-                scope: None,
-            });
-        };
-        let grant: WorkAuthorityGrant = CanonicalObject::verify(grant_hash, bytes)?.decode()?;
-        require_authority_revocation_integrity(&self.connection, grant_hash, revoked_at_ms)?;
-        if project_id != grant.project_id.0
-            || policy_ref != grant.policy_ref
-            || subject_actor_id != grant.subject_actor_id
-            || valid_until_ms != grant.valid_until.timestamp_millis()
-        {
-            return Err(StoreError::InvalidWorkProjection(format!(
-                "authority grant {grant_hash} has an invalid installed projection"
-            )));
-        }
-        let revoked_at = revoked_at_ms
-            .map(|value| {
-                DateTime::from_timestamp_millis(value).ok_or_else(|| {
-                    StoreError::InvalidWorkProjection(format!(
-                        "authority grant {grant_hash} has an invalid revocation time"
-                    ))
-                })
-            })
-            .transpose()?;
-        Ok(WorkAuthorityGrantStatus {
-            installed: true,
-            subject_actor_id: Some(grant.subject_actor_id),
-            issued_by: Some(grant.issued_by.actor_id),
-            valid_from: Some(grant.issued_at),
-            valid_until: Some(grant.valid_until),
-            revoked_at,
-            operations: Some(grant.operations),
-            scope: Some(grant.scope),
-        })
-    }
-
-    /// Revokes a host-issued work-authority grant through an immutable record.
-    ///
-    /// This host-SDK boundary is not agent-facing. Repeating a revocation
-    /// returns the original immutable revocation hash.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] when the grant is absent, attribution or content
-    /// is invalid, or the atomic revocation cannot be persisted.
-    pub fn revoke_work_authority_grant<R: Redactor>(
-        &mut self,
-        grant_hash: &ObjectHash,
-        revoked_by: &crate::domain::ActorContext,
-        reason: &str,
-        revoked_at: DateTime<Utc>,
-        redactor: &R,
-    ) -> Result<ObjectHash, StoreError> {
-        let reason = normalize_text(reason, "authority revocation reason")?;
-        if revoked_at > Utc::now() {
-            return Err(StoreError::InvalidWork(
-                "authority revocation time cannot be in the future".into(),
-            ));
-        }
-        let transaction = self.begin_work_mutation()?;
-        let existing: Option<String> = transaction
-            .query_row(
-                "SELECT revocation_hash FROM work_authority_revocations WHERE grant_hash = ?1",
-                [grant_hash.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if let Some(existing) = existing {
-            let hash = ObjectHash::from_stored(existing.clone())
-                .ok_or(StoreError::InvalidStoredHash(existing))?;
-            transaction.commit()?;
-            return Ok(hash);
-        }
-        let grant: WorkAuthorityGrant =
-            load_typed_work_object(&transaction, grant_hash, "work_authority_grant")?;
-        let projected_revocation: Option<i64> = transaction
-            .query_row(
-                "SELECT revoked_at_ms FROM work_authority_grants WHERE grant_hash = ?1",
-                [grant_hash.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?
-            .flatten();
-        if projected_revocation.is_some() || revoked_at < grant.issued_at {
-            return Err(StoreError::InvalidWork(
-                "authority grant revocation state or time is invalid".into(),
-            ));
-        }
-        let revocation = WorkAuthorityRevocation {
-            schema_version: SCHEMA_VERSION,
-            grant: grant_hash.clone(),
-            revoked_by: revoked_by.clone(),
-            reason,
-            revoked_at,
-        };
-        inspect_work_request(redactor, &revocation)?;
-        let object = CanonicalObject::freeze(&revocation)?;
-        SqliteStore::insert_object(&transaction, "work_authority_revocation", &object)?;
-        let changed = transaction.execute(
-            "UPDATE work_authority_grants SET revoked_at_ms = ?2
-             WHERE grant_hash = ?1 AND revoked_at_ms IS NULL",
-            params![grant_hash.as_str(), revoked_at.timestamp_millis()],
-        )?;
-        if changed != 1 {
-            return Err(StoreError::InvalidWorkProjection(format!(
-                "authority grant {grant_hash} was not active during revocation"
-            )));
-        }
-        transaction.execute(
-            "INSERT INTO work_authority_revocations (
-                 grant_hash, revocation_hash, revoked_at_ms, revocation_json
-             ) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                grant_hash.as_str(),
-                object.hash().as_str(),
-                revoked_at.timestamp_millis(),
-                object.bytes()
-            ],
-        )?;
-        transaction.commit()?;
-        Ok(object.hash().clone())
     }
 
     /// Returns one current work projection.
@@ -1606,49 +1339,8 @@ impl SqliteStore {
         })
     }
 
-    /// Resolves the currently live operations admitted by one host-bound grant
-    /// for a focused item. Invalid, expired, revoked, wrong-actor, wrong-policy,
-    /// and wrong-scope grants yield no advertised capability.
-    pub fn allowed_work_authority_operations(
-        &self,
-        decision: &LifecycleAuthorityDecision,
-        actor: &crate::domain::ActorContext,
-        item: &WorkItem,
-        now: DateTime<Utc>,
-    ) -> Vec<WorkAuthorityOperation> {
-        let target = AuthorityTarget {
-            project_id: &item.project_id,
-            policy_ref: &item.authority_policy_ref,
-            work_id: Some(item.work_id),
-            root_id: Some(item.root_id),
-            run_id: item.active_run_id,
-        };
-        let Ok(grant) =
-            resolve_work_authority_grant(&self.connection, decision, actor, target, now)
-        else {
-            return Vec::new();
-        };
-        [
-            WorkAuthorityOperation::Plan,
-            WorkAuthorityOperation::Claim,
-            WorkAuthorityOperation::Dispose,
-            WorkAuthorityOperation::RootComplete,
-            WorkAuthorityOperation::Reopen,
-            WorkAuthorityOperation::ClaimRecovery,
-            WorkAuthorityOperation::CompletionWaiver,
-            WorkAuthorityOperation::CompletionDrain,
-        ]
-        .into_iter()
-        .filter(|operation| grant.operations.contains(operation))
-        .collect()
-    }
-
-    /// Returns direct required children that the supplied grant can currently
-    /// waive from this parent's completion barrier.
-    ///
-    /// The check deliberately reuses the mutation's exact child-scoped
-    /// authority target. Agent guidance must not advertise a parent-scoped
-    /// capability that the eventual waiver operation will refuse.
+    /// Returns direct required children that can be waived from this parent's
+    /// completion barrier under the local project's binding-only policy.
     ///
     /// # Errors
     ///
@@ -1656,10 +1348,7 @@ impl SqliteStore {
     /// waiver history are invalid, or when candidate children cannot be read.
     pub fn waivable_required_children(
         &self,
-        decision: &LifecycleAuthorityDecision,
-        actor: &crate::domain::ActorContext,
         parent: &WorkItem,
-        now: DateTime<Utc>,
         limit: usize,
     ) -> Result<Vec<WorkItem>, StoreError> {
         if limit == 0 || parent.lifecycle != WorkLifecycle::Open {
@@ -1695,24 +1384,7 @@ impl SqliteStore {
                 continue;
             }
             let child = load_work_item(&self.connection, child_id)?;
-            match resolve_work_authority(
-                &self.connection,
-                decision,
-                actor,
-                WorkAuthorityOperation::CompletionWaiver,
-                AuthorityTarget {
-                    project_id: &child.project_id,
-                    policy_ref: &child.authority_policy_ref,
-                    work_id: Some(child.work_id),
-                    root_id: Some(child.root_id),
-                    run_id: child.active_run_id,
-                },
-                now,
-            ) {
-                Ok(_) => eligible.push(child),
-                Err(StoreError::InvalidWork(_)) => continue,
-                Err(error) => return Err(error),
-            }
+            eligible.push(child);
             if eligible.len() == limit {
                 break;
             }
@@ -1741,8 +1413,7 @@ impl SqliteStore {
         idempotency_key: &str,
         result: &T,
     ) -> Result<(), StoreError> {
-        let compact_result =
-            compact_work_protocol_result(operation, serde_json::to_value(result)?)?;
+        let compact_result = require_work_protocol_result_object(serde_json::to_value(result)?)?;
         let transaction = self.begin_work_mutation()?;
         validate_work_protocol_result_binding(
             &transaction,
@@ -3244,32 +2915,7 @@ impl SqliteStore {
                 continue;
             }
             match &event.transition {
-                WorkTransition::Created {
-                    prerequisites,
-                    authority_grant,
-                } => {
-                    let required_operation = if event.work.parent_id.is_some() {
-                        WorkAuthorityOperation::Plan
-                    } else {
-                        WorkAuthorityOperation::RootCreate
-                    };
-                    let authority_is_bound = load_typed_work_object::<WorkAuthorityGrant>(
-                        connection,
-                        authority_grant,
-                        "work_authority_grant",
-                    )
-                    .is_ok_and(|grant| {
-                        grant.project_id == event.project_id
-                            && grant.policy_ref == event.work.authority_policy_ref
-                            && grant.subject_actor_id == event.actor.actor_id
-                            && assurance_covers(event.actor.assurance, grant.assurance)
-                            && grant.operations.contains(&required_operation)
-                            && grant.issued_at <= event.created_at
-                            && grant.valid_until > event.created_at
-                    });
-                    if !authority_is_bound {
-                        invalid.push(format!("{label}:invalid_admission_authority"));
-                    }
+                WorkTransition::Created { prerequisites } => {
                     for prerequisite in prerequisites {
                         prerequisite_rows.insert(
                             (event.work_id.0.to_string(), prerequisite.0.to_string()),
@@ -3277,72 +2923,9 @@ impl SqliteStore {
                         );
                     }
                 }
-                WorkTransition::Claimed {
-                    authority_grant, ..
-                } => {
-                    let authority_is_bound = load_typed_work_object::<WorkAuthorityGrant>(
-                        connection,
-                        authority_grant,
-                        "work_authority_grant",
-                    )
-                    .is_ok_and(|grant| {
-                        grant.project_id == event.project_id
-                            && grant.policy_ref == event.work.authority_policy_ref
-                            && grant.subject_actor_id == event.actor.actor_id
-                            && assurance_covers(event.actor.assurance, grant.assurance)
-                            && grant.operations.contains(&WorkAuthorityOperation::Claim)
-                            && grant.issued_at <= event.created_at
-                            && grant.valid_until > event.created_at
-                            && authority_scope_matches(
-                                &grant.scope,
-                                AuthorityTarget {
-                                    project_id: &event.project_id,
-                                    policy_ref: &event.work.authority_policy_ref,
-                                    work_id: Some(event.work_id),
-                                    root_id: Some(event.root_id),
-                                    run_id: event.run_id,
-                                },
-                            )
-                    });
-                    if !authority_is_bound {
-                        invalid.push(format!("{label}:invalid_claim_authority"));
-                    }
-                }
-                WorkTransition::HandedOff {
-                    authority_grant, ..
-                } => {
-                    let authority_is_bound = load_typed_work_object::<WorkAuthorityGrant>(
-                        connection,
-                        authority_grant,
-                        "work_authority_grant",
-                    )
-                    .is_ok_and(|grant| {
-                        grant.project_id == event.project_id
-                            && grant.policy_ref == event.work.authority_policy_ref
-                            && grant.subject_actor_id == event.actor.actor_id
-                            && assurance_covers(event.actor.assurance, grant.assurance)
-                            && grant.operations.contains(&WorkAuthorityOperation::Claim)
-                            && grant.issued_at <= event.created_at
-                            && grant.valid_until > event.created_at
-                            && authority_scope_matches(
-                                &grant.scope,
-                                AuthorityTarget {
-                                    project_id: &event.project_id,
-                                    policy_ref: &event.work.authority_policy_ref,
-                                    work_id: Some(event.work_id),
-                                    root_id: Some(event.root_id),
-                                    run_id: event.run_id,
-                                },
-                            )
-                    });
-                    if !authority_is_bound {
-                        invalid.push(format!("{label}:invalid_handoff_authority"));
-                    }
-                }
                 WorkTransition::Disposed {
                     lifecycle,
                     replacement_id,
-                    authority_grant,
                     ..
                 } => {
                     let transition_is_bound = *lifecycle == event.work.lifecycle
@@ -3351,38 +2934,13 @@ impl SqliteStore {
                             lifecycle,
                             WorkLifecycle::Cancelled | WorkLifecycle::Superseded
                         );
-                    let authority_is_bound = load_typed_work_object::<WorkAuthorityGrant>(
-                        connection,
-                        authority_grant,
-                        "work_authority_grant",
-                    )
-                    .is_ok_and(|grant| {
-                        grant.project_id == event.project_id
-                            && grant.policy_ref == event.work.authority_policy_ref
-                            && grant.subject_actor_id == event.actor.actor_id
-                            && assurance_covers(event.actor.assurance, grant.assurance)
-                            && grant.operations.contains(&WorkAuthorityOperation::Dispose)
-                            && grant.issued_at <= event.created_at
-                            && grant.valid_until > event.created_at
-                            && authority_scope_matches(
-                                &grant.scope,
-                                AuthorityTarget {
-                                    project_id: &event.project_id,
-                                    policy_ref: &event.work.authority_policy_ref,
-                                    work_id: Some(event.work_id),
-                                    root_id: Some(event.root_id),
-                                    run_id: event.run_id,
-                                },
-                            )
-                    });
-                    if !transition_is_bound || !authority_is_bound {
+                    if !transition_is_bound {
                         invalid.push(format!("{label}:invalid_disposal_binding"));
                     }
                 }
                 WorkTransition::RequiredChildWaived {
                     child_id,
                     child_revision,
-                    authority_grant,
                     ..
                 } => {
                     let child = load_work_item(connection, *child_id);
@@ -3398,39 +2956,10 @@ impl SqliteStore {
                                 execution.required_child_waivers.iter().any(|waiver| {
                                     waiver.work_id == *child_id
                                         && waiver.work_revision == *child_revision
-                                        && waiver.authority_grant == *authority_grant
                                 })
                             })
                     });
-                    let authority_is_bound = child.as_ref().is_ok_and(|child| {
-                        load_typed_work_object::<WorkAuthorityGrant>(
-                            connection,
-                            authority_grant,
-                            "work_authority_grant",
-                        )
-                        .is_ok_and(|grant| {
-                            grant.project_id == event.project_id
-                                && grant.policy_ref == child.authority_policy_ref
-                                && grant.subject_actor_id == event.actor.actor_id
-                                && assurance_covers(event.actor.assurance, grant.assurance)
-                                && grant
-                                    .operations
-                                    .contains(&WorkAuthorityOperation::CompletionWaiver)
-                                && grant.issued_at <= event.created_at
-                                && grant.valid_until > event.created_at
-                                && authority_scope_matches(
-                                    &grant.scope,
-                                    AuthorityTarget {
-                                        project_id: &event.project_id,
-                                        policy_ref: &child.authority_policy_ref,
-                                        work_id: Some(*child_id),
-                                        root_id: Some(event.root_id),
-                                        run_id: child.active_run_id,
-                                    },
-                                )
-                        })
-                    });
-                    if !transition_is_bound || !authority_is_bound {
+                    if !transition_is_bound {
                         invalid.push(format!("{label}:invalid_required_child_waiver"));
                     }
                 }
@@ -3686,7 +3215,6 @@ impl SqliteStore {
         verify_work_catalog_projections(connection, &mut checked, &mut invalid)?;
         verify_work_scalar_bindings(connection, &mut checked, &mut invalid)?;
         verify_canonical_work_rows(connection, &mut checked, &mut invalid)?;
-        verify_authority_revocation_bindings(connection, &mut checked, &mut invalid)?;
         verify_required_child_waiver_bindings(connection, &mut checked, &mut invalid)?;
         verify_work_protocol_attempts(connection, &mut checked, &mut invalid)?;
         verify_anchored_memory_feeds(connection, &mut checked, &mut invalid)?;
@@ -3846,27 +3374,13 @@ impl SqliteStore {
             }
             Err(error) => return Err(error),
         };
-        resolve_work_authority(
-            &transaction,
-            &request.drain.decision,
-            &request.actor,
-            WorkAuthorityOperation::CompletionDrain,
-            AuthorityTarget {
-                project_id: &item.project_id,
-                policy_ref: &item.authority_policy_ref,
-                work_id: Some(item.work_id),
-                root_id: Some(item.root_id),
-                run_id: Some(run.run_id),
-            },
-            request.completed_at,
-        )?;
         let drain = request.drain.clone();
         if !drain.reconciled_action_outcomes.is_empty()
             || !drain.released_resource_leases.is_empty()
         {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
-                reason: "V1 completion drain accepts only a grant-backed zero-linked-state attestation until action and resource projections are linked to work runs".into(),
+                reason: "V1 completion drain accepts only a zero-linked-state attestation until action and resource projections are linked to work runs".into(),
             });
         }
         let incomplete = incomplete_prerequisite_projections(&transaction, item.work_id)?;
@@ -4017,58 +3531,29 @@ impl SqliteStore {
         SqliteStore::insert_object(&transaction, "work_item_revision", &accepted_work_revision)?;
         expect_root_contributor(&mut root_execution, &claim.holder);
         add_root_contribution(&mut root_execution, &claim.holder, &checkpoint);
-        let root_authority = if item.work_id == item.root_id {
-            let decision = request.root_authority.as_ref().ok_or_else(|| {
-                StoreError::WorkCompletionRefused {
-                    work: item.work_id,
-                    reason: "root completion requires an explicit lifecycle authority decision"
-                        .into(),
-                }
-            })?;
-            resolve_work_authority(
-                &transaction,
-                decision,
-                &request.actor,
-                WorkAuthorityOperation::RootComplete,
-                AuthorityTarget {
-                    project_id: &item.project_id,
-                    policy_ref: &item.authority_policy_ref,
-                    work_id: Some(item.work_id),
-                    root_id: Some(item.root_id),
-                    run_id: Some(run.run_id),
-                },
-                request.completed_at,
-            )?;
-            if let Some(participant) = first_unaccounted_root_contributor(&root_execution) {
-                let cause = WorkCompletionRecoveryCause::MissingContribution {
-                    participant: participant.clone(),
-                };
-                if persist_recovery {
-                    let recovery = persist_completion_recovery_on(
-                        &transaction,
-                        &item,
-                        cause,
-                        "complete_work_recovery",
-                        &request.idempotency_key,
-                        request_object.hash(),
-                    )?;
-                    transaction.commit()?;
-                    return Ok(CompleteWorkStorageResult::Recovery(recovery));
-                }
-                return Err(StoreError::WorkCompletionRecoveryRequired {
-                    work: item.work_id,
+        if item.work_id == item.root_id
+            && let Some(participant) = first_unaccounted_root_contributor(&root_execution)
+        {
+            let cause = WorkCompletionRecoveryCause::MissingContribution {
+                participant: participant.clone(),
+            };
+            if persist_recovery {
+                let recovery = persist_completion_recovery_on(
+                    &transaction,
+                    &item,
                     cause,
-                });
+                    "complete_work_recovery",
+                    &request.idempotency_key,
+                    request_object.hash(),
+                )?;
+                transaction.commit()?;
+                return Ok(CompleteWorkStorageResult::Recovery(recovery));
             }
-            Some(decision.clone())
-        } else {
-            if request.root_authority.is_some() {
-                return Err(StoreError::InvalidWork(
-                    "root completion authority is only valid for root work".into(),
-                ));
-            }
-            None
-        };
+            return Err(StoreError::WorkCompletionRecoveryRequired {
+                work: item.work_id,
+                cause,
+            });
+        }
         let seal = CompletionSeal {
             schema_version: SCHEMA_VERSION,
             work_id: item.work_id,
@@ -4094,7 +3579,6 @@ impl SqliteStore {
             expected_contributors: root_execution.expected_contributors.clone(),
             contributions: root_execution.contributions.clone(),
             waivers: root_execution.waivers.clone(),
-            root_authority,
             drain,
             actor: request.actor.clone(),
             completed_at: request.completed_at,
@@ -4208,20 +3692,6 @@ impl SqliteStore {
         }
         let mut item = load_work_item(&transaction, request.work_id)?;
         assert_revision(&item, request.expected_work_revision)?;
-        resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &request.actor,
-            WorkAuthorityOperation::Reopen,
-            AuthorityTarget {
-                project_id: &item.project_id,
-                policy_ref: &item.authority_policy_ref,
-                work_id: Some(item.work_id),
-                root_id: Some(item.root_id),
-                run_id: item.active_run_id,
-            },
-            request.reopened_at,
-        )?;
         if item.lifecycle != WorkLifecycle::Completed {
             return Err(StoreError::InvalidWork(
                 "only completed work can be reopened".into(),
@@ -4377,7 +3847,6 @@ impl SqliteStore {
             transition: WorkTransition::Reopened {
                 run_id: run.run_id,
                 generation: run.generation,
-                authority: request.authority.clone(),
                 reason,
             },
             actor: request.actor.clone(),
@@ -4424,20 +3893,6 @@ impl SqliteStore {
         if item.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(item.work_id));
         }
-        resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &request.actor,
-            WorkAuthorityOperation::Dispose,
-            AuthorityTarget {
-                project_id: &item.project_id,
-                policy_ref: &item.authority_policy_ref,
-                work_id: Some(item.work_id),
-                root_id: Some(item.root_id),
-                run_id: item.active_run_id,
-            },
-            request.disposed_at,
-        )?;
         let open_descendants = transaction.query_row(
             "WITH RECURSIVE descendants(work_id) AS (
                  SELECT work_id FROM work_items WHERE parent_id = ?1
@@ -4571,25 +4026,10 @@ impl SqliteStore {
                 .iter()
                 .any(|waiver| waiver.participant == holder)
         {
-            let grant = resolve_work_authority(
-                &transaction,
-                &request.authority,
-                &request.actor,
-                WorkAuthorityOperation::CompletionWaiver,
-                AuthorityTarget {
-                    project_id: &item.project_id,
-                    policy_ref: &item.authority_policy_ref,
-                    work_id: Some(item.work_id),
-                    root_id: Some(item.root_id),
-                    run_id: run.as_ref().map(|run| run.run_id),
-                },
-                request.disposed_at,
-            )?;
             root_changed |= waive_root_contributor(
                 &mut root_execution,
                 &holder,
-                &request.authority,
-                &grant,
+                &request.actor.actor_id,
                 &reason,
             );
         }
@@ -4619,7 +4059,6 @@ impl SqliteStore {
                 lifecycle: item.lifecycle,
                 replacement_id: item.superseded_by,
                 reason,
-                authority_grant: request.authority.grant.clone(),
             },
             actor: request.actor.clone(),
             created_at: request.disposed_at,
@@ -4637,13 +4076,13 @@ impl SqliteStore {
     }
 
     /// Accounts for one deliberately cancelled or superseded required child
-    /// under explicit completion-waiver authority.
+    /// with an attributed, audited reason from the project-bound session.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when the parent revision changed, the child is
-    /// not a directly required disposed child, authority is absent, or the
-    /// waiver conflicts with an earlier request.
+    /// not a directly required disposed child, the asserted project binding
+    /// is invalid, or the waiver conflicts with an earlier request.
     pub fn waive_required_child<R: Redactor>(
         &mut self,
         request: &WaiveRequiredChildRequest,
@@ -4680,20 +4119,6 @@ impl SqliteStore {
                     .into(),
             ));
         }
-        let grant = resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &request.actor,
-            WorkAuthorityOperation::CompletionWaiver,
-            AuthorityTarget {
-                project_id: &child.project_id,
-                policy_ref: &child.authority_policy_ref,
-                work_id: Some(child.work_id),
-                root_id: Some(child.root_id),
-                run_id: child.active_run_id,
-            },
-            request.waived_at,
-        )?;
         let mut root_execution = active_root_execution(&transaction, parent.root_id)?;
         if root_execution
             .required_child_waivers
@@ -4707,8 +4132,7 @@ impl SqliteStore {
         let waiver = RequiredChildWaiver {
             work_id: child.work_id,
             work_revision: child.revision,
-            authority_grant: request.authority.grant.clone(),
-            waived_by: grant.issued_by.actor_id,
+            waived_by: request.actor.actor_id.clone(),
             reason: reason.clone(),
         };
         root_execution.required_child_waivers.push(waiver.clone());
@@ -4739,7 +4163,6 @@ impl SqliteStore {
                 child_id: child.work_id,
                 child_revision: child.revision,
                 reason,
-                authority_grant: request.authority.grant.clone(),
             },
             actor: request.actor.clone(),
             created_at: request.waived_at,
@@ -4773,7 +4196,6 @@ impl SqliteStore {
         routing_token: &str,
         obligation_id: WorkObligationId,
         expected_definition: &ObjectHash,
-        authority_grant: &ObjectHash,
         waived_by: &str,
         reason: &str,
         actor: &crate::domain::ActorContext,
@@ -4786,9 +4208,6 @@ impl SqliteStore {
             expected_definition: expected_definition.clone(),
             waived_by: waived_by.to_owned(),
             reason: reason.to_owned(),
-            authority: LifecycleAuthorityDecision {
-                grant: authority_grant.clone(),
-            },
             actor: actor.clone(),
             idempotency_key: idempotency_key.to_owned(),
             waived_at,
@@ -4813,7 +4232,6 @@ impl SqliteStore {
             bind_intent_hash: &session.bind_intent_hash,
             obligation_id,
             expected_definition,
-            authority_grant,
             waived_by: &request.waived_by,
             reason: &request.reason,
             idempotency_key,
@@ -4928,45 +4346,6 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(decision);
         }
-        let item = load_work_item(&transaction, record.obligation.work_id)?;
-        let mut authority_actor = request.actor.clone();
-        authority_actor.actor_id.clone_from(&waived_by);
-        let authority = resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &authority_actor,
-            WorkAuthorityOperation::ObligationWaiver,
-            AuthorityTarget {
-                project_id: &record.obligation.project_id,
-                policy_ref: &item.authority_policy_ref,
-                work_id: Some(record.obligation.work_id),
-                root_id: Some(record.obligation.root_id),
-                run_id: Some(record.obligation.run_id),
-            },
-            waived_at,
-        );
-        if let Err(StoreError::InvalidWork(_)) = authority {
-            let decision = WorkObligationWaiverDecision::Refused {
-                code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
-                obligation_id,
-                current_definition: Some(record.definition_hash),
-                remedy:
-                    "obtain a live obligation_waiver grant for this operator and exact work scope"
-                        .into(),
-            };
-            Self::persist_control_operation(
-                &transaction,
-                session_id,
-                "obligation_waive",
-                idempotency_key,
-                &intent,
-                &decision,
-                waived_at,
-            )?;
-            transaction.commit()?;
-            return Ok(decision);
-        }
-        authority?;
         let event = WorkObligationResolutionEvent {
             schema_version: SCHEMA_VERSION,
             project_id: record.obligation.project_id.clone(),
@@ -4974,7 +4353,6 @@ impl SqliteStore {
             definition: record.definition_hash.clone(),
             run_id: record.obligation.run_id,
             resolution: WorkObligationResolution::Waived {
-                authority_grant: authority_grant.clone(),
                 waived_by: waived_by.clone(),
                 reason,
             },
@@ -5005,15 +4383,14 @@ impl SqliteStore {
         Ok(decision)
     }
 
-    /// Resolves one exact open obligation through dedicated host/operator
-    /// authority. This operation is intentionally absent from the ambient
-    /// agent work protocol.
+    /// Resolves one exact open obligation through an attributed local shell
+    /// action. This operation is absent from the ambient agent work protocol,
+    /// but the shell path itself is neither authenticated nor run-bound.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when the definition changed, the obligation is
-    /// already terminal, the dedicated grant is invalid, or the request
-    /// conflicts with an idempotent replay.
+    /// already terminal or the request conflicts with an idempotent replay.
     pub fn waive_work_obligation<R: Redactor>(
         &mut self,
         request: &WaiveWorkObligationRequest,
@@ -5027,7 +4404,6 @@ impl SqliteStore {
             expected_definition: &request.expected_definition,
             waived_by: &request.waived_by,
             reason: &request.reason,
-            authority: &request.authority,
             actor: &request.actor,
             idempotency_key: &request.idempotency_key,
         })?;
@@ -5054,34 +4430,13 @@ impl SqliteStore {
                 request.obligation_id.0
             )));
         }
-        let item = load_work_item(&transaction, record.obligation.work_id)?;
-        let mut authority_actor = request.actor.clone();
-        authority_actor.actor_id.clone_from(&waived_by);
-        resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &authority_actor,
-            WorkAuthorityOperation::ObligationWaiver,
-            AuthorityTarget {
-                project_id: &record.obligation.project_id,
-                policy_ref: &item.authority_policy_ref,
-                work_id: Some(record.obligation.work_id),
-                root_id: Some(record.obligation.root_id),
-                run_id: Some(record.obligation.run_id),
-            },
-            request.waived_at,
-        )?;
         let event = WorkObligationResolutionEvent {
             schema_version: SCHEMA_VERSION,
             project_id: record.obligation.project_id.clone(),
             obligation_id: record.obligation.obligation_id,
             definition: record.definition_hash.clone(),
             run_id: record.obligation.run_id,
-            resolution: WorkObligationResolution::Waived {
-                authority_grant: request.authority.grant.clone(),
-                waived_by,
-                reason,
-            },
+            resolution: WorkObligationResolution::Waived { waived_by, reason },
             actor: request.actor.clone(),
             created_at: request.waived_at,
         };
@@ -5140,20 +4495,6 @@ impl SqliteStore {
         if item.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(item.work_id));
         }
-        resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &request.actor,
-            WorkAuthorityOperation::Claim,
-            AuthorityTarget {
-                project_id: &item.project_id,
-                policy_ref: &item.authority_policy_ref,
-                work_id: Some(item.work_id),
-                root_id: Some(item.root_id),
-                run_id: Some(request.expected_run_id),
-            },
-            request.claimed_at,
-        )?;
         let view = inspect_work_canonical_on(&transaction, item.work_id, request.claimed_at)?;
         if !matches!(view.availability, WorkAvailability::Ready) {
             if matches!(
@@ -5227,26 +4568,6 @@ impl SqliteStore {
             && prior_claim.holder != request.holder
             && !root_participant_is_accounted(&root_execution, &prior_claim.holder)
         {
-            let decision = request.recovery_authority.as_ref().ok_or_else(|| {
-                StoreError::InvalidWork(
-                    "claim recovery requires explicit authority to waive an unaccounted prior holder"
-                        .into(),
-                )
-            })?;
-            let grant = resolve_work_authority(
-                &transaction,
-                decision,
-                &request.actor,
-                WorkAuthorityOperation::ClaimRecovery,
-                AuthorityTarget {
-                    project_id: &item.project_id,
-                    policy_ref: &item.authority_policy_ref,
-                    work_id: Some(item.work_id),
-                    root_id: Some(item.root_id),
-                    run_id: Some(run_id),
-                },
-                request.claimed_at,
-            )?;
             let reason = request.recovery_reason.as_deref().ok_or_else(|| {
                 StoreError::InvalidWork(
                     "claim recovery requires an explicit attributed reason".into(),
@@ -5256,8 +4577,7 @@ impl SqliteStore {
             root_changed |= waive_root_contributor(
                 &mut root_execution,
                 &prior_claim.holder,
-                decision,
-                &grant,
+                &request.actor.actor_id,
                 &reason,
             );
         }
@@ -5294,7 +4614,6 @@ impl SqliteStore {
             transition: WorkTransition::Claimed {
                 claim: claim.clone(),
                 recovered,
-                authority_grant: request.authority.grant.clone(),
             },
             actor: request.actor.clone(),
             created_at: request.claimed_at,
@@ -5355,25 +4674,6 @@ impl SqliteStore {
         )?;
         let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
         if !root_participant_is_accounted(&root_execution, &claim.holder) {
-            let decision = request.waiver_authority.as_ref().ok_or_else(|| {
-                StoreError::InvalidWork(
-                    "release requires a contribution or an explicit completion waiver".into(),
-                )
-            })?;
-            let grant = resolve_work_authority(
-                &transaction,
-                decision,
-                &request.actor,
-                WorkAuthorityOperation::CompletionWaiver,
-                AuthorityTarget {
-                    project_id: &item.project_id,
-                    policy_ref: &item.authority_policy_ref,
-                    work_id: Some(item.work_id),
-                    root_id: Some(item.root_id),
-                    run_id: Some(run.run_id),
-                },
-                request.released_at,
-            )?;
             let reason = request.waiver_reason.as_deref().ok_or_else(|| {
                 StoreError::InvalidWork(
                     "completion waiver requires an explicit attributed reason".into(),
@@ -5383,8 +4683,7 @@ impl SqliteStore {
             if waive_root_contributor(
                 &mut root_execution,
                 &claim.holder,
-                decision,
-                &grant,
+                &request.actor.actor_id,
                 &reason,
             ) {
                 root_execution.revision += 1;
@@ -6020,20 +5319,6 @@ impl SqliteStore {
             request.accepted_at,
             true,
         )?;
-        resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &request.actor,
-            WorkAuthorityOperation::Claim,
-            AuthorityTarget {
-                project_id: &item.project_id,
-                policy_ref: &item.authority_policy_ref,
-                work_id: Some(item.work_id),
-                root_id: Some(item.root_id),
-                run_id: Some(offer.run_id),
-            },
-            request.accepted_at,
-        )?;
         claim.holder = request.to.clone();
         claim.fence += 1;
         claim.revision += 1;
@@ -6084,7 +5369,6 @@ impl SqliteStore {
                 fence: claim.fence,
                 checkpoint: offer.checkpoint,
                 offer: accepted_offer_object.hash().clone(),
-                authority_grant: request.authority.grant.clone(),
             },
             actor: request.actor.clone(),
             created_at: request.accepted_at,
@@ -6234,7 +5518,8 @@ impl SqliteStore {
         inspect_work_request(redactor, request)?;
         if request.parent_id.is_some() {
             return Err(StoreError::InvalidWork(
-                "direct child creation is not allowed; use decompose_work with parent revision and planning authority".into(),
+                "direct child creation is not allowed; use decompose_work with the parent revision"
+                    .into(),
             ));
         }
         if !(0..=4).contains(&request.priority) {
@@ -6266,20 +5551,6 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(item);
         }
-        resolve_work_authority(
-            &transaction,
-            &request.authority,
-            &request.actor,
-            WorkAuthorityOperation::RootCreate,
-            AuthorityTarget {
-                project_id: &request.project_id,
-                policy_ref: &request.authority_policy_ref,
-                work_id: None,
-                root_id: None,
-                run_id: None,
-            },
-            request.created_at,
-        )?;
         if let Some(snapshot) = request.source_snapshot_id.as_ref() {
             let source = load_typed_work_object::<WorkSourceSnapshot>(
                 &transaction,
@@ -6296,8 +5567,6 @@ impl SqliteStore {
 
         let title = normalize_text(&request.title, "title")?;
         let outcome = normalize_text(&request.outcome, "outcome")?;
-        let authority_policy_ref =
-            normalize_text(&request.authority_policy_ref, "authority policy reference")?;
         let work_id = WorkId::new();
         let run_id = WorkRunId::new();
         let root_id = work_id;
@@ -6336,7 +5605,6 @@ impl SqliteStore {
             deferred_until: request.deferred_until,
             origin: request.origin,
             source_snapshot_id: request.source_snapshot_id.clone(),
-            authority_policy_ref,
             lifecycle: WorkLifecycle::Open,
             revision: 1,
             active_run_id: Some(run_id),
@@ -6443,7 +5711,6 @@ impl SqliteStore {
             blocker: None,
             transition: WorkTransition::Created {
                 prerequisites: Vec::new(),
-                authority_grant: request.authority.grant.clone(),
             },
             actor: request.actor.clone(),
             created_at: request.created_at,
@@ -6472,10 +5739,10 @@ impl SqliteStore {
         redactor: &R,
     ) -> Result<WorkDecomposition, StoreError> {
         inspect_work_request(redactor, request)?;
-        if request.children.is_empty() || request.children.len() > 64 {
-            return Err(StoreError::InvalidWork(
-                "decomposition must contain from 1 through 64 children".into(),
-            ));
+        if request.children.is_empty() || request.children.len() > MAX_CHILDREN_PER_DECOMPOSITION {
+            return Err(StoreError::InvalidWork(format!(
+                "decomposition must contain from 1 through {MAX_CHILDREN_PER_DECOMPOSITION} children"
+            )));
         }
         let mut keys = HashSet::new();
         for child in &request.children {
@@ -6504,23 +5771,14 @@ impl SqliteStore {
         }
         let mut parent = load_work_item(&transaction, request.parent_id)?;
         assert_revision(&parent, request.expected_parent_revision)?;
-        let planning_grant = validate_planning_authority(
+        validate_planning_authority(
             &transaction,
             &parent,
             &request.authority,
             &request.actor,
             request.created_at,
         )?;
-        validate_decomposition_budget(
-            &transaction,
-            &parent,
-            planning_grant.planning_budget.as_ref().ok_or_else(|| {
-                StoreError::InvalidWorkProjection(
-                    "resolved planning grant has no planning budget".into(),
-                )
-            })?,
-            request.children.len(),
-        )?;
+        validate_decomposition_budget(&transaction, &parent, request.children.len())?;
         if parent.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(parent.work_id));
         }
@@ -6607,7 +5865,6 @@ impl SqliteStore {
                 deferred_until: draft.deferred_until,
                 origin: WorkOrigin::Local,
                 source_snapshot_id: None,
-                authority_policy_ref: parent.authority_policy_ref.clone(),
                 lifecycle: WorkLifecycle::Open,
                 revision: 1,
                 active_run_id: Some(run_id),
@@ -6704,10 +5961,6 @@ impl SqliteStore {
                 blocker: None,
                 transition: WorkTransition::Created {
                     prerequisites: item_prerequisites.clone(),
-                    authority_grant: match &request.authority {
-                        WorkPlanningAuthority::Claim { grant, .. }
-                        | WorkPlanningAuthority::Delegated { grant } => grant.clone(),
-                    },
                 },
                 actor: request.actor.clone(),
                 created_at: request.created_at,
@@ -9393,11 +8646,7 @@ fn validate_obligation_resolution_projection(
                 )));
             }
         }
-        WorkObligationResolution::Waived {
-            authority_grant,
-            waived_by,
-            reason,
-        } => {
+        WorkObligationResolution::Waived { waived_by, reason } => {
             if state != WorkObligationState::Waived
                 || projected_kind != Some("waived")
                 || projected_evidence.is_some()
@@ -9411,62 +8660,9 @@ fn validate_obligation_resolution_projection(
                     obligation.obligation_id.0
                 )));
             }
-            validate_obligation_waiver_authority(
-                connection,
-                obligation,
-                authority_grant,
-                waived_by,
-                event.actor.assurance,
-                event.created_at,
-            )?;
         }
     }
     Ok(Some(resolution_position))
-}
-
-fn validate_obligation_waiver_authority(
-    connection: &Connection,
-    obligation: &WorkObligation,
-    grant_hash: &ObjectHash,
-    waived_by: &str,
-    actor_assurance: crate::domain::AssuranceLevel,
-    at: DateTime<Utc>,
-) -> Result<(), StoreError> {
-    let grant = load_typed_work_object::<WorkAuthorityGrant>(
-        connection,
-        grant_hash,
-        "work_authority_grant",
-    )?;
-    let revoked_at_ms: Option<i64> = connection.query_row(
-        "SELECT revoked_at_ms FROM work_authority_grants WHERE grant_hash = ?1",
-        [grant_hash.as_str()],
-        |row| row.get(0),
-    )?;
-    require_authority_revocation_integrity(connection, grant_hash, revoked_at_ms)?;
-    let target = AuthorityTarget {
-        project_id: &obligation.project_id,
-        policy_ref: &load_work_item(connection, obligation.work_id)?.authority_policy_ref,
-        work_id: Some(obligation.work_id),
-        root_id: Some(obligation.root_id),
-        run_id: Some(obligation.run_id),
-    };
-    let valid = grant.project_id == obligation.project_id
-        && grant.subject_actor_id == waived_by
-        && assurance_covers(actor_assurance, grant.assurance)
-        && grant
-            .operations
-            .contains(&WorkAuthorityOperation::ObligationWaiver)
-        && authority_scope_matches(&grant.scope, target)
-        && grant.issued_at <= at
-        && grant.valid_until > at
-        && revoked_at_ms.is_none_or(|revoked| revoked > at.timestamp_millis());
-    if !valid {
-        return Err(StoreError::InvalidWorkProjection(format!(
-            "obligation {} waiver authority is invalid",
-            obligation.obligation_id.0
-        )));
-    }
-    Ok(())
 }
 
 struct TypedEvidenceProjection<'a> {
@@ -10058,6 +9254,17 @@ fn append_work_event(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
 ) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+    if event.actor.actor_id.trim().is_empty()
+        || event
+            .actor
+            .session_id
+            .as_ref()
+            .is_none_or(|session| session.0.trim().is_empty())
+    {
+        return Err(StoreError::InvalidWork(
+            "local work requires a non-empty asserted actor and session binding".into(),
+        ));
+    }
     let mut relation_basis =
         if latest_canonical_work_event_for_item_optional(transaction, event.work_id)?.is_some() {
             validated_current_work_relation_basis(transaction, event.work_id)?
@@ -10161,26 +9368,12 @@ fn load_handoff_offer_projection(
     Ok(canonical)
 }
 
-fn compact_work_protocol_result(
-    operation: &str,
-    mut result: serde_json::Value,
+fn require_work_protocol_result_object(
+    result: serde_json::Value,
 ) -> Result<serde_json::Value, StoreError> {
-    let object = result.as_object_mut().ok_or_else(|| {
+    result.as_object().ok_or_else(|| {
         StoreError::InvalidWorkProjection("work-protocol result must be a JSON object".into())
     })?;
-    if operation == "work_update:waive_required_child"
-        && let Some(receipt) = object
-            .get_mut("receipt")
-            .and_then(serde_json::Value::as_object_mut)
-    {
-        receipt.remove("authority_grant");
-        if let Some(result) = receipt
-            .get_mut("result")
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            result.remove("authority_grant");
-        }
-    }
     Ok(result)
 }
 
@@ -10655,221 +9848,25 @@ fn assert_actor_session(
     }
 }
 
-#[derive(Clone, Copy)]
-struct AuthorityTarget<'a> {
-    project_id: &'a crate::domain::ProjectId,
-    policy_ref: &'a str,
-    work_id: Option<WorkId>,
-    root_id: Option<WorkId>,
-    run_id: Option<WorkRunId>,
-}
-
-fn resolve_work_authority(
-    connection: &Connection,
-    decision: &LifecycleAuthorityDecision,
-    actor: &crate::domain::ActorContext,
-    operation: WorkAuthorityOperation,
-    target: AuthorityTarget<'_>,
-    at: DateTime<Utc>,
-) -> Result<WorkAuthorityGrant, StoreError> {
-    let grant = resolve_work_authority_grant(connection, decision, actor, target, at)?;
-    if !grant.operations.contains(&operation) {
-        return Err(StoreError::InvalidWork(format!(
-            "work authority grant does not admit {operation:?}"
-        )));
-    }
-    Ok(grant)
-}
-
-fn resolve_work_authority_grant(
-    connection: &Connection,
-    decision: &LifecycleAuthorityDecision,
-    actor: &crate::domain::ActorContext,
-    target: AuthorityTarget<'_>,
-    at: DateTime<Utc>,
-) -> Result<WorkAuthorityGrant, StoreError> {
-    let stored: Option<(Vec<u8>, Option<i64>)> = connection
-        .query_row(
-            "SELECT grant_json, revoked_at_ms FROM work_authority_grants
-             WHERE grant_hash = ?1",
-            [decision.grant.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    let (bytes, revoked_at_ms) = stored.ok_or_else(|| {
-        StoreError::InvalidWork("referenced work authority grant is not installed".into())
-    })?;
-    let grant: WorkAuthorityGrant = CanonicalObject::verify(&decision.grant, bytes)?.decode()?;
-    require_authority_revocation_integrity(connection, &decision.grant, revoked_at_ms)?;
-    // The caller and the target are checked first, so a grant hash in the
-    // wrong hands learns only that it does not apply; an eligible caller then
-    // hears exactly why: revoked, expired, not yet valid, or not admitted.
-    if grant.subject_actor_id != actor.actor_id
-        || !assurance_covers(actor.assurance, grant.assurance)
-    {
-        return Err(StoreError::InvalidWork(
-            "work authority grant was issued to another actor or assurance".into(),
-        ));
-    }
-    if grant.project_id != *target.project_id
-        || grant.policy_ref != target.policy_ref
-        || !authority_scope_matches(&grant.scope, target)
-    {
-        return Err(StoreError::InvalidWork(
-            "work authority grant does not cover this project, policy, or work scope".into(),
-        ));
-    }
-    if revoked_at_ms.is_some() {
-        return Err(StoreError::InvalidWork(
-            "work authority grant was revoked by the host".into(),
-        ));
-    }
-    if grant.valid_until <= at {
-        return Err(StoreError::InvalidWork(format!(
-            "work authority grant expired at {}",
-            grant.valid_until.format("%Y-%m-%d %H:%M:%S UTC")
-        )));
-    }
-    if grant.issued_at > at {
-        return Err(StoreError::InvalidWork(format!(
-            "work authority grant is not valid before {}",
-            grant.issued_at.format("%Y-%m-%d %H:%M:%S UTC")
-        )));
-    }
-    Ok(grant)
-}
-
-fn require_authority_revocation_integrity(
-    connection: &Connection,
-    grant_hash: &ObjectHash,
-    projected_at: Option<i64>,
-) -> Result<(), StoreError> {
-    let canonical_rows = {
-        let mut statement = connection.prepare(
-            "SELECT object_hash, canonical_json FROM objects
-             WHERE object_kind = 'work_authority_revocation'
-               AND json_extract(canonical_json, '$.grant') = ?1
-             ORDER BY object_hash",
-        )?;
-        statement
-            .query_map([grant_hash.as_str()], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })?
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    if canonical_rows.len() > 1 {
-        return Err(StoreError::InvalidWorkProjection(format!(
-            "authority grant {grant_hash} has multiple canonical revocations"
-        )));
-    }
-    let canonical = canonical_rows
-        .into_iter()
-        .next()
-        .map(|(stored_hash, bytes)| {
-            let hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-            let revocation: WorkAuthorityRevocation =
-                CanonicalObject::verify(&hash, bytes)?.decode()?;
-            if revocation.grant != *grant_hash {
-                return Err(StoreError::InvalidWorkProjection(format!(
-                    "authority revocation {hash} crosses its grant binding"
-                )));
-            }
-            Ok((hash, revocation))
-        })
-        .transpose()?;
-    let projection: Option<(String, i64, Vec<u8>)> = connection
-        .query_row(
-            "SELECT revocation_hash, revoked_at_ms, revocation_json
-             FROM work_authority_revocations WHERE grant_hash = ?1",
-            [grant_hash.as_str()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()?;
-    let valid = match (canonical, projection, projected_at) {
-        (None, None, None) => true,
-        (Some((hash, revocation)), Some((row_hash, row_at, row_bytes)), Some(grant_at)) => {
-            hash.as_str() == row_hash
-                && revocation.revoked_at.timestamp_millis() == row_at
-                && row_at == grant_at
-                && CanonicalObject::verify(&hash, row_bytes)
-                    .and_then(|object| object.decode::<WorkAuthorityRevocation>())
-                    .is_ok_and(|row| row == revocation)
-        }
-        _ => false,
-    };
-    if !valid {
-        return Err(StoreError::InvalidWorkProjection(format!(
-            "authority grant {grant_hash} has an invalid revocation projection"
-        )));
-    }
-    Ok(())
-}
-
-fn assurance_covers(
-    actor: crate::domain::AssuranceLevel,
-    required: crate::domain::AssuranceLevel,
-) -> bool {
-    fn rank(level: crate::domain::AssuranceLevel) -> u8 {
-        match level {
-            crate::domain::AssuranceLevel::Asserted => 0,
-            crate::domain::AssuranceLevel::Authenticated => 1,
-            crate::domain::AssuranceLevel::Signed => 2,
-        }
-    }
-    rank(actor) >= rank(required)
-}
-
-fn authority_scope_matches(scope: &WorkAuthorityScope, target: AuthorityTarget<'_>) -> bool {
-    match scope {
-        WorkAuthorityScope::Project => true,
-        WorkAuthorityScope::Root(root_id) => target.root_id == Some(*root_id),
-        WorkAuthorityScope::Work(work_id) => target.work_id == Some(*work_id),
-        WorkAuthorityScope::Run(run_id) => target.run_id == Some(*run_id),
-    }
-}
-
 fn validate_planning_authority(
     transaction: &Transaction<'_>,
     item: &WorkItem,
     authority: &WorkPlanningAuthority,
     actor: &crate::domain::ActorContext,
     at: DateTime<Utc>,
-) -> Result<WorkAuthorityGrant, StoreError> {
+) -> Result<(), StoreError> {
     if let Some(run_id) = item.active_run_id {
         expire_handoff_offers(transaction, run_id, at, actor)?;
     }
-    let grant_hash = match authority {
-        WorkPlanningAuthority::Claim { grant, .. } | WorkPlanningAuthority::Delegated { grant } => {
-            grant
-        }
-    };
-    let decision = LifecycleAuthorityDecision {
-        grant: grant_hash.clone(),
-    };
-    let grant = resolve_work_authority(
-        transaction,
-        &decision,
-        actor,
-        WorkAuthorityOperation::Plan,
-        AuthorityTarget {
-            project_id: &item.project_id,
-            policy_ref: &item.authority_policy_ref,
-            work_id: Some(item.work_id),
-            root_id: Some(item.root_id),
-            run_id: item.active_run_id,
-        },
-        at,
-    )?;
     match authority {
-        WorkPlanningAuthority::Delegated { .. } => {
+        WorkPlanningAuthority::Project => {
             if let Some(run_id) = item.active_run_id
                 && load_work_claim_optional(transaction, run_id)?.is_some_and(|claim| {
                     claim.state == WorkClaimState::Active && claim.expires_at > at
                 })
             {
                 return Err(StoreError::InvalidWork(
-                    "delegated planning cannot revise work held by a live claim; use the holder's claim-bound planning authority or wait for recovery"
+                    "project planning cannot revise work held by a live claim; use the holder's claim-bound planning context or wait for recovery"
                         .into(),
                 ));
             }
@@ -10899,27 +9896,25 @@ fn validate_planning_authority(
             )?;
         }
     }
-    Ok(grant)
+    Ok(())
 }
 
 fn validate_decomposition_budget(
     connection: &Connection,
     parent: &WorkItem,
-    budget: &WorkPlanningBudget,
     proposed_children: usize,
 ) -> Result<(), StoreError> {
-    let proposed = u32::try_from(proposed_children)
-        .map_err(|_| StoreError::InvalidWork("decomposition size overflow".into()))?;
-    if budget.max_children_per_decomposition < 1 || proposed > budget.max_children_per_decomposition
-    {
+    if proposed_children > MAX_CHILDREN_PER_DECOMPOSITION {
         return Err(StoreError::InvalidWork(
-            "decomposition exceeds the authorized per-operation child budget".into(),
+            "decomposition exceeds the project per-operation child budget".into(),
         ));
     }
+    let proposed = i64::try_from(proposed_children)
+        .map_err(|_| StoreError::InvalidWork("decomposition size overflow".into()))?;
     let depth = work_depth(connection, parent.work_id)? + 1;
-    if depth > i64::from(budget.max_depth) {
+    if depth > i64::from(MAX_WORK_DEPTH) {
         return Err(StoreError::InvalidWork(
-            "decomposition exceeds the authorized hierarchy depth".into(),
+            "decomposition exceeds the project hierarchy depth".into(),
         ));
     }
     let open_descendants = connection.query_row(
@@ -10935,9 +9930,9 @@ fn validate_decomposition_budget(
         [parent.root_id.0.to_string()],
         |row| row.get::<_, i64>(0),
     )?;
-    if open_descendants + i64::from(proposed) > i64::from(budget.max_open_descendants) {
+    if open_descendants + proposed > i64::from(MAX_OPEN_WORK_DESCENDANTS) {
         return Err(StoreError::InvalidWork(
-            "decomposition exceeds the authorized open-descendant budget".into(),
+            "decomposition exceeds the root open-descendant budget".into(),
         ));
     }
     Ok(())
@@ -11351,8 +10346,7 @@ fn add_root_contribution(
 fn waive_root_contributor(
     execution: &mut RootExecution,
     participant: &SessionId,
-    decision: &LifecycleAuthorityDecision,
-    grant: &WorkAuthorityGrant,
+    waived_by: &str,
     reason: &str,
 ) -> bool {
     if execution
@@ -11368,8 +10362,7 @@ fn waive_root_contributor(
     }
     execution.waivers.push(CompletionWaiver {
         participant: participant.clone(),
-        authority_grant: decision.grant.clone(),
-        waived_by: grant.issued_by.actor_id.clone(),
+        waived_by: waived_by.to_owned(),
         reason: reason.trim().to_owned(),
     });
     execution
@@ -12239,27 +11232,15 @@ fn validated_required_child_waivers(
             child_id,
             child_revision,
             reason,
-            authority_grant,
         } = &event.transition
         else {
             continue;
         };
         let child = load_work_item(connection, *child_id)?;
-        let grant: WorkAuthorityGrant =
-            load_typed_work_object(connection, authority_grant, "work_authority_grant")?;
-        let revoked_at_ms: Option<i64> = connection
-            .query_row(
-                "SELECT revoked_at_ms FROM work_authority_grants WHERE grant_hash = ?1",
-                [authority_grant.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?
-            .flatten();
         let waiver = RequiredChildWaiver {
             work_id: *child_id,
             work_revision: *child_revision,
-            authority_grant: authority_grant.clone(),
-            waived_by: grant.issued_by.actor_id.clone(),
+            waived_by: event.actor.actor_id.clone(),
             reason: reason.clone(),
         };
         let event_contains_exact_waiver = event_execution
@@ -12280,27 +11261,6 @@ fn validated_required_child_waivers(
                 WorkLifecycle::Cancelled | WorkLifecycle::Superseded
             )
             && child.revision == *child_revision
-            && grant.schema_version == SCHEMA_VERSION
-            && grant.project_id == event.project_id
-            && grant.policy_ref == child.authority_policy_ref
-            && grant.subject_actor_id == event.actor.actor_id
-            && assurance_covers(event.actor.assurance, grant.assurance)
-            && grant
-                .operations
-                .contains(&WorkAuthorityOperation::CompletionWaiver)
-            && grant.issued_at <= event.created_at
-            && grant.valid_until > event.created_at
-            && revoked_at_ms.is_none_or(|revoked| revoked > event.created_at.timestamp_millis())
-            && authority_scope_matches(
-                &grant.scope,
-                AuthorityTarget {
-                    project_id: &event.project_id,
-                    policy_ref: &child.authority_policy_ref,
-                    work_id: Some(child.work_id),
-                    root_id: Some(child.root_id),
-                    run_id: child.active_run_id,
-                },
-            )
             && event_contains_exact_waiver;
         if !valid || events.insert(*child_id, waiver).is_some() {
             return Err(StoreError::InvalidWorkProjection(format!(
@@ -12735,56 +11695,6 @@ fn verify_prerequisite_rows(
     }
     drop(statement);
 
-    let mut statement = connection.prepare(
-        "SELECT object_hash, canonical_json
-         FROM objects
-         WHERE object_kind = 'work_authority_revocation'
-         ORDER BY object_hash",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-    })?;
-    for row in rows {
-        let (stored_hash, bytes) = row?;
-        *checked += 1;
-        let valid = ObjectHash::from_stored(stored_hash.clone()).is_some_and(|hash| {
-            CanonicalObject::verify(&hash, bytes)
-                .and_then(|object| object.decode::<WorkAuthorityRevocation>())
-                .is_ok_and(|revocation| {
-                    connection
-                        .query_row(
-                            "SELECT projection.revocation_hash,
-                                    projection.revoked_at_ms,
-                                    grant.revoked_at_ms
-                             FROM work_authority_revocations projection
-                             JOIN work_authority_grants grant
-                               ON grant.grant_hash = projection.grant_hash
-                             WHERE projection.grant_hash = ?1",
-                            [revocation.grant.as_str()],
-                            |row| {
-                                Ok((
-                                    row.get::<_, String>(0)?,
-                                    row.get::<_, i64>(1)?,
-                                    row.get::<_, Option<i64>>(2)?,
-                                ))
-                            },
-                        )
-                        .optional()
-                        .is_ok_and(|binding| {
-                            binding.is_some_and(|(projected_hash, row_at, grant_at)| {
-                                projected_hash == stored_hash
-                                    && row_at == revocation.revoked_at.timestamp_millis()
-                                    && grant_at == Some(row_at)
-                            })
-                        })
-                })
-        });
-        if !valid {
-            invalid.push(format!(
-                "work_authority_revocation:{stored_hash}:orphaned_or_mismatched"
-            ));
-        }
-    }
     Ok(())
 }
 
@@ -14046,15 +12956,6 @@ fn verify_canonical_work_rows(
 ) -> Result<(), StoreError> {
     let projections = [
         (
-            "work_authority_grant",
-            "SELECT projection.grant_hash, projection.grant_json,
-                    object.object_kind, object.canonical_json
-             FROM work_authority_grants projection
-             LEFT JOIN objects object ON object.object_hash = projection.grant_hash
-             ORDER BY projection.grant_hash",
-            "work_authority_grant",
-        ),
-        (
             "completion_seal",
             "SELECT projection.seal_hash, projection.seal_json,
                     object.object_kind, object.canonical_json
@@ -14062,15 +12963,6 @@ fn verify_canonical_work_rows(
              LEFT JOIN objects object ON object.object_hash = projection.seal_hash
              ORDER BY projection.seal_hash",
             "completion_seal",
-        ),
-        (
-            "work_authority_revocation",
-            "SELECT projection.revocation_hash, projection.revocation_json,
-                    object.object_kind, object.canonical_json
-             FROM work_authority_revocations projection
-             LEFT JOIN objects object ON object.object_hash = projection.revocation_hash
-             ORDER BY projection.revocation_hash",
-            "work_authority_revocation",
         ),
         (
             "work_handoff_offer",
@@ -14110,57 +13002,6 @@ fn verify_canonical_work_rows(
             if !valid {
                 invalid.push(format!("{label}:{stored_hash}"));
             }
-        }
-    }
-    Ok(())
-}
-
-fn verify_authority_revocation_bindings(
-    connection: &Connection,
-    checked: &mut usize,
-    invalid: &mut Vec<String>,
-) -> Result<(), StoreError> {
-    let mut statement = connection.prepare(
-        "SELECT grant.grant_hash, grant.revoked_at_ms,
-                revocation.revocation_hash, revocation.revoked_at_ms,
-                revocation.revocation_json
-         FROM work_authority_grants grant
-         LEFT JOIN work_authority_revocations revocation
-           ON revocation.grant_hash = grant.grant_hash
-         ORDER BY grant.grant_hash",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, Option<i64>>(1)?,
-            row.get::<_, Option<String>>(2)?,
-            row.get::<_, Option<i64>>(3)?,
-            row.get::<_, Option<Vec<u8>>>(4)?,
-        ))
-    })?;
-    for row in rows {
-        let (grant_hash, projected_at, revocation_hash, revocation_at, bytes) = row?;
-        *checked += 1;
-        let valid = match (projected_at, revocation_hash, revocation_at, bytes) {
-            (None, None, None, None) => true,
-            (Some(projected_at), Some(stored_hash), Some(row_at), Some(bytes))
-                if projected_at == row_at =>
-            {
-                ObjectHash::from_stored(stored_hash).is_some_and(|hash| {
-                    CanonicalObject::verify(&hash, bytes)
-                        .and_then(|object| object.decode::<WorkAuthorityRevocation>())
-                        .is_ok_and(|revocation| {
-                            revocation.grant.as_str() == grant_hash
-                                && revocation.revoked_at.timestamp_millis() == row_at
-                        })
-                })
-            }
-            _ => false,
-        };
-        if !valid {
-            invalid.push(format!(
-                "work_authority_grant:{grant_hash}:revocation_binding"
-            ));
         }
     }
     Ok(())
@@ -14260,12 +13101,12 @@ mod tests {
         ControlTurnCheckpointDecision, ControlTurnDecision, CreateWorkRequest,
         DecomposeWorkRequest, DisposeWorkRequest, EffectClass, EnvironmentComponents,
         EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservationInput,
-        ExecutionObservationReference, ExecutionOutcome, ExecutionSourceBasis,
-        LifecycleAuthorityDecision, NoteRequest, NoteVisibility, ProvenanceLink,
-        RecordWorkEvidenceRequest, ReopenWorkRequest, Scope, Sensitivity, TurnIntent,
-        TurnNextIntent, TurnPurpose, VerificationEvidenceInput, VerificationEvidenceMismatch,
-        VerificationKind, VerificationResult, WaiveRequiredChildRequest, WorkDependencyRef,
-        WorkItemKind, WorkPlanningAuthority, WorkPlanningBudget, WorkRevisionPatch,
+        ExecutionObservationReference, ExecutionOutcome, ExecutionSourceBasis, NoteRequest,
+        NoteVisibility, ProvenanceLink, RecordWorkEvidenceRequest, ReopenWorkRequest, Scope,
+        Sensitivity, TurnIntent, TurnNextIntent, TurnPurpose, VerificationEvidenceInput,
+        VerificationEvidenceMismatch, VerificationKind, VerificationResult,
+        WaiveRequiredChildRequest, WorkDependencyRef, WorkItemKind, WorkPlanningAuthority,
+        WorkRevisionPatch,
     };
     use crate::memory::DevelopmentNoopRedactor;
     use crate::storage::test_database_shape_snapshot;
@@ -14289,10 +13130,48 @@ mod tests {
     }
 
     #[test]
+    fn current_work_schema_has_no_agent_grant_tables() {
+        let store = SqliteStore::open_in_memory().expect("current work schema");
+        for name in ["work_authority_grants", "work_authority_revocations"] {
+            let count: i64 = store
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    params![name],
+                    |row| row.get(0),
+                )
+                .expect("inspect current schema");
+            assert_eq!(count, 0, "agent grant table {name} must stay absent");
+        }
+    }
+
+    #[test]
+    fn prerelease_agent_grant_schema_is_refused_as_a_different_build() {
+        let directory = tempfile::tempdir().expect("temporary schema fixture");
+        let database = directory.path().join("engram.sqlite3");
+        drop(SqliteStore::open(&database).expect("create current store"));
+        let connection = Connection::open(&database).expect("open schema fixture");
+        connection
+            .execute(
+                "CREATE TABLE work_authority_grants (obsolete TEXT NOT NULL)",
+                [],
+            )
+            .expect("inject prerelease grant table");
+        drop(connection);
+
+        let Err(error) = SqliteStore::open(&database) else {
+            panic!("obsolete grant schema must refuse");
+        };
+        assert!(
+            error.to_string().contains("different Engram build"),
+            "unexpected refusal: {error}"
+        );
+    }
+
+    #[test]
     fn revision_kind_and_label_deltas_preserve_unmentioned_labels() {
         let project = "revision-metadata";
         let mut store = SqliteStore::open_in_memory().expect("metadata fixture");
-        install_grant(&mut store, project, "planner");
         let mut request = root_request(project, "metadata-root", 1);
         request.labels = (0..12).map(|index| format!("label-{index:02}")).collect();
         request.labels.push("Straße".into());
@@ -14343,7 +13222,6 @@ mod tests {
     fn latest_gate_observation_uses_indexed_canonical_run_history() {
         let project = "canonical-gate-history";
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, project, "planner");
         let work = store
             .create_work(
                 &root_request(project, "canonical-gate-root", 0),
@@ -14463,7 +13341,6 @@ mod tests {
         let project = "gate-actor-attribution";
         let holder = "shared-session";
         let mut store = SqliteStore::open_in_memory().expect("gate actor fixture");
-        install_grant(&mut store, project, "planner");
         let work = store
             .create_work(
                 &root_request(project, "gate-actor-root", 0),
@@ -14583,7 +13460,6 @@ mod tests {
         let project = "completed-gate-attempt-mismatch";
         let holder = "gate-holder";
         let mut store = SqliteStore::open_in_memory().expect("gate attempt fixture");
-        install_grant(&mut store, project, "planner");
         let work = store
             .create_work(
                 &root_request(project, "gate-attempt-root", 0),
@@ -14684,7 +13560,6 @@ mod tests {
     #[test]
     fn resolver_sql_bounds_collisions_and_recovers_an_omitted_target_by_full_id() {
         let mut store = SqliteStore::open_in_memory().expect("collision fixture");
-        install_grant(&mut store, "ambiguous-project", "planner");
         let mut items = (0..9)
             .map(|index| {
                 store
@@ -14804,7 +13679,6 @@ mod tests {
     #[test]
     fn completion_recovery_rejects_a_shell_unsafe_participant_id() {
         let mut store = SqliteStore::open_in_memory().expect("recovery fixture");
-        install_grant(&mut store, "unsafe-recovery-project", "planner");
         let work = store
             .create_work(
                 &root_request("unsafe-recovery-project", "unsafe-recovery", 0),
@@ -14957,85 +13831,8 @@ mod tests {
         }
     }
 
-    fn test_grant(
-        project: &str,
-        actor_id: &str,
-        budget: WorkPlanningBudget,
-        valid_until: DateTime<Utc>,
-    ) -> WorkAuthorityGrant {
-        WorkAuthorityGrant {
-            schema_version: SCHEMA_VERSION,
-            project_id: crate::domain::ProjectId(project.into()),
-            policy_ref: "project-default".into(),
-            subject_actor_id: actor_id.into(),
-            issued_by: actor("host-operator"),
-            assurance: AssuranceLevel::Asserted,
-            operations: vec![
-                WorkAuthorityOperation::RootCreate,
-                WorkAuthorityOperation::Plan,
-                WorkAuthorityOperation::Claim,
-                WorkAuthorityOperation::Dispose,
-                WorkAuthorityOperation::RootComplete,
-                WorkAuthorityOperation::Reopen,
-                WorkAuthorityOperation::ClaimRecovery,
-                WorkAuthorityOperation::CompletionWaiver,
-                WorkAuthorityOperation::CompletionDrain,
-                WorkAuthorityOperation::ObligationWaiver,
-            ],
-            scope: WorkAuthorityScope::Project,
-            planning_budget: Some(budget),
-            issued_at: at(-1_000),
-            valid_until,
-            reason: "test host-authorized local work".into(),
-        }
-    }
-
-    fn default_budget() -> WorkPlanningBudget {
-        WorkPlanningBudget {
-            max_depth: 8,
-            max_open_descendants: 64,
-            max_children_per_decomposition: 16,
-        }
-    }
-
-    fn install_grant(store: &mut SqliteStore, project: &str, actor_id: &str) -> ObjectHash {
-        store
-            .install_work_authority_grant(
-                test_grant(project, actor_id, default_budget(), at(1_000)),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("install test work authority grant")
-    }
-
-    fn authority(project: &str, actor_id: &str) -> LifecycleAuthorityDecision {
-        let object =
-            CanonicalObject::freeze(&test_grant(project, actor_id, default_budget(), at(1_000)))
-                .expect("canonical test work authority grant");
-        LifecycleAuthorityDecision {
-            grant: object.hash().clone(),
-        }
-    }
-
-    fn delegated(project: &str, actor_id: &str) -> WorkPlanningAuthority {
-        WorkPlanningAuthority::Delegated {
-            grant: authority(project, actor_id).grant,
-        }
-    }
-
-    fn install_delegated_with_budget(
-        store: &mut SqliteStore,
-        project: &str,
-        actor_id: &str,
-        budget: WorkPlanningBudget,
-        valid_until: DateTime<Utc>,
-    ) -> WorkPlanningAuthority {
-        let grant = store
-            .install_work_authority_grant(
-                test_grant(project, actor_id, budget, valid_until),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("install bounded planning grant");
-        WorkPlanningAuthority::Delegated { grant }
+    fn delegated(_project: &str, _actor_id: &str) -> WorkPlanningAuthority {
+        WorkPlanningAuthority::Project
     }
 
     struct RejectingRedactor;
@@ -15047,22 +13844,6 @@ mod tests {
 
         fn description(&self) -> &'static str {
             "test rejecting redactor"
-        }
-    }
-
-    struct RevocationReasonRejectingRedactor;
-
-    impl Redactor for RevocationReasonRejectingRedactor {
-        fn inspect(&self, prose: &str) -> Result<(), String> {
-            if prose.contains("secret revocation material") {
-                Err("test policy refused revocation reason".into())
-            } else {
-                Ok(())
-            }
-        }
-
-        fn description(&self) -> &'static str {
-            "test revocation-reason rejecting redactor"
         }
     }
 
@@ -15081,11 +13862,27 @@ mod tests {
             deferred_until: None,
             origin: WorkOrigin::Local,
             source_snapshot_id: None,
-            authority_policy_ref: "project-default".into(),
-            authority: authority(project, "planner"),
             actor: actor("planner"),
             idempotency_key: key.into(),
             created_at: at(second),
+        }
+    }
+
+    #[test]
+    fn canonical_work_events_reject_blank_asserted_identity() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        for (actor_id, session_id, key) in [
+            ("   ", "session", "blank-actor"),
+            ("agent", "\t", "blank-session"),
+        ] {
+            let mut request = root_request("blank-work-identity", key, 0);
+            request.actor.actor_id = actor_id.into();
+            request.actor.session_id = Some(SessionId(session_id.into()));
+            assert!(matches!(
+                store.create_work(&request, &DevelopmentNoopRedactor),
+                Err(StoreError::InvalidWork(detail))
+                    if detail.contains("non-empty asserted actor and session")
+            ));
         }
     }
 
@@ -15112,7 +13909,6 @@ mod tests {
         second: i64,
         ttl_seconds: i64,
     ) -> WorkClaim {
-        install_grant(store, &work.project_id.0, holder);
         store
             .claim_work(
                 &ClaimWorkRequest {
@@ -15121,8 +13917,6 @@ mod tests {
                     expected_run_id: work.active_run_id.expect("active run"),
                     holder: SessionId(holder.into()),
                     ttl_seconds,
-                    authority: authority(&work.project_id.0, holder),
-                    recovery_authority: Some(authority(&work.project_id.0, holder)),
                     recovery_reason: Some("recover abandoned test claim".into()),
                     actor: actor(holder),
                     idempotency_key: key.into(),
@@ -15220,10 +14014,7 @@ mod tests {
             drain: crate::domain::CompletionDrainAttestation {
                 reconciled_action_outcomes: Vec::new(),
                 released_resource_leases: Vec::new(),
-                decision: authority(&work.project_id.0, holder),
             },
-            root_authority: (work.work_id == work.root_id)
-                .then(|| authority(&work.project_id.0, holder)),
             actor: actor(holder),
             idempotency_key: key.into(),
             completed_at: at(second),
@@ -15239,7 +14030,6 @@ mod tests {
         key: &str,
         second: i64,
     ) -> Result<CompletionSeal, StoreError> {
-        install_grant(store, &work.project_id.0, holder);
         store.complete_work(
             &completion_request(work, claim, holder, evidence, key, second),
             &DevelopmentNoopRedactor,
@@ -15250,7 +14040,6 @@ mod tests {
     fn catalog_uses_unicode_keys_and_ready_ranking_is_deterministic() {
         let mut store = SqliteStore::open_in_memory().expect("store");
         let project = "project-catalog-index";
-        install_grant(&mut store, project, "planner");
 
         let mut oldest_request = root_request(project, "catalog-oldest", 0);
         oldest_request.title = "Maße der Größe".into();
@@ -15314,7 +14103,6 @@ mod tests {
                     disposition: WorkDisposition::Cancelled,
                     replacement_id: None,
                     reason: "terminal dependant must not affect ready rank".into(),
-                    authority: authority(project, "planner"),
                     actor: actor("planner"),
                     idempotency_key: "catalog-terminal-dispose".into(),
                     disposed_at: at(5),
@@ -15448,7 +14236,6 @@ mod tests {
     #[test]
     fn doctor_exercises_work_catalog_fts_index() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-catalog-fts-integrity", "planner");
         let item = store
             .create_work(
                 &root_request("project-catalog-fts-integrity", "fts-root", 0),
@@ -15511,7 +14298,6 @@ mod tests {
     #[test]
     fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-delivery", "planner");
         let first = store
             .create_work(
                 &root_request("project-delivery", "delivery-root-a", 0),
@@ -15650,7 +14436,6 @@ mod tests {
     #[test]
     fn staged_work_delivery_cas_binds_the_current_task() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-delivery-task-cas", "planner");
         let work = store
             .create_work(
                 &root_request("project-delivery-task-cas", "delivery-root", 0),
@@ -15717,7 +14502,6 @@ mod tests {
     #[test]
     fn focus_derived_work_contradiction_publishes_one_feed_delta_and_doctor_backstops() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-contra", "planner");
         let root = store
             .create_work(
                 &root_request("project-contra", "contra-root", 0),
@@ -15845,7 +14629,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let mut writer = SqliteStore::open(&database).expect("writer");
-        install_grant(&mut writer, "project-focus-delivery", "planner");
         let first = writer
             .create_work(
                 &root_request("project-focus-delivery", "focus-first", 0),
@@ -15950,9 +14733,8 @@ mod tests {
     }
 
     #[test]
-    fn disposing_claimed_child_requires_and_records_participant_waiver() {
+    fn disposing_claimed_child_records_an_attributed_participant_waiver() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-dispose-claim", "planner");
         let root = store
             .create_work(
                 &root_request("project-dispose-claim", "dispose-claim-root", 0),
@@ -15983,23 +14765,6 @@ mod tests {
             .expect("decompose");
         let child = decomposition.children[0].clone();
 
-        let mut limited_grant = test_grant(
-            "project-dispose-claim",
-            "child-agent",
-            default_budget(),
-            at(1_000),
-        );
-        limited_grant.operations = vec![
-            WorkAuthorityOperation::Claim,
-            WorkAuthorityOperation::Dispose,
-        ];
-        limited_grant.planning_budget = None;
-        let limited_hash = store
-            .install_work_authority_grant(limited_grant, &DevelopmentNoopRedactor)
-            .expect("limited child grant");
-        let limited_authority = LifecycleAuthorityDecision {
-            grant: limited_hash,
-        };
         let child_claim = store
             .claim_work(
                 &ClaimWorkRequest {
@@ -16008,8 +14773,6 @@ mod tests {
                     expected_run_id: child.active_run_id.expect("child run"),
                     holder: SessionId("child-agent".into()),
                     ttl_seconds: 100,
-                    authority: limited_authority.clone(),
-                    recovery_authority: None,
                     recovery_reason: None,
                     actor: actor("child-agent"),
                     idempotency_key: "dispose-claim-child-claim".into(),
@@ -16018,40 +14781,6 @@ mod tests {
                 &DevelopmentNoopRedactor,
             )
             .expect("claim child");
-        let refused = store.dispose_work(
-            &DisposeWorkRequest {
-                work_id: child.work_id,
-                expected_work_revision: child.revision,
-                disposition: WorkDisposition::Cancelled,
-                replacement_id: None,
-                reason: "optional path was abandoned".into(),
-                authority: limited_authority,
-                actor: actor("child-agent"),
-                idempotency_key: "dispose-claim-without-waiver".into(),
-                disposed_at: at(3),
-            },
-            &DevelopmentNoopRedactor,
-        );
-        assert!(matches!(refused, Err(StoreError::InvalidWork(_))));
-        assert_eq!(
-            load_work_item(&store.connection, child.work_id).expect("child after refusal"),
-            child
-        );
-        assert_eq!(
-            load_work_claim_optional(&store.connection, child_claim.run_id)
-                .expect("claim after refusal"),
-            Some(child_claim.clone())
-        );
-        let child_run =
-            load_work_run(&store.connection, child_claim.run_id).expect("child run after refusal");
-        assert!(
-            load_root_execution(&store.connection, child_run.root_execution_id)
-                .expect("root execution after refusal")
-                .waivers
-                .is_empty()
-        );
-
-        install_grant(&mut store, "project-dispose-claim", "child-agent");
         store
             .dispose_work(
                 &DisposeWorkRequest {
@@ -16060,10 +14789,9 @@ mod tests {
                     disposition: WorkDisposition::Cancelled,
                     replacement_id: None,
                     reason: "optional path was abandoned".into(),
-                    authority: authority("project-dispose-claim", "child-agent"),
                     actor: actor("child-agent"),
                     idempotency_key: "dispose-claim-with-waiver".into(),
-                    disposed_at: at(4),
+                    disposed_at: at(3),
                 },
                 &DevelopmentNoopRedactor,
             )
@@ -16077,7 +14805,6 @@ mod tests {
                     disposition: WorkDisposition::Cancelled,
                     replacement_id: None,
                     reason: "unused optional path".into(),
-                    authority: authority("project-dispose-claim", "planner"),
                     actor: actor("planner"),
                     idempotency_key: "dispose-unused-child".into(),
                     disposed_at: at(4),
@@ -16128,9 +14855,8 @@ mod tests {
     }
 
     #[test]
-    fn cancelled_required_child_blocks_completion_until_an_authorized_waiver() {
+    fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-waiver", "planner");
         let root = store
             .create_work(
                 &root_request("project-waiver", "waiver-root", 0),
@@ -16173,7 +14899,6 @@ mod tests {
                     disposition: WorkDisposition::Cancelled,
                     replacement_id: None,
                     reason: "child is no longer required for the accepted outcome".into(),
-                    authority: authority("project-waiver", "planner"),
                     actor: actor("planner"),
                     idempotency_key: "cancel-required-child".into(),
                     disposed_at: at(2),
@@ -16229,7 +14954,6 @@ mod tests {
             child_id: child.work_id,
             expected_parent_revision: root.revision,
             reason: "the omission is explicit, attributed, and accepted".into(),
-            authority: authority("project-waiver", "planner"),
             actor: actor("planner"),
             idempotency_key: "waive-required-child".into(),
             waived_at: at(7),
@@ -16317,7 +15041,6 @@ mod tests {
     #[test]
     fn superseding_required_work_with_a_completed_optional_child_still_requires_a_waiver() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-supersede", "planner");
         let root = store
             .create_work(
                 &root_request("project-supersede", "supersede-root", 0),
@@ -16396,7 +15119,6 @@ mod tests {
                     disposition: WorkDisposition::Superseded,
                     replacement_id: Some(optional.work_id),
                     reason: "attempt to substitute unrelated completed optional work".into(),
-                    authority: authority("project-supersede", "planner"),
                     actor: actor("planner"),
                     idempotency_key: "supersede-required".into(),
                     disposed_at: at(6),
@@ -16452,7 +15174,6 @@ mod tests {
                     child_id: required.work_id,
                     expected_parent_revision: root.revision,
                     reason: "explicitly accept the superseded required outcome".into(),
-                    authority: authority("project-supersede", "planner"),
                     actor: actor("planner"),
                     idempotency_key: "waive-superseded-required".into(),
                     waived_at: at(11),
@@ -16485,8 +15206,6 @@ mod tests {
     #[test]
     fn supersession_ref_and_replacement_matrix_is_enforced_in_storage() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-supersession-matrix", "planner");
-        install_grant(&mut store, "other-supersession-project", "planner");
         let source = store
             .create_work(
                 &root_request("project-supersession-matrix", "matrix-source", 0),
@@ -16517,7 +15236,6 @@ mod tests {
                 disposition: WorkDisposition::Superseded,
                 replacement_id: Some(replacement_id),
                 reason: "matrix validation".into(),
-                authority: authority("project-supersession-matrix", "planner"),
                 actor: actor("planner"),
                 idempotency_key: key.into(),
                 disposed_at: at(second),
@@ -16553,7 +15271,6 @@ mod tests {
                     disposition: WorkDisposition::Cancelled,
                     replacement_id: None,
                     reason: "cancel replacement".into(),
-                    authority: authority("project-supersession-matrix", "planner"),
                     actor: actor("planner"),
                     idempotency_key: "matrix-cancel-replacement".into(),
                     disposed_at: at(6),
@@ -16743,7 +15460,6 @@ mod tests {
     #[test]
     fn local_decomposition_is_atomic_cycle_safe_and_uses_dense_named_feeds() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-a", "planner");
         let root = store
             .create_work(
                 &root_request("project-a", "root", 0),
@@ -16962,7 +15678,6 @@ mod tests {
                     disposition: WorkDisposition::Cancelled,
                     replacement_id: None,
                     reason: "terminal prerequisites are refused".into(),
-                    authority: authority("project-a", "planner"),
                     actor: actor("planner"),
                     idempotency_key: "cancel-terminal-prerequisite".into(),
                     disposed_at: at(5),
@@ -17063,7 +15778,6 @@ mod tests {
     #[test]
     fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-memory", "planner");
         let root = store
             .create_work(
                 &root_request("project-memory", "root-memory", 0),
@@ -17271,7 +15985,6 @@ mod tests {
                         holder: work_claim.holder.clone(),
                         claim_id: work_claim.claim_id,
                         claim_fence: work_claim.fence,
-                        grant: authority("project-memory", "planner").grant,
                     },
                     actor: actor("planner"),
                     idempotency_key: "memory-child-decompose".into(),
@@ -17540,7 +16253,6 @@ mod tests {
     #[test]
     fn context_explanation_requires_the_current_work_focus() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-context-focus", "planner");
         let first = store
             .create_work(
                 &root_request("project-context-focus", "context-focus-first", 0),
@@ -17588,15 +16300,8 @@ mod tests {
     }
 
     #[test]
-    fn redaction_child_creation_and_unattributed_authority_fail_closed() {
+    fn redaction_direct_child_creation_and_unverified_drain_fail_closed() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-policy", "planner");
-        install_grant(&mut store, "project-policy", "different-actor");
-        let uninstalled = store.create_work(
-            &root_request("project-uninstalled", "uninstalled-grant", 0),
-            &DevelopmentNoopRedactor,
-        );
-        assert!(matches!(uninstalled, Err(StoreError::InvalidWork(_))));
         let rejected = store.create_work(
             &root_request("project-policy", "redacted-root", 0),
             &RejectingRedactor,
@@ -17608,21 +16313,6 @@ mod tests {
                 &DevelopmentNoopRedactor,
             )
             .expect("root");
-        let bad_authority = store.decompose_work(
-            &DecomposeWorkRequest {
-                parent_id: root.work_id,
-                expected_parent_revision: root.revision,
-                children: vec![child("child", ChildRequirement::Required, "Child")],
-                prerequisites: Vec::new(),
-                authority: delegated(&root.project_id.0, "different-actor"),
-                actor: actor("planner"),
-                idempotency_key: "bad-authority".into(),
-                created_at: at(1),
-            },
-            &DevelopmentNoopRedactor,
-        );
-        assert!(matches!(bad_authority, Err(StoreError::InvalidWork(_))));
-
         let mut direct_child = root_request("project-policy", "direct-child", 2);
         direct_child.parent_id = Some(root.work_id);
         let direct = store.create_work(&direct_child, &DevelopmentNoopRedactor);
@@ -17657,20 +16347,6 @@ mod tests {
             Err(StoreError::WorkCompletionRefused { .. })
         ));
 
-        let mut request = completion_request(
-            &root,
-            &claim,
-            "root-agent",
-            &evidence,
-            "no-root-authority",
-            7,
-        );
-        request.root_authority = None;
-        let without_root_authority = store.complete_work(&request, &DevelopmentNoopRedactor);
-        assert!(matches!(
-            without_root_authority,
-            Err(StoreError::WorkCompletionRefused { .. })
-        ));
         assert_eq!(
             store
                 .get_work_item(root.work_id)
@@ -17683,7 +16359,6 @@ mod tests {
     #[test]
     fn delegated_planning_cannot_revise_a_foreign_live_claim() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-claimed-planning", "planner");
         let root = store
             .create_work(
                 &root_request("project-claimed-planning", "root", 0),
@@ -17729,7 +16404,6 @@ mod tests {
                         holder: live_claim.holder.clone(),
                         claim_id: live_claim.claim_id,
                         claim_fence: live_claim.fence,
-                        grant: authority(&root.project_id.0, "holder").grant,
                     },
                     actor: actor("holder"),
                     idempotency_key: "holder-claim-plan".into(),
@@ -17753,7 +16427,6 @@ mod tests {
     #[test]
     fn submillisecond_work_and_claim_times_bind_to_millisecond_projections() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-fractional-time", "planner");
         let created_at = at(0) + Duration::nanoseconds(999_999_999);
         let mut request = root_request("project-fractional-time", "root", 0);
         request.created_at = created_at;
@@ -17762,7 +16435,6 @@ mod tests {
             .expect("create work with submillisecond timestamp");
         assert_eq!(store.get_work_item(root.work_id).unwrap(), root);
 
-        install_grant(&mut store, &root.project_id.0, "holder");
         let claimed_at = at(1) + Duration::nanoseconds(999_999_999);
         let claim = store
             .claim_work(
@@ -17772,8 +16444,6 @@ mod tests {
                     expected_run_id: root.active_run_id.expect("active run"),
                     holder: SessionId("holder".into()),
                     ttl_seconds: 30,
-                    authority: authority(&root.project_id.0, "holder"),
-                    recovery_authority: None,
                     recovery_reason: None,
                     actor: actor("holder"),
                     idempotency_key: "fractional-claim".into(),
@@ -17794,212 +16464,8 @@ mod tests {
     }
 
     #[test]
-    fn work_authority_status_reports_installed_revoked_and_unknown_hashes() {
-        let mut store = SqliteStore::open_in_memory().expect("store");
-        let grant_hash = install_grant(&mut store, "project-authority-status", "holder");
-
-        let installed = store
-            .work_authority_grant_status(&grant_hash)
-            .expect("installed authority status");
-        assert!(installed.installed);
-        assert_eq!(installed.subject_actor_id.as_deref(), Some("holder"));
-        assert_eq!(installed.issued_by.as_deref(), Some("host-operator"));
-        assert_eq!(installed.valid_from, Some(at(-1_000)));
-        assert_eq!(installed.valid_until, Some(at(1_000)));
-        assert_eq!(installed.revoked_at, None);
-        assert!(
-            installed
-                .operations
-                .as_ref()
-                .is_some_and(|operations| operations.contains(&WorkAuthorityOperation::Claim))
-        );
-        assert_eq!(installed.scope, Some(WorkAuthorityScope::Project));
-
-        store
-            .revoke_work_authority_grant(
-                &grant_hash,
-                &actor("host-operator"),
-                "operator revoked the installed grant",
-                at(1),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("revoke installed authority");
-        let revoked = store
-            .work_authority_grant_status(&grant_hash)
-            .expect("revoked authority status");
-        assert!(revoked.installed);
-        assert_eq!(revoked.revoked_at, Some(at(1)));
-
-        let unknown_hash = CanonicalObject::freeze(&test_grant(
-            "project-authority-status",
-            "unknown-holder",
-            default_budget(),
-            at(1_000),
-        ))
-        .expect("canonical unknown grant")
-        .hash()
-        .clone();
-        let unknown = store
-            .work_authority_grant_status(&unknown_hash)
-            .expect("unknown authority status is a successful query");
-        assert_eq!(
-            unknown,
-            WorkAuthorityGrantStatus {
-                installed: false,
-                subject_actor_id: None,
-                issued_by: None,
-                valid_from: None,
-                valid_until: None,
-                revoked_at: None,
-                operations: None,
-                scope: None,
-            }
-        );
-    }
-
-    #[test]
-    fn host_revocation_is_immutable_idempotent_and_blocks_later_authority_use() {
-        let mut store = SqliteStore::open_in_memory().expect("store");
-        let grant = install_grant(&mut store, "project-revocation", "planner");
-        let root = store
-            .create_work(
-                &root_request("project-revocation", "root", 0),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("root before revocation");
-        let future_rejection = store.revoke_work_authority_grant(
-            &grant,
-            &actor("host-operator"),
-            "future timestamps cannot delay an irreversible revocation",
-            Utc::now() + Duration::hours(1),
-            &DevelopmentNoopRedactor,
-        );
-        assert!(matches!(future_rejection, Err(StoreError::InvalidWork(_))));
-        let rejected = store.revoke_work_authority_grant(
-            &grant,
-            &actor("host-operator"),
-            "secret revocation material",
-            at(1),
-            &RevocationReasonRejectingRedactor,
-        );
-        assert!(matches!(rejected, Err(StoreError::RedactionRefused(_))));
-        let first = store
-            .revoke_work_authority_grant(
-                &grant,
-                &actor("host-operator"),
-                "user withdrew standing planning authority",
-                at(1),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("revoke authority");
-        let replay = store
-            .revoke_work_authority_grant(
-                &grant,
-                &actor("host-operator"),
-                "a replay cannot rewrite the immutable reason",
-                at(2),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("idempotent revocation");
-        assert_eq!(replay, first);
-        let refused = store.decompose_work(
-            &DecomposeWorkRequest {
-                parent_id: root.work_id,
-                expected_parent_revision: root.revision,
-                children: vec![
-                    child("a", ChildRequirement::Required, "A"),
-                    child("b", ChildRequirement::Required, "B"),
-                ],
-                prerequisites: Vec::new(),
-                authority: delegated(&root.project_id.0, "planner"),
-                actor: actor("planner"),
-                idempotency_key: "after-revocation".into(),
-                created_at: at(3),
-            },
-            &DevelopmentNoopRedactor,
-        );
-        assert!(matches!(refused, Err(StoreError::InvalidWork(_))));
-        let refused_backdated = store.decompose_work(
-            &DecomposeWorkRequest {
-                parent_id: root.work_id,
-                expected_parent_revision: root.revision,
-                children: vec![
-                    child("backdated-a", ChildRequirement::Required, "Backdated A"),
-                    child("backdated-b", ChildRequirement::Required, "Backdated B"),
-                ],
-                prerequisites: Vec::new(),
-                authority: delegated(&root.project_id.0, "planner"),
-                actor: actor("planner"),
-                idempotency_key: "backdated-after-revocation".into(),
-                created_at: at(0),
-            },
-            &DevelopmentNoopRedactor,
-        );
-        assert!(matches!(refused_backdated, Err(StoreError::InvalidWork(_))));
-        assert!(
-            store
-                .verify_all()
-                .expect("revocation integrity")
-                .is_healthy()
-        );
-        let events_before_corruption = store
-            .work_event_tail(root.work_id, 100)
-            .expect("event tail before corruption")
-            .len();
-        store
-            .connection
-            .execute(
-                "DELETE FROM work_authority_revocations WHERE grant_hash = ?1",
-                [grant.as_str()],
-            )
-            .expect("delete revocation projection");
-        store
-            .connection
-            .execute(
-                "UPDATE work_authority_grants SET revoked_at_ms = NULL WHERE grant_hash = ?1",
-                [grant.as_str()],
-            )
-            .expect("corrupt revocation projection");
-        let report = store.verify_all().expect("revocation corruption report");
-        assert!(
-            report
-                .invalid_work_records
-                .iter()
-                .any(|record| record.contains("work_authority_revocation"))
-        );
-        let refused_corrupt_projection = store.decompose_work(
-            &DecomposeWorkRequest {
-                parent_id: root.work_id,
-                expected_parent_revision: root.revision,
-                children: vec![
-                    child("corrupt-a", ChildRequirement::Required, "Corrupt A"),
-                    child("corrupt-b", ChildRequirement::Required, "Corrupt B"),
-                ],
-                prerequisites: Vec::new(),
-                authority: delegated(&root.project_id.0, "planner"),
-                actor: actor("planner"),
-                idempotency_key: "corrupt-revocation-mutation".into(),
-                created_at: at(4),
-            },
-            &DevelopmentNoopRedactor,
-        );
-        assert!(matches!(
-            refused_corrupt_projection,
-            Err(StoreError::InvalidWorkProjection(_))
-        ));
-        assert_eq!(
-            store
-                .work_event_tail(root.work_id, 100)
-                .expect("event tail after refused mutation")
-                .len(),
-            events_before_corruption
-        );
-    }
-
-    #[test]
     fn scoped_mutation_ignores_unrelated_corruption_but_refuses_its_target() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-scoped-integrity", "planner");
         let healthy = store
             .create_work(
                 &root_request("project-scoped-integrity", "healthy", 0),
@@ -18086,7 +16552,6 @@ mod tests {
     #[test]
     fn doctor_binds_work_projections_to_canonical_events_and_scalar_columns() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-integrity", "planner");
         let root = store
             .create_work(
                 &root_request("project-integrity", "root", 0),
@@ -18149,7 +16614,6 @@ mod tests {
     #[test]
     fn stale_self_consistent_projection_cannot_authorize_a_new_event() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-stale-projection", "planner");
         let original = store
             .create_work(
                 &root_request("project-stale-projection", "root", 0),
@@ -18230,7 +16694,6 @@ mod tests {
     #[test]
     fn indexed_feed_work_identity_is_fail_closed_and_doctor_visible() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-feed-work-id", "planner");
         let root = store
             .create_work(
                 &root_request("project-feed-work-id", "root", 0),
@@ -18285,7 +16748,6 @@ mod tests {
     #[test]
     fn relation_fingerprint_refuses_projection_drift_before_append() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-relation-fingerprint", "planner");
         let root = store
             .create_work(
                 &root_request("project-relation-fingerprint", "root", 0),
@@ -18356,7 +16818,6 @@ mod tests {
     #[test]
     fn work_event_trigger_rejects_null_work_binding() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-trigger", "planner");
         let root = store
             .create_work(
                 &root_request("project-trigger", "root", 0),
@@ -18399,7 +16860,6 @@ mod tests {
             let directory = tempfile::tempdir().expect("temp directory");
             let database = directory.path().join(format!("missing-{table}.sqlite3"));
             let mut store = SqliteStore::open(&database).expect("initialize current schema");
-            install_grant(&mut store, "missing-current-table", "planner");
             let root = store
                 .create_work(
                     &root_request("missing-current-table", "root", 0),
@@ -18414,8 +16874,6 @@ mod tests {
                         expected_run_id: root.active_run_id.expect("active run"),
                         holder: SessionId("planner".into()),
                         ttl_seconds: 60,
-                        authority: authority("missing-current-table", "planner"),
-                        recovery_authority: None,
                         recovery_reason: None,
                         actor: actor("planner"),
                         idempotency_key: format!("claim-before-dropping-{table}"),
@@ -18482,7 +16940,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("temp directory");
         let database = directory.path().join("missing-indexes.sqlite3");
         let mut store = SqliteStore::open(&database).expect("initialize current schema");
-        install_grant(&mut store, "missing-current-index", "planner");
         let root = store
             .create_work(
                 &root_request("missing-current-index", "root", 0),
@@ -18583,7 +17040,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("temp directory");
         let database = directory.path().join("corrupt-work-repair.sqlite3");
         let mut store = SqliteStore::open(&database).expect("initialize current schema");
-        install_grant(&mut store, "corrupt-work-repair", "planner");
         let root = store
             .create_work(
                 &root_request("corrupt-work-repair", "root", 0),
@@ -18695,7 +17151,6 @@ mod tests {
     #[test]
     fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-import", "planner");
         let snapshot = |reference: &str, fingerprint: &str, captured_at| WorkSourceSnapshot {
             schema_version: SCHEMA_VERSION,
             adapter_kind: "beads".into(),
@@ -18809,7 +17264,6 @@ mod tests {
     #[test]
     fn doctor_reconstructs_safety_rows_and_typed_feed_membership() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-safety-integrity", "planner");
         let root = store
             .create_work(
                 &root_request("project-safety-integrity", "root", 0),
@@ -19036,9 +17490,8 @@ mod tests {
     }
 
     #[test]
-    fn decomposition_enforces_expiry_depth_fanout_and_cumulative_open_budget() {
+    fn decomposition_enforces_default_fanout_and_open_descendant_budget() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-budget", "planner");
         let root = store
             .create_work(
                 &root_request("project-budget", "root", 0),
@@ -19051,7 +17504,7 @@ mod tests {
                 expected_parent_revision: root.revision,
                 children: Vec::new(),
                 prerequisites: Vec::new(),
-                authority: delegated(&root.project_id.0, "planner"),
+                authority: WorkPlanningAuthority::Project,
                 actor: actor("planner"),
                 idempotency_key: "no-children".into(),
                 created_at: at(1),
@@ -19060,157 +17513,131 @@ mod tests {
         );
         assert!(matches!(no_children, Err(StoreError::InvalidWork(_))));
 
-        let expired_authority = install_delegated_with_budget(
-            &mut store,
-            "project-budget",
-            "planner",
-            default_budget(),
-            at(1),
-        );
-        let expired = store.decompose_work(
+        let too_many = store.decompose_work(
             &DecomposeWorkRequest {
                 parent_id: root.work_id,
                 expected_parent_revision: root.revision,
-                children: vec![
-                    child("a", ChildRequirement::Required, "A"),
-                    child("b", ChildRequirement::Required, "B"),
-                ],
+                children: (0..17)
+                    .map(|index| {
+                        child(
+                            &format!("fanout-{index}"),
+                            ChildRequirement::Required,
+                            &format!("Fanout {index}"),
+                        )
+                    })
+                    .collect(),
                 prerequisites: Vec::new(),
-                authority: expired_authority,
+                authority: WorkPlanningAuthority::Project,
                 actor: actor("planner"),
-                idempotency_key: "expired-authority".into(),
-                created_at: at(1),
+                idempotency_key: "over-fanout".into(),
+                created_at: at(2),
             },
             &DevelopmentNoopRedactor,
         );
-        assert!(matches!(expired, Err(StoreError::InvalidWork(_))));
+        assert!(matches!(too_many, Err(StoreError::InvalidWork(_))));
 
-        let tight_authority = install_delegated_with_budget(
-            &mut store,
-            "project-budget",
-            "planner",
-            WorkPlanningBudget {
-                max_depth: 1,
-                max_open_descendants: 2,
-                max_children_per_decomposition: 2,
-            },
-            at(1_000),
-        );
-        let first = store
-            .decompose_work(
-                &DecomposeWorkRequest {
-                    parent_id: root.work_id,
-                    expected_parent_revision: root.revision,
-                    children: vec![
-                        child("a", ChildRequirement::Required, "A"),
-                        child("b", ChildRequirement::Required, "B"),
-                    ],
-                    prerequisites: Vec::new(),
-                    authority: tight_authority.clone(),
-                    actor: actor("planner"),
-                    idempotency_key: "within-budget".into(),
-                    created_at: at(2),
-                },
-                &DevelopmentNoopRedactor,
-            )
-            .expect("first decomposition");
-        let cumulative = store.decompose_work(
+        let mut parent = root;
+        for batch in 0..8 {
+            parent = store
+                .decompose_work(
+                    &DecomposeWorkRequest {
+                        parent_id: parent.work_id,
+                        expected_parent_revision: parent.revision,
+                        children: (0..16)
+                            .map(|index| {
+                                child(
+                                    &format!("batch-{batch}-{index}"),
+                                    ChildRequirement::Required,
+                                    &format!("Batch {batch} child {index}"),
+                                )
+                            })
+                            .collect(),
+                        prerequisites: Vec::new(),
+                        authority: WorkPlanningAuthority::Project,
+                        actor: actor("planner"),
+                        idempotency_key: format!("budget-batch-{batch}"),
+                        created_at: at(3 + batch),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("fill the default root-wide open-descendant budget")
+                .parent;
+        }
+        let over_budget = store.decompose_work(
             &DecomposeWorkRequest {
-                parent_id: root.work_id,
-                expected_parent_revision: first.parent.revision,
-                children: vec![
-                    child("c", ChildRequirement::Required, "C"),
-                    child("d", ChildRequirement::Required, "D"),
-                ],
+                parent_id: parent.work_id,
+                expected_parent_revision: parent.revision,
+                children: vec![child(
+                    "over-budget",
+                    ChildRequirement::Required,
+                    "Over budget",
+                )],
                 prerequisites: Vec::new(),
-                authority: tight_authority,
+                authority: WorkPlanningAuthority::Project,
                 actor: actor("planner"),
-                idempotency_key: "over-cumulative-budget".into(),
-                created_at: at(3),
+                idempotency_key: "over-open-budget".into(),
+                created_at: at(20),
             },
             &DevelopmentNoopRedactor,
         );
-        assert!(matches!(cumulative, Err(StoreError::InvalidWork(_))));
+        assert!(matches!(over_budget, Err(StoreError::InvalidWork(_))));
     }
 
     #[test]
-    fn decomposition_open_descendant_budget_is_root_wide_across_siblings() {
+    fn decomposition_enforces_default_depth_budget() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-root-budget", "planner");
-        let root = store
+        let mut parent = store
             .create_work(
-                &root_request("project-root-budget", "root", 0),
+                &root_request("project-depth-budget", "root", 0),
                 &DevelopmentNoopRedactor,
             )
             .expect("root");
-        let bounded = install_delegated_with_budget(
-            &mut store,
-            "project-root-budget",
-            "planner",
-            WorkPlanningBudget {
-                max_depth: 2,
-                max_open_descendants: 4,
-                max_children_per_decomposition: 2,
-            },
-            at(1_000),
-        );
-        let siblings = store
-            .decompose_work(
-                &DecomposeWorkRequest {
-                    parent_id: root.work_id,
-                    expected_parent_revision: root.revision,
-                    children: vec![
-                        child("left", ChildRequirement::Required, "Left"),
-                        child("right", ChildRequirement::Required, "Right"),
-                    ],
-                    prerequisites: Vec::new(),
-                    authority: bounded.clone(),
-                    actor: actor("planner"),
-                    idempotency_key: "root-siblings".into(),
-                    created_at: at(1),
-                },
-                &DevelopmentNoopRedactor,
-            )
-            .expect("create sibling branches");
-        let left = siblings.children[0].clone();
-        let right = siblings.children[1].clone();
-        store
-            .decompose_work(
-                &DecomposeWorkRequest {
-                    parent_id: left.work_id,
-                    expected_parent_revision: left.revision,
-                    children: vec![
-                        child("left-a", ChildRequirement::Required, "Left A"),
-                        child("left-b", ChildRequirement::Required, "Left B"),
-                    ],
-                    prerequisites: Vec::new(),
-                    authority: bounded.clone(),
-                    actor: actor("planner"),
-                    idempotency_key: "left-children".into(),
-                    created_at: at(2),
-                },
-                &DevelopmentNoopRedactor,
-            )
-            .expect("consume the remaining root-wide budget");
-        let refused = store.decompose_work(
+        for depth in 1..=MAX_WORK_DEPTH {
+            parent = store
+                .decompose_work(
+                    &DecomposeWorkRequest {
+                        parent_id: parent.work_id,
+                        expected_parent_revision: parent.revision,
+                        children: vec![child(
+                            &format!("depth-{depth}"),
+                            ChildRequirement::Required,
+                            &format!("Depth {depth}"),
+                        )],
+                        prerequisites: Vec::new(),
+                        authority: WorkPlanningAuthority::Project,
+                        actor: actor("planner"),
+                        idempotency_key: format!("depth-{depth}"),
+                        created_at: at(i64::from(depth)),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("decomposition through the maximum depth")
+                .children
+                .into_iter()
+                .next()
+                .expect("one child");
+        }
+        let over_depth = store.decompose_work(
             &DecomposeWorkRequest {
-                parent_id: right.work_id,
-                expected_parent_revision: right.revision,
-                children: vec![
-                    child("right-a", ChildRequirement::Required, "Right A"),
-                    child("right-b", ChildRequirement::Required, "Right B"),
-                ],
+                parent_id: parent.work_id,
+                expected_parent_revision: parent.revision,
+                children: vec![child(
+                    "over-depth",
+                    ChildRequirement::Required,
+                    "Over depth",
+                )],
                 prerequisites: Vec::new(),
-                authority: bounded,
+                authority: WorkPlanningAuthority::Project,
                 actor: actor("planner"),
-                idempotency_key: "right-children-over-budget".into(),
-                created_at: at(3),
+                idempotency_key: "over-depth".into(),
+                created_at: at(10),
             },
             &DevelopmentNoopRedactor,
         );
-        assert!(matches!(refused, Err(StoreError::InvalidWork(_))));
-        assert_eq!(store.work_children(right.work_id).unwrap(), Vec::new());
-        assert!(store.verify_all().expect("integrity").is_healthy());
+        assert!(matches!(
+            over_depth,
+            Err(StoreError::InvalidWork(message)) if message.contains("hierarchy depth")
+        ));
     }
 
     #[test]
@@ -19218,7 +17645,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("tempdir");
         let database = directory.path().join("work.db");
         let mut first = SqliteStore::open(&database).expect("first connection");
-        install_grant(&mut first, "project-b", "planner");
         let root = first
             .create_work(
                 &root_request("project-b", "root", 0),
@@ -19227,7 +17653,6 @@ mod tests {
             .expect("root");
         let mut second = SqliteStore::open(&database).expect("second connection");
         let initial = claim(&mut first, &root, "agent-a", "claim-a", 1, 10);
-        install_grant(&mut second, "project-b", "agent-b");
         let conflict = second.claim_work(
             &ClaimWorkRequest {
                 work_id: root.work_id,
@@ -19235,8 +17660,6 @@ mod tests {
                 expected_run_id: root.active_run_id.expect("active run"),
                 holder: SessionId("agent-b".into()),
                 ttl_seconds: 10,
-                authority: authority("project-b", "agent-b"),
-                recovery_authority: None,
                 recovery_reason: None,
                 actor: actor("agent-b"),
                 idempotency_key: "claim-b-too-soon".into(),
@@ -19253,8 +17676,6 @@ mod tests {
                 expected_run_id: root.active_run_id.expect("active run"),
                 holder: SessionId("agent-b".into()),
                 ttl_seconds: 20,
-                authority: authority("project-b", "agent-b"),
-                recovery_authority: None,
                 recovery_reason: None,
                 actor: actor("agent-b"),
                 idempotency_key: "claim-b-missing-recovery".into(),
@@ -19275,8 +17696,6 @@ mod tests {
                 expected_run_id: root.active_run_id.expect("active run"),
                 holder: SessionId("agent-b".into()),
                 ttl_seconds: 20,
-                authority: authority("project-b", "agent-b"),
-                recovery_authority: Some(authority("project-b", "agent-b")),
                 recovery_reason: Some("   ".into()),
                 actor: actor("agent-b"),
                 idempotency_key: "claim-b-empty-recovery-reason".into(),
@@ -19381,14 +17800,12 @@ mod tests {
             blocked_while_pending,
             Err(StoreError::InvalidWork(_))
         ));
-        install_grant(&mut first, "project-b", "agent-c");
         let accepted = first
             .accept_work_handoff(
                 &AcceptWorkHandoffRequest {
                     work_id: root.work_id,
                     offer_id: offer.offer_id,
                     to: SessionId("agent-c".into()),
-                    authority: authority("project-b", "agent-c"),
                     actor: actor("agent-c"),
                     idempotency_key: "accept".into(),
                     accepted_at: at(16),
@@ -19404,7 +17821,6 @@ mod tests {
                     work_id: root.work_id,
                     offer_id: offer.offer_id,
                     to: SessionId("agent-c".into()),
-                    authority: authority("project-b", "agent-c"),
                     actor: actor("agent-c"),
                     idempotency_key: "accept".into(),
                     accepted_at: at(16),
@@ -19462,7 +17878,6 @@ mod tests {
     #[test]
     fn same_holder_plain_claim_retakes_a_lapsed_claim_and_replays_exactly() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "same-holder-retake", "planner");
         let root = store
             .create_work(
                 &root_request("same-holder-retake", "root", 0),
@@ -19483,27 +17898,12 @@ mod tests {
             .current_work_claim(root.work_id)
             .expect("claim after checkpoint")
             .expect("active claim");
-        let current_grant = store
-            .install_work_authority_grant(
-                test_grant(
-                    "same-holder-retake",
-                    "holder",
-                    default_budget(),
-                    active.expires_at + Duration::hours(1),
-                ),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("current claim authority");
         let request = ClaimWorkRequest {
             work_id: root.work_id,
             expected_work_revision: root.revision,
             expected_run_id: active.run_id,
             holder: active.holder.clone(),
             ttl_seconds: 60,
-            authority: LifecycleAuthorityDecision {
-                grant: current_grant,
-            },
-            recovery_authority: None,
             recovery_reason: None,
             actor: actor("holder"),
             idempotency_key: "plain-same-holder-retake".into(),
@@ -19551,95 +17951,8 @@ mod tests {
     }
 
     #[test]
-    fn same_holder_plain_retake_uses_only_the_supplied_grant() {
-        let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "retake-exact-grant", "planner");
-        let root = store
-            .create_work(
-                &root_request("retake-exact-grant", "root", 0),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("root");
-        let initial = claim(&mut store, &root, "holder", "initial", 1, 1);
-        let supplied = authority("retake-exact-grant", "holder");
-        let alternate = store
-            .install_work_authority_grant(
-                test_grant("retake-exact-grant", "holder", default_budget(), at(2_000)),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("install alternate current grant");
-        assert_ne!(alternate, supplied.grant);
-        store
-            .revoke_work_authority_grant(
-                &supplied.grant,
-                &actor("host-operator"),
-                "revoke the grant bound to the caller",
-                at(2),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("revoke supplied grant");
-
-        let refused = store.claim_work(
-            &ClaimWorkRequest {
-                work_id: root.work_id,
-                expected_work_revision: root.revision,
-                expected_run_id: initial.run_id,
-                holder: initial.holder.clone(),
-                ttl_seconds: 60,
-                authority: supplied,
-                recovery_authority: None,
-                recovery_reason: None,
-                actor: actor("holder"),
-                idempotency_key: "same-holder-revoked-grant".into(),
-                claimed_at: at(3),
-            },
-            &DevelopmentNoopRedactor,
-        );
-        assert!(
-            matches!(refused, Err(StoreError::InvalidWork(reason)) if reason.contains("revoked"))
-        );
-        assert_eq!(
-            store
-                .current_work_claim(root.work_id)
-                .expect("claim after refusal"),
-            Some(initial)
-        );
-        assert_eq!(
-            canonical_work_events_for_item(&store.connection, root.work_id)
-                .expect("claim history")
-                .into_iter()
-                .filter(|event| matches!(
-                    event.transition,
-                    WorkTransition::Claimed {
-                        recovered: true,
-                        ..
-                    }
-                ))
-                .count(),
-            0,
-            "storage must not borrow the alternate actor grant"
-        );
-    }
-
-    #[test]
     fn same_holder_plain_retake_refuses_blocked_and_deferred_work() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "retake-readiness", "planner");
-        let grant = store
-            .install_work_authority_grant(
-                test_grant(
-                    "retake-readiness",
-                    "holder",
-                    default_budget(),
-                    at(2_000_000),
-                ),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("install long-lived holder grant");
-        let authority = LifecycleAuthorityDecision {
-            grant: grant.clone(),
-        };
-
         let blocked = store
             .create_work(
                 &root_request("retake-readiness", "blocked-root", 0),
@@ -19654,8 +17967,6 @@ mod tests {
                     expected_run_id: blocked.active_run_id.expect("active run"),
                     holder: SessionId("holder".into()),
                     ttl_seconds: 1,
-                    authority: authority.clone(),
-                    recovery_authority: None,
                     recovery_reason: None,
                     actor: actor("holder"),
                     idempotency_key: "blocked-claim".into(),
@@ -19676,7 +17987,6 @@ mod tests {
                         holder: blocked_claim.holder.clone(),
                         claim_id: blocked_claim.claim_id,
                         claim_fence: blocked_claim.fence,
-                        grant: grant.clone(),
                     },
                     actor: actor("holder"),
                     idempotency_key: "block-before-retake".into(),
@@ -19697,8 +18007,6 @@ mod tests {
                 expected_run_id: blocked_claim.run_id,
                 holder: blocked_claim.holder.clone(),
                 ttl_seconds: 60,
-                authority: authority.clone(),
-                recovery_authority: None,
                 recovery_reason: None,
                 actor: actor("holder"),
                 idempotency_key: "blocked-plain-retake".into(),
@@ -19724,8 +18032,6 @@ mod tests {
                     expected_run_id: deferred.active_run_id.expect("active run"),
                     holder: SessionId("holder".into()),
                     ttl_seconds: 1,
-                    authority: authority.clone(),
-                    recovery_authority: None,
                     recovery_reason: None,
                     actor: actor("holder"),
                     idempotency_key: "deferred-claim".into(),
@@ -19748,7 +18054,6 @@ mod tests {
                         holder: deferred_claim.holder.clone(),
                         claim_id: deferred_claim.claim_id,
                         claim_fence: deferred_claim.fence,
-                        grant: grant.clone(),
                     },
                     actor: actor("holder"),
                     idempotency_key: "defer-before-retake".into(),
@@ -19771,8 +18076,6 @@ mod tests {
                 expected_run_id: deferred_claim.run_id,
                 holder: deferred_claim.holder.clone(),
                 ttl_seconds: 60,
-                authority,
-                recovery_authority: None,
                 recovery_reason: None,
                 actor: actor("holder"),
                 idempotency_key: "deferred-plain-retake".into(),
@@ -19790,7 +18093,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let mut first = SqliteStore::open(&database).expect("first connection");
-        install_grant(&mut first, "retake-contention", "planner");
         let root = first
             .create_work(
                 &root_request("retake-contention", "root", 0),
@@ -19804,8 +18106,6 @@ mod tests {
             expected_run_id: initial.run_id,
             holder: initial.holder.clone(),
             ttl_seconds: 60,
-            authority: authority("retake-contention", "holder"),
-            recovery_authority: None,
             recovery_reason: None,
             actor: actor("holder"),
             idempotency_key: "retake-contention-key".into(),
@@ -19839,7 +18139,6 @@ mod tests {
     #[test]
     fn holder_mutations_renew_refusals_do_not_and_plain_claim_retakes() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-renewal", "planner");
         let root = store
             .create_work(
                 &root_request("project-renewal", "renewal-root", 0),
@@ -19893,7 +18192,6 @@ mod tests {
                         holder: after_checkpoint.holder.clone(),
                         claim_id: after_checkpoint.claim_id,
                         claim_fence: after_checkpoint.fence,
-                        grant: authority("project-renewal", "holder").grant,
                     },
                     actor: actor("holder"),
                     idempotency_key: "renewal-revise".into(),
@@ -20028,17 +18326,6 @@ mod tests {
             .expect("claim after activating checkpoint")
             .expect("active claim");
         let retaken_at = active.expires_at;
-        let current_grant = store
-            .install_work_authority_grant(
-                test_grant(
-                    "project-renewal",
-                    "holder",
-                    default_budget(),
-                    retaken_at + Duration::hours(1),
-                ),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("install current retake authority");
         let retaken_claim = store
             .claim_work(
                 &ClaimWorkRequest {
@@ -20047,10 +18334,6 @@ mod tests {
                     expected_run_id: active.run_id,
                     holder: active.holder.clone(),
                     ttl_seconds: DEFAULT_WORK_CLAIM_TTL_SECONDS,
-                    authority: LifecycleAuthorityDecision {
-                        grant: current_grant,
-                    },
-                    recovery_authority: None,
                     recovery_reason: None,
                     actor: ActorContext {
                         source_tool: Some("work_update".into()),
@@ -20115,7 +18398,6 @@ mod tests {
     fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
         let mut store = SqliteStore::open_in_memory().expect("store");
         let project = ProjectId("project-work-note-claim".into());
-        install_grant(&mut store, &project.0, "planner");
         let root = store
             .create_work(
                 &root_request(&project.0, "work-note-root", 0),
@@ -20208,16 +18490,6 @@ mod tests {
             store.capture_note(&lapsed, &DevelopmentNoopRedactor),
             Err(StoreError::WorkClaimLapsed { work, .. }) if work == root.work_id
         ));
-        let current_authority = install_delegated_with_budget(
-            &mut store,
-            &project.0,
-            "holder",
-            default_budget(),
-            at(10_000),
-        );
-        let WorkPlanningAuthority::Delegated { grant } = current_authority else {
-            panic!("test helper returns delegated authority");
-        };
         let retaken_claim = store
             .claim_work(
                 &ClaimWorkRequest {
@@ -20226,8 +18498,6 @@ mod tests {
                     expected_run_id: renewed.run_id,
                     holder: renewed.holder.clone(),
                     ttl_seconds: DEFAULT_WORK_CLAIM_TTL_SECONDS,
-                    authority: LifecycleAuthorityDecision { grant },
-                    recovery_authority: None,
                     recovery_reason: None,
                     actor: ActorContext {
                         source_tool: Some("work_update".into()),
@@ -20290,7 +18560,6 @@ mod tests {
     #[test]
     fn release_requires_nonempty_waiver_reason_and_persists_audit_reasons() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-release-reason", "planner");
         let root = store
             .create_work(
                 &root_request("project-release-reason", "root", 0),
@@ -20306,7 +18575,6 @@ mod tests {
             claim_id: claim.claim_id,
             claim_fence: claim.fence,
             reason: "  planned pause  ".into(),
-            waiver_authority: Some(authority("project-release-reason", "holder")),
             waiver_reason: Some("   ".into()),
             actor: actor("holder"),
             idempotency_key: "release-empty-waiver-reason".into(),
@@ -20358,7 +18626,6 @@ mod tests {
                 .work_claim_recovery_required(root.work_id, &next_holder)
                 .expect("waived holder is already accounted")
         );
-        install_grant(&mut store, "project-release-reason", "next-holder");
         let successor = store
             .claim_work(
                 &ClaimWorkRequest {
@@ -20367,8 +18634,6 @@ mod tests {
                     expected_run_id: root.active_run_id.expect("active run"),
                     holder: next_holder,
                     ttl_seconds: 60,
-                    authority: authority("project-release-reason", "next-holder"),
-                    recovery_authority: None,
                     recovery_reason: None,
                     actor: actor("next-holder"),
                     idempotency_key: "ordinary-claim-after-waiver".into(),
@@ -20384,7 +18649,6 @@ mod tests {
     #[test]
     fn expired_handoff_is_audited_and_does_not_block_a_new_offer() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-expiry", "planner");
         let root = store
             .create_work(
                 &root_request("project-expiry", "root", 0),
@@ -20465,7 +18729,6 @@ mod tests {
     #[test]
     fn expired_handoff_is_swept_before_progress_and_terminal_completion() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-terminal-expiry", "planner");
         let root = store
             .create_work(
                 &root_request("project-terminal-expiry", "root", 0),
@@ -20553,7 +18816,6 @@ mod tests {
     #[test]
     fn outgoing_holder_can_cancel_a_handoff_and_resume_progress() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-cancel", "planner");
         let root = store
             .create_work(
                 &root_request("project-cancel", "root", 0),
@@ -20621,7 +18883,6 @@ mod tests {
     #[test]
     fn foreign_holder_cannot_commit_an_expired_handoff_sweep() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-cancel-auth", "planner");
         let root = store
             .create_work(
                 &root_request("project-cancel-auth", "root", 0),
@@ -20694,7 +18955,6 @@ mod tests {
         let database = directory.path().join("work.db");
         let (root_id, old_run, reopened_run) = {
             let mut store = SqliteStore::open(&database).expect("store");
-            install_grant(&mut store, "project-c", "planner");
             let root = store
                 .create_work(
                     &root_request("project-c", "root", 0),
@@ -21008,13 +19268,11 @@ mod tests {
             );
 
             let required_current = store.get_work_item(required.work_id).expect("required");
-            install_grant(&mut store, "project-c", "human");
             let child_reopen = store.reopen_work(
                 &ReopenWorkRequest {
                     work_id: required.work_id,
                     expected_work_revision: required_current.revision,
                     reason: "invalidate completed child".into(),
-                    authority: authority("project-c", "human"),
                     actor: actor("human"),
                     idempotency_key: "child-reopen".into(),
                     reopened_at: at(11),
@@ -21030,7 +19288,6 @@ mod tests {
                     expected_work_revision: root_current.revision,
                     reason: "unfinished optional child still belongs to the sealed execution"
                         .into(),
-                    authority: authority("project-c", "human"),
                     actor: actor("human"),
                     idempotency_key: "root-reopen-before-optional-disposal".into(),
                     reopened_at: at(12),
@@ -21049,7 +19306,6 @@ mod tests {
                         disposition: WorkDisposition::Cancelled,
                         replacement_id: None,
                         reason: "retire optional work omitted by the sealed execution".into(),
-                        authority: authority("project-c", "human"),
                         actor: actor("human"),
                         idempotency_key: "dispose-optional-before-root-reopen".into(),
                         disposed_at: at(13),
@@ -21063,7 +19319,6 @@ mod tests {
                         work_id: root.work_id,
                         expected_work_revision: root_current.revision,
                         reason: "  new root execution generation  ".into(),
-                        authority: authority("project-c", "human"),
                         actor: actor("human"),
                         idempotency_key: "root-reopen".into(),
                         reopened_at: at(14),
@@ -21118,7 +19373,6 @@ mod tests {
     )]
     fn root_completion_fences_live_optional_descendants_and_old_generations() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-optional-fence", "planner");
         let root = store
             .create_work(
                 &root_request("project-optional-fence", "root", 0),
@@ -21242,7 +19496,6 @@ mod tests {
                     claim_id: optional_claim.claim_id,
                     claim_fence: optional_claim.fence,
                     reason: "  root is sealing without this optional child  ".into(),
-                    waiver_authority: None,
                     waiver_reason: None,
                     actor: actor("optional-agent"),
                     idempotency_key: "release-optional".into(),
@@ -21261,7 +19514,6 @@ mod tests {
                     claim_id: expiring_claim.claim_id,
                     claim_fence: expiring_claim.fence,
                     reason: "handoff expired before root sealing".into(),
-                    waiver_authority: None,
                     waiver_reason: None,
                     actor: actor("expiring-agent"),
                     idempotency_key: "release-expiring-optional".into(),
@@ -21297,13 +19549,11 @@ mod tests {
         expected_unfinished.sort_by_key(|work_id| work_id.0);
         assert_eq!(seal.unfinished_optional_children, expected_unfinished);
 
-        install_grant(&mut store, "project-optional-fence", "late-recipient");
         let backdated_accept = store.accept_work_handoff(
             &AcceptWorkHandoffRequest {
                 work_id: idle_optional.work_id,
                 offer_id: expiring_offer.offer_id,
                 to: SessionId("late-recipient".into()),
-                authority: authority("project-optional-fence", "late-recipient"),
                 actor: actor("late-recipient"),
                 idempotency_key: "backdated-post-root-accept".into(),
                 accepted_at: at(7),
@@ -21341,14 +19591,12 @@ mod tests {
                 .contains(&WorkReadinessReason::ParentDisallowsExecution)
         );
 
-        install_grant(&mut store, "project-optional-fence", "human");
         let root_current = store.get_work_item(root.work_id).expect("completed root");
         let premature_reopen = store.reopen_work(
             &ReopenWorkRequest {
                 work_id: root.work_id,
                 expected_work_revision: root_current.revision,
                 reason: "unfinished descendants must be resolved first".into(),
-                authority: authority("project-optional-fence", "human"),
                 actor: actor("human"),
                 idempotency_key: "premature-root-reopen".into(),
                 reopened_at: at(12),
@@ -21369,7 +19617,6 @@ mod tests {
                         disposition: WorkDisposition::Cancelled,
                         replacement_id: None,
                         reason: "retire optional work omitted by the completed root".into(),
-                        authority: authority("project-optional-fence", "human"),
                         actor: actor("human"),
                         idempotency_key: key.into(),
                         disposed_at: at(second),
@@ -21384,7 +19631,6 @@ mod tests {
                     work_id: root.work_id,
                     expected_work_revision: root_current.revision,
                     reason: "start a clean root generation".into(),
-                    authority: authority("project-optional-fence", "human"),
                     actor: actor("human"),
                     idempotency_key: "reopen-clean-root".into(),
                     reopened_at: at(15),
@@ -21415,7 +19661,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("temporary directory");
         let database = directory.path().join("engram.sqlite3");
         let mut store = SqliteStore::open(&database).expect("store");
-        install_grant(&mut store, "project-completion-obligations", "planner");
         let work = store
             .create_work(
                 &root_request(
@@ -21722,7 +19967,6 @@ mod tests {
     #[test]
     fn completion_refuses_more_than_the_bounded_environment_basis() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-bounded-environment", "planner");
         let work = store
             .create_work(
                 &root_request(
@@ -21839,7 +20083,6 @@ mod tests {
     #[test]
     fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
         let mut store = SqliteStore::open_in_memory().expect("store");
-        install_grant(&mut store, "project-bounded-obligations", "planner");
         let work = store
             .create_work(
                 &root_request(
@@ -21934,10 +20177,8 @@ mod tests {
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("project-protocol-obligations".into());
         let session = SessionId("runner".into());
-        let (grant, work, evidence_hash, expected_obligation) = {
+        let (work, evidence_hash, expected_obligation) = {
             let mut store = SqliteStore::open(&database).expect("store");
-            install_grant(&mut store, &project.0, "planner");
-            let grant = install_grant(&mut store, &project.0, &session.0);
             let work = store
                 .create_work(
                     &root_request(&project.0, "create-protocol-obligation-work", 1),
@@ -22017,7 +20258,7 @@ mod tests {
                 5,
                 std::slice::from_ref(&evidence_hash),
             );
-            (grant, work, evidence_hash, obligation)
+            (work, evidence_hash, obligation)
         };
         let service = LocalWorkService::new(
             database.clone(),
@@ -22025,7 +20266,6 @@ mod tests {
             "runner".into(),
             session,
             Some("obligation-protocol-test".into()),
-            Some(grant),
         );
         let input = WorkCompleteInput {
             capture: None,
@@ -22114,8 +20354,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("temporary directory");
         let database = directory.path().join("engram.sqlite3");
         let mut store = SqliteStore::open(&database).expect("store");
-        install_grant(&mut store, "project-obligations", "planner");
-        let waiver_grant = install_grant(&mut store, "project-obligations", "operator");
         let work = store
             .create_work(
                 &root_request("project-obligations", "create-obligation-work", 1),
@@ -22315,9 +20553,6 @@ mod tests {
                     expected_definition: waiver_target.definition_hash.clone(),
                     waived_by: "operator".into(),
                     reason: "already terminal must not be waived".into(),
-                    authority: LifecycleAuthorityDecision {
-                        grant: waiver_grant.clone(),
-                    },
                     actor: actor("operator"),
                     idempotency_key: "waive-terminal-obligation".into(),
                     waived_at: at(7),
@@ -22353,9 +20588,6 @@ mod tests {
             expected_definition: waiver_target.definition_hash.clone(),
             waived_by: "operator".into(),
             reason: "operator accepted the unverified final mutation".into(),
-            authority: LifecycleAuthorityDecision {
-                grant: waiver_grant,
-            },
             actor: actor("operator"),
             idempotency_key: "waive-open-obligation".into(),
             waived_at: at(8),
@@ -22516,8 +20748,6 @@ mod tests {
         let directory = tempfile::tempdir().expect("temporary directory");
         let database = directory.path().join("engram.sqlite3");
         let mut store = SqliteStore::open(&database).expect("store");
-        let planner_grant = install_grant(&mut store, "project-host-waiver", "planner");
-        let waiver_grant = install_grant(&mut store, "project-host-waiver", "human-operator");
         let work = store
             .create_work(
                 &root_request("project-host-waiver", "create-host-waiver-work", 1),
@@ -22602,7 +20832,6 @@ mod tests {
                 &unbound.routing_token,
                 open.obligation.obligation_id,
                 &open.definition_hash,
-                &waiver_grant,
                 "human-operator",
                 "reviewed the exact obligation",
                 &unbound_actor,
@@ -22646,7 +20875,6 @@ mod tests {
                 &bound.routing_token,
                 open.obligation.obligation_id,
                 &ObjectHash::from_canonical_bytes(b"wrong definition"),
-                &waiver_grant,
                 "human-operator",
                 "reviewed the exact obligation",
                 &host_actor,
@@ -22662,30 +20890,6 @@ mod tests {
                 ..
             }
         ));
-        let not_admitted = store
-            .waive_bound_work_obligation(
-                &work.project_id,
-                &session_id,
-                &connection_token,
-                &bound.routing_token,
-                open.obligation.obligation_id,
-                &open.definition_hash,
-                &planner_grant,
-                "human-operator",
-                "reviewed the exact obligation",
-                &host_actor,
-                "host-waiver-not-admitted",
-                at(5),
-                &DevelopmentNoopRedactor,
-            )
-            .expect("authority refusal is typed");
-        assert!(matches!(
-            not_admitted,
-            WorkObligationWaiverDecision::Refused {
-                code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
-                ..
-            }
-        ));
         let waived = store
             .waive_bound_work_obligation(
                 &work.project_id,
@@ -22694,7 +20898,6 @@ mod tests {
                 &bound.routing_token,
                 open.obligation.obligation_id,
                 &open.definition_hash,
-                &waiver_grant,
                 "human-operator",
                 "reviewed the exact obligation",
                 &host_actor,
@@ -22711,7 +20914,6 @@ mod tests {
                 &bound.routing_token,
                 open.obligation.obligation_id,
                 &open.definition_hash,
-                &waiver_grant,
                 "human-operator",
                 "reviewed the exact obligation",
                 &host_actor,
@@ -22746,7 +20948,6 @@ mod tests {
                 &bound.routing_token,
                 open.obligation.obligation_id,
                 &open.definition_hash,
-                &waiver_grant,
                 "human-operator",
                 "reviewed the exact obligation",
                 &host_actor,
@@ -22773,7 +20974,6 @@ mod tests {
             .control_diagnostics()
             .expect("initial control policy")
             .obligation_rule_set;
-        install_grant(&mut store, "project-control-work", "planner");
         let work = store
             .create_work(
                 &root_request("project-control-work", "create-control-work", 1),
@@ -23496,7 +21696,6 @@ mod tests {
             "runner".into(),
             session_id.clone(),
             Some("typed-evidence-attach-test".into()),
-            None,
         );
         work_protocol
             .work_focus(&work.short_ref, at(10))

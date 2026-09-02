@@ -59,12 +59,16 @@ contract and keep the change narrow.
   distinct child runs under a `RootExecution` aggregate.
 - Root completion requires a `CompletionSeal` over the dense run-feed cut,
   required child seals, contributions, reconciled actions/leases, acceptance,
-  and evidence, or a human-authorized waiver. Planned report assembly
-  consumes the seal under a separate fenced `ReportAssemblyClaim`, without
-  retaining completed-run authority or draining execution again.
+  and evidence, or an attributed, audited waiver by a project-bound session.
+  Planned report assembly consumes the seal under a separate fenced
+  `ReportAssemblyClaim`, without retaining completed-run authority or draining
+  execution again.
+- External publication still requires an explicit human decision. A host that
+  runs the optional behavioral-control plane may independently mediate model
+  turns or material external actions.
 - One capture must feed work/peer deltas, handoffs, evidence, and report
-  assembly. A future portable projection is a dormant transfer/restore head, not a
-  second live status ledger.
+  assembly. A future portable projection is a dormant transfer/restore head,
+  not a second live status ledger.
 - Planned `portable` mode is one-active-host handoff: scheduled push, writer-epoch
   release/acquire under remote-head CAS, explicit restore, and divergence
   refusal. Release freezes old-host mutation; acquire must succeed before
@@ -96,7 +100,7 @@ contract and keep the change narrow.
 - external adapters: backend-neutral source snapshots, backup, portable
   handoff, later concurrent sync, frozen publication, idempotency, and receipt
   capabilities.
-- `verbs`: the ten-word agent surface; flat CLI flags and MCP arguments
+- `verbs`: the thirteen-word agent surface; flat CLI flags and MCP arguments
   translate into the unchanged six-operation core and every receipt gains
   `reminders` and `next` from fixed tables.
 - CLI/MCP front doors translate requests; they do not redefine domain rules.
@@ -106,10 +110,9 @@ policy outside the core. Extend ports using neutral request/response records.
 
 ## Using Engram as an agent
 
-Engram tracks the work of this repository. You use ten words; everything
+Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
-`ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
-you type only the word.
+and `ENGRAM_SESSION_ID` in your environment; you type only the word.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
@@ -122,6 +125,9 @@ engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
+engram work remember "Project note" [--key KEY]
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
+engram work forget KEY
 ```
 
 Add `--json` to any word for its structured receipt. `next` and `ls` stay
@@ -140,17 +146,21 @@ Rules that matter:
   convention); Engram does not shape-validate it.
 - `note` is for decisions, findings, and evidence pointers. One note feeds
   peers, handoff, and the final report; never repeat it elsewhere.
+- `remember` is for attributed project notes and observations, never rules or
+  secrets. `memories` is the source of truth; `forget` tombstones rather than
+  erases and permanently retires the safe key.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
   `done` again.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Nothing asks you to copy hashes, fences, or
-  keys; if you see one, it is a bug.
+  idempotency keys; if you see one, it is a bug. Safe project-memory keys are
+  intentional navigation tokens for `memories` and `forget`.
 - Lost response? Run the same command again. Identical calls are safe.
 
-The same ten words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `gate`, `note`, `done`, `handoff`) with the same flat arguments,
-plus `search`.
+The same thirteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`,
+`forget`) with the same flat arguments, plus `search`.
 
 ## Verification
 

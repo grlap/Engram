@@ -120,6 +120,11 @@ redactor and a 256-byte bound before canonicalization. The shipped development
 redactor is deliberately a visible no-op, so hosts must never place credentials
 or other secret values in these fields.
 
+Project-memory reads and writes use the cooperative asserted project binding.
+Before persistence, mutations validate a non-empty, consistent actor/session
+binding. This is not authenticated identity and does not invent a separate
+memory policy, grant token, revocation object, or validity timeout.
+
 The agent work protocol applies a separate authorized presentation projection.
 `work_next` verifies each canonical source object, then emits a typed compact
 summary beside the original dense position and object hash. The hash binds the

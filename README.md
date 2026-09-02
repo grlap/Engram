@@ -204,7 +204,7 @@ shipped through one service core with CLI and MCP translations. It includes
 bounded root/decomposition admission, typed prerequisites/blockers,
 deterministic readiness, assignment/deferral revision, fenced claims,
 checkpoint/evidence, explicit handoff, evidence-gated completion/reopen,
-canonical host-installed authority with immutable revocation, dense
+project-bound planning with reason-attributed waivers, dense
 project/root/run feeds with acknowledged exact-page replay, ambient per-session
 focus/cursors, typed work-scoped shared/private memory, query/history views,
 honest cancel/supersede lifecycles, one-call evidence capture/completion, and
@@ -220,8 +220,8 @@ The Host Enforcement SDK binding, action/resource outcomes linked to work
 runs, recovery snapshots/portable handoff, Beads round-trip migration, and
 optional publication remain the next implementation slices. Until the host
 SDK mediates prompt/action dispatch, agent-facing MCP work calls are still an
-advisory interface even though their lifecycle transactions enforce grants
-and fences.
+advisory interface even though their lifecycle transactions enforce claims,
+fences, and project binding.
 
 The CLI requires `ENGRAM_HOME` (or `--home`) and resolves this repository's
 tracked `.engram-project` identity to one database shared across worktrees.
@@ -239,10 +239,8 @@ Run the MCP
 server
 with `engram mcp --actor-id <agent> --session-id <session>`, or run the
 host-private service with `engram control --actor-id <agent> --session-id
-<session>`, or issue a bounded local work grant with `engram authority grant
---subject-actor-id <agent> --issued-by <host-actor>` and use it with
-`engram work` or MCP's
-`--work-authority-grant`. See the
+<session>`, or run `engram work --actor-id <agent> --session-id <session>`.
+See the
 [CLI and MCP guide](docs/features/cli-and-mcp.md) for host configuration and
 the exact shipped tool set.
 

@@ -46,10 +46,10 @@ backup/portable/sync, and publication are independent optional capabilities.
   distinct child runs under a `RootExecution` aggregate.
 - Do not complete a root until `CompletionSeal` binds the dense run-feed cut,
   required child seals, contributions, reconciled actions/leases, acceptance,
-  and evidence, or a human-authorized waiver accounts for an omission.
-  Planned report assembly consumes that seal under a separate fenced
-  `ReportAssemblyClaim`, without retaining completed-run authority or draining
-  execution again.
+  and evidence, or an attributed, audited waiver by a project-bound session
+  accounts for an omission. Planned report assembly consumes that seal under a
+  separate fenced `ReportAssemblyClaim`, without retaining completed-run
+  authority or draining execution again.
 - One capture should generate work/task deltas, handoff material, evidence,
   and report input. A future portable projection is a dormant
   transfer/restore head, not a second live ledger.
@@ -58,6 +58,9 @@ backup/portable/sync, and publication are independent optional capabilities.
   sends the same payload. A revision creates a superseding report and intent.
 - Actor/authority text supplied through tools and skills is asserted context,
   not authenticated identity. Never claim stronger assurance than recorded.
+- External publication still requires an explicit human decision. A host that
+  runs the optional behavioral-control plane may independently raise the bar
+  for model turns or material external actions.
 - SQLite is canonical on the active host. Planned external backup may raise
   `local_backed_up`; planned `portable` mode provides one-active-host handoff with
   scheduled push, writer-epoch release/acquire under remote-head CAS,
@@ -173,11 +176,10 @@ cp -rf source dest          # NOT: cp -r source dest
 
 This repository tracks its work in Engram. In a TermAl-hosted session the
 injected `engram` MCP tools (next, ls, show, add, claim, update, gate, note,
-done, handoff, search) ARE the words — use them directly. The shell form
-below serves humans and hosts; it needs `engram` on PATH and the host
-environment (`ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, `ENGRAM_SESSION_ID`,
-`ENGRAM_WORK_AUTHORITY_GRANT` — the grant value comes from a host-private
-file and is never typed or logged):
+done, handoff, remember, memories, forget, search) ARE the words — use them
+directly. The shell form below serves humans and hosts; it needs `engram` on
+PATH and the host environment (`ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, and
+`ENGRAM_SESSION_ID`):
 
 ```bash
 engram work next                  # what you hold, what is ready, what changed
@@ -188,6 +190,9 @@ engram work update REF [--after OTHER | --drop-after OTHER | --supersede-with NE
 engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "what you found or decided"
 engram work done ["what was delivered"]
+engram work remember "project note" [--key KEY]
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
+engram work forget KEY
 ```
 
 - Claim before you change anything; note decisions and evidence once;
