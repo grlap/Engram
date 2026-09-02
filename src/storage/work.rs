@@ -19,35 +19,37 @@ use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
 use super::{
-    BeginWorkProtocolAttempt, SchemaDurability, SchemaOwner, SqliteStore, StoreError,
-    WorkAuthorityGrantStatus,
+    BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, SchemaDurability, SchemaOwner,
+    SqliteStore, StoreError, WorkAuthorityGrantStatus,
 };
 use crate::{
     CanonicalObject, ObjectHash,
     domain::{
-        AcceptWorkHandoffRequest, AcceptanceResult, AddWorkBlockerRequest,
+        AcceptWorkHandoffRequest, AcceptanceResult, ActorContext, AddWorkBlockerRequest,
         COMPLETION_ENVIRONMENT_SCHEMA_VERSION, COMPLETION_OBLIGATION_SCHEMA_VERSION,
         CancelWorkHandoffRequest, ChangeWorkPrerequisiteRequest, ChildRequirement,
         ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest,
         CompletionObligationBinding, CompletionSeal, CompletionWaiver, ControlWorkBinding,
         CreateWorkRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS, DecomposeWorkRequest,
         DisposeWorkRequest, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
-        LifecycleAuthorityDecision, MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest,
-        OpenWorkObligation, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
-        ReopenWorkRequest, RequiredChildWaiver, ReviseWorkRequest, RootContribution, RootExecution,
-        RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId, TaskId,
-        VerificationEvidence, WaiveRequiredChildRequest, WaiveWorkObligationRequest,
-        WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityRevocation, WorkAuthorityScope,
-        WorkAvailability, WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint,
-        WorkClaim, WorkClaimId, WorkClaimState, WorkCompletionRecovery,
-        WorkCompletionRecoveryCause, WorkDecomposition, WorkDependencyRef, WorkDisposition,
-        WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
-        WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation,
-        WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
+        GATE_EVIDENCE_SUMMARY, GateEvidenceRecord, LifecycleAuthorityDecision,
+        MemoryAssertionEvent, MemoryVersion, OfferWorkHandoffRequest, OpenWorkObligation,
+        ReadyWork, RecordGateEvidenceRequest, RecordWorkEvidenceRequest, RecordWorkNoteRequest,
+        ReleaseWorkRequest, ReopenWorkRequest, RequiredChildWaiver, ReviseWorkRequest,
+        RootContribution, RootExecution, RootExecutionId, RootExecutionState, SCHEMA_VERSION,
+        SessionId, TaskId, VerificationEvidence, WaiveRequiredChildRequest,
+        WaiveWorkObligationRequest, WorkAuthorityGrant, WorkAuthorityOperation,
+        WorkAuthorityRevocation, WorkAuthorityScope, WorkAvailability, WorkBlocker,
+        WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState,
+        WorkCompletionRecovery, WorkCompletionRecoveryCause, WorkDecomposition, WorkDependencyRef,
+        WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry,
+        WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkId, WorkItem, WorkLifecycle,
+        WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
         WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
         WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
-        WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId, WorkRunState,
-        WorkSessionState, WorkSourceSnapshot, WorkTransition,
+        WorkPrerequisiteState, WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId,
+        WorkRunState, WorkSessionState, WorkSourceSnapshot, WorkTransition,
+        normalize_gate_evidence_input, validate_gate_evidence_payload,
     },
     memory::Redactor,
     schema::WORK_SCHEMA_VERSION as CURRENT_WORK_SCHEMA_VERSION,
@@ -58,6 +60,7 @@ const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
 const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_catalog_fts",
     "objects_work_authority_revocation_grant",
+    "objects_work_evidence_gate_name",
     "objects_work_event_work_id",
     "work_feed_entries_work_event_item",
     "work_feed_entries_environment_cut",
@@ -725,6 +728,13 @@ pub(super) fn initialize_schema(
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
+         CREATE INDEX IF NOT EXISTS objects_work_evidence_gate_name
+             ON objects(
+                 json_extract(canonical_json, '$.run_id'),
+                 json_extract(canonical_json, '$.gate.name')
+             )
+             WHERE object_kind = 'work_evidence'
+               AND json_type(canonical_json, '$.gate') = 'object';
          CREATE INDEX IF NOT EXISTS objects_work_authority_revocation_grant
              ON objects(json_extract(canonical_json, '$.grant'))
              WHERE object_kind = 'work_authority_revocation';
@@ -834,6 +844,13 @@ pub(super) fn repair_rebuildable_schema_on(connection: &Connection) -> Result<bo
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
+         CREATE INDEX IF NOT EXISTS objects_work_evidence_gate_name
+             ON objects(
+                 json_extract(canonical_json, '$.run_id'),
+                 json_extract(canonical_json, '$.gate.name')
+             )
+             WHERE object_kind = 'work_evidence'
+               AND json_type(canonical_json, '$.gate') = 'object';
          CREATE INDEX IF NOT EXISTS objects_work_authority_revocation_grant
              ON objects(json_extract(canonical_json, '$.grant'))
              WHERE object_kind = 'work_authority_revocation';
@@ -960,6 +977,41 @@ pub(crate) struct WorkProtocolAttempt {
     pub(crate) basis: Option<serde_json::Value>,
 }
 
+#[derive(Debug)]
+pub(crate) struct GateWorkProtocolAttempt {
+    pub(crate) evidence: ObjectHash,
+    pub(crate) idempotency_key: String,
+    pub(crate) result: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct WorkNoteCapture {
+    pub(crate) evidence: ObjectHash,
+    pub(crate) checkpoint: ObjectHash,
+}
+
+pub(crate) struct WorkPrerequisitePage {
+    pub(crate) items: Vec<(WorkItem, WorkPrerequisiteState)>,
+    /// Omitted dead, pending, and satisfied entries, in that order.
+    pub(crate) omitted_by_state: [usize; 3],
+}
+
+#[derive(Serialize)]
+struct GateWorkProtocolIntent<'a> {
+    schema_version: u16,
+    project_id: &'a crate::domain::ProjectId,
+    session_id: &'a SessionId,
+    actor: &'a ActorContext,
+    work_id: WorkId,
+    run_id: WorkRunId,
+    claim_id: WorkClaimId,
+    claim_fence: i64,
+    name: &'a str,
+    failed: &'a [String],
+    refs: &'a [String],
+    previous: Option<&'a ObjectHash>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) enum CompleteWorkStorageResult {
     Completed(Box<CompletionSeal>),
@@ -988,6 +1040,104 @@ struct WorkProtocolAttemptRow {
 }
 
 type WorkAuthorityGrantStatusRow = (String, String, String, i64, Vec<u8>, Option<i64>);
+
+fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
+    connection: &Connection,
+    request: &BeginWorkProtocolAttempt<'_, T, B>,
+) -> Result<WorkProtocolAttempt, StoreError> {
+    let project_id = request.project_id;
+    let session_id = request.session_id;
+    let operation = request.operation;
+    let idempotency_key = normalize_text(request.idempotency_key, "work idempotency key")?;
+    let request_object = CanonicalObject::freeze(request.intent)?;
+    let basis_object = CanonicalObject::freeze(request.basis)?;
+    connection.execute(
+        "INSERT INTO work_protocol_attempts (
+             project_id, session_id, operation, idempotency_key,
+             request_hash, basis_hash, basis_json, initiated_at_ms,
+             result_hash, result_json
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL)
+         ON CONFLICT(project_id, session_id, operation, idempotency_key)
+         DO NOTHING",
+        params![
+            project_id.0,
+            session_id.0,
+            operation,
+            idempotency_key,
+            request_object.hash().as_str(),
+            basis_object.hash().as_str(),
+            basis_object.bytes(),
+            request.now.timestamp_millis()
+        ],
+    )?;
+    let stored = connection.query_row(
+        "SELECT request_hash, basis_hash, basis_json, result_hash, result_json
+         FROM work_protocol_attempts
+         WHERE project_id = ?1 AND session_id = ?2
+           AND operation = ?3 AND idempotency_key = ?4",
+        params![project_id.0, session_id.0, operation, idempotency_key],
+        |row| {
+            Ok(WorkProtocolAttemptRow {
+                request_hash: row.get(0)?,
+                basis_hash: row.get(1)?,
+                basis_json: row.get(2)?,
+                result_hash: row.get(3)?,
+                result_json: row.get(4)?,
+            })
+        },
+    )?;
+    if stored.request_hash != request_object.hash().as_str() {
+        return Err(StoreError::WorkOperationIdempotencyConflict {
+            operation: operation.to_owned(),
+            key: idempotency_key,
+        });
+    }
+    let basis_matches = stored.basis_hash.as_deref() == Some(basis_object.hash().as_str())
+        && stored.basis_json.as_deref() == Some(basis_object.bytes());
+    let stored_basis = match (&stored.basis_hash, &stored.basis_json) {
+        (Some(stored_hash), Some(bytes)) => {
+            let hash = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))?;
+            Some(CanonicalObject::verify(&hash, bytes.clone())?.decode()?)
+        }
+        (_, None) if stored.result_hash.is_some() && stored.result_json.is_some() => None,
+        _ => {
+            return Err(StoreError::InvalidWorkProjection(
+                "pending work-protocol attempt has no verified durable basis".into(),
+            ));
+        }
+    };
+    let result = match (stored.result_hash, stored.result_json) {
+        (None, None) => None,
+        (Some(stored_hash), Some(bytes)) => {
+            let hash = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let value = load_typed_work_object::<serde_json::Value>(
+                connection,
+                &hash,
+                "work_protocol_result",
+            )?;
+            let object = CanonicalObject::freeze(&value)?;
+            if object.hash() != &hash || object.bytes() != bytes {
+                return Err(StoreError::InvalidWorkProjection(
+                    "work-protocol replay bytes differ from their canonical result".into(),
+                ));
+            }
+            validate_work_protocol_result_binding(connection, &project_id.0, operation, &value)?;
+            Some(value)
+        }
+        _ => {
+            return Err(StoreError::InvalidWorkProjection(
+                "work-protocol result hash and bytes must be present together".into(),
+            ));
+        }
+    };
+    Ok(WorkProtocolAttempt {
+        result,
+        basis_matches,
+        basis: stored_basis,
+    })
+}
 
 impl SqliteStore {
     fn begin_work_mutation(&mut self) -> Result<Transaction<'_>, StoreError> {
@@ -1576,109 +1726,10 @@ impl SqliteStore {
         &mut self,
         request: &BeginWorkProtocolAttempt<'_, T, B>,
     ) -> Result<WorkProtocolAttempt, StoreError> {
-        let project_id = request.project_id;
-        let session_id = request.session_id;
-        let operation = request.operation;
-        let idempotency_key = request.idempotency_key;
-        let intent = request.intent;
-        let basis = request.basis;
-        let now = request.now;
-        let idempotency_key = normalize_text(idempotency_key, "work idempotency key")?;
-        let request_object = CanonicalObject::freeze(intent)?;
-        let basis_object = CanonicalObject::freeze(basis)?;
         let transaction = self.begin_work_mutation()?;
-        transaction.execute(
-            "INSERT INTO work_protocol_attempts (
-                 project_id, session_id, operation, idempotency_key,
-                 request_hash, basis_hash, basis_json, initiated_at_ms,
-                 result_hash, result_json
-              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL)
-             ON CONFLICT(project_id, session_id, operation, idempotency_key)
-             DO NOTHING",
-            params![
-                project_id.0,
-                session_id.0,
-                operation,
-                idempotency_key,
-                request_object.hash().as_str(),
-                basis_object.hash().as_str(),
-                basis_object.bytes(),
-                now.timestamp_millis()
-            ],
-        )?;
-        let stored = transaction.query_row(
-            "SELECT request_hash, basis_hash, basis_json, result_hash, result_json
-                 FROM work_protocol_attempts
-                 WHERE project_id = ?1 AND session_id = ?2
-                   AND operation = ?3 AND idempotency_key = ?4",
-            params![project_id.0, session_id.0, operation, idempotency_key],
-            |row| {
-                Ok(WorkProtocolAttemptRow {
-                    request_hash: row.get(0)?,
-                    basis_hash: row.get(1)?,
-                    basis_json: row.get(2)?,
-                    result_hash: row.get(3)?,
-                    result_json: row.get(4)?,
-                })
-            },
-        )?;
-        if stored.request_hash != request_object.hash().as_str() {
-            return Err(StoreError::WorkOperationIdempotencyConflict {
-                operation: operation.to_owned(),
-                key: idempotency_key,
-            });
-        }
-        let basis_matches = stored.basis_hash.as_deref() == Some(basis_object.hash().as_str())
-            && stored.basis_json.as_deref() == Some(basis_object.bytes());
-        let stored_basis = match (&stored.basis_hash, &stored.basis_json) {
-            (Some(stored_hash), Some(bytes)) => {
-                let hash = ObjectHash::from_stored(stored_hash.clone())
-                    .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))?;
-                Some(CanonicalObject::verify(&hash, bytes.clone())?.decode()?)
-            }
-            (_, None) if stored.result_hash.is_some() && stored.result_json.is_some() => None,
-            _ => {
-                return Err(StoreError::InvalidWorkProjection(
-                    "pending work-protocol attempt has no verified durable basis".into(),
-                ));
-            }
-        };
-        let result = match (stored.result_hash, stored.result_json) {
-            (None, None) => None,
-            (Some(stored_hash), Some(bytes)) => {
-                let hash = ObjectHash::from_stored(stored_hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-                let value = load_typed_work_object::<serde_json::Value>(
-                    &transaction,
-                    &hash,
-                    "work_protocol_result",
-                )?;
-                let object = CanonicalObject::freeze(&value)?;
-                if object.hash() != &hash || object.bytes() != bytes {
-                    return Err(StoreError::InvalidWorkProjection(
-                        "work-protocol replay bytes differ from their canonical result".into(),
-                    ));
-                }
-                validate_work_protocol_result_binding(
-                    &transaction,
-                    &project_id.0,
-                    operation,
-                    &value,
-                )?;
-                Some(value)
-            }
-            _ => {
-                return Err(StoreError::InvalidWorkProjection(
-                    "work-protocol result hash and bytes must be present together".into(),
-                ));
-            }
-        };
+        let attempt = begin_work_protocol_attempt_on(&transaction, request)?;
         transaction.commit()?;
-        Ok(WorkProtocolAttempt {
-            result,
-            basis_matches,
-            basis: stored_basis,
-        })
+        Ok(attempt)
     }
 
     /// Persists the caller-visible result for exact lost-response replay.
@@ -2122,6 +2173,14 @@ impl SqliteStore {
              WHERE edge.work_id = ?1 ORDER BY prerequisite.work_id",
             work_id,
         )
+    }
+
+    pub(crate) fn work_prerequisites_with_state(
+        &self,
+        work_id: WorkId,
+        limit: usize,
+    ) -> Result<WorkPrerequisitePage, StoreError> {
+        bounded_prerequisite_projection_rows(&self.connection, work_id, limit)
     }
 
     /// Returns the projected claim for the active run, or the latest
@@ -3101,6 +3160,7 @@ impl SqliteStore {
         let mut blocker_rows = HashMap::new();
         let mut relation_bases = HashMap::new();
         let mut evidence_rows = HashMap::new();
+        let mut gate_heads = HashMap::new();
         let mut completion_rows = HashMap::new();
 
         let mut statement = connection.prepare(
@@ -3425,6 +3485,12 @@ impl SqliteStore {
                             if value.work_id == event.work_id
                                 && Some(value.run_id) == event.run_id =>
                         {
+                            if validate_gate_evidence_chain(evidence, &value, &mut gate_heads)
+                                .is_err()
+                            {
+                                invalid.push(format!("{label}:invalid_gate_chain"));
+                                continue;
+                            }
                             evidence_rows.insert(
                                 evidence.as_str().to_owned(),
                                 EvidenceProjectionRow {
@@ -4419,6 +4485,13 @@ impl SqliteStore {
                         "replacement must be live or completed work in the same project".into(),
                     ));
                 }
+                if !combined_graph_is_acyclic_with_dependency(
+                    &transaction,
+                    &item.project_id.0,
+                    Some((item.work_id, replacement.work_id)),
+                )? {
+                    return Err(StoreError::WorkDependencyCycle);
+                }
                 Some(replacement)
             }
         };
@@ -5393,7 +5466,7 @@ impl SqliteStore {
             request.checkpointed_at,
             &request.actor,
         )?;
-        let (item, mut run, mut claim) = validate_live_claim_on(
+        let (item, run, mut claim) = validate_live_claim_on(
             &transaction,
             request.work_id,
             request.run_id,
@@ -5410,75 +5483,25 @@ impl SqliteStore {
         };
         ensure_run_evidence(&transaction, run.run_id, &evidence)?;
         renew_holder_claim(&transaction, &mut claim, request.checkpointed_at)?;
-        let acknowledged_run_position = FeedPosition {
-            feed: FeedId::RunExecution(run.run_id),
-            position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
-        };
-        let checkpoint = WorkCheckpoint {
-            schema_version: SCHEMA_VERSION,
-            work_id: item.work_id,
-            run_id: run.run_id,
-            claim_id: claim.claim_id,
-            claim_fence: claim.fence,
-            acknowledged_run_position,
+        let checkpoint = persist_work_checkpoint_on(
+            &transaction,
+            &item,
+            run,
+            claim,
             summary,
             evidence,
-            actor: request.actor.clone(),
-            created_at: request.checkpointed_at,
-        };
-        let object = CanonicalObject::freeze(&checkpoint)?;
-        SqliteStore::insert_object(&transaction, "work_checkpoint", &object)?;
-        append_to_work_feeds(
-            &transaction,
-            &item.project_id,
-            item.root_id,
-            Some(run.run_id),
-            None,
-            "work_checkpoint",
-            &object,
+            &request.actor,
+            request.checkpointed_at,
         )?;
-        run.last_checkpoint = Some(object.hash().clone());
-        run.state = WorkRunState::Active;
-        run.revision += 1;
-        run.updated_at = request.checkpointed_at;
-        persist_work_run(&transaction, &run, claim.fence)?;
-        let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
-        let root_changed = expect_root_contributor(&mut root_execution, &claim.holder)
-            | add_root_contribution(&mut root_execution, &claim.holder, object.hash());
-        if root_changed {
-            root_execution.revision += 1;
-            root_execution.updated_at = request.checkpointed_at;
-            persist_root_execution(&transaction, &root_execution)?;
-        }
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: Some(run.run_id),
-            revision: item.revision,
-            work: item.clone(),
-            run: Some(run.clone()),
-            root_execution: Some(root_execution),
-            claim: Some(claim),
-            handoff_offer: None,
-            blocker: None,
-            transition: WorkTransition::Checkpointed {
-                checkpoint: object.hash().clone(),
-            },
-            actor: request.actor.clone(),
-            created_at: request.checkpointed_at,
-        };
-        append_work_event(&transaction, &event)?;
         persist_operation_result(
             &transaction,
             "checkpoint_work",
             &request.idempotency_key,
             request_object.hash(),
-            object.hash(),
+            &checkpoint,
         )?;
         transaction.commit()?;
-        Ok(object.hash().clone())
+        Ok(checkpoint)
     }
 
     /// Adds immutable evidence under the exact live claim basis.
@@ -5523,6 +5546,7 @@ impl SqliteStore {
             request.recorded_at,
             false,
         )?;
+        renew_holder_claim(&transaction, &mut claim, request.recorded_at)?;
         let evidence = WorkEvidence {
             schema_version: SCHEMA_VERSION,
             work_id: item.work_id,
@@ -5531,67 +5555,248 @@ impl SqliteStore {
             claim_fence: claim.fence,
             summary,
             refs: normalize_strings(&request.refs),
+            gate: None,
             actor: request.actor.clone(),
             created_at: request.recorded_at,
         };
-        renew_holder_claim(&transaction, &mut claim, request.recorded_at)?;
-        let object = CanonicalObject::freeze(&evidence)?;
-        SqliteStore::insert_object(&transaction, "work_evidence", &object)?;
-        transaction.execute(
-            "INSERT INTO work_run_evidence (evidence_hash, work_id, run_id)
-             VALUES (?1, ?2, ?3)",
-            params![
-                object.hash().as_str(),
-                item.work_id.0.to_string(),
-                run.run_id.0.to_string()
-            ],
-        )?;
-        append_to_work_feeds(
-            &transaction,
-            &item.project_id,
-            item.root_id,
-            Some(run.run_id),
-            None,
-            "work_evidence",
-            &object,
-        )?;
-        let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
-        let root_changed = expect_root_contributor(&mut root_execution, &claim.holder)
-            | add_root_contribution(&mut root_execution, &claim.holder, object.hash());
-        if root_changed {
-            root_execution.revision += 1;
-            root_execution.updated_at = request.recorded_at;
-            persist_root_execution(&transaction, &root_execution)?;
-        }
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: Some(run.run_id),
-            revision: item.revision,
-            work: item.clone(),
-            run: Some(run.clone()),
-            root_execution: Some(root_execution),
-            claim: Some(claim),
-            handoff_offer: None,
-            blocker: None,
-            transition: WorkTransition::EvidenceAdded {
-                evidence: object.hash().clone(),
-            },
-            actor: request.actor.clone(),
-            created_at: request.recorded_at,
-        };
-        append_work_event(&transaction, &event)?;
+        let evidence_hash = persist_work_evidence_on(&transaction, &item, &run, claim, &evidence)?;
         persist_operation_result(
             &transaction,
             "record_work_evidence",
             &request.idempotency_key,
             request_object.hash(),
-            object.hash(),
+            &evidence_hash,
         )?;
         transaction.commit()?;
-        Ok(object.hash().clone())
+        Ok(evidence_hash)
+    }
+
+    /// Captures one note as evidence and the checkpoint that acknowledges the
+    /// resulting run-evidence cut in one exact-claim transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when authority is stale, content is invalid, a
+    /// handoff is pending, or either immutable object cannot be persisted.
+    pub(crate) fn record_work_note<R: Redactor>(
+        &mut self,
+        request: &RecordWorkNoteRequest,
+        redactor: &R,
+    ) -> Result<WorkNoteCapture, StoreError> {
+        inspect_work_request(redactor, request)?;
+        assert_actor_session(&request.actor, &request.holder)?;
+        let summary = normalize_text(&request.summary, "note summary")?;
+        let request_object = request_object(request)?;
+        let transaction = self.begin_work_mutation()?;
+        if let Some(capture) = replay_operation::<WorkNoteCapture>(
+            &transaction,
+            "record_work_note",
+            &request.idempotency_key,
+            request_object.hash(),
+        )? {
+            transaction.commit()?;
+            return Ok(capture);
+        }
+        expire_handoff_offers(
+            &transaction,
+            request.run_id,
+            request.recorded_at,
+            &request.actor,
+        )?;
+        let (item, run, mut claim) = validate_live_claim_on(
+            &transaction,
+            request.work_id,
+            request.run_id,
+            request.expected_work_revision,
+            &request.holder,
+            request.claim_id,
+            request.claim_fence,
+            request.recorded_at,
+            false,
+        )?;
+        renew_holder_claim(&transaction, &mut claim, request.recorded_at)?;
+        let evidence = WorkEvidence {
+            schema_version: SCHEMA_VERSION,
+            work_id: item.work_id,
+            run_id: run.run_id,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            summary: summary.clone(),
+            refs: normalize_strings(&request.refs),
+            gate: None,
+            actor: request.actor.clone(),
+            created_at: request.recorded_at,
+        };
+        let evidence_hash =
+            persist_work_evidence_on(&transaction, &item, &run, claim.clone(), &evidence)?;
+        let acknowledged_evidence = work_run_evidence_on(&transaction, run.run_id)?;
+        ensure_run_evidence(&transaction, run.run_id, &acknowledged_evidence)?;
+        let checkpoint_hash = persist_work_checkpoint_on(
+            &transaction,
+            &item,
+            run,
+            claim,
+            summary,
+            acknowledged_evidence,
+            &request.actor,
+            request.recorded_at,
+        )?;
+        let capture = WorkNoteCapture {
+            evidence: evidence_hash,
+            checkpoint: checkpoint_hash,
+        };
+        persist_operation_result(
+            &transaction,
+            "record_work_note",
+            &request.idempotency_key,
+            request_object.hash(),
+            &capture,
+        )?;
+        transaction.commit()?;
+        Ok(capture)
+    }
+
+    /// Records a quality-gate transition, or replays the latest consecutive
+    /// identical observation, under one SQLite write transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when a new observation has a stale live-claim
+    /// basis, the typed gate payload is inconsistent, or persistence fails.
+    /// An exact consecutive replay is a read of the already-recorded fact and
+    /// does not revalidate the historical claim.
+    #[cfg(test)]
+    pub(crate) fn record_gate_evidence<R: Redactor>(
+        &mut self,
+        request: &RecordGateEvidenceRequest,
+        redactor: &R,
+    ) -> Result<ObjectHash, StoreError> {
+        inspect_work_request(redactor, request)?;
+        assert_actor_session(&request.actor, &request.holder)?;
+        let normalized = normalize_gate_evidence_input(
+            &request.name,
+            &request.failed,
+            request.evidence_ref.as_deref(),
+        )
+        .map_err(StoreError::InvalidWork)?;
+        let name = normalized.name;
+        let failed = normalized.failed;
+        let refs = normalized.evidence_ref.into_iter().collect::<Vec<_>>();
+        let transaction = self.begin_work_mutation()?;
+        let previous = latest_gate_evidence_on(&transaction, request.run_id, &name)?;
+        if let Some((hash, evidence)) = previous.as_ref()
+            && gate_observation_matches(evidence, request, &name, &failed, &refs)
+        {
+            transaction.commit()?;
+            return Ok(hash.clone());
+        }
+
+        let evidence_hash = append_gate_evidence_on(
+            &transaction,
+            request,
+            name,
+            failed,
+            refs,
+            previous.as_ref().map(|(hash, _)| hash.clone()),
+        )?;
+        transaction.commit()?;
+        Ok(evidence_hash)
+    }
+
+    /// Atomically reserves the gate transition's caller-visible protocol
+    /// attempt and records (or reuses) its evidence object. The attempt key is
+    /// derived from normalized input plus the previous distinct observation,
+    /// so pass -> fail -> pass remains three transitions while an exact retry
+    /// after a crash resumes the same pending attempt.
+    pub(crate) fn record_gate_evidence_protocol<B: Serialize, R: Redactor>(
+        &mut self,
+        request: &RecordGateEvidenceRequest,
+        protocol: &BeginGateWorkProtocolAttempt<'_, B>,
+        redactor: &R,
+    ) -> Result<GateWorkProtocolAttempt, StoreError> {
+        inspect_work_request(redactor, request)?;
+        assert_actor_session(&request.actor, &request.holder)?;
+        let normalized = normalize_gate_evidence_input(
+            &request.name,
+            &request.failed,
+            request.evidence_ref.as_deref(),
+        )
+        .map_err(StoreError::InvalidWork)?;
+        let name = normalized.name;
+        let failed = normalized.failed;
+        let refs = normalized.evidence_ref.into_iter().collect::<Vec<_>>();
+        let transaction = self.begin_work_mutation()?;
+        let latest = latest_gate_evidence_on(&transaction, request.run_id, &name)?;
+        let exact = latest.as_ref().is_some_and(|(_, evidence)| {
+            gate_observation_matches(evidence, request, &name, &failed, &refs)
+        });
+        let previous = if exact {
+            latest
+                .as_ref()
+                .and_then(|(_, evidence)| evidence.gate.as_ref())
+                .and_then(|gate| gate.previous.as_ref())
+        } else {
+            latest.as_ref().map(|(hash, _)| hash)
+        };
+        let intent = GateWorkProtocolIntent {
+            schema_version: SCHEMA_VERSION,
+            project_id: protocol.project_id,
+            session_id: protocol.session_id,
+            actor: &request.actor,
+            work_id: request.work_id,
+            run_id: request.run_id,
+            claim_id: request.claim_id,
+            claim_fence: request.claim_fence,
+            name: &name,
+            failed: &failed,
+            refs: &refs,
+            previous,
+        };
+        let intent_object = CanonicalObject::freeze(&intent)?;
+        let idempotency_key = format!("gate:{}", intent_object.hash().as_str());
+        let attempt = begin_work_protocol_attempt_on(
+            &transaction,
+            &BeginWorkProtocolAttempt {
+                project_id: protocol.project_id,
+                session_id: protocol.session_id,
+                operation: "work_update:gate",
+                idempotency_key: &idempotency_key,
+                intent: &intent,
+                basis: protocol.basis,
+                now: protocol.now,
+            },
+        )?;
+        if attempt.result.is_some() && !exact {
+            return Err(StoreError::InvalidWorkProjection(
+                "completed gate protocol attempt disagrees with the latest same-name evidence"
+                    .into(),
+            ));
+        }
+        let evidence = if exact {
+            latest
+                .as_ref()
+                .map(|(hash, _)| hash.clone())
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "an exact gate replay has no latest evidence object".into(),
+                    )
+                })?
+        } else {
+            append_gate_evidence_on(
+                &transaction,
+                request,
+                name,
+                failed,
+                refs,
+                latest.as_ref().map(|(hash, _)| hash.clone()),
+            )?
+        };
+        transaction.commit()?;
+        Ok(GateWorkProtocolAttempt {
+            evidence,
+            idempotency_key,
+            result: attempt.result,
+        })
     }
 
     /// Offers a checkpoint-coupled handoff without transferring authority yet.
@@ -6340,6 +6545,19 @@ impl SqliteStore {
                             "prerequisite edges cannot cross projects".into(),
                         ));
                     }
+                    if existing.lifecycle == WorkLifecycle::Completed {
+                        return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
+                            existing.work_id,
+                        ));
+                    }
+                    if existing.lifecycle != WorkLifecycle::Open {
+                        return Err(StoreError::WorkNotOpen(existing.work_id));
+                    }
+                    if existing.work_id == parent.work_id
+                        || work_is_ancestor_of(&transaction, existing.work_id, &parent)?
+                    {
+                        return Err(StoreError::WorkDependencyCycle);
+                    }
                     *work_id
                 }
                 WorkDependencyRef::Proposed(key) => {
@@ -6804,6 +7022,19 @@ impl SqliteStore {
         if item.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(item.work_id));
         }
+        if add {
+            if prerequisite.lifecycle == WorkLifecycle::Completed {
+                return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
+                    prerequisite.work_id,
+                ));
+            }
+            if prerequisite.lifecycle != WorkLifecycle::Open {
+                return Err(StoreError::WorkNotOpen(prerequisite.work_id));
+            }
+            if work_is_ancestor_of(&transaction, prerequisite.work_id, &item)? {
+                return Err(StoreError::WorkDependencyCycle);
+            }
+        }
         let exists: Option<String> = transaction
             .query_row(
                 "SELECT event_hash FROM work_prerequisites
@@ -7240,8 +7471,8 @@ fn inspect_work_on(
     let work = load_work_item(connection, work_id)?;
     require_work_item_relation_integrity(connection, work_id)?;
     let blockers = load_active_blocker_projections(connection, work_id)?;
-    let blocked_by = incomplete_prerequisite_projections(connection, work_id)?;
-    derive_projected_work_availability(connection, work, blockers, blocked_by, now)
+    let prerequisites = classified_prerequisite_projections(connection, work_id)?;
+    derive_projected_work_availability(connection, work, blockers, prerequisites, now)
 }
 
 fn inspect_work_catalog_on(
@@ -7251,17 +7482,18 @@ fn inspect_work_catalog_on(
 ) -> Result<ReadyWork, StoreError> {
     let work = load_work_item_projection(connection, work_id)?;
     let blockers = load_active_blocker_catalog_rows(connection, work_id)?;
-    let blocked_by = incomplete_prerequisite_catalog_rows(connection, work_id)?;
-    derive_projected_work_availability(connection, work, blockers, blocked_by, now)
+    let prerequisites = classified_prerequisite_catalog_rows(connection, work_id)?;
+    derive_projected_work_availability(connection, work, blockers, prerequisites, now)
 }
 
 fn derive_projected_work_availability(
     connection: &Connection,
     work: WorkItem,
     blockers: Vec<WorkBlocker>,
-    blocked_by: Vec<WorkId>,
+    prerequisites: Vec<(WorkId, WorkPrerequisiteState)>,
     now: DateTime<Utc>,
 ) -> Result<ReadyWork, StoreError> {
+    let (blocked_by, has_dead_prerequisite) = prerequisite_readiness(prerequisites);
     let mut why = Vec::new();
     let mut reason_codes = Vec::new();
     let availability = if !matches!(work.lifecycle, WorkLifecycle::Open) {
@@ -7281,7 +7513,11 @@ fn derive_projected_work_availability(
     } else if !blockers.is_empty() || !blocked_by.is_empty() {
         if !blocked_by.is_empty() {
             reason_codes.push(WorkReadinessReason::PrerequisiteIncomplete);
-            why.push("one or more prerequisites are incomplete".into());
+            why.push(if has_dead_prerequisite {
+                "one or more prerequisites are dead and must be removed".into()
+            } else {
+                "one or more prerequisites are incomplete".into()
+            });
         }
         if !blockers.is_empty() {
             reason_codes.push(WorkReadinessReason::TypedBlockerActive);
@@ -7313,17 +7549,18 @@ fn inspect_work_canonical_on(
     let work = load_work_item(connection, work_id)?;
     require_work_item_relation_integrity(connection, work_id)?;
     let blockers = load_active_blocker_projections(connection, work_id)?;
-    let blocked_by = incomplete_prerequisite_projections(connection, work_id)?;
-    derive_work_availability(connection, work, blockers, blocked_by, now)
+    let prerequisites = classified_prerequisite_projections(connection, work_id)?;
+    derive_work_availability(connection, work, blockers, prerequisites, now)
 }
 
 fn derive_work_availability(
     connection: &Connection,
     work: WorkItem,
     blockers: Vec<WorkBlocker>,
-    blocked_by: Vec<WorkId>,
+    prerequisites: Vec<(WorkId, WorkPrerequisiteState)>,
     now: DateTime<Utc>,
 ) -> Result<ReadyWork, StoreError> {
+    let (blocked_by, has_dead_prerequisite) = prerequisite_readiness(prerequisites);
     let mut why = Vec::new();
     let mut reason_codes = Vec::new();
     let availability = if !matches!(work.lifecycle, WorkLifecycle::Open) {
@@ -7343,7 +7580,11 @@ fn derive_work_availability(
     } else if !blockers.is_empty() || !blocked_by.is_empty() {
         if !blocked_by.is_empty() {
             reason_codes.push(WorkReadinessReason::PrerequisiteIncomplete);
-            why.push("one or more prerequisites are incomplete".into());
+            why.push(if has_dead_prerequisite {
+                "one or more prerequisites are dead and must be removed".into()
+            } else {
+                "one or more prerequisites are incomplete".into()
+            });
         }
         if !blockers.is_empty() {
             reason_codes.push(WorkReadinessReason::TypedBlockerActive);
@@ -7365,6 +7606,21 @@ fn derive_work_availability(
         blocked_by,
         blockers,
     })
+}
+
+fn prerequisite_readiness(
+    prerequisites: Vec<(WorkId, WorkPrerequisiteState)>,
+) -> (Vec<WorkId>, bool) {
+    let has_dead = prerequisites
+        .iter()
+        .any(|(_, state)| *state == WorkPrerequisiteState::Dead);
+    let blocked_by = prerequisites
+        .into_iter()
+        .filter_map(|(work_id, state)| {
+            (state != WorkPrerequisiteState::Satisfied).then_some(work_id)
+        })
+        .collect();
+    (blocked_by, has_dead)
 }
 
 fn claim_availability(
@@ -8023,26 +8279,32 @@ fn load_active_blocker_catalog_rows(
         .collect()
 }
 
+fn classified_prerequisite_projections(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<(WorkId, WorkPrerequisiteState)>, StoreError> {
+    let prerequisite_ids = load_prerequisite_projection_ids(connection, work_id)?;
+    let mut classified = Vec::with_capacity(prerequisite_ids.len());
+    for prerequisite_id in prerequisite_ids {
+        let prerequisite = load_work_item(connection, prerequisite_id)?;
+        classified.push((
+            prerequisite_id,
+            work_prerequisite_state(connection, &prerequisite)?,
+        ));
+    }
+    Ok(classified)
+}
+
 fn incomplete_prerequisite_projections(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<WorkId>, StoreError> {
-    let prerequisite_ids = load_prerequisite_projection_ids(connection, work_id)?;
-    let mut incomplete = Vec::new();
-    for prerequisite_id in prerequisite_ids {
-        let prerequisite = load_work_item(connection, prerequisite_id)?;
-        let satisfied = prerequisite.lifecycle == WorkLifecycle::Completed
-            || (prerequisite.lifecycle == WorkLifecycle::Superseded
-                && prerequisite
-                    .superseded_by
-                    .map(|replacement| load_work_item(connection, replacement))
-                    .transpose()?
-                    .is_some_and(|replacement| replacement.lifecycle == WorkLifecycle::Completed));
-        if !satisfied {
-            incomplete.push(prerequisite_id);
-        }
-    }
-    Ok(incomplete)
+    Ok(classified_prerequisite_projections(connection, work_id)?
+        .into_iter()
+        .filter_map(|(work_id, state)| {
+            (state != WorkPrerequisiteState::Satisfied).then_some(work_id)
+        })
+        .collect())
 }
 
 fn load_prerequisite_projection_ids(
@@ -8092,10 +8354,10 @@ fn load_prerequisite_projection_ids(
     Ok(bound)
 }
 
-fn incomplete_prerequisite_catalog_rows(
+fn classified_prerequisite_catalog_rows(
     connection: &Connection,
     work_id: WorkId,
-) -> Result<Vec<WorkId>, StoreError> {
+) -> Result<Vec<(WorkId, WorkPrerequisiteState)>, StoreError> {
     let mut statement = connection.prepare(
         "SELECT edge.prerequisite_id, prerequisite.lifecycle, replacement.lifecycle
          FROM work_prerequisites edge
@@ -8122,17 +8384,163 @@ fn incomplete_prerequisite_catalog_rows(
                     "prerequisite {prerequisite_id:?} is missing"
                 ))
             })?;
-            let satisfied = lifecycle == "completed"
-                || (lifecycle == "superseded"
-                    && replacement_lifecycle.as_deref() == Some("completed"));
-            Ok((!satisfied).then_some(prerequisite_id))
-        })
-        .filter_map(|result| match result {
-            Ok(Some(work_id)) => Some(Ok(work_id)),
-            Ok(None) => None,
-            Err(error) => Some(Err(error)),
+            let state = projected_prerequisite_state(
+                &lifecycle,
+                replacement_lifecycle.as_deref(),
+                prerequisite_id,
+            )?;
+            Ok((prerequisite_id, state))
         })
         .collect()
+}
+
+fn bounded_prerequisite_projection_rows(
+    connection: &Connection,
+    work_id: WorkId,
+    limit: usize,
+) -> Result<WorkPrerequisitePage, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT edge.prerequisite_id, prerequisite.short_ref,
+                prerequisite.lifecycle, replacement.lifecycle
+         FROM work_prerequisites edge
+         LEFT JOIN work_items prerequisite
+           ON prerequisite.work_id = edge.prerequisite_id
+         LEFT JOIN work_items replacement
+           ON replacement.work_id = prerequisite.superseded_by
+         WHERE edge.work_id = ?1",
+    )?;
+    let mut classified = statement
+        .query_map([work_id.0.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?
+        .map(|row| {
+            let (stored_id, short_ref, lifecycle, replacement_lifecycle) = row?;
+            let prerequisite_id = parse_work_id(&stored_id)?;
+            let short_ref = short_ref.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "prerequisite {prerequisite_id:?} is missing its catalog row"
+                ))
+            })?;
+            let lifecycle = lifecycle.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "prerequisite {prerequisite_id:?} is missing"
+                ))
+            })?;
+            let state = projected_prerequisite_state(
+                &lifecycle,
+                replacement_lifecycle.as_deref(),
+                prerequisite_id,
+            )?;
+            Ok((prerequisite_id, short_ref, state))
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    drop(statement);
+
+    classified.sort_by(|left, right| {
+        prerequisite_state_rank(left.2)
+            .cmp(&prerequisite_state_rank(right.2))
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    let mut totals = [0_usize; 3];
+    for (_, _, state) in &classified {
+        totals[prerequisite_state_rank(*state)] += 1;
+    }
+    let selected = classified.into_iter().take(limit).collect::<Vec<_>>();
+    let mut selected_counts = [0_usize; 3];
+    let mut items = Vec::with_capacity(selected.len());
+    for (prerequisite_id, _, state) in selected {
+        selected_counts[prerequisite_state_rank(state)] += 1;
+        items.push((load_work_item(connection, prerequisite_id)?, state));
+    }
+    Ok(WorkPrerequisitePage {
+        items,
+        omitted_by_state: std::array::from_fn(|index| totals[index] - selected_counts[index]),
+    })
+}
+
+const fn prerequisite_state_rank(state: WorkPrerequisiteState) -> usize {
+    match state {
+        WorkPrerequisiteState::Dead => 0,
+        WorkPrerequisiteState::Pending => 1,
+        WorkPrerequisiteState::Satisfied => 2,
+    }
+}
+
+fn work_prerequisite_state(
+    connection: &Connection,
+    prerequisite: &WorkItem,
+) -> Result<WorkPrerequisiteState, StoreError> {
+    let replacement_lifecycle = prerequisite
+        .superseded_by
+        .map(|replacement| load_work_item(connection, replacement))
+        .transpose()?
+        .map(|replacement| replacement.lifecycle);
+    classify_prerequisite_state(
+        prerequisite.lifecycle,
+        replacement_lifecycle,
+        prerequisite.work_id,
+    )
+}
+
+fn classify_prerequisite_state(
+    lifecycle: WorkLifecycle,
+    replacement_lifecycle: Option<WorkLifecycle>,
+    prerequisite_id: WorkId,
+) -> Result<WorkPrerequisiteState, StoreError> {
+    match lifecycle {
+        WorkLifecycle::Completed => Ok(WorkPrerequisiteState::Satisfied),
+        WorkLifecycle::Cancelled => Ok(WorkPrerequisiteState::Dead),
+        WorkLifecycle::Open | WorkLifecycle::Proposed => Ok(WorkPrerequisiteState::Pending),
+        WorkLifecycle::Superseded => match replacement_lifecycle {
+            Some(WorkLifecycle::Completed) => Ok(WorkPrerequisiteState::Satisfied),
+            Some(WorkLifecycle::Open | WorkLifecycle::Proposed) => {
+                Ok(WorkPrerequisiteState::Pending)
+            }
+            Some(WorkLifecycle::Cancelled | WorkLifecycle::Superseded) => {
+                Ok(WorkPrerequisiteState::Dead)
+            }
+            None => Err(StoreError::InvalidWorkProjection(format!(
+                "superseded prerequisite {prerequisite_id:?} has no replacement projection"
+            ))),
+        },
+    }
+}
+
+fn projected_prerequisite_state(
+    lifecycle: &str,
+    replacement_lifecycle: Option<&str>,
+    prerequisite_id: WorkId,
+) -> Result<WorkPrerequisiteState, StoreError> {
+    let lifecycle = match lifecycle {
+        "proposed" => WorkLifecycle::Proposed,
+        "open" => WorkLifecycle::Open,
+        "completed" => WorkLifecycle::Completed,
+        "cancelled" => WorkLifecycle::Cancelled,
+        "superseded" => WorkLifecycle::Superseded,
+        value => {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "prerequisite {prerequisite_id:?} has unknown lifecycle {value:?}"
+            )));
+        }
+    };
+    let replacement_lifecycle = replacement_lifecycle
+        .map(|value| match value {
+            "proposed" => Ok(WorkLifecycle::Proposed),
+            "open" => Ok(WorkLifecycle::Open),
+            "completed" => Ok(WorkLifecycle::Completed),
+            "cancelled" => Ok(WorkLifecycle::Cancelled),
+            "superseded" => Ok(WorkLifecycle::Superseded),
+            value => Err(StoreError::InvalidWorkProjection(format!(
+                "prerequisite {prerequisite_id:?} has replacement with unknown lifecycle {value:?}"
+            ))),
+        })
+        .transpose()?;
+    classify_prerequisite_state(lifecycle, replacement_lifecycle, prerequisite_id)
 }
 
 fn incomplete_prerequisites(
@@ -11005,6 +11413,302 @@ fn work_run_evidence_on(
         .collect()
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the checkpoint object and event retain the complete exact claim basis"
+)]
+fn persist_work_checkpoint_on(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    mut run: WorkRun,
+    claim: WorkClaim,
+    summary: String,
+    evidence: Vec<ObjectHash>,
+    actor: &crate::domain::ActorContext,
+    checkpointed_at: DateTime<Utc>,
+) -> Result<ObjectHash, StoreError> {
+    let acknowledged_run_position = FeedPosition {
+        feed: FeedId::RunExecution(run.run_id),
+        position: feed_head(transaction, &FeedId::RunExecution(run.run_id))?,
+    };
+    let checkpoint = WorkCheckpoint {
+        schema_version: SCHEMA_VERSION,
+        work_id: item.work_id,
+        run_id: run.run_id,
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+        acknowledged_run_position,
+        summary,
+        evidence,
+        actor: actor.clone(),
+        created_at: checkpointed_at,
+    };
+    let object = CanonicalObject::freeze(&checkpoint)?;
+    SqliteStore::insert_object(transaction, "work_checkpoint", &object)?;
+    append_to_work_feeds(
+        transaction,
+        &item.project_id,
+        item.root_id,
+        Some(run.run_id),
+        None,
+        "work_checkpoint",
+        &object,
+    )?;
+    run.last_checkpoint = Some(object.hash().clone());
+    run.state = WorkRunState::Active;
+    run.revision += 1;
+    run.updated_at = checkpointed_at;
+    persist_work_run(transaction, &run, claim.fence)?;
+    let mut root_execution = load_root_execution(transaction, run.root_execution_id)?;
+    let root_changed = expect_root_contributor(&mut root_execution, &claim.holder)
+        | add_root_contribution(&mut root_execution, &claim.holder, object.hash());
+    if root_changed {
+        root_execution.revision += 1;
+        root_execution.updated_at = checkpointed_at;
+        persist_root_execution(transaction, &root_execution)?;
+    }
+    append_work_event(
+        transaction,
+        &WorkEventDraft {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: Some(run.run_id),
+            revision: item.revision,
+            work: item.clone(),
+            run: Some(run),
+            root_execution: Some(root_execution),
+            claim: Some(claim),
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::Checkpointed {
+                checkpoint: object.hash().clone(),
+            },
+            actor: actor.clone(),
+            created_at: checkpointed_at,
+        },
+    )?;
+    Ok(object.hash().clone())
+}
+
+fn persist_work_evidence_on(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run: &WorkRun,
+    claim: WorkClaim,
+    evidence: &WorkEvidence,
+) -> Result<ObjectHash, StoreError> {
+    let object = CanonicalObject::freeze(evidence)?;
+    SqliteStore::insert_object(transaction, "work_evidence", &object)?;
+    transaction.execute(
+        "INSERT INTO work_run_evidence (evidence_hash, work_id, run_id)
+         VALUES (?1, ?2, ?3)",
+        params![
+            object.hash().as_str(),
+            item.work_id.0.to_string(),
+            run.run_id.0.to_string()
+        ],
+    )?;
+    append_to_work_feeds(
+        transaction,
+        &item.project_id,
+        item.root_id,
+        Some(run.run_id),
+        None,
+        "work_evidence",
+        &object,
+    )?;
+    let mut root_execution = load_root_execution(transaction, run.root_execution_id)?;
+    let root_changed = expect_root_contributor(&mut root_execution, &claim.holder)
+        | add_root_contribution(&mut root_execution, &claim.holder, object.hash());
+    if root_changed {
+        root_execution.revision += 1;
+        root_execution.updated_at = evidence.created_at;
+        persist_root_execution(transaction, &root_execution)?;
+    }
+    append_work_event(
+        transaction,
+        &WorkEventDraft {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: Some(run.run_id),
+            revision: item.revision,
+            work: item.clone(),
+            run: Some(run.clone()),
+            root_execution: Some(root_execution),
+            claim: Some(claim),
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::EvidenceAdded {
+                evidence: object.hash().clone(),
+            },
+            actor: evidence.actor.clone(),
+            created_at: evidence.created_at,
+        },
+    )?;
+    Ok(object.hash().clone())
+}
+
+fn append_gate_evidence_on(
+    transaction: &Transaction<'_>,
+    request: &RecordGateEvidenceRequest,
+    name: String,
+    failed: Vec<String>,
+    refs: Vec<String>,
+    previous: Option<ObjectHash>,
+) -> Result<ObjectHash, StoreError> {
+    expire_handoff_offers(
+        transaction,
+        request.run_id,
+        request.recorded_at,
+        &request.actor,
+    )?;
+    let (item, run, mut claim) = validate_live_claim_on(
+        transaction,
+        request.work_id,
+        request.run_id,
+        request.expected_work_revision,
+        &request.holder,
+        request.claim_id,
+        request.claim_fence,
+        request.recorded_at,
+        false,
+    )?;
+    let gate = GateEvidenceRecord {
+        schema_version: SCHEMA_VERSION,
+        name,
+        passed: failed.is_empty(),
+        failed,
+        previous,
+    };
+    renew_holder_claim(transaction, &mut claim, request.recorded_at)?;
+    let evidence = WorkEvidence {
+        schema_version: SCHEMA_VERSION,
+        work_id: item.work_id,
+        run_id: run.run_id,
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+        summary: GATE_EVIDENCE_SUMMARY.into(),
+        refs,
+        gate: Some(gate),
+        actor: request.actor.clone(),
+        created_at: request.recorded_at,
+    };
+    persist_work_evidence_on(transaction, &item, &run, claim, &evidence)
+}
+
+const LATEST_GATE_EVIDENCE_SQL: &str = "SELECT entry.object_hash
+     FROM work_feed_entries entry
+     WHERE entry.feed_kind = 'run_execution'
+       AND entry.feed_id = ?1
+       AND entry.object_kind = 'work_evidence'
+       AND entry.position = (
+           SELECT MAX(candidate.position)
+           FROM objects object INDEXED BY objects_work_evidence_gate_name
+           JOIN work_run_evidence evidence
+             ON evidence.run_id = ?1
+            AND evidence.evidence_hash = object.object_hash
+           JOIN work_feed_entries candidate
+             ON candidate.feed_kind = 'run_execution'
+            AND candidate.feed_id = evidence.run_id
+            AND candidate.object_hash = evidence.evidence_hash
+           WHERE object.object_kind = 'work_evidence'
+             AND json_extract(object.canonical_json, '$.run_id') = ?1
+             AND json_type(object.canonical_json, '$.gate') = 'object'
+             AND json_extract(object.canonical_json, '$.gate.name') = ?2
+       )";
+
+fn latest_gate_evidence_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    name: &str,
+) -> Result<Option<(ObjectHash, WorkEvidence)>, StoreError> {
+    // The canonical run feed is the sole source of the previous transition.
+    // The rebuildable expression index narrows candidates, but a mutable head
+    // must never redirect an immutable `previous` link.
+    let stored = connection
+        .query_row(
+            LATEST_GATE_EVIDENCE_SQL,
+            params![run_id.0.to_string(), name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    stored
+        .map(|stored| {
+            let hash = ObjectHash::from_stored(stored.clone())
+                .ok_or(StoreError::InvalidStoredHash(stored))?;
+            let evidence =
+                load_typed_work_object::<WorkEvidence>(connection, &hash, "work_evidence")?;
+            let gate = evidence.gate.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "gate evidence {hash} has no typed gate payload"
+                ))
+            })?;
+            if evidence.run_id != run_id || gate.name != name {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "gate evidence {hash} disagrees with its indexed identity"
+                )));
+            }
+            validate_gate_evidence(&hash, &evidence)?;
+            Ok((hash, evidence))
+        })
+        .transpose()
+}
+
+fn validate_gate_evidence(
+    evidence_hash: &ObjectHash,
+    evidence: &WorkEvidence,
+) -> Result<(), StoreError> {
+    validate_gate_evidence_payload(evidence).map_err(|detail| {
+        StoreError::InvalidWorkProjection(format!(
+            "gate evidence {evidence_hash} has an invalid typed payload: {detail}"
+        ))
+    })
+}
+
+fn validate_gate_evidence_chain(
+    evidence_hash: &ObjectHash,
+    evidence: &WorkEvidence,
+    gate_heads: &mut HashMap<(WorkRunId, String), ObjectHash>,
+) -> Result<(), StoreError> {
+    validate_gate_evidence(evidence_hash, evidence)?;
+    let Some(gate) = &evidence.gate else {
+        return Ok(());
+    };
+    let key = (evidence.run_id, gate.name.clone());
+    if gate.previous.as_ref() != gate_heads.get(&key) {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "gate evidence {evidence_hash} does not name the prior same-run, same-name observation"
+        )));
+    }
+    gate_heads.insert(key, evidence_hash.clone());
+    Ok(())
+}
+
+fn gate_observation_matches(
+    evidence: &WorkEvidence,
+    request: &RecordGateEvidenceRequest,
+    name: &str,
+    failed: &[String],
+    refs: &[String],
+) -> bool {
+    evidence.work_id == request.work_id
+        && evidence.run_id == request.run_id
+        && evidence.claim_id == request.claim_id
+        && evidence.claim_fence == request.claim_fence
+        && evidence.actor == request.actor
+        && evidence.refs == refs
+        && evidence.gate.as_ref().is_some_and(|gate| {
+            gate.schema_version == SCHEMA_VERSION
+                && gate.name == name
+                && gate.passed == failed.is_empty()
+                && gate.failed == failed
+        })
+}
+
 fn work_run_evidence_projection_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -11244,6 +11948,7 @@ fn work_evidence_kind_on(
                     "generic evidence {evidence_hash} has an unsupported schema"
                 )));
             }
+            validate_gate_evidence(evidence_hash, &evidence)?;
             (
                 WorkEvidenceKind::Generic,
                 EvidenceProjectionRow {
@@ -11832,13 +12537,50 @@ fn refuse_completed_ancestor(connection: &Connection, item: &WorkItem) -> Result
     Ok(())
 }
 
+fn work_is_ancestor_of(
+    connection: &Connection,
+    candidate: WorkId,
+    descendant: &WorkItem,
+) -> Result<bool, StoreError> {
+    let mut parent_id = descendant.parent_id;
+    let mut depth = 0_u16;
+    while let Some(parent) = parent_id {
+        depth += 1;
+        if depth > 1_024 {
+            return Err(StoreError::InvalidWorkProjection(
+                "work hierarchy depth exceeds the corruption guard".into(),
+            ));
+        }
+        let ancestor = load_work_item(connection, parent)?;
+        if ancestor.project_id != descendant.project_id || ancestor.root_id != descendant.root_id {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "work ancestor {:?} crosses its project or root boundary",
+                ancestor.work_id
+            )));
+        }
+        if ancestor.work_id == candidate {
+            return Ok(true);
+        }
+        parent_id = ancestor.parent_id;
+    }
+    Ok(false)
+}
+
 fn combined_graph_is_acyclic(
     connection: &Connection,
     project_id: &str,
 ) -> Result<bool, StoreError> {
+    combined_graph_is_acyclic_with_dependency(connection, project_id, None)
+}
+
+fn combined_graph_is_acyclic_with_dependency(
+    connection: &Connection,
+    project_id: &str,
+    proposed_supersession: Option<(WorkId, WorkId)>,
+) -> Result<bool, StoreError> {
     let mut graph: HashMap<WorkId, Vec<WorkId>> = HashMap::new();
     let mut statement = connection.prepare(
-        "SELECT work_id, parent_id, child_requirement
+        "SELECT work_id, parent_id, child_requirement, superseded_by
          FROM work_items WHERE project_id = ?1",
     )?;
     let rows = statement.query_map([project_id], |row| {
@@ -11846,10 +12588,11 @@ fn combined_graph_is_acyclic(
             row.get::<_, String>(0)?,
             row.get::<_, Option<String>>(1)?,
             row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
         ))
     })?;
     for row in rows {
-        let (child, parent, requirement) = row?;
+        let (child, parent, requirement, superseded_by) = row?;
         let child = parse_work_id(&child)?;
         graph.entry(child).or_default();
         if requirement == "required"
@@ -11859,6 +12602,12 @@ fn combined_graph_is_acyclic(
                 .entry(parse_work_id(&parent)?)
                 .or_default()
                 .push(child);
+        }
+        if let Some(replacement) = superseded_by {
+            graph
+                .entry(child)
+                .or_default()
+                .push(parse_work_id(&replacement)?);
         }
     }
     let mut statement = connection.prepare(
@@ -11876,6 +12625,10 @@ fn combined_graph_is_acyclic(
             .entry(parse_work_id(&work)?)
             .or_default()
             .push(parse_work_id(&prerequisite)?);
+    }
+    if let Some((source, replacement)) = proposed_supersession {
+        graph.entry(source).or_default().push(replacement);
+        graph.entry(replacement).or_default();
     }
 
     let mut incoming = graph
@@ -13587,6 +14340,348 @@ mod tests {
     }
 
     #[test]
+    fn latest_gate_observation_uses_indexed_canonical_run_history() {
+        let project = "canonical-gate-history";
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, project, "planner");
+        let work = store
+            .create_work(
+                &root_request(project, "canonical-gate-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("gate work");
+        let claim = claim(
+            &mut store,
+            &work,
+            "gate-agent",
+            "canonical-gate-claim",
+            1,
+            10_000,
+        );
+        let mut hashes = Vec::new();
+        for index in 0..128_i64 {
+            let failed = (index % 2 != 0).then(|| vec!["cargo-test".into()]);
+            hashes.push(
+                store
+                    .record_gate_evidence(
+                        &RecordGateEvidenceRequest {
+                            work_id: work.work_id,
+                            run_id: claim.run_id,
+                            expected_work_revision: work.revision,
+                            holder: claim.holder.clone(),
+                            claim_id: claim.claim_id,
+                            claim_fence: claim.fence,
+                            name: "cargo-test".into(),
+                            failed: failed.unwrap_or_default(),
+                            evidence_ref: None,
+                            actor: actor("gate-agent"),
+                            recorded_at: at(index + 2),
+                        },
+                        &DevelopmentNoopRedactor,
+                    )
+                    .expect("alternating gate observation"),
+            );
+        }
+        assert!(hashes.windows(2).all(|pair| pair[0] != pair[1]));
+        for (index, hash) in hashes.iter().enumerate() {
+            let evidence = store
+                .get::<WorkEvidence>(hash)
+                .expect("gate evidence read")
+                .expect("gate evidence");
+            assert_eq!(
+                evidence.gate.expect("typed gate").previous.as_ref(),
+                index.checked_sub(1).map(|previous| &hashes[previous])
+            );
+        }
+        let latest = latest_gate_evidence_on(&store.connection, claim.run_id, "cargo-test")
+            .expect("latest canonical gate observation")
+            .expect("gate observation");
+        assert_eq!(latest.0, *hashes.last().expect("last gate hash"));
+
+        let explain = format!("EXPLAIN QUERY PLAN {LATEST_GATE_EVIDENCE_SQL}");
+        let mut statement = store
+            .connection
+            .prepare(&explain)
+            .expect("prepare gate lookup plan");
+        let plan = statement
+            .query_map(params![claim.run_id.0.to_string(), "cargo-test"], |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("explain gate lookup")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect gate lookup plan");
+        assert!(
+            plan.iter().any(|detail| {
+                detail.contains("SEARCH object USING INDEX objects_work_evidence_gate_name")
+            }),
+            "gate lookup does not search its expression index: {plan:?}"
+        );
+        assert!(
+            plan.iter().all(|detail| !detail.contains("SCAN ")),
+            "gate lookup contains an unbounded scan: {plan:?}"
+        );
+        assert!(
+            plan.iter()
+                .all(|detail| !detail.contains("USE TEMP B-TREE")),
+            "gate lookup sorts through a temporary B-tree: {plan:?}"
+        );
+        assert!(
+            store
+                .verify_all()
+                .expect("gate history integrity")
+                .is_healthy()
+        );
+        let mutable_head_exists = store
+            .connection
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM sqlite_master
+                     WHERE name = 'work_gate_evidence_heads'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("gate head absence");
+        assert!(!mutable_head_exists);
+        let expression_index_exists = store
+            .connection
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM sqlite_master
+                     WHERE name = 'objects_work_evidence_gate_name'
+                       AND type = 'index'
+                 )",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .expect("gate expression index");
+        assert!(expression_index_exists);
+    }
+
+    #[test]
+    fn gate_replay_never_reuses_another_actors_attribution() {
+        let project = "gate-actor-attribution";
+        let holder = "shared-session";
+        let mut store = SqliteStore::open_in_memory().expect("gate actor fixture");
+        install_grant(&mut store, project, "planner");
+        let work = store
+            .create_work(
+                &root_request(project, "gate-actor-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("gate actor root");
+        let claim = claim(&mut store, &work, holder, "gate-actor-claim", 1, 300);
+        let project_id = crate::domain::ProjectId(project.into());
+        let session_id = SessionId(holder.into());
+        let basis = serde_json::json!({"test_basis": work.work_id});
+        let actor_a = actor(holder);
+        let failed = Vec::<String>::new();
+        let refs = Vec::<String>::new();
+        let pending_intent = GateWorkProtocolIntent {
+            schema_version: SCHEMA_VERSION,
+            project_id: &project_id,
+            session_id: &session_id,
+            actor: &actor_a,
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            name: "cargo-test",
+            failed: &failed,
+            refs: &refs,
+            previous: None,
+        };
+        let pending_object = CanonicalObject::freeze(&pending_intent).expect("actor A intent");
+        let actor_a_key = format!("gate:{}", pending_object.hash().as_str());
+        assert!(
+            store
+                .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                    project_id: &project_id,
+                    session_id: &session_id,
+                    operation: "work_update:gate",
+                    idempotency_key: &actor_a_key,
+                    intent: &pending_intent,
+                    basis: &basis,
+                    now: at(2),
+                })
+                .expect("reserve actor A attempt")
+                .result
+                .is_none()
+        );
+
+        let mut actor_b = actor(holder);
+        actor_b.actor_id = "different-actor".into();
+        actor_b.source_tool = Some("different-tool".into());
+        let actor_b_request = RecordGateEvidenceRequest {
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: work.revision,
+            holder: session_id.clone(),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            name: "cargo-test".into(),
+            failed: Vec::new(),
+            evidence_ref: None,
+            actor: actor_b.clone(),
+            recorded_at: at(2),
+        };
+        let actor_b_attempt = store
+            .record_gate_evidence_protocol(
+                &actor_b_request,
+                &BeginGateWorkProtocolAttempt {
+                    project_id: &project_id,
+                    session_id: &session_id,
+                    basis: &basis,
+                    now: at(2),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("actor B records its own gate observation");
+        assert_ne!(actor_b_attempt.idempotency_key, actor_a_key);
+        let different_attribution = store
+            .get::<WorkEvidence>(&actor_b_attempt.evidence)
+            .expect("actor B evidence read")
+            .expect("actor B evidence");
+        assert_eq!(different_attribution.actor, actor_b);
+        assert_eq!(
+            different_attribution
+                .gate
+                .as_ref()
+                .expect("actor B gate")
+                .previous,
+            None
+        );
+
+        let actor_a_hash = store
+            .record_gate_evidence(
+                &RecordGateEvidenceRequest {
+                    actor: actor_a.clone(),
+                    recorded_at: at(3),
+                    ..actor_b_request
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("actor A records a distinct attributed observation");
+        assert_ne!(actor_a_hash, actor_b_attempt.evidence);
+        let original_attribution = store
+            .get::<WorkEvidence>(&actor_a_hash)
+            .expect("actor A evidence read")
+            .expect("actor A evidence");
+        assert_eq!(original_attribution.actor, actor_a);
+        assert_eq!(
+            original_attribution
+                .gate
+                .expect("actor A gate")
+                .previous
+                .as_ref(),
+            Some(&actor_b_attempt.evidence)
+        );
+    }
+
+    #[test]
+    fn completed_gate_attempt_mismatch_refuses_before_appending() {
+        let project = "completed-gate-attempt-mismatch";
+        let holder = "gate-holder";
+        let mut store = SqliteStore::open_in_memory().expect("gate attempt fixture");
+        install_grant(&mut store, project, "planner");
+        let work = store
+            .create_work(
+                &root_request(project, "gate-attempt-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("gate attempt root");
+        let claim = claim(&mut store, &work, holder, "gate-attempt-claim", 1, 300);
+        let pass = RecordGateEvidenceRequest {
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: work.revision,
+            holder: SessionId(holder.into()),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            name: "cargo-test".into(),
+            failed: Vec::new(),
+            evidence_ref: None,
+            actor: actor(holder),
+            recorded_at: at(2),
+        };
+        let pass_hash = store
+            .record_gate_evidence(&pass, &DevelopmentNoopRedactor)
+            .expect("initial gate observation");
+        let failed = vec!["suite::failure".into()];
+        let request = RecordGateEvidenceRequest {
+            failed: failed.clone(),
+            recorded_at: at(3),
+            ..pass
+        };
+        let project_id = crate::domain::ProjectId(project.into());
+        let session_id = SessionId(holder.into());
+        let basis = serde_json::json!({"test_basis": work.work_id});
+        let intent = GateWorkProtocolIntent {
+            schema_version: SCHEMA_VERSION,
+            project_id: &project_id,
+            session_id: &session_id,
+            actor: &request.actor,
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            name: "cargo-test",
+            failed: &failed,
+            refs: &[],
+            previous: Some(&pass_hash),
+        };
+        let intent_object = CanonicalObject::freeze(&intent).expect("gate intent");
+        let idempotency_key = format!("gate:{}", intent_object.hash().as_str());
+        assert!(
+            store
+                .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                    project_id: &project_id,
+                    session_id: &session_id,
+                    operation: "work_update:gate",
+                    idempotency_key: &idempotency_key,
+                    intent: &intent,
+                    basis: &basis,
+                    now: at(3),
+                })
+                .expect("reserve synthetic completed attempt")
+                .result
+                .is_none()
+        );
+        store
+            .finish_work_protocol_attempt(
+                &project_id,
+                &session_id,
+                "work_update:gate",
+                &idempotency_key,
+                &serde_json::json!({"receipt": {"work_id": work.work_id}}),
+            )
+            .expect("complete synthetic attempt without evidence");
+
+        assert!(matches!(
+            store
+                .record_gate_evidence_protocol(
+                    &request,
+                    &BeginGateWorkProtocolAttempt {
+                        project_id: &project_id,
+                        session_id: &session_id,
+                        basis: &basis,
+                        now: at(3),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect_err("a completed attempt cannot append disagreeing evidence"),
+            StoreError::InvalidWorkProjection(detail)
+                if detail.contains("disagrees with the latest same-name evidence")
+        ));
+        assert_eq!(
+            store
+                .work_run_evidence(claim.run_id)
+                .expect("bounded gate evidence history"),
+            vec![pass_hash]
+        );
+    }
+
+    #[test]
     fn resolver_sql_bounds_collisions_and_recovers_an_omitted_target_by_full_id() {
         let mut store = SqliteStore::open_in_memory().expect("collision fixture");
         install_grant(&mut store, "ambiguous-project", "planner");
@@ -13726,6 +14821,118 @@ mod tests {
         .expect_err("shell metacharacters must not enter executable recovery guidance");
         assert!(
             matches!(error, StoreError::InvalidWorkProjection(reason) if reason.contains("shell-safe CLI argument"))
+        );
+    }
+
+    #[test]
+    fn gate_integrity_requires_a_valid_payload_and_prior_same_name_head() {
+        let work_id = WorkId(uuid::Uuid::now_v7());
+        let run_id = WorkRunId(uuid::Uuid::now_v7());
+        let claim_id = WorkClaimId(uuid::Uuid::now_v7());
+        let make = |previous: Option<ObjectHash>, passed: bool| WorkEvidence {
+            schema_version: SCHEMA_VERSION,
+            work_id,
+            run_id,
+            claim_id,
+            claim_fence: 1,
+            summary: GATE_EVIDENCE_SUMMARY.into(),
+            refs: Vec::new(),
+            gate: Some(GateEvidenceRecord {
+                schema_version: SCHEMA_VERSION,
+                name: "cargo-test".into(),
+                passed,
+                failed: Vec::new(),
+                previous,
+            }),
+            actor: actor("gate-integrity"),
+            created_at: at(1),
+        };
+
+        let first = make(None, true);
+        let first_hash = CanonicalObject::freeze(&first)
+            .expect("first gate object")
+            .hash()
+            .clone();
+        let mut heads = HashMap::new();
+        validate_gate_evidence_chain(&first_hash, &first, &mut heads)
+            .expect("first normalized gate starts the chain");
+
+        let mut alternate_summary = first.clone();
+        alternate_summary.summary = "human rendering may evolve".into();
+        validate_gate_evidence_payload(&alternate_summary)
+            .expect("the typed gate field, not a summary literal, is the discriminator");
+
+        let second = make(Some(first_hash.clone()), true);
+        let second_hash = CanonicalObject::freeze(&second)
+            .expect("second gate object")
+            .hash()
+            .clone();
+        validate_gate_evidence_chain(&second_hash, &second, &mut heads)
+            .expect("the exact prior head advances the chain");
+
+        let dangling_target = CanonicalObject::freeze(&"dangling")
+            .expect("dangling target")
+            .hash()
+            .clone();
+        let dangling = make(Some(dangling_target), true);
+        let dangling_hash = CanonicalObject::freeze(&dangling)
+            .expect("dangling gate object")
+            .hash()
+            .clone();
+        assert!(validate_gate_evidence_chain(&dangling_hash, &dangling, &mut heads).is_err());
+
+        let malformed = make(Some(second_hash), false);
+        let malformed_hash = CanonicalObject::freeze(&malformed)
+            .expect("malformed gate object")
+            .hash()
+            .clone();
+        assert!(validate_gate_evidence_chain(&malformed_hash, &malformed, &mut heads).is_err());
+    }
+
+    #[test]
+    fn prerequisite_state_uses_one_hop_satisfaction_and_dead_edge_rules() {
+        let prerequisite_id = WorkId::new();
+        assert_eq!(
+            classify_prerequisite_state(WorkLifecycle::Completed, None, prerequisite_id)
+                .expect("completed state"),
+            WorkPrerequisiteState::Satisfied
+        );
+        assert_eq!(
+            classify_prerequisite_state(WorkLifecycle::Open, None, prerequisite_id)
+                .expect("open state"),
+            WorkPrerequisiteState::Pending
+        );
+        assert_eq!(
+            classify_prerequisite_state(WorkLifecycle::Cancelled, None, prerequisite_id)
+                .expect("cancelled state"),
+            WorkPrerequisiteState::Dead
+        );
+        assert_eq!(
+            classify_prerequisite_state(
+                WorkLifecycle::Superseded,
+                Some(WorkLifecycle::Completed),
+                prerequisite_id,
+            )
+            .expect("completed replacement"),
+            WorkPrerequisiteState::Satisfied
+        );
+        assert_eq!(
+            classify_prerequisite_state(
+                WorkLifecycle::Superseded,
+                Some(WorkLifecycle::Open),
+                prerequisite_id,
+            )
+            .expect("live replacement"),
+            WorkPrerequisiteState::Pending
+        );
+        assert_eq!(
+            classify_prerequisite_state(
+                WorkLifecycle::Superseded,
+                Some(WorkLifecycle::Cancelled),
+                prerequisite_id,
+            )
+            .expect("cancelled replacement"),
+            WorkPrerequisiteState::Dead
         );
     }
 
@@ -15276,6 +16483,264 @@ mod tests {
     }
 
     #[test]
+    fn supersession_ref_and_replacement_matrix_is_enforced_in_storage() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        install_grant(&mut store, "project-supersession-matrix", "planner");
+        install_grant(&mut store, "other-supersession-project", "planner");
+        let source = store
+            .create_work(
+                &root_request("project-supersession-matrix", "matrix-source", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("source");
+        let live_replacement = store
+            .create_work(
+                &root_request("project-supersession-matrix", "matrix-live", 1),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("live replacement");
+        let cross_project = store
+            .create_work(
+                &root_request("other-supersession-project", "matrix-cross", 2),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("cross-project replacement");
+
+        let supersede = |work: &WorkItem,
+                         replacement_id: WorkId,
+                         key: &str,
+                         second: i64|
+         -> DisposeWorkRequest {
+            DisposeWorkRequest {
+                work_id: work.work_id,
+                expected_work_revision: work.revision,
+                disposition: WorkDisposition::Superseded,
+                replacement_id: Some(replacement_id),
+                reason: "matrix validation".into(),
+                authority: authority("project-supersession-matrix", "planner"),
+                actor: actor("planner"),
+                idempotency_key: key.into(),
+                disposed_at: at(second),
+            }
+        };
+
+        assert!(matches!(
+            store.dispose_work(
+                &supersede(&source, source.work_id, "matrix-self", 3),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidWork(_))
+        ));
+        assert!(matches!(
+            store.dispose_work(
+                &supersede(&source, cross_project.work_id, "matrix-cross", 4),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidWork(_))
+        ));
+
+        let cancelled_replacement = store
+            .create_work(
+                &root_request("project-supersession-matrix", "matrix-cancelled", 5),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("cancelled replacement");
+        let cancelled_replacement = store
+            .dispose_work(
+                &DisposeWorkRequest {
+                    work_id: cancelled_replacement.work_id,
+                    expected_work_revision: cancelled_replacement.revision,
+                    disposition: WorkDisposition::Cancelled,
+                    replacement_id: None,
+                    reason: "cancel replacement".into(),
+                    authority: authority("project-supersession-matrix", "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "matrix-cancel-replacement".into(),
+                    disposed_at: at(6),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("cancel replacement");
+        assert!(matches!(
+            store.dispose_work(
+                &supersede(
+                    &source,
+                    cancelled_replacement.work_id,
+                    "matrix-cancelled-target",
+                    7,
+                ),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidWork(_))
+        ));
+
+        let obsolete_replacement = store
+            .create_work(
+                &root_request("project-supersession-matrix", "matrix-obsolete", 8),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("obsolete replacement");
+        let obsolete_replacement = store
+            .dispose_work(
+                &supersede(
+                    &obsolete_replacement,
+                    live_replacement.work_id,
+                    "matrix-obsolete-dispose",
+                    9,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("supersede obsolete replacement");
+        assert!(matches!(
+            store.dispose_work(
+                &supersede(
+                    &source,
+                    obsolete_replacement.work_id,
+                    "matrix-superseded-target",
+                    10,
+                ),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidWork(_))
+        ));
+
+        let disposed = store
+            .dispose_work(
+                &supersede(&source, live_replacement.work_id, "matrix-valid", 11),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("open replacement is admitted");
+        assert_eq!(disposed.lifecycle, WorkLifecycle::Superseded);
+        assert_eq!(disposed.superseded_by, Some(live_replacement.work_id));
+        assert!(matches!(
+            store.dispose_work(
+                &supersede(
+                    &disposed,
+                    live_replacement.work_id,
+                    "matrix-closed-source",
+                    12,
+                ),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::WorkNotOpen(work_id)) if work_id == disposed.work_id
+        ));
+
+        let direct_source = store
+            .create_work(
+                &root_request("project-supersession-matrix", "matrix-direct-source", 13),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("direct cycle source");
+        let direct_replacement = store
+            .create_work(
+                &root_request(
+                    "project-supersession-matrix",
+                    "matrix-direct-replacement",
+                    14,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("direct cycle replacement");
+        store
+            .add_work_prerequisite(
+                &ChangeWorkPrerequisiteRequest {
+                    work_id: direct_replacement.work_id,
+                    prerequisite_id: direct_source.work_id,
+                    expected_revision: direct_replacement.revision,
+                    authority: delegated("project-supersession-matrix", "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "matrix-direct-prerequisite".into(),
+                    changed_at: at(15),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("direct prerequisite");
+        assert!(matches!(
+            store.dispose_work(
+                &supersede(
+                    &direct_source,
+                    direct_replacement.work_id,
+                    "matrix-direct-cycle",
+                    16,
+                ),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::WorkDependencyCycle)
+        ));
+
+        let transitive_source = store
+            .create_work(
+                &root_request(
+                    "project-supersession-matrix",
+                    "matrix-transitive-source",
+                    17,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("transitive cycle source");
+        let transitive_middle = store
+            .create_work(
+                &root_request(
+                    "project-supersession-matrix",
+                    "matrix-transitive-middle",
+                    18,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("transitive cycle middle");
+        let transitive_replacement = store
+            .create_work(
+                &root_request(
+                    "project-supersession-matrix",
+                    "matrix-transitive-replacement",
+                    19,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("transitive cycle replacement");
+        store
+            .add_work_prerequisite(
+                &ChangeWorkPrerequisiteRequest {
+                    work_id: transitive_middle.work_id,
+                    prerequisite_id: transitive_source.work_id,
+                    expected_revision: transitive_middle.revision,
+                    authority: delegated("project-supersession-matrix", "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "matrix-transitive-first".into(),
+                    changed_at: at(20),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("first transitive prerequisite");
+        store
+            .add_work_prerequisite(
+                &ChangeWorkPrerequisiteRequest {
+                    work_id: transitive_replacement.work_id,
+                    prerequisite_id: transitive_middle.work_id,
+                    expected_revision: transitive_replacement.revision,
+                    authority: delegated("project-supersession-matrix", "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "matrix-transitive-second".into(),
+                    changed_at: at(21),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("second transitive prerequisite");
+        assert!(matches!(
+            store.dispose_work(
+                &supersede(
+                    &transitive_source,
+                    transitive_replacement.work_id,
+                    "matrix-transitive-cycle",
+                    22,
+                ),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::WorkDependencyCycle)
+        ));
+    }
+
+    #[test]
     fn local_decomposition_is_atomic_cycle_safe_and_uses_dense_named_feeds() {
         let mut store = SqliteStore::open_in_memory().expect("store");
         install_grant(&mut store, "project-a", "planner");
@@ -15337,6 +16802,47 @@ mod tests {
         assert_eq!(optional_view.availability, WorkAvailability::Blocked);
         assert_eq!(optional_view.blocked_by, vec![required.work_id]);
 
+        let optional_parent_cycle = store.add_work_prerequisite(
+            &ChangeWorkPrerequisiteRequest {
+                work_id: optional.work_id,
+                prerequisite_id: root.work_id,
+                expected_revision: optional.revision,
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "optional-parent-cycle".into(),
+                changed_at: at(3),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            optional_parent_cycle,
+            Err(StoreError::WorkDependencyCycle)
+        ));
+        let nested_ancestor_cycle = store.decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: optional.work_id,
+                expected_parent_revision: optional.revision,
+                children: vec![child(
+                    "nested-optional",
+                    ChildRequirement::Optional,
+                    "Nested optional child",
+                )],
+                prerequisites: vec![ChildWorkPrerequisite {
+                    work_key: "nested-optional".into(),
+                    prerequisite: WorkDependencyRef::Existing(root.work_id),
+                }],
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "nested-ancestor-cycle".into(),
+                created_at: at(3),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            nested_ancestor_cycle,
+            Err(StoreError::WorkDependencyCycle)
+        ));
+
         let cycle = store.add_work_prerequisite(
             &ChangeWorkPrerequisiteRequest {
                 work_id: required.work_id,
@@ -15358,12 +16864,168 @@ mod tests {
             1
         );
 
+        let completed_prerequisite = store
+            .create_work(
+                &root_request("project-a", "completed-prerequisite", 4),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("create completed prerequisite");
+        let completed_claim = claim(
+            &mut store,
+            &completed_prerequisite,
+            "planner",
+            "completed-prerequisite-claim",
+            5,
+            300,
+        );
+        let completed_evidence = evidence(
+            &mut store,
+            &completed_prerequisite,
+            &completed_claim,
+            "planner",
+            "completed-prerequisite-evidence",
+            6,
+        );
+        checkpoint(
+            &mut store,
+            &completed_prerequisite,
+            &completed_claim,
+            "planner",
+            "completed-prerequisite-checkpoint",
+            7,
+            std::slice::from_ref(&completed_evidence),
+        );
+        complete(
+            &mut store,
+            &completed_prerequisite,
+            &completed_claim,
+            "planner",
+            &completed_evidence,
+            "completed-prerequisite-complete",
+            8,
+        )
+        .expect("complete prerequisite");
+        let completed_target = store.add_work_prerequisite(
+            &ChangeWorkPrerequisiteRequest {
+                work_id: required.work_id,
+                prerequisite_id: completed_prerequisite.work_id,
+                expected_revision: required.revision,
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "completed-prerequisite-refusal".into(),
+                changed_at: at(9),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            completed_target,
+            Err(StoreError::WorkPrerequisiteAlreadySatisfied(work_id))
+                if work_id == completed_prerequisite.work_id
+        ));
+        let completed_decomposition = store.decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: root.work_id,
+                expected_parent_revision: decomposition.parent.revision,
+                children: vec![child(
+                    "completed-existing",
+                    ChildRequirement::Optional,
+                    "Completed existing prerequisite",
+                )],
+                prerequisites: vec![ChildWorkPrerequisite {
+                    work_key: "completed-existing".into(),
+                    prerequisite: WorkDependencyRef::Existing(completed_prerequisite.work_id),
+                }],
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "completed-existing-decompose".into(),
+                created_at: at(9),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            completed_decomposition,
+            Err(StoreError::WorkPrerequisiteAlreadySatisfied(work_id))
+                if work_id == completed_prerequisite.work_id
+        ));
+
+        let terminal_prerequisite = store
+            .create_work(
+                &root_request("project-a", "terminal-prerequisite", 4),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("create terminal prerequisite");
+        let terminal_prerequisite = store
+            .dispose_work(
+                &DisposeWorkRequest {
+                    work_id: terminal_prerequisite.work_id,
+                    expected_work_revision: terminal_prerequisite.revision,
+                    disposition: WorkDisposition::Cancelled,
+                    replacement_id: None,
+                    reason: "terminal prerequisites are refused".into(),
+                    authority: authority("project-a", "planner"),
+                    actor: actor("planner"),
+                    idempotency_key: "cancel-terminal-prerequisite".into(),
+                    disposed_at: at(5),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("cancel terminal prerequisite");
+        let closed_target = store.add_work_prerequisite(
+            &ChangeWorkPrerequisiteRequest {
+                work_id: required.work_id,
+                prerequisite_id: terminal_prerequisite.work_id,
+                expected_revision: required.revision,
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "terminal-prerequisite-refusal".into(),
+                changed_at: at(6),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            closed_target,
+            Err(StoreError::WorkNotOpen(work_id)) if work_id == terminal_prerequisite.work_id
+        ));
+
         let before = store
             .connection
             .query_row("SELECT COUNT(*) FROM work_items", [], |row| {
                 row.get::<_, i64>(0)
             })
             .expect("count before");
+        let closed_decomposition = store.decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: root.work_id,
+                expected_parent_revision: decomposition.parent.revision,
+                children: vec![child(
+                    "closed-existing",
+                    ChildRequirement::Required,
+                    "Closed existing prerequisite",
+                )],
+                prerequisites: vec![ChildWorkPrerequisite {
+                    work_key: "closed-existing".into(),
+                    prerequisite: WorkDependencyRef::Existing(terminal_prerequisite.work_id),
+                }],
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "closed-existing-decompose".into(),
+                created_at: at(7),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            closed_decomposition,
+            Err(StoreError::WorkNotOpen(work_id)) if work_id == terminal_prerequisite.work_id
+        ));
+        assert_eq!(
+            before,
+            store
+                .connection
+                .query_row("SELECT COUNT(*) FROM work_items", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("count after closed prerequisite refusal")
+        );
         let bad = store.decompose_work(
             &DecomposeWorkRequest {
                 parent_id: root.work_id,

@@ -319,14 +319,22 @@ seals and aggregate contributions. The seal makes the work `completed`; an
 attributed abort before it returns to `open`. Reopen preserves root-work
 memory but creates a clean run generation.
 
-The planned gate word is an audit wrapper over existing machinery: one
-pass/fail `WorkEvidence` entry on the held item (gate name, bounded failure
-list, optional reference) through the ordinary evidence path and
-exact-retry protocol — nothing else. It adds no canonical kind, no
-obligation, no completion barrier, and no waiver; a product defect becomes
+The `gate` word is an audit wrapper over existing machinery: one pass/fail
+`WorkEvidence` entry on the focused item the session holds (gate name, bounded
+failure-label list, optional reference) through the ordinary evidence path.
+Bare `gate NAME` records a pass; a failure carries at least one label, using
+the check command or check name when no test id exists. Hidden
+idempotency replays a consecutive identical result after a lost response only
+within the same claim generation. Release, handoff, or recovery creates a new
+claim identity and therefore a fresh observation even when the result is
+unchanged; the same result after a different state is also fresh — nothing
+else. The gate payload is a structural field on `WorkEvidence`, not a
+classification inferred from generic evidence prose. It adds no canonical kind,
+no obligation, no completion barrier, and no waiver; a product defect becomes
 a required child through the ordinary propose path, which existing
 completion machinery already enforces. The feature brief defines the input
-bounds.
+bounds; the domain/storage boundary owns and revalidates their normalized
+form.
 
 Optional report state is separate from work completion:
 
@@ -1047,23 +1055,23 @@ engram export preview <adapter> <work-ref>   engram export apply <intent>
 ### 8.2 Agent-facing MCP server
 
 Agent-facing MCP exposes exactly `next`, `ls`, `show`, `add`, `claim`,
-`update`, `note`, `done`, `search`, and `handoff`. Those tools translate into
-the six-operation work core: `work_next`, `work_focus`, `work_propose`,
-`work_update`, `work_complete`, and `work_handoff`; the session binding
-supplies project, actor, current work, and cursors. Optional generic memory
-capture, import, publication, and administrative queries remain
+`update`, `gate`, `note`, `done`, `search`, and `handoff`. Those tools
+translate into the six-operation work core: `work_next`, `work_focus`,
+`work_propose`, `work_update`, `work_complete`, and `work_handoff`; the
+session binding supplies project, actor, current work, and cursors. Optional
+generic memory capture, import, publication, and administrative queries remain
 separate tools rather than expanding every model turn.
 
-The planned local-work cut described in the feature briefs adds `gate`,
+The planned project-memory cut described in the feature briefs adds
 `remember`, `memories`, and `forget`. When it ships, the agent surface
 becomes thirteen words plus `search` — fourteen MCP tools, with no new
-core operation: `gate` wraps the existing evidence path, and
+work-core operation: `gate` already wraps the existing evidence path, and
 `remember`, `memories`, and `forget` are a thin project-memory surface with
 project-policy authorization and hidden idempotency, outside the
 six-operation work core — no focus mutation, no claim renewal. The
 implementation updates this tool count, the MCP registration and
 instructions, and every agent instruction file atomically with the code;
-until then the ten tools above are the complete shipped surface.
+until then the eleven tools above are the complete shipped surface.
 
 Project-memory advertisement in planned `next` is advisory and
 content-free: a count of retained project notes and a changed flag, with

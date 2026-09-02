@@ -33,8 +33,8 @@ try {
     }
 
     if ($cargoArgs.Count -eq 0) {
-        Write-Output "Rust performance gate: claim-validated mutations, test threads=1"
-        & cargo test claim_validated_mutations_are_bounded_at_project_scale -- --ignored --nocapture --test-threads=1
+        Write-Output "Rust scale gate: claim-validated mutation decode budgets"
+        & cargo test claim_validated_mutations_are_bounded_at_project_scale -- --ignored --nocapture
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }

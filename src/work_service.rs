@@ -30,15 +30,17 @@ use crate::{
     WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
     WorkHandoffState, WorkId, WorkItem, WorkItemKind, WorkLifecycle, WorkObligation,
     WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState, WorkOrigin,
-    WorkPlanningAuthority, WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
-    WorkTransition,
+    WorkPlanningAuthority, WorkPrerequisiteState, WorkRevisionPatch, WorkRun, WorkRunId,
+    WorkRunState, WorkSessionState, WorkTransition,
     domain::{
         AssuranceLevel, MemoryAssertionEvent, MemoryContradictionEvent, ProvenanceLink,
-        ProvenanceRelation, SCHEMA_VERSION, Scope, Sensitivity, WorkCompletionRecoveryCause,
+        ProvenanceRelation, RecordGateEvidenceRequest, RecordWorkNoteRequest, SCHEMA_VERSION,
+        Scope, Sensitivity, WorkCompletionRecoveryCause, validate_gate_evidence_payload,
     },
     storage::{
-        BeginWorkProtocolAttempt, CompleteWorkStorageResult, StageWorkSessionDelivery, StoreError,
-        WorkEvidenceProjectionSummary, normalize_completion_acceptance_shape,
+        BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, CompleteWorkStorageResult,
+        StageWorkSessionDelivery, StoreError, WorkEvidenceProjectionSummary, WorkNoteCapture,
+        normalize_completion_acceptance_shape,
     },
 };
 
@@ -139,6 +141,12 @@ struct WorkProtocolIntent<'a, T> {
     source_skill: Option<&'a str>,
     authority_grant: Option<&'a ObjectHash>,
     input: &'a T,
+}
+
+#[derive(Serialize)]
+struct WorkNoteIntent<'a> {
+    summary: &'a str,
+    refs: &'a [String],
 }
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
@@ -353,6 +361,9 @@ pub struct WorkSectionOmission {
 pub enum WorkSectionOmissionReason {
     ByteBudget,
     CountLimit,
+    DeadPrerequisiteCountLimit,
+    PendingPrerequisiteCountLimit,
+    SatisfiedPrerequisiteCountLimit,
 }
 
 /// Bounded work identity and planning fields used on the agent wire.
@@ -375,6 +386,8 @@ pub struct WorkItemSummary {
     pub revision: i64,
     pub active_run_id: Option<WorkRunId>,
     pub superseded_by: Option<WorkId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prerequisite_state: Option<WorkPrerequisiteState>,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -455,6 +468,8 @@ pub struct WorkFocusView {
 pub struct WorkEvidenceSummary {
     pub evidence: ObjectHash,
     pub evidence_kind: WorkEvidenceKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<WorkGateEvidenceSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -475,6 +490,14 @@ pub struct WorkEvidenceSummary {
     pub environment_components: Option<crate::EnvironmentComponents>,
     pub summary: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// Typed gate discriminator retained beside the human-readable evidence line.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkGateEvidenceSummary {
+    pub name: String,
+    pub passed: bool,
+    pub failed_count: usize,
 }
 
 /// Bounded agent-facing summary of one immutable run obligation.
@@ -749,6 +772,16 @@ pub struct WorkUpdateResult {
     pub obligations: Vec<String>,
     pub obligation_page: WorkObligationPage,
     pub allowed_next: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct WorkNoteResult {
+    pub(crate) operation: String,
+    pub(crate) receipt: WorkMutationReceipt,
+    pub(crate) obligations: Vec<String>,
+    pub(crate) obligation_page: WorkObligationPage,
+    pub(crate) allowed_next: Vec<String>,
+    pub(crate) evidence: WorkMutationReceipt,
 }
 
 /// Stable compact receipt shared by update and handoff operations.
@@ -1209,6 +1242,12 @@ impl LocalWorkService {
         self.focus_view(&store, work.work_id, false, now)
     }
 
+    /// Resolves one work reference without projecting or changing ambient
+    /// focus. Agent translations use this only to attribute core refusals.
+    pub(crate) fn resolve_work_reference(&self, work_ref: &str) -> Result<WorkItem, StoreError> {
+        self.store()?.resolve_work_ref(&self.project_id, work_ref)
+    }
+
     /// Selects and inspects ambient work without implicitly changing its claim.
     ///
     /// # Errors
@@ -1454,6 +1493,219 @@ impl LocalWorkService {
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
         self.work_update_on(None, input, now)
+    }
+
+    /// Records one typed gate transition through the evidence path. Storage
+    /// serializes the latest same-name observation with the append, so an
+    /// exact consecutive retry is atomic across sessions and processes.
+    #[cfg(test)]
+    pub(crate) fn work_gate(
+        &self,
+        name: &str,
+        failed: &[String],
+        evidence_ref: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<WorkUpdateResult, StoreError> {
+        self.work_gate_on(None, name, failed, evidence_ref, now)
+    }
+
+    /// Like [`Self::work_gate`], but binds an explicit target through the same
+    /// storage operation so concurrent focus changes cannot redirect evidence.
+    pub(crate) fn work_gate_on(
+        &self,
+        work_ref: Option<&str>,
+        name: &str,
+        failed: &[String],
+        evidence_ref: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<WorkUpdateResult, StoreError> {
+        let mut store = self.store()?;
+        let target = self.bind_target(&mut store, work_ref, now)?;
+        let basis = self.protocol_basis(&store, true, false, target, now)?;
+        let work = basis.focused_work.clone().ok_or_else(|| {
+            StoreError::InvalidWorkProjection("gate attempt has no bound focused work".into())
+        })?;
+        let claim = basis
+            .claim
+            .clone()
+            .ok_or(StoreError::WorkClaimMismatch { work: work.work_id })?;
+        if claim.work_id != work.work_id
+            || claim.state != WorkClaimState::Active
+            || claim.holder != self.session_id
+        {
+            return Err(StoreError::WorkClaimMismatch { work: work.work_id });
+        }
+        if work.lifecycle != WorkLifecycle::Open {
+            return Err(StoreError::WorkNotOpen(work.work_id));
+        }
+        let attempt = store.record_gate_evidence_protocol(
+            &RecordGateEvidenceRequest {
+                work_id: work.work_id,
+                run_id: claim.run_id,
+                expected_work_revision: work.revision,
+                holder: self.session_id.clone(),
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+                name: name.to_owned(),
+                failed: failed.to_owned(),
+                evidence_ref: evidence_ref.map(str::to_owned),
+                actor: self.actor("work_update", "record gate evidence for ambient work"),
+                recorded_at: now,
+            },
+            &BeginGateWorkProtocolAttempt {
+                project_id: &self.project_id,
+                session_id: &self.session_id,
+                basis: &basis,
+                now,
+            },
+            &DevelopmentNoopRedactor,
+        )?;
+        let protocol_operation = "work_update:gate";
+        // Gate does not use `basis_matches`: its protocol key already binds
+        // work, run, claim id/fence, normalized observation, and the canonical
+        // previous transition. A new append revalidates the live claim inside
+        // the same storage transaction.
+        if let Some(result) = attempt.result {
+            return serde_json::from_value(result).map_err(StoreError::from);
+        }
+        let result = self.work_update_result(
+            &store,
+            "evidence",
+            work.work_id,
+            serde_json::to_value(&attempt.evidence)?,
+            now,
+        )?;
+        store.finish_work_protocol_attempt(
+            &self.project_id,
+            &self.session_id,
+            protocol_operation,
+            &attempt.idempotency_key,
+            &result,
+        )?;
+        Ok(result)
+    }
+
+    /// Captures one note as evidence plus its acknowledging checkpoint under
+    /// one explicit work target and one atomic storage operation.
+    pub(crate) fn work_note_on(
+        &self,
+        work_ref: Option<&str>,
+        summary: &str,
+        refs: &[String],
+        now: DateTime<Utc>,
+    ) -> Result<WorkNoteResult, StoreError> {
+        let mut store = self.store()?;
+        let target = self.bind_target(&mut store, work_ref, now)?;
+        let basis = self.protocol_basis(&store, true, false, target, now)?;
+        let note = WorkNoteIntent { summary, refs };
+        let intent = self.protocol_intent(&note);
+        let protocol_operation = "work_update:note";
+        let raw_key =
+            self.effective_idempotency_key("", protocol_operation, &basis, &intent, now)?;
+        let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+            project_id: &self.project_id,
+            session_id: &self.session_id,
+            operation: protocol_operation,
+            idempotency_key: &raw_key,
+            intent: &intent,
+            basis: &basis,
+            now,
+        })?;
+        if let Some(result) = attempt.result {
+            return serde_json::from_value(result).map_err(StoreError::from);
+        }
+        let basis_matches =
+            retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
+        let scoped_key =
+            self.core_operation_key(protocol_operation, &raw_key, "record_work_note")?;
+        if let Some(value) = store.work_operation_result_value("record_work_note", &scoped_key)? {
+            let capture: WorkNoteCapture = serde_json::from_value(value)?;
+            let durable_basis: WorkProtocolBasis =
+                serde_json::from_value(attempt.basis.ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "committed note has no durable attempt basis".into(),
+                    )
+                })?)?;
+            let work_id = durable_basis
+                .focused_work
+                .map(|work| work.work_id)
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "committed note basis has no focused work".into(),
+                    )
+                })?;
+            let result = self.work_note_result(&store, work_id, capture, now)?;
+            store.finish_work_protocol_attempt(
+                &self.project_id,
+                &self.session_id,
+                protocol_operation,
+                &raw_key,
+                &result,
+            )?;
+            return Ok(result);
+        }
+        ensure_protocol_basis(basis_matches, protocol_operation, &raw_key, false)?;
+        let work = basis.focused_work.clone().ok_or_else(|| {
+            StoreError::InvalidWorkProjection("note attempt has no bound focused work".into())
+        })?;
+        let claim = self.live_protocol_claim(&basis, &work, now)?;
+        let capture = store.record_work_note(
+            &RecordWorkNoteRequest {
+                work_id: work.work_id,
+                run_id: claim.run_id,
+                expected_work_revision: work.revision,
+                holder: self.session_id.clone(),
+                claim_id: claim.claim_id,
+                claim_fence: claim.fence,
+                summary: summary.to_owned(),
+                refs: refs.to_owned(),
+                actor: self.actor(
+                    "work_update",
+                    "record note evidence and checkpoint ambient local work",
+                ),
+                idempotency_key: scoped_key,
+                recorded_at: now,
+            },
+            &DevelopmentNoopRedactor,
+        )?;
+        let result = self.work_note_result(&store, work.work_id, capture, now)?;
+        store.finish_work_protocol_attempt(
+            &self.project_id,
+            &self.session_id,
+            protocol_operation,
+            &raw_key,
+            &result,
+        )?;
+        Ok(result)
+    }
+
+    fn work_note_result(
+        &self,
+        store: &SqliteStore,
+        work_id: WorkId,
+        capture: WorkNoteCapture,
+        now: DateTime<Utc>,
+    ) -> Result<WorkNoteResult, StoreError> {
+        let guidance = self.work_guidance(store, work_id, now)?;
+        let evidence = compact_mutation_receipt(
+            &guidance.status.work,
+            None,
+            serde_json::to_value(capture.evidence)?,
+        );
+        let result = WorkNoteResult {
+            operation: "note".into(),
+            receipt: compact_mutation_receipt(
+                &guidance.status.work,
+                None,
+                serde_json::to_value(capture.checkpoint)?,
+            ),
+            obligations: compact_obligations(&guidance.status),
+            obligation_page: work_obligation_page(store, work_id)?,
+            allowed_next: guidance.allowed_next,
+            evidence,
+        };
+        ensure_agent_response_budget(&result, "work_update")?;
+        Ok(result)
     }
 
     /// Like [`Self::work_update`], but first binds `work_ref` as the ambient
@@ -2827,7 +3079,8 @@ impl LocalWorkService {
             });
         }
         let children = store.work_children(work_id)?;
-        let prerequisites = store.work_prerequisites(work_id)?;
+        let prerequisite_page =
+            store.work_prerequisites_with_state(work_id, MAX_FOCUS_RELATIONS)?;
         // The work-memory index is bound to the session's persisted focus; an
         // inspection of another item carries no memory index.
         let memories = if with_memories {
@@ -2848,12 +3101,6 @@ impl LocalWorkService {
             omissions.push(count_omission(
                 WorkNextSection::Focus,
                 children.len() - MAX_FOCUS_RELATIONS,
-            ));
-        }
-        if prerequisites.len() > MAX_FOCUS_RELATIONS {
-            omissions.push(count_omission(
-                WorkNextSection::Focus,
-                prerequisites.len() - MAX_FOCUS_RELATIONS,
             ));
         }
         if handoffs.len() > MAX_FOCUS_RELATIONS {
@@ -2884,6 +3131,11 @@ impl LocalWorkService {
             owned_control_work_binding(&status.work, run, claim.as_ref(), &self.session_id, now)
         });
         let outcome = status.work.outcome.clone();
+        let (prerequisites, prerequisite_omissions) = bounded_prerequisite_summaries(
+            prerequisite_page.items,
+            prerequisite_page.omitted_by_state,
+        );
+        omissions.extend(prerequisite_omissions);
         let mut view = WorkFocusView {
             session: agent_work_session(&session),
             status: ready_work_summary(status),
@@ -2896,11 +3148,7 @@ impl LocalWorkService {
                 .take(MAX_FOCUS_RELATIONS)
                 .map(|work| work_item_summary(&work))
                 .collect(),
-            prerequisites: prerequisites
-                .into_iter()
-                .take(MAX_FOCUS_RELATIONS)
-                .map(|work| work_item_summary(&work))
-                .collect(),
+            prerequisites,
             handoffs: handoffs
                 .iter()
                 .take(MAX_FOCUS_RELATIONS)
@@ -3081,8 +3329,45 @@ fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
         revision: work.revision,
         active_run_id: work.active_run_id,
         superseded_by: work.superseded_by,
+        prerequisite_state: None,
         updated_at: work.updated_at,
     }
+}
+
+fn work_item_summary_with_prerequisite_state(
+    work: &WorkItem,
+    state: WorkPrerequisiteState,
+) -> WorkItemSummary {
+    let mut summary = work_item_summary(work);
+    summary.prerequisite_state = Some(state);
+    summary
+}
+
+fn bounded_prerequisite_summaries(
+    prerequisites: Vec<(WorkItem, WorkPrerequisiteState)>,
+    omitted_by_state: [usize; 3],
+) -> (Vec<WorkItemSummary>, Vec<WorkSectionOmission>) {
+    let reasons = [
+        WorkSectionOmissionReason::DeadPrerequisiteCountLimit,
+        WorkSectionOmissionReason::PendingPrerequisiteCountLimit,
+        WorkSectionOmissionReason::SatisfiedPrerequisiteCountLimit,
+    ];
+    let omissions = reasons
+        .into_iter()
+        .zip(omitted_by_state)
+        .filter_map(|(reason, omitted_count)| {
+            (omitted_count != 0).then_some(WorkSectionOmission {
+                section: WorkNextSection::Focus,
+                reason,
+                omitted_count,
+            })
+        })
+        .collect();
+    let summaries = prerequisites
+        .into_iter()
+        .map(|(work, state)| work_item_summary_with_prerequisite_state(&work, state))
+        .collect();
+    (summaries, omissions)
 }
 
 fn ready_work_summary(status: ReadyWork) -> ReadyWorkSummary {
@@ -3395,6 +3680,34 @@ fn push_focus_evidence(selected: &mut Vec<ObjectHash>, hash: &ObjectHash) {
     }
 }
 
+fn compact_work_evidence(evidence: &WorkEvidence) -> Result<String, StoreError> {
+    let Some(gate) = evidence.gate.as_ref() else {
+        return Ok(compact_text(&evidence.summary));
+    };
+    validate_gate_evidence_payload(evidence).map_err(StoreError::InvalidWorkProjection)?;
+    if gate.passed {
+        return Ok(compact_text(&format!("gate {} passed", gate.name)));
+    }
+    let count = gate.failed.len();
+    let listed = gate
+        .failed
+        .iter()
+        .take(2)
+        .map(|failure| compact_text(failure))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let omitted = count.saturating_sub(2);
+    let suffix = if omitted == 0 {
+        String::new()
+    } else {
+        format!(" (+{omitted} more)")
+    };
+    Ok(compact_text(&format!(
+        "gate {} failed ({count} failures): {listed}{suffix}",
+        gate.name
+    )))
+}
+
 fn work_evidence_summary(
     store: &SqliteStore,
     run_id: WorkRunId,
@@ -3407,9 +3720,16 @@ fn work_evidence_summary(
                     "generic evidence object {hash} is missing"
                 ))
             })?;
+            let summary = compact_work_evidence(&evidence)?;
+            let gate = evidence.gate.as_ref().map(|gate| WorkGateEvidenceSummary {
+                name: gate.name.clone(),
+                passed: gate.passed,
+                failed_count: gate.failed.len(),
+            });
             Ok(WorkEvidenceSummary {
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Generic,
+                gate,
                 workspace_id: None,
                 source_revision: None,
                 producer_session_id: evidence.actor.session_id,
@@ -3419,7 +3739,7 @@ fn work_evidence_summary(
                 environment_fingerprint: None,
                 environment: None,
                 environment_components: None,
-                summary: compact_text(&evidence.summary),
+                summary,
                 created_at: evidence.created_at,
             })
         }
@@ -3428,6 +3748,7 @@ fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Verification,
+                gate: None,
                 workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
                 source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
                 producer_session_id: Some(evidence.session_id),
@@ -3446,6 +3767,7 @@ fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Environment,
+                gate: None,
                 workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
                 source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
                 producer_session_id: Some(evidence.session_id),
@@ -4129,7 +4451,7 @@ fn agent_change_object(
                 work_ref: Some(item.short_ref),
                 revision: None,
                 change_kind: "evidence".into(),
-                summary: compact_text(&evidence.summary),
+                summary: compact_work_evidence(&evidence)?,
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 created_at: evidence.created_at,
             }))
@@ -4764,7 +5086,7 @@ mod tests {
     use super::*;
     use crate::{
         WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityScope, WorkPlanningBudget,
-        domain::SCHEMA_VERSION,
+        domain::{GATE_EVIDENCE_SUMMARY, SCHEMA_VERSION},
     };
 
     fn at(second: i64) -> DateTime<Utc> {
@@ -4772,6 +5094,64 @@ mod tests {
             .single()
             .expect("fixed timestamp")
             + Duration::seconds(second)
+    }
+
+    #[test]
+    fn gate_evidence_projection_uses_bounded_words() {
+        let gate = crate::GateEvidenceRecord {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            name: "cargo-test".into(),
+            passed: false,
+            failed: ["suite::first", "suite::second", "suite::third"]
+                .map(String::from)
+                .to_vec(),
+            previous: None,
+        };
+        let evidence = WorkEvidence {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            work_id: WorkId(uuid::Uuid::from_u128(1)),
+            run_id: WorkRunId(uuid::Uuid::from_u128(2)),
+            claim_id: crate::WorkClaimId(uuid::Uuid::from_u128(3)),
+            claim_fence: 1,
+            summary: GATE_EVIDENCE_SUMMARY.into(),
+            refs: Vec::new(),
+            gate: Some(gate),
+            actor: ActorContext {
+                actor_id: "agent".into(),
+                actor_kind: "agent".into(),
+                assurance: AssuranceLevel::Asserted,
+                run_id: None,
+                session_id: Some(SessionId("session".into())),
+                source_tool: Some("gate".into()),
+                source_skill: None,
+                provenance_chain: Vec::new(),
+                reason: "test gate projection".into(),
+            },
+            created_at: DateTime::<Utc>::UNIX_EPOCH,
+        };
+
+        assert_eq!(
+            compact_work_evidence(&evidence).expect("typed gate projection"),
+            "gate cargo-test failed (3 failures): suite::first, suite::second (+1 more)"
+        );
+        let mut generic = evidence;
+        generic.gate = None;
+        assert_eq!(
+            compact_work_evidence(&generic).expect("generic evidence projection"),
+            generic.summary
+        );
+        let mut invalid = generic;
+        invalid.gate = Some(crate::GateEvidenceRecord {
+            schema_version: SCHEMA_VERSION,
+            name: "cargo-test".into(),
+            passed: true,
+            failed: vec!["suite::failed".into()],
+            previous: None,
+        });
+        assert!(matches!(
+            compact_work_evidence(&invalid),
+            Err(StoreError::InvalidWorkProjection(_))
+        ));
     }
 
     fn obligation_record(
@@ -5148,6 +5528,73 @@ mod tests {
         }
     }
 
+    #[test]
+    fn focus_prioritizes_all_dead_prerequisites_and_counts_omitted_classes() {
+        let actor = ActorContext {
+            actor_id: "agent".into(),
+            actor_kind: "test_agent".into(),
+            assurance: AssuranceLevel::Asserted,
+            run_id: None,
+            session_id: Some(SessionId("session".into())),
+            source_tool: Some("test".into()),
+            source_skill: None,
+            provenance_chain: Vec::new(),
+            reason: "test prerequisite focus ordering".into(),
+        };
+        let item = |index: u128| {
+            let work_id = WorkId(uuid::Uuid::from_u128(index));
+            WorkItem {
+                schema_version: SCHEMA_VERSION,
+                project_id: ProjectId("prerequisite-focus".into()),
+                work_id,
+                short_ref: format!("w-{index:012x}"),
+                root_id: work_id,
+                parent_id: None,
+                child_requirement: ChildRequirement::Optional,
+                title: format!("Prerequisite {index}"),
+                outcome: "Classified prerequisite".into(),
+                acceptance: Vec::new(),
+                kind: WorkItemKind::Task,
+                priority: 2,
+                labels: Vec::new(),
+                assigned_to: None,
+                deferred_until: None,
+                origin: WorkOrigin::Local,
+                source_snapshot_id: None,
+                authority_policy_ref: "project-default".into(),
+                lifecycle: WorkLifecycle::Open,
+                revision: 1,
+                active_run_id: None,
+                superseded_by: None,
+                created_by: actor.clone(),
+                created_at: at(0),
+                updated_at: at(0),
+            }
+        };
+        let prerequisites = (0..8)
+            .map(|index| (item(index), WorkPrerequisiteState::Dead))
+            .collect();
+        let (selected, omissions) = bounded_prerequisite_summaries(prerequisites, [1, 2, 1]);
+        assert_eq!(selected.len(), MAX_FOCUS_RELATIONS);
+        assert!(
+            selected
+                .iter()
+                .all(|item| { item.prerequisite_state == Some(WorkPrerequisiteState::Dead) })
+        );
+        assert!(omissions.iter().any(|omission| {
+            omission.reason == WorkSectionOmissionReason::DeadPrerequisiteCountLimit
+                && omission.omitted_count == 1
+        }));
+        assert!(omissions.iter().any(|omission| {
+            omission.reason == WorkSectionOmissionReason::PendingPrerequisiteCountLimit
+                && omission.omitted_count == 2
+        }));
+        assert!(omissions.iter().any(|omission| {
+            omission.reason == WorkSectionOmissionReason::SatisfiedPrerequisiteCountLimit
+                && omission.omitted_count == 1
+        }));
+    }
+
     #[derive(Clone, Copy, Debug)]
     struct ScaleSample {
         elapsed_us: u128,
@@ -5183,7 +5630,7 @@ mod tests {
 
     fn report_scale_samples(operation: &str, samples: &[ScaleSample]) {
         eprintln!(
-            "claim mutation scale {operation}: samples={} p95_us={} canonical_decodes_p95={} canonical_decodes_max={} work_event_decodes_p95={} item_decodes_p95={}",
+            "claim mutation scale {operation}: samples={} p95_us={} canonical_decodes_p95={} canonical_decodes_max={} work_event_decodes_p95={} work_event_decodes_max={} item_decodes_p95={} item_decodes_max={}",
             samples.len(),
             scale_p95(samples.iter().map(|sample| sample.elapsed_us)),
             scale_p95(samples.iter().map(|sample| sample.canonical_decodes)),
@@ -5193,7 +5640,17 @@ mod tests {
                 .max()
                 .expect("scale samples"),
             scale_p95(samples.iter().map(|sample| sample.work_event_decodes)),
+            samples
+                .iter()
+                .map(|sample| sample.work_event_decodes)
+                .max()
+                .expect("scale samples"),
             scale_p95(samples.iter().map(|sample| sample.item_decodes)),
+            samples
+                .iter()
+                .map(|sample| sample.item_decodes)
+                .max()
+                .expect("scale samples"),
         );
     }
 
@@ -8377,6 +8834,748 @@ mod tests {
     #[test]
     #[allow(
         clippy::too_many_lines,
+        reason = "concurrency, exact replay, and a large unrelated evidence history form one gate-transition regression"
+    )]
+    fn concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("concurrent-gate".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let session = SessionId("gate-session".into());
+        let service = LocalWorkService::new(
+            database.clone(),
+            project,
+            "agent".into(),
+            session,
+            Some("gate-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(root_input("Concurrent gate", "concurrent-gate-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "concurrent-gate-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+
+        let barrier = Arc::new(Barrier::new(3));
+        let first_service = service.clone();
+        let first_barrier = barrier.clone();
+        let first = std::thread::spawn(move || {
+            first_barrier.wait();
+            first_service.work_gate("cargo-test", &["first".into()], None, at(2))
+        });
+        let second_service = service.clone();
+        let second_barrier = barrier.clone();
+        let second = std::thread::spawn(move || {
+            second_barrier.wait();
+            second_service.work_gate("cargo-test", &["second".into()], None, at(2))
+        });
+        barrier.wait();
+        let first = first.join().expect("first thread").expect("first gate");
+        let second = second.join().expect("second thread").expect("second gate");
+        let first_hash: ObjectHash =
+            serde_json::from_value(first.receipt.result).expect("first evidence hash");
+        let second_hash: ObjectHash =
+            serde_json::from_value(second.receipt.result).expect("second evidence hash");
+        let store = SqliteStore::open(&database).expect("store");
+        let first_evidence = store
+            .get::<WorkEvidence>(&first_hash)
+            .expect("first evidence read")
+            .expect("first evidence");
+        let second_evidence = store
+            .get::<WorkEvidence>(&second_hash)
+            .expect("second evidence read")
+            .expect("second evidence");
+        let (latest_hash, latest_failed) = if first_evidence
+            .gate
+            .as_ref()
+            .and_then(|gate| gate.previous.as_ref())
+            == Some(&second_hash)
+        {
+            (first_hash, vec!["first".into()])
+        } else {
+            assert_eq!(
+                second_evidence
+                    .gate
+                    .as_ref()
+                    .and_then(|gate| gate.previous.as_ref()),
+                Some(&first_hash)
+            );
+            (second_hash, vec!["second".into()])
+        };
+        drop(store);
+        let replay = service
+            .work_gate("cargo-test", &latest_failed, None, at(3))
+            .expect("replay latest transition");
+        assert_eq!(
+            serde_json::from_value::<ObjectHash>(replay.receipt.result)
+                .expect("replayed evidence hash"),
+            latest_hash
+        );
+        assert_eq!(
+            SqliteStore::open(&database)
+                .expect("store")
+                .work_run_evidence(work.active_run_id.expect("active run"))
+                .expect("run evidence")
+                .len(),
+            2
+        );
+
+        for index in 0..64 {
+            service
+                .work_update(
+                    WorkUpdateInput::Evidence {
+                        summary: format!("unrelated evidence {index}"),
+                        refs: Vec::new(),
+                        attach: None,
+                        idempotency_key: format!("unrelated-evidence-{index}"),
+                    },
+                    at(4 + index),
+                )
+                .expect("unrelated evidence");
+        }
+        crate::canonical::reset_canonical_decode_count();
+        service
+            .work_gate("bounded-history", &[], None, at(100))
+            .expect("bounded gate lookup");
+        assert!(
+            crate::canonical::canonical_decode_count() <= 24,
+            "gate lookup decoded an unbounded evidence history"
+        );
+        let lapsed_replay = service
+            .work_gate("bounded-history", &[], None, at(4_000))
+            .expect("a committed exact gate retry replays after claim lapse");
+        assert_eq!(lapsed_replay.operation, "evidence");
+    }
+
+    #[test]
+    fn explicit_update_target_wins_after_same_session_focus_change() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("explicit-update-target".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("shared-session".into()),
+            Some("explicit-target-test".into()),
+            Some(grant),
+        );
+        let create = |title: &str, key: &str| match service
+            .work_propose(root_input(title, key), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let target = create("Explicit target", "explicit-target");
+        let other = create("Concurrent focus", "concurrent-focus");
+        let prerequisite = create("Prerequisite", "explicit-prerequisite");
+
+        service
+            .work_focus(&target.short_ref, at(1))
+            .expect("initial target focus");
+        service
+            .work_focus(&other.short_ref, at(2))
+            .expect("same session changes focus before mutation");
+        service
+            .work_update_on(
+                Some(&target.work_id.0.to_string()),
+                WorkUpdateInput::AddPrerequisite {
+                    prerequisite: prerequisite.short_ref.clone(),
+                    idempotency_key: String::new(),
+                },
+                at(3),
+            )
+            .expect("explicit update remains bound to its target");
+
+        let store = SqliteStore::open(&service.database).expect("store");
+        assert_eq!(
+            store
+                .work_prerequisites(target.work_id)
+                .expect("target prerequisites")
+                .into_iter()
+                .map(|item| item.work_id)
+                .collect::<Vec<_>>(),
+            vec![prerequisite.work_id]
+        );
+        assert!(
+            store
+                .work_prerequisites(other.work_id)
+                .expect("other prerequisites")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the regression keeps pending-attempt setup, atomic capture, and recovery assertions together"
+    )]
+    fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("pending-note-attempt".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database.clone(),
+            project,
+            "agent".into(),
+            SessionId("pending-note-session".into()),
+            Some("pending-note-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(root_input("Pending note", "pending-note-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "pending-note-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+        let summary = "atomic note survives a lost response";
+        let refs = vec!["test:pending-note".into()];
+        let committed = {
+            let mut store = service.store().expect("store");
+            let basis = service
+                .protocol_basis(&store, true, false, Some(work.work_id), at(2))
+                .expect("note basis");
+            let note = WorkNoteIntent {
+                summary,
+                refs: &refs,
+            };
+            let intent = service.protocol_intent(&note);
+            let raw_key = service
+                .effective_idempotency_key("", "work_update:note", &basis, &intent, at(2))
+                .expect("derived note key");
+            store
+                .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                    project_id: &service.project_id,
+                    session_id: &service.session_id,
+                    operation: "work_update:note",
+                    idempotency_key: &raw_key,
+                    intent: &intent,
+                    basis: &basis,
+                    now: at(2),
+                })
+                .expect("pending note attempt");
+            let claim = basis.claim.expect("claim basis");
+            let scoped_key = service
+                .core_operation_key("work_update:note", &raw_key, "record_work_note")
+                .expect("note core key");
+            store
+                .record_work_note(
+                    &RecordWorkNoteRequest {
+                        work_id: work.work_id,
+                        run_id: claim.run_id,
+                        expected_work_revision: work.revision,
+                        holder: service.session_id.clone(),
+                        claim_id: claim.claim_id,
+                        claim_fence: claim.fence,
+                        summary: summary.into(),
+                        refs: refs.clone(),
+                        actor: service.actor(
+                            "work_update",
+                            "simulate a lost note response after atomic capture",
+                        ),
+                        idempotency_key: scoped_key,
+                        recorded_at: at(2),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("atomic note capture")
+        };
+
+        let recovered = service
+            .work_note_on(Some(&work.work_id.0.to_string()), summary, &refs, at(3))
+            .expect("recover pending note");
+        assert_eq!(
+            recovered.evidence.result,
+            serde_json::to_value(&committed.evidence).expect("evidence value")
+        );
+        assert_eq!(
+            recovered.receipt.result,
+            serde_json::to_value(&committed.checkpoint).expect("checkpoint value")
+        );
+        let store = SqliteStore::open(&database).expect("store");
+        assert_eq!(
+            store
+                .work_run_evidence(work.active_run_id.expect("active run"))
+                .expect("run evidence"),
+            vec![committed.evidence]
+        );
+        assert_eq!(
+            store
+                .latest_work_run(work.work_id)
+                .expect("run read")
+                .expect("run")
+                .last_checkpoint,
+            Some(committed.checkpoint)
+        );
+    }
+
+    #[test]
+    fn pending_gate_attempt_recovers_without_appending_again() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("pending-gate-attempt".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database.clone(),
+            project,
+            "agent".into(),
+            SessionId("pending-gate-session".into()),
+            Some("pending-gate-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(root_input("Pending gate", "pending-gate-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "pending-gate-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+
+        let pending = {
+            let mut store = service.store().expect("store");
+            let basis = service
+                .protocol_basis(&store, true, false, Some(work.work_id), at(2))
+                .expect("gate basis");
+            let claim = basis.claim.clone().expect("claim basis");
+            store
+                .record_gate_evidence_protocol(
+                    &RecordGateEvidenceRequest {
+                        work_id: work.work_id,
+                        run_id: claim.run_id,
+                        expected_work_revision: work.revision,
+                        holder: service.session_id.clone(),
+                        claim_id: claim.claim_id,
+                        claim_fence: claim.fence,
+                        name: "cargo-test".into(),
+                        failed: vec!["one failure".into()],
+                        evidence_ref: None,
+                        actor: service
+                            .actor("work_update", "record gate evidence for ambient work"),
+                        recorded_at: at(2),
+                    },
+                    &BeginGateWorkProtocolAttempt {
+                        project_id: &service.project_id,
+                        session_id: &service.session_id,
+                        basis: &basis,
+                        now: at(2),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("atomic gate append")
+        };
+        assert!(pending.result.is_none());
+
+        let recovered = service
+            .work_gate_on(
+                Some(&work.work_id.0.to_string()),
+                "cargo-test",
+                &["one failure".into()],
+                None,
+                at(3),
+            )
+            .expect("recover pending gate attempt");
+        assert_eq!(
+            serde_json::from_value::<ObjectHash>(recovered.receipt.result)
+                .expect("recovered evidence hash"),
+            pending.evidence
+        );
+        assert_eq!(
+            SqliteStore::open(&database)
+                .expect("store")
+                .work_run_evidence(work.active_run_id.expect("active run"))
+                .expect("run evidence")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one scenario covers handoff and same-session reclaim gate replay authority"
+    )]
+    fn identical_gate_after_handoff_or_reclaim_is_a_new_claim_observation() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("handoff-gate-observation".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let first = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            SessionId("gate-holder-a".into()),
+            Some("gate-handoff-test".into()),
+            Some(grant.clone()),
+        );
+        let second = LocalWorkService::new(
+            database.clone(),
+            project,
+            "agent".into(),
+            SessionId("gate-holder-b".into()),
+            Some("gate-handoff-test".into()),
+            Some(grant),
+        );
+        let work = match first
+            .work_propose(root_input("Handoff gate", "handoff-gate-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        first
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "gate-holder-a-claim".into(),
+                },
+                at(1),
+            )
+            .expect("first claim");
+        let first_gate = first
+            .work_gate("cargo-test", &[], None, at(2))
+            .expect("first holder gate");
+        let first_hash: ObjectHash =
+            serde_json::from_value(first_gate.receipt.result).expect("first gate hash");
+        second
+            .work_focus(&work.short_ref, at(3))
+            .expect("non-holder focus");
+        assert!(matches!(
+            second
+                .work_gate("cargo-test", &[], None, at(3))
+                .expect_err("a non-holder cannot reuse the holder's gate observation"),
+            StoreError::WorkClaimMismatch { .. }
+        ));
+        first
+            .work_handoff(
+                WorkHandoffInput::Offer {
+                    to: "gate-holder-b".into(),
+                    ttl_seconds: Some(300),
+                    checkpoint_summary: "handoff after the first gate observation".into(),
+                    idempotency_key: "gate-handoff-offer".into(),
+                },
+                at(4),
+            )
+            .expect("offer handoff");
+        second
+            .work_focus(&work.short_ref, at(5))
+            .expect("second holder focus");
+        second
+            .work_handoff(
+                WorkHandoffInput::Accept {
+                    idempotency_key: "gate-handoff-accept".into(),
+                },
+                at(6),
+            )
+            .expect("accept handoff");
+        assert!(matches!(
+            first
+                .work_gate("cargo-test", &[], None, at(7))
+                .expect_err("the outgoing holder cannot replay after handoff acceptance"),
+            StoreError::WorkClaimMismatch { .. }
+        ));
+
+        let second_gate = second
+            .work_gate("cargo-test", &[], None, at(8))
+            .expect("second holder records the same result");
+        let second_hash: ObjectHash =
+            serde_json::from_value(second_gate.receipt.result).expect("second gate hash");
+        assert_ne!(second_hash, first_hash);
+        let evidence = SqliteStore::open(&database)
+            .expect("store")
+            .get::<WorkEvidence>(&second_hash)
+            .expect("second evidence read")
+            .expect("second evidence");
+        assert_eq!(
+            evidence
+                .gate
+                .as_ref()
+                .and_then(|gate| gate.previous.as_ref()),
+            Some(&first_hash)
+        );
+        assert_eq!(
+            evidence.actor.session_id.as_ref(),
+            Some(&SessionId("gate-holder-b".into()))
+        );
+        second
+            .work_update(
+                WorkUpdateInput::Release {
+                    reason: "pause after verification".into(),
+                    waiver_reason: None,
+                    idempotency_key: "gate-holder-b-release".into(),
+                },
+                at(9),
+            )
+            .expect("release second holder claim");
+        assert!(matches!(
+            second
+                .work_gate("cargo-test", &[], None, at(10))
+                .expect_err("a released holder cannot replay gate evidence"),
+            StoreError::WorkClaimMismatch { .. }
+        ));
+        second
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "gate-holder-b-reclaim".into(),
+                },
+                at(11),
+            )
+            .expect("same session reclaims the run");
+        let reclaimed = second
+            .work_gate("cargo-test", &[], None, at(12))
+            .expect("same result under a new claim is a fresh observation");
+        let reclaimed_hash: ObjectHash =
+            serde_json::from_value(reclaimed.receipt.result).expect("reclaimed gate hash");
+        assert_ne!(reclaimed_hash, second_hash);
+        let reclaimed_evidence = SqliteStore::open(&database)
+            .expect("store")
+            .get::<WorkEvidence>(&reclaimed_hash)
+            .expect("reclaimed evidence read")
+            .expect("reclaimed evidence");
+        assert_eq!(
+            reclaimed_evidence
+                .gate
+                .as_ref()
+                .and_then(|gate| gate.previous.as_ref()),
+            Some(&second_hash)
+        );
+        assert!(reclaimed_evidence.claim_fence > evidence.claim_fence);
+    }
+
+    #[test]
+    fn explicit_gate_target_wins_after_same_session_focus_change() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("explicit-gate-target".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database.clone(),
+            project,
+            "agent".into(),
+            SessionId("shared-gate-session".into()),
+            Some("explicit-gate-test".into()),
+            Some(grant),
+        );
+        let create = |title: &str, key: &str| match service
+            .work_propose(root_input(title, key), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let target = create("Explicit gate target", "explicit-gate-target");
+        let other = create("Concurrent gate focus", "concurrent-gate-focus");
+        service
+            .work_update_on(
+                Some(&target.work_id.0.to_string()),
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "explicit-gate-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim explicit target");
+        service
+            .work_focus(&other.short_ref, at(2))
+            .expect("same session changes focus before gate");
+
+        let result = service
+            .work_gate_on(
+                Some(&target.work_id.0.to_string()),
+                "cargo-test",
+                &[],
+                None,
+                at(3),
+            )
+            .expect("explicit gate remains bound to target");
+        let evidence_hash: ObjectHash =
+            serde_json::from_value(result.receipt.result).expect("evidence hash");
+        let evidence = SqliteStore::open(&database)
+            .expect("store")
+            .get::<WorkEvidence>(&evidence_hash)
+            .expect("evidence read")
+            .expect("evidence");
+        assert_eq!(evidence.work_id, target.work_id);
+        assert_ne!(evidence.work_id, other.work_id);
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one boundary test covers normalization, typed projection, and direct-storage refusal"
+    )]
+    fn gate_storage_owns_normalization_and_bounds() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("gate-storage-boundary".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let service = LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("gate-storage-session".into()),
+            Some("gate-storage-test".into()),
+            Some(grant),
+        );
+        let work = match service
+            .work_propose(root_input("Gate storage", "gate-storage-root"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "gate-storage-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim");
+        let claim = service
+            .store()
+            .expect("store")
+            .current_work_claim(work.work_id)
+            .expect("claim projection")
+            .expect("live claim");
+        let request = RecordGateEvidenceRequest {
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: work.revision,
+            holder: service.session_id.clone(),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            name: "  CARGO-TEST  ".into(),
+            failed: vec![" suite::b ".into(), "suite::a".into(), "suite::a".into()],
+            evidence_ref: Some(" logs/gate.txt ".into()),
+            actor: service.actor("work_update", "exercise the gate storage boundary"),
+            recorded_at: at(2),
+        };
+        let evidence_hash = service
+            .store()
+            .expect("store")
+            .record_gate_evidence(&request, &DevelopmentNoopRedactor)
+            .expect("normalized gate evidence");
+        let evidence = service
+            .store()
+            .expect("store")
+            .get::<WorkEvidence>(&evidence_hash)
+            .expect("evidence read")
+            .expect("evidence");
+        let gate = evidence.gate.expect("typed gate payload");
+        assert_eq!(gate.name, "cargo-test");
+        assert_eq!(gate.failed, vec!["suite::a", "suite::b"]);
+        assert_eq!(evidence.refs, vec!["logs/gate.txt"]);
+        assert_eq!(evidence.summary, GATE_EVIDENCE_SUMMARY);
+
+        let mimicking_hash: ObjectHash = serde_json::from_value(
+            service
+                .work_update(
+                    WorkUpdateInput::Evidence {
+                        summary: "gate cargo-test failed (2 failures): suite::a, suite::b".into(),
+                        refs: Vec::new(),
+                        attach: None,
+                        idempotency_key: "gate-shaped-note".into(),
+                    },
+                    at(3),
+                )
+                .expect("gate-shaped generic evidence")
+                .receipt
+                .result,
+        )
+        .expect("generic evidence hash");
+        let focus = service
+            .inspect_work(&work.short_ref, at(4))
+            .expect("projected evidence");
+        let projected_gate = focus
+            .evidence_items
+            .iter()
+            .find(|item| item.evidence == evidence_hash)
+            .expect("typed gate projection")
+            .gate
+            .as_ref()
+            .expect("typed gate discriminator");
+        assert_eq!(projected_gate.name, "cargo-test");
+        assert!(!projected_gate.passed);
+        assert_eq!(projected_gate.failed_count, 2);
+        assert!(
+            focus
+                .evidence_items
+                .iter()
+                .find(|item| item.evidence == mimicking_hash)
+                .expect("gate-shaped generic projection")
+                .gate
+                .is_none(),
+            "generic prose must not acquire the typed gate discriminator"
+        );
+
+        let mut oversized = request;
+        oversized.name = "x".repeat(crate::domain::MAX_GATE_NAME_BYTES + 1);
+        oversized.recorded_at = at(3);
+        assert!(matches!(
+            service
+                .store()
+                .expect("store")
+                .record_gate_evidence(&oversized, &DevelopmentNoopRedactor)
+                .expect_err("storage rejects oversized gate identity"),
+            StoreError::InvalidWork(detail) if detail.contains("gate_input_too_large")
+        ));
+        oversized.name = "cargo\u{e0020}test".into();
+        oversized.recorded_at = at(4);
+        assert!(matches!(
+            service
+                .store()
+                .expect("store")
+                .record_gate_evidence(&oversized, &DevelopmentNoopRedactor)
+                .expect_err("storage rejects invisible gate identity"),
+            StoreError::InvalidWork(detail) if detail.contains("control or format")
+        ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
         reason = "one end-to-end scenario demonstrates that no lifecycle identifiers are shuttled between protocol calls"
     )]
     fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
@@ -9640,7 +10839,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "runs serially from the platform Rust gate to keep the latency budget meaningful"]
+    #[ignore = "runs separately so the project-scale fixture and decode samples stay out of the ordinary suite"]
     #[allow(
         clippy::too_many_lines,
         reason = "one scale regression measures the complete claim-validated mutation family against one fixed project fixture"
@@ -9788,6 +10987,26 @@ mod tests {
                 )
             })
             .expect("record scale evidence");
+        }
+
+        let mut gate_samples = Vec::with_capacity(SAMPLE_COUNT);
+        let gate_target = sampled_work.last().expect("sampled gate target");
+        for sample_index in 0..SAMPLE_COUNT {
+            let failed = if sample_index % 2 == 0 {
+                Vec::new()
+            } else {
+                vec!["scale alternating failure".to_owned()]
+            };
+            measure_scale_operation(&mut gate_samples, || {
+                writer.work_gate_on(
+                    Some(&gate_target.short_ref),
+                    "claim-mutation-scale",
+                    &failed,
+                    None,
+                    at(1_200 + i64::try_from(sample_index).expect("gate timestamp")),
+                )
+            })
+            .expect("record scale gate transition");
         }
 
         let mut checkpoint_samples = Vec::with_capacity(SAMPLE_COUNT);
@@ -9943,6 +11162,7 @@ mod tests {
         for (operation, samples) in [
             ("claim", &claim_samples),
             ("evidence", &evidence_samples),
+            ("gate", &gate_samples),
             ("checkpoint", &checkpoint_samples),
             ("revise", &revise_samples),
             ("block", &block_samples),
@@ -9953,25 +11173,45 @@ mod tests {
         ] {
             assert_eq!(samples.len(), SAMPLE_COUNT);
             report_scale_samples(operation, samples);
-            let latency_target_us = if operation == "work_next" {
-                100_000
+            let (canonical_budget, work_event_budget, item_budget) = if operation == "work_next" {
+                (16, 0, 64)
             } else {
-                50_000
+                (64, 64, 16)
             };
-            let decode_target = if operation == "work_next" { 16 } else { 64 };
-            assert!(
-                scale_p95(samples.iter().map(|sample| sample.elapsed_us)) <= latency_target_us,
-                "{operation} exceeded its p95 latency target of {latency_target_us}us"
-            );
-            let max_decodes = samples
-                .iter()
-                .map(|sample| sample.canonical_decodes)
-                .max()
-                .expect("scale samples");
-            assert!(
-                max_decodes <= decode_target,
-                "{operation} exceeded its bounded canonical-decode budget of {decode_target}: {max_decodes}"
-            );
+            for (kind, actual, budget) in [
+                (
+                    "canonical-decode",
+                    samples
+                        .iter()
+                        .map(|sample| sample.canonical_decodes)
+                        .max()
+                        .expect("scale samples"),
+                    canonical_budget,
+                ),
+                (
+                    "work-event-decode",
+                    samples
+                        .iter()
+                        .map(|sample| sample.work_event_decodes)
+                        .max()
+                        .expect("scale samples"),
+                    work_event_budget,
+                ),
+                (
+                    "item-decode",
+                    samples
+                        .iter()
+                        .map(|sample| sample.item_decodes)
+                        .max()
+                        .expect("scale samples"),
+                    item_budget,
+                ),
+            ] {
+                assert!(
+                    actual <= budget,
+                    "{operation} exceeded its bounded {kind} budget of {budget}: {actual}"
+                );
+            }
         }
     }
 }

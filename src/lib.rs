@@ -41,19 +41,19 @@ pub use domain::{
     DirectiveTarget, DisposeWorkRequest, EffectClass, EnvironmentComponents, EnvironmentEvidence,
     EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservation,
     ExecutionObservationInput, ExecutionObservationReference, ExecutionOutcome,
-    ExecutionSourceBasis, FeedId, FeedPosition, FinalizationBarrier, FrozenReport, HostPathPolicy,
-    IssuedTurnGrant, LeaseBasis, LeaseKind, LeaseMode, LifecycleAuthorityDecision, LocalTask,
-    MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryKind, MemoryRecord,
-    MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
-    OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition, ObligationRuleSet,
-    ObservedActionBeginDecision, ObservedTurnDecision, OfferWorkHandoffRequest, OpenWorkObligation,
-    PacketSafety, ParentTurnState, ParticipantMembership, ParticipantReadiness, ProjectId,
-    ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation, ReadyWork,
-    RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest, RequiredChildWaiver,
-    ResolutionAssurance, ResourceCoverage, ResourceSubject, ReviseWorkRequest, RootContribution,
-    RootExecution, RootExecutionId, RootExecutionState, Scope, Sensitivity, SessionId,
-    SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskLease, TaskState,
-    TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
+    ExecutionSourceBasis, FeedId, FeedPosition, FinalizationBarrier, FrozenReport,
+    GateEvidenceRecord, HostPathPolicy, IssuedTurnGrant, LeaseBasis, LeaseKind, LeaseMode,
+    LifecycleAuthorityDecision, LocalTask, MemoryContradictionEvent, MemoryContradictionReceipt,
+    MemoryId, MemoryKind, MemoryRecord, MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt,
+    NoteRequest, NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition,
+    ObligationRuleSet, ObservedActionBeginDecision, ObservedTurnDecision, OfferWorkHandoffRequest,
+    OpenWorkObligation, PacketSafety, ParentTurnState, ParticipantMembership, ParticipantReadiness,
+    ProjectId, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation,
+    ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest, ReopenWorkRequest,
+    RequiredChildWaiver, ResolutionAssurance, ResourceCoverage, ResourceSubject, ReviseWorkRequest,
+    RootContribution, RootExecution, RootExecutionId, RootExecutionState, Scope, Sensitivity,
+    SessionId, SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskLease,
+    TaskState, TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
     TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
     TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnGrantSupersession,
     TurnGrantSupersessionReason, TurnIntent, TurnNextIntent, TurnPurpose, VerificationEvidence,
@@ -69,8 +69,9 @@ pub use domain::{
     WorkObligation, WorkObligationId, WorkObligationResolution, WorkObligationResolutionEvent,
     WorkObligationState, WorkObligationWaiverDecision, WorkObligationWaiverReceipt,
     WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPlanningBudget,
-    WorkReadinessReason, WorkReferenceCandidate, WorkRevisionPatch, WorkRun, WorkRunId,
-    WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot, WorkTransition,
+    WorkPrerequisiteState, WorkReadinessReason, WorkReferenceCandidate, WorkRevisionPatch, WorkRun,
+    WorkRunId, WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot,
+    WorkTransition,
 };
 pub use host::{HostControlRequest, HostControlServer};
 pub use mcp::{McpServer, store_error_value};
@@ -86,9 +87,9 @@ pub use storage::{
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use verbs::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, Guidance, HandoffAction, HandoffInput, LsInput,
-    NextInput, NoteInput, Receipt, UpdateAction, UpdateInput, VerbError, looks_like_work_ref,
-    parse_defer_date,
+    AddInput, AgentVerbs, ClaimInput, DoneInput, GateInput, Guidance, HandoffAction, HandoffInput,
+    LsInput, NextInput, NoteInput, Receipt, UpdateAction, UpdateInput, VerbError,
+    looks_like_work_ref, parse_defer_date,
 };
 pub use work_service::{
     LocalWorkService, WorkAcceptanceInput, WorkChange, WorkChangeOmission,

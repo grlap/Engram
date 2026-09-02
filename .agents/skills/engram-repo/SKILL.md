@@ -96,7 +96,7 @@ contract and keep the change narrow.
 - external adapters: backend-neutral source snapshots, backup, portable
   handoff, later concurrent sync, frozen publication, idempotency, and receipt
   capabilities.
-- `verbs`: the nine-word agent surface; flat CLI flags and MCP arguments
+- `verbs`: the ten-word agent surface; flat CLI flags and MCP arguments
   translate into the unchanged six-operation core and every receipt gains
   `reminders` and `next` from fixed tables.
 - CLI/MCP front doors translate requests; they do not redefine domain rules.
@@ -106,7 +106,7 @@ policy outside the core. Extend ports using neutral request/response records.
 
 ## Using Engram as an agent
 
-Engram tracks the work of this repository. You use nine words; everything
+Engram tracks the work of this repository. You use ten words; everything
 else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
 `ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
 you type only the word.
@@ -117,7 +117,8 @@ engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbo
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
@@ -133,6 +134,10 @@ Rules that matter:
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against.
 - `claim` before you change anything. Only the holder can `note` and `done`.
+- Bare `gate NAME` records a pass. Repeat `--failed FAILURE` for bounded
+  failure labels; when a check has no test id, use the check command or check
+  name. Use `--ref` as an opaque external-evidence reference (a path or URL by
+  convention); Engram does not shape-validate it.
 - `note` is for decisions, findings, and evidence pointers. One note feeds
   peers, handoff, and the final report; never repeat it elsewhere.
 - `done` completes the item you hold. If something is still owed, the answer
@@ -143,9 +148,9 @@ Rules that matter:
   keys; if you see one, it is a bug.
 - Lost response? Run the same command again. Identical calls are safe.
 
-The same nine words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `note`, `done`, `handoff`) with the same flat arguments, plus
-`search`.
+The same ten words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `gate`, `note`, `done`, `handoff`) with the same flat arguments,
+plus `search`.
 
 ## Verification
 
@@ -164,10 +169,7 @@ node scripts/check-doc-links.mjs
 ```
 
 On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
-`scripts/test-rust.sh`. Classify timing-sensitive scale-gate failures with the
-evidence-backed procedure in
-[Quality gates](../../../docs/development.md#quality-gates); it is not a
-retry-until-green exception.
+`scripts/test-rust.sh`.
 
 Use `/review-changes` for the two-agent read-only review after the gates pass.
 Do not commit, push, or sync remotes without explicit authority.

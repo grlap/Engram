@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Measured acceptance for the nine-word agent surface: on a fresh store, an
+// Measured acceptance for the ten-word agent surface: on a fresh store, an
 // agent goes from nothing to a sealed item with add -> claim -> done in at
 // most three commands and at most three agent-supplied fields, typing no
 // JSON, and never seeing a hash, fence, or idempotency key in text output.
@@ -432,6 +432,215 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
     // the code path is shared with the MCP `done` tool and covered there.
     const again = run([...hostContext, "done"]);
     assert.equal(again.status, 0, again.stderr);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("cut A gate, prerequisite, and supersession words reach the typed core", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-cut-a-"));
+  const actor = "cut-a-agent";
+  try {
+    const grant = hostSetup(engramHome, actor);
+    const hostContext = [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      actor,
+      "--session-id",
+      actor,
+      "--authority-grant",
+      grant,
+    ];
+    const add = (title) => {
+      const added = run([...hostContext, "add", title, "--json"]);
+      assert.equal(added.status, 0, added.stderr);
+      return JSON.parse(added.stdout).work.short_ref;
+    };
+
+    const dependent = add("Cut A dependent");
+    const prerequisite = add("Cut A prerequisite");
+    const replacement = add("Cut A replacement");
+    const gated = add("Cut A gated item");
+
+    const after = run([
+      ...hostContext,
+      "update",
+      dependent,
+      "--after",
+      prerequisite,
+      "--json",
+    ]);
+    assert.equal(after.status, 0, after.stderr);
+    assert.equal(JSON.parse(after.stdout).operation, "add_prerequisite");
+    const blocked = run([...hostContext, "show", dependent, "--json"]);
+    assert.equal(blocked.status, 0, blocked.stderr);
+    assert.equal(
+      JSON.parse(blocked.stdout).next.includes(
+        `engram work update ${dependent} --drop-after ${prerequisite}`,
+      ),
+      false,
+    );
+    const blockedList = run([...hostContext, "ls", "--blocked", "--json"]);
+    assert.equal(blockedList.status, 0, blockedList.stderr);
+    assert.equal(
+      JSON.parse(blockedList.stdout).next.includes(
+        `engram work update ${dependent} --drop-after ${prerequisite}`,
+      ),
+      false,
+    );
+
+    const cancelledPrerequisite = run([
+      ...hostContext,
+      "update",
+      prerequisite,
+      "--cancel",
+      "no longer needed",
+    ]);
+    assert.equal(cancelledPrerequisite.status, 0, cancelledPrerequisite.stderr);
+    const stale = run([...hostContext, "show", dependent, "--json"]);
+    assert.equal(stale.status, 0, stale.stderr);
+    assert.ok(
+      JSON.parse(stale.stdout).next.includes(
+        `engram work update ${dependent} --drop-after ${prerequisite}`,
+      ),
+    );
+    const dropAfter = run([
+      ...hostContext,
+      "update",
+      dependent,
+      "--drop-after",
+      prerequisite,
+      "--json",
+    ]);
+    assert.equal(dropAfter.status, 0, dropAfter.stderr);
+    assert.equal(JSON.parse(dropAfter.stdout).operation, "remove_prerequisite");
+
+    const closedAfter = run([
+      ...hostContext,
+      "update",
+      dependent,
+      "--after",
+      prerequisite,
+    ]);
+    assert.notEqual(closedAfter.status, 0);
+    assert.match(closedAfter.stderr, /not open/u);
+    assert.match(closedAfter.stderr, new RegExp(prerequisite, "u"));
+    assert.doesNotMatch(closedAfter.stderr, new RegExp(`show ${dependent}`, "u"));
+
+    const missingPrerequisite = "00000000-0000-0000-0000-000000000000";
+    const missingDrop = run([
+      ...hostContext,
+      "update",
+      dependent,
+      "--drop-after",
+      missingPrerequisite,
+    ]);
+    assert.notEqual(missingDrop.status, 0);
+    assert.match(missingDrop.stderr, /no such item/u);
+    assert.doesNotMatch(missingDrop.stderr, new RegExp(`show ${dependent}`, "u"));
+
+    const missingReason = run([
+      ...hostContext,
+      "update",
+      dependent,
+      "--supersede-with",
+      replacement,
+    ]);
+    assert.notEqual(missingReason.status, 0);
+    assert.match(missingReason.stderr, /requires --reason/u);
+
+    const superseded = run([
+      ...hostContext,
+      "update",
+      dependent,
+      "--supersede-with",
+      replacement,
+      "--reason",
+      "replacement owns the outcome",
+      "--json",
+    ]);
+    assert.equal(superseded.status, 0, superseded.stderr);
+    assert.equal(JSON.parse(superseded.stdout).operation, "supersede");
+
+    const claimed = run([...hostContext, "claim", gated]);
+    assert.equal(claimed.status, 0, claimed.stderr);
+    const gate = run([
+      ...hostContext,
+      "gate",
+      "CARGO-TEST",
+      "--failed",
+      "cut_a::gate",
+      "--ref",
+      "target/cut-a.log",
+      "--json",
+    ]);
+    assert.equal(gate.status, 0, gate.stderr);
+    assert.deepEqual(JSON.parse(gate.stdout).gate, {
+      name: "cargo-test",
+      passed: false,
+      failed_count: 1,
+      referenced: true,
+    });
+    const gateShow = run([...hostContext, "show", gated, "--json"]);
+    assert.equal(gateShow.status, 0, gateShow.stderr);
+    assert.match(
+      JSON.parse(gateShow.stdout).evidence_items.at(-1).summary,
+      /^gate cargo-test failed/u,
+    );
+    const passed = run([...hostContext, "gate", "CARGO-TEST", "--json"]);
+    assert.equal(passed.status, 0, passed.stderr);
+    const passedReceipt = JSON.parse(passed.stdout);
+    assert.equal(passedReceipt.gate.passed, true);
+    const replayed = run([...hostContext, "gate", "cargo-test", "--json"]);
+    assert.equal(replayed.status, 0, replayed.stderr);
+    assert.deepEqual(
+      JSON.parse(replayed.stdout).receipt.result,
+      passedReceipt.receipt.result,
+    );
+    const failedAgain = run([
+      ...hostContext,
+      "gate",
+      "cargo-test",
+      "--failed",
+      "cut_a::gate",
+      "--ref",
+      "target/cut-a.log",
+      "--json",
+    ]);
+    assert.equal(failedAgain.status, 0, failedAgain.stderr);
+    const passedAgain = run([...hostContext, "gate", "cargo-test", "--json"]);
+    assert.equal(passedAgain.status, 0, passedAgain.stderr);
+    assert.notDeepEqual(
+      JSON.parse(passedAgain.stdout).receipt.result,
+      passedReceipt.receipt.result,
+    );
+
+    const escapeHeavy = run([
+      ...hostContext,
+      "gate",
+      "escape-heavy",
+      ...Array.from({ length: 16 }, (_, index) => [
+        "--failed",
+        `${String(index).padStart(2, "0")}-${'"'.repeat(252)}`,
+      ]).flat(),
+      "--ref",
+      "\\".repeat(2048),
+      "--json",
+    ]);
+    assert.equal(escapeHeavy.status, 0, escapeHeavy.stderr);
+    assert.ok(Buffer.byteLength(escapeHeavy.stdout, "utf8") < 12 * 1024);
+    assert.deepEqual(JSON.parse(escapeHeavy.stdout).gate, {
+      name: "escape-heavy",
+      passed: false,
+      failed_count: 16,
+      referenced: true,
+    });
+
+    const textGate = run([...hostContext, "gate", "cargo-fmt"]);
+    assert.equal(textGate.status, 0, textGate.stderr);
+    assert.match(textGate.stdout, /recorded gate cargo-fmt passed/u);
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }

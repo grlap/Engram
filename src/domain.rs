@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use unicode_casefold::UnicodeCaseFold;
+use unicode_general_category::{GeneralCategory, get_general_category};
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
@@ -17,6 +18,14 @@ pub use crate::schema::{
 };
 /// Sliding lease applied after every successful claim-holder work mutation.
 pub const DEFAULT_WORK_CLAIM_TTL_SECONDS: i64 = 3_600;
+pub(crate) const GATE_EVIDENCE_SUMMARY: &str = "typed gate evidence";
+pub(crate) const MAX_GATE_NAME_BYTES: usize = 128;
+pub(crate) const MAX_GATE_FAILURE_INPUTS: usize = 256;
+pub(crate) const MAX_GATE_FAILURES: usize = 64;
+pub(crate) const MAX_GATE_FAILURE_BYTES: usize = 256;
+pub(crate) const MAX_GATE_FAILURE_TOTAL_BYTES: usize = 4 * 1024;
+pub(crate) const MAX_GATE_REF_BYTES: usize = 2 * 1024;
+const MAX_GATE_RAW_EXPANSION: usize = 4;
 
 /// Stable host-local project identity shared by every session and worktree.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -1622,6 +1631,19 @@ pub enum WorkLifecycle {
     Superseded,
 }
 
+/// One-hop completion state of an explicit prerequisite edge.
+///
+/// `Dead` means the edge cannot become satisfied without removing it. A
+/// superseded prerequisite is classified from its immediate replacement; the
+/// V1 readiness contract deliberately does not chase successor chains.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkPrerequisiteState {
+    Satisfied,
+    Pending,
+    Dead,
+}
+
 /// Current execution state of one work-run generation.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1854,6 +1876,141 @@ pub struct WorkHandoffOffer {
     pub state: WorkHandoffState,
 }
 
+/// Structurally typed payload for one agent-reported quality-gate observation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct GateEvidenceRecord {
+    pub schema_version: u16,
+    pub name: String,
+    pub passed: bool,
+    pub failed: Vec<String>,
+    /// Previous observation for this gate name. This makes a later return to
+    /// the same result a distinct immutable transition even at one timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<ObjectHash>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NormalizedGateEvidenceInput {
+    pub name: String,
+    pub failed: Vec<String>,
+    pub evidence_ref: Option<String>,
+}
+
+pub(crate) fn normalize_gate_evidence_input(
+    name: &str,
+    failed: &[String],
+    evidence_ref: Option<&str>,
+) -> Result<NormalizedGateEvidenceInput, String> {
+    if name.len() > MAX_GATE_NAME_BYTES * MAX_GATE_RAW_EXPANSION {
+        return Err(gate_input_too_large(
+            "the raw gate name exceeds the normalization input ceiling",
+        ));
+    }
+    if failed.len() > MAX_GATE_FAILURE_INPUTS {
+        return Err(gate_input_too_large(
+            "more than 256 gate failure labels were supplied",
+        ));
+    }
+    let nfc: String = name.trim().nfc().collect();
+    let name: String = nfc.as_str().case_fold().collect::<String>().nfc().collect();
+    if name.is_empty() {
+        return Err("gate name must not be empty".into());
+    }
+    if name.len() > MAX_GATE_NAME_BYTES {
+        return Err(gate_input_too_large("gate name exceeds 128 UTF-8 bytes"));
+    }
+    if name.chars().any(is_unsafe_gate_text_char) {
+        return Err("gate name must not contain control or format characters".into());
+    }
+
+    let mut normalized_failed = Vec::with_capacity(failed.len());
+    for failure in failed {
+        if failure.len() > MAX_GATE_FAILURE_BYTES * MAX_GATE_RAW_EXPANSION {
+            return Err(gate_input_too_large(
+                "one raw gate failure label exceeds the normalization input ceiling",
+            ));
+        }
+        let failure: String = failure.trim().nfc().collect();
+        if failure.is_empty() {
+            return Err("gate failure labels must not be empty".into());
+        }
+        if failure.len() > MAX_GATE_FAILURE_BYTES {
+            return Err(gate_input_too_large(
+                "one gate failure label exceeds 256 UTF-8 bytes",
+            ));
+        }
+        if failure.chars().any(is_unsafe_gate_text_char) {
+            return Err("gate failure labels must not contain control or format characters".into());
+        }
+        normalized_failed.push(failure);
+    }
+    normalized_failed.sort();
+    normalized_failed.dedup();
+    if normalized_failed.len() > MAX_GATE_FAILURES {
+        return Err(gate_input_too_large(
+            "more than 64 distinct gate failure labels were supplied",
+        ));
+    }
+    if normalized_failed.iter().map(String::len).sum::<usize>() > MAX_GATE_FAILURE_TOTAL_BYTES {
+        return Err(gate_input_too_large(
+            "the normalized gate failure-label list exceeds 4096 UTF-8 bytes",
+        ));
+    }
+
+    if evidence_ref.is_some_and(|value| value.len() > MAX_GATE_REF_BYTES * MAX_GATE_RAW_EXPANSION) {
+        return Err(gate_input_too_large(
+            "the raw gate reference exceeds the normalization input ceiling",
+        ));
+    }
+    let evidence_ref = evidence_ref.and_then(|value| {
+        let value = value.trim().nfc().collect::<String>();
+        (!value.is_empty()).then_some(value)
+    });
+    if let Some(value) = evidence_ref.as_deref()
+        && (value.len() > MAX_GATE_REF_BYTES || value.chars().any(is_unsafe_gate_text_char))
+    {
+        return Err(
+            "gate --ref must be a control- and format-free opaque reference of at most 2048 UTF-8 bytes"
+                .into(),
+        );
+    }
+
+    Ok(NormalizedGateEvidenceInput {
+        name,
+        failed: normalized_failed,
+        evidence_ref,
+    })
+}
+
+fn is_unsafe_gate_text_char(ch: char) -> bool {
+    matches!(
+        get_general_category(ch),
+        GeneralCategory::Control
+            | GeneralCategory::Format
+            | GeneralCategory::LineSeparator
+            | GeneralCategory::ParagraphSeparator
+            | GeneralCategory::PrivateUse
+    ) || matches!(
+        ch,
+        '\u{034f}'
+            | '\u{115f}'..='\u{1160}'
+            | '\u{17b4}'..='\u{17b5}'
+            | '\u{180b}'..='\u{180f}'
+            | '\u{3164}'
+            | '\u{fe00}'..='\u{fe0f}'
+            | '\u{ffa0}'
+            | '\u{fff0}'..='\u{fff8}'
+            | '\u{1bca0}'..='\u{1bca3}'
+            | '\u{e0100}'..='\u{e0fff}'
+    )
+}
+
+fn gate_input_too_large(detail: &str) -> String {
+    format!(
+        "gate_input_too_large: {detail}; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+    )
+}
+
 /// Evidence captured under the live work claim and later consumed by completion.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkEvidence {
@@ -1864,8 +2021,59 @@ pub struct WorkEvidence {
     pub claim_fence: i64,
     pub summary: String,
     pub refs: Vec<String>,
+    /// Present only for the typed `gate` word. Generic note/evidence prose can
+    /// never acquire gate semantics by resembling its serialized form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<GateEvidenceRecord>,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
+}
+
+pub(crate) fn validate_gate_evidence_payload(evidence: &WorkEvidence) -> Result<(), String> {
+    let Some(gate) = &evidence.gate else {
+        return Ok(());
+    };
+    let evidence_ref = match evidence.refs.as_slice() {
+        [] => None,
+        [evidence_ref] => Some(evidence_ref.as_str()),
+        _ => return Err("more than one evidence reference".into()),
+    };
+    validate_stored_gate_evidence_fields(&gate.name, &gate.failed, evidence_ref)?;
+    if gate.schema_version != SCHEMA_VERSION || gate.passed != gate.failed.is_empty() {
+        return Err("inconsistent normalized gate fields".into());
+    }
+    Ok(())
+}
+
+fn validate_stored_gate_evidence_fields(
+    name: &str,
+    failed: &[String],
+    evidence_ref: Option<&str>,
+) -> Result<(), String> {
+    if name.is_empty() || name.len() > MAX_GATE_NAME_BYTES {
+        return Err("stored gate name is empty or oversized".into());
+    }
+    if failed.len() > MAX_GATE_FAILURES
+        || failed.iter().map(String::len).sum::<usize>() > MAX_GATE_FAILURE_TOTAL_BYTES
+    {
+        return Err("stored gate failure-label list exceeds its count or byte bound".into());
+    }
+    let mut previous: Option<&str> = None;
+    for failure in failed {
+        if failure.is_empty()
+            || failure.len() > MAX_GATE_FAILURE_BYTES
+            || previous.is_some_and(|prior| prior >= failure.as_str())
+        {
+            return Err("stored gate failure labels are not bounded and strictly sorted".into());
+        }
+        previous = Some(failure);
+    }
+    if let Some(value) = evidence_ref
+        && (value.is_empty() || value.len() > MAX_GATE_REF_BYTES)
+    {
+        return Err("stored gate reference is empty or oversized".into());
+    }
+    Ok(())
 }
 
 /// Checkpoint captured before continuing, releasing, or handing off work.
@@ -2532,6 +2740,39 @@ pub struct RecordWorkEvidenceRequest {
     pub refs: Vec<String>,
     pub actor: ActorContext,
     pub idempotency_key: String,
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Request to capture one note as evidence plus the checkpoint that
+/// acknowledges it. Storage commits both immutable objects atomically.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct RecordWorkNoteRequest {
+    pub work_id: WorkId,
+    pub run_id: WorkRunId,
+    pub expected_work_revision: i64,
+    pub holder: SessionId,
+    pub claim_id: WorkClaimId,
+    pub claim_fence: i64,
+    pub summary: String,
+    pub refs: Vec<String>,
+    pub actor: ActorContext,
+    pub idempotency_key: String,
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Request to record or replay one consecutive quality-gate transition.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct RecordGateEvidenceRequest {
+    pub work_id: WorkId,
+    pub run_id: WorkRunId,
+    pub expected_work_revision: i64,
+    pub holder: SessionId,
+    pub claim_id: WorkClaimId,
+    pub claim_fence: i64,
+    pub name: String,
+    pub failed: Vec<String>,
+    pub evidence_ref: Option<String>,
+    pub actor: ActorContext,
     pub recorded_at: DateTime<Utc>,
 }
 
@@ -3292,6 +3533,40 @@ mod tests {
 
     fn hash(seed: &str) -> ObjectHash {
         ObjectHash::from_canonical_bytes(seed.as_bytes())
+    }
+
+    #[test]
+    fn gate_names_apply_canonicalization_once_and_stored_validation_does_not_rewrite_them() {
+        for raw in [
+            "\u{0345}",
+            "\u{1f88}",
+            "\u{1e9e}",
+            "\u{0130}",
+            "A\u{0315}\u{0300}",
+            "\u{1f00}\u{0345}",
+        ] {
+            let normalized = normalize_gate_evidence_input(raw, &[], None)
+                .unwrap_or_else(|error| panic!("normalize {raw:?}: {error}"));
+            let repeated = normalize_gate_evidence_input(
+                &normalized.name,
+                &normalized.failed,
+                normalized.evidence_ref.as_deref(),
+            )
+            .unwrap_or_else(|error| panic!("repeat normalization for {raw:?}: {error}"));
+            assert_eq!(
+                repeated, normalized,
+                "gate normalization must be a fixed point"
+            );
+            assert!(
+                validate_stored_gate_evidence_fields(&normalized.name, &normalized.failed, None)
+                    .is_ok(),
+                "stored canonical gate name {raw:?} must validate without a second fold"
+            );
+        }
+        assert!(
+            validate_stored_gate_evidence_fields("gate\u{e0020}", &[], None).is_ok(),
+            "stored shape validation must not depend on mutable Unicode category tables"
+        );
     }
 
     #[test]

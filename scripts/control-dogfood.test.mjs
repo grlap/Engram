@@ -2041,7 +2041,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ),
       refusedCompletion,
     );
-    // The nine-word `done` answers the same typed refusal in words plus the
+    // The ten-word `done` answers the same typed refusal in words plus the
     // resolving command, prints no hash, and exits 2.
     const owed = spawnSync(
       binary,

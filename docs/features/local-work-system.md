@@ -382,7 +382,7 @@ The hot agent protocol has six operations:
 
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for
-the process lifetime and shares it across the ten agent tools. That instance
+the process lifetime and shares it across the eleven MCP tools. That instance
 lazily retains one SQLite connection; cloning a
 service explicitly creates an independent connection so concurrent delivery
 and CAS behavior remains real rather than process-local serialization. The
@@ -600,41 +600,89 @@ Model-visible success is terse—often only changed obligations—while the host
 retains the full durable receipt. Every refusal includes a stable code and a
 satisfiable next action.
 
-### Gates, prerequisites, supersession, and project memories (planned)
+### Gates, prerequisites, supersession, and project memories
 
-Four planned additions make the agent surface strictly stronger than the
-tracker it replaced. None has shipped; each lands with its code, tests, and
-the matching agent-word documentation. None adds a canonical object kind, a
-completion barrier, or a review queue: everything rides the existing
-evidence, decomposition, episode-memory, and idempotency machinery, changed
-in place at schema marker 1. The agent-facing syntax is summarized in
+The shipped `gate` word and prerequisite/supersession update flags make the
+agent surface strictly stronger than the tracker it replaced. The project
+memory words remain planned. These additions add no canonical object kind,
+completion barrier, or review queue: they ride the existing evidence, graph,
+dispose, episode-memory, and idempotency machinery at schema marker 1. The
+agent-facing syntax is summarized in
 [CLI & MCP](cli-and-mcp.md#using-engram-as-an-agent); the memory rules
 cross-link [security & trust](security-and-trust.md).
 
-**Gate results become auditable evidence.** `gate NAME [--failed TEST...]
-[--ref path-or-url]` records exactly one bounded pass or fail evidence
-entry on the held item (otherwise the typed claim guidance) — gate name,
-the bounded failure list, any `--ref` — through the ordinary `WorkEvidence`
-path with the ordinary exact-retry protocol. That is all it does: no extra
-completion barrier, no children, no obligation, no waiver — the entry rides
-the ordinary evidence feed, contribution, and `CompletionSeal` binding like
-any other evidence, and completion semantics do not change. The workflow
-rule stays where it belongs, in the instruction
-files: the agent classifies every failure, and a product defect gets a
-required child through the ordinary `add` command with kind `bug`, label
+**Gate results become auditable evidence.** `gate NAME [--failed FAILURE]...
+[--ref opaque-reference]` records exactly one bounded pass or fail evidence
+entry on the focused item you hold (otherwise the typed claim guidance) —
+gate name, the bounded failure-label list, any `--ref` — through the ordinary
+`WorkEvidence` path. Consecutive identical results under the same claim
+generation replay after a lost response without renewing the claim: replay is
+the recorded fact again — it records no new evidence and does not renew the
+claim. Release,
+handoff, or recovery creates a new claim identity, so even the same result
+becomes a fresh observation; the
+same result after a different state is likewise fresh. Pass → fail → pass
+therefore preserves all three observations. That is all it does:
+no extra completion barrier, no children, no obligation, no waiver — the
+entry rides the ordinary evidence feed, contribution, and `CompletionSeal`
+binding like any other evidence, and completion semantics do not change. The
+workflow
+rule stays where it belongs, in the instruction files: the agent classifies
+every failure, and a product defect gets a required child through the ordinary
+`add` command with kind `bug`, label
 `gate`, and the failing test as acceptance — existing required-child
 machinery enforces that work; test and environment classifications go into
-the durable note with their evidence.
+the durable note with their evidence. A structural typed field on
+`WorkEvidence` keeps test boundaries exact and prevents generic note prose
+from acquiring gate semantics; agent-facing projections retain a typed gate
+discriminator beside bounded rendered words. The receipt echoes the gate name, result, failure count,
+and whether an evidence reference was present, not the potentially
+escape-expanded input.
 
-Gate input is bounded after normalization: the name is trimmed,
-NFC-normalized, and case-folded; each test is trimmed and NFC-normalized
-with case kept (test identifiers are case-sensitive) and duplicates are
-deduplicated; then the name must fit 128 UTF-8 bytes and the failure set
+Bare `gate NAME` always records a pass. Every failure supplies at least one
+bounded `--failed` label; when the check has no named test, the label is the
+check command or check name (for example, `--failed "cargo fmt --check"`).
+
+The verb binds the selected work id through the core call, so a concurrent
+same-session focus change cannot redirect the evidence or its receipt. The
+storage transaction derives a stable attempt identity from the normalized
+observation and previous distinct transition, reserves the protocol attempt,
+and appends the evidence atomically. A crash before receipt completion
+therefore resumes the pending attempt instead of appending another result.
+The same transaction uses a rebuildable partial expression index to narrow
+the same-run, same-name evidence candidates, then derives the latest
+observation from their canonical run-feed positions. No mutable head can
+redirect an immutable `previous` link. Runs are short-lived and their
+same-name evidence count is bounded in practice; a query-plan regression pins
+the indexed search without a scan or temporary sort, and the project-scale
+gate measures the canonical-decode cost alongside the other claim-validated
+mutations.
+
+The shared domain/storage boundary owns gate normalization and bounds; the
+agent verb calls that same constructor early only to return concise guidance.
+Conservative raw byte ceilings run before Unicode normalization so an
+oversized MCP string cannot force unbounded normalization work. The name is
+trimmed, NFC-normalized, case-folded, and NFC-normalized once when raw input is
+admitted; read validation checks the stored canonical fields without applying
+that pipeline or mutable Unicode category policy again. This preserves
+previously admitted bounded text if a later Unicode table reclassifies a code
+point; agent-facing rendering remains bounded and whitespace-collapsed. Each
+failure label is trimmed and NFC-normalized with case kept (test and check
+identifiers are case-sensitive) and duplicates are
+deduplicated; unsafe control and format characters are refused. Then the name
+must fit 128 UTF-8 bytes and the failure set
 4096 total bytes — the dominant bound — with a 256-byte per-entry sanity
-cap and at most 64 distinct failures. `--ref` is a bounded path or URL and
-never ingests log bytes; oversize input is refused with the
-one-aggregate-entry remedy. The bounds and the pass/fail/replay behavior
-are planned test targets.
+cap, at most 256 supplied entries, and at most 64 distinct normalized
+failures. `--ref` is a bounded opaque reference — a path or URL by convention,
+not a shape-validated locator — and never ingests log bytes; oversize input is refused with the
+one-aggregate-entry remedy. Tests cover the bounds, normalization, MCP shape,
+and pass/fail evidence receipt.
+
+Every explicit agent word resolves the exact target and binds it through the
+core mutation, so a concurrent focus change by the same session cannot retarget
+`claim`, `update`, `note`, `done`, `gate`, or `handoff`. One `note` commits its
+evidence and acknowledging checkpoint in one storage transaction and replays
+that pair as one operation.
 
 **Prerequisites between arbitrary items.** `update REF --after OTHER` records
 that `REF` must not become ready until `OTHER` is complete; `--drop-after
@@ -642,22 +690,35 @@ OTHER` removes it. The relation and its readiness semantics already exist
 in the graph (`ls --blocked` reports "one or more prerequisites are
 incomplete"), but exposing the word adds real core validation: `REF` must
 be open for add and drop, `OTHER` must be open for add — proposed,
-completed, cancelled, or superseded targets are refused with the item
-named — `OTHER` must not be `REF`, both must share the project, and cycle
+cancelled, or superseded targets are refused with the item named, while a
+completed target gets the typed "already satisfied; no edge needed" refusal —
+`OTHER` must not be `REF`, both must share the project, and cycle
 prevention rejects any prerequisite cycle and simply refuses an `OTHER`
 that is an ancestor of `REF`, keeping decomposition deadlocks impossible
-without graph gymnastics. Dropping stays allowed
-after `OTHER` becomes terminal so stale edges can be cleaned, and dropping an
-absent edge is an idempotent no-op. A cancelled `OTHER` does not satisfy the
-edge: `REF` stays blocked, and the blocked reason surfaced by `next`/`ls
---blocked` carries the planned `update REF --drop-after OTHER` guidance — a
-guide, not a refusal; a superseded `OTHER` follows the shipped one-hop
-superseded-replacement readiness rule.
+without graph gymnastics. Dropping stays allowed after `OTHER` becomes
+terminal so stale edges can be cleaned, and dropping an
+absent edge is an idempotent no-op. Re-adding an existing edge after `OTHER`
+becomes terminal returns the same typed terminal refusal; only exact protocol
+replay of the original add returns its recorded result. One shared one-hop
+classifier labels each edge `satisfied`, `pending`, or `dead`: completed and
+superseded-to-completed
+edges are satisfied; live replacements remain pending; cancelled prerequisites
+and superseded prerequisites whose immediate replacement cannot complete are
+dead. `REF` stays blocked on pending and dead edges, and the blocked reason plus
+`next`/`show` guidance carries `update REF --drop-after OTHER` for a dead edge —
+a guide, not a refusal.
+All dead prerequisites are prioritized ahead of pending and satisfied edges in
+the bounded focus relation page; class-specific omission counts say which
+relations did not fit.
+At most one removal command precedes ordinary lifecycle suggestions, keeping
+both prerequisite recovery and a lifecycle action available under relation
+and command limits.
 Each flag takes one ref and is mutually exclusive with every other `update`
-action. An edge is not a required child: a
-prerequisite orders readiness and can be dropped again, while a required
+action. An edge is not a required child: a prerequisite orders readiness and
+can be dropped again, while a required
 child binds parent completion and is accounted only by seal or waiver. The
-admission, cycle, and refusal boundaries above are planned test targets.
+admission, cycle, and refusal boundaries above are covered in the core and
+agent-surface tests.
 
 **Supersession.** `update REF --supersede-with NEW --reason "why"` exposes
 the existing dispose-as-superseded path with the caller's attributed reason —
@@ -667,15 +728,17 @@ the caller's own claim on `REF` is released with that audited reason.
 `REF`-side refusals: not open, open descendants, held by another session.
 `NEW`-side refusals, as storage already enforces: `NEW` is `REF` itself, lives
 in another project, or is cancelled or superseded; a completed `NEW` is
-allowed. The word exposes only the existing dispose path with its existing
-validation; the only planned front-end changes are the flag itself, the
-shared update action group replacing today's `--reason requires --release`
-clap coupling, and the extended action-enumeration error. Superseding a
+allowed. Exposing the word also adds one core admission check: the implicit
+`REF` → `NEW` completion dependency joins required-child and prerequisite edges
+in the union-cycle validation, so direct and transitive replacement deadlocks
+are refused. The shared update action group allows `--reason` with release or
+supersession, and the action-enumeration error names all three new flags.
+Superseding a
 required child never satisfies its parent by itself: the parent's `done`
 still reports the unsealed required child, and the deliberate replacement
 is accounted by the existing grant-backed required-child waiver. Automatic
-successor accounting is not in this cut; the REF/NEW refusal matrix is a
-planned test target.
+successor accounting is not in this cut; tests cover the REF/NEW refusal
+matrix and the front-end translation.
 
 **Project memories.** `remember "text" [--key KEY]` stores one attributed,
 retrievable project note — an ordinary Episode in the existing memory
@@ -1016,11 +1079,11 @@ daily workflow it covers, kept for anyone arriving from the previous tracker
 | `bd create`, parent/child | `work_propose` |
 | `bd ready` | `work_next` with typed readiness reasons |
 | `bd show`, search/list | `work_focus` plus query views |
-| `bd dep add`, blocked | prerequisite edges and typed blockers (agent flags `--after`/`--drop-after` planned; the core relation ships) |
+| `bd dep add`, blocked | prerequisite edges and typed blockers through `update --after` / `--drop-after` |
 | assignee vs. `bd update --claim` | durable assignment vs. fenced live claim; resource mutation still needs leases |
 | notes/design/acceptance | typed work fields plus work-scoped shared/private memory and evidence |
 | comments and handoff | one checkpoint feeding deltas, handoff, and report input |
-| `bd close`, reopen, supersede | one-call evidence capture/seal when compact, or explicit evidence/checkpoint steps; audited reopen/cancel/supersede events (agent flag `--supersede-with` planned) |
+| `bd close`, reopen, supersede | one-call evidence capture/seal when compact, or explicit evidence/checkpoint steps; audited reopen/cancel/supersede events through `update --supersede-with` |
 | `bd remember` | Engram's typed durable memory, not a pseudo-task (`remember`/`memories`/`forget` planned) |
 | `bd stats`, stale/orphans/preflight | rebuildable operational indexes and integrity diagnostics |
 | Dolt cross-machine sync | V1 sequential `portable` handoff; later concurrent Engram `Sync` backend |

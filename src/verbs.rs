@@ -1,4 +1,4 @@
-//! Nine-word agent surface over the unchanged six-operation work core.
+//! Ten-word agent surface over the unchanged six-operation work core.
 //!
 //! Every word here is a thin translation of flat CLI flags or MCP arguments
 //! into existing [`LocalWorkService`] calls. The agent never supplies JSON,
@@ -23,10 +23,17 @@ use crate::{
     WorkAvailability, WorkBlockerKind, WorkChildInput, WorkClaim, WorkClaimState,
     WorkCompleteInput, WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView,
     WorkHandoffInput, WorkHandoffState, WorkId, WorkItemKind, WorkLifecycle, WorkNextQuery,
-    WorkNextSection, WorkNextView, WorkObligationPage, WorkObligationState, WorkProposeInput,
-    WorkProposeResult, WorkRevisionPatch, WorkUpdateInput,
+    WorkNextSection, WorkNextView, WorkObligationPage, WorkObligationState, WorkPrerequisiteState,
+    WorkProposeInput, WorkProposeResult, WorkRevisionPatch, WorkUpdateInput,
+    domain::normalize_gate_evidence_input,
     storage::StoreError,
     work_service::{ReadyWorkSummary, WorkChange, WorkChangeProjection, WorkSectionOmissionReason},
+};
+
+#[cfg(test)]
+use crate::domain::{
+    MAX_GATE_FAILURE_BYTES, MAX_GATE_FAILURE_INPUTS, MAX_GATE_FAILURES, MAX_GATE_NAME_BYTES,
+    MAX_GATE_REF_BYTES,
 };
 
 const DEFAULT_LIMIT: u32 = 20;
@@ -189,6 +196,25 @@ pub enum UpdateAction {
     Cancel {
         reason: String,
     },
+    After {
+        prerequisite: String,
+    },
+    DropAfter {
+        prerequisite: String,
+    },
+    Supersede {
+        replacement: String,
+        reason: String,
+    },
+}
+
+/// `gate`: one bounded pass/fail observation on the focused item.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GateInput {
+    pub name: String,
+    #[serde(default)]
+    pub failed: Vec<String>,
+    pub evidence_ref: Option<String>,
 }
 
 /// `note`: one finding, decision, or evidence pointer.
@@ -316,6 +342,10 @@ impl VerbError {
 
     /// Words and commands that resolve the failure, when a fixed table knows.
     #[must_use]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the fixed refusal-to-guidance table stays contiguous and exhaustively reviewable"
+    )]
     pub fn guidance(&self) -> Guidance {
         let target = self.work_ref.as_deref().unwrap_or("<ref>");
         let message = self.error.to_string();
@@ -361,6 +391,10 @@ impl VerbError {
             ),
             StoreError::WorkNotOpen(_) => (
                 vec!["this item is not open".into()],
+                vec![format!("engram work show {target}")],
+            ),
+            StoreError::WorkPrerequisiteAlreadySatisfied(_) => (
+                vec!["this prerequisite is already satisfied; no edge is needed".into()],
                 vec![format!("engram work show {target}")],
             ),
             StoreError::WorkNotFound(_) => {
@@ -1052,14 +1086,13 @@ impl AgentVerbs {
     /// Returns [`VerbError`] when the item is unknown, held elsewhere, or the
     /// host grant does not admit claiming.
     pub fn claim(&self, input: ClaimInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let view = self
-            .service
-            .work_focus(&input.work_ref, now)
-            .map_err(|error| VerbError::at(error, &input.work_ref))?;
+        let view = self.target(Some(&input.work_ref), now)?;
         let work_ref = view.status.work.short_ref.clone();
+        let target = view.status.work.work_id.0.to_string();
         let result = self
             .service
-            .work_update(
+            .work_update_on(
+                Some(&target),
                 WorkUpdateInput::Claim {
                     ttl_seconds: input.ttl_seconds,
                     recovery_reason: input
@@ -1071,7 +1104,7 @@ impl AgentVerbs {
                 now,
             )
             .map_err(|error| VerbError::at(error, &work_ref))?;
-        let after = self.refreshed(view, now)?;
+        let after = self.refreshed(&view, now)?;
         let lines = vec![format!(
             "claimed {work_ref} \"{}\"{}",
             short(&after.status.work.title),
@@ -1095,12 +1128,37 @@ impl AgentVerbs {
         let view = self.target(input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
+        let prerequisite_target = match &input.action {
+            UpdateAction::After { prerequisite } | UpdateAction::DropAfter { prerequisite }
+                if !prerequisite.trim().is_empty() =>
+            {
+                let prerequisite = self
+                    .service
+                    .resolve_work_reference(prerequisite)
+                    .map_err(|error| VerbError::at(error, prerequisite))?;
+                Some((prerequisite.work_id, prerequisite.short_ref))
+            }
+            _ => None,
+        };
         let (core, line) = self.update_translation(input.action, &work_ref, &title)?;
+        let target = view.status.work.work_id.0.to_string();
         let result = self
             .service
-            .work_update(core, now)
-            .map_err(|error| VerbError::at(error, &work_ref))?;
-        let after = self.refreshed(view, now)?;
+            .work_update_on(Some(&target), core, now)
+            .map_err(|error| {
+                if let Some((prerequisite_id, prerequisite_ref)) = &prerequisite_target
+                    && match &error {
+                        StoreError::WorkNotOpen(closed)
+                        | StoreError::WorkPrerequisiteAlreadySatisfied(closed)
+                        | StoreError::WorkNotFound(closed) => closed == prerequisite_id,
+                        _ => false,
+                    }
+                {
+                    return VerbError::at(error, prerequisite_ref);
+                }
+                VerbError::at(error, &work_ref)
+            })?;
+        let after = self.refreshed(&view, now)?;
         let line = format!("{line}{}", held_suffix(self.holder(&after, now), now));
         let guidance = self.guidance(&after, "update", now);
         Ok(Receipt::assemble(
@@ -1115,7 +1173,7 @@ impl AgentVerbs {
     /// receipt line the shell prints.
     #[allow(
         clippy::too_many_lines,
-        reason = "the five flat update actions stay together so the agent-to-core mapping remains reviewable"
+        reason = "the flat update actions stay together so the agent-to-core mapping remains reviewable"
     )]
     fn update_translation(
         &self,
@@ -1236,7 +1294,119 @@ impl AgentVerbs {
                     format!("cancelled {work_ref} \"{title}\": {}", short(&reason)),
                 )
             }
+            UpdateAction::After { prerequisite } => {
+                let prerequisite = prerequisite.trim().to_owned();
+                if prerequisite.is_empty() {
+                    return Err(StoreError::InvalidWork(
+                        "adding a prerequisite needs the prerequisite item ref".into(),
+                    )
+                    .into());
+                }
+                (
+                    WorkUpdateInput::AddPrerequisite {
+                        prerequisite: prerequisite.clone(),
+                        idempotency_key: String::new(),
+                    },
+                    format!("made {work_ref} \"{title}\" wait for {prerequisite}"),
+                )
+            }
+            UpdateAction::DropAfter { prerequisite } => {
+                let prerequisite = prerequisite.trim().to_owned();
+                if prerequisite.is_empty() {
+                    return Err(StoreError::InvalidWork(
+                        "removing a prerequisite needs the prerequisite item ref".into(),
+                    )
+                    .into());
+                }
+                (
+                    WorkUpdateInput::RemovePrerequisite {
+                        prerequisite: prerequisite.clone(),
+                        idempotency_key: String::new(),
+                    },
+                    format!("removed {prerequisite} as a prerequisite of {work_ref} \"{title}\""),
+                )
+            }
+            UpdateAction::Supersede {
+                replacement,
+                reason,
+            } => {
+                let replacement = replacement.trim().to_owned();
+                let reason = reason.trim().to_owned();
+                if replacement.is_empty() {
+                    return Err(StoreError::InvalidWork(
+                        "a supersession needs the replacement item ref".into(),
+                    )
+                    .into());
+                }
+                if reason.is_empty() {
+                    return Err(
+                        StoreError::InvalidWork("a supersession needs a reason".into()).into(),
+                    );
+                }
+                (
+                    WorkUpdateInput::Supersede {
+                        replacement: replacement.clone(),
+                        reason: reason.clone(),
+                        idempotency_key: String::new(),
+                    },
+                    format!(
+                        "superseded {work_ref} \"{title}\" with {replacement}: {}",
+                        short(&reason)
+                    ),
+                )
+            }
         })
+    }
+
+    /// `gate`: record one bounded pass/fail observation on the focused item.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerbError`] when the input exceeds the documented bounds,
+    /// text contains unsafe control/format characters, or this session does
+    /// not hold the item.
+    pub fn gate(&self, input: GateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        let normalized = normalize_gate_input(&input)?;
+        let GateInput {
+            name,
+            failed,
+            evidence_ref,
+        } = input;
+        let view = self.target(None, now)?;
+        let work_ref = view.status.work.short_ref.clone();
+        let passed = normalized.failed.is_empty();
+        let result = self
+            .service
+            .work_gate_on(
+                Some(&view.status.work.work_id.0.to_string()),
+                &name,
+                &failed,
+                evidence_ref.as_deref(),
+                now,
+            )
+            .map_err(|error| VerbError::at(error, &work_ref))?;
+        let after = self.refreshed(&view, now)?;
+        let guidance = self.guidance(&after, "gate", now);
+        let mut value = serde_json::to_value(&result)?;
+        value["operation"] = json!("gate");
+        value["gate"] = json!({
+            "name": &normalized.name,
+            "passed": passed,
+            "failed_count": normalized.failed.len(),
+            "referenced": normalized.evidence_ref.is_some(),
+        });
+        let state = if passed {
+            "passed".to_owned()
+        } else {
+            format!("failed ({} failures)", normalized.failed.len())
+        };
+        let lines = vec![format!(
+            "recorded gate {} {state} on {work_ref} \"{}\"{}",
+            short(&normalized.name),
+            short(&after.status.work.title),
+            held_suffix(self.holder(&after, now), now)
+        )];
+        Ok(Receipt::assemble(lines, guidance, value, false))
     }
 
     /// `note`: record evidence, then checkpoint it, both keyless.
@@ -1252,34 +1422,14 @@ impl AgentVerbs {
         }
         let view = self.target(input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
-        let evidence = self
+        let target = view.status.work.work_id.0.to_string();
+        let result = self
             .service
-            .work_update(
-                WorkUpdateInput::Evidence {
-                    summary: text.clone(),
-                    refs: trimmed(&input.refs),
-                    attach: None,
-                    idempotency_key: String::new(),
-                },
-                now,
-            )
+            .work_note_on(Some(&target), &text, &trimmed(&input.refs), now)
             .map_err(|error| VerbError::at(error, &work_ref))?;
-        let checkpoint = self
-            .service
-            .work_update(
-                WorkUpdateInput::Checkpoint {
-                    summary: text.clone(),
-                    evidence: None,
-                    idempotency_key: String::new(),
-                },
-                now,
-            )
-            .map_err(|error| VerbError::at(error, &work_ref))?;
-        let after = self.refreshed(view, now)?;
+        let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "note", now);
-        let mut value = serde_json::to_value(&checkpoint)?;
-        value["operation"] = json!("note");
-        value["evidence"] = serde_json::to_value(&evidence.receipt)?;
+        let value = serde_json::to_value(&result)?;
         let lines = vec![format!(
             "noted on {work_ref} \"{}\": {}{}",
             short(&after.status.work.title),
@@ -1299,9 +1449,11 @@ impl AgentVerbs {
         let view = self.target(input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
+        let target = view.status.work.work_id.0.to_string();
         let result = self
             .service
-            .work_complete(
+            .work_complete_on(
+                Some(&target),
                 WorkCompleteInput {
                     capture: nonempty(input.summary).map(|summary| WorkCompletionCaptureInput {
                         summary,
@@ -1315,7 +1467,7 @@ impl AgentVerbs {
                 now,
             )
             .map_err(|error| VerbError::at(error, &work_ref))?;
-        let after = self.refreshed(view, now)?;
+        let after = self.refreshed(&view, now)?;
         let (lines, guidance, owed) = match &result {
             WorkCompleteResult::Completed(_) => {
                 let mut guidance = self.guidance(&after, "done", now);
@@ -1450,11 +1602,12 @@ impl AgentVerbs {
                 )
             }
         };
+        let target = view.status.work.work_id.0.to_string();
         let result = self
             .service
-            .work_handoff(core, now)
+            .work_handoff_on(Some(&target), core, now)
             .map_err(|error| VerbError::at(error, &work_ref))?;
-        let after = self.refreshed(view, now)?;
+        let after = self.refreshed(&view, now)?;
         let holder = self.holder(&after, now);
         let line = format!("{verb}{}", held_suffix(holder, now));
         let guidance = self.guidance(&after, "handoff", now);
@@ -1472,10 +1625,14 @@ impl AgentVerbs {
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, VerbError> {
         match work_ref {
-            Some(work_ref) => self
-                .service
-                .work_focus(work_ref, now)
-                .map_err(|error| VerbError::at(error, work_ref)),
+            Some(work_ref) => {
+                self.service
+                    .select_work(work_ref, now)
+                    .map_err(|error| VerbError::at(error, work_ref))?;
+                self.service
+                    .inspect_work(work_ref, now)
+                    .map_err(|error| VerbError::at(error, work_ref))
+            }
             None => self.focused(now)?.ok_or_else(|| {
                 StoreError::InvalidWork(
                     "this session has no focused work; name the item or claim one first".into(),
@@ -1500,10 +1657,13 @@ impl AgentVerbs {
 
     fn refreshed(
         &self,
-        previous: WorkFocusView,
+        previous: &WorkFocusView,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, VerbError> {
-        Ok(self.focused(now)?.unwrap_or(previous))
+        let work_ref = previous.status.work.short_ref.clone();
+        self.service
+            .inspect_work(&previous.status.work.work_id.0.to_string(), now)
+            .map_err(|error| VerbError::at(error, &work_ref))
     }
 
     fn holder<'a>(&self, view: &'a WorkFocusView, now: DateTime<Utc>) -> Holder<'a> {
@@ -1545,6 +1705,7 @@ impl AgentVerbs {
             word,
             !view.blockers.is_empty(),
             view.status.work.lifecycle == WorkLifecycle::Open,
+            &view.prerequisites,
         );
         Guidance { reminders, next }
     }
@@ -1657,6 +1818,9 @@ fn reminder_for_reason(reason: &str, holder: Holder<'_>, blockers: &[String]) ->
         "one or more prerequisites are incomplete" => {
             Some("waiting: one or more prerequisites are not complete".into())
         }
+        "one or more prerequisites are dead and must be removed" => {
+            Some("waiting: a dead prerequisite must be removed".into())
+        }
         "one or more typed blockers remain active" => Some(if blockers.is_empty() {
             "blocked: one or more blockers remain active".into()
         } else {
@@ -1725,16 +1889,17 @@ const NEXT_LIFECYCLE_LIMIT: usize = 3;
 /// Fixed table from `allowed_next` tags to literal commands. Only the moves
 /// that change who holds the item or whether it is finished are suggested
 /// (accept, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
-/// priority order — followed by `engram work show REF` for the rest. Planning
-/// edits (block, release, handoff offers, decomposition, revision, cancel) and
-/// entries the agent cannot run through the nine words stay in `allowed_next`
-/// on the structured receipt only.
+/// priority order — followed by `engram work show REF` for the rest. The one
+/// planning exception is removing a dead prerequisite that can never
+/// satisfy its edge. Other planning edits and entries the agent cannot run
+/// through the ten words stay in `allowed_next` on the structured receipt.
 fn next_commands(
     allowed_next: &[String],
     work_ref: &str,
     word: &str,
     blocked: bool,
     open: bool,
+    prerequisites: &[crate::work_service::WorkItemSummary],
 ) -> Vec<String> {
     let has = |tag: &str| allowed_next.iter().any(|entry| entry == tag);
     let mut out: Vec<String> = Vec::new();
@@ -1743,6 +1908,20 @@ fn next_commands(
             out.push(command);
         }
     };
+    if has("work_update:remove_prerequisite") {
+        for prerequisite in prerequisites
+            .iter()
+            .filter(|prerequisite| {
+                prerequisite.prerequisite_state == Some(WorkPrerequisiteState::Dead)
+            })
+            .take(1)
+        {
+            push(format!(
+                "engram work update {work_ref} --drop-after {}",
+                prerequisite.short_ref
+            ));
+        }
+    }
     if has("work_handoff:accept") {
         push(format!("engram work handoff {work_ref} --accept"));
     }
@@ -2345,12 +2524,359 @@ pub fn looks_like_work_ref(value: &str) -> bool {
     uuid::Uuid::parse_str(value).is_ok()
 }
 
+fn normalize_gate_input(input: &GateInput) -> Result<GateInput, VerbError> {
+    let normalized =
+        normalize_gate_evidence_input(&input.name, &input.failed, input.evidence_ref.as_deref())
+            .map_err(StoreError::InvalidWork)?;
+
+    Ok(GateInput {
+        name: normalized.name,
+        failed: normalized.failed,
+        evidence_ref: normalized.evidence_ref,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
+    use chrono::{Duration, TimeZone};
+    use tempfile::tempdir;
+
     use super::*;
-    use crate::{BuiltinObligationRuleRef, VerificationRequirement, WorkObligationGuidance};
+    use crate::{
+        ActorContext, BuiltinObligationRuleRef, DevelopmentNoopRedactor, SqliteStore,
+        VerificationRequirement, WorkAuthorityGrant, WorkAuthorityOperation, WorkAuthorityScope,
+        WorkObligationGuidance, WorkPlanningBudget,
+        domain::{AssuranceLevel, SCHEMA_VERSION},
+    };
+
+    fn at(second: i64) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 9, 1, 18, 0, 0)
+            .single()
+            .expect("fixed timestamp")
+            + Duration::seconds(second)
+    }
+
+    fn install_protocol_grant(
+        database: &std::path::Path,
+        project: &ProjectId,
+        actor_id: &str,
+    ) -> ObjectHash {
+        SqliteStore::open(database)
+            .expect("store")
+            .install_work_authority_grant(
+                WorkAuthorityGrant {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: project.clone(),
+                    policy_ref: "project-default".into(),
+                    subject_actor_id: actor_id.into(),
+                    issued_by: ActorContext {
+                        actor_id: "test-host".into(),
+                        actor_kind: "host_operator".into(),
+                        assurance: AssuranceLevel::Asserted,
+                        run_id: None,
+                        session_id: None,
+                        source_tool: Some("test".into()),
+                        source_skill: None,
+                        provenance_chain: Vec::new(),
+                        reason: "issue test authority".into(),
+                    },
+                    assurance: AssuranceLevel::Asserted,
+                    operations: vec![
+                        WorkAuthorityOperation::RootCreate,
+                        WorkAuthorityOperation::Plan,
+                        WorkAuthorityOperation::Claim,
+                        WorkAuthorityOperation::Dispose,
+                        WorkAuthorityOperation::RootComplete,
+                        WorkAuthorityOperation::Reopen,
+                        WorkAuthorityOperation::ClaimRecovery,
+                        WorkAuthorityOperation::CompletionWaiver,
+                        WorkAuthorityOperation::CompletionDrain,
+                    ],
+                    scope: WorkAuthorityScope::Project,
+                    planning_budget: Some(WorkPlanningBudget {
+                        max_depth: 4,
+                        max_open_descendants: 32,
+                        max_children_per_decomposition: 8,
+                    }),
+                    issued_at: at(-1),
+                    valid_until: at(3_600),
+                    reason: "test host delegation".into(),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("grant")
+    }
+
+    fn root_input(title: &str, key: &str) -> WorkProposeInput {
+        WorkProposeInput::Root {
+            title: title.into(),
+            outcome: format!("{title} outcome"),
+            acceptance: vec![format!("{title} accepted")],
+            work_kind: None,
+            priority: None,
+            labels: Vec::new(),
+            assigned_to: None,
+            deferred_until: None,
+            authority_policy_ref: None,
+            idempotency_key: key.into(),
+        }
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one deterministic focus-race scenario covers the exact-target agent words"
+    )]
+    fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("agent-verb-explicit-targets".into());
+        let grant = install_protocol_grant(&database, &project, "agent");
+        let session = SessionId("shared-agent-session".into());
+        let service = Arc::new(LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            session.clone(),
+            Some("agent-verb-target-test".into()),
+            Some(grant.clone()),
+        ));
+        let create = |title: &str, key: &str| match service
+            .work_propose(root_input(title, key), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let target = create("Exact target", "exact-target");
+        let other = create("Concurrent focus", "concurrent-focus");
+        let handoff_target = create("Exact handoff", "exact-handoff");
+        let verbs =
+            AgentVerbs::with_shared_service(service.clone(), "agent".into(), session.clone());
+        let race_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let race_barrier = Arc::new(std::sync::Barrier::new(2));
+        let race_started = Arc::new(std::sync::Barrier::new(2));
+        let focus_racer = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            session.clone(),
+            Some("agent-verb-target-test".into()),
+            Some(grant.clone()),
+        );
+        let raced_ref = other.short_ref.clone();
+        let thread_running = race_running.clone();
+        let thread_barrier = race_barrier.clone();
+        let thread_started = race_started.clone();
+        let focus_thread = std::thread::spawn(move || {
+            thread_barrier.wait();
+            focus_racer
+                .select_work(&raced_ref, at(2))
+                .expect("initial same-session focus race");
+            let mut switches = 1_usize;
+            thread_started.wait();
+            while thread_running.load(std::sync::atomic::Ordering::Acquire) && switches < 10_000 {
+                focus_racer
+                    .select_work(&raced_ref, at(2))
+                    .expect("same-session focus race");
+                switches += 1;
+                std::thread::yield_now();
+            }
+            switches
+        });
+        race_barrier.wait();
+        race_started.wait();
+
+        verbs
+            .claim(
+                ClaimInput {
+                    work_ref: target.short_ref.clone(),
+                    ttl_seconds: Some(300),
+                    recover: None,
+                },
+                at(1),
+            )
+            .expect("claim remains on exact target");
+        assert_eq!(
+            SqliteStore::open(&database)
+                .expect("store")
+                .current_work_claim(target.work_id)
+                .expect("target claim")
+                .expect("live target claim")
+                .work_id,
+            target.work_id
+        );
+        assert!(
+            SqliteStore::open(&database)
+                .expect("store")
+                .current_work_claim(other.work_id)
+                .expect("other claim")
+                .is_none()
+        );
+
+        let note = NoteInput {
+            work_ref: Some(target.short_ref.clone()),
+            text: "one atomic note capture".into(),
+            refs: vec!["test:exact-note".into()],
+        };
+        let first_note = verbs.note(&note, at(3)).expect("note exact target");
+        let replayed_note = verbs.note(&note, at(4)).expect("replay exact note");
+        assert_eq!(first_note.value["receipt"], replayed_note.value["receipt"]);
+        assert_eq!(
+            first_note.value["evidence"],
+            replayed_note.value["evidence"]
+        );
+        let target_run = target.active_run_id.expect("target run");
+        let store = SqliteStore::open(&database).expect("store");
+        let evidence = store
+            .work_run_evidence(target_run)
+            .expect("target evidence");
+        assert_eq!(evidence.len(), 1);
+        let checkpoint_hash = ObjectHash::from_stored(
+            first_note.value["receipt"]["result"]
+                .as_str()
+                .expect("checkpoint hash")
+                .to_owned(),
+        )
+        .expect("valid checkpoint hash");
+        let checkpoint = store
+            .get::<crate::WorkCheckpoint>(&checkpoint_hash)
+            .expect("checkpoint read")
+            .expect("checkpoint");
+        assert_eq!(checkpoint.work_id, target.work_id);
+        assert_eq!(checkpoint.evidence, evidence);
+        assert!(
+            store
+                .work_run_evidence(other.active_run_id.expect("other run"))
+                .expect("other evidence")
+                .is_empty()
+        );
+
+        verbs
+            .done(
+                DoneInput {
+                    work_ref: Some(target.short_ref.clone()),
+                    summary: Some("exact target completed".into()),
+                    note: None,
+                },
+                at(5),
+            )
+            .expect("completion remains on exact target");
+        assert_eq!(
+            service
+                .inspect_work(&target.work_id.0.to_string(), at(6))
+                .expect("target view")
+                .status
+                .work
+                .lifecycle,
+            WorkLifecycle::Completed
+        );
+        assert_eq!(
+            service
+                .inspect_work(&other.work_id.0.to_string(), at(6))
+                .expect("other view")
+                .status
+                .work
+                .lifecycle,
+            WorkLifecycle::Open
+        );
+
+        verbs
+            .claim(
+                ClaimInput {
+                    work_ref: handoff_target.short_ref.clone(),
+                    ttl_seconds: Some(300),
+                    recover: None,
+                },
+                at(7),
+            )
+            .expect("claim handoff target");
+        verbs
+            .handoff(
+                HandoffInput {
+                    work_ref: Some(handoff_target.short_ref.clone()),
+                    action: HandoffAction::Offer {
+                        to: "peer-session".into(),
+                        summary: Some("handoff the exact item".into()),
+                        ttl_seconds: Some(300),
+                    },
+                },
+                at(8),
+            )
+            .expect("offer remains on exact target");
+        race_running.store(false, std::sync::atomic::Ordering::Release);
+        assert!(focus_thread.join().expect("focus race thread") > 0);
+        let peer_session = SessionId("peer-session".into());
+        let peer_service = Arc::new(LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            peer_session.clone(),
+            Some("agent-verb-target-test".into()),
+            Some(grant.clone()),
+        ));
+        let peer =
+            AgentVerbs::with_shared_service(peer_service, "agent".into(), peer_session.clone());
+        let peer_race_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let peer_race_barrier = Arc::new(std::sync::Barrier::new(2));
+        let peer_race_started = Arc::new(std::sync::Barrier::new(2));
+        let peer_focus_racer = LocalWorkService::new(
+            database.clone(),
+            project,
+            "agent".into(),
+            peer_session.clone(),
+            Some("agent-verb-target-test".into()),
+            Some(grant),
+        );
+        let peer_raced_ref = other.short_ref.clone();
+        let thread_running = peer_race_running.clone();
+        let thread_barrier = peer_race_barrier.clone();
+        let thread_started = peer_race_started.clone();
+        let peer_focus_thread = std::thread::spawn(move || {
+            thread_barrier.wait();
+            peer_focus_racer
+                .select_work(&peer_raced_ref, at(9))
+                .expect("initial peer same-session focus race");
+            let mut switches = 1_usize;
+            thread_started.wait();
+            while thread_running.load(std::sync::atomic::Ordering::Acquire) && switches < 10_000 {
+                peer_focus_racer
+                    .select_work(&peer_raced_ref, at(9))
+                    .expect("peer same-session focus race");
+                switches += 1;
+                std::thread::yield_now();
+            }
+            switches
+        });
+        peer_race_barrier.wait();
+        peer_race_started.wait();
+        peer.handoff(
+            HandoffInput {
+                work_ref: Some(handoff_target.short_ref.clone()),
+                action: HandoffAction::Accept,
+            },
+            at(10),
+        )
+        .expect("accept remains on exact target");
+        peer_race_running.store(false, std::sync::atomic::Ordering::Release);
+        assert!(peer_focus_thread.join().expect("peer focus race thread") > 0);
+        let accepted = SqliteStore::open(&database)
+            .expect("store")
+            .current_work_claim(handoff_target.work_id)
+            .expect("handoff claim")
+            .expect("accepted claim");
+        assert_eq!(accepted.work_id, handoff_target.work_id);
+        assert_eq!(accepted.holder, peer_session);
+        assert!(
+            SqliteStore::open(&database)
+                .expect("store")
+                .current_work_claim(other.work_id)
+                .expect("other claim")
+                .is_none()
+        );
+    }
 
     fn hash(fill: char) -> ObjectHash {
         ObjectHash::from_str(&fill.to_string().repeat(64)).expect("hash")
@@ -2472,6 +2998,15 @@ mod tests {
             Some("blocked: waiting on review")
         );
         assert_eq!(
+            reminder_for_reason(
+                "one or more prerequisites are dead and must be removed",
+                Holder::Nobody,
+                &[]
+            )
+            .as_deref(),
+            Some("waiting: a dead prerequisite must be removed")
+        );
+        assert_eq!(
             reminder_for_reason("lifecycle is Completed", Holder::Nobody, &[]),
             None
         );
@@ -2519,7 +3054,7 @@ mod tests {
         ]
         .map(String::from);
         assert_eq!(
-            next_commands(&tags, "w-0123456789ab", "add", false, true),
+            next_commands(&tags, "w-0123456789ab", "add", false, true, &[]),
             vec![
                 "engram work claim w-0123456789ab",
                 "engram work show w-0123456789ab",
@@ -2543,14 +3078,14 @@ mod tests {
         ]
         .map(String::from);
         assert_eq!(
-            next_commands(&held, "w-0123456789ab", "show", false, true),
+            next_commands(&held, "w-0123456789ab", "show", false, true, &[]),
             vec![
                 "engram work note w-0123456789ab \"…\"",
                 "engram work done w-0123456789ab \"…\"",
             ]
         );
         assert_eq!(
-            next_commands(&held, "w-0123456789ab", "claim", true, true),
+            next_commands(&held, "w-0123456789ab", "claim", true, true, &[]),
             vec![
                 "engram work note w-0123456789ab \"…\"",
                 "engram work done w-0123456789ab \"…\"",
@@ -2570,7 +3105,7 @@ mod tests {
         ]
         .map(String::from);
         assert_eq!(
-            next_commands(&crowded, "w-0123456789ab", "next", true, true),
+            next_commands(&crowded, "w-0123456789ab", "next", true, true, &[]),
             vec![
                 "engram work handoff w-0123456789ab --accept",
                 "engram work claim w-0123456789ab",
@@ -2584,7 +3119,8 @@ mod tests {
                 "w-0123456789ab",
                 "done",
                 false,
-                true
+                true,
+                &[],
             ),
             vec!["engram work show w-0123456789ab", "engram work next",]
         );
@@ -2596,7 +3132,8 @@ mod tests {
                 "w-0123456789ab",
                 "done",
                 false,
-                false
+                false,
+                &[],
             ),
             vec!["engram work next"]
         );
@@ -2606,9 +3143,122 @@ mod tests {
                 "w-0123456789ab",
                 "next",
                 false,
-                false
+                false,
+                &[],
             )
             .is_empty()
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one table test covers authority, pending, dead, and bounded command priority"
+    )]
+    fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
+        let summary = |index: u128, lifecycle| crate::work_service::WorkItemSummary {
+            work_id: WorkId(uuid::Uuid::from_u128(index)),
+            short_ref: format!("w-{index:012x}"),
+            root_id: WorkId(uuid::Uuid::from_u128(index)),
+            parent_id: None,
+            title: "Prerequisite".into(),
+            outcome: "Prerequisite".into(),
+            acceptance: vec!["Prerequisite is done".into()],
+            acceptance_count: 1,
+            kind: WorkItemKind::Task,
+            priority: 2,
+            labels: Vec::new(),
+            assigned_to: None,
+            lifecycle,
+            revision: 1,
+            active_run_id: None,
+            superseded_by: None,
+            prerequisite_state: Some(match lifecycle {
+                WorkLifecycle::Cancelled => WorkPrerequisiteState::Dead,
+                WorkLifecycle::Completed => WorkPrerequisiteState::Satisfied,
+                _ => WorkPrerequisiteState::Pending,
+            }),
+            updated_at: DateTime::<Utc>::from_timestamp(0, 0).expect("epoch"),
+        };
+        let cancelled = summary(0, WorkLifecycle::Cancelled);
+        let open = summary(0, WorkLifecycle::Open);
+        let mut superseded_dead = summary(0, WorkLifecycle::Superseded);
+        superseded_dead.prerequisite_state = Some(WorkPrerequisiteState::Dead);
+        let command = "engram work update w-111111111111 --drop-after w-000000000000".to_owned();
+
+        assert!(
+            !next_commands(
+                &["work_focus".into()],
+                "w-111111111111",
+                "show",
+                false,
+                true,
+                std::slice::from_ref(&cancelled),
+            )
+            .contains(&command)
+        );
+        assert!(
+            !next_commands(
+                &[
+                    "work_focus".into(),
+                    "work_update:remove_prerequisite".into()
+                ],
+                "w-111111111111",
+                "show",
+                false,
+                true,
+                &[open],
+            )
+            .contains(&command)
+        );
+        assert!(
+            next_commands(
+                &[
+                    "work_focus".into(),
+                    "work_update:remove_prerequisite".into()
+                ],
+                "w-111111111111",
+                "show",
+                false,
+                true,
+                &[cancelled],
+            )
+            .contains(&command)
+        );
+        assert!(
+            next_commands(
+                &[
+                    "work_focus".into(),
+                    "work_update:remove_prerequisite".into()
+                ],
+                "w-111111111111",
+                "show",
+                false,
+                true,
+                &[superseded_dead],
+            )
+            .contains(&command)
+        );
+
+        let cancelled = (0..4)
+            .map(|index| summary(index, WorkLifecycle::Cancelled))
+            .collect::<Vec<_>>();
+        let crowded = [
+            "work_focus",
+            "work_update:remove_prerequisite",
+            "work_handoff:accept",
+            "work_update:claim",
+            "work_update:checkpoint",
+            "work_complete",
+        ]
+        .map(String::from);
+        assert_eq!(
+            next_commands(&crowded, "w-111111111111", "show", true, true, &cancelled,),
+            [
+                "engram work update w-111111111111 --drop-after w-000000000000",
+                "engram work handoff w-111111111111 --accept",
+                "engram work claim w-111111111111",
+            ]
         );
     }
 
@@ -2786,5 +3436,190 @@ mod tests {
         assert!(parse_defer_date("tomorrow").is_err());
         assert_eq!(short("a  b\n c"), "a b c");
         assert!(short(&"x".repeat(200)).ends_with('…'));
+    }
+
+    #[test]
+    fn gate_input_normalizes_identity_and_deduplicates_failures() {
+        let normalized = normalize_gate_input(&GateInput {
+            name: "  CARGO-TEST  ".into(),
+            failed: vec![" test_b ".into(), "test_a".into(), "test_a".into()],
+            evidence_ref: Some(" target/cafe\u{301}.log ".into()),
+        })
+        .expect("normalize gate input");
+
+        assert_eq!(normalized.name, "cargo-test");
+        assert_eq!(normalized.failed, ["test_a", "test_b"]);
+        assert_eq!(normalized.evidence_ref.as_deref(), Some("target/café.log"));
+        assert_eq!(
+            normalize_gate_input(&GateInput {
+                name: "cargo-test".into(),
+                failed: vec!["same".into(); MAX_GATE_FAILURES + 1],
+                evidence_ref: None,
+            })
+            .expect("the distinct-failure bound is applied after deduplication")
+            .failed,
+            ["same"]
+        );
+    }
+
+    #[test]
+    fn gate_evidence_preserves_exact_failure_boundaries() {
+        let left = GateInput {
+            name: "cargo-test".into(),
+            failed: vec!["a | b".into(), "c".into()],
+            evidence_ref: None,
+        };
+        let right = GateInput {
+            name: "cargo-test".into(),
+            failed: vec!["a".into(), "b | c".into()],
+            evidence_ref: None,
+        };
+
+        let left_summary = serde_json::to_string(&crate::GateEvidenceRecord {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            name: left.name,
+            passed: false,
+            failed: left.failed,
+            previous: None,
+        })
+        .expect("left summary");
+        let right_summary = serde_json::to_string(&crate::GateEvidenceRecord {
+            schema_version: crate::domain::SCHEMA_VERSION,
+            name: right.name,
+            passed: false,
+            failed: right.failed,
+            previous: None,
+        })
+        .expect("right summary");
+        assert_ne!(left_summary, right_summary);
+        assert_eq!(
+            serde_json::from_str::<Value>(&left_summary).expect("structured summary"),
+            json!({
+                "schema_version": crate::domain::SCHEMA_VERSION,
+                "name": "cargo-test",
+                "passed": false,
+                "failed": ["a | b", "c"],
+            })
+        );
+    }
+
+    #[test]
+    fn gate_input_bounds_failures_with_an_actionable_remedy() {
+        let error = normalize_gate_input(&GateInput {
+            name: "cargo-test".into(),
+            failed: vec!["x".repeat(MAX_GATE_FAILURE_BYTES + 1)],
+            evidence_ref: None,
+        })
+        .expect_err("oversize failure must be refused");
+
+        let text = error.to_string();
+        assert!(text.contains("gate_input_too_large"));
+        assert!(text.contains("one aggregate --failed entry"));
+        assert!(text.contains("--ref OPAQUE_REFERENCE"));
+    }
+
+    #[test]
+    fn gate_input_enforces_every_normalized_bound() {
+        for input in [
+            GateInput {
+                name: "x".repeat(MAX_GATE_NAME_BYTES + 1),
+                failed: Vec::new(),
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: (0..=MAX_GATE_FAILURES)
+                    .map(|index| format!("test-{index}"))
+                    .collect(),
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: (0..17)
+                    .map(|index| format!("{index:02}-{}", "x".repeat(247)))
+                    .collect(),
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: vec!["same".into(); MAX_GATE_FAILURE_INPUTS + 1],
+                evidence_ref: None,
+            },
+        ] {
+            assert!(
+                normalize_gate_input(&input)
+                    .expect_err("oversize gate input")
+                    .to_string()
+                    .contains("gate_input_too_large")
+            );
+        }
+
+        for evidence_ref in ["x".repeat(MAX_GATE_REF_BYTES + 1), "bad\nref".into()] {
+            let error = normalize_gate_input(&GateInput {
+                name: "gate".into(),
+                failed: Vec::new(),
+                evidence_ref: Some(evidence_ref),
+            })
+            .expect_err("unsafe gate reference");
+            assert!(
+                error
+                    .to_string()
+                    .contains("control- and format-free opaque reference")
+            );
+        }
+
+        for input in [
+            GateInput {
+                name: "bad\ngate".into(),
+                failed: Vec::new(),
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: vec!["bad\u{1b}test".into()],
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: vec!["bad\u{202e}test".into()],
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: vec!["bad\u{e0020}test".into()],
+                evidence_ref: None,
+            },
+        ] {
+            let error = normalize_gate_input(&input).expect_err("unsafe gate text");
+            assert!(error.to_string().contains("control or format characters"));
+        }
+    }
+
+    #[test]
+    fn gate_input_rejects_oversized_raw_strings_before_normalization() {
+        for input in [
+            GateInput {
+                name: "x".repeat(MAX_GATE_NAME_BYTES * 4 + 1),
+                failed: Vec::new(),
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: vec!["x".repeat(MAX_GATE_FAILURE_BYTES * 4 + 1)],
+                evidence_ref: None,
+            },
+            GateInput {
+                name: "gate".into(),
+                failed: Vec::new(),
+                evidence_ref: Some("x".repeat(MAX_GATE_REF_BYTES * 4 + 1)),
+            },
+        ] {
+            assert!(
+                normalize_gate_input(&input)
+                    .expect_err("raw oversize must be refused before normalization")
+                    .to_string()
+                    .contains("normalization input ceiling")
+            );
+        }
     }
 }

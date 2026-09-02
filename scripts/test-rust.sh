@@ -56,7 +56,7 @@ export RUST_TEST_THREADS
 cargo test "$@"
 
 if [ "$#" -eq 0 ]; then
-    echo "Rust performance gate: claim-validated mutations, test threads=1"
+    echo "Rust scale gate: claim-validated mutation decode budgets"
     cargo test claim_validated_mutations_are_bounded_at_project_scale -- \
-        --ignored --nocapture --test-threads=1
+        --ignored --nocapture
 fi

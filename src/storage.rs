@@ -4,7 +4,8 @@ mod work;
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 
 pub(crate) use work::{
-    CompleteWorkStorageResult, StageWorkSessionDelivery, normalize_completion_acceptance_shape,
+    CompleteWorkStorageResult, StageWorkSessionDelivery, WorkNoteCapture,
+    normalize_completion_acceptance_shape,
 };
 
 #[cfg(test)]
@@ -435,6 +436,13 @@ pub(crate) struct BeginWorkProtocolAttempt<'a, T, B> {
     pub(crate) now: DateTime<Utc>,
 }
 
+pub(crate) struct BeginGateWorkProtocolAttempt<'a, B> {
+    pub(crate) project_id: &'a crate::domain::ProjectId,
+    pub(crate) session_id: &'a SessionId,
+    pub(crate) basis: &'a B,
+    pub(crate) now: DateTime<Utc>,
+}
+
 #[derive(Serialize)]
 struct ContradictionIntentFingerprint<'a> {
     project_id: &'a crate::domain::ProjectId,
@@ -698,6 +706,8 @@ pub enum StoreError {
     WorkOperationIdempotencyConflict { operation: String, key: String },
     #[error("work completion dependency graph would contain a cycle")]
     WorkDependencyCycle,
+    #[error("work prerequisite {0:?} is already completed; no edge is needed")]
+    WorkPrerequisiteAlreadySatisfied(crate::domain::WorkId),
     #[error("work {0:?} is not open for this operation")]
     WorkNotOpen(crate::domain::WorkId),
     #[error("work {work:?} is claimed by session {holder} until {expires_at}")]

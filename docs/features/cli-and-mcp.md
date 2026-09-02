@@ -9,12 +9,12 @@
 One core library owns classification, object storage, scope authorization,
 task binding, deltas, and context-packet construction. The CLI and MCP server
 are thin faces over it; transport code does not redefine memory policy. The
-agent sees nine words; every host and operator control lives under
+agent sees ten words; every host and operator control lives under
 [Host integration](#host-integration).
 
 ## Using Engram as an agent
 
-Engram tracks the work of this repository. You use nine words; everything
+Engram tracks the work of this repository. You use ten words; everything
 else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
 `ENGRAM_SESSION_ID`, and `ENGRAM_WORK_AUTHORITY_GRANT` in your environment;
 you type only the word.
@@ -25,23 +25,20 @@ engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbo
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
 ```
 
-Planned, not yet shipped (the contract is specified in
-[local work system](local-work-system.md#gates-prerequisites-supersession-and-project-memories-planned)
-and lands with its code; gate names follow the repository's
-[quality gates](../development.md#quality-gates)):
+Project memories remain planned (the contract is specified in
+[local work system](local-work-system.md#gates-prerequisites-supersession-and-project-memories)):
 
 ```bash
-engram work gate NAME [--failed TEST...] [--ref path-or-url]   # audit: bare = pass; --failed records the failures as evidence
 engram work remember "Project note" [--key KEY]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
 engram work forget KEY
-engram work update REF --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why"
 ```
 
 Add `--json` to any word for its structured receipt. Lists are short by
@@ -71,22 +68,28 @@ Rules that matter:
   the text renderer shows at most four and prints `(+N more)` when it omits
   any.
 - Lost response? Run the same command again. Identical calls are safe.
-- Planned: a failed gate is work, not a stop — `gate NAME --failed TEST...`
-  records the failures as evidence on what you hold, nothing more.
+- A failed gate is work, not a stop — `gate NAME --failed FAILURE`
+  records the failures as evidence on the focused item you hold, nothing more.
+  Gate names follow the repository's
+  [quality gates](../development.md#quality-gates).
   Classification stays your judgment: a product defect gets a required
   child through the ordinary `add … --accept "<test> passes" --kind bug
   --label gate`, and test or environment findings go into the durable note.
-  `gate NAME` alone records a pass.
+  `gate NAME` alone always records a pass. Every failure supplies at least one
+  bounded `--failed` label; when no test id exists, use the check command or
+  check name. A consecutive identical result replays;
+  the same result after an intervening different result records a fresh gate
+  transition.
 - Planned: `remember` a retrievable project note — an attributed
   observation, never a rule or a decision record, kept in full until an
   explicit `forget`. `next` only signals how many notes exist and whether
   any changed; `memories` is the source of truth.
 
-The same nine words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `note`, `done`, `handoff`) with the same flat arguments, plus
-`search` — ten tools today. The planned cut adds `gate`, `remember`,
+The same ten words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `gate`, `note`, `done`, `handoff`) with the same flat arguments,
+plus `search` — eleven tools today. The planned memory cut adds `remember`,
 `memories`, and `forget`: thirteen words plus `search`, fourteen tools,
-with no new core operation — `gate` wraps the existing evidence path, and
+with no new work-core operation — `gate` wraps the existing evidence path, and
 `remember`/`memories`/`forget` are a thin project-memory surface
 with project-policy authorization and hidden idempotency, outside the
 six-operation work core (no focus mutation, no claim renewal). The
@@ -212,7 +215,7 @@ grant-less MCP service as today; a nonempty malformed value fails startup and
 never falls back silently. The value must not be logged or copied into MCP
 traffic, agent-visible receipts, or configuration committed to the repository.
 The MCP process retains one `LocalWorkService` and its lazily opened SQLite
-connection for its lifetime. All ten agent tools use that service. A failed
+connection for its lifetime. All eleven MCP tools use that service. A failed
 operation rolls back before the next call uses the connection.
 
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
@@ -352,7 +355,7 @@ reason.
 
 ### MCP tools
 
-`engram mcp` registers exactly the ten agent tools below.
+`engram mcp` registers exactly the eleven agent-facing tools below.
 
 | Tool | Purpose |
 | --- | --- |
@@ -361,7 +364,8 @@ reason.
 | `show` | One item in full; selects it as focus without claiming |
 | `add` | A root from a title, or one required child with `under`; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
-| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, or `cancel` |
+| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, or `supersede` |
+| `gate` | Record one bounded pass/fail observation on the explicitly bound focused item |
 | `note` | Record evidence and checkpoint it in one call, both keyless |
 | `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |
 | `search` | `ls` over every lifecycle |
@@ -371,13 +375,14 @@ Every agent tool result keeps its structured shape and adds two fields.
 `reminders` holds words only, derived by a fixed table from the readiness
 `obligations` strings, open `obligation_page` items, active blockers, and the
 claim holder. `next` holds literal `engram work …` commands derived by a fixed
-table from `allowed_next`: at most three lifecycle moves in priority order
-(`handoff --accept`, `claim`, `note`, `done`, `update --unblock`) and one
-trailing `show REF`, so no receipt lists more than four. Planning edits
-(`--blocked`, `--release`, `handoff --to`, `add --under`, `--title`,
-`--cancel`) and entries the agent cannot run through the words (reopen,
-supersede, prerequisite edits, required-child waivers) stay in `allowed_next`
-on the structured receipt only.
+table from `allowed_next`: at most one dead-prerequisite `--drop-after`
+recovery followed by lifecycle moves in priority order (`handoff --accept`,
+`claim`, `note`, `done`, `update --unblock`), with three commands total and
+one trailing `show REF`, so no receipt lists more than four. Other planning
+edits (`--blocked`, `--release`, `handoff --to`, `add --under`, `--title`,
+`--cancel`, `--after`, `--supersede-with`) and entries without an agent word
+(reopen and required-child waivers) stay in `allowed_next` on the structured
+receipt only.
 Errors keep their stable code and details and add the same two fields. The
 shell prints a one-line receipt followed by `reminders:` and `next:`; `--json`
 prints the exact structured receipt. Text output never contains a 64-hex
@@ -397,7 +402,7 @@ because the core derives the idempotency key.
 
 ### Work protocol contract
 
-The ten tools translate into six ambient operations: `work_next`,
+The eleven tools translate into six ambient operations: `work_next`,
 `work_focus`, `work_propose`, `work_update`, `work_complete`, and
 `work_handoff`. Hosts and operators may call them directly through
 `engram work core`; they are not additional MCP tools. Session binding supplies
@@ -507,7 +512,7 @@ deliberately a single next command, and the `done` verb exposes exactly that
 one entry in its `next` list. The recovery snapshot commits in the same SQLite
 transaction that proves its cause, and an interrupted wrapper replays those
 exact cause/item/command bytes even if live work changes afterward. Native
-`done` and the ten-tool MCP surface return this as a typed refusal receipt. The
+`done` and the eleven-tool MCP surface return this as a typed refusal receipt. The
 JSON core prints the same typed refusal receipt on stdout and exits with status
 1; it does not wrap the refusal in an error envelope. Short-ref ambiguity
 likewise returns a stable
@@ -804,7 +809,7 @@ Build an executable and configure one stdio MCP process per agent session:
 The proprietary runtime supplies actor/session/tool/skill instruction context
 and injects the host-bound grant as process-local environment rather than
 placing it in argv. The same precedence and malformed-value rules described
-above apply. This process exposes exactly the ten agent tools. V1 records host
+above apply. This process exposes exactly the eleven MCP tools. V1 records host
 context with `asserted` assurance; configuration text is not authentication.
 Distinct concurrent sessions need distinct `--session-id` values. The database
 is shared; the MCP processes are not.
@@ -819,7 +824,7 @@ text output. It also checks that an unheld `note` and an unnoted `done` answer
 with one sentence and the resolving command.
 
 `scripts/mcp-dogfood.test.mjs` launches real stdio MCP processes against a
-fresh home. Its main lifecycle uses only the ten agent tools: one session
+fresh home. Its main lifecycle uses only the agent-facing MCP tools: one session
 creates, claims, blocks/unblocks, notes, and offers a root; a peer accepts the
 checkpoint-coupled handoff, notes, and seals it with `done`. Keyless replay,
 `reminders`/`next` derivation, catalog and search filters, cancellation,

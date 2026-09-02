@@ -109,18 +109,19 @@ node scripts/check-doc-links.mjs
 ```
 
 On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
-`scripts/test-rust.sh`; it preserves the same ordinary and performance-test
+`scripts/test-rust.sh`; it preserves the same ordinary and scale-test
 phases without the Unix-only file-descriptor-limit adjustment.
 
 After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
 acceptable flaky test.
-For the timing-sensitive scale gate, use the evidence-backed product-versus-
-environment classification in [Quality gates](docs/development.md#quality-gates);
-that procedure is not permission to retry until green.
-
-A failed gate is an investigation, never a stop. For every failing test
-or check, classify the cause and act in the same session:
+On the focused item you hold, record each executed gate once: `engram work
+gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
+opaque-reference` for bounded failure evidence. Bare `gate NAME` always means
+pass; when a failed check has no test id, use the check command or check name
+as its `--failed` label. A failed gate is an
+investigation, never a stop. For every failing test or check, classify the
+cause and act in the same session:
 
 - **Test or environment defect** (wrong assertion, stale fixture, host
   contention, missing prerequisite): fix it in the current changeset and
@@ -171,7 +172,7 @@ cp -rf source dest          # NOT: cp -r source dest
 ## Work Tracking
 
 This repository tracks its work in Engram. In a TermAl-hosted session the
-injected `engram` MCP tools (next, ls, show, add, claim, update, note,
+injected `engram` MCP tools (next, ls, show, add, claim, update, gate, note,
 done, handoff, search) ARE the words — use them directly. The shell form
 below serves humans and hosts; it needs `engram` on PATH and the host
 environment (`ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, `ENGRAM_SESSION_ID`,
@@ -183,6 +184,8 @@ engram work next                  # what you hold, what is ready, what changed
 engram work ls | show REF
 engram work add "Title" [--under REF] [--kind KIND] [--label L]
 engram work claim REF
+engram work update REF [--after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why"]
+engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "what you found or decided"
 engram work done ["what was delivered"]
 ```

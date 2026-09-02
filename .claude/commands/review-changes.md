@@ -52,14 +52,16 @@ node scripts/check-doc-links.mjs
 ```
 
 On Windows, run `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
-`scripts/test-rust.sh`; it runs the same ordinary and serial performance-test
+`scripts/test-rust.sh`; it runs the same ordinary and scale-test
 phases without the Unix-only file-descriptor-limit adjustment.
 
 On any failure, do not spawn reviewers. A failed gate is an investigation,
 never a stop: classify every failing test or check in this same turn.
-For the timing-sensitive scale gate, follow the evidence-backed classification
-in [Quality gates](../../docs/development.md#quality-gates); it is not a
-retry-until-green exception.
+Record every executed gate on the focused item you hold: `engram work gate
+NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
+opaque-reference` for bounded failure evidence. Bare `gate NAME` always means
+pass; when a failed check has no test id, use the check command or check name
+as its `--failed` label.
 
 - Test or environment defect (wrong assertion, stale fixture, host
   contention, missing prerequisite): fix it in the current changeset, rerun

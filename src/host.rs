@@ -551,6 +551,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkRevisionConflict { .. }
         | StoreError::WorkOperationIdempotencyConflict { .. }
         | StoreError::WorkDependencyCycle
+        | StoreError::WorkPrerequisiteAlreadySatisfied(_)
         | StoreError::WorkNotOpen(_)
         | StoreError::WorkClaimHeld { .. }
         | StoreError::WorkCompletionRefused { .. }

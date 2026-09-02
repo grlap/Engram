@@ -1,4 +1,4 @@
-//! MCP stdio surface for the ten agent-facing work tools.
+//! MCP stdio surface for the eleven agent-facing work tools.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -14,9 +14,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, HandoffAction, HandoffInput, LocalWorkService,
-    LsInput, NextInput, NoteInput, ObjectHash, ProjectId, Receipt, SessionId, UpdateAction,
-    UpdateInput, VerbError, WorkItemKind, parse_defer_date, storage::StoreError,
+    AddInput, AgentVerbs, ClaimInput, DoneInput, GateInput, HandoffAction, HandoffInput,
+    LocalWorkService, LsInput, NextInput, NoteInput, ObjectHash, ProjectId, Receipt, SessionId,
+    UpdateAction, UpdateInput, VerbError, WorkItemKind, parse_defer_date, storage::StoreError,
 };
 
 /// Immutable host context asserted for one MCP connection.
@@ -32,7 +32,7 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// Creates a tools-only MCP service exposing the ten agent work tools.
+    /// Creates a tools-only MCP service exposing the eleven agent work tools.
     #[must_use]
     pub fn new(
         database: PathBuf,
@@ -152,15 +152,19 @@ enum UpdateActionArg {
     Unblock,
     Revise,
     Cancel,
+    After,
+    DropAfter,
+    Supersede,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct UpdateArgs {
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
-    /// release, blocked (with text), unblock, revise (with fields), or cancel (with reason).
+    /// `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`,
+    /// `drop_after`, or `supersede`.
     action: UpdateActionArg,
-    /// Reason for release (optional) or cancel (required).
+    /// Reason for release (optional), cancel, or supersede (required).
     reason: Option<String>,
     /// Why the item is blocked.
     text: Option<String>,
@@ -177,6 +181,20 @@ struct UpdateArgs {
     labels: Option<Vec<String>>,
     /// Labels to remove.
     unlabels: Option<Vec<String>>,
+    /// Prerequisite item for `after` or `drop_after`.
+    prerequisite: Option<String>,
+    /// Replacement item for supersede.
+    replacement: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GateArgs {
+    /// Stable gate name, normalized case-insensitively.
+    name: String,
+    /// Failure labels (test ids or check names). Omit only when the gate passed.
+    failed: Option<Vec<String>>,
+    /// Bounded opaque external-evidence reference; a path or URL by convention.
+    evidence_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -317,7 +335,7 @@ impl McpServer {
     /// Apply exactly one planning or claim action.
     #[tool(
         name = "update",
-        description = "One action: release, blocked (text), unblock, revise (title, outcome, assignee, priority, defer, kind, labels), or cancel (reason)"
+        description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), or supersede (replacement plus reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
         let action = match args.action {
@@ -347,11 +365,37 @@ impl McpServer {
             UpdateActionArg::Cancel => UpdateAction::Cancel {
                 reason: args.reason.unwrap_or_default(),
             },
+            UpdateActionArg::After => UpdateAction::After {
+                prerequisite: args.prerequisite.unwrap_or_default(),
+            },
+            UpdateActionArg::DropAfter => UpdateAction::DropAfter {
+                prerequisite: args.prerequisite.unwrap_or_default(),
+            },
+            UpdateActionArg::Supersede => UpdateAction::Supersede {
+                replacement: args.replacement.unwrap_or_default(),
+                reason: args.reason.unwrap_or_default(),
+            },
         };
         verb(self.verbs().update(
             UpdateInput {
                 work_ref: args.work_ref,
                 action,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Record one bounded gate observation on the focused item you hold.
+    #[tool(
+        name = "gate",
+        description = "Record a gate pass or bounded failure-label list on the item you hold; evidence_ref is opaque (a path or URL by convention) and never ingested"
+    )]
+    fn gate(&self, Parameters(args): Parameters<GateArgs>) -> CallToolResult {
+        verb(self.verbs().gate(
+            GateInput {
+                name: args.name,
+                failed: args.failed.unwrap_or_default(),
+                evidence_ref: args.evidence_ref,
             },
             Utc::now(),
         ))
@@ -433,7 +477,7 @@ impl McpServer {
     router = self.tool_router,
     name = "engram",
     version = "0.1.0",
-    instructions = "Nine words: next, ls, show, add, claim, update, note, done, handoff (plus search). add needs only a title; claim before you change anything; note findings once; done completes what you hold. Every answer ends with reminders (what is owed) and next (commands you can run now). Identical calls are safe to repeat."
+    instructions = "Ten words: next, ls, show, add, claim, update, gate, note, done, handoff (plus search). add needs only a title; claim before you change anything; gate records bounded pass/fail evidence; note findings once; done completes what you hold. Every answer ends with reminders (what is owed) and next (commands you can run now). Identical calls are safe to repeat."
 )]
 impl ServerHandler for McpServer {}
 
@@ -519,6 +563,10 @@ pub fn store_error_value(error: &StoreError) -> Value {
         StoreError::WorkNotOpen(work) => json!({
             "work_id": work,
             "remedy": "run show for the affected item and follow next",
+        }),
+        StoreError::WorkPrerequisiteAlreadySatisfied(work) => json!({
+            "work_id": work,
+            "remedy": "no edge is needed; run show for the prerequisite before choosing another action",
         }),
         StoreError::WorkClaimHeld {
             work,
@@ -607,6 +655,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
         StoreError::WorkOperationIdempotencyConflict { .. } => "work_idempotency_conflict",
         StoreError::WorkDependencyCycle => "work_dependency_cycle",
+        StoreError::WorkPrerequisiteAlreadySatisfied(_) => "work_prerequisite_already_satisfied",
         StoreError::WorkNotOpen(_) => "work_not_open",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
@@ -687,6 +736,20 @@ mod tests {
         assert_eq!(details["candidates"][0]["title"], "Collision candidate");
         assert_eq!(details["candidates"][0]["state"], "open");
         assert_eq!(details["more"], 2);
+    }
+
+    #[test]
+    fn satisfied_prerequisite_refusal_has_actionable_structured_details() {
+        let work_id = crate::WorkId::new();
+        let error = StoreError::WorkPrerequisiteAlreadySatisfied(work_id);
+        assert_eq!(error_code(&error), "work_prerequisite_already_satisfied");
+        let value = store_error_value(&error);
+        let details = &value["error"]["details"];
+        assert_eq!(details["work_id"], work_id.0.to_string());
+        assert_eq!(
+            details["remedy"],
+            "no edge is needed; run show for the prerequisite before choosing another action"
+        );
     }
 
     #[test]

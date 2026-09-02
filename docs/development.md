@@ -6,7 +6,7 @@ the human-readable overview and the documentation conventions.
 
 ## Task tracking
 
-This project tracks its work in Engram — the nine agent words, documented in
+This project tracks its work in Engram — the ten agent words, documented in
 [CLI & MCP](features/cli-and-mcp.md#using-engram-as-an-agent).
 
 - `engram work next` — what you hold, what is ready, what others changed;
@@ -40,26 +40,26 @@ bounded test concurrency and then the ignored claim-mutation scale test with
 one thread. The shell entry point also raises the Unix file-descriptor soft
 limit when the host permits it; that step is not applicable on Windows.
 
+After updating to a build that adds a rebuildable projection, an existing
+development store can refuse until `engram doctor --repair-projections` is run
+once. The Cut A gate lookup adds the rebuildable
+`objects_work_evidence_gate_name` expression index; repairing it does not
+rewrite canonical objects.
+
 Every gate must pass. A failure is investigated and classified as a product,
 test, or environment defect; it is never normalized by retrying until green.
 
-The claim-mutation scale test today asserts absolute p95 latencies plus a
-canonical-decode maximum per operation; work-event and item decode counts are
-printed for the record, not asserted (the separate `work_next` scale test
-asserts those counts without timing). On a shared host another agent's build
-can push the latency assertion over its budget; such a failure is classified
-as an environment defect only with observed contention evidence (the foreign
-process named) and a quiet-host rerun that passes. A failure that repeats on
-a quiet host is a product defect. The evidence-backed quiet rerun is a
-classification step, not a retry-until-green exception, and the contention
-evidence plus the rerun result are recorded as a durable note on the
-affected work item.
-
-Planned: a contention-robust scale gate replaces the absolute wall-clock
-assertion so the test measures work, not the host's mood; the concrete
-design is decided at implementation
-([roadmap](roadmap.md#v1--close-the-loop)). The classification rule above
-is the discipline until it lands.
+The claim-mutation scale test asserts maximum canonical, work-event, and item
+decode budgets per operation. Those counters bound Engram's canonical and
+projection materialization work and remain stable under foreign host load.
+The test prints p95 wall-clock latency as diagnostic evidence but does not
+assert it; the separate `work_next` scale test also asserts its decode and
+response-size budgets.
+These deterministic counters do not bound every possible SQLite query-plan
+regression; p95 remains visible until a portable SQL-work counter can replace
+that remaining diagnostic gap.
+This contention-robust contract is recorded in the
+[roadmap](roadmap.md#v1--close-the-loop).
 
 Documentation-only changes: verify all relative links resolve and that docs
 stay consistent with the [specification](spec.md) — the spec is normative;

@@ -1,4 +1,4 @@
-//! Engram CLI: host/operator administration plus the nine-word agent surface.
+//! Engram CLI: host/operator administration plus the ten-word agent surface.
 
 use std::{
     env, fs,
@@ -9,20 +9,21 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use engram::domain::{AssuranceLevel, SCHEMA_VERSION};
 use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
-    ClaimInput, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, DoneInput, HandoffAction,
-    HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService, LsInput, McpServer,
-    NextInput, NoteInput, ObjectHash, ObligationRuleDefinition, ObligationRuleSet, ProjectId,
-    ProjectPolicyAuthorityDecision, SessionId, SqliteStore, StoreError, UpdateAction, UpdateInput,
-    VerificationKind, VerificationRequirement, WaiveWorkObligationRequest, WorkAuthorityGrant,
-    WorkAuthorityGrantStatus, WorkAuthorityOperation, WorkAuthorityScope, WorkAvailability,
-    WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind, WorkLifecycle,
-    WorkNextQuery, WorkNextSection, WorkObligationId, WorkPlanningBudget, WorkProposeInput,
-    WorkUpdateInput, describe_host_path_policy, looks_like_work_ref, parse_defer_date,
-    parse_host_path_policy, probe_host_path_policy, project_database_path, store_error_value,
+    ClaimInput, ControlAssurance, ControlPolicy, DevelopmentNoopRedactor, DoneInput, GateInput,
+    HandoffAction, HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService, LsInput,
+    McpServer, NextInput, NoteInput, ObjectHash, ObligationRuleDefinition, ObligationRuleSet,
+    ProjectId, ProjectPolicyAuthorityDecision, SessionId, SqliteStore, StoreError, UpdateAction,
+    UpdateInput, VerificationKind, VerificationRequirement, WaiveWorkObligationRequest,
+    WorkAuthorityGrant, WorkAuthorityGrantStatus, WorkAuthorityOperation, WorkAuthorityScope,
+    WorkAvailability, WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind,
+    WorkLifecycle, WorkNextQuery, WorkNextSection, WorkObligationId, WorkPlanningBudget,
+    WorkProposeInput, WorkUpdateInput, describe_host_path_policy, looks_like_work_ref,
+    parse_defer_date, parse_host_path_policy, probe_host_path_policy, project_database_path,
+    store_error_value,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -159,8 +160,8 @@ enum Command {
         #[arg(long)]
         source_skill: Option<String>,
     },
-    /// Track work with nine words: next, ls, show, add, claim, update, note,
-    /// done, handoff.
+    /// Track work with ten words: next, ls, show, add, claim, update, gate,
+    /// note, done, handoff.
     ///
     /// The host fixes actor, session, and authority through the environment
     /// so an agent types only the word and its arguments.
@@ -428,8 +429,8 @@ enum WorkCommand {
         /// Release your claim.
         #[arg(long)]
         release: bool,
-        /// Reason recorded with --release.
-        #[arg(long, requires = "release")]
+        /// Reason recorded with --release or required by --supersede-with.
+        #[arg(long)]
         reason: Option<String>,
         /// Mark the item blocked and say why.
         #[arg(long, value_name = "WHY")]
@@ -461,6 +462,31 @@ enum WorkCommand {
         /// Cancel the item and say why.
         #[arg(long, value_name = "REASON")]
         cancel: Option<String>,
+        /// Make this item wait for another open item.
+        #[arg(long, value_name = "REF")]
+        after: Option<String>,
+        /// Remove one prerequisite edge from this item.
+        #[arg(long, value_name = "REF")]
+        drop_after: Option<String>,
+        /// Supersede this item with another item; requires --reason.
+        #[arg(long, value_name = "REF")]
+        supersede_with: Option<String>,
+    },
+    /// Record one bounded gate pass/fail observation on the focused item you hold.
+    Gate {
+        /// Stable gate name, normalized case-insensitively.
+        name: String,
+        /// Failure label; repeatable. Omit only when the gate passed.
+        #[arg(
+            long = "failed",
+            value_name = "FAILURE",
+            action = ArgAction::Append,
+            num_args = 1
+        )]
+        failed: Vec<String>,
+        /// Opaque evidence reference; a path or URL by convention, never ingested.
+        #[arg(long = "ref", value_name = "OPAQUE_REFERENCE")]
+        evidence_ref: Option<String>,
     },
     /// Record one finding, decision, or evidence pointer on the item you hold.
     Note {
@@ -1098,7 +1124,7 @@ fn print_authority_grant_status(status: &WorkAuthorityGrantStatus) -> Result<()>
 
 #[allow(
     clippy::too_many_lines,
-    reason = "each word's flag translation stays beside the others so the nine-word surface is reviewable in one place"
+    reason = "each word's flag translation stays beside the others so the ten-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
     let verbs = AgentVerbs::new(
@@ -1188,7 +1214,13 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             labels,
             unlabels,
             cancel,
+            after,
+            drop_after,
+            supersede_with,
         } => {
+            if reason.is_some() && !release && supersede_with.is_none() {
+                bail!("--reason is only valid with --release or --supersede-with");
+            }
             let revise = assignee.is_some()
                 || priority.is_some()
                 || defer.is_some()
@@ -1201,10 +1233,13 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(blocked.is_some())
                 + usize::from(unblock)
                 + usize::from(cancel.is_some())
+                + usize::from(after.is_some())
+                + usize::from(drop_after.is_some())
+                + usize::from(supersede_with.is_some())
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, or field changes (--title, --outcome, --assignee, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --after REF, --drop-after REF, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --assignee, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1215,6 +1250,18 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 UpdateAction::Unblock
             } else if let Some(reason) = cancel {
                 UpdateAction::Cancel { reason }
+            } else if let Some(prerequisite) = after {
+                UpdateAction::After { prerequisite }
+            } else if let Some(prerequisite) = drop_after {
+                UpdateAction::DropAfter { prerequisite }
+            } else if let Some(replacement) = supersede_with {
+                let reason = reason
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or_else(|| anyhow::anyhow!("--supersede-with requires --reason WHY"))?;
+                UpdateAction::Supersede {
+                    replacement,
+                    reason,
+                }
             } else {
                 let defer = defer
                     .as_deref()
@@ -1234,6 +1281,18 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             };
             verbs.update(UpdateInput { work_ref, action }, now)
         }
+        WorkCommand::Gate {
+            name,
+            failed,
+            evidence_ref,
+        } => verbs.gate(
+            GateInput {
+                name,
+                failed,
+                evidence_ref,
+            },
+            now,
+        ),
         WorkCommand::Note { mut args, refs } => {
             let (work_ref, text) = if args.len() >= 2 {
                 let text = args.remove(1);
@@ -2022,6 +2081,96 @@ async fn serve_mcp(server: McpServer) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn work_cli_parses_cut_a_update_flags_and_gate() {
+        let prerequisite = Cli::try_parse_from([
+            "engram",
+            "work",
+            "--actor-id",
+            "agent",
+            "--session-id",
+            "session",
+            "update",
+            "w-000000000001",
+            "--after",
+            "w-000000000002",
+        ])
+        .expect("parse prerequisite flag");
+        assert!(matches!(
+            prerequisite.command,
+            Command::Work { operation, .. }
+                if matches!(*operation, WorkCommand::Update { after: Some(_), .. })
+        ));
+
+        let supersede = Cli::try_parse_from([
+            "engram",
+            "work",
+            "--actor-id",
+            "agent",
+            "--session-id",
+            "session",
+            "update",
+            "w-000000000001",
+            "--supersede-with",
+            "w-000000000002",
+            "--reason",
+            "duplicate",
+        ])
+        .expect("parse supersession flag");
+        assert!(matches!(
+            supersede.command,
+            Command::Work { operation, .. }
+                if matches!(*operation, WorkCommand::Update { supersede_with: Some(_), reason: Some(_), .. })
+        ));
+
+        let gate = Cli::try_parse_from([
+            "engram",
+            "work",
+            "--actor-id",
+            "agent",
+            "--session-id",
+            "session",
+            "gate",
+            "cargo-test",
+            "--failed",
+            "one::test",
+            "--ref",
+            "target/test.log",
+        ])
+        .expect("parse gate word");
+        assert!(matches!(
+            gate.command,
+            Command::Work { operation, .. }
+                if matches!(&*operation, WorkCommand::Gate { failed, evidence_ref: Some(_), .. } if failed == &["one::test"])
+        ));
+
+        let failures_before_name = Cli::try_parse_from([
+            "engram",
+            "work",
+            "--actor-id",
+            "agent",
+            "--session-id",
+            "session",
+            "gate",
+            "--failed",
+            "cargo fmt --check",
+            "--failed",
+            "doc-links",
+            "quality-gates",
+        ])
+        .expect("repeatable failure labels do not consume the gate name");
+        assert!(matches!(
+            failures_before_name.command,
+            Command::Work { operation, .. }
+                if matches!(
+                    &*operation,
+                    WorkCommand::Gate { name, failed, .. }
+                        if name == "quality-gates"
+                            && failed == &["cargo fmt --check", "doc-links"]
+                )
+        ));
+    }
 
     #[test]
     fn unhealthy_doctor_json_survives_a_corrupt_policy_projection() {

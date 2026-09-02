@@ -18,6 +18,7 @@ const AGENT_TOOLS = [
   "add",
   "claim",
   "update",
+  "gate",
   "note",
   "done",
   "search",
@@ -512,7 +513,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.match(help.stdout, /ENGRAM_WORK_AUTHORITY_GRANT/u);
     assert.equal(help.stdout.includes(helpSecret), false);
 
-    // Both sessions receive the same ten-tool MCP surface. `b` passes its
+    // Both sessions receive the same eleven-tool MCP surface. `b` passes its
     // grant through argv over a malformed environment value.
     a = new McpClient(engramHome, "work-agent-a", {
       environmentAuthorityGrant: grantA,
@@ -526,9 +527,9 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     await Promise.all([a.initialize(), b.initialize()]);
     assert.match(
       a.instructions,
-      /Nine words: next, ls, show, add, claim, update, note, done, handoff \(plus search\)/u,
+      /Ten words: next, ls, show, add, claim, update, gate, note, done, handoff \(plus search\)/u,
     );
-    assert.doesNotMatch(a.instructions, /Eight words/u);
+    assert.doesNotMatch(a.instructions, /Nine words/u);
     const aToolDefinitions = await a.tools();
     const aTools = new Set(aToolDefinitions.map(({ name }) => name));
     assert.deepEqual([...aTools].sort(), [...AGENT_TOOLS].sort());
@@ -550,9 +551,106 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const updateProperties = aToolDefinitions.find(
       ({ name }) => name === "update",
     ).inputSchema.properties;
-    for (const field of ["kind", "labels", "unlabels"]) {
+    for (const field of [
+      "kind",
+      "labels",
+      "unlabels",
+      "prerequisite",
+      "replacement",
+    ]) {
       assert.ok(updateProperties[field], `update is missing ${field}`);
     }
+    const gateProperties = aToolDefinitions.find(
+      ({ name }) => name === "gate",
+    ).inputSchema.properties;
+    for (const field of ["name", "failed", "evidence_ref"]) {
+      assert.ok(gateProperties[field], `gate is missing ${field}`);
+    }
+    assert.match(
+      gateProperties.evidence_ref.description,
+      /opaque external-evidence reference/u,
+    );
+
+    const mcpDependent = receipt(
+      await a.call("add", { title: "MCP prerequisite dependent" }),
+    ).work;
+    const mcpPrerequisite = receipt(
+      await a.call("add", { title: "MCP prerequisite source" }),
+    ).work;
+    const mcpReplacement = receipt(
+      await a.call("add", { title: "MCP supersession replacement" }),
+    ).work;
+    const afterReceipt = receipt(
+      await a.call("update", {
+        work_ref: mcpDependent.short_ref,
+        action: "after",
+        prerequisite: mcpPrerequisite.short_ref,
+      }),
+    );
+    assert.equal(afterReceipt.operation, "add_prerequisite");
+    assert.equal(
+      receipt(
+        await a.call("show", { work_ref: mcpDependent.short_ref }),
+      ).prerequisites[0].short_ref,
+      mcpPrerequisite.short_ref,
+    );
+    const missingPrerequisite = structuredError(
+      await a.call("update", {
+        work_ref: mcpDependent.short_ref,
+        action: "after",
+      }),
+      "work_invalid",
+    );
+    assert.match(missingPrerequisite.message, /needs the prerequisite item ref/u);
+    const dropAfterReceipt = receipt(
+      await a.call("update", {
+        work_ref: mcpDependent.short_ref,
+        action: "drop_after",
+        prerequisite: mcpPrerequisite.short_ref,
+      }),
+    );
+    assert.equal(dropAfterReceipt.operation, "remove_prerequisite");
+    assert.deepEqual(
+      receipt(
+        await a.call("show", { work_ref: mcpDependent.short_ref }),
+      ).prerequisites,
+      [],
+    );
+    assert.match(
+      structuredError(
+        await a.call("update", {
+          work_ref: mcpDependent.short_ref,
+          action: "supersede",
+          reason: "missing replacement",
+        }),
+        "work_invalid",
+      ).message,
+      /supersession needs the replacement item ref/u,
+    );
+    assert.match(
+      structuredError(
+        await a.call("update", {
+          work_ref: mcpDependent.short_ref,
+          action: "supersede",
+          replacement: mcpReplacement.short_ref,
+        }),
+        "work_invalid",
+      ).message,
+      /supersession needs a reason/u,
+    );
+    const supersedeReceipt = receipt(
+      await a.call("update", {
+        work_ref: mcpDependent.short_ref,
+        action: "supersede",
+        replacement: mcpReplacement.short_ref,
+        reason: "MCP replacement owns this outcome",
+      }),
+    );
+    assert.equal(supersedeReceipt.operation, "supersede");
+    assert.equal(
+      supersedeReceipt.receipt.result.superseded_by,
+      mcpReplacement.work_id,
+    );
 
     const added = receipt(
       await a.call("add", {
@@ -616,6 +714,25 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assert.ok(claimed.next.includes(`engram work note ${workRef} "…"`));
     assert.ok(claimed.next.includes(`engram work done ${workRef} "…"`));
+    const gate = receipt(
+      await a.call("gate", {
+        name: "CARGO-TEST",
+        failed: ["work::one", "work::two"],
+        evidence_ref: "target/test.log",
+      }),
+    );
+    assert.equal(gate.operation, "gate");
+    assert.deepEqual(gate.gate, {
+      name: "cargo-test",
+      passed: false,
+      failed_count: 2,
+      referenced: true,
+    });
+    assert.match(
+      receipt(await a.call("show", { work_ref: workRef })).evidence_items.at(-1)
+        .summary,
+      /^gate cargo-test failed/u,
+    );
     const replayedClaim = receipt(
       await a.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
     );

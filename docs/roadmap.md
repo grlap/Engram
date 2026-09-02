@@ -17,11 +17,12 @@ freshness, and only then enable a replay-proven refusal set and action gates.
 This keeps false refusals and hook latency measurable before Engram can block
 work.
 
-Current milestone: agents use nine words — `next`, `ls`, `show`, `add`,
-`claim`, `update`, `note`, `done`, `handoff` — as flat CLI commands and MCP
-tools over the unchanged six-operation core; `add → claim → done` is measured at three
-commands and no JSON, hashes, fences, or keys, and every receipt ends with
-`reminders` and `next`. The separate JSON-lines host service process-tests a
+Current milestone: agents use ten words — `next`, `ls`, `show`, `add`,
+`claim`, `update`, `gate`, `note`, `done`, `handoff` — as flat CLI commands
+and MCP tools over the unchanged six-operation core; `add → claim → done` is
+measured at three commands and no JSON, hashes, fences, or keys, and every
+receipt ends with `reminders` and `next`. The separate JSON-lines host service
+process-tests a
 restart-safe `session_bind → turn_evaluate → turn_begin → turn_checkpoint`
 loop with transactional context and stale-grant refusal. It also process-tests
 exclusive resource acquisition/release, overlap fencing, denial of unleased
@@ -53,14 +54,14 @@ on the V1 path below.
   [context packets](features/context-packets.md)
 - `engram work note` / MCP `note`: one work finding feeds peer, handoff,
   evidence, and report views
-- Planned agent-surface additions: gate results as auditable evidence,
-  prerequisites and supersession as `update` flags, and project memories
-  advertised by a content-free `next` signal —
-  [local work system](features/local-work-system.md#gates-prerequisites-supersession-and-project-memories-planned)
-- Planned contention-robust scale gate: replace the absolute wall-clock
-  assertion with a measurement that does not fail under foreign host load;
-  the concrete design is decided at implementation. Until then the current
-  measured gates and the evidence-backed contention classification stand —
+- Agent-surface Cut A: gate results are auditable evidence, and prerequisites
+  and supersession are `update` flags. Project memories remain planned and
+  are advertised by a content-free `next` signal —
+  [local work
+  system](features/local-work-system.md#gates-prerequisites-supersession-and-project-memories)
+- The contention-robust scale gate asserts canonical, work-event, and item
+  decode budgets—materialization work—while printing p95 wall-clock latency
+  only as diagnostic evidence, so foreign host load cannot fail the test —
   [development workflow](development.md#quality-gates)
 - Write policy matrix, proposal/approval, review queue,
   supersede/contradict/contested, tombstones —
