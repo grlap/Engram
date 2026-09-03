@@ -3351,9 +3351,7 @@ impl SqliteStore {
             });
         }
         let acceptance = match validate_acceptance(
-            &transaction,
             &item,
-            run.run_id,
             &evidence,
             &request.acceptance,
             request.actor.assurance,
@@ -4748,10 +4746,13 @@ impl SqliteStore {
             false,
         )?;
         let evidence = match request.evidence.as_ref() {
-            Some(evidence) => unique_hashes(evidence),
+            Some(evidence) => {
+                let evidence = unique_hashes(evidence);
+                ensure_run_evidence(&transaction, run.run_id, &evidence)?;
+                evidence
+            }
             None => work_run_evidence_on(&transaction, run.run_id)?,
         };
-        ensure_run_evidence(&transaction, run.run_id, &evidence)?;
         renew_holder_claim(&transaction, &mut claim, request.checkpointed_at)?;
         let checkpoint = persist_work_checkpoint_on(
             &transaction,
@@ -4816,10 +4817,13 @@ impl SqliteStore {
             false,
         )?;
         let evidence = match request.evidence.as_ref() {
-            Some(evidence) => unique_hashes(evidence),
+            Some(evidence) => {
+                let evidence = unique_hashes(evidence);
+                ensure_run_evidence(&transaction, run.run_id, &evidence)?;
+                evidence
+            }
             None => work_run_evidence_on(&transaction, run.run_id)?,
         };
-        ensure_run_evidence(&transaction, run.run_id, &evidence)?;
         let current_cut = FeedPosition {
             feed: FeedId::RunExecution(run.run_id),
             position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
@@ -5042,7 +5046,6 @@ impl SqliteStore {
         let evidence_hash =
             persist_work_evidence_on(&transaction, &item, &run, claim.clone(), &evidence)?;
         let acknowledged_evidence = work_run_evidence_on(&transaction, run.run_id)?;
-        ensure_run_evidence(&transaction, run.run_id, &acknowledged_evidence)?;
         let checkpoint_hash = persist_work_checkpoint_on(
             &transaction,
             &item,
@@ -11128,16 +11131,43 @@ fn ensure_run_evidence(
     run_id: WorkRunId,
     evidence: &[ObjectHash],
 ) -> Result<(), StoreError> {
-    for hash in unique_hashes(evidence) {
-        work_evidence_kind_on(connection, run_id, &hash)?;
+    // Evidence attach establishes the indexed run-membership fact in the same
+    // transaction as its canonical object. Lifecycle mutations trust that
+    // projection; operator-invoked integrity verification checks agreement.
+    let evidence = unique_hashes(evidence);
+    if evidence.is_empty() {
+        return Ok(());
+    }
+    let evidence_json =
+        serde_json::to_string(&evidence.iter().map(ObjectHash::as_str).collect::<Vec<_>>())?;
+    let missing = connection
+        .query_row(
+            "WITH requested(evidence_hash) AS (
+                 SELECT value FROM json_each(?2)
+             )
+             SELECT requested.evidence_hash
+             FROM requested
+             LEFT JOIN work_run_evidence projection
+               ON projection.run_id = ?1
+              AND projection.evidence_hash = requested.evidence_hash
+             WHERE projection.evidence_hash IS NULL
+             ORDER BY requested.evidence_hash
+             LIMIT 1",
+            params![run_id.0.to_string(), evidence_json],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if let Some(hash) = missing {
+        return Err(StoreError::InvalidWork(format!(
+            "evidence object {hash} does not belong to run {}",
+            run_id.0
+        )));
     }
     Ok(())
 }
 
 fn validate_acceptance(
-    connection: &Connection,
     item: &WorkItem,
-    run_id: WorkRunId,
     completion_evidence: &[ObjectHash],
     results: &[AcceptanceResult],
     actor_assurance: crate::domain::AssuranceLevel,
@@ -11163,7 +11193,6 @@ fn validate_acceptance(
                 ),
             });
         }
-        ensure_run_evidence(connection, run_id, &evidence)?;
         result.evidence = evidence;
         normalized.push(result);
     }
@@ -22512,6 +22541,18 @@ mod tests {
             ),
             Err(StoreError::ControlWorkBindingStale { .. })
         ));
+        let unbound_evidence = ObjectHash::from_canonical_bytes(b"unbound run evidence");
+        assert!(ensure_run_evidence(&store.connection, run.run_id, &[]).is_ok());
+        let mixed_evidence = [(*verification_hash).clone(), unbound_evidence.clone()];
+        assert!(matches!(
+            ensure_run_evidence(
+                &store.connection,
+                run.run_id,
+                &mixed_evidence,
+            ),
+            Err(StoreError::InvalidWork(detail))
+                if detail.contains(unbound_evidence.as_str())
+        ));
         let projection_corruptions = [
             (
                 verification_hash,
@@ -22690,8 +22731,8 @@ mod tests {
                     run.run_id,
                     std::slice::from_ref(evidence_hash),
                 )
-                .is_err(),
-                "{label} remained checkpointable"
+                .is_ok(),
+                "{label} lost its run-membership projection"
             );
             let corrupt_report = store
                 .verify_all()

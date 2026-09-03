@@ -12512,6 +12512,129 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the two-depth regression keeps identical setup and three measured lifecycle mutations together"
+    )]
+    fn gate_heavy_evidence_membership_has_constant_decode_cost() {
+        const FIRST_GATE_TRANSITION_COUNT: usize = 64;
+        const SECOND_GATE_TRANSITION_COUNT: usize = FIRST_GATE_TRANSITION_COUNT * 2;
+        const CANONICAL_DECODE_BUDGET: usize = 64;
+
+        fn measure(gate_transition_count: usize) -> [usize; 3] {
+            let directory = tempdir().expect("temp directory");
+            let database = directory.path().join("engram.sqlite3");
+            let service = LocalWorkService::new(
+                database,
+                ProjectId(format!(
+                    "gate-heavy-evidence-membership-{gate_transition_count}"
+                )),
+                "agent".into(),
+                SessionId(format!("gate-heavy-session-{gate_transition_count}")),
+                Some("protocol-test".into()),
+            );
+            let work = proposed_root(
+                service
+                    .work_propose(
+                        root_input("Gate-heavy evidence membership", "gate-heavy-root"),
+                        at(0),
+                    )
+                    .expect("create gate-heavy work"),
+            );
+            service
+                .work_update_on(
+                    Some(&work.short_ref),
+                    WorkUpdateInput::Claim {
+                        ttl_seconds: Some(3_600),
+                        recovery_reason: None,
+                        idempotency_key: "gate-heavy-claim".into(),
+                    },
+                    at(1),
+                )
+                .expect("claim gate-heavy work");
+
+            for index in 0..gate_transition_count {
+                let failed = if index % 2 == 0 {
+                    Vec::new()
+                } else {
+                    vec!["alternating failure".to_owned()]
+                };
+                service
+                    .work_gate_on(
+                        Some(&work.short_ref),
+                        "gate-heavy",
+                        &failed,
+                        None,
+                        at(2 + i64::try_from(index).expect("gate timestamp")),
+                    )
+                    .expect("record gate transition");
+            }
+            let after_gates = 2 + i64::try_from(gate_transition_count).expect("gate count");
+
+            crate::canonical::reset_canonical_decode_count();
+            service
+                .work_note_on(
+                    Some(&work.short_ref),
+                    "gate-heavy note",
+                    &[],
+                    at(after_gates),
+                )
+                .expect("record gate-heavy note");
+            let note_decodes = crate::canonical::canonical_decode_count();
+
+            crate::canonical::reset_canonical_decode_count();
+            service
+                .work_update_on(
+                    Some(&work.short_ref),
+                    WorkUpdateInput::Checkpoint {
+                        summary: "gate-heavy explicit checkpoint".into(),
+                        evidence: None,
+                        idempotency_key: "gate-heavy-checkpoint".into(),
+                    },
+                    at(after_gates + 1),
+                )
+                .expect("record gate-heavy explicit checkpoint");
+            let checkpoint_decodes = crate::canonical::canonical_decode_count();
+
+            crate::canonical::reset_canonical_decode_count();
+            let completed = service
+                .work_complete_on(
+                    Some(&work.short_ref),
+                    WorkCompleteInput {
+                        capture: None,
+                        evidence: Vec::new(),
+                        acceptance: None,
+                        note: Some("gate-heavy completion".into()),
+                        idempotency_key: "gate-heavy-complete".into(),
+                    },
+                    at(after_gates + 2),
+                )
+                .expect("complete gate-heavy work");
+            assert!(matches!(completed, WorkCompleteResult::Completed(_)));
+            let completion_decodes = crate::canonical::canonical_decode_count();
+
+            [note_decodes, checkpoint_decodes, completion_decodes]
+        }
+
+        let first = measure(FIRST_GATE_TRANSITION_COUNT);
+        let second = measure(SECOND_GATE_TRANSITION_COUNT);
+        for (operation, first_count, second_count) in [
+            ("note", first[0], second[0]),
+            ("checkpoint", first[1], second[1]),
+            ("completion", first[2], second[2]),
+        ] {
+            assert_eq!(
+                first_count, second_count,
+                "{operation} canonical decode cost grew between {FIRST_GATE_TRANSITION_COUNT} and {SECOND_GATE_TRANSITION_COUNT} gate transitions"
+            );
+            assert!(
+                second_count <= CANONICAL_DECODE_BUDGET,
+                "{operation} decoded {second_count} canonical objects after {SECOND_GATE_TRANSITION_COUNT} gate transitions; budget is {CANONICAL_DECODE_BUDGET}"
+            );
+        }
+    }
+
+    #[test]
     #[ignore = "runs separately so the project-scale fixture and decode samples stay out of the ordinary suite"]
     #[allow(
         clippy::too_many_lines,
@@ -12525,6 +12648,7 @@ mod tests {
         const TOTAL_EVENT_COUNT: usize = 5_000;
         const DEEP_EVENT_COUNT: usize = 500;
         const SAMPLE_COUNT: usize = 20;
+        const GATE_TRANSITION_COUNT: usize = 128;
 
         let directory = tempdir().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
@@ -12659,9 +12783,9 @@ mod tests {
             .expect("record scale evidence");
         }
 
-        let mut gate_samples = Vec::with_capacity(SAMPLE_COUNT);
+        let mut gate_samples = Vec::with_capacity(GATE_TRANSITION_COUNT);
         let gate_target = sampled_work.last().expect("sampled gate target");
-        for sample_index in 0..SAMPLE_COUNT {
+        for sample_index in 0..GATE_TRANSITION_COUNT {
             let failed = if sample_index % 2 == 0 {
                 Vec::new()
             } else {
@@ -12679,12 +12803,23 @@ mod tests {
             .expect("record scale gate transition");
         }
 
+        let mut note_samples = Vec::with_capacity(1);
+        measure_scale_operation(&mut note_samples, || {
+            writer.work_note_on(
+                Some(&gate_target.short_ref),
+                "scale gate-heavy note",
+                &[],
+                at(1_350),
+            )
+        })
+        .expect("record scale gate-heavy note");
+
         let mut checkpoint_samples = Vec::with_capacity(SAMPLE_COUNT);
         for (sample_index, work) in sampled_work.iter().enumerate() {
             writer
                 .select_work(
                     &work.short_ref,
-                    at(1_220 + i64::try_from(sample_index * 2).expect("select timestamp")),
+                    at(1_400 + i64::try_from(sample_index * 2).expect("select timestamp")),
                 )
                 .expect("select checkpoint target");
             measure_scale_operation(&mut checkpoint_samples, || {
@@ -12694,7 +12829,7 @@ mod tests {
                         evidence: None,
                         idempotency_key: format!("scale-checkpoint-{sample_index:02}"),
                     },
-                    at(1_221 + i64::try_from(sample_index * 2).expect("checkpoint timestamp")),
+                    at(1_401 + i64::try_from(sample_index * 2).expect("checkpoint timestamp")),
                 )
             })
             .expect("record scale checkpoint");
@@ -12705,7 +12840,7 @@ mod tests {
             writer
                 .select_work(
                     &work.short_ref,
-                    at(1_270 + i64::try_from(sample_index * 2).expect("select timestamp")),
+                    at(1_450 + i64::try_from(sample_index * 2).expect("select timestamp")),
                 )
                 .expect("select revision target");
             measure_scale_operation(&mut revise_samples, || {
@@ -12719,7 +12854,7 @@ mod tests {
                         },
                         idempotency_key: format!("scale-revise-{sample_index:02}"),
                     },
-                    at(1_271 + i64::try_from(sample_index * 2).expect("revise timestamp")),
+                    at(1_451 + i64::try_from(sample_index * 2).expect("revise timestamp")),
                 )
             })
             .expect("revise scale target");
@@ -12731,7 +12866,7 @@ mod tests {
             writer
                 .select_work(
                     &work.short_ref,
-                    at(1_320 + i64::try_from(sample_index * 3).expect("select timestamp")),
+                    at(1_500 + i64::try_from(sample_index * 3).expect("select timestamp")),
                 )
                 .expect("select blocker target");
             let blocked = measure_scale_operation(&mut block_samples, || {
@@ -12741,7 +12876,7 @@ mod tests {
                         detail: format!("scale blocker {sample_index:02}"),
                         idempotency_key: format!("scale-block-{sample_index:02}"),
                     },
-                    at(1_321 + i64::try_from(sample_index * 3).expect("block timestamp")),
+                    at(1_501 + i64::try_from(sample_index * 3).expect("block timestamp")),
                 )
             })
             .expect("block scale target");
@@ -12758,7 +12893,7 @@ mod tests {
                         blocker_id: Some(blocker_id),
                         idempotency_key: format!("scale-unblock-{sample_index:02}"),
                     },
-                    at(1_322 + i64::try_from(sample_index * 3).expect("unblock timestamp")),
+                    at(1_502 + i64::try_from(sample_index * 3).expect("unblock timestamp")),
                 )
             })
             .expect("unblock scale target");
@@ -12769,7 +12904,7 @@ mod tests {
             writer
                 .select_work(
                     &work.short_ref,
-                    at(1_400 + i64::try_from(sample_index * 4).expect("select timestamp")),
+                    at(1_600 + i64::try_from(sample_index * 4).expect("select timestamp")),
                 )
                 .expect("select handoff target");
             measure_scale_operation(&mut handoff_samples, || {
@@ -12780,7 +12915,7 @@ mod tests {
                         checkpoint_summary: format!("scale handoff checkpoint {sample_index:02}"),
                         idempotency_key: format!("scale-handoff-offer-{sample_index:02}"),
                     },
-                    at(1_401 + i64::try_from(sample_index * 4).expect("offer timestamp")),
+                    at(1_601 + i64::try_from(sample_index * 4).expect("offer timestamp")),
                 )
             })
             .expect("offer scale handoff");
@@ -12790,7 +12925,7 @@ mod tests {
                         reason: "restore benchmark executor".into(),
                         idempotency_key: format!("scale-handoff-cancel-{sample_index:02}"),
                     },
-                    at(1_402 + i64::try_from(sample_index * 4).expect("cancel timestamp")),
+                    at(1_602 + i64::try_from(sample_index * 4).expect("cancel timestamp")),
                 )
                 .expect("cancel scale handoff");
             writer
@@ -12800,7 +12935,7 @@ mod tests {
                         evidence: None,
                         idempotency_key: format!("scale-post-handoff-checkpoint-{sample_index:02}"),
                     },
-                    at(1_403 + i64::try_from(sample_index * 4).expect("checkpoint timestamp")),
+                    at(1_603 + i64::try_from(sample_index * 4).expect("checkpoint timestamp")),
                 )
                 .expect("checkpoint after scale handoff");
         }
@@ -12810,7 +12945,7 @@ mod tests {
             writer
                 .select_work(
                     &work.short_ref,
-                    at(1_500 + i64::try_from(sample_index * 2).expect("select timestamp")),
+                    at(1_700 + i64::try_from(sample_index * 2).expect("select timestamp")),
                 )
                 .expect("select completion target");
             let completed = measure_scale_operation(&mut complete_samples, || {
@@ -12822,26 +12957,27 @@ mod tests {
                         note: Some(format!("scale completion {sample_index:02}")),
                         idempotency_key: format!("scale-complete-{sample_index:02}"),
                     },
-                    at(1_501 + i64::try_from(sample_index * 2).expect("complete timestamp")),
+                    at(1_701 + i64::try_from(sample_index * 2).expect("complete timestamp")),
                 )
             })
             .expect("complete scale target");
             assert!(matches!(completed, WorkCompleteResult::Completed(_)));
         }
 
-        for (operation, samples) in [
-            ("claim", &claim_samples),
-            ("evidence", &evidence_samples),
-            ("gate", &gate_samples),
-            ("checkpoint", &checkpoint_samples),
-            ("revise", &revise_samples),
-            ("block", &block_samples),
-            ("unblock", &unblock_samples),
-            ("handoff", &handoff_samples),
-            ("complete", &complete_samples),
-            ("work_next", &work_next_samples),
+        for (operation, samples, expected_samples) in [
+            ("claim", &claim_samples, SAMPLE_COUNT),
+            ("evidence", &evidence_samples, SAMPLE_COUNT),
+            ("gate", &gate_samples, GATE_TRANSITION_COUNT),
+            ("note", &note_samples, 1),
+            ("checkpoint", &checkpoint_samples, SAMPLE_COUNT),
+            ("revise", &revise_samples, SAMPLE_COUNT),
+            ("block", &block_samples, SAMPLE_COUNT),
+            ("unblock", &unblock_samples, SAMPLE_COUNT),
+            ("handoff", &handoff_samples, SAMPLE_COUNT),
+            ("complete", &complete_samples, SAMPLE_COUNT),
+            ("work_next", &work_next_samples, SAMPLE_COUNT),
         ] {
-            assert_eq!(samples.len(), SAMPLE_COUNT);
+            assert_eq!(samples.len(), expected_samples);
             report_scale_samples(operation, samples);
             let (canonical_budget, work_event_budget, item_budget) = if operation == "work_next" {
                 (16, 0, 64)
