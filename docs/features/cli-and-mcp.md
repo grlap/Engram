@@ -16,19 +16,29 @@ agent sees thirteen words; every host and operator control lives under
 
 Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME` and normally injects
-`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; you type only the word. A local
-shell that omits either attribution value remains usable: actor derives from
-the first nonblank conventional OS-user environment variable and session
+`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; it may also set the optional
+`ENGRAM_ACTOR_CONTEXT` to bounded free text such as
+`model=opus-4.1;reasoning=high`. You type only the word. Actor context is
+attribution, not a principal: assignment, `--mine`, handoff, and claim/session
+authority continue to use the unchanged actor and session ids. Context never
+refuses the session: Engram replaces each unsafe-control run with one space,
+trims the value, and cuts it at a UTF-8 boundary to 256 bytes; altered input
+receives an explicit `actor_context:normalized` provenance marker, and an
+empty result is absent. It is excluded from retry/idempotency identity, so a
+replay retains the original operation's attribution instead of duplicating or
+refusing it.
+A local shell that omits either principal value remains usable: actor derives
+from the first nonblank conventional OS-user environment variable and session
 defaults to one stable id for that `engram` process. The actor derivation is
 asserted context, not an authenticated OS identity; if no conventional user
 variable exists, Engram uses a synthetic process actor instead of refusing.
 Durable actor provenance distinguishes `defaulted:os_user_environment`,
-`defaulted:process_actor`, and `defaulted:process_session`. Explicit host
-values are recorded verbatim. Because separate shell invocations are separate
-processes, multi-command ambient workflows still need a host-injected stable
-session id. Every defaulted-session invocation prints its generated id and
-the exact `--session-id` reuse instruction, so a shell can safely continue a
-claim or retry; the process default itself does not claim cross-process
+`defaulted:process_actor`, and `defaulted:process_session`. Explicit actor and
+session ids are recorded verbatim. Because separate shell invocations are
+separate processes, multi-command ambient workflows still need a host-injected
+stable session id. Every defaulted-session invocation prints its generated id
+and the exact `--session-id` reuse instruction, so a shell can safely continue
+a claim or retry; the process default itself does not claim cross-process
 continuity.
 
 ```bash
@@ -58,8 +68,10 @@ history cannot hide unfinished work while page capacity remains. Text prints
 `(+N more)` and structured output carries the exact `children_omitted` total;
 typed count omissions distinguish unfinished from terminal children that did
 not fit. Actor and session references are relative words such as `you`,
-`another actor`, and `another session`; raw actor/session identifiers are not
-part of this view. It also omits canonical UUIDs and hashes, revision and fence
+`another actor`, and `another session`; when present, bounded actor context is
+shown parenthetically (`you (model=opus-4.1;reasoning=high)`) on note and
+history attribution. Raw actor/session identifiers are not part of this view.
+It also omits canonical UUIDs and hashes, revision and fence
 counters, and host-only run, claim, control-binding, obligation-page, and
 memory-version fields. Humans and hosts that need the rich projection use
 host-only `work core focus`; full list projections remain available through
@@ -205,6 +217,7 @@ engram control-policy set-obligation-rule-set \
 engram mcp \
   --actor-id codex \
   --session-id session-unique-id \
+  --actor-context 'model=opus-4.1;reasoning=high' \
   --source-skill engram-repo
 engram control \
   --actor-id codex \
@@ -228,9 +241,16 @@ engram work --actor-id codex --session-id session-unique-id \
   core focus <short-ref>
 ```
 
-The MCP process retains one `LocalWorkService` and its lazily opened SQLite
-connection for its lifetime. All fourteen MCP tools use that service. A failed
-operation rolls back before the next call uses the connection.
+Actor context currently binds only the work/MCP service. The behavioral
+control plane keeps its existing actor/session and environment-evidence
+attribution contract.
+
+The optional actor context can equivalently arrive through
+`ENGRAM_ACTOR_CONTEXT`; it is fixed when the CLI invocation or MCP connection
+binds its session. The MCP process retains one `LocalWorkService` and its
+lazily opened SQLite connection for its lifetime. All fourteen MCP tools use
+that service. A failed operation rolls back before the next call uses the
+connection.
 
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and
@@ -819,6 +839,8 @@ Build an executable and configure one stdio MCP process per agent session:
         "codex",
         "--session-id",
         "replace-with-this-runtime-session-id",
+        "--actor-context",
+        "model=opus-4.1;reasoning=high",
         "--source-skill",
         "engram-repo"
       ]

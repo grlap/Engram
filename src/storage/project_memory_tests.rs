@@ -247,6 +247,18 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
             .expect("exact replay")
             .duplicate
     );
+    let mut changed_context = request.clone();
+    changed_context.actor.provenance_chain.push(ProvenanceLink {
+        relation: crate::domain::ProvenanceRelation::DerivedFrom,
+        source: "model=changed-after-lost-response".into(),
+        reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+    });
+    assert!(
+        store
+            .remember_project_memory(&changed_context, &DevelopmentNoopRedactor)
+            .expect("attribution-only context change replays the original memory")
+            .duplicate
+    );
 
     let collision = project_memory_request(
         &project.0,
@@ -426,6 +438,7 @@ fn keyed_project_memories_refuse_contradiction_lifecycle_transitions() {
             "project-memory-contradiction",
             actor(&session.0),
             Utc.timestamp_millis_opt(1_700_000_000_002).unwrap(),
+            &DevelopmentNoopRedactor,
         ),
         Err(StoreError::InvalidContradiction(detail))
             if detail.contains("cannot be contradiction endpoints")
@@ -964,7 +977,7 @@ fn project_memory_attribution_is_bounded_and_redacted_on_create_and_forget() {
         &session.0,
         Some("retained"),
         "retained body",
-        1_700_000_000_003,
+        1_700_000_000_004,
     );
     store
         .remember_project_memory(&retained, &DevelopmentNoopRedactor)
@@ -978,7 +991,7 @@ fn project_memory_attribution_is_bounded_and_redacted_on_create_and_forget() {
                 session_id: session.clone(),
                 key: "retained".into(),
                 actor: forget_actor,
-                created_at: Utc.timestamp_millis_opt(1_700_000_000_004).unwrap(),
+                created_at: Utc.timestamp_millis_opt(1_700_000_000_005).unwrap(),
             },
             &MatchingRedactor("reject-forget-attribution"),
         ),
@@ -991,6 +1004,108 @@ fn project_memory_attribution_is_bounded_and_redacted_on_create_and_forget() {
             .is_ok(),
         "a refused forget must leave the retained memory live"
     );
+}
+
+#[test]
+fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("project-memory-context-replay-boundary".into());
+    let session = SessionId("memory-context-boundary-session".into());
+    let mut request = project_memory_request(
+        &project.0,
+        &session.0,
+        Some("context-replay-boundary"),
+        &"x".repeat(crate::domain::MAX_PROJECT_MEMORY_BODY_BYTES),
+        1_700_000_000_000,
+    );
+    request.actor.actor_id = "a".repeat(3_850);
+    let created = store
+        .remember_project_memory_with_admission(
+            &request,
+            &DevelopmentNoopRedactor,
+            admit_project_memory_full,
+        )
+        .expect("original bounded memory");
+    assert!(!created.duplicate);
+
+    let mut retry = request.clone();
+    retry.actor.provenance_chain.push(ProvenanceLink {
+        relation: crate::domain::ProvenanceRelation::DerivedFrom,
+        source: "c".repeat(crate::domain::MAX_ACTOR_CONTEXT_BYTES),
+        reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+    });
+    let incoming = ProjectMemoryFull {
+        key: "context-replay-boundary".into(),
+        body: retry.body.clone(),
+        remembered_at: retry.created_at,
+        actor_id: retry.actor.actor_id.clone(),
+        actor_context: retry.actor.attribution_context().map(str::to_owned),
+        session_id: retry.actor.session_id.clone(),
+    };
+    assert!(
+        admit_project_memory_full(&incoming).is_err(),
+        "the retry's larger transient attribution must cross the response boundary"
+    );
+    let replay = store
+        .remember_project_memory_with_admission(
+            &retry,
+            &DevelopmentNoopRedactor,
+            admit_project_memory_full,
+        )
+        .expect("context-only retry uses the stored original envelope");
+    assert!(replay.duplicate);
+    let retained = store
+        .project_memory_full(&project, &session, &request.actor, &created.key)
+        .expect("retained original memory");
+    assert_eq!(retained.actor_context, None);
+    assert_eq!(retained.remembered_at, request.created_at);
+}
+
+#[test]
+fn project_memory_redactor_inspects_actor_context_provenance() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let mut request = project_memory_request(
+        "project-memory-context-redaction",
+        "memory-context-session",
+        Some("rejected-context"),
+        "safe body",
+        1_700_000_000_003,
+    );
+    request.actor.provenance_chain.push(ProvenanceLink {
+        relation: crate::domain::ProvenanceRelation::DerivedFrom,
+        source: "model=secret-bearing-context".into(),
+        reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+    });
+
+    assert!(matches!(
+        store.remember_project_memory(
+            &request,
+            &MatchingRedactor("model=secret-bearing-context"),
+        ),
+        Err(StoreError::RedactionRefused(message))
+            if message == "project-memory attribution refusal"
+    ));
+
+    let mut duplicated = request.clone();
+    duplicated.actor.provenance_chain.push(ProvenanceLink {
+        relation: crate::domain::ProvenanceRelation::DerivedFrom,
+        source: "model=second-context".into(),
+        reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+    });
+    assert!(matches!(
+        store.remember_project_memory(&duplicated, &DevelopmentNoopRedactor),
+        Err(StoreError::InvalidProjectMemory(detail))
+            if detail.contains("at most one value")
+    ));
+
+    let mut oversized = request;
+    oversized.actor.provenance_chain[0].source =
+        "x".repeat(crate::domain::MAX_ACTOR_CONTEXT_BYTES + 1);
+    assert!(matches!(
+        store.remember_project_memory(&oversized, &DevelopmentNoopRedactor),
+        Err(StoreError::InvalidProjectMemory(detail))
+            if detail.contains("not normalized and bounded")
+    ));
 }
 
 #[test]

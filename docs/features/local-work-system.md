@@ -367,9 +367,16 @@ canonical-decode budget.
 
 Models are primary protocol users, so the surface optimizes for few calls,
 bounded responses, stable reason codes, and no redundant identifier shuttling.
-The host supplies the bound project, session, actor context, and current work
-where unambiguous. A model receives short references and only supplies an
-explicit id when changing focus or referring to another graph node.
+The host supplies the bound project, session, actor, optional bounded execution
+context, and current work where unambiguous. Execution context is attribution
+only: assignment, `--mine`, handoff targeting, and session-bound claim
+authority continue to compare their unchanged principals. It is normalized to
+one control-free line of at most 256 UTF-8 bytes without refusing the session;
+each unsafe-control run becomes one space and altered input carries an
+explicit provenance marker. Context is excluded from protocol-attempt identity,
+so retry matching stays on the operation and its authority basis. A model
+receives short references and only supplies an explicit id when changing focus
+or referring to another graph node.
 
 The hot agent protocol has six operations:
 
@@ -477,19 +484,23 @@ record later response fitting. The agent `show` word projects that view into a
 terse receipt with short refs, planning state, safe relation/blocker summaries,
 typed note summaries, meaningful history, a superseded item's successor short
 ref, and allowed actions. Actor and session references become relative words;
-the view excludes their raw identifiers, canonical UUIDs and hashes, revisions
-and fences, and host-only run, claim, control, obligation, seal, and
-memory-version fields. Active core blockers include their id, type, and compact
-detail; when exactly one blocker is active the agent word infers it for
-`unblock`. Authorized memory bodies remain available on demand through their
-version hash on host-only reads. `work_update` and `work_handoff` never rebuild
-this history: their success envelopes contain only the
-operation, compact receipt, one bounded `obligation_page`, generic readiness
-obligations, and `allowed_next`, so hundreds of historical events cannot grow
-a mutation response. The same page field appears on `work_focus`, nested
-`work_next.focus`, and both completion outcomes. Its item count and canonical
-byte size are bounded independently, with an explicit `omitted_count`. Open
-obligations sort ahead of terminal history under both count and byte trimming.
+optional actor context follows the relative actor word parenthetically on note
+and history attribution. Relative words hide the principal identifiers, but
+the parenthetical value remains exactly the bounded context asserted by the
+host and may itself be identifying. The view excludes raw actor/session
+identifiers, canonical UUIDs and hashes, revisions and fences, and host-only
+run, claim, control, obligation, seal, and memory-version fields. Active core
+blockers include their id, type, and compact detail; when exactly one blocker
+is active the agent word infers it for `unblock`. Authorized memory bodies
+remain available on demand through their version hash on host-only reads.
+`work_update` and `work_handoff` never rebuild this history: their success
+envelopes contain only the operation, compact receipt, one bounded
+`obligation_page`, generic readiness obligations, and `allowed_next`, so
+hundreds of historical events cannot grow a mutation response. The same page
+field appears on `work_focus`, nested `work_next.focus`, and both completion
+outcomes. Its item count and canonical byte size are bounded independently,
+with an explicit `omitted_count`. Open obligations sort ahead of terminal
+history under both count and byte trimming.
 The sibling focus-evidence selection retains environments required by visible
 open obligations and keeps each visible verification's referenced environment
 before that verification, so bounded summaries do not expose dangling typed
@@ -770,11 +781,13 @@ never a rule or a fact authority, active through the
 existing episode exception (see
 [write policy & review](write-policy-and-review.md)). There is no Proposed
 slot, no review queue, and no host review operation: what you write is
-what project peers can list, attributed to your session. A note stays full
-until an explicit `forget`: `memories` lists it and `--full` returns the
-full body until the tombstone; a retired key answers with the typed
-`memory_retired` and the satisfiable next action to pick or list another
-key. Reads and writes in V1 use cooperative project binding: any session
+what project peers can list, attributed to your session. Optional actor context
+is retained in existing attribution provenance and rendered as
+`actor (context)` by compact and full memory reads; it is omitted when absent.
+A note stays full until an explicit `forget`: `memories` lists it and `--full`
+returns the full body until the tombstone; a retired key answers with the typed
+`memory_retired` and the satisfiable next action to pick or list another key.
+Reads and writes in V1 use cooperative project binding: any session
 asserted-bound to the same stable project may list, read, remember, and forget.
 Before persistence, the mutation path validates a non-empty consistent
 actor/session binding. `memory_binding_invalid` means that binding is absent
@@ -821,8 +834,8 @@ continuation, escape-heavy size boundaries, and ordinary idempotency.
 
 `memories` is the source of truth; `next` only advertises. The positional
 argument is a query unless `--full` names a key, and `--after` always
-takes a key. Unfiltered `memories` lists compact rows (key, bounded first
-line, remembered-at) in key order and may continue with the shell-safe
+takes a key. Unfiltered `memories` lists compact rows (key, bounded first line,
+actor attribution, remembered-at) in key order and may continue with the shell-safe
 `memories --after KEY`; an exhausted listing says so. Filtered `memories
 QUERY` returns a bounded set of top matches only and never emits a
 continuation — its omission note tells the agent to refine the query. Final

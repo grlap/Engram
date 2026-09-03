@@ -5448,6 +5448,7 @@ impl SqliteStore {
         if request.prose.trim().is_empty() {
             return Err(StoreError::EmptyNote);
         }
+        inspect_generic_memory_actor_context(&request.actor, redactor)?;
         redactor
             .inspect(&request.prose)
             .map_err(StoreError::RedactionRefused)?;
@@ -5499,15 +5500,6 @@ impl SqliteStore {
             Some(key) => validate_project_memory_key(key)?,
             None => slug_project_memory_key(&request.body)?,
         };
-        let full = ProjectMemoryFull {
-            key: key.clone(),
-            body: request.body.clone(),
-            remembered_at: request.created_at,
-            actor_id: actor.actor_id.clone(),
-            session_id: actor.session_id.clone(),
-        };
-        admit_full_response(&full)?;
-
         let mut request = request.clone();
         request.actor = actor;
 
@@ -5523,6 +5515,19 @@ impl SqliteStore {
                         && existing.version.actor.actor_id == request.actor.actor_id
                         && existing.version.actor.session_id == request.actor.session_id =>
                 {
+                    let stored_full = ProjectMemoryFull {
+                        key: key.clone(),
+                        body: existing.version.body.clone(),
+                        remembered_at: existing.version.created_at,
+                        actor_id: existing.version.actor.actor_id.clone(),
+                        actor_context: existing
+                            .version
+                            .actor
+                            .attribution_context()
+                            .map(str::to_owned),
+                        session_id: existing.version.actor.session_id.clone(),
+                    };
+                    admit_full_response(&stored_full)?;
                     Ok(ProjectMemoryMutationReceipt {
                         key,
                         remembered_at: existing.version.created_at,
@@ -5536,6 +5541,16 @@ impl SqliteStore {
                 ))),
             };
         }
+
+        let full = ProjectMemoryFull {
+            key: key.clone(),
+            body: request.body.clone(),
+            remembered_at: request.created_at,
+            actor_id: request.actor.actor_id.clone(),
+            actor_context: request.actor.attribution_context().map(str::to_owned),
+            session_id: request.actor.session_id.clone(),
+        };
+        admit_full_response(&full)?;
 
         let prepared = prepare_project_memory(&request, &key)?;
         Self::insert_object(&transaction, "memory_version", &prepared.version_object)?;
@@ -5662,7 +5677,12 @@ impl SqliteStore {
             key,
             body: existing.version.body,
             remembered_at: existing.version.created_at,
-            actor_id: existing.version.actor.actor_id,
+            actor_id: existing.version.actor.actor_id.clone(),
+            actor_context: existing
+                .version
+                .actor
+                .attribution_context()
+                .map(str::to_owned),
             session_id: existing.version.actor.session_id,
         };
         Ok(full)
@@ -6037,7 +6057,7 @@ impl SqliteStore {
         clippy::too_many_lines,
         reason = "the explicit authorization and idempotency inputs are part of the core boundary"
     )]
-    pub fn record_memory_contradiction(
+    pub fn record_memory_contradiction<R: Redactor>(
         &mut self,
         project_id: &crate::domain::ProjectId,
         task_id: Option<TaskId>,
@@ -6050,7 +6070,12 @@ impl SqliteStore {
         idempotency_key: &str,
         actor: ActorContext,
         now: DateTime<Utc>,
+        redactor: &R,
     ) -> Result<MemoryContradictionReceipt, StoreError> {
+        inspect_generic_memory_actor_context(&actor, redactor)?;
+        redactor
+            .inspect(reason)
+            .map_err(StoreError::RedactionRefused)?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -10978,6 +11003,34 @@ fn bounded_optional_project_memory_attribution_text(
         .transpose()
 }
 
+fn inspect_generic_memory_actor_context<R: Redactor>(
+    actor: &ActorContext,
+    redactor: &R,
+) -> Result<(), StoreError> {
+    actor.validate_attribution_context().map_err(|detail| {
+        StoreError::InvalidMemoryProjection(format!("invalid actor context: {detail}"))
+    })?;
+    for link in actor.provenance_chain.iter().filter(|link| {
+        matches!(
+            link.reference.as_deref(),
+            Some(
+                crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE
+                    | crate::domain::ACTOR_CONTEXT_NORMALIZED_REFERENCE
+            )
+        )
+    }) {
+        redactor
+            .inspect(&link.source)
+            .map_err(StoreError::RedactionRefused)?;
+        if let Some(reference) = link.reference.as_deref() {
+            redactor
+                .inspect(reference)
+                .map_err(StoreError::RedactionRefused)?;
+        }
+    }
+    Ok(())
+}
+
 fn validated_project_memory_actor<R: Redactor>(
     actor: &ActorContext,
     redactor: &R,
@@ -11017,6 +11070,11 @@ fn validated_project_memory_actor<R: Redactor>(
 }
 
 fn validate_project_memory_actor_shape(actor: &ActorContext) -> Result<(), StoreError> {
+    actor.validate_attribution_context().map_err(|detail| {
+        StoreError::InvalidProjectMemory(format!(
+            "project-memory attribution has invalid actor context: {detail}"
+        ))
+    })?;
     if actor.provenance_chain.len() > MAX_PROJECT_MEMORY_PROVENANCE_LINKS {
         return Err(StoreError::InvalidProjectMemory(format!(
             "project-memory attribution must contain at most {MAX_PROJECT_MEMORY_PROVENANCE_LINKS} provenance links"
@@ -11467,14 +11525,24 @@ fn project_memory_rows_on(
                     "project memory list candidate is not active".into(),
                 ));
             }
-            Ok(ProjectMemoryListRow {
-                key,
-                first_line: project_memory_first_line(&stored.version.body),
-                remembered_at: stored.version.created_at,
-            })
+            Ok(project_memory_list_row(key, &stored))
         })
         .collect::<Result<Vec<_>, StoreError>>()?;
     Ok((rows, total_matches))
+}
+
+fn project_memory_list_row(key: String, stored: &StoredProjectMemory) -> ProjectMemoryListRow {
+    ProjectMemoryListRow {
+        key,
+        first_line: project_memory_first_line(&stored.version.body),
+        remembered_at: stored.version.created_at,
+        actor_id: stored.version.actor.actor_id.clone(),
+        actor_context: stored
+            .version
+            .actor
+            .attribution_context()
+            .map(str::to_owned),
+    }
 }
 
 fn project_memory_state_on(
@@ -16675,6 +16743,187 @@ mod tests {
     }
 
     #[test]
+    fn generic_memory_actor_context_validation_and_redaction_are_non_mutating() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["context-agent"]);
+        let before = test_database_shape_snapshot(&store.connection).expect("initial shape");
+        let mut request = note_request(
+            task_id,
+            "context-agent",
+            "Decision: context admission remains explicit.",
+            "actor-context-redaction",
+            NoteVisibility::Shared,
+        );
+        request.actor.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "model=reject-me-context".into(),
+            reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+        });
+
+        assert!(matches!(
+            store.capture_note(&request, &SentinelRedactor),
+            Err(StoreError::RedactionRefused(message)) if message == "test sentinel was rejected"
+        ));
+
+        let mut duplicate_context = request.clone();
+        duplicate_context
+            .actor
+            .provenance_chain
+            .push(ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: "model=second-context".into(),
+                reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+            });
+        assert!(matches!(
+            store.capture_note(&duplicate_context, &DevelopmentNoopRedactor),
+            Err(StoreError::InvalidMemoryProjection(detail)) if detail.contains("at most one value")
+        ));
+
+        let normalized_marker = || ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "actor_context:normalized".into(),
+            reference: Some(crate::domain::ACTOR_CONTEXT_NORMALIZED_REFERENCE.into()),
+        };
+        let mut duplicate_marker = note_request(
+            task_id,
+            "context-agent",
+            "Decision: normalization provenance is unique.",
+            "actor-context-duplicate-marker",
+            NoteVisibility::Shared,
+        );
+        duplicate_marker
+            .actor
+            .provenance_chain
+            .extend([normalized_marker(), normalized_marker()]);
+        assert!(matches!(
+            store.capture_note(&duplicate_marker, &DevelopmentNoopRedactor),
+            Err(StoreError::InvalidMemoryProjection(detail)) if detail.contains("must be unique")
+        ));
+
+        let mut forged_marker = note_request(
+            task_id,
+            "context-agent",
+            "Decision: normalization provenance is exact.",
+            "actor-context-forged-marker",
+            NoteVisibility::Shared,
+        );
+        forged_marker.actor.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "actor_context:forged".into(),
+            reference: Some(crate::domain::ACTOR_CONTEXT_NORMALIZED_REFERENCE.into()),
+        });
+        assert!(matches!(
+            store.capture_note(&forged_marker, &DevelopmentNoopRedactor),
+            Err(StoreError::InvalidMemoryProjection(detail)) if detail.contains("is invalid")
+        ));
+
+        let mut unsafe_context = note_request(
+            task_id,
+            "context-agent",
+            "Decision: retained context is terminal safe.",
+            "actor-context-unsafe",
+            NoteVisibility::Shared,
+        );
+        unsafe_context.actor.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "model=line\nbreak".into(),
+            reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+        });
+        assert!(matches!(
+            store.capture_note(&unsafe_context, &DevelopmentNoopRedactor),
+            Err(StoreError::InvalidMemoryProjection(detail))
+                if detail.contains("not normalized and bounded")
+        ));
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).expect("shape after refusals"),
+            before,
+            "invalid or redacted generic-memory attribution must not mutate the store"
+        );
+    }
+
+    #[test]
+    fn contradiction_actor_context_is_redactor_inspected() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let task_id = TaskId::new();
+        install_memory_task(&store, task_id, &["context-agent"]);
+        let left = store
+            .capture_note(
+                &note_request(
+                    task_id,
+                    "context-agent",
+                    "Constraint: use the first context rule.",
+                    "context-left",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("left note");
+        let right = store
+            .capture_note(
+                &note_request(
+                    task_id,
+                    "context-agent",
+                    "Constraint: use the second context rule.",
+                    "context-right",
+                    NoteVisibility::Shared,
+                ),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("right note");
+        let mut attribution = actor("context-agent");
+        attribution.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "model=reject-me-context".into(),
+            reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+        });
+        assert!(matches!(
+            store.record_memory_contradiction(
+                &ProjectId("project-a".into()),
+                Some(task_id),
+                None,
+                &SessionId("context-agent".into()),
+                "context-agent",
+                &left.version,
+                &right.version,
+                "these context rules conflict",
+                "context-contradiction",
+                attribution.clone(),
+                Utc::now(),
+                &SentinelRedactor,
+            ),
+            Err(StoreError::RedactionRefused(message)) if message == "test sentinel was rejected"
+        ));
+
+        let before = test_database_shape_snapshot(&store.connection).expect("prepared shape");
+        attribution.provenance_chain[0].source =
+            "x".repeat(crate::domain::MAX_ACTOR_CONTEXT_BYTES + 1);
+        assert!(matches!(
+            store.record_memory_contradiction(
+                &ProjectId("project-a".into()),
+                Some(task_id),
+                None,
+                &SessionId("context-agent".into()),
+                "context-agent",
+                &left.version,
+                &right.version,
+                "these context rules conflict",
+                "context-contradiction-oversized",
+                attribution,
+                Utc::now(),
+                &DevelopmentNoopRedactor,
+            ),
+            Err(StoreError::InvalidMemoryProjection(detail))
+                if detail.contains("not normalized and bounded")
+        ));
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).expect("shape after refusals"),
+            before,
+            "invalid or redacted contradiction attribution must not mutate the store"
+        );
+    }
+
+    #[test]
     fn note_capture_is_idempotent_searchable_and_explainable() {
         let mut store = SqliteStore::open_in_memory().unwrap();
         let task_id = TaskId::new();
@@ -17204,6 +17453,7 @@ mod tests {
                 "contradiction-a",
                 actor("agent-a"),
                 now,
+                &DevelopmentNoopRedactor,
             )
             .unwrap();
         let replay = store
@@ -17219,6 +17469,7 @@ mod tests {
                 "contradiction-a",
                 actor("agent-a"),
                 now + TimeDelta::seconds(1),
+                &DevelopmentNoopRedactor,
             )
             .unwrap();
         assert_eq!(replay.contradiction, edge.contradiction);
@@ -17321,6 +17572,7 @@ mod tests {
                 "soft-conflict",
                 actor("agent-a"),
                 now,
+                &DevelopmentNoopRedactor,
             )
             .unwrap();
 

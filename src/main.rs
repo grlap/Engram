@@ -138,6 +138,9 @@ enum Command {
         /// Durable runtime session identity used for task binding and privacy.
         #[arg(long)]
         session_id: String,
+        /// Optional free-form execution context attributed to this actor.
+        #[arg(long, env = "ENGRAM_ACTOR_CONTEXT")]
+        actor_context: Option<String>,
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long)]
         source_skill: Option<String>,
@@ -169,6 +172,10 @@ enum Command {
         /// defaults to one stable id for this process.
         #[arg(long, env = "ENGRAM_SESSION_ID", global = true)]
         session_id: Option<String>,
+        /// Optional free-form execution context attributed to this actor;
+        /// this never changes assignment, claim, or handoff identity.
+        #[arg(long, env = "ENGRAM_ACTOR_CONTEXT", global = true)]
+        actor_context: Option<String>,
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long, env = "ENGRAM_SOURCE_SKILL")]
         source_skill: Option<String>,
@@ -718,14 +725,16 @@ async fn run_cli() -> Result<ExitCode> {
         Command::Mcp {
             actor_id,
             session_id,
+            actor_context,
             source_skill,
         } => {
-            serve_mcp(McpServer::new(
+            serve_mcp(McpServer::new_with_actor_context(
                 database,
                 project_id,
                 actor_id,
                 SessionId(session_id),
                 source_skill,
+                actor_context,
             ))
             .await?;
         }
@@ -744,6 +753,7 @@ async fn run_cli() -> Result<ExitCode> {
         Command::Work {
             actor_id,
             session_id,
+            actor_context,
             source_skill,
             json,
             operation,
@@ -755,6 +765,7 @@ async fn run_cli() -> Result<ExitCode> {
                 project_id,
                 actor_id: attribution.actor_id,
                 session_id: SessionId(attribution.session_id),
+                actor_context,
                 attribution_defaults: attribution.defaults,
                 source_skill,
             };
@@ -779,6 +790,7 @@ struct WorkContext {
     project_id: ProjectId,
     actor_id: String,
     session_id: SessionId,
+    actor_context: Option<String>,
     attribution_defaults: WorkAttributionDefaults,
     source_skill: Option<String>,
 }
@@ -1027,12 +1039,13 @@ fn run_authority(
     reason = "each word's flag translation stays beside the others so the thirteen-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
-    let verbs = AgentVerbs::new_with_attribution_defaults(
+    let verbs = AgentVerbs::new_with_attribution(
         context.database,
         context.project_id,
         context.actor_id,
         context.session_id,
         context.source_skill,
+        context.actor_context,
         context.attribution_defaults,
     );
     let now = chrono::Utc::now();
@@ -1327,12 +1340,13 @@ fn serialize_agent_receipt(value: &serde_json::Value) -> serde_json::Result<Stri
 }
 
 fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<ExitCode> {
-    let service = LocalWorkService::new_with_attribution_defaults(
+    let service = LocalWorkService::new_with_attribution(
         context.database,
         context.project_id,
         context.actor_id,
         context.session_id,
         context.source_skill,
+        context.actor_context,
         context.attribution_defaults,
     );
     let now = chrono::Utc::now();

@@ -32,7 +32,7 @@ const AGENT_TOOLS = [
 const HASH = /\b[0-9a-f]{64}\b/u;
 
 class McpClient {
-  constructor(engramHome, sessionId) {
+  constructor(engramHome, sessionId, actorContext, actorId = sessionId) {
     this.nextId = 1;
     this.pending = new Map();
     this.stderr = "";
@@ -42,16 +42,19 @@ class McpClient {
       engramHome,
       "mcp",
       "--actor-id",
-      sessionId,
+      actorId,
       "--session-id",
       sessionId,
       "--source-skill",
       "engram-dogfood",
     ];
     this.args = [...args];
+    const environment = { ...process.env };
+    if (actorContext === undefined) delete environment.ENGRAM_ACTOR_CONTEXT;
+    else environment.ENGRAM_ACTOR_CONTEXT = actorContext;
     this.child = spawn(binary, args, {
       cwd: root,
-      env: process.env,
+      env: environment,
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child.stderr.on("data", (chunk) => {
@@ -223,7 +226,13 @@ function cliWord(engramHome, actorId, word, ...agentArgs) {
     word,
     ...agentArgs,
   ];
-  return spawnSync(binary, args, { cwd: root, encoding: "utf8" });
+  const environment = { ...process.env };
+  delete environment.ENGRAM_ACTOR_CONTEXT;
+  return spawnSync(binary, args, {
+    cwd: root,
+    encoding: "utf8",
+    env: environment,
+  });
 }
 
 function cliText(engramHome, actorId, word, ...agentArgs) {
@@ -508,10 +517,13 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const peerMemories = receipt(await b.call("memories", {}));
     assert.equal(peerMemories.memories[0].key, "mcp-project-note");
     assert.equal(peerMemories.memories[0].body, undefined);
+    assert.equal(peerMemories.memories[0].actor_id, sessionA);
+    assert.equal(peerMemories.memories[0].actor_context, undefined);
     const fullMemory = receipt(
       await b.call("memories", { query: "mcp-project-note", full: true }),
     );
     assert.equal(fullMemory.body, "MCP project observation\nfull body");
+    assert.equal(fullMemory.actor_context, undefined);
     structuredError(
       await a.call("remember", {
         text: "different content",
@@ -642,6 +654,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     const createdHistory = typicalShow.history.items.find(({ kind }) => kind === "created");
     assert.match(createdHistory.summary, /without prerequisites/u);
+    assert.equal(createdHistory.by, "you");
 
     const next = receipt(await a.call("next", { limit: 20, verbose: true }));
     assert.equal(next.session.focused_work_id, added.work.work_id);
@@ -712,6 +725,10 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(
       receipt(await a.call("show", { work_ref: workRef })).notes.at(-1).kind,
       "generic",
+    );
+    assert.equal(
+      receipt(await a.call("show", { work_ref: workRef })).notes.at(-1).by,
+      "you",
     );
     const replayedClaim = receipt(
       await a.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
@@ -1018,6 +1035,95 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
   } finally {
     await Promise.all([a?.close(), b?.close()]);
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("MCP actor context stays attribution-only across words and handoff", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-actor-context-"));
+  const actorContext = "model=opus-4.1;reasoning=high";
+  let author;
+  let assignee;
+  let recipient;
+  try {
+    buildAndInit(engramHome);
+    author = new McpClient(
+      engramHome,
+      "actor-context-source",
+      actorContext,
+      "greg/codex",
+    );
+    recipient = new McpClient(
+      engramHome,
+      "actor-context-recipient",
+      undefined,
+      "peer",
+    );
+    assignee = new McpClient(
+      engramHome,
+      "actor-context-assignee",
+      undefined,
+      "planning-owner",
+    );
+    await Promise.all([
+      author.initialize(),
+      assignee.initialize(),
+      recipient.initialize(),
+    ]);
+
+    const added = receipt(
+      await author.call("add", {
+        title: "Attribute MCP execution context",
+        assignee: "planning-owner",
+      }),
+    ).work;
+    const mine = receipt(await author.call("ls", { mine: true }));
+    assert.ok(!mine.items.some(({ ref }) => ref === added.short_ref));
+    const assigned = receipt(await assignee.call("ls", { mine: true }));
+    assert.ok(assigned.items.some(({ ref }) => ref === added.short_ref));
+    receipt(await author.call("claim", { work_ref: added.short_ref }));
+    receipt(
+      await author.call("note", {
+        work_ref: added.short_ref,
+        text: "MCP attribution context retained",
+      }),
+    );
+    const shown = receipt(
+      await author.call("show", { work_ref: added.short_ref }),
+    );
+    assert.equal(shown.notes.at(-1).by, `you (${actorContext})`);
+    assert.ok(
+      shown.history.items.some(({ by }) => by === `you (${actorContext})`),
+    );
+
+    receipt(
+      await author.call("remember", {
+        text: "MCP context memory",
+        key: "mcp-actor-context",
+      }),
+    );
+    const memories = receipt(await recipient.call("memories", {}));
+    assert.equal(memories.memories[0].actor_id, "greg/codex");
+    assert.equal(memories.memories[0].actor_context, actorContext);
+
+    receipt(
+      await author.call("handoff", {
+        action: "offer",
+        work_ref: added.short_ref,
+        to: "actor-context-recipient",
+      }),
+    );
+    assert.equal(
+      receipt(
+        await recipient.call("handoff", {
+          action: "accept",
+          work_ref: added.short_ref,
+        }),
+      ).operation,
+      "accept",
+    );
+  } finally {
+    await Promise.all([author?.close(), assignee?.close(), recipient?.close()]);
     rmSync(engramHome, { recursive: true, force: true });
   }
 });

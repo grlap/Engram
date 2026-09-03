@@ -3264,7 +3264,7 @@ impl SqliteStore {
         redactor: &R,
         return_recovery: bool,
     ) -> Result<CompleteWorkStorageResult, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -3648,7 +3648,7 @@ impl SqliteStore {
         request: &ReopenWorkRequest,
         redactor: &R,
     ) -> Result<WorkRun, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         let reason = normalize_text(&request.reason, "reopen reason")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -3846,7 +3846,7 @@ impl SqliteStore {
         request: &DisposeWorkRequest,
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         let reason = normalize_text(&request.reason, "work disposal reason")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -4059,7 +4059,7 @@ impl SqliteStore {
         request: &WaiveRequiredChildRequest,
         redactor: &R,
     ) -> Result<RequiredChildWaiver, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         let reason = normalize_text(&request.reason, "required-child waiver reason")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -4183,7 +4183,7 @@ impl SqliteStore {
             idempotency_key: idempotency_key.to_owned(),
             waived_at,
         };
-        inspect_work_request(redactor, &request)?;
+        inspect_work_request(redactor, &request, &request.actor)?;
         let waived_by = normalize_text(&request.waived_by, "obligation waiver actor")?;
         let reason = normalize_text(&request.reason, "obligation waiver reason")?;
         let transaction = self.begin_work_mutation()?;
@@ -4367,7 +4367,7 @@ impl SqliteStore {
         request: &WaiveWorkObligationRequest,
         redactor: &R,
     ) -> Result<WorkObligationResolutionEvent, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         let waived_by = normalize_text(&request.waived_by, "obligation waiver actor")?;
         let reason = normalize_text(&request.reason, "obligation waiver reason")?;
         let request_object = request_object(&WorkObligationWaiverFingerprint {
@@ -4436,7 +4436,7 @@ impl SqliteStore {
         request: &ClaimWorkRequest,
         redactor: &R,
     ) -> Result<WorkClaim, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let expires_at = claim_expiry(request.claimed_at, request.ttl_seconds)?;
         let request_object = request_object(request)?;
@@ -4612,7 +4612,7 @@ impl SqliteStore {
         request: &ReleaseWorkRequest,
         redactor: &R,
     ) -> Result<WorkClaim, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let reason = normalize_text(&request.reason, "release reason")?;
         let request_object = request_object(request)?;
@@ -4716,7 +4716,7 @@ impl SqliteStore {
         request: &crate::domain::CheckpointWorkRequest,
         redactor: &R,
     ) -> Result<ObjectHash, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = normalize_text(&request.summary, "checkpoint summary")?;
         let request_object = request_object(request)?;
@@ -4794,7 +4794,7 @@ impl SqliteStore {
         R: Redactor,
         F: FnMut(&FeedPosition) -> Result<String, StoreError>,
     {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = normalize_text(&request.summary, "checkpoint summary")?;
         let transaction = self.begin_work_mutation()?;
@@ -4927,7 +4927,7 @@ impl SqliteStore {
         request: &RecordWorkEvidenceRequest,
         redactor: &R,
     ) -> Result<ObjectHash, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = normalize_text(&request.summary, "evidence summary")?;
         let request_object = request_object(request)?;
@@ -4995,7 +4995,7 @@ impl SqliteStore {
         request: &RecordWorkNoteRequest,
         redactor: &R,
     ) -> Result<WorkNoteCapture, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = normalize_text(&request.summary, "note summary")?;
         let request_object = request_object(request)?;
@@ -5083,7 +5083,7 @@ impl SqliteStore {
         request: &RecordGateEvidenceRequest,
         redactor: &R,
     ) -> Result<ObjectHash, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let normalized = normalize_gate_evidence_input(
             &request.name,
@@ -5126,7 +5126,7 @@ impl SqliteStore {
         protocol: &BeginGateWorkProtocolAttempt<'_, B>,
         redactor: &R,
     ) -> Result<GateWorkProtocolAttempt, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let normalized = normalize_gate_evidence_input(
             &request.name,
@@ -5150,11 +5150,12 @@ impl SqliteStore {
         } else {
             latest.as_ref().map(|(hash, _)| hash)
         };
+        let retry_actor = actor_without_optional_context(&request.actor);
         let intent = GateWorkProtocolIntent {
             schema_version: SCHEMA_VERSION,
             project_id: protocol.project_id,
             session_id: protocol.session_id,
-            actor: &request.actor,
+            actor: &retry_actor,
             work_id: request.work_id,
             run_id: request.run_id,
             claim_id: request.claim_id,
@@ -5222,7 +5223,7 @@ impl SqliteStore {
         request: &OfferWorkHandoffRequest,
         redactor: &R,
     ) -> Result<WorkHandoffOffer, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.from)?;
         if request.from == request.to {
             return Err(StoreError::InvalidWork(
@@ -5376,7 +5377,7 @@ impl SqliteStore {
         request: &AcceptWorkHandoffRequest,
         redactor: &R,
     ) -> Result<WorkClaim, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.to)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -5509,7 +5510,7 @@ impl SqliteStore {
         request: &CancelWorkHandoffRequest,
         redactor: &R,
     ) -> Result<WorkHandoffOffer, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let reason = normalize_text(&request.reason, "handoff cancellation reason")?;
         let request_object = request_object(request)?;
@@ -5628,7 +5629,7 @@ impl SqliteStore {
         request: &CreateWorkRequest,
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         if request.parent_id.is_some() {
             return Err(StoreError::InvalidWork(
                 "direct child creation is not allowed; use decompose_work with the parent revision"
@@ -5851,7 +5852,7 @@ impl SqliteStore {
         request: &DecomposeWorkRequest,
         redactor: &R,
     ) -> Result<WorkDecomposition, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         if request.children.is_empty() || request.children.len() > MAX_CHILDREN_PER_DECOMPOSITION {
             return Err(StoreError::InvalidWork(format!(
                 "decomposition must contain from 1 through {MAX_CHILDREN_PER_DECOMPOSITION} children"
@@ -6150,7 +6151,7 @@ impl SqliteStore {
         request: &ReviseWorkRequest,
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         if request.patch.clear_assignment && request.patch.assigned_to.is_some() {
             return Err(StoreError::InvalidWork(
                 "assignment cannot be set and cleared in one revision".into(),
@@ -6349,7 +6350,7 @@ impl SqliteStore {
         redactor: &R,
         add: bool,
     ) -> Result<WorkItem, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         if request.work_id == request.prerequisite_id {
             return Err(StoreError::WorkDependencyCycle);
         }
@@ -6504,7 +6505,7 @@ impl SqliteStore {
         request: &AddWorkBlockerRequest,
         redactor: &R,
     ) -> Result<WorkBlocker, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         let detail = normalize_text(&request.detail, "blocker detail")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
@@ -6602,7 +6603,7 @@ impl SqliteStore {
         request: &ClearWorkBlockerRequest,
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
-        inspect_work_request(redactor, request)?;
+        inspect_work_request(redactor, request, &request.actor)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(item) = replay_operation::<WorkItem>(
@@ -9619,7 +9620,11 @@ fn validate_work_source_snapshot(
 fn inspect_work_request<R: Redactor, T: Serialize>(
     redactor: &R,
     request: &T,
+    actor: &ActorContext,
 ) -> Result<(), StoreError> {
+    actor
+        .validate_attribution_context()
+        .map_err(|detail| StoreError::InvalidWork(format!("invalid actor context: {detail}")))?;
     let candidate = serde_json::to_string(request)?;
     redactor
         .inspect(&candidate)
@@ -10805,7 +10810,7 @@ fn gate_observation_matches(
         && evidence.run_id == request.run_id
         && evidence.claim_id == request.claim_id
         && evidence.claim_fence == request.claim_fence
-        && evidence.actor == request.actor
+        && actor_matches_without_optional_context(&evidence.actor, &request.actor)
         && evidence.refs == refs
         && evidence.gate.as_ref().is_some_and(|gate| {
             gate.schema_version == SCHEMA_VERSION
@@ -10813,6 +10818,28 @@ fn gate_observation_matches(
                 && gate.passed == failed.is_empty()
                 && gate.failed == failed
         })
+}
+
+fn actor_without_optional_context(actor: &ActorContext) -> ActorContext {
+    let mut identity = actor.clone();
+    identity
+        .provenance_chain
+        .retain(|link| !is_optional_actor_context_link(link.reference.as_deref()));
+    identity
+}
+
+fn actor_matches_without_optional_context(left: &ActorContext, right: &ActorContext) -> bool {
+    actor_without_optional_context(left) == actor_without_optional_context(right)
+}
+
+fn is_optional_actor_context_link(reference: Option<&str>) -> bool {
+    matches!(
+        reference,
+        Some(
+            crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE
+                | crate::domain::ACTOR_CONTEXT_NORMALIZED_REFERENCE
+        )
+    )
 }
 
 fn work_run_evidence_projection_on(
@@ -13215,11 +13242,11 @@ mod tests {
         DecomposeWorkRequest, DisposeWorkRequest, EffectClass, EnvironmentComponents,
         EnvironmentEvidenceInput, EnvironmentEvidenceReference, ExecutionObservationInput,
         ExecutionObservationReference, ExecutionOutcome, ExecutionSourceBasis, NoteRequest,
-        NoteVisibility, ProvenanceLink, RecordWorkEvidenceRequest, ReopenWorkRequest, Scope,
-        Sensitivity, TurnIntent, TurnNextIntent, TurnPurpose, VerificationEvidenceInput,
-        VerificationEvidenceMismatch, VerificationKind, VerificationResult,
-        WaiveRequiredChildRequest, WorkDependencyRef, WorkItemKind, WorkPlanningAuthority,
-        WorkRevisionPatch,
+        NoteVisibility, ProvenanceLink, ProvenanceRelation, RecordWorkEvidenceRequest,
+        ReopenWorkRequest, Scope, Sensitivity, TurnIntent, TurnNextIntent, TurnPurpose,
+        VerificationEvidenceInput, VerificationEvidenceMismatch, VerificationKind,
+        VerificationResult, WaiveRequiredChildRequest, WorkDependencyRef, WorkItemKind,
+        WorkPlanningAuthority, WorkRevisionPatch,
     };
     use crate::memory::DevelopmentNoopRedactor;
     use crate::storage::test_database_shape_snapshot;
@@ -13451,6 +13478,35 @@ mod tests {
     }
 
     #[test]
+    fn work_request_actor_context_refusal_is_typed_and_non_mutating() {
+        let mut store = SqliteStore::open_in_memory().expect("store");
+        let before = test_database_shape_snapshot(&store.connection).expect("initial shape");
+        let mut request = root_request("invalid-work-context", "invalid context", 0);
+        request.actor.provenance_chain.extend([
+            ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: "model=first".into(),
+                reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+            },
+            ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: "model=second".into(),
+                reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+            },
+        ]);
+
+        assert!(matches!(
+            store.create_work(&request, &DevelopmentNoopRedactor),
+            Err(StoreError::InvalidWork(detail)) if detail.contains("at most one value")
+        ));
+        assert_eq!(
+            test_database_shape_snapshot(&store.connection).expect("shape after refusal"),
+            before,
+            "invalid work attribution must not mutate the store"
+        );
+    }
+
+    #[test]
     fn gate_replay_never_reuses_another_actors_attribution() {
         let project = "gate-actor-attribution";
         let holder = "shared-session";
@@ -13566,6 +13622,95 @@ mod tests {
                 .previous
                 .as_ref(),
             Some(&actor_b_attempt.evidence)
+        );
+    }
+
+    #[test]
+    fn gate_replay_ignores_optional_actor_context_but_keeps_original_attribution() {
+        let project = "gate-context-replay";
+        let holder = "gate-context-session";
+        let mut store = SqliteStore::open_in_memory().expect("gate context fixture");
+        let work = store
+            .create_work(
+                &root_request(project, "gate context root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("gate context root");
+        let claim = claim(&mut store, &work, holder, "gate-context-claim", 1, 300);
+        let project_id = ProjectId(project.into());
+        let session_id = SessionId(holder.into());
+        let basis = serde_json::json!({"test_basis": work.work_id});
+        let mut actor_a = actor(holder);
+        actor_a.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "model=first".into(),
+            reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+        });
+        let request = RecordGateEvidenceRequest {
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: work.revision,
+            holder: session_id.clone(),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            name: "cargo-test".into(),
+            failed: Vec::new(),
+            evidence_ref: None,
+            actor: actor_a.clone(),
+            recorded_at: at(2),
+        };
+        let first = store
+            .record_gate_evidence_protocol(
+                &request,
+                &BeginGateWorkProtocolAttempt {
+                    project_id: &project_id,
+                    session_id: &session_id,
+                    basis: &basis,
+                    now: at(2),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("first gate observation");
+
+        let mut actor_b = actor(holder);
+        actor_b.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "model=second".into(),
+            reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+        });
+        let retry = RecordGateEvidenceRequest {
+            actor: actor_b,
+            recorded_at: at(3),
+            ..request
+        };
+        let second = store
+            .record_gate_evidence_protocol(
+                &retry,
+                &BeginGateWorkProtocolAttempt {
+                    project_id: &project_id,
+                    session_id: &session_id,
+                    basis: &basis,
+                    now: at(3),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("context-only retry");
+
+        assert_eq!(second.idempotency_key, first.idempotency_key);
+        assert_eq!(second.evidence, first.evidence);
+        assert_eq!(
+            store
+                .work_run_evidence(claim.run_id)
+                .expect("one gate observation"),
+            vec![first.evidence.clone()]
+        );
+        assert_eq!(
+            store
+                .get::<WorkEvidence>(&first.evidence)
+                .expect("gate evidence read")
+                .expect("gate evidence")
+                .actor,
+            actor_a
         );
     }
 
@@ -14771,6 +14916,7 @@ mod tests {
                 "contra-derived",
                 actor("contra-session"),
                 at(5),
+                &DevelopmentNoopRedactor,
             )
             .expect("focus-derived contradiction");
         let explicit = store
@@ -14786,6 +14932,7 @@ mod tests {
                 "contra-explicit",
                 actor("contra-session"),
                 at(6),
+                &DevelopmentNoopRedactor,
             )
             .expect("explicit contradiction");
         let feeds = |positions: &[FeedPosition]| {
@@ -16440,6 +16587,7 @@ mod tests {
                 "work-contradiction",
                 actor("peer"),
                 at(7),
+                &DevelopmentNoopRedactor,
             )
             .expect("record pure-work contradiction");
         assert!(contradiction.cursor.is_none());

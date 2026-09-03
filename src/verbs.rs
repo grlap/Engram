@@ -31,8 +31,8 @@ use crate::{
         MAX_AGENT_WORK_RESPONSE_BYTES, MAX_TEXT_NEXT_COMMANDS, ProjectMemorySignal,
         ReadyWorkSummary, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
         WorkAttributionDefaults, WorkChange, WorkChangeProjection, WorkItemSummary,
-        WorkSectionOmission, WorkSectionOmissionReason, render_agent_receipt_text,
-        terminal_safe_multiline,
+        WorkSectionOmission, WorkSectionOmissionReason, actor_label, render_agent_receipt_text,
+        terminal_safe_actor_label, terminal_safe_multiline,
     },
 };
 
@@ -188,6 +188,8 @@ struct ShowHandoff {
 struct ShowNote {
     kind: WorkEvidenceKind,
     summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    by: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -629,34 +631,37 @@ impl AgentVerbs {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Self {
-        Self::new_with_attribution_defaults(
+        Self::new_with_attribution(
             database,
             project_id,
             actor_id,
             session_id,
             source_skill,
+            None,
             WorkAttributionDefaults::default(),
         )
     }
 
-    /// Builds the shell word surface while retaining whether local attribution
-    /// defaults must be marked in durable actor provenance.
+    /// Builds the shell word surface with optional host-asserted actor context
+    /// and explicit local-attribution defaults.
     #[must_use]
-    pub fn new_with_attribution_defaults(
+    pub fn new_with_attribution(
         database: PathBuf,
         project_id: ProjectId,
         actor_id: String,
         session_id: SessionId,
         source_skill: Option<String>,
+        actor_context: Option<String>,
         attribution_defaults: WorkAttributionDefaults,
     ) -> Self {
         Self::with_shared_service(
-            Arc::new(LocalWorkService::new_with_attribution_defaults(
+            Arc::new(LocalWorkService::new_with_attribution(
                 database,
                 project_id,
                 actor_id.clone(),
                 session_id.clone(),
                 source_skill,
+                actor_context,
                 attribution_defaults,
             )),
             actor_id,
@@ -2254,9 +2259,10 @@ fn project_memory_list_receipt(
     let mut lines = vec![format!("{} project memory item(s):", result.memories.len())];
     for row in &result.memories {
         lines.push(format!(
-            "  {} — {} ({})",
+            "  {} — {} — by {} ({})",
             row.key,
             short(&terminal_safe_multiline(&row.first_line)),
+            terminal_safe_actor_label(&row.actor_id, row.actor_context.as_deref()),
             row.remembered_at.format("%Y-%m-%d %H:%M UTC")
         ));
     }
@@ -2636,6 +2642,10 @@ fn actor_word(actor: &str, current_actor: &str) -> &'static str {
     }
 }
 
+fn relative_actor_label(actor: &str, context: Option<&str>, current_actor: &str) -> String {
+    actor_label(actor_word(actor, current_actor), context)
+}
+
 fn session_word(session: &SessionId, current_session: &SessionId) -> &'static str {
     if session == current_session {
         "you"
@@ -2743,10 +2753,19 @@ fn show_lines(
         ));
     }
     if let Some(last) = view.evidence_items.last() {
+        let by = last.actor_id.as_deref().map(|actor| {
+            terminal_safe_actor_label(
+                actor_word(actor, current_actor),
+                last.actor_context.as_deref(),
+            )
+        });
         lines.push(format!(
-            "notes: {} recorded; latest {}: \"{}\"",
+            "notes: {} recorded; latest {}{}: \"{}\"",
             view.evidence_items.len(),
             evidence_kind_word(last.evidence_kind),
+            by.as_ref()
+                .map(|actor| format!(" by {actor}"))
+                .unwrap_or_default(),
             short(&last.summary)
         ));
     }
@@ -2774,10 +2793,9 @@ fn show_receipt_value(
             WorkChangeProjection::Visible(summary) => Some(ShowHistoryItem {
                 kind: summary.change_kind.clone(),
                 summary: strip_kind_prefix(&summary.summary, &summary.change_kind),
-                by: summary
-                    .actor_id
-                    .as_deref()
-                    .map(|actor| actor_word(actor, current_actor).to_owned()),
+                by: summary.actor_id.as_deref().map(|actor| {
+                    relative_actor_label(actor, summary.actor_context.as_deref(), current_actor)
+                }),
                 created_at: summary.created_at,
             }),
             WorkChangeProjection::Omitted(_) => None,
@@ -2836,6 +2854,9 @@ fn show_receipt_value(
             .map(|note| ShowNote {
                 kind: note.evidence_kind,
                 summary: note.summary.clone(),
+                by: note.actor_id.as_deref().map(|actor| {
+                    relative_actor_label(actor, note.actor_context.as_deref(), current_actor)
+                }),
                 created_at: note.created_at,
             })
             .collect(),
@@ -2918,6 +2939,7 @@ fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
                 summary.change_kind.clone(),
                 strip_kind_prefix(&summary.summary, &summary.change_kind),
                 summary.actor_id.clone(),
+                summary.actor_context.clone(),
             )),
             WorkChangeProjection::Omitted(_) => None,
         })
@@ -2925,7 +2947,7 @@ fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let mut last_note: Option<(String, String)> = None;
     for (index, change) in changes.iter().enumerate() {
-        let Some((subject, kind, text, actor_id)) = visible[index].as_ref() else {
+        let Some((subject, kind, text, actor_id, actor_context)) = visible[index].as_ref() else {
             last_note = None;
             if let WorkChangeProjection::Omitted(omission) = &change.delivery {
                 lines.push(format!(
@@ -2949,7 +2971,7 @@ fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
             });
             let precedes_completion = visible.get(index + 1).is_some_and(|next| {
                 next.as_ref()
-                    .is_some_and(|(next_subject, next_kind, _, _)| {
+                    .is_some_and(|(next_subject, next_kind, _, _, _)| {
                         next_subject == subject && next_kind == "completed"
                     })
             });
@@ -2965,7 +2987,12 @@ fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
         };
         let actor = actor_id
             .as_ref()
-            .map(|actor| format!(" by {actor}"))
+            .map(|actor| {
+                format!(
+                    " by {}",
+                    terminal_safe_actor_label(actor, actor_context.as_deref())
+                )
+            })
             .unwrap_or_default();
         lines.push(format!("{subject} {verb}{actor}: {}", short(text)));
     }
@@ -3493,6 +3520,7 @@ mod tests {
                 change_kind: kind.into(),
                 summary: summary.into(),
                 actor_id: Some("peer".into()),
+                actor_context: Some("model=peer;reasoning=high".into()),
                 created_at: at(position),
             }),
         };
@@ -3503,7 +3531,9 @@ mod tests {
 
         assert_eq!(
             collapse_changes(&changes, "current actor"),
-            vec!["w-000000000001 completed by peer: \"Delivered title\""]
+            vec![
+                "w-000000000001 completed by peer (model=peer;reasoning=high): \"Delivered title\""
+            ]
         );
     }
 
@@ -3734,8 +3764,8 @@ mod tests {
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("project-memory-verb-envelope".into());
         let verbs = AgentVerbs::new(
-            database,
-            project,
+            database.clone(),
+            project.clone(),
             "agent".into(),
             SessionId("memory-verb-session".into()),
             Some("project-memory-verb-test".into()),
@@ -3855,6 +3885,37 @@ mod tests {
         assert_eq!(
             listed.value["memories"][0]["first_line"],
             "safe\u{1b}]0;spoofed\u{7}\u{202e}rtl split\u{e000}"
+        );
+
+        let unsafe_actor_verbs = AgentVerbs::new(
+            database,
+            project,
+            "agent\u{1b}spoof".into(),
+            SessionId("memory-unsafe-actor-session".into()),
+            Some("project-memory-verb-test".into()),
+        );
+        unsafe_actor_verbs
+            .remember(
+                RememberInput {
+                    text: "Actor labels are escaped at the receipt boundary.".into(),
+                    key: Some("unsafe-actor-label".into()),
+                },
+                at(3),
+            )
+            .expect("store unsafe asserted actor as structured attribution");
+        let unsafe_actor_list = unsafe_actor_verbs
+            .memories(&MemoriesInput {
+                query: Some("unsafe-actor-label".into()),
+                after: None,
+                full: false,
+            })
+            .expect("render unsafe asserted actor");
+        let unsafe_actor_text = unsafe_actor_list.text();
+        assert!(!unsafe_actor_text.contains('\u{1b}'));
+        assert!(unsafe_actor_text.contains("agent\\u{1b}spoof"));
+        assert_eq!(
+            unsafe_actor_list.value["memories"][0]["actor_id"],
+            "agent\u{1b}spoof"
         );
     }
 

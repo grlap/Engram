@@ -112,7 +112,8 @@ policy outside the core. Extend ports using neutral request/response records.
 
 Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME` and normally injects
-`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; you type only the word. A local
+`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT`
+adds attribution without changing the actor principal. You type only the word. A local
 shell may omit either attribution value and receives explicitly audited
 OS-user-environment or synthetic-actor and process-session defaults. The
 generated session lasts only for that CLI process; reuse the id printed in its

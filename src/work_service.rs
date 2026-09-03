@@ -33,11 +33,13 @@ use crate::{
     WorkPrerequisiteState, WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
     WorkTransition,
     domain::{
-        AssuranceLevel, ForgetProjectMemoryRequest, MemoryAssertionEvent, MemoryContradictionEvent,
-        ProjectMemoryFull, ProjectMemoryList, ProjectMemoryMutationReceipt, ProvenanceLink,
-        ProvenanceRelation, RecordGateEvidenceRequest, RecordWorkNoteRequest,
-        RememberProjectMemoryRequest, SCHEMA_VERSION, Scope, Sensitivity,
-        WorkCompletionRecoveryCause, is_unsafe_rendered_text_char, validate_gate_evidence_payload,
+        ACTOR_CONTEXT_NORMALIZED_REFERENCE, ACTOR_CONTEXT_PROVENANCE_REFERENCE, AssuranceLevel,
+        ForgetProjectMemoryRequest, MAX_ACTOR_CONTEXT_BYTES, MemoryAssertionEvent,
+        MemoryContradictionEvent, ProjectMemoryFull, ProjectMemoryList,
+        ProjectMemoryMutationReceipt, ProvenanceLink, ProvenanceRelation,
+        RecordGateEvidenceRequest, RecordWorkNoteRequest, RememberProjectMemoryRequest,
+        SCHEMA_VERSION, Scope, Sensitivity, WorkCompletionRecoveryCause,
+        is_unsafe_rendered_text_char, validate_gate_evidence_payload,
     },
     storage::{
         BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, CompleteWorkStorageResult,
@@ -69,6 +71,7 @@ const MAX_HISTORY_DETAIL_BYTES: usize = 72;
 const MAX_ACCEPTANCE_ITEMS: usize = 6;
 const MAX_LABEL_ITEMS: usize = 8;
 const MAX_DELIVERY_STAGE_RETRIES: usize = 8;
+/// Maximum runnable recovery commands rendered in one text receipt.
 pub(crate) const MAX_TEXT_NEXT_COMMANDS: usize = 4;
 /// The recovery tag is the sole agent-facing signal that `recovery_reason`
 /// is mandatory; consumers must not infer that requirement from readiness.
@@ -99,6 +102,13 @@ impl ProjectMemoryFullResponse {
     pub(crate) fn terminal_lines(&self) -> Vec<String> {
         vec![
             format!("memory {}:", self.memory.key),
+            format!(
+                "by {}",
+                terminal_safe_actor_label(
+                    &self.memory.actor_id,
+                    self.memory.actor_context.as_deref()
+                )
+            ),
             terminal_safe_data_block(&self.memory.body),
         ]
     }
@@ -206,6 +216,8 @@ pub struct LocalWorkService {
     database: PathBuf,
     project_id: ProjectId,
     actor_id: String,
+    actor_context: Option<String>,
+    actor_context_normalized: bool,
     session_id: SessionId,
     attribution_defaults: WorkAttributionDefaults,
     source_skill: Option<String>,
@@ -220,6 +232,8 @@ impl Clone for LocalWorkService {
             database: self.database.clone(),
             project_id: self.project_id.clone(),
             actor_id: self.actor_id.clone(),
+            actor_context: self.actor_context.clone(),
+            actor_context_normalized: self.actor_context_normalized,
             session_id: self.session_id.clone(),
             attribution_defaults: self.attribution_defaults,
             source_skill: self.source_skill.clone(),
@@ -240,6 +254,8 @@ impl fmt::Debug for LocalWorkService {
             .field("database", &self.database)
             .field("project_id", &self.project_id)
             .field("actor_id", &self.actor_id)
+            .field("actor_context_present", &self.actor_context.is_some())
+            .field("actor_context_normalized", &self.actor_context_normalized)
             .field("session_id", &self.session_id)
             .field("attribution_defaults", &self.attribution_defaults)
             .field("source_skill", &self.source_skill)
@@ -507,6 +523,10 @@ pub struct WorkChangeSummary {
     pub summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actor_id: Option<String>,
+    /// Optional host-asserted execution context. Actor identity remains in
+    /// `actor_id`; this field is attribution only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_context: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -673,6 +693,10 @@ pub struct WorkEvidenceSummary {
     pub source_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub producer_session_id: Option<SessionId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check_kind: Option<VerificationKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1107,31 +1131,36 @@ impl LocalWorkService {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Self {
-        Self::new_with_attribution_defaults(
+        Self::new_with_attribution(
             database,
             project_id,
             actor_id,
             session_id,
             source_skill,
+            None,
             WorkAttributionDefaults::default(),
         )
     }
 
-    /// Constructs a project-bound local-work service whose audit provenance
-    /// records which shell attribution values were defaulted locally.
+    /// Constructs a project-bound service with optional host-asserted actor
+    /// context and explicit local-attribution defaults.
     #[must_use]
-    pub fn new_with_attribution_defaults(
+    pub fn new_with_attribution(
         database: PathBuf,
         project_id: ProjectId,
         actor_id: String,
         session_id: SessionId,
         source_skill: Option<String>,
+        actor_context: Option<String>,
         attribution_defaults: WorkAttributionDefaults,
     ) -> Self {
+        let (actor_context, actor_context_normalized) = normalize_actor_context(actor_context);
         Self {
             database,
             project_id,
             actor_id,
+            actor_context,
+            actor_context_normalized,
             session_id,
             attribution_defaults,
             source_skill,
@@ -3330,6 +3359,20 @@ impl LocalWorkService {
                 reference: Some("session_id".into()),
             });
         }
+        if let Some(actor_context) = &self.actor_context {
+            provenance_chain.push(ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: actor_context.clone(),
+                reference: Some(ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+            });
+        }
+        if self.actor_context_normalized {
+            provenance_chain.push(ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: "actor_context:normalized".into(),
+                reference: Some(ACTOR_CONTEXT_NORMALIZED_REFERENCE.into()),
+            });
+        }
         ActorContext {
             actor_id: self.actor_id.clone(),
             actor_kind: "agent".into(),
@@ -3738,6 +3781,66 @@ fn agent_work_session(state: &WorkSessionState) -> AgentWorkSession {
 
 fn compact_text(value: &str) -> String {
     compact_text_to(value, MAX_SUMMARY_BYTES)
+}
+
+fn projected_actor_context(actor: &ActorContext) -> Option<String> {
+    actor.attribution_context().map(str::to_owned)
+}
+
+pub(crate) fn actor_label(actor_id: &str, actor_context: Option<&str>) -> String {
+    actor_context.map_or_else(
+        || actor_id.to_owned(),
+        |actor_context| format!("{actor_id} ({actor_context})"),
+    )
+}
+
+pub(crate) fn terminal_safe_actor_label(actor_id: &str, actor_context: Option<&str>) -> String {
+    let label = actor_label(actor_id, actor_context);
+    let mut safe = String::with_capacity(label.len());
+    for character in label.chars() {
+        if is_unsafe_rendered_text_char(character) {
+            safe.extend(character.escape_default());
+        } else {
+            safe.push(character);
+        }
+    }
+    safe
+}
+
+fn normalize_actor_context(actor_context: Option<String>) -> (Option<String>, bool) {
+    let Some(original) = actor_context else {
+        return (None, false);
+    };
+    let mut stripped = String::with_capacity(original.len());
+    let mut stripped_unsafe_run = false;
+    for character in original.chars() {
+        if is_unsafe_rendered_text_char(character) {
+            stripped_unsafe_run = true;
+            continue;
+        }
+        if stripped_unsafe_run {
+            let previous_is_space = stripped
+                .chars()
+                .next_back()
+                .is_some_and(char::is_whitespace);
+            if !stripped.is_empty() && !previous_is_space && !character.is_whitespace() {
+                stripped.push(' ');
+            }
+            stripped_unsafe_run = false;
+        }
+        stripped.push(character);
+    }
+    let trimmed = stripped.trim();
+    let mut end = trimmed.len().min(MAX_ACTOR_CONTEXT_BYTES);
+    while !trimmed.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    let normalized = trimmed[..end].trim_end();
+    let changed = normalized != original;
+    (
+        (!normalized.is_empty()).then(|| normalized.to_owned()),
+        changed,
+    )
 }
 
 fn compact_text_to(value: &str, max_bytes: usize) -> String {
@@ -4211,7 +4314,9 @@ fn work_evidence_summary(
                 gate,
                 workspace_id: None,
                 source_revision: None,
-                producer_session_id: evidence.actor.session_id,
+                producer_session_id: evidence.actor.session_id.clone(),
+                actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                actor_context: projected_actor_context(&evidence.actor),
                 check_kind: None,
                 check_fingerprint: None,
                 verification_result: None,
@@ -4231,6 +4336,8 @@ fn work_evidence_summary(
                 workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
                 source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
                 producer_session_id: Some(evidence.session_id),
+                actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                actor_context: projected_actor_context(&evidence.actor),
                 check_kind: Some(evidence.check_kind),
                 check_fingerprint: Some(evidence.check_fingerprint),
                 verification_result: Some(evidence.result),
@@ -4250,6 +4357,8 @@ fn work_evidence_summary(
                 workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
                 source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
                 producer_session_id: Some(evidence.session_id),
+                actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                actor_context: projected_actor_context(&evidence.actor),
                 check_kind: None,
                 check_fingerprint: None,
                 verification_result: None,
@@ -4977,6 +5086,7 @@ fn agent_change_object(
                 change_kind: "checkpoint".into(),
                 summary: compact_text(&checkpoint.summary),
                 actor_id: Some(compact_text(&checkpoint.actor.actor_id)),
+                actor_context: projected_actor_context(&checkpoint.actor),
                 created_at: checkpoint.created_at,
             }))
         }
@@ -4992,6 +5102,7 @@ fn agent_change_object(
                 change_kind: "evidence".into(),
                 summary: compact_work_evidence(&evidence)?,
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                actor_context: projected_actor_context(&evidence.actor),
                 created_at: evidence.created_at,
             }))
         }
@@ -5015,6 +5126,7 @@ fn agent_change_object(
                     observation.effect, observation.outcome, observation.source_changed
                 )),
                 actor_id: Some(compact_text(&observation.actor.actor_id)),
+                actor_context: projected_actor_context(&observation.actor),
                 created_at: observation.observed_at.unwrap_or(observation.recorded_at),
             }))
         }
@@ -5044,6 +5156,7 @@ fn agent_change_object(
                         .map_or("none", ObjectHash::as_str)
                 )),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                actor_context: projected_actor_context(&evidence.actor),
                 created_at: evidence.completed_at,
             }))
         }
@@ -5081,6 +5194,7 @@ fn agent_change_object(
                     component_summary
                 )),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                actor_context: projected_actor_context(&evidence.actor),
                 created_at: evidence.observed_at,
             }))
         }
@@ -5106,6 +5220,7 @@ fn agent_change_object(
                     obligation.requirement.check_kind
                 )),
                 actor_id: None,
+                actor_context: None,
                 created_at: obligation.opened_at,
             }))
         }
@@ -5139,6 +5254,7 @@ fn agent_change_object(
                 change_kind: change_kind.into(),
                 summary: compact_text(&summary),
                 actor_id: Some(compact_text(&event.actor.actor_id)),
+                actor_context: projected_actor_context(&event.actor),
                 created_at: event.created_at,
             }))
         }
@@ -5161,6 +5277,7 @@ fn agent_change_object(
                         change_kind: "memory_version".into(),
                         summary: compact_text(&version.title),
                         actor_id: Some(compact_text(&version.actor.actor_id)),
+                        actor_context: projected_actor_context(&version.actor),
                         created_at: version.created_at,
                     })
                 },
@@ -5199,6 +5316,7 @@ fn agent_change_object(
                         change_kind: format!("memory_{:?}", assertion.status).to_lowercase(),
                         summary: compact_text(&version.title),
                         actor_id: Some(compact_text(&assertion.actor.actor_id)),
+                        actor_context: projected_actor_context(&assertion.actor),
                         created_at: assertion.created_at,
                     })
                 },
@@ -5247,6 +5365,7 @@ fn agent_change_object(
                         change_kind: "memory_contradiction".into(),
                         summary: compact_text(&event.reason),
                         actor_id: Some(compact_text(&event.actor.actor_id)),
+                        actor_context: projected_actor_context(&event.actor),
                         created_at: event.created_at,
                     }))
                 },
@@ -5404,6 +5523,7 @@ fn agent_work_event_summary(event: &WorkEvent) -> WorkChangeSummary {
             work_transition_summary(event)
         )),
         actor_id: Some(compact_text(&event.actor.actor_id)),
+        actor_context: projected_actor_context(&event.actor),
         created_at: event.created_at,
     }
 }
@@ -6437,15 +6557,69 @@ mod tests {
     }
 
     #[test]
+    fn local_work_service_normalizes_actor_context_without_refusing_words() {
+        let directory = tempdir().expect("temporary directory");
+        for (index, (actor_context, expected)) in [
+            (
+                format!("  model=codex\n{}  ", "🙂".repeat(100)),
+                format!("model=codex {}", "🙂".repeat(61)),
+            ),
+            ("\n\t".into(), String::new()),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let service = LocalWorkService::new_with_attribution(
+                directory
+                    .path()
+                    .join(format!("actor-context-{index}.sqlite3")),
+                ProjectId("actor-context-bound-project".into()),
+                "agent".into(),
+                SessionId("session".into()),
+                None,
+                Some(actor_context),
+                WorkAttributionDefaults::default(),
+            );
+            service
+                .work_next(1, WorkNextQuery::default(), at(0))
+                .expect("normalized context must not refuse a word");
+            let actor = service.actor("work_next", "test normalized actor context");
+            if expected.is_empty() {
+                assert!(actor.attribution_context().is_none());
+                assert!(!actor.provenance_chain.iter().any(|link| {
+                    link.reference.as_deref() == Some(ACTOR_CONTEXT_PROVENANCE_REFERENCE)
+                }));
+            } else {
+                assert_eq!(actor.attribution_context(), Some(expected.as_str()));
+            }
+            assert!(actor.provenance_chain.contains(&ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: "actor_context:normalized".into(),
+                reference: Some(ACTOR_CONTEXT_NORMALIZED_REFERENCE.into()),
+            }));
+            assert!(!format!("{service:?}").contains("model=codex"));
+        }
+    }
+
+    #[test]
+    fn terminal_actor_labels_escape_asserted_identity_and_context() {
+        let safe = terminal_safe_actor_label("agent\nname", Some("model=codex\u{202e}"));
+        assert!(!safe.chars().any(is_unsafe_rendered_text_char));
+        assert!(safe.contains("agent\\nname"));
+        assert!(safe.contains("model=codex\\u{202e}"));
+    }
+
+    #[test]
     fn shell_attribution_defaults_are_explicit_in_actor_provenance() {
         let directory = tempdir().expect("temporary directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("defaulted-attribution-project".into());
-        let service = LocalWorkService::new_with_attribution_defaults(
+        let service = LocalWorkService::new_with_attribution(
             database.clone(),
             project,
             "os-user".into(),
             SessionId("process-session".into()),
+            None,
             None,
             WorkAttributionDefaults {
                 actor: Some(WorkActorDefaultSource::OsUserEnvironment),
@@ -6484,11 +6658,12 @@ mod tests {
             reference: Some("session_id".into()),
         }));
 
-        let fallback = LocalWorkService::new_with_attribution_defaults(
+        let fallback = LocalWorkService::new_with_attribution(
             PathBuf::from("unused.sqlite3"),
             ProjectId("fallback-attribution-project".into()),
             "local-user-1".into(),
             SessionId("process-session".into()),
+            None,
             None,
             WorkAttributionDefaults {
                 actor: Some(WorkActorDefaultSource::ProcessFallback),
@@ -6516,6 +6691,27 @@ mod tests {
             Some(SessionId(" injected session ".into()))
         );
         assert_eq!(injected.provenance_chain.len(), 1);
+
+        let contextual = LocalWorkService::new_with_attribution(
+            PathBuf::from("unused.sqlite3"),
+            ProjectId("contextual-attribution-project".into()),
+            "greg/codex".into(),
+            SessionId("contextual-session".into()),
+            None,
+            Some("model=opus-4.1;reasoning=high".into()),
+            WorkAttributionDefaults::default(),
+        )
+        .actor("work_next", "test contextual attribution");
+        assert_eq!(
+            contextual.attribution_context(),
+            Some("model=opus-4.1;reasoning=high")
+        );
+        assert_eq!(contextual.actor_id, "greg/codex");
+        assert!(
+            !contextual.provenance_chain.iter().any(|link| {
+                link.reference.as_deref() == Some(ACTOR_CONTEXT_NORMALIZED_REFERENCE)
+            })
+        );
     }
 
     #[test]
@@ -7358,6 +7554,44 @@ mod tests {
             .work_update(stale_release, at(8))
             .expect_err("the identical retry is refused the same way");
         assert_eq!(first_refusal.to_string(), second_refusal.to_string());
+    }
+
+    #[test]
+    fn actor_context_does_not_change_work_protocol_identity() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("context-independent-intent".into());
+        let service = |context: &str| {
+            LocalWorkService::new_with_attribution(
+                database.clone(),
+                project.clone(),
+                "agent".into(),
+                SessionId("stable-session".into()),
+                Some("protocol-test".into()),
+                Some(context.into()),
+                WorkAttributionDefaults::default(),
+            )
+        };
+        let first = service("model=first")
+            .work_propose(root_input("Context-independent retry", "stable-key"), at(0))
+            .expect("first operation");
+        let replay = service("model=second")
+            .work_propose(root_input("Context-independent retry", "stable-key"), at(1))
+            .expect("context change must replay instead of conflicting");
+        let WorkProposeResult::Root {
+            work: first_work, ..
+        } = first
+        else {
+            panic!("expected root");
+        };
+        let WorkProposeResult::Root {
+            work: replayed_work,
+            ..
+        } = replay
+        else {
+            panic!("expected replayed root");
+        };
+        assert_eq!(replayed_work.work_id, first_work.work_id);
     }
 
     #[test]
@@ -9721,6 +9955,7 @@ mod tests {
                 "contradiction-edge",
                 service.actor("memory_contradict", "record explicit work contradiction"),
                 at(5),
+                &DevelopmentNoopRedactor,
             )
             .expect("contradiction");
         let project_contradiction = store
@@ -9736,6 +9971,7 @@ mod tests {
                 "contradiction-work-project",
                 service.actor("memory_contradict", "record mixed project contradiction"),
                 at(6),
+                &DevelopmentNoopRedactor,
             )
             .expect("work and project contradiction");
         let task_contradiction = store
@@ -9751,6 +9987,7 @@ mod tests {
                 "contradiction-work-task",
                 service.actor("memory_contradict", "record mixed task contradiction"),
                 at(7),
+                &DevelopmentNoopRedactor,
             )
             .expect("work and task contradiction");
         assert!(!contradiction.work_positions.is_empty());
@@ -9938,6 +10175,7 @@ mod tests {
                 "peer-root-contradiction",
                 peer.actor("memory_contradict", "record peer-root contradiction"),
                 at(6),
+                &DevelopmentNoopRedactor,
             )
             .expect("peer-root contradiction");
         let restricted_contradiction = MemoryContradictionEvent {

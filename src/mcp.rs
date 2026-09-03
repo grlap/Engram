@@ -30,21 +30,25 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// Creates a tools-only MCP service exposing the fourteen agent tools.
+    /// Creates an MCP service with optional host-asserted actor attribution
+    /// context. The context never participates in actor/session authority.
     #[must_use]
-    pub fn new(
+    pub fn new_with_actor_context(
         database: PathBuf,
         project_id: ProjectId,
         actor_id: String,
         session_id: SessionId,
         source_skill: Option<String>,
+        actor_context: Option<String>,
     ) -> Self {
-        let work_service = Arc::new(LocalWorkService::new(
+        let work_service = Arc::new(LocalWorkService::new_with_attribution(
             database,
             project_id,
             actor_id.clone(),
             session_id.clone(),
             source_skill,
+            actor_context,
+            crate::WorkAttributionDefaults::default(),
         ));
         Self {
             actor_id,
@@ -859,12 +863,13 @@ mod tests {
     #[test]
     fn retained_work_service_survives_failure_for_agent_tools() {
         let directory = tempfile::tempdir().expect("temporary MCP home");
-        let server = McpServer::new(
+        let server = McpServer::new_with_actor_context(
             directory.path().join("engram.sqlite3"),
             ProjectId("mcp-retained-service".into()),
             "agent".into(),
             SessionId("mcp-retained-session".into()),
             Some("mcp-test".into()),
+            None,
         );
 
         server

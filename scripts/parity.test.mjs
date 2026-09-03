@@ -23,9 +23,12 @@ const MAX_FIELDS = 3;
 const HASH = /\b[0-9a-f]{64}\b/u;
 
 function run(args, options = {}) {
+  const environment = { ...process.env };
+  delete environment.ENGRAM_ACTOR_CONTEXT;
   const executed = spawnSync(binary, args, {
     cwd: root,
     encoding: "utf8",
+    env: environment,
     ...options,
   });
   return executed;
@@ -45,6 +48,7 @@ function withoutInjectedWorkAttribution(engramHome) {
   const environment = { ...process.env, ENGRAM_HOME: engramHome };
   delete environment.ENGRAM_ACTOR_ID;
   delete environment.ENGRAM_SESSION_ID;
+  delete environment.ENGRAM_ACTOR_CONTEXT;
   return environment;
 }
 
@@ -399,6 +403,7 @@ test("project memory words create list read and permanently retire a safe key", 
     const listedValue = JSON.parse(listed.stdout);
     assert.equal(listedValue.memories[0].key, "cli-project-note");
     assert.equal(listedValue.memories[0].body, undefined);
+    assert.equal(listedValue.memories[0].actor_context, undefined);
 
     const full = run([
       ...hostContext,
@@ -412,6 +417,7 @@ test("project memory words create list read and permanently retire a safe key", 
       JSON.parse(full.stdout).body,
       "CLI project observation\nfull body",
     );
+    assert.equal(JSON.parse(full.stdout).actor_context, undefined);
 
     const forgotten = run([
       ...hostContext,
@@ -430,6 +436,112 @@ test("project memory words create list read and permanently retire a safe key", 
     ]);
     assert.notEqual(retired.status, 0);
     assert.equal(JSON.parse(retired.stderr).error.code, "memory_retired");
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("CLI actor context is attribution while actor and session remain principals", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-actor-context-"));
+  const actor = "greg/codex";
+  const assignee = "planning-owner";
+  const session = "actor-context-source";
+  const recipientSession = "actor-context-recipient";
+  const actorContext = "model=opus-4.1;reasoning=high";
+  const environment = {
+    ...process.env,
+    ENGRAM_HOME: engramHome,
+    ENGRAM_ACTOR_ID: actor,
+    ENGRAM_SESSION_ID: session,
+    ENGRAM_ACTOR_CONTEXT: actorContext,
+  };
+  const word = (...args) => run(["work", ...args], { env: environment });
+  const recipientEnvironment = {
+    ...environment,
+    ENGRAM_ACTOR_ID: "peer",
+    ENGRAM_SESSION_ID: recipientSession,
+  };
+  delete recipientEnvironment.ENGRAM_ACTOR_CONTEXT;
+  const recipientWord = (...args) =>
+    run(["work", ...args], { env: recipientEnvironment });
+  const assigneeEnvironment = {
+    ...environment,
+    ENGRAM_ACTOR_ID: assignee,
+    ENGRAM_SESSION_ID: "actor-context-assignee",
+  };
+  delete assigneeEnvironment.ENGRAM_ACTOR_CONTEXT;
+  const assigneeWord = (...args) =>
+    run(["work", ...args], { env: assigneeEnvironment });
+  try {
+    hostSetup(engramHome);
+    const added = word(
+      "add",
+      "Attribute CLI execution context",
+      "--assignee",
+      assignee,
+      "--json",
+    );
+    assert.equal(added.status, 0, added.stderr);
+    const workRef = JSON.parse(added.stdout).work.short_ref;
+    const mine = word("ls", "--mine", "--json");
+    assert.equal(mine.status, 0, mine.stderr);
+    assert.ok(!JSON.parse(mine.stdout).items.some(({ ref }) => ref === workRef));
+    const assigned = assigneeWord("ls", "--mine", "--json");
+    assert.equal(assigned.status, 0, assigned.stderr);
+    assert.ok(JSON.parse(assigned.stdout).items.some(({ ref }) => ref === workRef));
+    assert.equal(word("claim", workRef).status, 0);
+    const noted = word("note", workRef, "context follows attribution");
+    assert.equal(noted.status, 0, noted.stderr);
+
+    const shown = word("show", workRef, "--json");
+    assert.equal(shown.status, 0, shown.stderr);
+    const showValue = JSON.parse(shown.stdout);
+    assert.equal(showValue.notes.at(-1).by, `you (${actorContext})`);
+    assert.ok(
+      showValue.history.items.some(
+        ({ by }) => by === `you (${actorContext})`,
+      ),
+    );
+    const showText = word("show", workRef);
+    assert.equal(showText.status, 0, showText.stderr);
+    assert.match(showText.stdout, new RegExp(`latest note by you \\(${actorContext}\\)`, "u"));
+
+    const remembered = word(
+      "remember",
+      "Actor context is retained on project memories",
+      "--key",
+      "actor-context",
+    );
+    assert.equal(remembered.status, 0, remembered.stderr);
+    const memories = word("memories", "--json");
+    assert.equal(memories.status, 0, memories.stderr);
+    assert.equal(JSON.parse(memories.stdout).memories[0].actor_id, actor);
+    assert.equal(
+      JSON.parse(memories.stdout).memories[0].actor_context,
+      actorContext,
+    );
+    const memoryText = word("memories");
+    assert.equal(memoryText.status, 0, memoryText.stderr);
+    assert.match(memoryText.stdout, new RegExp(`by ${actor} \\(${actorContext}\\)`, "u"));
+    const fullMemoryText = word("memories", "actor-context", "--full");
+    assert.equal(fullMemoryText.status, 0, fullMemoryText.stderr);
+    assert.match(
+      fullMemoryText.stdout,
+      new RegExp(`by ${actor} \\(${actorContext}\\)`, "u"),
+    );
+
+    const offered = word(
+      "handoff",
+      workRef,
+      "--to",
+      recipientSession,
+      "--json",
+    );
+    assert.equal(offered.status, 0, offered.stderr);
+    assert.equal(JSON.parse(offered.stdout).operation, "offer");
+    const accepted = recipientWord("handoff", workRef, "--accept", "--json");
+    assert.equal(accepted.status, 0, accepted.stderr);
+    assert.equal(JSON.parse(accepted.stdout).operation, "accept");
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }

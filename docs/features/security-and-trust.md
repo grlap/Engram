@@ -21,6 +21,24 @@ run/session, source/tool/skill metadata when available — together with an
 *asserted* instruction/authority context, **not cryptographic identity**, and
 no document in this repository may claim otherwise. No SSO/LDAP in V1.
 
+The work CLI and MCP binding may also carry optional `ENGRAM_ACTOR_CONTEXT`:
+free text describing execution context,
+for example `model=opus-4.1;reasoning=high`. It is retained in the existing
+actor provenance and passes the same Redactor inspection as its containing
+event, note, evidence, or project memory. It is attribution only and never
+changes the `actor_id` principal used for assignment, `--mine`, handoff, or
+authority checks. Agent projections render it parenthetically and omit it when
+absent. Relative actor words hide principal identifiers, but the context is
+whatever bounded text the host asserted and may itself identify its source.
+Host mistakes do not refuse every word: each unsafe-control run becomes one
+space, surrounding whitespace is trimmed, and the result is cut on a UTF-8
+boundary to 256 bytes. Altered input receives an
+`actor_context:normalized` provenance marker; an empty result is absent.
+Context is excluded from agent-protocol attempts, gate-observation replay, and
+project-memory replay identity: an identical retry through those surfaces
+returns the originally attributed result. Core storage request hashes still
+bind the complete asserted actor context supplied to that request.
+
 The shell work surface does not turn missing host attribution into false
 assurance. When `ENGRAM_ACTOR_ID` is absent it derives an actor from the first
 nonblank conventional OS-user environment variable, or uses a synthetic

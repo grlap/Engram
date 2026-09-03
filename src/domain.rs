@@ -2995,6 +2995,72 @@ pub struct ActorContext {
     pub reason: String,
 }
 
+/// Marker used inside [`ActorContext::provenance_chain`] for optional,
+/// host-asserted execution context that describes an actor without changing
+/// the actor principal used by assignment or authority checks.
+pub(crate) const ACTOR_CONTEXT_PROVENANCE_REFERENCE: &str = "actor_context";
+/// Provenance reference recording that supplied actor context was normalized
+/// before it was retained.
+pub(crate) const ACTOR_CONTEXT_NORMALIZED_REFERENCE: &str = "actor_context_normalized";
+/// Maximum retained UTF-8 bytes for optional host-asserted actor context.
+pub const MAX_ACTOR_CONTEXT_BYTES: usize = 256;
+
+impl ActorContext {
+    /// Validates the optional actor-context provenance contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable reason when context or its normalization marker is
+    /// duplicated, malformed, unsafe for rendering, or outside its byte bound.
+    pub fn validate_attribution_context(&self) -> Result<(), &'static str> {
+        let context_links = self
+            .provenance_chain
+            .iter()
+            .filter(|link| link.reference.as_deref() == Some(ACTOR_CONTEXT_PROVENANCE_REFERENCE))
+            .collect::<Vec<_>>();
+        if context_links.len() > 1 {
+            return Err("actor context provenance must contain at most one value");
+        }
+        if let Some(link) = context_links.first()
+            && (link.relation != ProvenanceRelation::DerivedFrom
+                || link.source.trim() != link.source
+                || link.source.is_empty()
+                || link.source.len() > MAX_ACTOR_CONTEXT_BYTES
+                || link.source.chars().any(is_unsafe_rendered_text_char))
+        {
+            return Err("actor context provenance is not normalized and bounded");
+        }
+
+        let normalized_links = self
+            .provenance_chain
+            .iter()
+            .filter(|link| link.reference.as_deref() == Some(ACTOR_CONTEXT_NORMALIZED_REFERENCE))
+            .collect::<Vec<_>>();
+        if normalized_links.len() > 1 {
+            return Err("actor context normalization provenance must be unique");
+        }
+        if let Some(link) = normalized_links.first()
+            && (link.relation != ProvenanceRelation::DerivedFrom
+                || link.source != "actor_context:normalized")
+        {
+            return Err("actor context normalization provenance is invalid");
+        }
+        Ok(())
+    }
+
+    /// Returns optional host-asserted execution context retained as
+    /// attribution provenance.
+    #[must_use]
+    pub fn attribution_context(&self) -> Option<&str> {
+        self.validate_attribution_context().ok()?;
+        self.provenance_chain.iter().find_map(|link| {
+            (link.relation == ProvenanceRelation::DerivedFrom
+                && link.reference.as_deref() == Some(ACTOR_CONTEXT_PROVENANCE_REFERENCE))
+            .then_some(link.source.as_str())
+        })
+    }
+}
+
 /// Immutable content of one memory version. Its object hash is stored outside
 /// this payload so identity is computed over canonical content only.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -3089,6 +3155,9 @@ pub struct ProjectMemoryListRow {
     pub key: String,
     pub first_line: String,
     pub remembered_at: DateTime<Utc>,
+    pub actor_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_context: Option<String>,
 }
 
 /// Bounded listing result. Filtered queries omit continuation and report how
@@ -3112,6 +3181,8 @@ pub struct ProjectMemoryFull {
     pub body: String,
     pub remembered_at: DateTime<Utc>,
     pub actor_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_context: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<SessionId>,
 }
