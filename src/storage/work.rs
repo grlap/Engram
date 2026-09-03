@@ -2753,7 +2753,7 @@ fn completion_recovery_on(
             };
             let parent_ref = command_work_ref_on(connection, &work.project_id, &parent)?;
             format!(
-                "engram work core update --work-ref {parent_ref} --input '{{\"kind\":\"waive_required_child\",\"child\":\"{command_ref}\",\"reason\":\"account for disposed required child\"}}'"
+                "engram work update {parent_ref} --waive {command_ref} --reason \"account for disposed required child\""
             )
         }
         WorkCompletionRecoveryCause::MissingContribution { participant } => {

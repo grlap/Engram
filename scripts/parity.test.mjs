@@ -183,6 +183,93 @@ test("optional child is marked by show and does not gate parent completion", () 
   }
 });
 
+test("disposed required child names its lifecycle and runnable waiver", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-child-waiver-"));
+  const actor = "child-waiver-agent";
+  try {
+    hostSetup(engramHome);
+    const hostContext = [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      actor,
+      "--session-id",
+      actor,
+    ];
+    const parentResult = run([
+      ...hostContext,
+      "add",
+      "Waiver parent",
+      "--json",
+    ]);
+    assert.equal(parentResult.status, 0, parentResult.stderr);
+    const parent = JSON.parse(parentResult.stdout).work;
+    const childResult = run([
+      ...hostContext,
+      "add",
+      "Disposed required child",
+      "--under",
+      parent.short_ref,
+      "--json",
+    ]);
+    assert.equal(childResult.status, 0, childResult.stderr);
+    const child = JSON.parse(childResult.stdout).work;
+    const cancelled = run([
+      ...hostContext,
+      "update",
+      child.short_ref,
+      "--cancel",
+      "child outcome is no longer needed",
+    ]);
+    assert.equal(cancelled.status, 0, cancelled.stderr);
+    const claimed = run([...hostContext, "claim", parent.short_ref]);
+    assert.equal(claimed.status, 0, claimed.stderr);
+
+    const refused = run([
+      ...hostContext,
+      "done",
+      parent.short_ref,
+      "parent implementation complete",
+    ]);
+    assert.equal(refused.status, 2, refused.stderr);
+    assert.match(
+      refused.stdout,
+      new RegExp(`required child ${child.short_ref} .* is cancelled without`, "u"),
+    );
+    const waiverCommand = `engram work update ${parent.short_ref} --waive ${child.short_ref} --reason "account for disposed required child"`;
+    assert.ok(refused.stdout.includes(waiverCommand), refused.stdout);
+    assert.doesNotMatch(refused.stdout, /engram work core/u);
+
+    const waived = run([
+      ...hostContext,
+      "update",
+      parent.short_ref,
+      "--waive",
+      child.short_ref,
+      "--reason",
+      "the cancelled child is explicitly accounted for",
+      "--json",
+    ]);
+    assert.equal(waived.status, 0, waived.stderr);
+    const waiverReceipt = JSON.parse(waived.stdout);
+    assert.equal(waiverReceipt.operation, "waive_required_child");
+    assert.equal(waiverReceipt.receipt.work_id, parent.work_id);
+    assert.equal(typeof waiverReceipt.receipt.result.work_revision, "number");
+
+    const completed = run([
+      ...hostContext,
+      "done",
+      parent.short_ref,
+      "parent implementation complete",
+    ]);
+    assert.equal(completed.status, 0, completed.stderr);
+    assert.match(completed.stdout, /^done /u);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("shell words default missing local attribution without losing explicit targeting", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-defaults-"));
   try {

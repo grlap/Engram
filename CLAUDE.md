@@ -144,9 +144,9 @@ Reuse the generated session id printed by the CLI for session-bound follow-up:
 ```bash
 engram work next                  # what you hold, what is ready, what changed
 engram work ls | show REF
-engram work add "Title" [--under REF] [--kind KIND] [--label L]
+engram work add "Title" [--under REF [--optional]] [--kind KIND] [--label L]
 engram work claim REF
-engram work update REF [--after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why"]
+engram work update REF [--after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why"]
 engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "what you found or decided"
 engram work done ["what was delivered"]

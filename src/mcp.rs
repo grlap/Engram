@@ -139,6 +139,7 @@ enum UpdateActionArg {
     Cancel,
     After,
     DropAfter,
+    Waive,
     Supersede,
 }
 
@@ -147,9 +148,9 @@ struct UpdateArgs {
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
     /// `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`,
-    /// `drop_after`, or `supersede`.
+    /// `drop_after`, `waive`, or `supersede`.
     action: UpdateActionArg,
-    /// Reason for release (optional), cancel, or supersede (required).
+    /// Reason for release (optional), cancel, waive, or supersede (required).
     reason: Option<String>,
     /// Why the item is blocked.
     text: Option<String>,
@@ -168,6 +169,8 @@ struct UpdateArgs {
     unlabels: Option<Vec<String>>,
     /// Prerequisite item for `after` or `drop_after`.
     prerequisite: Option<String>,
+    /// Cancelled or superseded required child for `waive`.
+    child: Option<String>,
     /// Replacement item for supersede.
     replacement: Option<String>,
 }
@@ -351,7 +354,7 @@ impl McpServer {
     /// Apply exactly one planning or claim action.
     #[tool(
         name = "update",
-        description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), or supersede (replacement plus reason)"
+        description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), waive (child plus reason), or supersede (replacement plus reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
         let action = match args.action {
@@ -386,6 +389,10 @@ impl McpServer {
             },
             UpdateActionArg::DropAfter => UpdateAction::DropAfter {
                 prerequisite: args.prerequisite.unwrap_or_default(),
+            },
+            UpdateActionArg::Waive => UpdateAction::WaiveRequiredChild {
+                child: args.child.unwrap_or_default(),
+                reason: args.reason.unwrap_or_default(),
             },
             UpdateActionArg::Supersede => UpdateAction::Supersede {
                 replacement: args.replacement.unwrap_or_default(),

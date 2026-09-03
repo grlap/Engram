@@ -462,6 +462,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       "labels",
       "unlabels",
       "prerequisite",
+      "child",
       "replacement",
     ]) {
       assert.ok(updateProperties[field], `update is missing ${field}`);
@@ -935,6 +936,61 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       await a.call("add", { title: "Invalid optional root", optional: true }),
       "work_invalid",
     );
+
+    // A disposed required child is an explicit, agent-runnable waiver flow:
+    // done names the lifecycle and command, update records the waiver, and the
+    // unchanged completion intent then seals the parent.
+    const waiverParent = receipt(
+      await a.call("add", { title: "Required-child waiver parent" }),
+    ).work;
+    const waiverChild = receipt(
+      await a.call("add", {
+        title: "Disposed required child",
+        under: waiverParent.short_ref,
+      }),
+    ).work;
+    receipt(
+      await a.call("update", {
+        work_ref: waiverChild.short_ref,
+        action: "cancel",
+        reason: "child outcome is no longer needed",
+      }),
+    );
+    receipt(await a.call("claim", { work_ref: waiverParent.short_ref }));
+    const refusedWaiverParent = receipt(
+      await a.call("done", {
+        work_ref: waiverParent.short_ref,
+        summary: "parent implementation complete",
+      }),
+    );
+    assert.ok(
+      refusedWaiverParent.reminders.some((line) =>
+        line.includes("is cancelled without a completion seal or waiver"),
+      ),
+      JSON.stringify(refusedWaiverParent),
+    );
+    assert.deepEqual(refusedWaiverParent.next, [
+      `engram work update ${waiverParent.short_ref} --waive ${waiverChild.short_ref} --reason "account for disposed required child"`,
+    ]);
+    const waiver = receipt(
+      await a.call("update", {
+        work_ref: waiverParent.short_ref,
+        action: "waive",
+        child: waiverChild.short_ref,
+        reason: "the cancelled child is explicitly accounted for",
+      }),
+    );
+    assert.equal(waiver.operation, "waive_required_child");
+    assert.equal(waiver.receipt.work_id, waiverParent.work_id);
+    assert.equal(typeof waiver.receipt.result.work_revision, "number");
+    const waiverParentSeal = receipt(
+      await a.call("done", {
+        work_ref: waiverParent.short_ref,
+        summary: "parent implementation complete",
+      }),
+    );
+    assert.match(waiverParentSeal.seal, HASH);
+
     // Planning fields revise in one call, and deferral shows up as words.
     const rootRef = keyless.work.short_ref;
     const revised = receipt(

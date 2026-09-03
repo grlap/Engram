@@ -748,10 +748,10 @@ in another project, or is cancelled or superseded; a completed `NEW` is
 allowed. Exposing the word also adds one core admission check: the implicit
 `REF` → `NEW` completion dependency joins required-child and prerequisite edges
 in the union-cycle validation, so direct and transitive replacement deadlocks
-are refused. The shared update action group allows `--reason` with release or
-supersession, and the action-enumeration error names all three new flags.
-Superseding a
-required child never satisfies its parent by itself: the parent's `done`
+are refused. The shared update action group allows `--reason` with release,
+required-child waiver, or supersession, and the action-enumeration error names
+the associated flags. Superseding a required child never satisfies its parent
+by itself: the parent's `done`
 still reports the unsealed required child, and the deliberate replacement
 is accounted by the existing reason-attributed required-child waiver. Automatic
 successor accounting is not in this cut; tests cover the REF/NEW refusal
@@ -889,8 +889,12 @@ session-specific action set.
 `work_update:waive_required_child` appears only when at least one direct,
 required, cancelled-or-superseded, not-yet-waived child exists.
 `work_focus` carries a bounded typed `waivable_required_children` list with
-the executable child short refs. The mutation rechecks the exact parent and
-child state before recording the attributed waiver.
+the executable child short refs. `engram work update PARENT --waive CHILD
+--reason "why"` and MCP `update { action: "waive", child, reason }` express
+that same operation. A completion refusal names the child's current
+`cancelled` or `superseded` lifecycle and returns the CLI word as its one
+runnable command. The mutation rechecks the exact parent and child state
+before recording the attributed waiver.
 
 Until action outcomes and resource leases are linked to `WorkRun`, V1 accepts
 only a **zero-linked-state** completion-drain attestation. An

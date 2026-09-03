@@ -2113,7 +2113,7 @@ pub struct CompletionWaiver {
 }
 
 /// Attributed authority decision accounting for one required child that was
-/// deliberately cancelled instead of completed.
+/// deliberately cancelled or superseded instead of completed.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RequiredChildWaiver {
     pub work_id: WorkId,
@@ -2742,7 +2742,7 @@ pub struct DisposeWorkRequest {
     pub disposed_at: DateTime<Utc>,
 }
 
-/// Explicit completion-barrier waiver for a cancelled required child.
+/// Explicit completion-barrier waiver for a cancelled or superseded required child.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WaiveRequiredChildRequest {
     pub parent_id: WorkId,

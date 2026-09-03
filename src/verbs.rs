@@ -321,6 +321,10 @@ pub enum UpdateAction {
     DropAfter {
         prerequisite: String,
     },
+    WaiveRequiredChild {
+        child: String,
+        reason: String,
+    },
     Supersede {
         replacement: String,
         reason: String,
@@ -1217,7 +1221,7 @@ impl AgentVerbs {
         ))
     }
 
-    /// `update`: release, block, unblock, revise fields, or cancel.
+    /// `update`: revise planning/lifecycle state or waive one disposed required child.
     ///
     /// # Errors
     ///
@@ -1235,6 +1239,12 @@ impl AgentVerbs {
                     .resolve_work_reference(prerequisite)
                     .map_err(|error| VerbError::at(error, prerequisite))?;
                 Some((prerequisite.work_id, prerequisite.short_ref))
+            }
+            UpdateAction::WaiveRequiredChild { child, .. } if !child.trim().is_empty() => {
+                self.service
+                    .resolve_work_reference(child)
+                    .map_err(|error| VerbError::at(error, child))?;
+                None
             }
             _ => None,
         };
@@ -1422,6 +1432,33 @@ impl AgentVerbs {
                         idempotency_key: String::new(),
                     },
                     format!("removed {prerequisite} as a prerequisite of {work_ref} \"{title}\""),
+                )
+            }
+            UpdateAction::WaiveRequiredChild { child, reason } => {
+                let child = child.trim().to_owned();
+                let reason = reason.trim().to_owned();
+                if child.is_empty() {
+                    return Err(StoreError::InvalidWork(
+                        "a required-child waiver needs the child item ref".into(),
+                    )
+                    .into());
+                }
+                if reason.is_empty() {
+                    return Err(StoreError::InvalidWork(
+                        "a required-child waiver needs a reason".into(),
+                    )
+                    .into());
+                }
+                (
+                    WorkUpdateInput::WaiveRequiredChild {
+                        child: child.clone(),
+                        reason: reason.clone(),
+                        idempotency_key: String::new(),
+                    },
+                    format!(
+                        "waived required child {child} for {work_ref} \"{title}\": {}",
+                        short(&reason)
+                    ),
                 )
             }
             UpdateAction::Supersede {
@@ -1960,10 +1997,10 @@ fn ambiguous_reference_guidance(
         .iter()
         .map(|candidate| {
             format!(
-                "{} \"{}\" is {:?}; use its full id {}",
+                "{} \"{}\" is {}; use its full id {}",
                 candidate.short_ref,
                 short(&candidate.title),
-                candidate.lifecycle,
+                lifecycle_word(candidate.lifecycle),
                 candidate.work_id.0
             )
         })
@@ -1994,10 +2031,10 @@ fn completion_recovery_reminder(recovery: &crate::WorkCompletionRecovery) -> Str
             obligation_id.0
         ),
         crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => format!(
-            "required child {} \"{}\" is {:?} without a completion seal or waiver",
+            "required child {} \"{}\" is {} without a completion seal or waiver",
             item.short_ref,
             short(&item.title),
-            item.lifecycle
+            lifecycle_word(item.lifecycle)
         ),
         crate::WorkCompletionRecoveryCause::MissingContribution { participant } => format!(
             "{} \"{}\" is missing the contribution or waiver for participant {}",
@@ -3912,6 +3949,34 @@ mod tests {
     }
 
     #[test]
+    fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
+        let child = WorkId(uuid::Uuid::from_u128(1));
+        for (lifecycle, word) in [
+            (WorkLifecycle::Cancelled, "cancelled"),
+            (WorkLifecycle::Superseded, "superseded"),
+        ] {
+            let recovery = crate::WorkCompletionRecovery {
+                cause: crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { child },
+                item: crate::WorkReferenceCandidate {
+                    work_id: child,
+                    short_ref: "w-000000000001".into(),
+                    title: "Disposed child".into(),
+                    lifecycle,
+                },
+                command:
+                    "engram work update w-000000000002 --waive w-000000000001 --reason \"why\""
+                        .into(),
+            };
+            assert_eq!(
+                completion_recovery_reminder(&recovery),
+                format!(
+                    "required child w-000000000001 \"Disposed child\" is {word} without a completion seal or waiver"
+                )
+            );
+        }
+    }
+
+    #[test]
     fn readiness_reasons_become_words() {
         let session = SessionId("peer".into());
         let now = Utc::now();
@@ -4557,8 +4622,8 @@ mod tests {
         );
         let guidance = error.guidance();
         assert_eq!(guidance.reminders.len(), 3);
-        assert!(guidance.reminders[0].contains("First candidate"));
-        assert!(guidance.reminders[1].contains("Second candidate"));
+        assert!(guidance.reminders[0].contains("First candidate\" is open"));
+        assert!(guidance.reminders[1].contains("Second candidate\" is completed"));
         assert_eq!(
             guidance.reminders[2],
             "3 additional ambiguous candidates were omitted"
@@ -4576,6 +4641,48 @@ mod tests {
                 format!("engram work show {}", second.0),
             ]
         );
+    }
+
+    #[test]
+    fn invalid_waiver_child_reference_is_attributed_to_the_child() {
+        let directory = tempdir().expect("temporary store");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("waiver-child-attribution".into());
+        let service = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            SessionId("waiver-child-session".into()),
+            Some("protocol-test".into()),
+        );
+        let parent = match service
+            .work_propose(root_input("Waiver parent", "waiver-parent"), at(0))
+            .expect("create parent")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let verbs = AgentVerbs::new(
+            database,
+            project,
+            "agent".into(),
+            SessionId("waiver-child-session".into()),
+            Some("protocol-test".into()),
+        );
+        let child_ref = "w-ffffffffffff";
+        let error = verbs
+            .update(
+                UpdateInput {
+                    work_ref: Some(parent.short_ref),
+                    action: UpdateAction::WaiveRequiredChild {
+                        child: child_ref.into(),
+                        reason: "account for disposed child".into(),
+                    },
+                },
+                at(1),
+            )
+            .expect_err("unknown child is refused");
+        assert_eq!(error.work_ref.as_deref(), Some(child_ref));
     }
 
     #[test]

@@ -124,7 +124,7 @@ engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbo
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]

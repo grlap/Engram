@@ -426,7 +426,7 @@ enum WorkCommand {
         /// Release your claim.
         #[arg(long)]
         release: bool,
-        /// Reason recorded with --release or required by --supersede-with.
+        /// Reason recorded with --release or required by --waive and --supersede-with.
         #[arg(long)]
         reason: Option<String>,
         /// Mark the item blocked and say why.
@@ -465,6 +465,9 @@ enum WorkCommand {
         /// Remove one prerequisite edge from this item.
         #[arg(long, value_name = "REF")]
         drop_after: Option<String>,
+        /// Waive one cancelled or superseded required child; requires --reason.
+        #[arg(long, value_name = "REF")]
+        waive: Option<String>,
         /// Supersede this item with another item; requires --reason.
         #[arg(long, value_name = "REF")]
         supersede_with: Option<String>,
@@ -1120,10 +1123,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             cancel,
             after,
             drop_after,
+            waive,
             supersede_with,
         } => {
-            if reason.is_some() && !release && supersede_with.is_none() {
-                bail!("--reason is only valid with --release or --supersede-with");
+            if reason.is_some() && !release && supersede_with.is_none() && waive.is_none() {
+                bail!("--reason is only valid with --release, --waive, or --supersede-with");
             }
             let revise = assignee.is_some()
                 || priority.is_some()
@@ -1139,11 +1143,12 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(cancel.is_some())
                 + usize::from(after.is_some())
                 + usize::from(drop_after.is_some())
+                + usize::from(waive.is_some())
                 + usize::from(supersede_with.is_some())
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --after REF, --drop-after REF, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --assignee, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --assignee, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1158,6 +1163,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 UpdateAction::After { prerequisite }
             } else if let Some(prerequisite) = drop_after {
                 UpdateAction::DropAfter { prerequisite }
+            } else if let Some(child) = waive {
+                let reason = reason
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or_else(|| anyhow::anyhow!("--waive requires --reason WHY"))?;
+                UpdateAction::WaiveRequiredChild { child, reason }
             } else if let Some(replacement) = supersede_with {
                 let reason = reason
                     .filter(|value| !value.trim().is_empty())
@@ -2184,6 +2194,30 @@ mod tests {
                         if name == "quality-gates"
                             && failed == &["cargo fmt --check", "doc-links"]
                 )
+        ));
+    }
+
+    #[test]
+    fn work_cli_parses_required_child_waiver() {
+        let waive = Cli::try_parse_from([
+            "engram",
+            "work",
+            "--actor-id",
+            "agent",
+            "--session-id",
+            "session",
+            "update",
+            "w-000000000001",
+            "--waive",
+            "w-000000000002",
+            "--reason",
+            "explicitly accepted omission",
+        ])
+        .expect("parse required-child waiver flag");
+        assert!(matches!(
+            waive.command,
+            Command::Work { operation, .. }
+                if matches!(*operation, WorkCommand::Update { waive: Some(_), reason: Some(_), .. })
         ));
     }
 

@@ -37,7 +37,7 @@ engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbo
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
@@ -315,10 +315,11 @@ and `next`) instead of text, and `done` exits with status 2 when the typed
 six-operation JSON protocol stays reachable for hosts and operators as
 `engram work core {next,focus,propose,update,complete,handoff}`, whose
 mutation payloads accept an inline JSON object or `@path`; that host/operator
-surface carries explicit delivery acknowledgement, typed evidence attach,
-prerequisite edits, supersede, reopen, and required-child waivers. All words
-and core operations call the same service core as MCP. Stats/import/export and
-the remaining broad administrative CLI in the specification are still planned.
+surface retains the core-only explicit delivery acknowledgement, typed evidence
+attach, and reopen operations alongside typed forms of the agent words. All
+words and core operations call the same service core as MCP. Stats/import/export
+and the remaining broad administrative CLI in the specification are still
+planned.
 
 The operator-intended shell command can waive one exact open run obligation
 with an attributed reason and retry key:
@@ -343,11 +344,11 @@ replays the exact result. The canonical resolution keeps the server-fixed
 session actor beside the asserted human attribution, while the receipt omits
 the reason.
 
-MCP and `work_update` cannot request a waiver, and agent-facing projections
-omit its reason. That surface separation is not authentication: the shell
-command has no credential or run-binding check, so any local process with the
-binary and store access can invoke it. Only the private JSON-lines operation
-enforces the live control-session/run binding described above.
+MCP and `work_update` cannot request a work-obligation waiver, and agent-facing
+projections omit its reason. That surface separation is not authentication:
+the shell command has no credential or run-binding check, so any local process
+with the binary and store access can invoke it. Only the private JSON-lines
+operation enforces the live control-session/run binding described above.
 
 ### MCP tools
 
@@ -360,7 +361,7 @@ enforces the live control-session/run binding described above.
 | `show` | One item in safe agent detail; selects it as focus without claiming |
 | `add` | A root from a title, or one child with `under`; `optional` makes that child non-blocking; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
-| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, or `supersede` |
+| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, `waive`, or `supersede` |
 | `gate` | Record one bounded pass/fail observation on the explicitly bound focused item |
 | `note` | Record evidence and checkpoint it in one call, both keyless |
 | `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |
@@ -379,9 +380,10 @@ recovery followed by lifecycle moves in priority order (`handoff --accept`,
 `claim`, `note`, `done`, `update --unblock`), with three commands total and
 one trailing `show REF`, so no receipt lists more than four. Other planning
 edits (`--blocked`, `--release`, `handoff --to`, `add --under`, `--title`,
-`--cancel`, `--after`, `--supersede-with`) and entries without an agent word
-(reopen and required-child waivers) stay in `allowed_next` on the structured
-receipt only.
+`--cancel`, `--after`, `--waive`, `--supersede-with`) are not synthesized as
+general next commands; their tags stay in `allowed_next` on the structured
+receipt. A required-child completion refusal supplies the exact waiver command.
+The host-only reopen operation remains structured-only.
 Errors keep their stable code and details and add the same two fields. The
 shell prints a one-line receipt followed by `reminders:` and `next:`; `--json`
 prints the exact structured receipt. Text output never contains a 64-hex
@@ -512,6 +514,14 @@ capture-backed completion reuses committed evidence, and reuses an exact
 checkpoint while its acknowledged run-feed cut remains current. If the feed
 advances, the retry writes a new checkpoint under a cut-derived substep key.
 Cut selection and that checkpoint append share one SQLite write transaction.
+
+For a cancelled or superseded required child without a seal or waiver, the
+refusal names that lifecycle and returns the runnable agent command
+`engram work update PARENT --waive CHILD --reason "why"`. The matching MCP
+update uses `action: "waive"`, `child`, and `reason`; both translate into the
+existing typed `work_update:waive_required_child` operation. The project-bound
+session records the reason-attributed, audited waiver, after which retrying
+`done` re-evaluates the current completion barrier.
 
 Recoverable completion refusals add `recovery { cause, item, command }` to the
 receipt. `cause` is a tagged value for `open_obligation`,

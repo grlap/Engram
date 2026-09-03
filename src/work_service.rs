@@ -2464,7 +2464,7 @@ impl LocalWorkService {
                         reason,
                         actor: self.actor(
                             "work_update",
-                            "waive a cancelled required child from the completion barrier",
+                            "waive a disposed required child from the completion barrier",
                         ),
                         idempotency_key: scoped_key,
                         waived_at: now,
@@ -5662,7 +5662,7 @@ mod tests {
 
     use super::*;
     use crate::domain::{GATE_EVIDENCE_SUMMARY, SCHEMA_VERSION};
-    use crate::verbs::{AgentVerbs, DoneInput};
+    use crate::verbs::{AgentVerbs, DoneInput, UpdateAction, UpdateInput};
 
     fn at(second: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 8, 27, 3, 0, 0)
@@ -8162,38 +8162,43 @@ mod tests {
         service
             .work_focus(&root.short_ref, at(7))
             .expect("refocus parent after cancellation");
-        let cancelled = AgentVerbs::new(
+        let verbs = AgentVerbs::new(
             database.clone(),
             project.clone(),
             "agent".into(),
             SessionId("completion-unsealed-session".into()),
             Some("protocol-test".into()),
-        )
-        .done(
-            DoneInput {
-                work_ref: Some(root.short_ref.clone()),
-                summary: Some("parent delivered".into()),
-                note: None,
-            },
-            at(8),
-        )
-        .expect("completion refusal is rendered from current state");
+        );
+        let cancelled = verbs
+            .done(
+                DoneInput {
+                    work_ref: Some(root.short_ref.clone()),
+                    summary: Some("parent delivered".into()),
+                    note: None,
+                },
+                at(8),
+            )
+            .expect("completion refusal is rendered from current state");
         assert!(cancelled.owed);
         let cancelled_text = cancelled.text();
         assert!(cancelled_text.contains(&format!("required child {} \"", waived.short_ref)));
-        assert!(cancelled_text.contains("is Cancelled without a completion seal or waiver"));
+        assert!(cancelled_text.contains("is cancelled without a completion seal or waiver"));
         let recovery_command = cancelled.next.first().expect("recovery command");
-        assert!(recovery_command.starts_with(&format!(
-            "engram work core update --work-ref {}",
-            root.short_ref
-        )));
-        assert!(recovery_command.contains(&waived.short_ref));
-        service
-            .work_update(
-                WorkUpdateInput::WaiveRequiredChild {
-                    child: waived.short_ref,
-                    reason: "the cancelled child is explicitly accounted for".into(),
-                    idempotency_key: "waive-required-child".into(),
+        assert_eq!(
+            recovery_command,
+            &format!(
+                "engram work update {} --waive {} --reason \"account for disposed required child\"",
+                root.short_ref, waived.short_ref
+            )
+        );
+        verbs
+            .update(
+                UpdateInput {
+                    work_ref: Some(root.short_ref.clone()),
+                    action: UpdateAction::WaiveRequiredChild {
+                        child: waived.short_ref,
+                        reason: "the cancelled child is explicitly accounted for".into(),
+                    },
                 },
                 at(9),
             )
