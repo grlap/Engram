@@ -2089,6 +2089,41 @@ impl SqliteStore {
         })
     }
 
+    /// Returns the last evidence object appended to one dense run feed.
+    /// Evidence timestamps are asserted metadata and do not order delivery.
+    pub(crate) fn latest_work_run_evidence(
+        &self,
+        run_id: WorkRunId,
+    ) -> Result<Option<ObjectHash>, StoreError> {
+        let stored = self
+            .connection
+            .query_row(
+                "SELECT object_hash
+                 FROM work_feed_entries
+                 WHERE feed_kind = 'run_execution'
+                   AND feed_id = ?1
+                   AND object_kind IN (
+                       'work_evidence',
+                       'verification_evidence',
+                       'environment_evidence'
+                   )
+                 ORDER BY position DESC
+                 LIMIT 1",
+                [run_id.0.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        stored
+            .map(|stored_hash| {
+                ObjectHash::from_stored(stored_hash).ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "latest run evidence has an invalid object hash".into(),
+                    )
+                })
+            })
+            .transpose()
+    }
+
     /// Returns hash-verified obligation definitions and terminal resolutions
     /// for one exact run in trigger order.
     ///
@@ -17673,6 +17708,114 @@ mod tests {
     }
 
     #[test]
+    fn pending_protocol_basis_refresh_accepts_an_identical_two_connection_cas() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("basis-refresh.sqlite3");
+        let project = crate::domain::ProjectId("basis-refresh-project".into());
+        let session = SessionId("basis-refresh-session".into());
+        let source = serde_json::json!({"claim": {"holder": "holder-a", "fence": 1}});
+        let target = serde_json::json!({"claim": {"holder": "holder-a", "fence": 2}});
+        let mut first = SqliteStore::open(&database).expect("first store");
+        first
+            .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                project_id: &project,
+                session_id: &session,
+                operation: "work_complete",
+                idempotency_key: "identical-refresh",
+                intent: &serde_json::json!({"complete": true}),
+                basis: &source,
+                now: at(0),
+            })
+            .expect("pending attempt");
+        let mut second = SqliteStore::open(&database).expect("second store");
+        second
+            .refresh_pending_work_protocol_attempt_basis(
+                &project,
+                &session,
+                "work_complete",
+                "identical-refresh",
+                &source,
+                &target,
+            )
+            .expect("first refresh wins");
+
+        first
+            .refresh_pending_work_protocol_attempt_basis(
+                &project,
+                &session,
+                "work_complete",
+                "identical-refresh",
+                &source,
+                &target,
+            )
+            .expect("changed-zero refresh accepts the identical target");
+    }
+
+    #[test]
+    fn pending_protocol_basis_refresh_conflict_preserves_the_durable_target() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("basis-refresh-conflict.sqlite3");
+        let project = crate::domain::ProjectId("basis-refresh-conflict-project".into());
+        let session = SessionId("basis-refresh-conflict-session".into());
+        let source = serde_json::json!({"claim": {"holder": "holder-a", "fence": 1}});
+        let durable_target = serde_json::json!({"claim": {"holder": "holder-b", "fence": 2}});
+        let competing_target = serde_json::json!({"claim": {"holder": "holder-c", "fence": 2}});
+        let mut first = SqliteStore::open(&database).expect("first store");
+        first
+            .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                project_id: &project,
+                session_id: &session,
+                operation: "work_complete",
+                idempotency_key: "conflicting-refresh",
+                intent: &serde_json::json!({"complete": true}),
+                basis: &source,
+                now: at(0),
+            })
+            .expect("pending attempt");
+        let mut second = SqliteStore::open(&database).expect("second store");
+        second
+            .refresh_pending_work_protocol_attempt_basis(
+                &project,
+                &session,
+                "work_complete",
+                "conflicting-refresh",
+                &source,
+                &durable_target,
+            )
+            .expect("different holder wins the refresh");
+
+        assert!(matches!(
+            first.refresh_pending_work_protocol_attempt_basis(
+                &project,
+                &session,
+                "work_complete",
+                "conflicting-refresh",
+                &source,
+                &competing_target,
+            ),
+            Err(StoreError::WorkOperationIdempotencyConflict { operation, key })
+                if operation == "work_complete" && key == "conflicting-refresh"
+        ));
+        let stored_basis: Vec<u8> = first
+            .connection
+            .query_row(
+                "SELECT basis_json FROM work_protocol_attempts
+                 WHERE project_id = ?1 AND session_id = ?2
+                   AND operation = 'work_complete'
+                   AND idempotency_key = 'conflicting-refresh'",
+                params![project.0, session.0],
+                |row| row.get(0),
+            )
+            .expect("durable target basis");
+        assert_eq!(
+            stored_basis,
+            CanonicalObject::freeze(&durable_target)
+                .expect("canonical durable target")
+                .bytes()
+        );
+    }
+
+    #[test]
     fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
         let mut store = SqliteStore::open_in_memory().expect("store");
         let snapshot = |reference: &str, fingerprint: &str, captured_at| WorkSourceSnapshot {
@@ -19260,6 +19403,14 @@ mod tests {
             )
             .expect("root");
         let claim = claim(&mut store, &root, "agent-a", "claim", 1, 100);
+        let evidence_before_offer = evidence(
+            &mut store,
+            &root,
+            &claim,
+            "agent-a",
+            "evidence-before-offer",
+            2,
+        );
         let offer = store
             .offer_work_handoff(
                 &OfferWorkHandoffRequest {
@@ -19274,12 +19425,12 @@ mod tests {
                     checkpoint_summary: "short-lived transfer".into(),
                     actor: actor("agent-a"),
                     idempotency_key: "offer".into(),
-                    offered_at: at(2),
+                    offered_at: at(3),
                 },
                 &DevelopmentNoopRedactor,
             )
             .expect("offer");
-        assert_eq!(offer.expires_at, at(4));
+        assert_eq!(offer.expires_at, at(5));
 
         let blocked = store.record_work_evidence(
             &RecordWorkEvidenceRequest {
@@ -19293,11 +19444,51 @@ mod tests {
                 refs: Vec::new(),
                 actor: actor("agent-a"),
                 idempotency_key: "blocked-evidence".into(),
-                recorded_at: at(3),
+                recorded_at: at(4),
             },
             &DevelopmentNoopRedactor,
         );
         assert!(matches!(blocked, Err(StoreError::InvalidWork(_))));
+
+        let refused_completion = store.complete_work_for_protocol(
+            &completion_request(
+                &root,
+                &claim,
+                "agent-a",
+                &evidence_before_offer,
+                "refused-expired-handoff-completion",
+                6,
+            ),
+            &DevelopmentNoopRedactor,
+        );
+        assert!(matches!(
+            refused_completion,
+            Err(StoreError::WorkCompletionRefused { .. })
+        ));
+        let offered_state = store
+            .connection
+            .query_row(
+                "SELECT state FROM work_handoff_offers WHERE offer_id = ?1",
+                [offer.offer_id.0.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("rolled-back offer state");
+        assert_eq!(offered_state, "offered");
+        let expired_events_after_refusal = store
+            .work_event_tail(root.work_id, 100)
+            .expect("events after refused completion")
+            .into_iter()
+            .filter_map(|entry| {
+                load_typed_work_object::<WorkEvent>(
+                    &store.connection,
+                    &entry.object_hash,
+                    "work_event",
+                )
+                .ok()
+            })
+            .filter(|event| matches!(event.transition, WorkTransition::HandoffExpired { .. }))
+            .count();
+        assert_eq!(expired_events_after_refusal, 0);
 
         let evidence = evidence(
             &mut store,
@@ -19305,7 +19496,7 @@ mod tests {
             &claim,
             "agent-a",
             "post-expiry-evidence",
-            5,
+            6,
         );
         let offer_state = store
             .connection
@@ -19322,7 +19513,7 @@ mod tests {
             &claim,
             "agent-a",
             "post-expiry-checkpoint",
-            6,
+            7,
             std::slice::from_ref(&evidence),
         );
         complete(
@@ -19332,9 +19523,24 @@ mod tests {
             "agent-a",
             &evidence,
             "post-expiry-complete",
-            7,
+            8,
         )
         .expect("terminal completion after expired handoff sweep");
+        let expired_events_after_completion = store
+            .work_event_tail(root.work_id, 100)
+            .expect("events after terminal completion")
+            .into_iter()
+            .filter_map(|entry| {
+                load_typed_work_object::<WorkEvent>(
+                    &store.connection,
+                    &entry.object_hash,
+                    "work_event",
+                )
+                .ok()
+            })
+            .filter(|event| matches!(event.transition, WorkTransition::HandoffExpired { .. }))
+            .count();
+        assert_eq!(expired_events_after_completion, 1);
     }
 
     #[test]

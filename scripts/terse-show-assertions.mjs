@@ -13,6 +13,7 @@ const INTERNAL_FIELDS = new Set([
   "entry",
   "evidence",
   "evidence_items",
+  "latest_evidence_item",
   "fence",
   "last_checkpoint",
   "memories",

@@ -226,6 +226,8 @@ struct ShowReceiptValue {
     handoffs: Vec<ShowHandoff>,
     blockers: Vec<ShowBlocker>,
     notes: Vec<ShowNote>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notes_omitted: Option<usize>,
     history: ShowHistory,
     allowed_next: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -2769,7 +2771,7 @@ fn show_lines(
             clock(offer.expires_at, now)
         ));
     }
-    if let Some(last) = view.evidence_items.last() {
+    if let Some(last) = view.latest_evidence_item.as_ref() {
         let by = last.actor_id.as_deref().map(|actor| {
             terminal_safe_actor_label(
                 actor_word(actor, current_actor),
@@ -2778,7 +2780,7 @@ fn show_lines(
         });
         lines.push(format!(
             "notes: {} recorded; latest {}{}: \"{}\"",
-            view.evidence_items.len(),
+            view.evidence_count,
             evidence_kind_word(last.evidence_kind),
             by.as_ref()
                 .map(|actor| format!(" by {actor}"))
@@ -2819,6 +2821,7 @@ fn show_receipt_value(
         })
         .collect();
     let hidden_history = view.history.items.len().saturating_sub(history.len());
+    let notes = show_notes(view, current_actor);
     ShowReceiptValue {
         status: ShowStatus {
             work: ShowWorkSummary {
@@ -2865,18 +2868,9 @@ fn show_receipt_value(
                 detail: blocker.detail.clone(),
             })
             .collect(),
-        notes: view
-            .evidence_items
-            .iter()
-            .map(|note| ShowNote {
-                kind: note.evidence_kind,
-                summary: note.summary.clone(),
-                by: note.actor_id.as_deref().map(|actor| {
-                    relative_actor_label(actor, note.actor_context.as_deref(), current_actor)
-                }),
-                created_at: note.created_at,
-            })
-            .collect(),
+        notes_omitted: (view.evidence_count > notes.len())
+            .then(|| view.evidence_count - notes.len()),
+        notes,
         history: ShowHistory {
             total: view.history.total,
             omitted: view.history.omitted.saturating_add(hidden_history),
@@ -2885,6 +2879,32 @@ fn show_receipt_value(
         allowed_next: view.allowed_next.clone(),
         omissions: view.omissions.clone(),
     }
+}
+
+fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowNote> {
+    let mut notes = view.evidence_items.clone();
+    if let Some(latest) = view.latest_evidence_item.as_ref() {
+        if let Some(index) = notes
+            .iter()
+            .position(|note| note.evidence == latest.evidence)
+        {
+            notes.remove(index);
+        } else if notes.len() == crate::work_service::MAX_FOCUS_RELATIONS {
+            notes.pop();
+        }
+        notes.push(latest.clone());
+    }
+    notes
+        .into_iter()
+        .map(|note| ShowNote {
+            kind: note.evidence_kind,
+            summary: note.summary,
+            by: note.actor_id.as_deref().map(|actor| {
+                relative_actor_label(actor, note.actor_context.as_deref(), current_actor)
+            }),
+            created_at: note.created_at,
+        })
+        .collect()
 }
 
 fn show_item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) -> String {
@@ -4407,6 +4427,103 @@ mod tests {
             .show(&lapsed.short_ref, at(13))
             .expect("show unaccounted lapsed claim");
         assert_recovery_claim_guidance(&recovery, &lapsed.short_ref);
+    }
+
+    #[test]
+    fn show_reports_the_true_note_total_and_latest_feed_entry() {
+        const GATE_TRANSITIONS: usize = 128;
+
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("show-bounded-evidence".into());
+        let session = SessionId("show-bounded-evidence-session".into());
+        let service = Arc::new(LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            session.clone(),
+            Some("protocol-test".into()),
+        ));
+        let work = match service
+            .work_propose(
+                root_input("Show bounded evidence", "show-bounded-evidence-root"),
+                at(0),
+            )
+            .expect("root proposal")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        service
+            .work_update_on(
+                Some(&work.short_ref),
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(3_600),
+                    recovery_reason: None,
+                    idempotency_key: "show-bounded-evidence-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim work");
+        for index in 0..GATE_TRANSITIONS {
+            let failed = if index % 2 == 0 {
+                Vec::new()
+            } else {
+                vec!["alternating failure".to_owned()]
+            };
+            service
+                .work_gate_on(
+                    Some(&work.short_ref),
+                    "bounded-show",
+                    &failed,
+                    None,
+                    at(2 + i64::try_from(index).expect("gate timestamp")),
+                )
+                .expect("record gate transition");
+        }
+        service
+            .work_note_on(
+                Some(&work.short_ref),
+                "earlier append with newer asserted timestamp",
+                &[],
+                at(130),
+            )
+            .expect("record latest note");
+        service
+            .work_note_on(
+                Some(&work.short_ref),
+                "latest append with older asserted timestamp",
+                &[],
+                at(129),
+            )
+            .expect("record older note after latest note");
+
+        let verbs = AgentVerbs::with_shared_service(service, "agent".into(), session);
+        let receipt = verbs.show(&work.short_ref, at(131)).expect("show work");
+        let notes = receipt.value["notes"].as_array().expect("notes");
+        assert_eq!(notes.len(), crate::work_service::MAX_FOCUS_RELATIONS);
+        assert_eq!(
+            notes.last().expect("latest note")["summary"],
+            "latest append with older asserted timestamp"
+        );
+        let evidence_count = GATE_TRANSITIONS + 2;
+        let omitted = evidence_count - crate::work_service::MAX_FOCUS_RELATIONS;
+        assert_eq!(receipt.value["notes_omitted"], omitted);
+        assert!(
+            receipt.value["omissions"]
+                .as_array()
+                .expect("omissions")
+                .iter()
+                .any(|omission| {
+                    omission["reason"] == "evidence_count_limit"
+                        && omission["omitted_count"] == omitted
+                })
+        );
+        assert!(
+            receipt.text().contains(
+                "notes: 130 recorded; latest note by you: \"latest append with older asserted timestamp\""
+            )
+        );
     }
 
     #[test]

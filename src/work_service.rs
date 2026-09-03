@@ -63,7 +63,7 @@ const MAX_READY_SECTION_BYTES: usize = 2 * 1024;
 const MAX_CATALOG_SECTION_BYTES: usize = 3 * 1024;
 const MAX_OBLIGATION_PAGE_BYTES: usize = 4 * 1024;
 const MAX_FOCUS_HISTORY: u32 = 4;
-const MAX_FOCUS_RELATIONS: usize = 8;
+pub(crate) const MAX_FOCUS_RELATIONS: usize = 8;
 const MAX_FOCUS_MEMORIES: u32 = 8;
 const MAX_SUMMARY_BYTES: usize = 192;
 const MAX_HISTORY_TITLE_BYTES: usize = 72;
@@ -564,6 +564,7 @@ pub enum WorkSectionOmissionReason {
     /// Dense change entries remain unconsumed for a later staged page.
     Staged,
     CountLimit,
+    EvidenceCountLimit,
     UnfinishedChildCountLimit,
     TerminalChildCountLimit,
     DeadPrerequisiteCountLimit,
@@ -667,6 +668,16 @@ pub struct WorkFocusView {
     pub evidence: Vec<ObjectHash>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_items: Vec<WorkEvidenceSummary>,
+    /// Exact evidence membership count before the bounded focus selection.
+    #[serde(default)]
+    pub evidence_count: usize,
+    /// Last run evidence by dense run-feed position, selected independently
+    /// from the obligation-prioritized evidence page. Evidence timestamps are
+    /// asserted metadata, never ordering authority. This fixed-size advisory
+    /// is populated only for drill-down reads and retained while other focus
+    /// rows trim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_evidence_item: Option<WorkEvidenceSummary>,
     pub obligation_page: WorkObligationPage,
     #[serde(default)]
     pub memories: Vec<WorkMemoryIndexEntry>,
@@ -1392,7 +1403,7 @@ impl LocalWorkService {
         let focus = if wants_focus {
             session
                 .focused_work_id
-                .map(|work_id| self.focus_view(&store, work_id, true, now))
+                .map(|work_id| self.focus_view(&store, work_id, true, false, now))
                 .transpose()?
         } else {
             None
@@ -1660,7 +1671,7 @@ impl LocalWorkService {
     ) -> Result<WorkFocusView, StoreError> {
         let store = self.store()?;
         let work = store.resolve_work_ref(&self.project_id, work_ref)?;
-        self.focus_view(&store, work.work_id, false, now)
+        self.focus_view(&store, work.work_id, false, true, now)
     }
 
     /// Resolves one work reference without projecting or changing ambient
@@ -1682,7 +1693,7 @@ impl LocalWorkService {
         let mut store = self.store()?;
         let item = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
-        self.focus_view(&store, item.work_id, true, now)
+        self.focus_view(&store, item.work_id, true, true, now)
     }
 
     /// Creates a root or atomically decomposes ambient focused work.
@@ -1773,7 +1784,7 @@ impl LocalWorkService {
                         work.work_id,
                         now,
                     )?;
-                    let focus = self.focus_view(&store, work.work_id, true, now)?;
+                    let focus = self.focus_view(&store, work.work_id, true, false, now)?;
                     let result = WorkProposeResult::Root {
                         work: work_item_summary(&work),
                         focus: Box::new(focus),
@@ -1810,7 +1821,7 @@ impl LocalWorkService {
                     &DevelopmentNoopRedactor,
                 )?;
                 store.focus_work_session(&self.project_id, &self.session_id, work.work_id, now)?;
-                let focus = self.focus_view(&store, work.work_id, true, now)?;
+                let focus = self.focus_view(&store, work.work_id, true, false, now)?;
                 WorkProposeResult::Root {
                     work: work_item_summary(&work),
                     focus: Box::new(focus),
@@ -2622,8 +2633,7 @@ impl LocalWorkService {
                 }
                 WorkCompleteResult::Refused(_) => {
                     return Err(StoreError::InvalidWorkProjection(
-                        "stored work_complete refusal belongs to an incompatible prerelease build"
-                            .into(),
+                        "stored work_complete attempt contains a refusal result".into(),
                     ));
                 }
             }
@@ -3470,6 +3480,7 @@ impl LocalWorkService {
         store: &SqliteStore,
         work_id: WorkId,
         with_memories: bool,
+        with_latest_evidence: bool,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
         let session = store.work_session_state(&self.project_id, &self.session_id, now)?;
@@ -3497,7 +3508,7 @@ impl LocalWorkService {
             .filter(|obligation| obligation.state == WorkObligationState::Open)
             .filter_map(|obligation| obligation.requirement.required_environment.clone())
             .collect::<Vec<_>>();
-        let evidence_total = run
+        let evidence_count = run
             .as_ref()
             .map(|run| store.work_run_evidence_count(run.run_id))
             .transpose()?
@@ -3524,6 +3535,19 @@ impl LocalWorkService {
             })
             .transpose()?
             .unwrap_or_default();
+        let latest_evidence_item = if with_latest_evidence {
+            run.as_ref()
+                .map(|run| {
+                    store
+                        .latest_work_run_evidence(run.run_id)?
+                        .map(|hash| work_evidence_summary(store, run.run_id, &hash))
+                        .transpose()
+                })
+                .transpose()?
+                .flatten()
+        } else {
+            None
+        };
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {
@@ -3605,11 +3629,12 @@ impl LocalWorkService {
                 blockers.len() - MAX_FOCUS_RELATIONS,
             ));
         }
-        if evidence_total > evidence.len() {
-            omissions.push(count_omission(
-                WorkNextSection::Focus,
-                evidence_total - evidence.len(),
-            ));
+        if evidence_count > evidence.len() {
+            omissions.push(WorkSectionOmission {
+                section: WorkNextSection::Focus,
+                reason: WorkSectionOmissionReason::EvidenceCountLimit,
+                omitted_count: evidence_count - evidence.len(),
+            });
         }
         if memories.len() > usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX) {
             omissions.push(count_omission(
@@ -3656,6 +3681,8 @@ impl LocalWorkService {
                 .collect(),
             evidence,
             evidence_items,
+            evidence_count,
+            latest_evidence_item,
             obligation_page,
             memories: memories
                 .into_iter()
@@ -9788,6 +9815,67 @@ mod tests {
             .expect("canonical seal");
         assert!(seal.evidence.contains(&unrelated));
         assert!(store.verify_all().expect("integrity").is_healthy());
+    }
+
+    #[test]
+    fn stored_completion_refusal_is_a_corrupt_projection() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("stored-completion-refusal".into());
+        let session = SessionId("stored-completion-refusal-session".into());
+        let service = LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            session.clone(),
+            Some("protocol-test".into()),
+        );
+        let root = proposed_root(
+            service
+                .work_propose(
+                    root_input("Stored completion refusal", "stored-refusal-root"),
+                    at(0),
+                )
+                .expect("root proposal"),
+        );
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "stored-refusal-claim".into(),
+                },
+                at(1),
+            )
+            .expect("claim focused work");
+        let input = WorkCompleteInput {
+            capture: None,
+            evidence: Vec::new(),
+            acceptance: Some(Vec::new()),
+            note: None,
+            idempotency_key: "stored-refusal-completion".into(),
+        };
+        let refused = service
+            .work_complete(input.clone(), at(2))
+            .expect("missing acceptance is a typed refusal");
+        assert!(matches!(refused, WorkCompleteResult::Refused(_)));
+        let mut store = SqliteStore::open(&database).expect("store refusal fixture");
+        store
+            .finish_work_protocol_attempt(
+                &project,
+                &session,
+                "work_complete",
+                &input.idempotency_key,
+                &refused,
+            )
+            .expect("seed corrupt stored refusal");
+        drop(store);
+
+        assert!(matches!(
+            service.work_complete_on(Some(&root.short_ref), input, at(3)),
+            Err(StoreError::InvalidWorkProjection(detail))
+                if detail == "stored work_complete attempt contains a refusal result"
+        ));
     }
 
     #[test]

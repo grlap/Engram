@@ -168,8 +168,13 @@ holder mutation on a lapsed claim is refused with one recovery command:
 `engram work claim <ref>`. When the work is ready, that ordinary claim command
 retakes the same holder's claim under the stable project/session binding,
 advances the fence, preserves an active run, and needs no recovery reason.
-Every handoff offer expires no later than its source claim. Taking over from a
-different, unaccounted holder still requires attributed recovery.
+Every handoff offer expires no later than its source claim. Expired offers are
+swept inside the completing mutation transaction, so a refused completion rolls
+the sweep back with the rest of that attempt. The immutable expiry event is
+therefore appended at the clock of a later successful sweeping mutation; a run
+with no later mutation has no expiry event even though readers already treat
+the offer as expired. Taking over from a different, unaccounted holder still
+requires attributed recovery.
 
 A session normally needs the work claim before an ordinary execution turn and
 the relevant resource lease immediately before mutation. Shared analysis may
@@ -483,13 +488,20 @@ state which lifecycle class exceeded that prefix, while byte-budget omissions
 record later response fitting. The agent `show` word projects that view into a
 terse receipt with short refs, planning state, safe relation/blocker summaries,
 typed note summaries, meaningful history, a superseded item's successor short
-ref, and allowed actions. Actor and session references become relative words;
-optional actor context follows the relative actor word parenthetically on note
-and history attribution. Relative words hide the principal identifiers, but
-the parenthetical value remains exactly the bounded context asserted by the
-host and may itself be identifying. The view excludes raw actor/session
-identifiers, canonical UUIDs and hashes, revisions and fences, and host-only
-run, claim, control, obligation, seal, and memory-version fields. Active core
+ref, and allowed actions. It preserves the exact evidence count and the latest
+note independently from the bounded evidence page; latest means the highest
+dense run-feed position because evidence timestamps are asserted metadata,
+never ordering authority. The latest note is emitted last in `notes`; on a full
+page, it replaces the least-priority selected note. `notes_omitted` is the
+exact remainder after all fitting, while `evidence_count_limit` reports its
+count-limit share. Actor and session references become relative words;
+optional actor context follows the
+relative actor word parenthetically on note and history attribution. Relative
+words hide the principal identifiers, but the parenthetical value remains
+exactly the bounded context asserted by the host and may itself be identifying.
+The view excludes raw actor/session identifiers, canonical UUIDs and hashes,
+revisions and fences, and host-only run, claim, control, obligation, seal, and
+memory-version fields. Active core
 blockers include their id, type, and compact detail; when exactly one blocker
 is active the agent word infers it for `unblock`. Authorized memory bodies
 remain available on demand through their version hash on host-only reads.

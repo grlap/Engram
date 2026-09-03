@@ -67,14 +67,21 @@ default in text, JSON, and MCP: `next` and `ls` return only navigation rows
 and one-line changes, while `show REF` returns one safe detail view. Structured
 `show` keeps short refs, planning state, holder words, relations, blocker and
 note summaries with their evidence kind, meaningful history, a superseded
-item's successor short ref, and allowed actions. Open or proposed children
-precede terminal children inside the bounded relation page, so terminal
-history cannot hide unfinished work while page capacity remains. Text prints
-`(+N more)` and structured output carries the exact `children_omitted` total;
-typed count omissions distinguish unfinished from terminal children that did
-not fit. Actor and session references are relative words such as `you`,
-`another actor`, and `another session`; when present, bounded actor context is
-shown parenthetically (`you (model=opus-4.1;reasoning=high)`) on note and
+item's successor short ref, and allowed actions. Its exact note total and
+latest note are independent of the bounded evidence page; latest means the
+highest dense run-feed position because evidence timestamps are asserted
+metadata, never ordering authority. The latest note is emitted last in
+`notes`; on a full page, it replaces the least-priority selected note.
+`notes_omitted` is the exact remainder after all fitting, while
+`evidence_count_limit` reports its count-limit share. Open or proposed children
+precede terminal children inside the bounded relation page,
+so terminal history cannot hide unfinished work while page capacity remains.
+Text prints `(+N more)` and structured output carries the exact
+`children_omitted` total; typed count omissions distinguish unfinished from
+terminal children that did not fit. Actor and session references are relative
+words such as `you`, `another actor`, and `another session`; when present,
+bounded actor context is shown parenthetically
+(`you (model=opus-4.1;reasoning=high)`) on note and
 history attribution. Raw actor/session identifiers are not part of this view.
 It also omits canonical UUIDs and hashes, revision and fence
 counters, and host-only run, claim, control-binding, obligation-page, and
