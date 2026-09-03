@@ -162,7 +162,8 @@ These are deliberately different:
   nothing about whether the overall work item is complete.
 
 A successful note, update, evidence, checkpoint, or handoff by the current
-holder slides the work-claim expiry to one hour after that mutation. Successful
+holder advances work-claim expiry to at least one hour after that mutation
+without shortening a longer explicit TTL. Successful
 completion instead terminalizes the claim at the completion timestamp. A
 holder mutation on a lapsed claim is refused with one recovery command:
 `engram work claim <ref>`. When the work is ready, that ordinary claim command

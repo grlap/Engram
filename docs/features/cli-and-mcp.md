@@ -503,7 +503,8 @@ supersede, deferral, assignment, revision, or prerequisite change. Update and
 handoff success responses contain only a compact receipt, one bounded
 `obligation_page`, generic readiness `obligations`, and `allowed_next`;
 their size does not grow with item history. A successful holder note, update,
-evidence, checkpoint, or handoff renews the claim for the one-hour default TTL;
+evidence, checkpoint, or handoff advances claim expiry to at least one hour
+after that mutation without shortening a longer explicit TTL;
 successful completion terminalizes it. A holder mutation on a lapsed claim is
 refused with exactly one next command: `engram work claim <ref>`. Once the work
 is ready, that ordinary claim command retakes the same holder's claim, advances

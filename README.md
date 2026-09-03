@@ -248,6 +248,7 @@ the exact shipped tool set.
 
 | Doc | What it covers |
 | --- | --- |
+| [Shipped today](docs/shipped.md) | Exact installed-build capability inventory, kept separate from planned work |
 | [Vision](docs/vision.md) | Why Engram exists; behavioral control, memory, and reporting |
 | [Architecture](docs/architecture.md) | Components, object model, ports, data flow |
 | [Specification](docs/spec.md) | The normative Draft 0.8 working design |

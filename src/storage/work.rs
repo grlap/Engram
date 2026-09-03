@@ -10134,7 +10134,9 @@ fn renew_holder_claim(
     claim: &mut WorkClaim,
     at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
-    claim.expires_at = claim_expiry(at, DEFAULT_WORK_CLAIM_TTL_SECONDS)?;
+    claim.expires_at = claim
+        .expires_at
+        .max(claim_expiry(at, DEFAULT_WORK_CLAIM_TTL_SECONDS)?);
     claim.revision += 1;
     persist_claim(transaction, claim)
 }

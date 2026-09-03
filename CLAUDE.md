@@ -70,6 +70,8 @@ are independent optional capabilities.
 
 - Architecture and behavior live under `docs/`; feature briefs live under
   `docs/features/` and should be cross-linked when related.
+- The installed capability inventory is [docs/shipped.md](docs/shipped.md);
+  keep shipped facts separate from roadmap and target prose.
 - Read `.agents/skills/engram-repo/SKILL.md` before changing core behavior.
 - This repository tracks its work in Engram (see Work Tracking below).
   Do not create Markdown TODO lists.

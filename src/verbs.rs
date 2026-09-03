@@ -4430,6 +4430,66 @@ mod tests {
     }
 
     #[test]
+    fn holder_note_never_shortens_an_explicit_long_claim() {
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("long-claim-renewal".into());
+        let session = SessionId("long-claim-renewal-session".into());
+        let service = Arc::new(LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            session.clone(),
+            Some("protocol-test".into()),
+        ));
+        let work = match service
+            .work_propose(
+                root_input("Long claim renewal", "long-claim-renewal-root"),
+                at(0),
+            )
+            .expect("root proposal")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let verbs = AgentVerbs::with_shared_service(service, "agent".into(), session);
+        let claimed = verbs
+            .claim(
+                ClaimInput {
+                    work_ref: work.short_ref.clone(),
+                    ttl_seconds: Some(14_400),
+                    recover: None,
+                },
+                at(1),
+            )
+            .expect("long claim");
+        let claimed_expires_at = claimed.value["receipt"]["result"]["expires_at"]
+            .as_str()
+            .expect("claim expiry")
+            .parse::<DateTime<Utc>>()
+            .expect("RFC 3339 claim expiry");
+
+        verbs
+            .note(
+                &NoteInput {
+                    work_ref: Some(work.short_ref.clone()),
+                    text: "keep the longer lease while recording progress".into(),
+                    refs: Vec::new(),
+                },
+                at(2),
+            )
+            .expect("record note");
+        let shown = verbs.show(&work.short_ref, at(3)).expect("show claim");
+        let shown_expires_at = shown.value["held_until"]
+            .as_str()
+            .expect("shown expiry")
+            .parse::<DateTime<Utc>>()
+            .expect("RFC 3339 shown expiry");
+
+        assert!(shown_expires_at >= claimed_expires_at);
+    }
+
+    #[test]
     fn show_reports_the_true_note_total_and_latest_feed_entry() {
         const GATE_TRANSITIONS: usize = 128;
 
