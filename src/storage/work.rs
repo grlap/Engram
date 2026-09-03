@@ -14069,6 +14069,146 @@ mod tests {
         );
     }
 
+    #[test]
+    fn prerequisite_page_bounds_real_edges_and_counts_each_omitted_class() {
+        const PAGE_LIMIT: usize = 8;
+
+        let project = "bounded-prerequisite-page";
+        let mut store = SqliteStore::open_in_memory().expect("prerequisite page fixture");
+        let mut dependent = store
+            .create_work(
+                &root_request(project, "dependent", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("dependent work");
+        let prerequisites = (0..14)
+            .map(|index| {
+                store
+                    .create_work(
+                        &root_request(project, &format!("prerequisite-{index}"), index + 1),
+                        &DevelopmentNoopRedactor,
+                    )
+                    .expect("prerequisite work")
+            })
+            .collect::<Vec<_>>();
+
+        for (index, prerequisite) in prerequisites.iter().enumerate() {
+            dependent = store
+                .add_work_prerequisite(
+                    &ChangeWorkPrerequisiteRequest {
+                        work_id: dependent.work_id,
+                        prerequisite_id: prerequisite.work_id,
+                        expected_revision: dependent.revision,
+                        authority: delegated(project, "planner"),
+                        actor: actor("planner"),
+                        idempotency_key: format!("add-prerequisite-{index}"),
+                        changed_at: at(100 + i64::try_from(index).expect("small index")),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("add prerequisite edge");
+        }
+
+        for (index, prerequisite) in prerequisites[..11].iter().enumerate() {
+            store
+                .dispose_work(
+                    &DisposeWorkRequest {
+                        work_id: prerequisite.work_id,
+                        expected_work_revision: prerequisite.revision,
+                        disposition: WorkDisposition::Cancelled,
+                        replacement_id: None,
+                        reason: "exercise dead prerequisite paging".into(),
+                        actor: actor("planner"),
+                        idempotency_key: format!("cancel-prerequisite-{index}"),
+                        disposed_at: at(200 + i64::try_from(index).expect("small index")),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("cancel prerequisite");
+        }
+
+        let completed = prerequisites.last().expect("completed prerequisite");
+        let completed_claim = claim(
+            &mut store,
+            completed,
+            "planner",
+            "completed-prerequisite-claim",
+            300,
+            300,
+        );
+        let completed_evidence = evidence(
+            &mut store,
+            completed,
+            &completed_claim,
+            "planner",
+            "completed-prerequisite-evidence",
+            301,
+        );
+        checkpoint(
+            &mut store,
+            completed,
+            &completed_claim,
+            "planner",
+            "completed-prerequisite-checkpoint",
+            302,
+            std::slice::from_ref(&completed_evidence),
+        );
+        complete(
+            &mut store,
+            completed,
+            &completed_claim,
+            "planner",
+            &completed_evidence,
+            "completed-prerequisite-complete",
+            303,
+        )
+        .expect("complete prerequisite");
+
+        let page = store
+            .work_prerequisites_with_state(dependent.work_id, PAGE_LIMIT)
+            .expect("bounded prerequisite page");
+        assert_eq!(page.items.len(), PAGE_LIMIT);
+        assert!(
+            page.items
+                .iter()
+                .all(|(_, state)| *state == WorkPrerequisiteState::Dead)
+        );
+        assert_eq!(page.omitted_by_state, [3, 2, 1]);
+
+        let mixed_page = store
+            .work_prerequisites_with_state(dependent.work_id, 13)
+            .expect("mixed-state prerequisite page");
+        let mixed_states = mixed_page
+            .items
+            .iter()
+            .map(|(_, state)| *state)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            mixed_states,
+            [
+                vec![WorkPrerequisiteState::Dead; 11],
+                vec![WorkPrerequisiteState::Pending; 2],
+            ]
+            .concat()
+        );
+        assert_eq!(mixed_page.omitted_by_state, [0, 0, 1]);
+
+        let mut expected_refs = prerequisites[..13]
+            .iter()
+            .map(|prerequisite| prerequisite.short_ref.clone())
+            .collect::<Vec<_>>();
+        expected_refs[..11].sort();
+        expected_refs[11..].sort();
+        assert_eq!(
+            mixed_page
+                .items
+                .iter()
+                .map(|(prerequisite, _)| prerequisite.short_ref.clone())
+                .collect::<Vec<_>>(),
+            expected_refs
+        );
+    }
+
     fn restore_savepoint(store: &SqliteStore) {
         store
             .connection

@@ -230,10 +230,6 @@ impl SchemaReferenceBuildGuard {
     }
 }
 
-#[cfg(test)]
-#[path = "storage/project_memory_tests.rs"]
-mod project_memory_tests;
-
 impl Drop for SchemaReferenceBuildGuard {
     fn drop(&mut self) {
         BUILDING_SCHEMA_REFERENCE.with(|state| state.set(false));
@@ -5553,7 +5549,12 @@ impl SqliteStore {
         admit_full_response(&full)?;
 
         let prepared = prepare_project_memory(&request, &key)?;
-        Self::insert_object(&transaction, "memory_version", &prepared.version_object)?;
+        Self::insert_project_memory_version_object(
+            &transaction,
+            &prepared.version_object,
+            &request.project_id,
+            &key,
+        )?;
         Self::insert_object(
             &transaction,
             "memory_assertion_event",
@@ -10620,6 +10621,39 @@ impl SqliteStore {
         }
     }
 
+    fn insert_project_memory_version_object(
+        connection: &Connection,
+        object: &CanonicalObject,
+        project_id: &crate::domain::ProjectId,
+        key: &str,
+    ) -> Result<(), StoreError> {
+        match Self::insert_object(connection, "memory_version", object) {
+            Ok(()) => Ok(()),
+            Err(StoreError::Sqlite(rusqlite::Error::SqliteFailure(failure, _)))
+                if failure.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE =>
+            {
+                match lookup_project_memory_on(connection, project_id, key)? {
+                    Some(existing) => match existing.assertion.status {
+                        MemoryStatus::Active => {
+                            Err(StoreError::ProjectMemoryExists(key.to_owned()))
+                        }
+                        MemoryStatus::Tombstoned => {
+                            Err(StoreError::ProjectMemoryRetired(key.to_owned()))
+                        }
+                        status => Err(StoreError::InvalidMemoryProjection(format!(
+                            "project memory key has unsupported status {status:?}"
+                        ))),
+                    },
+                    None => Err(StoreError::InvalidMemoryProjection(
+                        "project memory uniqueness was violated without a canonical key binding"
+                            .into(),
+                    )),
+                }
+            }
+            Err(other) => Err(other),
+        }
+    }
+
     fn insert_task_change(
         transaction: &Transaction<'_>,
         task_id: TaskId,
@@ -12131,6 +12165,10 @@ fn retrieval_reason(scope: &Scope, delivery: Delivery) -> String {
     };
     format!("{scope_reason}; {delivery_reason}")
 }
+
+#[cfg(test)]
+#[path = "storage/project_memory_tests.rs"]
+mod project_memory_tests;
 
 #[cfg(test)]
 mod tests {

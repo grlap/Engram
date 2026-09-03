@@ -6452,7 +6452,7 @@ mod tests {
     }
 
     #[test]
-    fn focus_prioritizes_all_dead_prerequisites_and_counts_omitted_classes() {
+    fn prerequisite_summary_preserves_states_and_public_omission_reasons() {
         let actor = ActorContext {
             actor_id: "agent".into(),
             actor_kind: "test_agent".into(),
@@ -6462,20 +6462,20 @@ mod tests {
             source_tool: Some("test".into()),
             source_skill: None,
             provenance_chain: Vec::new(),
-            reason: "test prerequisite focus ordering".into(),
+            reason: "test prerequisite summary translation".into(),
         };
         let item = |index: u128| {
             let work_id = WorkId(uuid::Uuid::from_u128(index));
             WorkItem {
                 schema_version: SCHEMA_VERSION,
-                project_id: ProjectId("prerequisite-focus".into()),
+                project_id: ProjectId("prerequisite-summary".into()),
                 work_id,
                 short_ref: format!("w-{index:012x}"),
                 root_id: work_id,
                 parent_id: None,
                 child_requirement: ChildRequirement::Optional,
                 title: format!("Prerequisite {index}"),
-                outcome: "Classified prerequisite".into(),
+                outcome: "Translated prerequisite".into(),
                 acceptance: Vec::new(),
                 kind: WorkItemKind::Task,
                 priority: 2,
@@ -6493,28 +6493,39 @@ mod tests {
                 updated_at: at(0),
             }
         };
-        let prerequisites = (0..8)
-            .map(|index| (item(index), WorkPrerequisiteState::Dead))
+        let states = [
+            WorkPrerequisiteState::Dead,
+            WorkPrerequisiteState::Pending,
+            WorkPrerequisiteState::Satisfied,
+        ];
+        let prerequisites = states
+            .into_iter()
+            .enumerate()
+            .map(|(index, state)| (item(index as u128), state))
             .collect();
-        let (selected, omissions) = bounded_prerequisite_summaries(prerequisites, [1, 2, 1]);
-        assert_eq!(selected.len(), MAX_FOCUS_RELATIONS);
-        assert!(
-            selected
+        let (summaries, omissions) = bounded_prerequisite_summaries(prerequisites, [3, 2, 1]);
+
+        assert_eq!(
+            summaries
                 .iter()
-                .all(|item| { item.prerequisite_state == Some(WorkPrerequisiteState::Dead) })
+                .map(|summary| summary.prerequisite_state)
+                .collect::<Vec<_>>(),
+            states.map(Some)
         );
-        assert!(omissions.iter().any(|omission| {
-            omission.reason == WorkSectionOmissionReason::DeadPrerequisiteCountLimit
-                && omission.omitted_count == 1
-        }));
-        assert!(omissions.iter().any(|omission| {
-            omission.reason == WorkSectionOmissionReason::PendingPrerequisiteCountLimit
-                && omission.omitted_count == 2
-        }));
-        assert!(omissions.iter().any(|omission| {
-            omission.reason == WorkSectionOmissionReason::SatisfiedPrerequisiteCountLimit
-                && omission.omitted_count == 1
-        }));
+        assert_eq!(
+            omissions
+                .iter()
+                .map(|omission| (omission.reason, omission.omitted_count))
+                .collect::<Vec<_>>(),
+            vec![
+                (WorkSectionOmissionReason::DeadPrerequisiteCountLimit, 3),
+                (WorkSectionOmissionReason::PendingPrerequisiteCountLimit, 2,),
+                (
+                    WorkSectionOmissionReason::SatisfiedPrerequisiteCountLimit,
+                    1,
+                ),
+            ]
+        );
     }
 
     #[derive(Clone, Copy, Debug)]

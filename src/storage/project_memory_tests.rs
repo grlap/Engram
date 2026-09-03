@@ -1586,3 +1586,42 @@ fn concurrent_project_memory_create_has_one_typed_winner() {
         1
     );
 }
+
+#[test]
+fn project_memory_unique_index_collision_fails_closed_as_a_typed_refusal() {
+    let mut store = SqliteStore::open_in_memory().expect("project memory unique-index fixture");
+    let key = "shared-key";
+    let first_request = project_memory_request(
+        "project-memory-unique-index",
+        "memory-first",
+        Some(key),
+        "first body",
+        1_700_000_000_000,
+    );
+    let second_request = project_memory_request(
+        "project-memory-unique-index",
+        "memory-second",
+        Some(key),
+        "second body",
+        1_700_000_001_000,
+    );
+    let first = prepare_project_memory(&first_request, key).expect("prepare first memory");
+    let second = prepare_project_memory(&second_request, key).expect("prepare second memory");
+    let transaction = store
+        .connection
+        .transaction()
+        .expect("project memory unique-index transaction");
+    SqliteStore::insert_object(&transaction, "memory_version", &first.version_object)
+        .expect("reserve the project-memory key");
+
+    assert!(matches!(
+        SqliteStore::insert_project_memory_version_object(
+            &transaction,
+            &second.version_object,
+            &first_request.project_id,
+            key,
+        ),
+        Err(StoreError::InvalidMemoryProjection(detail))
+            if detail == "project memory key is reserved but its durable head is missing"
+    ));
+}
