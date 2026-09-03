@@ -434,11 +434,11 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
     assert.equal(added.status, 0, added.stderr);
     const ref = added.stdout.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
     assert.ok(ref, added.stdout);
-    // Nothing is held yet: the answer names the command that resolves it.
+    // Nothing is held yet: inspect exact claim guidance before mutating it.
     const unheld = run([...hostContext, "note", "too early"]);
     assert.notEqual(unheld.status, 0);
     assert.match(unheld.stderr, /claim it before/u);
-    assert.match(unheld.stderr, new RegExp(`engram work claim ${ref}`, "u"));
+    assert.match(unheld.stderr, new RegExp(`engram work show ${ref}`, "u"));
     assert.doesNotMatch(unheld.stderr, HASH);
     assert.equal(run([...hostContext, "claim", ref]).status, 0);
     // Nothing noted and no summary: one sentence plus the resolving command.

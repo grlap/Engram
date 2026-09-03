@@ -869,7 +869,12 @@ making a model infer permissions by trial and error.
 still unaccounted and the caller must submit the `claim` variant with an
 attributed `recovery_reason`. A prior contribution or persisted participant waiver makes
 the holder accounted, so a successor receives ordinary `work_update:claim`
-instead of being asked to waive the same omission twice.
+instead of being asked to waive the same omission twice. Every agent-facing
+claim reminder and runnable claim command derives from that exact
+`allowed_next` tag; generic readiness wording never independently upgrades an
+ordinary claim into attributed recovery. Catalog-only `next` and `ls` rows
+route through `show` before suggesting a claim because they do not carry that
+session-specific action set.
 
 `work_update:waive_required_child` appears only when at least one direct,
 required, cancelled-or-superseded, not-yet-waived child exists.

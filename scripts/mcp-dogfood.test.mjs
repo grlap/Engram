@@ -760,7 +760,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       await a.call("note", { text: "must be rejected after handoff" }),
       "work_claim_mismatch",
     );
-    assert.deepEqual(stale.next, [`engram work claim ${workRef}`]);
+    assert.deepEqual(stale.next, [`engram work show ${workRef}`]);
     receipt(
       await b.call("note", {
         text: "recipient validated evidence and completion criterion",

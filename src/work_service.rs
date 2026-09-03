@@ -68,6 +68,11 @@ const MAX_ACCEPTANCE_ITEMS: usize = 6;
 const MAX_LABEL_ITEMS: usize = 8;
 const MAX_DELIVERY_STAGE_RETRIES: usize = 8;
 pub(crate) const MAX_TEXT_NEXT_COMMANDS: usize = 4;
+/// The recovery tag is the sole agent-facing signal that `recovery_reason`
+/// is mandatory; consumers must not infer that requirement from readiness.
+pub(crate) const WORK_UPDATE_CLAIM_ACTION: &str = "work_update:claim";
+pub(crate) const WORK_UPDATE_CLAIM_RECOVERY_ACTION: &str =
+    "work_update:claim(recovery_reason_required)";
 
 /// Exact structured agent response for one full project-memory read.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -5473,7 +5478,7 @@ fn append_claim_actions(
                 && claim.expires_at <= now
                 && status.availability == WorkAvailability::Ready =>
         {
-            allowed.push("work_update:claim".into());
+            allowed.push(WORK_UPDATE_CLAIM_ACTION.into());
         }
         Some(claim)
             if claim.state == WorkClaimState::Active
@@ -5485,9 +5490,9 @@ fn append_claim_actions(
                 && claim.expires_at > now => {}
         _ if status.availability == WorkAvailability::Ready => {
             if claim_recovery_required {
-                allowed.push("work_update:claim(recovery_reason_required)".into());
+                allowed.push(WORK_UPDATE_CLAIM_RECOVERY_ACTION.into());
             } else {
-                allowed.push("work_update:claim".into());
+                allowed.push(WORK_UPDATE_CLAIM_ACTION.into());
             }
         }
         _ => {}
@@ -7978,7 +7983,7 @@ mod tests {
         assert_eq!(refusal.recovery.item.title, waived_item.title);
         assert_eq!(
             refusal.recovery.command,
-            format!("engram work claim {}", waived.short_ref)
+            format!("engram work show {}", waived.short_ref)
         );
         let sealed = required
             .into_iter()

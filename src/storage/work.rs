@@ -2742,7 +2742,7 @@ fn completion_recovery_on(
         WorkCompletionRecoveryCause::RequiredChildUnsealed { .. }
             if item.lifecycle == WorkLifecycle::Open =>
         {
-            format!("engram work claim {command_ref}")
+            format!("engram work show {command_ref}")
         }
         WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => {
             let parent = WorkReferenceCandidate {

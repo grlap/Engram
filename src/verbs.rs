@@ -29,8 +29,9 @@ use crate::{
     storage::StoreError,
     work_service::{
         MAX_AGENT_WORK_RESPONSE_BYTES, MAX_TEXT_NEXT_COMMANDS, ProjectMemorySignal,
-        ReadyWorkSummary, WorkAttributionDefaults, WorkChange, WorkChangeProjection,
-        WorkSectionOmissionReason, render_agent_receipt_text, terminal_safe_multiline,
+        ReadyWorkSummary, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
+        WorkAttributionDefaults, WorkChange, WorkChangeProjection, WorkSectionOmissionReason,
+        render_agent_receipt_text, terminal_safe_multiline,
     },
 };
 
@@ -366,7 +367,7 @@ impl VerbError {
             ),
             StoreError::WorkClaimMismatch { .. } => (
                 vec!["you do not hold this item; claim it before you note or complete it".into()],
-                vec![format!("engram work claim {target}")],
+                vec![format!("engram work show {target}")],
             ),
             StoreError::WorkClaimLapsed { expired_at, .. } => (
                 vec![format!(
@@ -454,6 +455,14 @@ impl VerbError {
                 vec!["this item is not ready; inspect its blockers or deferral".into()],
                 vec![format!("engram work show {target}")],
             ),
+            StoreError::InvalidWork(reason)
+                if reason.contains("claim recovery requires an explicit attributed reason") =>
+            {
+                (
+                    vec![reason.clone()],
+                    vec![format!("engram work claim {target} --recover \"…\"")],
+                )
+            }
             StoreError::WorkRevisionConflict { .. } => (
                 vec!["the item changed underneath this call; look again and repeat it".into()],
                 vec![format!("engram work show {target}")],
@@ -623,7 +632,9 @@ impl AgentVerbs {
                     .as_ref()
                     .is_none_or(|focus| focus.status.work.work_id != item.work.work_id)
         }) {
-            let command = format!("engram work claim {}", first.work.short_ref);
+            // Catalog cards do not carry session-specific `allowed_next`.
+            // Resolve the exact ordinary-vs-recovery claim action via `show`.
+            let command = format!("engram work show {}", first.work.short_ref);
             if !guidance.next.contains(&command) {
                 guidance.next.insert(0, command);
             }
@@ -854,12 +865,6 @@ impl AgentVerbs {
         let mut next = Vec::new();
         if let Some(first) = items.first() {
             next.push(format!("engram work show {}", first.work.short_ref));
-        }
-        if let Some(ready) = items
-            .iter()
-            .find(|item| item.availability == WorkAvailability::Ready)
-        {
-            next.push(format!("engram work claim {}", ready.work.short_ref));
         }
         if next.is_empty() {
             next.push("engram work add \"…\"".into());
@@ -1841,6 +1846,10 @@ impl AgentVerbs {
 
     fn guidance(&self, view: &WorkFocusView, word: &str, now: DateTime<Utc>) -> Guidance {
         let holder = self.holder(view, now);
+        let claim_recovery_required = view
+            .allowed_next
+            .iter()
+            .any(|action| action == WORK_UPDATE_CLAIM_RECOVERY_ACTION);
         let blockers = view
             .blockers
             .iter()
@@ -1848,7 +1857,8 @@ impl AgentVerbs {
             .collect::<Vec<_>>();
         let mut reminders = Vec::new();
         for reason in &view.status.why {
-            if let Some(words) = reminder_for_reason(reason, holder, &blockers)
+            if let Some(words) =
+                reminder_for_reason(reason, holder, &blockers, claim_recovery_required)
                 && !reminders.contains(&words)
             {
                 reminders.push(words);
@@ -1957,7 +1967,12 @@ fn completion_recovery_reminder(recovery: &crate::WorkCompletionRecovery) -> Str
 }
 
 /// Fixed table from one readiness reason to the words an agent needs.
-fn reminder_for_reason(reason: &str, holder: Holder<'_>, blockers: &[String]) -> Option<String> {
+fn reminder_for_reason(
+    reason: &str,
+    holder: Holder<'_>,
+    blockers: &[String],
+    claim_recovery_required: bool,
+) -> Option<String> {
     let reason = reason.trim();
     if let Some(lifecycle) = reason.strip_prefix("lifecycle is ") {
         return match lifecycle.trim().to_ascii_lowercase().as_str() {
@@ -1989,9 +2004,8 @@ fn reminder_for_reason(reason: &str, holder: Holder<'_>, blockers: &[String]) ->
         "open, admitted, unblocked, and unclaimed" => {
             Some("unclaimed: claim it before you change anything".into())
         }
-        "prior claim is recoverable" => {
-            Some("a previous holder's claim lapsed; claiming needs a recovery reason".into())
-        }
+        "prior claim is recoverable" => claim_recovery_required
+            .then(|| "a previous holder's claim lapsed; claiming needs a recovery reason".into()),
         "live claim has checkpointed progress" => match holder {
             Holder::Other(session, _) => Some(format!("held by {}", session.0)),
             Holder::You(_) | Holder::Nobody => None,
@@ -2085,10 +2099,10 @@ fn next_commands(
     if has("work_handoff:accept") {
         push(format!("engram work handoff {work_ref} --accept"));
     }
-    if has("work_update:claim") {
+    if has(WORK_UPDATE_CLAIM_ACTION) {
         push(format!("engram work claim {work_ref}"));
     }
-    if has("work_update:claim(recovery_reason_required)") {
+    if has(WORK_UPDATE_CLAIM_RECOVERY_ACTION) {
         push(format!("engram work claim {work_ref} --recover \"…\""));
     }
     if has("work_update:checkpoint") || has("work_update:evidence") {
@@ -3340,7 +3354,8 @@ mod tests {
             reminder_for_reason(
                 "live claim has not checkpointed progress",
                 Holder::You(now),
-                &[]
+                &[],
+                false,
             )
             .as_deref(),
             Some("you hold this item but have not noted progress yet")
@@ -3349,7 +3364,8 @@ mod tests {
             reminder_for_reason(
                 "live claim has not checkpointed progress",
                 Holder::Other(&session, now),
-                &[]
+                &[],
+                false,
             )
             .as_deref(),
             Some("held by peer; no progress noted yet")
@@ -3358,7 +3374,8 @@ mod tests {
             reminder_for_reason(
                 "one or more typed blockers remain active",
                 Holder::Nobody,
-                &["waiting on review".into()]
+                &["waiting on review".into()],
+                false,
             )
             .as_deref(),
             Some("blocked: waiting on review")
@@ -3367,24 +3384,233 @@ mod tests {
             reminder_for_reason(
                 "one or more prerequisites are dead and must be removed",
                 Holder::Nobody,
-                &[]
+                &[],
+                false,
             )
             .as_deref(),
             Some("waiting: a dead prerequisite must be removed")
         );
         assert_eq!(
-            reminder_for_reason("lifecycle is Completed", Holder::Nobody, &[]),
+            reminder_for_reason("lifecycle is Completed", Holder::Nobody, &[], false),
             None
         );
         assert_eq!(
             reminder_for_reason(
                 "open, admitted, unblocked, and unclaimed",
                 Holder::Nobody,
-                &[]
+                &[],
+                false,
             )
             .as_deref(),
             Some("unclaimed: claim it before you change anything")
         );
+        assert_eq!(
+            reminder_for_reason("prior claim is recoverable", Holder::Nobody, &[], false,),
+            None
+        );
+        assert_eq!(
+            reminder_for_reason("prior claim is recoverable", Holder::Nobody, &[], true,)
+                .as_deref(),
+            Some("a previous holder's claim lapsed; claiming needs a recovery reason")
+        );
+    }
+
+    fn assert_ordinary_claim_guidance(receipt: &Receipt, work_ref: &str) {
+        assert_eq!(
+            receipt.reminders,
+            vec!["unclaimed: claim it before you change anything"]
+        );
+        assert_eq!(receipt.next, vec![format!("engram work claim {work_ref}")]);
+        let actions = receipt.value["allowed_next"]
+            .as_array()
+            .expect("ordinary allowed_next")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        assert!(actions.contains(&WORK_UPDATE_CLAIM_ACTION));
+        assert!(!actions.contains(&WORK_UPDATE_CLAIM_RECOVERY_ACTION));
+    }
+
+    fn assert_recovery_claim_guidance(receipt: &Receipt, work_ref: &str) {
+        assert_eq!(
+            receipt.reminders,
+            vec![
+                "a previous holder's claim lapsed; claiming needs a recovery reason",
+                "unclaimed: claim it before you change anything",
+            ]
+        );
+        assert_eq!(
+            receipt.next,
+            vec![format!("engram work claim {work_ref} --recover \"…\"")]
+        );
+        let actions = receipt.value["allowed_next"]
+            .as_array()
+            .expect("recovery allowed_next")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        assert!(!actions.contains(&WORK_UPDATE_CLAIM_ACTION));
+        assert!(actions.contains(&WORK_UPDATE_CLAIM_RECOVERY_ACTION));
+    }
+
+    #[test]
+    fn show_claim_guidance_uses_the_allowed_operation_as_its_source() {
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("show-claim-guidance".into());
+        let first_session = SessionId("first-holder".into());
+        let successor_session = SessionId("successor".into());
+        let first = Arc::new(LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            first_session.clone(),
+            Some("agent-verb-guidance-test".into()),
+        ));
+        let successor = Arc::new(LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            successor_session.clone(),
+            Some("agent-verb-guidance-test".into()),
+        ));
+        let first_verbs =
+            AgentVerbs::with_shared_service(first.clone(), "agent".into(), first_session);
+        let successor_verbs =
+            AgentVerbs::with_shared_service(successor, "agent".into(), successor_session);
+
+        let released = match first
+            .work_propose(
+                root_input("Released claim guidance", "released-guidance"),
+                at(0),
+            )
+            .expect("released root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        first_verbs
+            .claim(
+                ClaimInput {
+                    work_ref: released.short_ref.clone(),
+                    ttl_seconds: Some(60),
+                    recover: None,
+                },
+                at(1),
+            )
+            .expect("claim released root");
+        first_verbs
+            .note(
+                &NoteInput {
+                    work_ref: Some(released.short_ref.clone()),
+                    text: "account the first holder before release".into(),
+                    refs: Vec::new(),
+                },
+                at(2),
+            )
+            .expect("record first-holder contribution");
+        first_verbs
+            .update(
+                UpdateInput {
+                    work_ref: Some(released.short_ref.clone()),
+                    action: UpdateAction::Release {
+                        reason: Some("make the item ordinarily claimable".into()),
+                    },
+                },
+                at(3),
+            )
+            .expect("release accounted claim");
+
+        let ordinary = successor_verbs
+            .show(&released.short_ref, at(4))
+            .expect("show released claim");
+        assert_ordinary_claim_guidance(&ordinary, &released.short_ref);
+
+        let lapsed = match first
+            .work_propose(
+                root_input("Lapsed claim guidance", "lapsed-guidance"),
+                at(10),
+            )
+            .expect("lapsed root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        first_verbs
+            .claim(
+                ClaimInput {
+                    work_ref: lapsed.short_ref.clone(),
+                    ttl_seconds: Some(1),
+                    recover: None,
+                },
+                at(11),
+            )
+            .expect("claim lapsed root");
+
+        let recovery = successor_verbs
+            .show(&lapsed.short_ref, at(13))
+            .expect("show unaccounted lapsed claim");
+        assert_recovery_claim_guidance(&recovery, &lapsed.short_ref);
+    }
+
+    #[test]
+    fn catalog_claim_guidance_routes_through_exact_show() {
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("catalog-claim-guidance".into());
+        let first_session = SessionId("first-holder".into());
+        let reader_session = SessionId("catalog-reader".into());
+        let first = Arc::new(LocalWorkService::new(
+            database.clone(),
+            project.clone(),
+            "agent".into(),
+            first_session.clone(),
+            Some("catalog-guidance-test".into()),
+        ));
+        let reader = Arc::new(LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            reader_session.clone(),
+            Some("catalog-guidance-test".into()),
+        ));
+        let first_verbs =
+            AgentVerbs::with_shared_service(first.clone(), "agent".into(), first_session);
+        let reader_verbs = AgentVerbs::with_shared_service(reader, "agent".into(), reader_session);
+        let work = match first
+            .work_propose(root_input("Catalog recovery", "catalog-recovery"), at(0))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        first_verbs
+            .claim(
+                ClaimInput {
+                    work_ref: work.short_ref.clone(),
+                    ttl_seconds: Some(1),
+                    recover: None,
+                },
+                at(1),
+            )
+            .expect("claim root");
+
+        let expected = format!("engram work show {}", work.short_ref);
+        let next = reader_verbs
+            .next(&NextInput::default(), at(3))
+            .expect("next catalog guidance");
+        assert_eq!(next.next, vec![expected.clone()]);
+        let list = reader_verbs
+            .ls(&LsInput::default(), at(3))
+            .expect("list catalog guidance");
+        assert_eq!(list.next, vec![expected]);
+
+        let mismatch = VerbError::at(
+            StoreError::WorkClaimMismatch { work: work.work_id },
+            &work.short_ref,
+        )
+        .guidance();
+        assert_eq!(mismatch.next, list.next);
     }
 
     #[test]
@@ -3716,6 +3942,18 @@ mod tests {
             vec!["this item is not ready; inspect its blockers or deferral"]
         );
         assert_eq!(guidance.next, vec!["engram work show w-0123456789ab"]);
+    }
+
+    #[test]
+    fn explicit_claim_recovery_refusal_supplies_the_required_command() {
+        let reason = "claim recovery requires an explicit attributed reason";
+        let error = VerbError::at(StoreError::InvalidWork(reason.into()), "w-0123456789ab");
+        let guidance = error.guidance();
+        assert_eq!(guidance.reminders, vec![reason]);
+        assert_eq!(
+            guidance.next,
+            vec!["engram work claim w-0123456789ab --recover \"…\""]
+        );
     }
 
     #[test]

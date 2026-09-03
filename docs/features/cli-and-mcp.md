@@ -808,8 +808,9 @@ is shared; the MCP processes are not.
 `engram init` as host setup outside the count,
 then drives `add → claim → done` and fails if the agent needed more than three
 commands or three supplied fields, typed JSON, or saw a hash, fence, or key in
-text output. It also checks that an unheld `note` and an unnoted `done` answer
-with one sentence and the resolving command.
+text output. It also checks that an unheld `note` answers with one sentence and
+the exact-guidance inspection command, while an unnoted `done` supplies its
+resolving command.
 
 `scripts/mcp-dogfood.test.mjs` launches real stdio MCP processes against a
 fresh home. Its main lifecycle uses only the agent-facing MCP tools: one session
