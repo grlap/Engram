@@ -35,7 +35,7 @@ continuity.
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
-engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--kind KIND] [--label L]
+engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
@@ -350,7 +350,7 @@ enforces the live control-session/run binding described above.
 | `next` | What is ready, what this session holds, and the changes since its previous call |
 | `ls` | Open items with flat `search`, `blocked`, `mine`, `all`, and `label` filters |
 | `show` | One item in full; selects it as focus without claiming |
-| `add` | A root from a title, or one required child with `under`; outcome and acceptance default from the title |
+| `add` | A root from a title, or one child with `under`; `optional` makes that child non-blocking; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
 | `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, or `supersede` |
 | `gate` | Record one bounded pass/fail observation on the explicitly bound focused item |
@@ -384,9 +384,10 @@ most three agent-supplied fields.
 `ls --mine` returns items assigned to the actor plus the session's focused
 item when this session holds it; claims on other items are visible through
 `show`. `add --under` selects the parent and submits one required child
-through `work_propose:decompose` (a decomposition admits one through 16
-children), then focuses that child exactly as a root `add` focuses the new
-root. `note`
+through `work_propose:decompose`; adding `--optional` instead records an
+optional child that is shown as such and does not gate parent completion (a
+decomposition admits one through 16 children). Either form then focuses that
+child exactly as a root `add` focuses the new root. `note`
 records evidence and then checkpoints the run's current evidence set;
 repeating an identical `note`, `add`, `claim`, or `done` replays its receipt
 because the core derives the idempotency key.

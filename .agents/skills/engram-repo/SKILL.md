@@ -122,7 +122,7 @@ notice for a cross-process claim follow-up or exact retry.
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
-engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF] [--priority 0-4] [--kind KIND] [--label L]
+engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
@@ -142,7 +142,8 @@ it. Host-only `work core` reads remain full.
 Rules that matter:
 
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
-  are what `done` is checked against.
+  are what `done` is checked against. `--under REF` creates a required child;
+  add `--optional` when that child must not gate its parent's completion.
 - `claim` before you change anything. Only the holder can `note` and `done`.
 - Bare `gate NAME` records a pass. Repeat `--failed FAILURE` for bounded
   failure labels; when a check has no test id, use the check command or check

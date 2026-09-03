@@ -392,9 +392,12 @@ enum WorkCommand {
         /// Defaults to one criterion "<title> is done".
         #[arg(long = "accept", value_name = "CRITERION")]
         acceptance: Vec<String>,
-        /// Add as a required child of this item instead of a root.
+        /// Add as a child of this item instead of a root.
         #[arg(long, value_name = "REF")]
         under: Option<String>,
+        /// Make the child optional for parent completion; requires --under.
+        #[arg(long, requires = "under")]
+        optional: bool,
         /// 0 (highest) through 4.
         #[arg(long)]
         priority: Option<i32>,
@@ -1069,6 +1072,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             outcome,
             acceptance,
             under,
+            optional,
             priority,
             labels,
             assignee,
@@ -1079,6 +1083,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 outcome,
                 acceptance,
                 under,
+                optional,
                 priority,
                 labels,
                 assignee,

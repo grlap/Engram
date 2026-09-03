@@ -107,8 +107,10 @@ struct AddArgs {
     /// Acceptance criteria `done` is checked against; defaults to one
     /// criterion "<title> is done".
     acceptance: Option<Vec<String>>,
-    /// Add as a required child of this item instead of a root.
+    /// Add as a child of this item instead of a root.
     under: Option<String>,
+    /// Make the child optional for parent completion. Requires `under`.
+    optional: Option<bool>,
     /// 0 (highest) through 4.
     priority: Option<i32>,
     labels: Option<Vec<String>>,
@@ -308,10 +310,10 @@ impl McpServer {
         verb(self.verbs().show(&args.work_ref, Utc::now()))
     }
 
-    /// Create a root or one required child.
+    /// Create a root or one required/optional child.
     #[tool(
         name = "add",
-        description = "Create work from a title; outcome and acceptance are welcome; under adds a required child"
+        description = "Create work from a title; under adds a child and optional makes it non-blocking"
     )]
     fn add(&self, Parameters(args): Parameters<AddArgs>) -> CallToolResult {
         verb(self.verbs().add(
@@ -320,6 +322,7 @@ impl McpServer {
                 outcome: args.outcome,
                 acceptance: args.acceptance.unwrap_or_default(),
                 under: args.under,
+                optional: args.optional.unwrap_or(false),
                 priority: args.priority,
                 labels: args.labels.unwrap_or_default(),
                 assignee: args.assignee,

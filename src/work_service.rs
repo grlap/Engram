@@ -554,6 +554,13 @@ pub struct WorkItemSummary {
     pub short_ref: String,
     pub root_id: WorkId,
     pub parent_id: Option<WorkId>,
+    /// Present only when this item is an optional child. Required children
+    /// and roots keep the common agent response compact.
+    #[serde(
+        default = "default_child_requirement",
+        skip_serializing_if = "child_requirement_is_required"
+    )]
+    pub child_requirement: ChildRequirement,
     pub title: String,
     pub outcome: String,
     pub acceptance: Vec<String>,
@@ -3719,6 +3726,7 @@ fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
         short_ref: work.short_ref.clone(),
         root_id: work.root_id,
         parent_id: work.parent_id,
+        child_requirement: work.child_requirement,
         title: compact_text(&work.title),
         outcome: compact_text(&work.outcome),
         acceptance: work
@@ -3744,6 +3752,18 @@ fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
         prerequisite_state: None,
         updated_at: work.updated_at,
     }
+}
+
+fn default_child_requirement() -> ChildRequirement {
+    ChildRequirement::Required
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if predicates receive a borrowed field"
+)]
+fn child_requirement_is_required(requirement: &ChildRequirement) -> bool {
+    *requirement == ChildRequirement::Required
 }
 
 fn work_item_summary_with_prerequisite_state(

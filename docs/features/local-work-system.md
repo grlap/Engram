@@ -308,6 +308,9 @@ revision and idempotency key.
   the completion receipt. Root sealing refuses live descendant claims or
   handoff offers, and root reopen refuses unresolved open descendants, so an
   old child run can never cross into the next root-execution generation.
+- The agent word `add --under REF` creates a required child by default;
+  `add --under REF --optional` records an optional child, and `show REF` marks
+  that distinction without requiring a lower-level decomposition request.
 - A completion binds the accepted work revision, run generation, claim fence,
   latest checkpoint cursor, acceptance results, and evidence hashes. Any
   change to those facts makes an unconsumed completion decision stale.

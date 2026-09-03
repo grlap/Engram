@@ -856,6 +856,40 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const parentShow = receipt(await a.call("show", { work_ref: keyless.work.short_ref }));
     assert.equal(parentShow.children.length, 1);
     assert.equal(parentShow.children[0].title, "Child step");
+    assert.equal("child_requirement" in parentShow.children[0], false);
+
+    // The same one-child path exposes the optional requirement, and the open
+    // child is retained for audit without blocking its parent's seal.
+    const optionalParent = receipt(await a.call("add", { title: "Optional parent" })).work;
+    const optionalChild = receipt(
+      await a.call("add", {
+        title: "Optional follow-up",
+        under: optionalParent.short_ref,
+        optional: true,
+      }),
+    );
+    assert.equal(optionalChild.work.child_requirement, "optional");
+    const optionalParentShow = receipt(
+      await a.call("show", { work_ref: optionalParent.short_ref }),
+    );
+    assert.equal(optionalParentShow.children.length, 1);
+    assert.equal(optionalParentShow.children[0].child_requirement, "optional");
+    receipt(await a.call("claim", { work_ref: optionalParent.short_ref }));
+    const optionalSeal = receipt(
+      await a.call("done", {
+        work_ref: optionalParent.short_ref,
+        summary: "parent is complete without the optional follow-up",
+      }),
+    );
+    assert.match(optionalSeal.seal, HASH);
+    assert.equal(
+      receipt(await a.call("show", { work_ref: optionalParent.short_ref })).status.work.lifecycle,
+      "completed",
+    );
+    structuredError(
+      await a.call("add", { title: "Invalid optional root", optional: true }),
+      "work_invalid",
+    );
     // Planning fields revise in one call, and deferral shows up as words.
     const rootRef = keyless.work.short_ref;
     const revised = receipt(

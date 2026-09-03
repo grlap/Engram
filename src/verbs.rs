@@ -30,8 +30,8 @@ use crate::{
     work_service::{
         MAX_AGENT_WORK_RESPONSE_BYTES, MAX_TEXT_NEXT_COMMANDS, ProjectMemorySignal,
         ReadyWorkSummary, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
-        WorkAttributionDefaults, WorkChange, WorkChangeProjection, WorkSectionOmissionReason,
-        render_agent_receipt_text, terminal_safe_multiline,
+        WorkAttributionDefaults, WorkChange, WorkChangeProjection, WorkItemSummary,
+        WorkSectionOmissionReason, render_agent_receipt_text, terminal_safe_multiline,
     },
 };
 
@@ -156,13 +156,16 @@ enum CompactRowLocation {
     Focus,
 }
 
-/// `add`: a root, or one required child under `under`.
+/// `add`: a root, or one required/optional child under `under`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AddInput {
     pub title: String,
     pub outcome: Option<String>,
     pub acceptance: Vec<String>,
     pub under: Option<String>,
+    /// Make the child non-blocking for parent completion. Valid only with
+    /// `under`.
+    pub optional: bool,
     pub priority: Option<i32>,
     pub labels: Vec<String>,
     pub assignee: Option<String>,
@@ -944,12 +947,7 @@ impl AgentVerbs {
                 "children: {}",
                 view.children
                     .iter()
-                    .map(|child| format!(
-                        "{} \"{}\" ({})",
-                        child.short_ref,
-                        short(&child.title),
-                        lifecycle_word(child.lifecycle)
-                    ))
+                    .map(child_summary_line)
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -1001,7 +999,7 @@ impl AgentVerbs {
         ))
     }
 
-    /// `add`: a root, or one required child beneath `under`.
+    /// `add`: a root, or one required/optional child beneath `under`.
     ///
     /// # Errors
     ///
@@ -1031,7 +1029,18 @@ impl AgentVerbs {
             .assignee
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty());
+        if input.optional && input.under.is_none() {
+            return Err(StoreError::InvalidWork(
+                "optional work needs a parent; use --under REF with --optional".into(),
+            )
+            .into());
+        }
         if let Some(under) = input.under.as_deref() {
+            let requirement = if input.optional {
+                ChildRequirement::Optional
+            } else {
+                ChildRequirement::Required
+            };
             return self.add_child(
                 under,
                 WorkChildInput {
@@ -1039,7 +1048,7 @@ impl AgentVerbs {
                     title,
                     outcome,
                     acceptance,
-                    requirement: Some(ChildRequirement::Required),
+                    requirement: Some(requirement),
                     kind: input.kind,
                     priority,
                     labels,
@@ -1083,7 +1092,7 @@ impl AgentVerbs {
         ))
     }
 
-    /// One required child through `work_propose:decompose`; the child becomes
+    /// One required or optional child through `work_propose:decompose`; it becomes
     /// the focus exactly as a new root does.
     fn add_child(
         &self,
@@ -1128,8 +1137,13 @@ impl AgentVerbs {
         let mut value = serde_json::to_value(&result)?;
         value["work"] = serde_json::to_value(&focus.status.work)?;
         value["focus"] = serde_json::to_value(&focus)?;
+        let requirement = if focus.status.work.child_requirement == ChildRequirement::Optional {
+            " optional"
+        } else {
+            ""
+        };
         let lines = vec![format!(
-            "added {child_ref} \"{}\" under {parent_ref} \"{}\"",
+            "added{requirement} {child_ref} \"{}\" under {parent_ref} \"{}\"",
             short(&focus.status.work.title),
             short(&parent.status.work.title)
         )];
@@ -2699,6 +2713,20 @@ fn lifecycle_word(lifecycle: WorkLifecycle) -> &'static str {
     }
 }
 
+fn child_summary_line(child: &WorkItemSummary) -> String {
+    let requirement = if child.child_requirement == ChildRequirement::Optional {
+        ", optional"
+    } else {
+        ""
+    };
+    format!(
+        "{} \"{}\" ({}{requirement})",
+        child.short_ref,
+        short(&child.title),
+        lifecycle_word(child.lifecycle)
+    )
+}
+
 fn kind_word(kind: WorkItemKind) -> &'static str {
     match kind {
         WorkItemKind::Task => "task",
@@ -3995,6 +4023,7 @@ mod tests {
             short_ref: format!("w-{index:012x}"),
             root_id: WorkId(uuid::Uuid::from_u128(index)),
             parent_id: None,
+            child_requirement: ChildRequirement::Required,
             title: "Prerequisite".into(),
             outcome: "Prerequisite".into(),
             acceptance: vec!["Prerequisite is done".into()],

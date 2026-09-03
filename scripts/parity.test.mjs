@@ -113,6 +113,66 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
   }
 });
 
+test("optional child is marked by show and does not gate parent completion", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-optional-child-"));
+  const actor = "optional-child-agent";
+  try {
+    hostSetup(engramHome);
+    const hostContext = [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      actor,
+      "--session-id",
+      actor,
+    ];
+    const parent = run([...hostContext, "add", "Optional parent", "--json"]);
+    assert.equal(parent.status, 0, parent.stderr);
+    const parentWork = JSON.parse(parent.stdout).work;
+    const child = run([
+      ...hostContext,
+      "add",
+      "Non-blocking follow-up",
+      "--under",
+      parentWork.short_ref,
+      "--optional",
+      "--json",
+    ]);
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(JSON.parse(child.stdout).work.child_requirement, "optional");
+
+    const shown = run([...hostContext, "show", parentWork.short_ref, "--json"]);
+    assert.equal(shown.status, 0, shown.stderr);
+    const parentView = JSON.parse(shown.stdout);
+    assert.equal(parentView.children.length, 1);
+    assert.equal(parentView.children[0].child_requirement, "optional");
+    const shownText = run([...hostContext, "show", parentWork.short_ref]);
+    assert.equal(shownText.status, 0, shownText.stderr);
+    assert.match(shownText.stdout, /children: .* \(open, optional\)/u);
+
+    const claimed = run([...hostContext, "claim", parentWork.short_ref]);
+    assert.equal(claimed.status, 0, claimed.stderr);
+    const completed = run([
+      ...hostContext,
+      "done",
+      parentWork.short_ref,
+      "Parent complete without optional follow-up",
+    ]);
+    assert.equal(completed.status, 0, completed.stderr);
+    assert.match(completed.stdout, /^done /u);
+    const completedView = run([...hostContext, "show", parentWork.short_ref, "--json"]);
+    assert.equal(completedView.status, 0, completedView.stderr);
+    assert.equal(JSON.parse(completedView.stdout).status.work.lifecycle, "completed");
+
+    const invalidRoot = run([...hostContext, "add", "Invalid optional root", "--optional"]);
+    assert.notEqual(invalidRoot.status, 0);
+    assert.match(invalidRoot.stderr, /--under/u);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("shell words default missing local attribution without losing explicit targeting", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-defaults-"));
   try {
