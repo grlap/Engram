@@ -47,14 +47,22 @@ engram work memories [QUERY] | engram work memories --after KEY | engram work me
 engram work forget KEY
 ```
 
-Add `--json` to any word for its structured receipt. Lists are short by
+Add `--json` to any word for its structured receipt. Agent reads are short by
 default in text, JSON, and MCP: `next` and `ls` return only navigation rows
-and one-line changes. `show REF` is the detail boundary. Humans and hosts that
-really need the prior full list projection can add `--verbose` to `next` or
-`ls` (or set the equivalent MCP argument); host-only `work core` reads remain
-full. Compact rows retain up to 80 UTF-8 bytes of title, omit redundant
-lifecycle and blocked fields, cap labels, and report `labels_omitted`. When
-fitting an oversized advisory response, `next` sheds labels from the
+and one-line changes, while `show REF` returns one safe detail view. Structured
+`show` keeps short refs, planning state, holder words, relations, blocker and
+note summaries with their evidence kind, meaningful history, a superseded
+item's successor short ref, and allowed actions. Actor and session references
+are relative words such as `you`, `another actor`, and `another session`; raw
+actor/session identifiers are not part of this view. It also omits canonical
+UUIDs and hashes, revision and fence counters, and host-only run, claim,
+control-binding, obligation-page, and memory-version fields. Humans and hosts
+that need the rich projection use host-only `work core focus`; full list
+projections remain available through `next --verbose` and `ls --verbose` (or
+the equivalent MCP arguments). Compact rows retain up to 80 UTF-8 bytes of
+title, omit redundant lifecycle and blocked fields, cap labels, and report
+`labels_omitted`. When fitting an oversized advisory response, `next` sheds
+labels from the
 least-important navigation rows before dropping rows; `ls` does not shed
 labels. Compact `next` uses the same 12 KiB agent-response ceiling as its core
 view, so the default limit of 20 remains meaningful. Section removal is
@@ -349,7 +357,7 @@ enforces the live control-session/run binding described above.
 | --- | --- |
 | `next` | What is ready, what this session holds, and the changes since its previous call |
 | `ls` | Open items with flat `search`, `blocked`, `mine`, `all`, and `label` filters |
-| `show` | One item in full; selects it as focus without claiming |
+| `show` | One item in safe agent detail; selects it as focus without claiming |
 | `add` | A root from a title, or one child with `under`; `optional` makes that child non-blocking; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
 | `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, or `supersede` |
@@ -439,11 +447,14 @@ appends wait for the next page. Every successful work response is at most
 shortened by count or byte budget. A `staged` changes omission instead means
 those dense entries remain unconsumed for the next page; it is not a
 byte-budget discard. `work_focus` is navigation only and never claims/releases
-as a side effect. It returns an exact history count with a bounded newest-event
-summary tail, the latest run even after completion, and a body-free
-actor-filtered memory index for host-side inspection. A staged page never
-blocks a focus change or a mutation; changing focus discards the un-delivered
-page and the next call recomputes the same interval under the new focus.
+as a side effect. Its host-only core result returns an exact history count with
+a bounded newest-event summary tail, the latest run even after completion, and
+a body-free actor-filtered memory index. The `show` word projects that result
+into the safe agent detail view described above; event summaries name what
+happened instead of repeating only the transition kind and title. A staged
+page never blocks a focus change or a mutation; changing focus discards the
+un-delivered page and the next call recomputes the same interval under the new
+focus.
 `work_propose` atomically handles roots and bounded decomposition. `work_update`
 carries a typed transition such as claim/release, checkpoint, blocker, cancel,
 supersede, deferral, assignment, revision, or prerequisite change. Update and

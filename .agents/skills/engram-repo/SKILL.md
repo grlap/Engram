@@ -135,7 +135,8 @@ engram work forget KEY
 ```
 
 Add `--json` to any word for its structured receipt. `next` and `ls` stay
-short in text, JSON, and MCP; use `show REF` for detail. `--verbose` restores
+short in text, JSON, and MCP; use `show REF` for safe agent detail without
+canonical ids, hashes, fences, or host-control fields. `--verbose` restores
 the full structured list projection for a human or host that explicitly needs
 it. Host-only `work core` reads remain full.
 

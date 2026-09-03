@@ -64,6 +64,8 @@ const MAX_FOCUS_HISTORY: u32 = 4;
 const MAX_FOCUS_RELATIONS: usize = 8;
 const MAX_FOCUS_MEMORIES: u32 = 8;
 const MAX_SUMMARY_BYTES: usize = 192;
+const MAX_HISTORY_TITLE_BYTES: usize = 72;
+const MAX_HISTORY_DETAIL_BYTES: usize = 72;
 const MAX_ACCEPTANCE_ITEMS: usize = 6;
 const MAX_LABEL_ITEMS: usize = 8;
 const MAX_DELIVERY_STAGE_RETRIES: usize = 8;
@@ -5348,9 +5350,101 @@ fn agent_work_event_summary(event: &WorkEvent) -> WorkChangeSummary {
         work_ref: Some(event.work.short_ref.clone()),
         revision: Some(event.revision),
         change_kind: change_kind.into(),
-        summary: compact_text(&format!("{change_kind}: {}", event.work.title)),
+        summary: compact_text(&format!(
+            "{change_kind}: {}",
+            work_transition_summary(event)
+        )),
         actor_id: Some(compact_text(&event.actor.actor_id)),
         created_at: event.created_at,
+    }
+}
+
+fn work_transition_summary(event: &WorkEvent) -> String {
+    let title = compact_text_to(&event.work.title, MAX_HISTORY_TITLE_BYTES);
+    let detail = |value: &str| compact_text_to(value, MAX_HISTORY_DETAIL_BYTES);
+    match &event.transition {
+        WorkTransition::Created { prerequisites } if prerequisites.is_empty() => {
+            format!("without prerequisites: \"{title}\"")
+        }
+        WorkTransition::Created { prerequisites } => {
+            format!("with {} prerequisite(s): \"{title}\"", prerequisites.len())
+        }
+        WorkTransition::Decomposed { children, .. } => {
+            format!("added {} child item(s): \"{title}\"", children.len())
+        }
+        WorkTransition::Revised { .. } => format!("planning fields: \"{title}\""),
+        WorkTransition::PrerequisiteAdded { .. } => {
+            format!("added one prerequisite: \"{title}\"")
+        }
+        WorkTransition::PrerequisiteRemoved { .. } => {
+            format!("removed one prerequisite: \"{title}\"")
+        }
+        WorkTransition::Blocked { .. } => event.blocker.as_ref().map_or_else(
+            || format!("\"{title}\""),
+            |blocker| format!("{}: \"{title}\"", detail(&blocker.detail)),
+        ),
+        WorkTransition::Unblocked { .. } => format!("removed one blocker: \"{title}\""),
+        WorkTransition::Claimed {
+            recovered: true, ..
+        } => format!("after recovery by a session: \"{title}\""),
+        WorkTransition::Claimed {
+            recovered: false, ..
+        } => format!("by a session: \"{title}\""),
+        WorkTransition::Released { reason, .. }
+        | WorkTransition::HandoffCancelled { reason, .. }
+        | WorkTransition::Reopened { reason, .. } => {
+            format!("because {}: \"{title}\"", detail(reason))
+        }
+        WorkTransition::Checkpointed { .. } => format!("progress: \"{title}\""),
+        WorkTransition::HandoffOffered { .. } => {
+            format!("to another session: \"{title}\"")
+        }
+        WorkTransition::HandoffExpired { .. } => format!("expired: \"{title}\""),
+        WorkTransition::HandedOff { .. } => {
+            format!("from one session to another: \"{title}\"")
+        }
+        WorkTransition::EvidenceAdded { .. } => format!("for: \"{title}\""),
+        WorkTransition::MemoryCaptured { .. } => {
+            format!("shared work memory: \"{title}\"")
+        }
+        WorkTransition::TypedEvidenceAdded { evidence_kind, .. } => {
+            format!(
+                "{} evidence: \"{title}\"",
+                work_evidence_kind_word(*evidence_kind)
+            )
+        }
+        WorkTransition::Completed { .. } => format!("\"{title}\""),
+        WorkTransition::Disposed {
+            lifecycle, reason, ..
+        } => format!(
+            "to {} because {}: \"{title}\"",
+            work_lifecycle_word(*lifecycle),
+            detail(reason)
+        ),
+        WorkTransition::RequiredChildWaived { reason, .. } => {
+            format!(
+                "waived one required child because {}: \"{title}\"",
+                detail(reason)
+            )
+        }
+    }
+}
+
+fn work_evidence_kind_word(kind: WorkEvidenceKind) -> &'static str {
+    match kind {
+        WorkEvidenceKind::Generic => "generic",
+        WorkEvidenceKind::Verification => "verification",
+        WorkEvidenceKind::Environment => "environment",
+    }
+}
+
+fn work_lifecycle_word(lifecycle: WorkLifecycle) -> &'static str {
+    match lifecycle {
+        WorkLifecycle::Proposed => "proposed",
+        WorkLifecycle::Open => "open",
+        WorkLifecycle::Completed => "completed",
+        WorkLifecycle::Cancelled => "cancelled",
+        WorkLifecycle::Superseded => "superseded",
     }
 }
 
@@ -6455,6 +6549,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one canonical event fixture exercises the complete agent projection boundary"
+    )]
     fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         let work_id = WorkId(uuid::Uuid::from_u128(11));
         let run_id = WorkRunId(uuid::Uuid::from_u128(12));
@@ -6501,7 +6599,7 @@ mod tests {
             work_id,
             run_id,
             accepted_work_revision: 1,
-            holder: SessionId("projection-session".into()),
+            holder: SessionId("local-process-42-123e4567-e89b-42d3-a456-426614174000".into()),
             expires_at: at(60),
             revision: 1,
             fence: 77,
@@ -6528,9 +6626,14 @@ mod tests {
             actor,
             created_at: at(1),
         };
-        let claimed = serde_json::to_string(&agent_work_event_summary(&event))
-            .expect("serialize claimed summary");
+        let claimed_summary = agent_work_event_summary(&event);
+        assert_eq!(
+            claimed_summary.summary,
+            "claimed: by a session: \"Projection boundary\""
+        );
+        let claimed = serde_json::to_string(&claimed_summary).expect("serialize claimed summary");
         assert!(!claimed.contains(&claim_id.0.to_string()));
+        assert!(!claimed.contains("123e4567-e89b-42d3-a456-426614174000"));
         assert!(!claimed.contains("\"fence\""));
 
         let checkpoint = ObjectHash::from_canonical_bytes(b"private-checkpoint-marker");
@@ -6541,11 +6644,43 @@ mod tests {
             checkpoint: checkpoint.clone(),
             offer: offer.clone(),
         };
-        let offered = serde_json::to_string(&agent_work_event_summary(&event))
-            .expect("serialize handoff summary");
+        let offered_summary = agent_work_event_summary(&event);
+        assert_eq!(
+            offered_summary.summary,
+            "handoff_offered: to another session: \"Projection boundary\""
+        );
+        let offered = serde_json::to_string(&offered_summary).expect("serialize handoff summary");
         assert!(!offered.contains(&checkpoint.to_string()));
         assert!(!offered.contains(&offer.to_string()));
         assert!(!offered.contains("offer_id"));
+
+        event.work.title = "long title ".repeat(80);
+        event.transition = WorkTransition::Claimed {
+            claim,
+            recovered: true,
+        };
+        let long_claim = agent_work_event_summary(&event).summary;
+        assert!(long_claim.starts_with("claimed: after recovery by a session: \""));
+        assert!(long_claim.len() <= MAX_SUMMARY_BYTES);
+
+        event.transition = WorkTransition::TypedEvidenceAdded {
+            evidence: ObjectHash::from_canonical_bytes(b"verification"),
+            evidence_kind: WorkEvidenceKind::Verification,
+        };
+        assert!(
+            agent_work_event_summary(&event)
+                .summary
+                .starts_with("typed_evidence_added: verification evidence: \"")
+        );
+
+        event.transition = WorkTransition::Disposed {
+            lifecycle: WorkLifecycle::Cancelled,
+            replacement_id: None,
+            reason: "bounded reason ".repeat(40),
+        };
+        let disposed = agent_work_event_summary(&event).summary;
+        assert!(disposed.starts_with("disposed: to cancelled because bounded reason"));
+        assert!(disposed.len() <= MAX_SUMMARY_BYTES);
     }
 
     #[test]

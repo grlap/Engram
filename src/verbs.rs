@@ -21,17 +21,18 @@ use serde_json::{Value, json};
 use crate::{
     ChildRequirement, LocalWorkService, ProjectId, SessionId, VerificationKind, WorkAvailability,
     WorkBlockerKind, WorkChildInput, WorkClaim, WorkClaimState, WorkCompleteInput,
-    WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput,
-    WorkHandoffState, WorkId, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
-    WorkNextView, WorkObligationPage, WorkObligationState, WorkPrerequisiteState, WorkProposeInput,
-    WorkProposeResult, WorkRevisionPatch, WorkUpdateInput,
+    WorkCompleteResult, WorkCompletionCaptureInput, WorkEvidenceKind, WorkFocusView,
+    WorkHandoffInput, WorkHandoffState, WorkId, WorkItemKind, WorkLifecycle, WorkNextQuery,
+    WorkNextSection, WorkNextView, WorkObligationPage, WorkObligationState, WorkPrerequisiteState,
+    WorkProposeInput, WorkProposeResult, WorkRevisionPatch, WorkUpdateInput,
     domain::normalize_gate_evidence_input,
     storage::StoreError,
     work_service::{
         MAX_AGENT_WORK_RESPONSE_BYTES, MAX_TEXT_NEXT_COMMANDS, ProjectMemorySignal,
         ReadyWorkSummary, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
         WorkAttributionDefaults, WorkChange, WorkChangeProjection, WorkItemSummary,
-        WorkSectionOmissionReason, render_agent_receipt_text, terminal_safe_multiline,
+        WorkSectionOmission, WorkSectionOmissionReason, render_agent_receipt_text,
+        terminal_safe_multiline,
     },
 };
 
@@ -105,9 +106,9 @@ pub struct LsInput {
     pub verbose: bool,
 }
 
-/// Short list row used by the agent words. `show` remains the full-object
-/// boundary; absent claim and parent fields are omitted to keep repeated
-/// navigation inexpensive.
+/// Short list row used by the agent words. Host-only `work core focus` remains
+/// the rich-object boundary; absent claim and parent fields are omitted to
+/// keep repeated navigation inexpensive.
 #[derive(Clone, Debug, Serialize)]
 struct CompactWorkRow {
     #[serde(rename = "ref")]
@@ -126,6 +127,105 @@ struct CompactWorkRow {
     labels_omitted: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_ref: Option<String>,
+}
+
+/// Agent-detail work fields for `show`. Canonical ids, revision counters,
+/// run bindings, and content hashes remain on the host-only core view.
+#[derive(Clone, Debug, Serialize)]
+struct ShowWorkSummary {
+    short_ref: String,
+    title: String,
+    outcome: String,
+    acceptance: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acceptance_omitted: Option<usize>,
+    kind: WorkItemKind,
+    priority: i32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    labels: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    assigned_to: Option<String>,
+    lifecycle: WorkLifecycle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    superseded_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    child_requirement: Option<ChildRequirement>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ShowStatus {
+    work: ShowWorkSummary,
+    availability: WorkAvailability,
+}
+
+/// A relation row that preserves the agent's navigation vocabulary without
+/// exposing the relation's canonical work identity.
+#[derive(Clone, Debug, Serialize)]
+struct ShowRelation {
+    short_ref: String,
+    title: String,
+    lifecycle: WorkLifecycle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    child_requirement: Option<ChildRequirement>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prerequisite_state: Option<WorkPrerequisiteState>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ShowBlocker {
+    kind: WorkBlockerKind,
+    detail: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ShowHandoff {
+    from: String,
+    to: String,
+    expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ShowNote {
+    kind: WorkEvidenceKind,
+    summary: String,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ShowHistoryItem {
+    kind: String,
+    summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    by: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ShowHistory {
+    total: usize,
+    omitted: usize,
+    items: Vec<ShowHistoryItem>,
+}
+
+/// Terse projection shared by CLI `show --json` and the agent-facing MCP
+/// tool. The rich [`WorkFocusView`] remains available through `work core
+/// focus` for hosts that need authority and integrity fields.
+#[derive(Clone, Debug, Serialize)]
+struct ShowReceiptValue {
+    status: ShowStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    holder: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    held_until: Option<DateTime<Utc>>,
+    children: Vec<ShowRelation>,
+    prerequisites: Vec<ShowRelation>,
+    handoffs: Vec<ShowHandoff>,
+    blockers: Vec<ShowBlocker>,
+    notes: Vec<ShowNote>,
+    history: ShowHistory,
+    allowed_next: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    omissions: Vec<WorkSectionOmission>,
 }
 
 /// One deliberately bounded part of a compact `next` response. This mirrors
@@ -897,7 +997,9 @@ impl AgentVerbs {
         ))
     }
 
-    /// `show`: one item in full; selects it as ambient focus without claiming.
+    /// `show`: one item in agent detail; selects it as ambient focus without
+    /// claiming. Host authority and integrity fields remain on `work core
+    /// focus`.
     ///
     /// # Errors
     ///
@@ -908,93 +1010,18 @@ impl AgentVerbs {
             .work_focus(work_ref, now)
             .map_err(|error| VerbError::at(error, work_ref))?;
         let holder = self.holder(&view, now);
-        let work = &view.status.work;
-        let mut lines = vec![item_line(&view.status, holder, now)];
-        let mut facts = vec![
-            format!("kind: {}", kind_word(work.kind)),
-            format!("priority: {}", work.priority),
-        ];
-        if !work.labels.is_empty() {
-            facts.push(format!("labels: {}", work.labels.join(", ")));
-        }
-        if let Some(assignee) = &work.assigned_to {
-            facts.push(format!("assignee: {assignee}"));
-        }
-        lines.push(facts.join("  "));
-        lines.push(format!("outcome: {}", view.outcome));
-        lines.push("acceptance:".into());
-        for criterion in &work.acceptance {
-            lines.push(format!("  - {criterion}"));
-        }
-        if work.acceptance_count > work.acceptance.len() {
-            lines.push(format!(
-                "  ({} more not shown)",
-                work.acceptance_count - work.acceptance.len()
-            ));
-        }
-        if !view.blockers.is_empty() {
-            lines.push("blockers:".into());
-            for blocker in &view.blockers {
-                lines.push(format!(
-                    "  - {}: {}",
-                    blocker_word(blocker.kind),
-                    blocker.detail
-                ));
-            }
-        }
-        if !view.children.is_empty() {
-            lines.push(format!(
-                "children: {}",
-                view.children
-                    .iter()
-                    .map(child_summary_line)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-        if !view.prerequisites.is_empty() {
-            lines.push(format!(
-                "prerequisites: {}",
-                view.prerequisites
-                    .iter()
-                    .map(|item| format!(
-                        "{} \"{}\" ({})",
-                        item.short_ref,
-                        short(&item.title),
-                        lifecycle_word(item.lifecycle)
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-        for offer in view
-            .handoffs
-            .iter()
-            .filter(|offer| offer.state == WorkHandoffState::Offered && offer.expires_at > now)
-        {
-            lines.push(format!(
-                "handoff: offered by {} to {} until {}",
-                offer.from.0,
-                offer.to.0,
-                clock(offer.expires_at, now)
-            ));
-        }
-        if !view.evidence_items.is_empty() {
-            let last = view
-                .evidence_items
-                .last()
-                .map(|item| short(&item.summary))
-                .unwrap_or_default();
-            lines.push(format!(
-                "notes: {} recorded; latest: \"{last}\"",
-                view.evidence_items.len()
-            ));
-        }
+        let lines = show_lines(&view, holder, &self.actor_id, &self.session_id, now);
         let guidance = self.guidance(&view, "show", now);
         Ok(Receipt::assemble(
             lines,
             guidance,
-            serde_json::to_value(&view)?,
+            serde_json::to_value(show_receipt_value(
+                &view,
+                holder,
+                &self.actor_id,
+                &self.session_id,
+                now,
+            ))?,
             false,
         ))
     }
@@ -2028,14 +2055,12 @@ fn reminder_for_reason(
         "prior claim is recoverable" => claim_recovery_required
             .then(|| "a previous holder's claim lapsed; claiming needs a recovery reason".into()),
         "live claim has checkpointed progress" => match holder {
-            Holder::Other(session, _) => Some(format!("held by {}", session.0)),
+            Holder::Other(_, _) => Some("held by another session".into()),
             Holder::You(_) | Holder::Nobody => None,
         },
         "live claim has not checkpointed progress" => Some(match holder {
             Holder::You(_) => "you hold this item but have not noted progress yet".into(),
-            Holder::Other(session, _) => {
-                format!("held by {}; no progress noted yet", session.0)
-            }
+            Holder::Other(_, _) => "held by another session; no progress noted yet".into(),
             Holder::Nobody => "held; no progress noted yet".into(),
         }),
         other => Some(other.to_owned()),
@@ -2560,6 +2585,234 @@ fn live(claim: &WorkClaim, now: DateTime<Utc>) -> bool {
     claim.state == WorkClaimState::Active && claim.expires_at > now
 }
 
+fn optional_child_requirement(requirement: ChildRequirement) -> Option<ChildRequirement> {
+    (requirement == ChildRequirement::Optional).then_some(requirement)
+}
+
+fn actor_word(actor: &str, current_actor: &str) -> &'static str {
+    if actor == current_actor {
+        "you"
+    } else {
+        "another actor"
+    }
+}
+
+fn session_word(session: &SessionId, current_session: &SessionId) -> &'static str {
+    if session == current_session {
+        "you"
+    } else {
+        "another session"
+    }
+}
+
+fn show_relation(item: &WorkItemSummary) -> ShowRelation {
+    ShowRelation {
+        short_ref: item.short_ref.clone(),
+        title: item.title.clone(),
+        lifecycle: item.lifecycle,
+        child_requirement: optional_child_requirement(item.child_requirement),
+        prerequisite_state: item.prerequisite_state,
+    }
+}
+
+fn show_lines(
+    view: &WorkFocusView,
+    holder: Holder<'_>,
+    current_actor: &str,
+    current_session: &SessionId,
+    now: DateTime<Utc>,
+) -> Vec<String> {
+    let work = &view.status.work;
+    let mut lines = vec![show_item_line(&view.status, holder, now)];
+    let mut facts = vec![
+        format!("kind: {}", kind_word(work.kind)),
+        format!("priority: {}", work.priority),
+    ];
+    if !work.labels.is_empty() {
+        facts.push(format!("labels: {}", work.labels.join(", ")));
+    }
+    if let Some(assignee) = &work.assigned_to {
+        facts.push(format!("assignee: {}", actor_word(assignee, current_actor)));
+    }
+    lines.push(facts.join("  "));
+    if let Some(replacement) = work.superseded_by {
+        lines.push(format!("successor: {}", short_ref_for_work_id(replacement)));
+    }
+    lines.push(format!("outcome: {}", view.outcome));
+    lines.push("acceptance:".into());
+    for criterion in &work.acceptance {
+        lines.push(format!("  - {criterion}"));
+    }
+    if work.acceptance_count > work.acceptance.len() {
+        lines.push(format!(
+            "  ({} more not shown)",
+            work.acceptance_count - work.acceptance.len()
+        ));
+    }
+    if !view.blockers.is_empty() {
+        lines.push("blockers:".into());
+        for blocker in &view.blockers {
+            lines.push(format!(
+                "  - {}: {}",
+                blocker_word(blocker.kind),
+                blocker.detail
+            ));
+        }
+    }
+    if !view.children.is_empty() {
+        lines.push(format!(
+            "children: {}",
+            view.children
+                .iter()
+                .map(child_summary_line)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !view.prerequisites.is_empty() {
+        lines.push(format!(
+            "prerequisites: {}",
+            view.prerequisites
+                .iter()
+                .map(|item| format!(
+                    "{} \"{}\" ({})",
+                    item.short_ref,
+                    short(&item.title),
+                    lifecycle_word(item.lifecycle)
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    for offer in view
+        .handoffs
+        .iter()
+        .filter(|offer| offer.state == WorkHandoffState::Offered && offer.expires_at > now)
+    {
+        lines.push(format!(
+            "handoff: offered by {} to {} until {}",
+            session_word(&offer.from, current_session),
+            session_word(&offer.to, current_session),
+            clock(offer.expires_at, now)
+        ));
+    }
+    if let Some(last) = view.evidence_items.last() {
+        lines.push(format!(
+            "notes: {} recorded; latest {}: \"{}\"",
+            view.evidence_items.len(),
+            evidence_kind_word(last.evidence_kind),
+            short(&last.summary)
+        ));
+    }
+    lines
+}
+
+fn show_receipt_value(
+    view: &WorkFocusView,
+    holder: Holder<'_>,
+    current_actor: &str,
+    current_session: &SessionId,
+    now: DateTime<Utc>,
+) -> ShowReceiptValue {
+    let work = &view.status.work;
+    let (holder, held_until) = match holder {
+        Holder::You(expires_at) => (Some("you".into()), Some(expires_at)),
+        Holder::Other(_, expires_at) => (Some("another session".into()), Some(expires_at)),
+        Holder::Nobody => (None, None),
+    };
+    let history: Vec<ShowHistoryItem> = view
+        .history
+        .items
+        .iter()
+        .filter_map(|change| match &change.delivery {
+            WorkChangeProjection::Visible(summary) => Some(ShowHistoryItem {
+                kind: summary.change_kind.clone(),
+                summary: strip_kind_prefix(&summary.summary, &summary.change_kind),
+                by: summary
+                    .actor_id
+                    .as_deref()
+                    .map(|actor| actor_word(actor, current_actor).to_owned()),
+                created_at: summary.created_at,
+            }),
+            WorkChangeProjection::Omitted(_) => None,
+        })
+        .collect();
+    let hidden_history = view.history.items.len().saturating_sub(history.len());
+    ShowReceiptValue {
+        status: ShowStatus {
+            work: ShowWorkSummary {
+                short_ref: work.short_ref.clone(),
+                title: work.title.clone(),
+                outcome: view.outcome.clone(),
+                acceptance: work.acceptance.clone(),
+                acceptance_omitted: (work.acceptance_count > work.acceptance.len())
+                    .then(|| work.acceptance_count - work.acceptance.len()),
+                kind: work.kind,
+                priority: work.priority,
+                labels: work.labels.clone(),
+                assigned_to: work
+                    .assigned_to
+                    .as_deref()
+                    .map(|actor| actor_word(actor, current_actor).to_owned()),
+                lifecycle: work.lifecycle,
+                superseded_by: work.superseded_by.map(short_ref_for_work_id),
+                child_requirement: optional_child_requirement(work.child_requirement),
+            },
+            availability: view.status.availability,
+        },
+        holder,
+        held_until,
+        children: view.children.iter().map(show_relation).collect(),
+        prerequisites: view.prerequisites.iter().map(show_relation).collect(),
+        handoffs: view
+            .handoffs
+            .iter()
+            .filter(|offer| offer.state == WorkHandoffState::Offered && offer.expires_at > now)
+            .map(|offer| ShowHandoff {
+                from: session_word(&offer.from, current_session).to_owned(),
+                to: session_word(&offer.to, current_session).to_owned(),
+                expires_at: offer.expires_at,
+            })
+            .collect(),
+        blockers: view
+            .blockers
+            .iter()
+            .map(|blocker| ShowBlocker {
+                kind: blocker.kind,
+                detail: blocker.detail.clone(),
+            })
+            .collect(),
+        notes: view
+            .evidence_items
+            .iter()
+            .map(|note| ShowNote {
+                kind: note.evidence_kind,
+                summary: note.summary.clone(),
+                created_at: note.created_at,
+            })
+            .collect(),
+        history: ShowHistory {
+            total: view.history.total,
+            omitted: view.history.omitted.saturating_add(hidden_history),
+            items: history,
+        },
+        allowed_next: view.allowed_next.clone(),
+        omissions: view.omissions.clone(),
+    }
+}
+
+fn show_item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) -> String {
+    let work = &status.work;
+    let state = match holder {
+        Holder::You(expires_at) => format!("held by you until {}", clock(expires_at, now)),
+        Holder::Other(_, expires_at) => {
+            format!("held by another session until {}", clock(expires_at, now))
+        }
+        Holder::Nobody => availability_words(status).to_owned(),
+    };
+    format!("{} \"{}\" — {state}", work.short_ref, short(&work.title))
+}
+
 fn item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) -> String {
     let work = &status.work;
     let state = match holder {
@@ -2648,8 +2901,8 @@ fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
             });
             let precedes_completion = visible.get(index + 1).is_some_and(|next| {
                 next.as_ref()
-                    .is_some_and(|(next_subject, next_kind, next_text, _)| {
-                        next_subject == subject && next_kind == "completed" && next_text == text
+                    .is_some_and(|(next_subject, next_kind, _, _)| {
+                        next_subject == subject && next_kind == "completed"
                     })
             });
             if repeats_note || precedes_completion {
@@ -2710,6 +2963,14 @@ fn lifecycle_word(lifecycle: WorkLifecycle) -> &'static str {
         WorkLifecycle::Completed => "completed",
         WorkLifecycle::Cancelled => "cancelled",
         WorkLifecycle::Superseded => "superseded",
+    }
+}
+
+fn evidence_kind_word(kind: WorkEvidenceKind) -> &'static str {
+    match kind {
+        WorkEvidenceKind::Generic => "note",
+        WorkEvidenceKind::Verification => "verification",
+        WorkEvidenceKind::Environment => "environment",
     }
 }
 
@@ -3162,6 +3423,40 @@ mod tests {
 
     fn hash(fill: char) -> ObjectHash {
         ObjectHash::from_str(&fill.to_string().repeat(64)).expect("hash")
+    }
+
+    #[test]
+    fn checkpoint_before_completion_collapses_by_work_identity() {
+        let change = |position, kind: &str, summary: &str| WorkChange {
+            entry: crate::domain::WorkFeedEntry {
+                position: crate::domain::FeedPosition {
+                    feed: crate::domain::FeedId::Project(ProjectId("collapse-project".into())),
+                    position,
+                },
+                object_kind: "work_event".into(),
+                object_hash: hash(if position == 1 { 'a' } else { 'b' }),
+            },
+            delivery: WorkChangeProjection::Visible(crate::work_service::WorkChangeSummary {
+                schema_version: crate::domain::SCHEMA_VERSION,
+                object_kind: "work_event".into(),
+                work_id: Some(WorkId(uuid::Uuid::from_u128(1))),
+                work_ref: Some("w-000000000001".into()),
+                revision: Some(position),
+                change_kind: kind.into(),
+                summary: summary.into(),
+                actor_id: Some("peer".into()),
+                created_at: at(position),
+            }),
+        };
+        let changes = vec![
+            change(1, "checkpoint", "checkpoint: delivered title"),
+            change(2, "completed", "completed: \"Delivered title\""),
+        ];
+
+        assert_eq!(
+            collapse_changes(&changes, "current actor"),
+            vec!["w-000000000001 completed by peer: \"Delivered title\""]
+        );
     }
 
     fn compact_test_row(index: usize) -> CompactWorkRow {
@@ -3638,7 +3933,7 @@ mod tests {
                 false,
             )
             .as_deref(),
-            Some("held by peer; no progress noted yet")
+            Some("held by another session; no progress noted yet")
         );
         assert_eq!(
             reminder_for_reason(

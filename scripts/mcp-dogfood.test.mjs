@@ -7,6 +7,8 @@ import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { assertTerseShow } from "./terse-show-assertions.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const target = resolve(root, process.env.CARGO_TARGET_DIR || "target");
 const binary = join(target, "debug", "engram");
@@ -359,7 +361,8 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.match(doneJson.seal, HASH);
     const focused = cliJson(engramHome, actor, "show", workRef);
     assert.equal(focused.status.work.lifecycle, "completed");
-    assert.equal(focused.evidence.length, 1);
+    assert.equal(focused.notes.length, 1);
+    assertTerseShow(focused);
     const closedList = cliText(engramHome, actor, "ls");
     assert.match(closedList, /^0 item\(s\):/u);
     const allList = cliText(engramHome, actor, "ls", "--all", "--search", "dogfood work");
@@ -404,7 +407,11 @@ test("CLI words translate the same ambient lifecycle service", () => {
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(coreFocus.status, 0, coreFocus.stderr);
-    assert.equal(JSON.parse(coreFocus.stdout).status.work.lifecycle, "completed");
+    const richFocus = JSON.parse(coreFocus.stdout);
+    assert.equal(richFocus.status.work.lifecycle, "completed");
+    assert.equal(typeof richFocus.status.work.work_id, "string");
+    assert.ok(richFocus.run);
+    assert.ok(richFocus.obligation_page);
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }
@@ -412,14 +419,16 @@ test("CLI words translate the same ambient lifecycle service", () => {
 
 test("two MCP sessions complete ambient work through a fenced handoff", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-work-dogfood-"));
+  const sessionA = "work-agent-a-123e4567-e89b-42d3-a456-426614174000";
+  const sessionB = "work-agent-b-123e4567-e89b-42d3-a456-426614174001";
   let a;
   let b;
   try {
     buildAndInit(engramHome);
     // Both sessions receive the same fourteen-tool MCP surface with only
     // project and asserted actor/session bindings.
-    a = new McpClient(engramHome, "work-agent-a");
-    b = new McpClient(engramHome, "work-agent-b");
+    a = new McpClient(engramHome, sessionA);
+    b = new McpClient(engramHome, sessionB);
     await Promise.all([a.initialize(), b.initialize()]);
     assert.match(
       a.instructions,
@@ -601,6 +610,14 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       supersedeReceipt.receipt.result.superseded_by,
       mcpReplacement.work_id,
     );
+    const supersededShow = receipt(
+      await a.call("show", { work_ref: mcpDependent.short_ref }),
+    );
+    assert.equal(
+      supersededShow.status.work.superseded_by,
+      mcpReplacement.short_ref,
+    );
+    assertTerseShow(supersededShow);
 
     const added = receipt(
       await a.call("add", {
@@ -616,6 +633,14 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const workRef = added.work.short_ref;
     assert.ok(added.reminders.includes("unclaimed: claim it before you change anything"));
     assert.ok(added.next.includes(`engram work claim ${workRef}`));
+    const typicalShow = receipt(await a.call("show", { work_ref: workRef }));
+    assertTerseShow(typicalShow);
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(typicalShow), "utf8") < 1024,
+      `${Buffer.byteLength(JSON.stringify(typicalShow), "utf8")} byte MCP show`,
+    );
+    const createdHistory = typicalShow.history.items.find(({ kind }) => kind === "created");
+    assert.match(createdHistory.summary, /without prerequisites/u);
 
     const next = receipt(await a.call("next", { limit: 20, verbose: true }));
     assert.equal(next.session.focused_work_id, added.work.work_id);
@@ -679,9 +704,13 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       referenced: true,
     });
     assert.match(
-      receipt(await a.call("show", { work_ref: workRef })).evidence_items.at(-1)
+      receipt(await a.call("show", { work_ref: workRef })).notes.at(-1)
         .summary,
       /^gate cargo-test failed/u,
+    );
+    assert.equal(
+      receipt(await a.call("show", { work_ref: workRef })).notes.at(-1).kind,
+      "generic",
     );
     const replayedClaim = receipt(
       await a.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
@@ -711,7 +740,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     const blockedShow = receipt(await a.call("show", { work_ref: workRef }));
     assert.equal(blockedShow.blockers.length, 1);
-    assert.ok(blockedShow.blockers[0].blocker_id.length > 0);
+    assert.equal(blockedShow.blockers[0].kind, "manual");
+    assert.equal(blockedShow.blockers[0].detail, "Dogfood the agent-visible blocker identity");
     assert.ok(
       blockedShow.reminders.includes("blocked: Dogfood the agent-visible blocker identity"),
       JSON.stringify(blockedShow.reminders),
@@ -727,7 +757,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       await b.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
       "work_claim_held",
     );
-    assert.equal(held.details.holder_session_id, "work-agent-a");
+    assert.equal(held.details.holder_session_id, sessionA);
     assert.match(held.reminders[0], /^held by another session until /u);
     assert.deepEqual(held.next, [`engram work show ${workRef}`]);
     const noted = receipt(
@@ -746,7 +776,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     receipt(
       await a.call("handoff", {
         action: "offer",
-        to: "work-agent-b",
+        to: sessionB,
         ttl_seconds: 240,
         summary: "handoff after MCP evidence capture",
       }),
@@ -756,6 +786,14 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(recipientFocus.next[0], `engram work handoff ${workRef} --accept`);
     const accepted = receipt(await b.call("handoff", { action: "accept" }));
     assert.equal(accepted.operation, "accept");
+    const acceptedFocus = receipt(await b.call("show", { work_ref: workRef }));
+    assert.ok(
+      acceptedFocus.history.items.some(
+        ({ kind, summary }) =>
+          kind === "handed_off" && summary.includes("from one session to another"),
+      ),
+      JSON.stringify(acceptedFocus.history),
+    );
     const stale = structuredError(
       await a.call("note", { text: "must be rejected after handoff" }),
       "work_claim_mismatch",
@@ -776,6 +814,13 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const completed = receipt(await b.call("show", { work_ref: workRef }));
     assert.equal(completed.status.work.lifecycle, "completed");
     assert.ok(completed.history.items.length > 0);
+    assert.ok(
+      completed.history.items.some(
+        ({ kind, summary }) => kind === "completed" && summary === '"Dogfood local work"',
+      ),
+      JSON.stringify(completed.history),
+    );
+    assertTerseShow(completed);
     assert.equal(completed.reminders.length, 0);
     const openOnly = receipt(await b.call("ls", { search: "dogfood local work" }));
     assert.equal(openOnly.items.length, 0);
@@ -842,7 +887,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(compactSealReplay.seal, compactSeal.seal);
     const compactFocus = receipt(await b.call("show", { work_ref: compact.short_ref }));
     assert.equal(compactFocus.status.work.lifecycle, "completed");
-    assert.equal(compactFocus.evidence.length, 1);
+    assert.equal(compactFocus.notes.length, 1);
 
     // `add` with `under` translates to a one-child decomposition and focuses
     // the new required child.

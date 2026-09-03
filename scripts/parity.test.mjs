@@ -12,6 +12,8 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { assertTerseShow, UUID } from "./terse-show-assertions.mjs";
+
 const root = resolve(import.meta.dirname, "..");
 const target = resolve(root, process.env.CARGO_TARGET_DIR || "target");
 const binary = join(target, "debug", "engram");
@@ -98,8 +100,8 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
     assert.doesNotMatch(transcript, /idempotency/iu, "text output leaked a key");
     assert.doesNotMatch(transcript, /"[a-z_]+":/u, "text output contained JSON");
 
-    // Verification outside the count: the structured receipt still carries
-    // everything the host reads, and the item is sealed.
+    // Verification outside the count: the agent detail view remains terse,
+    // while the completed lifecycle stays directly readable.
     const shown = run([...hostContext, "show", ref, "--json"]);
     assert.equal(shown.status, 0, shown.stderr);
     const view = JSON.parse(shown.stdout);
@@ -107,7 +109,15 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
     assert.ok(Array.isArray(view.reminders));
     assert.ok(Array.isArray(view.next));
     assert.ok(Array.isArray(view.allowed_next));
-    assert.ok(view.obligation_page);
+    assertTerseShow(view);
+    const shownText = run([...hostContext, "show", ref]);
+    assert.equal(shownText.status, 0, shownText.stderr);
+    assert.doesNotMatch(shownText.stdout, HASH);
+    assert.doesNotMatch(shownText.stdout, UUID);
+    assert.doesNotMatch(
+      shownText.stdout,
+      /completion_seal|control_binding|obligation_page|\bfence\b|\brevision\b/iu,
+    );
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }
@@ -218,6 +228,38 @@ test("shell words default missing local attribution without losing explicit targ
       /this command uses (local-process-\d+-[0-9a-f-]{36})\./u,
     )?.[1];
     assert.ok(claimedSession, claimed.stderr);
+
+    const observed = run(
+      [
+        "work",
+        "--actor-id",
+        "observer",
+        "--session-id",
+        "observer",
+        "show",
+        workRef,
+        "--json",
+      ],
+      { env: environment },
+    );
+    assert.equal(observed.status, 0, observed.stderr);
+    const observedView = JSON.parse(observed.stdout);
+    assert.equal(observedView.holder, "another session");
+    assertTerseShow(observedView);
+    const observedText = run(
+      [
+        "work",
+        "--actor-id",
+        "observer",
+        "--session-id",
+        "observer",
+        "show",
+        workRef,
+      ],
+      { env: environment },
+    );
+    assert.equal(observedText.status, 0, observedText.stderr);
+    assert.equal(observedText.stdout.includes(claimedSession), false);
 
     const continued = run(
       [
@@ -664,6 +706,21 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
     ]);
     assert.equal(superseded.status, 0, superseded.stderr);
     assert.equal(JSON.parse(superseded.stdout).operation, "supersede");
+    const supersededShow = run([
+      ...hostContext,
+      "show",
+      dependent,
+      "--json",
+    ]);
+    assert.equal(supersededShow.status, 0, supersededShow.stderr);
+    assert.equal(
+      JSON.parse(supersededShow.stdout).status.work.superseded_by,
+      replacement,
+    );
+    assertTerseShow(JSON.parse(supersededShow.stdout));
+    const supersededText = run([...hostContext, "show", dependent]);
+    assert.equal(supersededText.status, 0, supersededText.stderr);
+    assert.match(supersededText.stdout, new RegExp(`successor: ${replacement}`, "u"));
 
     const claimed = run([...hostContext, "claim", gated]);
     assert.equal(claimed.status, 0, claimed.stderr);
@@ -687,7 +744,7 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
     const gateShow = run([...hostContext, "show", gated, "--json"]);
     assert.equal(gateShow.status, 0, gateShow.stderr);
     assert.match(
-      JSON.parse(gateShow.stdout).evidence_items.at(-1).summary,
+      JSON.parse(gateShow.stdout).notes.at(-1).summary,
       /^gate cargo-test failed/u,
     );
     const passed = run([...hostContext, "gate", "CARGO-TEST", "--json"]);

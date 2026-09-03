@@ -466,16 +466,22 @@ basis by compare-and-swap; a different focus or holder conflicts. Every resumed
 substep also re-reads evidence and revalidates the live claim inside its commit
 transaction.
 
-`work_focus` is the explicit drill-down surface. It carries an exact history
-event count and only the newest bounded event summaries, plus body-free memory
-index entries. Active blockers include their id, type, and compact detail so an
-agent can construct `unblock`; when exactly one blocker is active the id may be
-omitted and Engram infers it. Authorized memory bodies remain available on
-demand through their version hash. `work_update` and `work_handoff` never
-rebuild this history: their success envelopes contain only the operation,
-compact receipt, one bounded `obligation_page`, generic readiness obligations,
-and `allowed_next`, so hundreds of historical events cannot grow a mutation
-response. The same page field appears on `work_focus`, nested
+`work_focus` is the explicit host drill-down surface. It carries an exact
+history event count and only the newest bounded event summaries, plus body-free
+memory index entries. The agent `show` word projects that view into a terse
+receipt with short refs, planning state, safe relation/blocker summaries,
+typed note summaries, meaningful history, a superseded item's successor short
+ref, and allowed actions. Actor and session references become relative words;
+the view excludes their raw identifiers, canonical UUIDs and hashes, revisions
+and fences, and host-only run, claim, control, obligation, seal, and
+memory-version fields. Active core blockers include their id, type, and compact
+detail; when exactly one blocker is active the agent word infers it for
+`unblock`. Authorized memory bodies remain available on demand
+through their version hash on host-only reads. `work_update` and `work_handoff`
+never rebuild this history: their success envelopes contain only the
+operation, compact receipt, one bounded `obligation_page`, generic readiness
+obligations, and `allowed_next`, so hundreds of historical events cannot grow
+a mutation response. The same page field appears on `work_focus`, nested
 `work_next.focus`, and both completion outcomes. Its item count and canonical
 byte size are bounded independently, with an explicit `omitted_count`. Open
 obligations sort ahead of terminal history under both count and byte trimming.
