@@ -29,8 +29,8 @@ use crate::{
     storage::StoreError,
     work_service::{
         MAX_AGENT_WORK_RESPONSE_BYTES, MAX_TEXT_NEXT_COMMANDS, ProjectMemorySignal,
-        ReadyWorkSummary, WorkChange, WorkChangeProjection, WorkSectionOmissionReason,
-        render_agent_receipt_text, terminal_safe_multiline,
+        ReadyWorkSummary, WorkAttributionDefaults, WorkChange, WorkChangeProjection,
+        WorkSectionOmissionReason, render_agent_receipt_text, terminal_safe_multiline,
     },
 };
 
@@ -504,13 +504,35 @@ impl AgentVerbs {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Self {
+        Self::new_with_attribution_defaults(
+            database,
+            project_id,
+            actor_id,
+            session_id,
+            source_skill,
+            WorkAttributionDefaults::default(),
+        )
+    }
+
+    /// Builds the shell word surface while retaining whether local attribution
+    /// defaults must be marked in durable actor provenance.
+    #[must_use]
+    pub fn new_with_attribution_defaults(
+        database: PathBuf,
+        project_id: ProjectId,
+        actor_id: String,
+        session_id: SessionId,
+        source_skill: Option<String>,
+        attribution_defaults: WorkAttributionDefaults,
+    ) -> Self {
         Self::with_shared_service(
-            Arc::new(LocalWorkService::new(
+            Arc::new(LocalWorkService::new_with_attribution_defaults(
                 database,
                 project_id,
                 actor_id.clone(),
                 session_id.clone(),
                 source_skill,
+                attribution_defaults,
             )),
             actor_id,
             session_id,

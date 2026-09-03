@@ -4,8 +4,9 @@ use std::{
     env, fs,
     io::{self, BufReader, BufWriter, Read},
     path::{Path, PathBuf},
-    process::ExitCode,
+    process::{self, ExitCode},
     str::FromStr,
+    sync::OnceLock,
 };
 
 use anyhow::{Context, Result, bail};
@@ -18,11 +19,11 @@ use engram::{
     LsInput, McpServer, MemoriesInput, NextInput, NoteInput, ObjectHash, ObligationRuleDefinition,
     ObligationRuleSet, ProjectId, ProjectPolicyAuthorityDecision, RememberInput, SessionId,
     SqliteStore, StoreError, UpdateAction, UpdateInput, VerificationKind, VerificationRequirement,
-    WaiveWorkObligationRequest, WorkAvailability, WorkCompleteInput, WorkCompleteResult,
-    WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
-    WorkObligationId, WorkProposeInput, WorkUpdateInput, describe_host_path_policy,
-    looks_like_work_ref, parse_defer_date, parse_host_path_policy, probe_host_path_policy,
-    project_database_path, store_error_value,
+    WaiveWorkObligationRequest, WorkActorDefaultSource, WorkAttributionDefaults, WorkAvailability,
+    WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind, WorkLifecycle,
+    WorkNextQuery, WorkNextSection, WorkObligationId, WorkProposeInput, WorkUpdateInput,
+    describe_host_path_policy, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
+    probe_host_path_policy, project_database_path, store_error_value,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -159,12 +160,15 @@ enum Command {
     /// The host fixes actor and session through the environment
     /// so an agent types only the word and its arguments.
     Work {
-        /// Actor identity asserted by the invoking host or operator wrapper.
-        #[arg(long, env = "ENGRAM_ACTOR_ID")]
-        actor_id: String,
-        /// Durable session identity used for ambient focus and cursors.
-        #[arg(long, env = "ENGRAM_SESSION_ID")]
-        session_id: String,
+        /// Actor identity asserted by the invoking host or operator wrapper;
+        /// defaults from the conventional OS-user environment, with a
+        /// synthetic process fallback.
+        #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
+        actor_id: Option<String>,
+        /// Durable session identity used for ambient focus and cursors;
+        /// defaults to one stable id for this process.
+        #[arg(long, env = "ENGRAM_SESSION_ID", global = true)]
+        session_id: Option<String>,
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long, env = "ENGRAM_SOURCE_SKILL")]
         source_skill: Option<String>,
@@ -738,11 +742,14 @@ async fn run_cli() -> Result<ExitCode> {
             json,
             operation,
         } => {
+            let attribution = resolve_shell_work_attribution(actor_id, session_id);
+            attribution.print_notices();
             let context = WorkContext {
                 database,
                 project_id,
-                actor_id,
-                session_id: SessionId(session_id),
+                actor_id: attribution.actor_id,
+                session_id: SessionId(attribution.session_id),
+                attribution_defaults: attribution.defaults,
                 source_skill,
             };
             return match *operation {
@@ -766,7 +773,98 @@ struct WorkContext {
     project_id: ProjectId,
     actor_id: String,
     session_id: SessionId,
+    attribution_defaults: WorkAttributionDefaults,
     source_skill: Option<String>,
+}
+
+/// Shell attribution resolved before the CLI dispatches a work word.
+///
+/// Defaulted origins become durable actor provenance. The generated session
+/// lasts for this process only, so its notice exposes the exact value a human
+/// must reuse for a session-bound follow-up from another process.
+struct ShellWorkAttribution {
+    actor_id: String,
+    session_id: String,
+    defaults: WorkAttributionDefaults,
+}
+
+static DEFAULT_WORK_SESSION_ID: OnceLock<String> = OnceLock::new();
+
+impl ShellWorkAttribution {
+    fn print_notices(&self) {
+        match self.defaults.actor {
+            Some(WorkActorDefaultSource::OsUserEnvironment) => eprintln!(
+                "NOTICE: ENGRAM_ACTOR_ID was absent; attribution uses the asserted OS-user environment and is marked defaulted."
+            ),
+            Some(WorkActorDefaultSource::ProcessFallback) => eprintln!(
+                "NOTICE: ENGRAM_ACTOR_ID and conventional OS-user environment variables were absent; attribution uses a synthetic process actor and is marked defaulted."
+            ),
+            None => {}
+        }
+        if self.defaults.session {
+            eprintln!(
+                "NOTICE: ENGRAM_SESSION_ID was absent; this command uses {}. Reuse it with --session-id {} for a follow-up that must retain focus, claim authority, or exact retry identity.",
+                self.session_id, self.session_id
+            );
+        }
+    }
+}
+
+/// Resolves omitted local-shell attribution without rewriting injected bytes.
+fn resolve_shell_work_attribution(
+    actor_id: Option<String>,
+    session_id: Option<String>,
+) -> ShellWorkAttribution {
+    let (actor_id, actor_default) =
+        actor_id.map_or_else(default_shell_actor, |actor_id| (actor_id, None));
+    let session_defaulted = session_id.is_none();
+    ShellWorkAttribution {
+        actor_id,
+        session_id: session_id.unwrap_or_else(default_process_session_id),
+        defaults: WorkAttributionDefaults {
+            actor: actor_default,
+            session: session_defaulted,
+        },
+    }
+}
+
+/// Derives an asserted local actor from conventional OS-user environment
+/// variables, with a separately marked synthetic fallback.
+fn default_shell_actor() -> (String, Option<WorkActorDefaultSource>) {
+    default_shell_actor_from(|name| env::var(name).ok())
+}
+
+fn default_shell_actor_from(
+    mut environment_value: impl FnMut(&str) -> Option<String>,
+) -> (String, Option<WorkActorDefaultSource>) {
+    let candidates: &[&str] = if cfg!(windows) {
+        &["USERNAME", "USER", "LOGNAME"]
+    } else {
+        &["USER", "LOGNAME", "USERNAME"]
+    };
+    candidates
+        .iter()
+        .find_map(|name| {
+            environment_value(name)
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        })
+        .map_or_else(
+            || {
+                (
+                    format!("local-user-{}", process::id()),
+                    Some(WorkActorDefaultSource::ProcessFallback),
+                )
+            },
+            |actor_id| (actor_id, Some(WorkActorDefaultSource::OsUserEnvironment)),
+        )
+}
+
+/// Returns one opaque session id whose lifetime is this CLI process.
+fn default_process_session_id() -> String {
+    DEFAULT_WORK_SESSION_ID
+        .get_or_init(|| format!("local-process-{}-{}", process::id(), uuid::Uuid::new_v4()))
+        .clone()
 }
 
 fn run_control_policy(
@@ -923,12 +1021,13 @@ fn run_authority(
     reason = "each word's flag translation stays beside the others so the thirteen-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
-    let verbs = AgentVerbs::new(
+    let verbs = AgentVerbs::new_with_attribution_defaults(
         context.database,
         context.project_id,
         context.actor_id,
         context.session_id,
         context.source_skill,
+        context.attribution_defaults,
     );
     let now = chrono::Utc::now();
     let outcome = match operation {
@@ -1213,12 +1312,13 @@ fn serialize_agent_receipt(value: &serde_json::Value) -> serde_json::Result<Stri
 }
 
 fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<ExitCode> {
-    let service = LocalWorkService::new(
+    let service = LocalWorkService::new_with_attribution_defaults(
         context.database,
         context.project_id,
         context.actor_id,
         context.session_id,
         context.source_skill,
+        context.attribution_defaults,
     );
     let now = chrono::Utc::now();
     let mut completion_refused = false;
@@ -1948,6 +2048,48 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["waive-obligation"]
         );
+    }
+
+    #[test]
+    fn shell_work_attribution_defaults_without_rewriting_injected_values() {
+        let (environment_actor, environment_source) =
+            default_shell_actor_from(|name| (name == "USER").then(|| " env user ".into()));
+        assert_eq!(environment_actor, "env user");
+        assert_eq!(
+            environment_source,
+            Some(WorkActorDefaultSource::OsUserEnvironment)
+        );
+        let (fallback_actor, fallback_source) = default_shell_actor_from(|_| None);
+        assert_eq!(fallback_actor, format!("local-user-{}", process::id()));
+        assert_eq!(
+            fallback_source,
+            Some(WorkActorDefaultSource::ProcessFallback)
+        );
+
+        let first = resolve_shell_work_attribution(None, None);
+        let second = resolve_shell_work_attribution(None, None);
+        assert_eq!(first.session_id, second.session_id);
+        assert!(first.defaults.actor.is_some());
+        assert!(first.defaults.session);
+        assert!(first.session_id.starts_with("local-process-"));
+
+        let default_actor = resolve_shell_work_attribution(None, Some("host session".into()));
+        assert!(default_actor.defaults.actor.is_some());
+        assert!(!default_actor.defaults.session);
+        assert_eq!(default_actor.session_id, "host session");
+
+        let default_session = resolve_shell_work_attribution(Some("host actor".into()), None);
+        assert_eq!(default_session.actor_id, "host actor");
+        assert!(default_session.defaults.actor.is_none());
+        assert!(default_session.defaults.session);
+
+        let injected = resolve_shell_work_attribution(
+            Some(" host actor ".into()),
+            Some(" host session ".into()),
+        );
+        assert_eq!(injected.actor_id, " host actor ");
+        assert_eq!(injected.session_id, " host session ");
+        assert_eq!(injected.defaults, WorkAttributionDefaults::default());
     }
 
     #[test]

@@ -111,8 +111,12 @@ policy outside the core. Extend ports using neutral request/response records.
 ## Using Engram as an agent
 
 Engram tracks the work of this repository. You use thirteen words; everything
-else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
-and `ENGRAM_SESSION_ID` in your environment; you type only the word.
+else is the host's business. The host sets `ENGRAM_HOME` and normally injects
+`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; you type only the word. A local
+shell may omit either attribution value and receives explicitly audited
+OS-user-environment or synthetic-actor and process-session defaults. The
+generated session lasts only for that CLI process; reuse the id printed in its
+notice for a cross-process claim follow-up or exact retry.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
@@ -156,7 +160,10 @@ Rules that matter:
   (commands you can run now). Nothing asks you to copy hashes, fences, or
   idempotency keys; if you see one, it is a bug. Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`.
-- Lost response? Run the same command again. Identical calls are safe.
+- With a host-injected or explicitly reused stable session, a lost-response
+  retry of the same command is safe. If a shell used the process default and
+  lost the entire notice too, inspect with `ls`/`show` before repeating a
+  mutation; exact replay cannot cross processes without the printed session.
 
 The same thirteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
 `update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`,

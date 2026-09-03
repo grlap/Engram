@@ -91,11 +91,12 @@ pub use verbs::{
     UpdateAction, UpdateInput, VerbError, looks_like_work_ref, parse_defer_date,
 };
 pub use work_service::{
-    LocalWorkService, ProjectMemorySignal, WorkAcceptanceInput, WorkChange, WorkChangeOmission,
-    WorkChangeOmissionReason, WorkChangeProjection, WorkChildInput, WorkCompleteInput,
-    WorkCompleteRefusal, WorkCompleteResult, WorkCompletedReceipt, WorkCompletionCaptureInput,
-    WorkEvidenceAttachInput, WorkEvidenceSummary, WorkFocusView, WorkHandoffInput,
-    WorkHandoffResult, WorkNextQuery, WorkNextSection, WorkNextView, WorkObligationGuidance,
-    WorkObligationPage, WorkObligationSummary, WorkPrerequisiteInput, WorkProposeInput,
-    WorkProposeResult, WorkUpdateInput, WorkUpdateResult,
+    LocalWorkService, ProjectMemorySignal, WorkAcceptanceInput, WorkActorDefaultSource,
+    WorkAttributionDefaults, WorkChange, WorkChangeOmission, WorkChangeOmissionReason,
+    WorkChangeProjection, WorkChildInput, WorkCompleteInput, WorkCompleteRefusal,
+    WorkCompleteResult, WorkCompletedReceipt, WorkCompletionCaptureInput, WorkEvidenceAttachInput,
+    WorkEvidenceSummary, WorkFocusView, WorkHandoffInput, WorkHandoffResult, WorkNextQuery,
+    WorkNextSection, WorkNextView, WorkObligationGuidance, WorkObligationPage,
+    WorkObligationSummary, WorkPrerequisiteInput, WorkProposeInput, WorkProposeResult,
+    WorkUpdateInput, WorkUpdateResult,
 };

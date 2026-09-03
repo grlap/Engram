@@ -15,8 +15,21 @@ agent sees thirteen words; every host and operator control lives under
 ## Using Engram as an agent
 
 Engram tracks the work of this repository. You use thirteen words; everything
-else is the host's business. The host sets `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`,
-and `ENGRAM_SESSION_ID` in your environment; you type only the word.
+else is the host's business. The host sets `ENGRAM_HOME` and normally injects
+`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; you type only the word. A local
+shell that omits either attribution value remains usable: actor derives from
+the first nonblank conventional OS-user environment variable and session
+defaults to one stable id for that `engram` process. The actor derivation is
+asserted context, not an authenticated OS identity; if no conventional user
+variable exists, Engram uses a synthetic process actor instead of refusing.
+Durable actor provenance distinguishes `defaulted:os_user_environment`,
+`defaulted:process_actor`, and `defaulted:process_session`. Explicit host
+values are recorded verbatim. Because separate shell invocations are separate
+processes, multi-command ambient workflows still need a host-injected stable
+session id. Every defaulted-session invocation prints its generated id and
+the exact `--session-id` reuse instruction, so a shell can safely continue a
+claim or retry; the process default itself does not claim cross-process
+continuity.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
@@ -61,7 +74,10 @@ Rules that matter:
   intentional navigation tokens for `memories` and `forget`. JSON retains the
   complete command list; the text renderer shows at most four and prints
   `(+N more)` when it omits any.
-- Lost response? Run the same command again. Identical calls are safe.
+- With a host-injected or explicitly reused stable session, a lost-response
+  retry of the same command is safe. If a shell used the process default and
+  lost the entire notice too, inspect with `ls`/`show` before repeating a
+  mutation; exact replay cannot cross processes without the printed session.
 - A failed gate is work, not a stop — `gate NAME --failed FAILURE`
   records the failures as evidence on the focused item you hold, nothing more.
   Gate names follow the repository's

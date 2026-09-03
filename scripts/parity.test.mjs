@@ -39,6 +39,13 @@ function hostSetup(engramHome) {
   assert.equal(initialized.status, 0, initialized.stderr);
 }
 
+function withoutInjectedWorkAttribution(engramHome) {
+  const environment = { ...process.env, ENGRAM_HOME: engramHome };
+  delete environment.ENGRAM_ACTOR_ID;
+  delete environment.ENGRAM_SESSION_ID;
+  return environment;
+}
+
 test("add -> claim -> done takes three commands and at most three fields", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-"));
   const actor = "parity-agent";
@@ -101,6 +108,73 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
     assert.ok(Array.isArray(view.next));
     assert.ok(Array.isArray(view.allowed_next));
     assert.ok(view.obligation_page);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("shell words default missing local attribution without losing explicit targeting", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-defaults-"));
+  try {
+    hostSetup(engramHome);
+    const seeded = run([
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      "injected-actor",
+      "--session-id",
+      "injected-session",
+      "add",
+      "Default attribution fixture",
+      "--json",
+    ]);
+    assert.equal(seeded.status, 0, seeded.stderr);
+    const seededWork = JSON.parse(seeded.stdout).work;
+    const workRef = seededWork.short_ref;
+    const environment = withoutInjectedWorkAttribution(engramHome);
+
+    const next = run(["work", "next", "--json"], {
+      env: environment,
+    });
+    assert.equal(next.status, 0, next.stderr);
+    assert.ok(Array.isArray(JSON.parse(next.stdout).ready));
+    assert.match(
+      next.stderr,
+      /attribution uses the asserted OS-user environment|attribution uses a synthetic process actor/u,
+    );
+    assert.match(next.stderr, /Reuse it with --session-id local-process-/u);
+
+    const shown = run(
+      ["work", "show", workRef, "--json"],
+      { env: environment },
+    );
+    assert.equal(shown.status, 0, shown.stderr);
+    assert.equal(JSON.parse(shown.stdout).status.work.short_ref, workRef);
+
+    const claimed = run(["work", "claim", workRef], { env: environment });
+    assert.equal(claimed.status, 0, claimed.stderr);
+    const claimedSession = claimed.stderr.match(
+      /this command uses (local-process-\d+-[0-9a-f-]{36})\./u,
+    )?.[1];
+    assert.ok(claimedSession, claimed.stderr);
+
+    const continued = run(
+      [
+        "work",
+        "next",
+        "--verbose",
+        "--json",
+        "--session-id",
+        claimedSession,
+      ],
+      { env: environment },
+    );
+    assert.equal(continued.status, 0, continued.stderr);
+    assert.equal(
+      JSON.parse(continued.stdout).session.focused_work_id,
+      seededWork.work_id,
+    );
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }

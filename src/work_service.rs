@@ -177,12 +177,30 @@ fn ensure_project_memory_full_is_admissible(memory: &ProjectMemoryFull) -> Resul
     project_memory_full_response(memory.clone()).map(drop)
 }
 
+/// Locally derived source used when a shell omits its asserted actor id.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WorkActorDefaultSource {
+    /// A conventional OS-user environment variable supplied the value.
+    OsUserEnvironment,
+    /// No conventional user variable existed, so this process supplied a
+    /// synthetic non-empty actor id rather than refusing the shell word.
+    ProcessFallback,
+}
+
+/// Typed audit origins for shell attribution omitted by the caller.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WorkAttributionDefaults {
+    pub actor: Option<WorkActorDefaultSource>,
+    pub session: bool,
+}
+
 /// Immutable host context for one CLI or MCP work-service connection.
 pub struct LocalWorkService {
     database: PathBuf,
     project_id: ProjectId,
     actor_id: String,
     session_id: SessionId,
+    attribution_defaults: WorkAttributionDefaults,
     source_skill: Option<String>,
     cached_store: OnceLock<Mutex<SqliteStore>>,
     #[cfg(test)]
@@ -196,6 +214,7 @@ impl Clone for LocalWorkService {
             project_id: self.project_id.clone(),
             actor_id: self.actor_id.clone(),
             session_id: self.session_id.clone(),
+            attribution_defaults: self.attribution_defaults,
             source_skill: self.source_skill.clone(),
             // A clone is a separate protocol connection. Keeping its SQLite
             // handle independent preserves the real cross-connection CAS and
@@ -215,6 +234,7 @@ impl fmt::Debug for LocalWorkService {
             .field("project_id", &self.project_id)
             .field("actor_id", &self.actor_id)
             .field("session_id", &self.session_id)
+            .field("attribution_defaults", &self.attribution_defaults)
             .field("source_skill", &self.source_skill)
             .field("store_initialized", &self.cached_store.get().is_some())
             .finish_non_exhaustive()
@@ -1064,11 +1084,33 @@ impl LocalWorkService {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Self {
+        Self::new_with_attribution_defaults(
+            database,
+            project_id,
+            actor_id,
+            session_id,
+            source_skill,
+            WorkAttributionDefaults::default(),
+        )
+    }
+
+    /// Constructs a project-bound local-work service whose audit provenance
+    /// records which shell attribution values were defaulted locally.
+    #[must_use]
+    pub fn new_with_attribution_defaults(
+        database: PathBuf,
+        project_id: ProjectId,
+        actor_id: String,
+        session_id: SessionId,
+        source_skill: Option<String>,
+        attribution_defaults: WorkAttributionDefaults,
+    ) -> Self {
         Self {
             database,
             project_id,
             actor_id,
             session_id,
+            attribution_defaults,
             source_skill,
             cached_store: OnceLock::new(),
             #[cfg(test)]
@@ -3242,6 +3284,29 @@ impl LocalWorkService {
     }
 
     fn actor(&self, tool_name: &str, reason: &str) -> ActorContext {
+        let mut provenance_chain = vec![ProvenanceLink {
+            relation: ProvenanceRelation::AssertedBy,
+            source: self.actor_id.clone(),
+            reference: Some(self.session_id.0.clone()),
+        }];
+        if let Some(source) = self.attribution_defaults.actor {
+            provenance_chain.push(ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: match source {
+                    WorkActorDefaultSource::OsUserEnvironment => "defaulted:os_user_environment",
+                    WorkActorDefaultSource::ProcessFallback => "defaulted:process_actor",
+                }
+                .into(),
+                reference: Some("actor_id".into()),
+            });
+        }
+        if self.attribution_defaults.session {
+            provenance_chain.push(ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: "defaulted:process_session".into(),
+                reference: Some("session_id".into()),
+            });
+        }
         ActorContext {
             actor_id: self.actor_id.clone(),
             actor_kind: "agent".into(),
@@ -3250,11 +3315,7 @@ impl LocalWorkService {
             session_id: Some(self.session_id.clone()),
             source_tool: Some(tool_name.into()),
             source_skill: self.source_skill.clone(),
-            provenance_chain: vec![ProvenanceLink {
-                relation: ProvenanceRelation::AssertedBy,
-                source: self.actor_id.clone(),
-                reference: Some(self.session_id.0.clone()),
-            }],
+            provenance_chain,
             reason: reason.into(),
         }
     }
@@ -6194,6 +6255,88 @@ mod tests {
                     if detail.contains("non-empty asserted actor and session")
             ));
         }
+    }
+
+    #[test]
+    fn shell_attribution_defaults_are_explicit_in_actor_provenance() {
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("defaulted-attribution-project".into());
+        let service = LocalWorkService::new_with_attribution_defaults(
+            database.clone(),
+            project,
+            "os-user".into(),
+            SessionId("process-session".into()),
+            None,
+            WorkAttributionDefaults {
+                actor: Some(WorkActorDefaultSource::OsUserEnvironment),
+                session: true,
+            },
+        );
+        let work = proposed_root(
+            service
+                .work_propose(
+                    root_input("Defaulted attribution", "defaulted-attribution"),
+                    at(0),
+                )
+                .expect("persist defaulted attribution"),
+        );
+        let store = SqliteStore::open(&database).expect("defaulted attribution store");
+        let entry = store
+            .work_event_tail(work.work_id, 1)
+            .expect("defaulted attribution event")
+            .pop()
+            .expect("created event");
+        let event = store
+            .get::<WorkEvent>(&entry.object_hash)
+            .expect("read defaulted attribution event")
+            .expect("canonical defaulted attribution event");
+        let actor = event.actor;
+        assert_eq!(actor.actor_id, "os-user");
+        assert_eq!(actor.session_id, Some(SessionId("process-session".into())));
+        assert!(actor.provenance_chain.contains(&ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "defaulted:os_user_environment".into(),
+            reference: Some("actor_id".into()),
+        }));
+        assert!(actor.provenance_chain.contains(&ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "defaulted:process_session".into(),
+            reference: Some("session_id".into()),
+        }));
+
+        let fallback = LocalWorkService::new_with_attribution_defaults(
+            PathBuf::from("unused.sqlite3"),
+            ProjectId("fallback-attribution-project".into()),
+            "local-user-1".into(),
+            SessionId("process-session".into()),
+            None,
+            WorkAttributionDefaults {
+                actor: Some(WorkActorDefaultSource::ProcessFallback),
+                session: false,
+            },
+        )
+        .actor("work_next", "test fallback attribution");
+        assert!(fallback.provenance_chain.contains(&ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: "defaulted:process_actor".into(),
+            reference: Some("actor_id".into()),
+        }));
+
+        let injected = LocalWorkService::new(
+            PathBuf::from("unused.sqlite3"),
+            ProjectId("injected-attribution-project".into()),
+            " injected actor ".into(),
+            SessionId(" injected session ".into()),
+            None,
+        )
+        .actor("work_next", "test injected attribution");
+        assert_eq!(injected.actor_id, " injected actor ");
+        assert_eq!(
+            injected.session_id,
+            Some(SessionId(" injected session ".into()))
+        );
+        assert_eq!(injected.provenance_chain.len(), 1);
     }
 
     #[test]

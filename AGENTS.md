@@ -178,8 +178,10 @@ This repository tracks its work in Engram. In a TermAl-hosted session the
 injected `engram` MCP tools (next, ls, show, add, claim, update, gate, note,
 done, handoff, remember, memories, forget, search) ARE the words — use them
 directly. The shell form below serves humans and hosts; it needs `engram` on
-PATH and the host environment (`ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, and
-`ENGRAM_SESSION_ID`):
+PATH and `ENGRAM_HOME`. Hosts normally inject `ENGRAM_ACTOR_ID` and
+`ENGRAM_SESSION_ID`; a local shell may omit them and receives explicitly
+audited OS-user-environment or synthetic-actor and process-session defaults.
+Reuse the generated session id printed by the CLI for session-bound follow-up:
 
 ```bash
 engram work next                  # what you hold, what is ready, what changed

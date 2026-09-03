@@ -21,6 +21,18 @@ run/session, source/tool/skill metadata when available — together with an
 *asserted* instruction/authority context, **not cryptographic identity**, and
 no document in this repository may claim otherwise. No SSO/LDAP in V1.
 
+The shell work surface does not turn missing host attribution into false
+assurance. When `ENGRAM_ACTOR_ID` is absent it derives an actor from the first
+nonblank conventional OS-user environment variable, or uses a synthetic
+process actor if none exists. This is still asserted context, not an
+authenticated OS identity. When `ENGRAM_SESSION_ID` is absent it creates one
+stable id for that process. Durable actor provenance distinguishes
+`defaulted:os_user_environment`, `defaulted:process_actor`, and
+`defaulted:process_session`; injected values remain verbatim. A process-local
+session id does not itself provide cross-command continuity between separate
+CLI processes, so the CLI prints its generated id and an exact `--session-id`
+reuse instruction on every such invocation.
+
 If compliance-grade attribution ever becomes a deployment promise, a trusted
 write gateway or `Signer`-backed signatures must ship with that deployment —
 the port alone is not attestation.
