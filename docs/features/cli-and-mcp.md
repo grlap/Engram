@@ -52,8 +52,11 @@ default in text, JSON, and MCP: `next` and `ls` return only navigation rows
 and one-line changes. `show REF` is the detail boundary. Humans and hosts that
 really need the prior full list projection can add `--verbose` to `next` or
 `ls` (or set the equivalent MCP argument); host-only `work core` reads remain
-full. Compact rows cap labels and report `labels_omitted`; `next` trims any
-oversized advisory section into explicit `omissions` instead of failing.
+full. Compact rows retain up to 80 UTF-8 bytes of title, omit redundant
+lifecycle and blocked fields, cap labels, and report `labels_omitted`. When
+fitting an oversized advisory response, `next` sheds labels from the
+least-important navigation rows before dropping rows; `ls` does not shed
+labels. Section removal is recorded in explicit `omissions` instead of failing.
 
 Rules that matter:
 

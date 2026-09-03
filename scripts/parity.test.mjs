@@ -262,10 +262,16 @@ test("list words stay compact while verbose and update metadata remain explicit"
     ];
     const refs = [];
     for (let index = 0; index < 34; index += 1) {
+      const title =
+        index === 0
+          ? `Budget item 00 ${"x".repeat(100)}`
+          : index === 1
+            ? `Unicode budget ${"界".repeat(40)}`
+          : `Budget item ${String(index).padStart(2, "0")}`;
       const added = run([
         ...hostContext,
         "add",
-        `Budget item ${String(index).padStart(2, "0")}`,
+        title,
         "--kind",
         "task",
         "--label",
@@ -332,19 +338,18 @@ test("list words stay compact while verbose and update metadata remain explicit"
     const maxItemBytes = Math.max(...itemBytes);
     const maxItem = compactList.items[itemBytes.indexOf(maxItemBytes)];
     assert.ok(
-      maxItemBytes <= 200,
+      maxItemBytes <= 256,
       `${maxItemBytes} max bytes/item: ${JSON.stringify(maxItem)}`,
     );
     for (const row of compactList.items) {
       assert.equal(typeof row.ref, "string");
       assert.equal(typeof row.title, "string");
-      assert.equal(typeof row.lifecycle, "string");
       assert.equal(typeof row.state, "string");
-      assert.equal(typeof row.blocked, "boolean");
-      assert.equal(row.blocked, row.state === "blocked");
       for (const forbidden of [
         "acceptance",
         "active_run_id",
+        "blocked",
+        "lifecycle",
         "revision",
         "root_id",
         "updated_at",
@@ -354,8 +359,14 @@ test("list words stay compact while verbose and update metadata remain explicit"
       }
     }
     const heldRow = compactList.items.find(({ ref }) => ref === refs[0]);
+    assert.equal(Buffer.byteLength(heldRow.title, "utf8"), 80);
+    assert.match(heldRow.title, /…$/u);
     assert.equal(heldRow.holder, actor);
     assert.equal(typeof heldRow.held_until, "string");
+    const unicodeRow = compactList.items.find(({ ref }) => ref === refs[1]);
+    assert.ok(Buffer.byteLength(unicodeRow.title, "utf8") <= 80);
+    assert.match(unicodeRow.title, /…$/u);
+    assert.equal(unicodeRow.title.includes("\uFFFD"), false);
     const childRow = compactList.items.find(({ ref }) => ref === refs.at(-1));
     assert.equal(childRow.parent_ref, refs[0]);
     const listedText = run([...hostContext, "ls", "--limit", "100"]);
@@ -366,8 +377,8 @@ test("list words stay compact while verbose and update metadata remain explicit"
       .split(/\r?\n/u)
       .find((line) => line.includes(refs[1]));
     assert.ok(blockedLine?.includes("[task]"));
-    assert.ok(blockedLine?.includes("open/blocked"));
-    assert.ok(blockedLine?.endsWith(" blocked"));
+    assert.ok(blockedLine?.includes(" blocked \""));
+    assert.equal(blockedLine?.includes("open/blocked"), false);
     assert.ok(listedText.stdout.includes(`${refs.at(-1)} [task]`));
     assert.ok(listedText.stdout.includes(`← ${refs[0]}`));
 

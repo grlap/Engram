@@ -270,7 +270,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
     const listed = cliText(engramHome, actor, "ls", "--label", "dogfood");
     assert.match(
       listed,
-      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 open\/ready "Dogfood work CLI" labels:dogfood/u,
+      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 ready "Dogfood work CLI" labels:dogfood/u,
     );
     const nothingMine = cliText(engramHome, actor, "ls", "--mine");
     assert.match(nothingMine, /^0 item\(s\):/u);
@@ -365,7 +365,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
     const allList = cliText(engramHome, actor, "ls", "--all", "--search", "dogfood work");
     assert.match(
       allList,
-      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 completed\/closed/u,
+      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 completed/u,
     );
 
     // `add --under` translates to a one-child decomposition and focuses the
@@ -633,7 +633,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const compactNext = receipt(await a.call("next", { limit: 20 }));
     assert.equal(compactNext.focus.ref, workRef);
     assert.equal(compactNext.focus.title, "Dogfood local work");
-    assert.equal(compactNext.focus.lifecycle, "open");
+    assert.equal("lifecycle" in compactNext.focus, false);
     assert.equal("acceptance" in compactNext.focus, false);
     assert.equal("work_id" in compactNext.focus, false);
     assert.equal("session" in compactNext, false);
@@ -784,7 +784,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assert.equal(completedCatalog.items.length, 1);
     assert.equal(completedCatalog.items[0].ref, workRef);
-    assert.equal(completedCatalog.items[0].lifecycle, "completed");
+    assert.equal(completedCatalog.items[0].state, "completed");
+    assert.equal("lifecycle" in completedCatalog.items[0], false);
     assert.equal("work" in completedCatalog.items[0], false);
     assert.equal("changes" in completedCatalog, false);
     assert.equal("delivered_through" in completedCatalog, false);

@@ -48,7 +48,7 @@ const DEFAULT_LIMIT: u32 = 20;
 const MAX_TEXT_LINE_BYTES: usize = 96;
 const MAX_COMPACT_NEXT_JSON_BYTES: usize = 4 * 1024 - 1;
 const MAX_COMPACT_CHANGE_ITEMS: u32 = 8;
-const MAX_COMPACT_TITLE_BYTES: usize = 32;
+const MAX_COMPACT_TITLE_BYTES: usize = 80;
 const MAX_COMPACT_LABEL_ITEMS: usize = 2;
 const MAX_COMPACT_LABEL_BYTES: usize = 24;
 const MAX_COMPACT_HOLDER_BYTES: usize = 48;
@@ -113,7 +113,6 @@ struct CompactWorkRow {
     #[serde(rename = "ref")]
     work_ref: String,
     title: String,
-    lifecycle: WorkLifecycle,
     state: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     holder: Option<String>,
@@ -121,10 +120,10 @@ struct CompactWorkRow {
     held_until: Option<String>,
     priority: i32,
     kind: WorkItemKind,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     labels: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     labels_omitted: Option<usize>,
-    blocked: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_ref: Option<String>,
 }
@@ -139,6 +138,7 @@ struct CompactSectionOmission {
     omitted_count: usize,
 }
 
+#[derive(Clone)]
 struct CompactNextReceipt {
     focus: Option<CompactWorkRow>,
     held: Vec<CompactWorkRow>,
@@ -2213,23 +2213,16 @@ fn compact_row(
                 )
             });
     let (labels, labels_omitted) = compact_labels(&work.labels);
-    let title_bytes = if holder.is_some() {
-        12
-    } else {
-        MAX_COMPACT_TITLE_BYTES
-    };
     CompactWorkRow {
         work_ref: work.short_ref.clone(),
-        title: short_with_limit(&work.title, title_bytes),
-        lifecycle: work.lifecycle,
-        state: availability_word(status.availability).into(),
+        title: short_with_limit(&work.title, MAX_COMPACT_TITLE_BYTES),
+        state: compact_state_word(work.lifecycle, status.availability).into(),
         holder,
         held_until,
         priority: work.priority,
         kind: work.kind,
         labels,
         labels_omitted,
-        blocked: status.availability == WorkAvailability::Blocked,
         parent_ref: work.parent_id.map(short_ref_for_work_id),
     }
 }
@@ -2301,7 +2294,8 @@ fn compact_next_receipt(
 fn fit_compact_next(mut compact: CompactNextReceipt) -> Result<CompactNextReceipt, VerbError> {
     loop {
         let value = compact_next_value(&compact);
-        if serde_json::to_vec_pretty(&value)?.len() < MAX_COMPACT_NEXT_JSON_BYTES {
+        let current_bytes = serde_json::to_vec_pretty(&value)?.len();
+        if current_bytes < MAX_COMPACT_NEXT_JSON_BYTES {
             return Ok(compact);
         }
         if compact.memories.take().is_some() {
@@ -2312,6 +2306,9 @@ fn fit_compact_next(mut compact: CompactNextReceipt) -> Result<CompactNextReceip
         }
         if compact.changes.pop().is_some() {
             record_compact_omission(&mut compact.omissions, "changes", 1);
+            continue;
+        }
+        if shed_compact_labels(&mut compact, current_bytes)? {
             continue;
         }
         if compact.ready.pop().is_some() {
@@ -2340,6 +2337,56 @@ fn fit_compact_next(mut compact: CompactNextReceipt) -> Result<CompactNextReceip
         // `next` call fail merely because advisory sections were large.
         return Ok(compact);
     }
+}
+
+fn shed_compact_labels(
+    compact: &mut CompactNextReceipt,
+    current_bytes: usize,
+) -> Result<bool, VerbError> {
+    #[derive(Clone, Copy)]
+    enum RowLocation {
+        Ready(usize),
+        Held(usize),
+        Focus,
+    }
+
+    let locations = compact
+        .ready
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(index, _)| RowLocation::Ready(index))
+        .chain(
+            compact
+                .held
+                .iter()
+                .enumerate()
+                .rev()
+                .map(|(index, _)| RowLocation::Held(index)),
+        )
+        .chain(compact.focus.iter().map(|_| RowLocation::Focus))
+        .collect::<Vec<_>>();
+
+    for location in locations {
+        let mut candidate = compact.clone();
+        let row = match location {
+            RowLocation::Ready(index) => &mut candidate.ready[index],
+            RowLocation::Held(index) => &mut candidate.held[index],
+            RowLocation::Focus => candidate.focus.as_mut().expect("focus location exists"),
+        };
+        if row.labels.is_empty() {
+            continue;
+        }
+        let omitted = row.labels.len();
+        row.labels.clear();
+        *row.labels_omitted.get_or_insert(0) += omitted;
+        let candidate_bytes = serde_json::to_vec_pretty(&compact_next_value(&candidate))?.len();
+        if candidate_bytes < current_bytes {
+            *compact = candidate;
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn compact_next_value(compact: &CompactNextReceipt) -> Value {
@@ -2478,11 +2525,10 @@ fn ready_line(item: &ReadyWorkSummary) -> String {
 
 fn compact_row_line(item: &CompactWorkRow) -> String {
     let mut line = format!(
-        "{} [{}] p{} {}/{} \"{}\"",
+        "{} [{}] p{} {} \"{}\"",
         item.work_ref,
         kind_word(item.kind),
         item.priority,
-        lifecycle_word(item.lifecycle),
         item.state,
         item.title,
     );
@@ -2491,9 +2537,6 @@ fn compact_row_line(item: &CompactWorkRow) -> String {
     }
     if let Some(omitted) = item.labels_omitted {
         let _ = write!(line, " (+{omitted} labels)");
-    }
-    if item.blocked {
-        line.push_str(" blocked");
     }
     if let Some(parent_ref) = &item.parent_ref {
         let _ = write!(line, " ← {parent_ref}");
@@ -2585,9 +2628,13 @@ fn strip_kind_prefix(summary: &str, kind: &str) -> String {
 }
 
 fn availability_words(status: &ReadyWorkSummary) -> &'static str {
-    match status.availability {
-        WorkAvailability::Closed => lifecycle_word(status.work.lifecycle),
-        availability => availability_word(availability),
+    compact_state_word(status.work.lifecycle, status.availability)
+}
+
+fn compact_state_word(lifecycle: WorkLifecycle, availability: WorkAvailability) -> &'static str {
+    match lifecycle {
+        WorkLifecycle::Open => availability_word(availability),
+        lifecycle => lifecycle_word(lifecycle),
     }
 }
 
@@ -3051,18 +3098,17 @@ mod tests {
     }
 
     fn compact_test_row(index: usize) -> CompactWorkRow {
+        let title = format!("Readable compact title {index} {}", "x".repeat(100));
         CompactWorkRow {
             work_ref: format!("w-{index:012x}"),
-            title: "A compact but deliberately full title".into(),
-            lifecycle: WorkLifecycle::Open,
+            title: short_with_limit(&title, MAX_COMPACT_TITLE_BYTES),
             state: "blocked".into(),
             holder: Some("session-with-a-readable-name".into()),
             held_until: Some("01:45".into()),
             priority: 1,
             kind: WorkItemKind::Bug,
             labels: vec!["first-label".into(), "second-label".into()],
-            labels_omitted: Some(6),
-            blocked: true,
+            labels_omitted: None,
             parent_ref: Some("w-000000000000".into()),
         }
     }
@@ -3103,12 +3149,77 @@ mod tests {
         assert!(fitted.memories.is_none());
         assert!(fitted.focus.is_some());
         assert!(!fitted.guidance.next.is_empty());
+        assert!(
+            fitted
+                .ready
+                .iter()
+                .chain(&fitted.held)
+                .any(|row| row.labels_omitted.is_some_and(|omitted| omitted >= 2))
+        );
         let line = compact_row_line(&row);
         assert!(line.contains("[bug]"));
-        assert!(line.contains("open/blocked"));
-        assert!(line.contains("blocked"));
+        assert!(line.contains(" blocked \"Readable compact title"));
         assert!(line.contains("← w-000000000000"));
         assert!(line.contains("held by session-with-a-readable-name until 01:45"));
+    }
+
+    #[test]
+    fn compact_next_sheds_labels_in_navigation_priority_order() {
+        let mut focus = compact_test_row(0);
+        focus.labels = vec!["focus".into()];
+        let mut held = compact_test_row(1);
+        held.labels = vec!["held".into()];
+        let mut first_ready = compact_test_row(2);
+        first_ready.labels = vec!["first".into()];
+        let mut last_ready = compact_test_row(3);
+        last_ready.labels = vec!["label-with-a-quoted-\"value\"".into()];
+        let last_ready_title = last_ready.title.clone();
+        let mut receipt = CompactNextReceipt {
+            focus: Some(focus),
+            held: vec![held],
+            ready: vec![first_ready, last_ready],
+            changes: Vec::new(),
+            memories: None,
+            omissions: Vec::new(),
+            guidance: Guidance::default(),
+        };
+        let before = serde_json::to_vec_pretty(&compact_next_value(&receipt))
+            .expect("labeled receipt")
+            .len();
+        assert!(shed_compact_labels(&mut receipt, before).expect("size-reducing label shed"));
+        let after = serde_json::to_vec_pretty(&compact_next_value(&receipt))
+            .expect("shed receipt")
+            .len();
+        assert!(after < before);
+        assert_eq!(receipt.ready.len(), 2);
+        assert_eq!(receipt.ready[0].labels, vec!["first"]);
+        assert!(receipt.ready[1].labels.is_empty());
+        assert_eq!(receipt.ready[1].labels_omitted, Some(1));
+        assert_eq!(receipt.ready[1].title, last_ready_title);
+        assert_eq!(receipt.held[0].labels, vec!["held"]);
+        assert_eq!(
+            receipt.focus.as_ref().expect("focus remains").labels,
+            vec!["focus"]
+        );
+    }
+
+    #[test]
+    fn compact_state_word_preserves_non_open_lifecycle() {
+        assert_eq!(
+            compact_state_word(WorkLifecycle::Open, WorkAvailability::Blocked),
+            "blocked"
+        );
+        for lifecycle in [
+            WorkLifecycle::Proposed,
+            WorkLifecycle::Completed,
+            WorkLifecycle::Cancelled,
+            WorkLifecycle::Superseded,
+        ] {
+            assert_eq!(
+                compact_state_word(lifecycle, WorkAvailability::Ready),
+                lifecycle_word(lifecycle)
+            );
+        }
     }
 
     #[test]
