@@ -1913,9 +1913,9 @@ pub(crate) fn normalize_gate_evidence_input(
         ));
     }
     if failed.len() > MAX_GATE_FAILURE_INPUTS {
-        return Err(gate_input_too_large(
-            "more than 256 gate failure labels were supplied",
-        ));
+        return Err(gate_input_too_large(&format!(
+            "more than {MAX_GATE_FAILURE_INPUTS} gate failure labels were supplied"
+        )));
     }
     let nfc: String = name.trim().nfc().collect();
     let name: String = nfc.as_str().case_fold().collect::<String>().nfc().collect();
@@ -1923,7 +1923,9 @@ pub(crate) fn normalize_gate_evidence_input(
         return Err("gate name must not be empty".into());
     }
     if name.len() > MAX_GATE_NAME_BYTES {
-        return Err(gate_input_too_large("gate name exceeds 128 UTF-8 bytes"));
+        return Err(gate_input_too_large(&format!(
+            "gate name exceeds {MAX_GATE_NAME_BYTES} UTF-8 bytes"
+        )));
     }
     if name.chars().any(is_unsafe_rendered_text_char) {
         return Err("gate name must not contain control or format characters".into());
@@ -1941,9 +1943,9 @@ pub(crate) fn normalize_gate_evidence_input(
             return Err("gate failure labels must not be empty".into());
         }
         if failure.len() > MAX_GATE_FAILURE_BYTES {
-            return Err(gate_input_too_large(
-                "one gate failure label exceeds 256 UTF-8 bytes",
-            ));
+            return Err(gate_input_too_large(&format!(
+                "one gate failure label exceeds {MAX_GATE_FAILURE_BYTES} UTF-8 bytes"
+            )));
         }
         if failure.chars().any(is_unsafe_rendered_text_char) {
             return Err("gate failure labels must not contain control or format characters".into());
@@ -1953,14 +1955,14 @@ pub(crate) fn normalize_gate_evidence_input(
     normalized_failed.sort();
     normalized_failed.dedup();
     if normalized_failed.len() > MAX_GATE_FAILURES {
-        return Err(gate_input_too_large(
-            "more than 64 distinct gate failure labels were supplied",
-        ));
+        return Err(gate_input_too_large(&format!(
+            "more than {MAX_GATE_FAILURES} distinct gate failure labels were supplied"
+        )));
     }
     if normalized_failed.iter().map(String::len).sum::<usize>() > MAX_GATE_FAILURE_TOTAL_BYTES {
-        return Err(gate_input_too_large(
-            "the normalized gate failure-label list exceeds 4096 UTF-8 bytes",
-        ));
+        return Err(gate_input_too_large(&format!(
+            "the normalized gate failure-label list exceeds {MAX_GATE_FAILURE_TOTAL_BYTES} UTF-8 bytes"
+        )));
     }
 
     if evidence_ref.is_some_and(|value| value.len() > MAX_GATE_REF_BYTES * MAX_GATE_RAW_EXPANSION) {
@@ -1975,10 +1977,9 @@ pub(crate) fn normalize_gate_evidence_input(
     if let Some(value) = evidence_ref.as_deref()
         && (value.len() > MAX_GATE_REF_BYTES || value.chars().any(is_unsafe_rendered_text_char))
     {
-        return Err(
-            "gate --ref must be a control- and format-free opaque reference of at most 2048 UTF-8 bytes"
-                .into(),
-        );
+        return Err(format!(
+            "gate --ref must be a control- and format-free opaque reference of at most {MAX_GATE_REF_BYTES} UTF-8 bytes"
+        ));
     }
 
     Ok(NormalizedGateEvidenceInput {
@@ -3627,6 +3628,67 @@ mod tests {
         assert!(
             validate_stored_gate_evidence_fields("gate\u{e0020}", &[], None).is_ok(),
             "stored shape validation must not depend on mutable Unicode category tables"
+        );
+    }
+
+    #[test]
+    fn gate_input_bound_messages_derive_numbers_from_the_enforced_constants() {
+        let oversized_name = "x".repeat(MAX_GATE_NAME_BYTES + 1);
+        assert_eq!(
+            normalize_gate_evidence_input(&oversized_name, &[], None)
+                .expect_err("oversized gate name"),
+            format!(
+                "gate_input_too_large: gate name exceeds {MAX_GATE_NAME_BYTES} UTF-8 bytes; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+            )
+        );
+
+        let too_many_inputs = vec!["same".into(); MAX_GATE_FAILURE_INPUTS + 1];
+        assert_eq!(
+            normalize_gate_evidence_input("gate", &too_many_inputs, None)
+                .expect_err("too many raw failure inputs"),
+            format!(
+                "gate_input_too_large: more than {MAX_GATE_FAILURE_INPUTS} gate failure labels were supplied; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+            )
+        );
+
+        let oversized_failure = vec!["x".repeat(MAX_GATE_FAILURE_BYTES + 1)];
+        assert_eq!(
+            normalize_gate_evidence_input("gate", &oversized_failure, None)
+                .expect_err("oversized normalized failure"),
+            format!(
+                "gate_input_too_large: one gate failure label exceeds {MAX_GATE_FAILURE_BYTES} UTF-8 bytes; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+            )
+        );
+
+        let too_many_distinct = (0..=MAX_GATE_FAILURES)
+            .map(|index| format!("failure-{index}"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            normalize_gate_evidence_input("gate", &too_many_distinct, None)
+                .expect_err("too many distinct failures"),
+            format!(
+                "gate_input_too_large: more than {MAX_GATE_FAILURES} distinct gate failure labels were supplied; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+            )
+        );
+
+        let oversized_total = (0..=MAX_GATE_FAILURE_TOTAL_BYTES / MAX_GATE_FAILURE_BYTES)
+            .map(|index| format!("{index:02}{}", "x".repeat(MAX_GATE_FAILURE_BYTES - 2)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            normalize_gate_evidence_input("gate", &oversized_total, None)
+                .expect_err("oversized failure-label total"),
+            format!(
+                "gate_input_too_large: the normalized gate failure-label list exceeds {MAX_GATE_FAILURE_TOTAL_BYTES} UTF-8 bytes; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+            )
+        );
+
+        let oversized_ref = "x".repeat(MAX_GATE_REF_BYTES + 1);
+        assert_eq!(
+            normalize_gate_evidence_input("gate", &[], Some(&oversized_ref))
+                .expect_err("oversized gate reference"),
+            format!(
+                "gate --ref must be a control- and format-free opaque reference of at most {MAX_GATE_REF_BYTES} UTF-8 bytes"
+            )
         );
     }
 

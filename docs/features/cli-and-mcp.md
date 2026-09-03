@@ -346,10 +346,12 @@ six-operation JSON protocol stays reachable for hosts and operators as
 `engram work core {next,focus,propose,update,complete,handoff}`, whose
 mutation payloads accept an inline JSON object or `@path`; that host/operator
 surface retains the core-only explicit delivery acknowledgement, typed evidence
-attach, and reopen operations alongside typed forms of the agent words. All
-words and core operations call the same service core as MCP. Stats/import/export
-and the remaining broad administrative CLI in the specification are still
-planned.
+attach, and reopen operations alongside typed forms of the ordinary lifecycle
+words. Typed `gate` and atomic `note` are word-only `work_update:gate` and
+`work_update:note` suboperations, not variants callers can reach directly
+through `work core update`; they still use the same service and storage core as
+MCP. Stats/import/export and the remaining broad administrative CLI in the
+specification are still planned.
 
 The operator-intended shell command can waive one exact open run obligation
 with an attributed reason and retry key:

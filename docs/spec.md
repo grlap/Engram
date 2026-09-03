@@ -1057,12 +1057,14 @@ engram export preview <adapter> <work-ref>   engram export apply <intent>
 
 Agent-facing MCP exposes exactly `next`, `ls`, `show`, `add`, `claim`,
 `update`, `gate`, `note`, `done`, `search`, `handoff`, `remember`, `memories`,
-and `forget`. The work tools translate into the six-operation work core:
-`work_next`, `work_focus`,
-`work_propose`, `work_update`, `work_complete`, and `work_handoff`; the
-session binding supplies project, actor, current work, and cursors. Optional
-generic memory capture, import, publication, and administrative queries remain
-separate tools rather than expanding every model turn.
+and `forget`. The ordinary lifecycle work tools translate into the
+six-operation work core: `work_next`, `work_focus`, `work_propose`,
+`work_update`, `work_complete`, and `work_handoff`; the session binding
+supplies project, actor, current work, and cursors. Typed `gate` and atomic
+`note` are word-only `work_update:gate` and `work_update:note` service
+suboperations, not variants exposed by the direct `work core update` surface.
+Optional generic memory capture, import, publication, and administrative
+queries remain separate tools rather than expanding every model turn.
 
 The agent surface is thirteen words plus `search` — fourteen MCP tools, with no new
 work-core operation: `gate` already wraps the existing evidence path, and

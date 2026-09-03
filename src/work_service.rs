@@ -5944,6 +5944,78 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn failing_gate_evidence_does_not_create_a_completion_barrier() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let service = LocalWorkService::new(
+            database.clone(),
+            ProjectId("failing-gate-completion".into()),
+            "agent".into(),
+            SessionId("failing-gate-session".into()),
+            Some("protocol-test".into()),
+        );
+        let work = proposed_root(
+            service
+                .work_propose(
+                    root_input("Failed gate is evidence", "failed-gate-root"),
+                    at(0),
+                )
+                .expect("root proposal"),
+        );
+        service
+            .work_focus(&work.short_ref, at(1))
+            .expect("focus root");
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "failed-gate-claim".into(),
+                },
+                at(2),
+            )
+            .expect("claim root");
+        let gate = service
+            .work_gate(
+                "cargo-test",
+                &["suite::failure".into()],
+                Some("test:failing-gate"),
+                at(3),
+            )
+            .expect("record failing gate");
+        let gate_evidence =
+            serde_json::from_value::<ObjectHash>(gate.receipt.result).expect("gate evidence hash");
+
+        let completed = service
+            .work_complete(
+                completion_input(
+                    "completion remains independent from gate result",
+                    "failed-gate-completion",
+                ),
+                at(4),
+            )
+            .expect("failing gate does not block completion");
+        let WorkCompleteResult::Completed(completed) = completed else {
+            panic!("failing gate evidence must not create a completion refusal");
+        };
+        let store = SqliteStore::open(&database).expect("store");
+        let evidence = store
+            .get::<WorkEvidence>(&gate_evidence)
+            .expect("read failing gate evidence")
+            .expect("canonical failing gate evidence");
+        let gate = evidence.gate.expect("typed gate evidence");
+        assert!(!gate.passed);
+        assert_eq!(gate.failed, ["suite::failure"]);
+        let seal = store
+            .get::<CompletionSeal>(&completed.seal)
+            .expect("read completion seal")
+            .expect("canonical completion seal");
+        assert!(seal.evidence.contains(&gate_evidence));
+        assert!(seal.obligations.is_empty());
+        assert!(seal.waivers.is_empty());
+    }
+
     fn obligation_record(
         identity: i64,
         state: WorkObligationState,

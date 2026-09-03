@@ -41,8 +41,8 @@ use crate::ObjectHash;
 
 #[cfg(test)]
 use crate::domain::{
-    MAX_GATE_FAILURE_BYTES, MAX_GATE_FAILURE_INPUTS, MAX_GATE_FAILURES, MAX_GATE_NAME_BYTES,
-    MAX_GATE_REF_BYTES,
+    MAX_GATE_FAILURE_BYTES, MAX_GATE_FAILURE_INPUTS, MAX_GATE_FAILURE_TOTAL_BYTES,
+    MAX_GATE_FAILURES, MAX_GATE_NAME_BYTES, MAX_GATE_REF_BYTES,
 };
 
 const DEFAULT_LIMIT: u32 = 20;
@@ -5011,70 +5011,103 @@ mod tests {
     }
 
     #[test]
-    fn gate_input_bounds_failures_with_an_actionable_remedy() {
-        let error = normalize_gate_input(&GateInput {
-            name: "cargo-test".into(),
-            failed: vec!["x".repeat(MAX_GATE_FAILURE_BYTES + 1)],
-            evidence_ref: None,
-        })
-        .expect_err("oversize failure must be refused");
-
-        let text = error.to_string();
-        assert!(text.contains("gate_input_too_large"));
-        assert!(text.contains("one aggregate --failed entry"));
-        assert!(text.contains("--ref OPAQUE_REFERENCE"));
+    fn gate_input_enforces_every_normalized_bound() {
+        let oversized_total = (0..=MAX_GATE_FAILURE_TOTAL_BYTES / MAX_GATE_FAILURE_BYTES)
+            .map(|index| format!("{index:02}{}", "x".repeat(MAX_GATE_FAILURE_BYTES - 2)))
+            .collect();
+        for (input, expected) in [
+            (
+                GateInput {
+                    name: "x".repeat(MAX_GATE_NAME_BYTES + 1),
+                    failed: Vec::new(),
+                    evidence_ref: None,
+                },
+                format!(
+                    "local work input is invalid: gate_input_too_large: gate name exceeds {MAX_GATE_NAME_BYTES} UTF-8 bytes; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+                ),
+            ),
+            (
+                GateInput {
+                    name: "gate".into(),
+                    failed: vec!["x".repeat(MAX_GATE_FAILURE_BYTES + 1)],
+                    evidence_ref: None,
+                },
+                format!(
+                    "local work input is invalid: gate_input_too_large: one gate failure label exceeds {MAX_GATE_FAILURE_BYTES} UTF-8 bytes; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+                ),
+            ),
+            (
+                GateInput {
+                    name: "gate".into(),
+                    failed: (0..=MAX_GATE_FAILURES)
+                        .map(|index| format!("test-{index}"))
+                        .collect(),
+                    evidence_ref: None,
+                },
+                format!(
+                    "local work input is invalid: gate_input_too_large: more than {MAX_GATE_FAILURES} distinct gate failure labels were supplied; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+                ),
+            ),
+            (
+                GateInput {
+                    name: "gate".into(),
+                    failed: oversized_total,
+                    evidence_ref: None,
+                },
+                format!(
+                    "local work input is invalid: gate_input_too_large: the normalized gate failure-label list exceeds {MAX_GATE_FAILURE_TOTAL_BYTES} UTF-8 bytes; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+                ),
+            ),
+            (
+                GateInput {
+                    name: "gate".into(),
+                    failed: vec!["same".into(); MAX_GATE_FAILURE_INPUTS + 1],
+                    evidence_ref: None,
+                },
+                format!(
+                    "local work input is invalid: gate_input_too_large: more than {MAX_GATE_FAILURE_INPUTS} gate failure labels were supplied; rerun with one aggregate --failed entry and --ref OPAQUE_REFERENCE"
+                ),
+            ),
+        ] {
+            assert_eq!(
+                normalize_gate_input(&input)
+                    .expect_err("oversize gate input")
+                    .to_string(),
+                expected
+            );
+        }
     }
 
     #[test]
-    fn gate_input_enforces_every_normalized_bound() {
-        for input in [
-            GateInput {
-                name: "x".repeat(MAX_GATE_NAME_BYTES + 1),
-                failed: Vec::new(),
-                evidence_ref: None,
-            },
-            GateInput {
-                name: "gate".into(),
-                failed: (0..=MAX_GATE_FAILURES)
-                    .map(|index| format!("test-{index}"))
-                    .collect(),
-                evidence_ref: None,
-            },
-            GateInput {
-                name: "gate".into(),
-                failed: (0..17)
-                    .map(|index| format!("{index:02}-{}", "x".repeat(247)))
-                    .collect(),
-                evidence_ref: None,
-            },
-            GateInput {
-                name: "gate".into(),
-                failed: vec!["same".into(); MAX_GATE_FAILURE_INPUTS + 1],
-                evidence_ref: None,
-            },
-        ] {
-            assert!(
-                normalize_gate_input(&input)
-                    .expect_err("oversize gate input")
-                    .to_string()
-                    .contains("gate_input_too_large")
-            );
-        }
+    fn gate_input_enforces_reference_bound_and_shape() {
+        let oversized_ref = normalize_gate_input(&GateInput {
+            name: "gate".into(),
+            failed: Vec::new(),
+            evidence_ref: Some("x".repeat(MAX_GATE_REF_BYTES + 1)),
+        })
+        .expect_err("oversize gate reference");
+        assert_eq!(
+            oversized_ref.to_string(),
+            format!(
+                "local work input is invalid: gate --ref must be a control- and format-free opaque reference of at most {MAX_GATE_REF_BYTES} UTF-8 bytes"
+            )
+        );
 
-        for evidence_ref in ["x".repeat(MAX_GATE_REF_BYTES + 1), "bad\nref".into()] {
-            let error = normalize_gate_input(&GateInput {
-                name: "gate".into(),
-                failed: Vec::new(),
-                evidence_ref: Some(evidence_ref),
-            })
-            .expect_err("unsafe gate reference");
-            assert!(
-                error
-                    .to_string()
-                    .contains("control- and format-free opaque reference")
-            );
-        }
+        let unsafe_ref = normalize_gate_input(&GateInput {
+            name: "gate".into(),
+            failed: Vec::new(),
+            evidence_ref: Some("bad\nref".into()),
+        })
+        .expect_err("unsafe gate reference");
+        assert!(
+            unsafe_ref
+                .to_string()
+                .contains("control- and format-free opaque reference")
+        );
+    }
 
+    #[test]
+    fn gate_input_refuses_control_and_format_characters() {
         for input in [
             GateInput {
                 name: "bad\ngate".into(),
