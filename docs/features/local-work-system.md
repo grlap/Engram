@@ -431,12 +431,13 @@ confirmed cursor does not move. The delta interval is the authoritative
 delivery cut. Focus, ready, and catalog sections are advisory refreshed views
 and may observe a newer concurrent commit; lifecycle mutations always
 revalidate their revision, claim, lease, authority, and canonical projection
-basis under the write lock. The exact projected change page and its byte-budget
+basis under the write lock. The exact projected change page and its staged
 omission count are stored canonically beside the tentative cursor and opaque
-token. Staging compare-and-swaps the confirmed cursor, empty pending slot,
-focused work, and task binding under the SQLite write lock; a focus or
-task rebind that commits first forces projection to restart on the new read
-basis.
+token; that count names entries left unconsumed for the next page, not entries
+discarded from the current response by its byte budget. Staging
+compare-and-swaps the confirmed cursor, empty pending slot, focused work, and
+task binding under the SQLite write lock; a focus or task rebind that commits
+first forces projection to restart on the new read basis.
 
 Model-originated mutations may supply a caller-stable idempotency key. When
 none is supplied the server derives one from the session, operation, focused

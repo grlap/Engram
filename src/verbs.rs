@@ -46,7 +46,7 @@ use crate::domain::{
 
 const DEFAULT_LIMIT: u32 = 20;
 const MAX_TEXT_LINE_BYTES: usize = 96;
-const MAX_COMPACT_NEXT_JSON_BYTES: usize = 4 * 1024 - 1;
+const MAX_COMPACT_NEXT_JSON_BYTES: usize = MAX_AGENT_WORK_RESPONSE_BYTES;
 const MAX_COMPACT_CHANGE_ITEMS: u32 = 8;
 const MAX_COMPACT_TITLE_BYTES: usize = 80;
 const MAX_COMPACT_LABEL_ITEMS: usize = 2;
@@ -147,6 +147,13 @@ struct CompactNextReceipt {
     memories: Option<ProjectMemorySignal>,
     omissions: Vec<CompactSectionOmission>,
     guidance: Guidance,
+}
+
+#[derive(Clone, Copy)]
+enum CompactRowLocation {
+    Ready(usize),
+    Held(usize),
+    Focus,
 }
 
 /// `add`: a root, or one required child under `under`.
@@ -2291,11 +2298,18 @@ fn compact_next_receipt(
     fit_compact_next(compact)
 }
 
-fn fit_compact_next(mut compact: CompactNextReceipt) -> Result<CompactNextReceipt, VerbError> {
+fn fit_compact_next(compact: CompactNextReceipt) -> Result<CompactNextReceipt, VerbError> {
+    fit_compact_next_to(compact, MAX_COMPACT_NEXT_JSON_BYTES)
+}
+
+fn fit_compact_next_to(
+    mut compact: CompactNextReceipt,
+    max_json_bytes: usize,
+) -> Result<CompactNextReceipt, VerbError> {
     loop {
         let value = compact_next_value(&compact);
         let current_bytes = serde_json::to_vec_pretty(&value)?.len();
-        if current_bytes < MAX_COMPACT_NEXT_JSON_BYTES {
+        if current_bytes < max_json_bytes {
             return Ok(compact);
         }
         if compact.memories.take().is_some() {
@@ -2343,50 +2357,56 @@ fn shed_compact_labels(
     compact: &mut CompactNextReceipt,
     current_bytes: usize,
 ) -> Result<bool, VerbError> {
-    #[derive(Clone, Copy)]
-    enum RowLocation {
-        Ready(usize),
-        Held(usize),
-        Focus,
-    }
-
-    let locations = compact
-        .ready
-        .iter()
-        .enumerate()
-        .rev()
-        .map(|(index, _)| RowLocation::Ready(index))
-        .chain(
-            compact
-                .held
-                .iter()
-                .enumerate()
-                .rev()
-                .map(|(index, _)| RowLocation::Held(index)),
-        )
-        .chain(compact.focus.iter().map(|_| RowLocation::Focus))
-        .collect::<Vec<_>>();
-
-    for location in locations {
-        let mut candidate = compact.clone();
-        let row = match location {
-            RowLocation::Ready(index) => &mut candidate.ready[index],
-            RowLocation::Held(index) => &mut candidate.held[index],
-            RowLocation::Focus => candidate.focus.as_mut().expect("focus location exists"),
-        };
-        if row.labels.is_empty() {
-            continue;
-        }
-        let omitted = row.labels.len();
-        row.labels.clear();
-        *row.labels_omitted.get_or_insert(0) += omitted;
-        let candidate_bytes = serde_json::to_vec_pretty(&compact_next_value(&candidate))?.len();
-        if candidate_bytes < current_bytes {
-            *compact = candidate;
+    for index in (0..compact.ready.len()).rev() {
+        if try_shed_compact_labels(compact, CompactRowLocation::Ready(index), current_bytes)? {
             return Ok(true);
         }
     }
+    for index in (0..compact.held.len()).rev() {
+        if try_shed_compact_labels(compact, CompactRowLocation::Held(index), current_bytes)? {
+            return Ok(true);
+        }
+    }
+    try_shed_compact_labels(compact, CompactRowLocation::Focus, current_bytes)
+}
+
+fn try_shed_compact_labels(
+    compact: &mut CompactNextReceipt,
+    location: CompactRowLocation,
+    current_bytes: usize,
+) -> Result<bool, VerbError> {
+    let (labels, previous_omitted) = {
+        let Some(row) = compact_row_at_mut(compact, location) else {
+            return Ok(false);
+        };
+        if row.labels.is_empty() {
+            return Ok(false);
+        }
+        let labels = std::mem::take(&mut row.labels);
+        let previous_omitted = row.labels_omitted;
+        row.labels_omitted = Some(previous_omitted.unwrap_or(0) + labels.len());
+        (labels, previous_omitted)
+    };
+    let candidate_bytes = serde_json::to_vec_pretty(&compact_next_value(compact))?.len();
+    if candidate_bytes < current_bytes {
+        return Ok(true);
+    }
+    if let Some(row) = compact_row_at_mut(compact, location) {
+        row.labels = labels;
+        row.labels_omitted = previous_omitted;
+    }
     Ok(false)
+}
+
+fn compact_row_at_mut(
+    compact: &mut CompactNextReceipt,
+    location: CompactRowLocation,
+) -> Option<&mut CompactWorkRow> {
+    match location {
+        CompactRowLocation::Ready(index) => compact.ready.get_mut(index),
+        CompactRowLocation::Held(index) => compact.held.get_mut(index),
+        CompactRowLocation::Focus => compact.focus.as_mut(),
+    }
 }
 
 fn compact_next_value(compact: &CompactNextReceipt) -> Value {
@@ -2407,12 +2427,10 @@ fn record_compact_omission(
     section: &str,
     omitted_count: usize,
 ) {
-    if let Some(omission) = omissions
-        .iter_mut()
-        .find(|omission| omission.section == section)
-    {
+    if let Some(omission) = omissions.iter_mut().find(|omission| {
+        omission.section == section && omission.reason == WorkSectionOmissionReason::ByteBudget
+    }) {
         omission.omitted_count += omitted_count;
-        omission.reason = WorkSectionOmissionReason::ByteBudget;
     } else {
         omissions.push(CompactSectionOmission {
             section: section.into(),
@@ -2449,11 +2467,19 @@ fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
     for ready in &compact.ready {
         lines.push(format!("  {}", compact_row_line(ready)));
     }
-    append_changes_lines(
-        &mut lines,
-        &compact.changes,
-        compact_omitted(compact, "changes"),
-    );
+    let staged_changes =
+        compact_omitted_for_reason(compact, "changes", WorkSectionOmissionReason::Staged);
+    let byte_budget_changes =
+        compact_omitted_for_reason(compact, "changes", WorkSectionOmissionReason::ByteBudget);
+    append_changes_lines(&mut lines, &compact.changes, staged_changes);
+    if byte_budget_changes > 0 {
+        if compact.changes.is_empty() && staged_changes == 0 {
+            lines.push("changes by others (none shown):".into());
+        }
+        lines.push(format!(
+            "  ({byte_budget_changes} change entries omitted from this response by byte budget)"
+        ));
+    }
     if let Some(memories) = &compact.memories {
         lines.push(format!(
             "memories: {} retained{}",
@@ -2480,6 +2506,19 @@ fn compact_omitted(compact: &CompactNextReceipt, section: &str) -> usize {
         .omissions
         .iter()
         .filter(|omission| omission.section == section)
+        .map(|omission| omission.omitted_count)
+        .sum()
+}
+
+fn compact_omitted_for_reason(
+    compact: &CompactNextReceipt,
+    section: &str,
+    reason: WorkSectionOmissionReason,
+) -> usize {
+    compact
+        .omissions
+        .iter()
+        .filter(|omission| omission.section == section && omission.reason == reason)
         .map(|omission| omission.omitted_count)
         .sum()
 }
@@ -3174,7 +3213,7 @@ mod tests {
         let mut last_ready = compact_test_row(3);
         last_ready.labels = vec!["label-with-a-quoted-\"value\"".into()];
         let last_ready_title = last_ready.title.clone();
-        let mut receipt = CompactNextReceipt {
+        let receipt = CompactNextReceipt {
             focus: Some(focus),
             held: vec![held],
             ready: vec![first_ready, last_ready],
@@ -3186,20 +3225,112 @@ mod tests {
         let before = serde_json::to_vec_pretty(&compact_next_value(&receipt))
             .expect("labeled receipt")
             .len();
-        assert!(shed_compact_labels(&mut receipt, before).expect("size-reducing label shed"));
-        let after = serde_json::to_vec_pretty(&compact_next_value(&receipt))
+        let fitted = fit_compact_next_to(receipt, before).expect("labels alone fit receipt");
+        let after = serde_json::to_vec_pretty(&compact_next_value(&fitted))
             .expect("shed receipt")
             .len();
         assert!(after < before);
-        assert_eq!(receipt.ready.len(), 2);
-        assert_eq!(receipt.ready[0].labels, vec!["first"]);
-        assert!(receipt.ready[1].labels.is_empty());
-        assert_eq!(receipt.ready[1].labels_omitted, Some(1));
-        assert_eq!(receipt.ready[1].title, last_ready_title);
-        assert_eq!(receipt.held[0].labels, vec!["held"]);
+        assert_eq!(compact_omitted(&fitted, "ready"), 0);
+        assert_eq!(fitted.ready.len(), 2);
+        assert_eq!(fitted.ready[0].labels, vec!["first"]);
+        assert!(fitted.ready[1].labels.is_empty());
+        assert_eq!(fitted.ready[1].labels_omitted, Some(1));
+        assert_eq!(fitted.ready[1].title, last_ready_title);
+        assert_eq!(fitted.held[0].labels, vec!["held"]);
         assert_eq!(
-            receipt.focus.as_ref().expect("focus remains").labels,
+            fitted.focus.as_ref().expect("focus remains").labels,
             vec!["focus"]
+        );
+    }
+
+    #[test]
+    fn compact_label_shed_restores_and_continues_to_a_reducing_row() {
+        let mut first_ready = compact_test_row(1);
+        first_ready.labels = vec!["long-escaped-\"label\"".into()];
+        let mut last_ready = compact_test_row(2);
+        last_ready.labels = vec!["x".into()];
+        let receipt = CompactNextReceipt {
+            focus: None,
+            held: Vec::new(),
+            ready: vec![first_ready, last_ready],
+            changes: Vec::new(),
+            memories: None,
+            omissions: Vec::new(),
+            guidance: Guidance::default(),
+        };
+        let mut short_candidate = receipt.clone();
+        let short_row = &mut short_candidate.ready[1];
+        short_row.labels.clear();
+        short_row.labels_omitted = Some(1);
+        let threshold = serde_json::to_vec_pretty(&compact_next_value(&short_candidate))
+            .expect("short-label candidate")
+            .len();
+        let mut fitted = receipt;
+
+        assert!(shed_compact_labels(&mut fitted, threshold).expect("later label shed"));
+        assert!(fitted.ready[0].labels.is_empty());
+        assert_eq!(fitted.ready[0].labels_omitted, Some(1));
+        assert_eq!(fitted.ready[1].labels, vec!["x"]);
+        assert_eq!(fitted.ready[1].labels_omitted, None);
+    }
+
+    #[test]
+    fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
+        let mut omissions = vec![CompactSectionOmission {
+            section: "changes".into(),
+            reason: WorkSectionOmissionReason::Staged,
+            omitted_count: 2,
+        }];
+        record_compact_omission(&mut omissions, "changes", 3);
+        let receipt = CompactNextReceipt {
+            focus: None,
+            held: Vec::new(),
+            ready: Vec::new(),
+            changes: vec!["one visible change".into()],
+            memories: None,
+            omissions,
+            guidance: Guidance::default(),
+        };
+
+        assert_eq!(receipt.omissions.len(), 2);
+        assert_eq!(
+            compact_omitted_for_reason(&receipt, "changes", WorkSectionOmissionReason::Staged),
+            2
+        );
+        assert_eq!(
+            compact_omitted_for_reason(&receipt, "changes", WorkSectionOmissionReason::ByteBudget),
+            3
+        );
+        let lines = compact_next_lines(&receipt);
+        assert!(lines.contains(
+            &"changes by others (1 shown, 2 more arrive with your next call):".to_owned()
+        ));
+        assert!(lines.contains(
+            &"  (3 change entries omitted from this response by byte budget)".to_owned()
+        ));
+
+        let byte_budget_only = CompactNextReceipt {
+            focus: None,
+            held: Vec::new(),
+            ready: Vec::new(),
+            changes: Vec::new(),
+            memories: None,
+            omissions: vec![CompactSectionOmission {
+                section: "changes".into(),
+                reason: WorkSectionOmissionReason::ByteBudget,
+                omitted_count: 4,
+            }],
+            guidance: Guidance::default(),
+        };
+        assert_eq!(
+            compact_next_lines(&byte_budget_only),
+            vec![
+                "focus: none",
+                "held by you (0 shown):",
+                "ready (0 shown):",
+                "changes by others (none shown):",
+                "  (4 change entries omitted from this response by byte budget)",
+            ]
         );
     }
 

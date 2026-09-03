@@ -56,7 +56,9 @@ full. Compact rows retain up to 80 UTF-8 bytes of title, omit redundant
 lifecycle and blocked fields, cap labels, and report `labels_omitted`. When
 fitting an oversized advisory response, `next` sheds labels from the
 least-important navigation rows before dropping rows; `ls` does not shed
-labels. Section removal is recorded in explicit `omissions` instead of failing.
+labels. Compact `next` uses the same 12 KiB agent-response ceiling as its core
+view, so the default limit of 20 remains meaningful. Section removal is
+recorded in explicit `omissions` instead of failing.
 
 Rules that matter:
 
@@ -430,19 +432,19 @@ canonical state stays readable through focus and catalog views. A host that
 needs exact delivery acknowledges explicitly by returning the exact
 `delivered_through` value and opaque `delivery_token` as `acknowledge_through`
 and `acknowledge_token`; both fields are absent when changes were not
-delivered, and a guessed pair is refused without disclosure. Concurrent appends
-wait for the next page. Every successful work response is at most 12,288
-serialized JSON bytes; typed `omissions` report advisory sections shortened by
-count or byte budget. `work_focus` is navigation only and never
-claims/releases as a side effect. It returns an exact history count with a
-bounded newest-event summary tail, the latest run even after completion, and a
-body-free actor-filtered memory index for host-side inspection. A staged page
-never blocks a focus change or a
-mutation; changing focus discards the un-delivered page and the next call
-recomputes the same interval under the new focus.
-`work_propose`
-atomically handles roots and bounded decomposition. `work_update` carries a
-typed transition such as claim/release, checkpoint, blocker, cancel,
+delivered, and a guessed pair is refused without disclosure. Concurrent
+appends wait for the next page. Every successful work response is at most
+12,288 serialized JSON bytes; typed `omissions` report advisory sections
+shortened by count or byte budget. A `staged` changes omission instead means
+those dense entries remain unconsumed for the next page; it is not a
+byte-budget discard. `work_focus` is navigation only and never claims/releases
+as a side effect. It returns an exact history count with a bounded newest-event
+summary tail, the latest run even after completion, and a body-free
+actor-filtered memory index for host-side inspection. A staged page never
+blocks a focus change or a mutation; changing focus discards the un-delivered
+page and the next call recomputes the same interval under the new focus.
+`work_propose` atomically handles roots and bounded decomposition. `work_update`
+carries a typed transition such as claim/release, checkpoint, blocker, cancel,
 supersede, deferral, assignment, revision, or prerequisite change. Update and
 handoff success responses contain only a compact receipt, one bounded
 `obligation_page`, generic readiness `obligations`, and `allowed_next`;

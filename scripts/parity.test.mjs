@@ -395,18 +395,21 @@ test("list words stay compact while verbose and update metadata remain explicit"
 
     const next = run([...hostContext, "next", "--limit", "20", "--json"]);
     assert.equal(next.status, 0, next.stderr);
+    // Keep the realistic 20-row compact fixture materially below the shared
+    // 12 KiB hard ceiling while still requiring every requested row.
     assert.ok(
-      Buffer.byteLength(next.stdout, "utf8") <= 4 * 1024,
+      Buffer.byteLength(next.stdout, "utf8") <= 8 * 1024,
       `${Buffer.byteLength(next.stdout, "utf8")} byte next receipt`,
     );
     const compactNext = JSON.parse(next.stdout);
+    assert.equal(compactNext.ready.length, 20);
     assert.equal("session" in compactNext, false);
     assert.equal("delivery_token" in compactNext, false);
     assert.ok(Array.isArray(compactNext.changes));
     const nextText = run([...hostContext, "next", "--limit", "20"]);
     assert.equal(nextText.status, 0, nextText.stderr);
     assert.ok(
-      Buffer.byteLength(nextText.stdout, "utf8") <= 4 * 1024,
+      Buffer.byteLength(nextText.stdout, "utf8") <= 8 * 1024,
       `${Buffer.byteLength(nextText.stdout, "utf8")} byte text next receipt`,
     );
     assert.ok(nextText.stdout.includes(`${refs[0]} [bug]`));

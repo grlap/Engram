@@ -539,6 +539,8 @@ pub struct WorkSectionOmission {
 #[serde(rename_all = "snake_case")]
 pub enum WorkSectionOmissionReason {
     ByteBudget,
+    /// Dense change entries remain unconsumed for a later staged page.
+    Staged,
     CountLimit,
     DeadPrerequisiteCountLimit,
     PendingPrerequisiteCountLimit,
@@ -1261,7 +1263,7 @@ impl LocalWorkService {
                     if page.omitted_count > 0 {
                         omissions.push(WorkSectionOmission {
                             section: WorkNextSection::Changes,
-                            reason: WorkSectionOmissionReason::ByteBudget,
+                            reason: WorkSectionOmissionReason::Staged,
                             omitted_count: page.omitted_count,
                         });
                     }
@@ -1323,7 +1325,7 @@ impl LocalWorkService {
                     if omitted_count > 0 {
                         omissions.push(WorkSectionOmission {
                             section: WorkNextSection::Changes,
-                            reason: WorkSectionOmissionReason::ByteBudget,
+                            reason: WorkSectionOmissionReason::Staged,
                             omitted_count,
                         });
                     }
@@ -11749,6 +11751,11 @@ mod tests {
                 .len()
                 <= MAX_AGENT_WORK_RESPONSE_BYTES
         );
+        assert!(first.omissions.iter().any(|omission| {
+            omission.section == WorkNextSection::Changes
+                && omission.reason == WorkSectionOmissionReason::Staged
+                && omission.omitted_count > 0
+        }));
         let first_cursor = first.delivered_through.expect("first delivery cursor");
         let first_hashes = first
             .changes
