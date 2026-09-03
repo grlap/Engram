@@ -291,15 +291,66 @@ test("shell words default missing local attribution without losing explicit targ
       "--json",
     ]);
     assert.equal(seeded.status, 0, seeded.stderr);
-    const seededWork = JSON.parse(seeded.stdout).work;
+    const seededReceipt = JSON.parse(seeded.stdout);
+    assert.equal("effective_session_id" in seededReceipt, false);
+    const seededWork = seededReceipt.work;
     const workRef = seededWork.short_ref;
     const environment = withoutInjectedWorkAttribution(engramHome);
+
+    const defaultedAdd = run(
+      ["work", "add", "Defaulted session receipt", "--json"],
+      { env: environment },
+    );
+    assert.equal(defaultedAdd.status, 0, defaultedAdd.stderr);
+    const defaultedAddReceipt = JSON.parse(defaultedAdd.stdout);
+    const defaultedAddSession = defaultedAdd.stderr.match(
+      /this command uses (local-process-\d+-[0-9a-f-]{36})\./u,
+    )?.[1];
+    assert.ok(defaultedAddSession, defaultedAdd.stderr);
+    assert.equal(defaultedAddReceipt.effective_session_id, defaultedAddSession);
+    const continuedAdd = run(
+      [
+        "work",
+        "next",
+        "--verbose",
+        "--json",
+        "--session-id",
+        defaultedAddReceipt.effective_session_id,
+      ],
+      { env: environment },
+    );
+    assert.equal(continuedAdd.status, 0, continuedAdd.stderr);
+    const continuedAddReceipt = JSON.parse(continuedAdd.stdout);
+    assert.equal(
+      continuedAddReceipt.session.focused_work_id,
+      defaultedAddReceipt.work.work_id,
+    );
+    assert.equal("effective_session_id" in continuedAddReceipt, false);
+    const refusedMutation = run(
+      [
+        "work",
+        "note",
+        defaultedAddReceipt.work.short_ref,
+        "not held",
+        "--json",
+      ],
+      { env: environment },
+    );
+    assert.notEqual(refusedMutation.status, 0);
+    const refusalJsonStart = refusedMutation.stderr.indexOf("{");
+    assert.notEqual(refusalJsonStart, -1, refusedMutation.stderr);
+    const refusalReceipt = JSON.parse(
+      refusedMutation.stderr.slice(refusalJsonStart),
+    );
+    assert.equal("effective_session_id" in refusalReceipt, false);
 
     const next = run(["work", "next", "--json"], {
       env: environment,
     });
     assert.equal(next.status, 0, next.stderr);
-    assert.ok(Array.isArray(JSON.parse(next.stdout).ready));
+    const nextReceipt = JSON.parse(next.stdout);
+    assert.ok(Array.isArray(nextReceipt.ready));
+    assert.equal("effective_session_id" in nextReceipt, false);
     assert.match(
       next.stderr,
       /attribution uses the asserted OS-user environment|attribution uses a synthetic process actor/u,
@@ -313,12 +364,15 @@ test("shell words default missing local attribution without losing explicit targ
     assert.equal(shown.status, 0, shown.stderr);
     assert.equal(JSON.parse(shown.stdout).status.work.short_ref, workRef);
 
-    const claimed = run(["work", "claim", workRef], { env: environment });
+    const claimed = run(["work", "claim", workRef, "--json"], {
+      env: environment,
+    });
     assert.equal(claimed.status, 0, claimed.stderr);
     const claimedSession = claimed.stderr.match(
       /this command uses (local-process-\d+-[0-9a-f-]{36})\./u,
     )?.[1];
     assert.ok(claimedSession, claimed.stderr);
+    assert.equal(JSON.parse(claimed.stdout).effective_session_id, claimedSession);
 
     const observed = run(
       [
@@ -335,6 +389,7 @@ test("shell words default missing local attribution without losing explicit targ
     );
     assert.equal(observed.status, 0, observed.stderr);
     const observedView = JSON.parse(observed.stdout);
+    assert.equal("effective_session_id" in observedView, false);
     assert.equal(observedView.holder, "another session");
     assertTerseShow(observedView);
     const observedText = run(

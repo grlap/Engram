@@ -441,6 +441,23 @@ impl Receipt {
         }
     }
 
+    /// Adds the caller's process-defaulted session handle to a successful CLI
+    /// mutation receipt without changing the shared verb or MCP receipt by
+    /// default. Owed completion refusals remain unchanged.
+    #[must_use]
+    pub fn with_effective_session_id(mut self, session_id: &SessionId) -> Self {
+        if self.owed {
+            return self;
+        }
+        if let Value::Object(fields) = &mut self.value {
+            debug_assert!(!fields.contains_key("effective_session_id"));
+            fields
+                .entry("effective_session_id")
+                .or_insert_with(|| Value::String(session_id.0.clone()));
+        }
+        self
+    }
+
     /// Shell rendering: the receipt lines, then `reminders:` and at most four
     /// `next:` commands plus an explicit omission marker. Never contains
     /// object hashes, fences, or idempotency keys.
@@ -4716,6 +4733,21 @@ mod tests {
         assert!(text.ends_with("next:\n  engram work note w-0123456789ab \"…\""));
         assert_eq!(receipt.value["reminders"].as_array().map(Vec::len), Some(1));
         assert_eq!(receipt.value["seal"], json!("a".repeat(64)));
+    }
+
+    #[test]
+    fn effective_session_id_only_enriches_success_receipts() {
+        let session = SessionId("local-process-test".into());
+        let success = Receipt::assemble(Vec::new(), Guidance::default(), json!({}), false)
+            .with_effective_session_id(&session);
+        assert_eq!(
+            success.value["effective_session_id"],
+            json!("local-process-test")
+        );
+
+        let owed = Receipt::assemble(Vec::new(), Guidance::default(), json!({}), true)
+            .with_effective_session_id(&session);
+        assert_eq!(owed.value.get("effective_session_id"), None);
     }
 
     #[test]

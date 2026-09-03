@@ -49,7 +49,9 @@ stable id for that process. Durable actor provenance distinguishes
 `defaulted:process_session`; injected values remain verbatim. A process-local
 session id does not itself provide cross-command continuity between separate
 CLI processes, so the CLI prints its generated id and an exact `--session-id`
-reuse instruction on every such invocation.
+reuse instruction on every such invocation. A successful default-session
+mutation with `--json` repeats that caller-owned process-local fencing handle
+as `effective_session_id`; it is not an authenticated principal.
 
 If compliance-grade attribution ever becomes a deployment promise, a trusted
 write gateway or `Signer`-backed signatures must ship with that deployment —

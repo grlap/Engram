@@ -179,7 +179,8 @@ enum Command {
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long, env = "ENGRAM_SOURCE_SKILL")]
         source_skill: Option<String>,
-        /// Print the exact structured receipt instead of text.
+        /// Print the structured receipt instead of text. Successful mutations whose
+        /// session was defaulted also include top-level `effective_session_id`.
         #[arg(long, global = true)]
         json: bool,
         #[command(subcommand)]
@@ -555,6 +556,30 @@ enum WorkCommand {
         #[command(subcommand)]
         operation: Box<CoreWorkCommand>,
     },
+}
+
+impl WorkCommand {
+    /// Only successful mutation receipts need an in-band handle for a
+    /// process-defaulted session. Read receipts and every explicitly bound
+    /// surface retain their existing structured shape.
+    const fn returns_mutation_receipt(&self) -> bool {
+        match self {
+            Self::Add { .. }
+            | Self::Claim { .. }
+            | Self::Update { .. }
+            | Self::Gate { .. }
+            | Self::Remember { .. }
+            | Self::Forget { .. }
+            | Self::Note { .. }
+            | Self::Done { .. }
+            | Self::Handoff { .. } => true,
+            Self::Next { .. }
+            | Self::Ls { .. }
+            | Self::Show { .. }
+            | Self::Memories { .. }
+            | Self::Core { .. } => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -1039,6 +1064,9 @@ fn run_authority(
     reason = "each word's flag translation stays beside the others so the thirteen-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
+    let effective_session_id =
+        (json && context.attribution_defaults.session && operation.returns_mutation_receipt())
+            .then(|| context.session_id.clone());
     let verbs = AgentVerbs::new_with_attribution(
         context.database,
         context.project_id,
@@ -1293,6 +1321,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     };
     match outcome {
         Ok(receipt) => {
+            let receipt = if let Some(effective_session_id) = &effective_session_id {
+                receipt.with_effective_session_id(effective_session_id)
+            } else {
+                receipt
+            };
             if json {
                 println!("{}", serialize_agent_receipt(&receipt.value)?);
             } else {
@@ -2119,6 +2152,49 @@ mod tests {
         assert_eq!(injected.actor_id, " host actor ");
         assert_eq!(injected.session_id, " host session ");
         assert_eq!(injected.defaults, WorkAttributionDefaults::default());
+    }
+
+    #[test]
+    fn every_agent_word_classifies_its_structured_receipt_exhaustively() {
+        let cases: &[(&[&str], bool)] = &[
+            (&["next"], false),
+            (&["ls"], false),
+            (&["show", "w-000000000001"], false),
+            (&["add", "new work"], true),
+            (&["claim", "w-000000000001"], true),
+            (&["update", "--release"], true),
+            (&["gate", "cargo-check"], true),
+            (&["remember", "project observation"], true),
+            (&["memories"], false),
+            (&["forget", "project-observation"], true),
+            (&["note", "progress"], true),
+            (&["done"], true),
+            (&["handoff", "--to", "peer-session"], true),
+        ];
+
+        let command = Cli::command();
+        let work = command
+            .find_subcommand("work")
+            .expect("work command exists");
+        let agent_word_count = work
+            .get_subcommands()
+            .filter(|subcommand| subcommand.get_name() != "core")
+            .count();
+        assert_eq!(cases.len(), agent_word_count);
+
+        for &(args, expected) in cases {
+            let mut command = vec!["engram", "work"];
+            command.extend_from_slice(args);
+            let parsed = Cli::try_parse_from(command).expect("parse agent word");
+            let Command::Work { operation, .. } = parsed.command else {
+                panic!("agent word did not parse as work");
+            };
+            assert_eq!(
+                operation.returns_mutation_receipt(),
+                expected,
+                "unexpected receipt classification for {args:?}"
+            );
+        }
     }
 
     #[test]

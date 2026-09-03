@@ -39,7 +39,12 @@ separate processes, multi-command ambient workflows still need a host-injected
 stable session id. Every defaulted-session invocation prints its generated id
 and the exact `--session-id` reuse instruction, so a shell can safely continue
 a claim or retry; the process default itself does not claim cross-process
-continuity.
+continuity. A successful mutating word with `--json` also returns that id as
+top-level `effective_session_id`; read receipts, explicitly bound CLI or MCP
+receipts, and the host-only `work core` protocol retain their existing shape.
+`next` can stage a delivery cursor, but remains a read receipt by this
+contract: compact `next` relies on the stderr notice, while verbose `next`
+already returns its session object.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
@@ -332,9 +337,10 @@ setter prints a warning that no V1 host can bind at that level plus the
 `set-required-assurance turn_gated` recovery command. The operator identity is
 asserted host context, not authenticated administration.
 
-`engram work` exposes the thirteen agent words; `--json` after any
-word prints the exact structured receipt (the existing shape plus `reminders`
-and `next`) instead of text, and `done` exits with status 2 when the typed
+`engram work` exposes the thirteen agent words; `--json` after any word prints
+the structured receipt (the existing shape plus `reminders` and `next`)
+instead of text. A successful mutation with a process-defaulted session also
+adds top-level `effective_session_id`. `done` exits with status 2 when the typed
 `open_work_obligations` refusal says something is still owed. The
 six-operation JSON protocol stays reachable for hosts and operators as
 `engram work core {next,focus,propose,update,complete,handoff}`, whose
@@ -410,10 +416,11 @@ receipt. A required-child completion refusal supplies the exact waiver command.
 The host-only reopen operation remains structured-only.
 Errors keep their stable code and details and add the same two fields. The
 shell prints a one-line receipt followed by `reminders:` and `next:`; `--json`
-prints the exact structured receipt. Text output never contains a 64-hex
-hash, fence number, or idempotency key. `scripts/parity.test.mjs` checks that
-on a fresh store and counts `add → claim → done` at three commands and at
-most three agent-supplied fields.
+prints the structured receipt plus `effective_session_id` only for a successful
+default-session mutation. Text output never contains a 64-hex hash, fence
+number, or idempotency key. `scripts/parity.test.mjs` checks that on a fresh
+store and counts `add → claim → done` at three commands and at most three
+agent-supplied fields.
 
 `ls --mine` returns items assigned to the actor plus the session's focused
 item when this session holds it; claims on other items are visible through

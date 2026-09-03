@@ -643,6 +643,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
     );
     assert.equal(added.kind, "root");
+    assert.equal("effective_session_id" in added, false);
     const workRef = added.work.short_ref;
     assert.ok(added.reminders.includes("unclaimed: claim it before you change anything"));
     assert.ok(added.next.includes(`engram work claim ${workRef}`));
