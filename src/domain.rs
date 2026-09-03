@@ -1802,9 +1802,9 @@ pub enum WorkCompletionRecoveryCause {
     },
 }
 
-/// Exact affected item and one executable command captured with a completion
-/// refusal. Writers freeze this value in the same transaction that decides
-/// the refusal so retries cannot observe a different recovery target.
+/// Exact affected item and one executable command derived from one coherent
+/// current snapshot for a completion refusal. The guidance is not persisted;
+/// a retry recomputes it so a moved barrier yields its current recovery target.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkCompletionRecovery {
     pub cause: WorkCompletionRecoveryCause,

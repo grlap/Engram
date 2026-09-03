@@ -4,8 +4,8 @@ mod work;
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 
 pub(crate) use work::{
-    CompleteWorkStorageResult, StageWorkSessionDelivery, WorkNoteCapture,
-    normalize_completion_acceptance_shape,
+    CompleteWorkStorageResult, CompletionRecoverySnapshot, StageWorkSessionDelivery,
+    WorkNoteCapture, normalize_completion_acceptance_shape,
 };
 
 #[cfg(test)]

@@ -470,11 +470,15 @@ evidence uses the same actionable-first rule: environments required by visible
 open obligations are retained first, and a visible verification summary keeps
 its referenced environment summary ahead of it. Count and byte trimming remove
 unrelated or dependent evidence before breaking that visible typed closure.
-Generic readiness strings remain a separate compatibility field. The typed
-completion result is durably replayable under the same idempotency key.
-An interrupted capture-backed completion recovers committed evidence or
-checkpoint timestamps for exact replay, while missing substeps use current
-time and recheck the live claim.
+Generic readiness strings remain a separate compatibility field. A successful
+completion result is durably replayable under the same idempotency key;
+recoverable refusals are recomputed from current state. The pending attempt
+retains the original request and work target, so a lost refusal cannot redirect
+the same caller key after focus moves. An interrupted
+capture-backed completion reuses committed evidence, and reuses an exact
+checkpoint while its acknowledged run-feed cut remains current. If the feed
+advances, the retry writes a new checkpoint under a cut-derived substep key.
+Cut selection and that checkpoint append share one SQLite write transaction.
 
 Recoverable completion refusals add `recovery { cause, item, command }` to the
 receipt. `cause` is a tagged value for `open_obligation`,
@@ -482,13 +486,13 @@ receipt. `cause` is a tagged value for `open_obligation`,
 including the exact blocker identity. `item` carries the
 affected full id, short ref, title, and lifecycle-backed state. `command` is
 deliberately a single next command, and the `done` verb exposes exactly that
-one entry in its `next` list. The recovery snapshot commits in the same SQLite
-transaction that proves its cause, and an interrupted wrapper replays those
-exact cause/item/command bytes even if live work changes afterward. Native
-`done` and the fourteen-tool MCP surface return this as a typed refusal receipt. The
-JSON core prints the same typed refusal receipt on stdout and exits with status
-1; it does not wrap the refusal in an error envelope. Short-ref ambiguity
-likewise returns a stable
+one entry in its `next` list. Recovery guidance is not a replayable result: it
+is rebuilt from a coherent current snapshot so a retry observes a child,
+contribution, obligation, or acceptance barrier that moved. Native `done` and
+the fourteen-tool MCP surface return this as a typed refusal receipt. The JSON
+core prints the same typed refusal receipt on stdout and exits with status 1;
+it does not wrap the refusal in an error envelope. Short-ref ambiguity likewise
+returns a stable
 `work_reference_ambiguous` error with up to eight ordered candidates, an exact
 `more` count, and full-id retry guidance on every JSON front door.
 
@@ -501,10 +505,11 @@ optional on every mutating branch: when omitted, the server derives one from
 the session, operation, focused work, the item's current claim/handoff basis,
 and canonical intent, so an identical repeated call replays its receipt while
 nothing about the item changed and is a new attempt once it moved; a supplied
-key keeps the explicit contract. Durable
-attempts bind caller intent separately from the current focused work/claim/
-handoff basis, so committed retries replay while interrupted attempts
-revalidate that basis and cannot mutate a newly focused item. Omitting
+key keeps the explicit contract. Durable attempts bind caller intent separately
+from the current focused work/claim/handoff basis. A pending refused completion
+may refresh its live claim basis only after the original target binding is
+verified; committed successes replay, and an interrupted attempt cannot mutate
+a newly focused item. Omitting
 `work_complete.acceptance` asserts every current criterion with the note
 `accepted by <actor_id> via work done` (or the supplied `note`); omitting
 `work_update:checkpoint.evidence` acknowledges every evidence object already on

@@ -982,23 +982,16 @@ struct GateWorkProtocolIntent<'a> {
     previous: Option<&'a ObjectHash>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub(crate) enum CompleteWorkStorageResult {
     Completed(Box<CompletionSeal>),
-    Recovery(WorkCompletionRecovery),
+    Recovery(CompletionRecoverySnapshot),
 }
 
-#[derive(Serialize)]
-struct WorkCompletionRecoveryFingerprint<'a> {
-    schema_version: u16,
-    work_id: WorkId,
-    run_id: WorkRunId,
-    expected_work_revision: i64,
-    holder: &'a SessionId,
-    claim_id: WorkClaimId,
-    claim_fence: i64,
-    cause: &'a WorkCompletionRecoveryCause,
-    idempotency_key: &'a str,
+#[derive(Clone, Debug)]
+pub(crate) struct CompletionRecoverySnapshot {
+    pub(crate) recovery: WorkCompletionRecovery,
+    pub(crate) obligations: Vec<WorkObligationRecord>,
 }
 
 struct WorkProtocolAttemptRow {
@@ -1169,80 +1162,41 @@ impl SqliteStore {
         resolve_work_ref_on(&self.connection, project_id, work_ref)
     }
 
-    /// Freezes a pre-completion recovery snapshot under the same SQLite
-    /// snapshot that proves the missing acceptance criterion.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the exact claim fence and protocol replay key are explicit recovery evidence"
-    )]
-    pub(crate) fn persist_preflight_completion_recovery(
-        &mut self,
-        work_id: WorkId,
-        run_id: WorkRunId,
-        expected_work_revision: i64,
-        holder: &SessionId,
-        claim_id: WorkClaimId,
-        claim_fence: i64,
-        cause: &WorkCompletionRecoveryCause,
-        idempotency_key: &str,
+    /// Builds current completion-recovery guidance without persisting a
+    /// replayable refusal.
+    pub(crate) fn work_completion_recovery(
+        &self,
+        expected_work: &WorkItem,
+        claim: &WorkClaim,
         now: DateTime<Utc>,
-    ) -> Result<WorkCompletionRecovery, StoreError> {
-        let fingerprint = WorkCompletionRecoveryFingerprint {
-            schema_version: SCHEMA_VERSION,
-            work_id,
-            run_id,
-            expected_work_revision,
-            holder,
-            claim_id,
-            claim_fence,
-            cause,
-            idempotency_key,
-        };
-        let request_object = request_object(&fingerprint)?;
-        let transaction = self.begin_work_mutation()?;
-        if let Some(recovery) = replay_operation::<WorkCompletionRecovery>(
+        cause: &WorkCompletionRecoveryCause,
+    ) -> Result<CompletionRecoverySnapshot, StoreError> {
+        debug_assert!(self.connection.is_autocommit());
+        let transaction = self.connection.unchecked_transaction()?;
+        let (work, _, _) = validate_live_claim_on(
             &transaction,
-            "complete_work_recovery",
-            idempotency_key,
-            request_object.hash(),
-        )? {
-            transaction.commit()?;
-            return Ok(recovery);
-        }
-        let work = match cause {
-            WorkCompletionRecoveryCause::MissingAcceptance { criterion } => {
-                let (work, _, _) = validate_live_claim_on(
-                    &transaction,
-                    work_id,
-                    run_id,
-                    expected_work_revision,
-                    holder,
-                    claim_id,
-                    claim_fence,
-                    now,
-                    false,
-                )?;
-                if !work.acceptance.contains(criterion) {
-                    return Err(StoreError::InvalidWorkProjection(
-                        "completion recovery criterion is not in the deciding work revision".into(),
-                    ));
-                }
-                work
-            }
-            _ => {
-                return Err(StoreError::InvalidWork(
-                    "preflight completion recovery accepts only missing acceptance".into(),
-                ));
-            }
-        };
-        let recovery = persist_completion_recovery_on(
-            &transaction,
-            &work,
-            cause.clone(),
-            "complete_work_recovery",
-            idempotency_key,
-            request_object.hash(),
+            expected_work.work_id,
+            claim.run_id,
+            expected_work.revision,
+            &claim.holder,
+            claim.claim_id,
+            claim.fence,
+            now,
+            false,
         )?;
+        let WorkCompletionRecoveryCause::MissingAcceptance { criterion } = cause else {
+            return Err(StoreError::InvalidWorkProjection(
+                "preflight completion recovery accepts only missing acceptance".into(),
+            ));
+        };
+        if !work.acceptance.contains(criterion) {
+            return Err(StoreError::InvalidWorkProjection(
+                "preflight completion recovery criterion is absent from the bound work revision"
+                    .into(),
+            ));
+        }
+        let recovery =
+            completion_recovery_snapshot_on(&transaction, &work, claim.run_id, cause.clone())?;
         transaction.commit()?;
         Ok(recovery)
     }
@@ -1466,6 +1420,69 @@ impl SqliteStore {
         } else if changed != 1 {
             return Err(StoreError::InvalidWorkProjection(
                 "work-protocol result updated more than one durable attempt".into(),
+            ));
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Refreshes one pending completion attempt to a newer live basis without
+    /// losing its caller-key, request, or target binding. The caller first
+    /// verifies that both bases name the same work item.
+    pub(crate) fn refresh_pending_work_protocol_attempt_basis<B: Serialize>(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        operation: &str,
+        idempotency_key: &str,
+        expected_basis: &serde_json::Value,
+        current_basis: &B,
+    ) -> Result<(), StoreError> {
+        let expected = CanonicalObject::freeze(expected_basis)?;
+        let current = CanonicalObject::freeze(current_basis)?;
+        let transaction = self.begin_work_mutation()?;
+        let changed = transaction.execute(
+            "UPDATE work_protocol_attempts
+             SET basis_hash = ?7, basis_json = ?8
+             WHERE project_id = ?1 AND session_id = ?2
+               AND operation = ?3 AND idempotency_key = ?4
+               AND basis_hash = ?5 AND basis_json = ?6
+               AND result_hash IS NULL AND result_json IS NULL",
+            params![
+                project_id.0,
+                session_id.0,
+                operation,
+                idempotency_key,
+                expected.hash().as_str(),
+                expected.bytes(),
+                current.hash().as_str(),
+                current.bytes()
+            ],
+        )?;
+        if changed == 0 {
+            let matches_current = transaction
+                .query_row(
+                    "SELECT basis_hash, basis_json
+                     FROM work_protocol_attempts
+                     WHERE project_id = ?1 AND session_id = ?2
+                       AND operation = ?3 AND idempotency_key = ?4
+                       AND result_hash IS NULL AND result_json IS NULL",
+                    params![project_id.0, session_id.0, operation, idempotency_key],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                )
+                .optional()?
+                .is_some_and(|(hash, bytes)| {
+                    hash == current.hash().as_str() && bytes == current.bytes()
+                });
+            if !matches_current {
+                return Err(StoreError::WorkOperationIdempotencyConflict {
+                    operation: operation.to_owned(),
+                    key: idempotency_key.to_owned(),
+                });
+            }
+        } else if changed != 1 {
+            return Err(StoreError::InvalidWorkProjection(
+                "pending work-protocol basis refresh updated more than one attempt".into(),
             ));
         }
         transaction.commit()?;
@@ -2696,25 +2713,6 @@ fn command_work_ref_on(
     }
 }
 
-fn persist_completion_recovery_on(
-    transaction: &Transaction<'_>,
-    work: &WorkItem,
-    cause: WorkCompletionRecoveryCause,
-    operation: &str,
-    idempotency_key: &str,
-    request_hash: &ObjectHash,
-) -> Result<WorkCompletionRecovery, StoreError> {
-    let recovery = completion_recovery_on(transaction, work, cause)?;
-    persist_operation_result(
-        transaction,
-        operation,
-        idempotency_key,
-        request_hash,
-        &recovery,
-    )?;
-    Ok(recovery)
-}
-
 fn completion_recovery_on(
     connection: &Connection,
     work: &WorkItem,
@@ -2772,6 +2770,18 @@ fn completion_recovery_on(
         cause,
         item,
         command,
+    })
+}
+
+fn completion_recovery_snapshot_on(
+    connection: &Connection,
+    work: &WorkItem,
+    run_id: WorkRunId,
+    cause: WorkCompletionRecoveryCause,
+) -> Result<CompletionRecoverySnapshot, StoreError> {
+    Ok(CompletionRecoverySnapshot {
+        recovery: completion_recovery_on(connection, work, cause)?,
+        obligations: load_work_obligation_records_on(connection, run_id, None)?,
     })
 }
 
@@ -3252,7 +3262,7 @@ impl SqliteStore {
         &mut self,
         request: &CompleteWorkRequest,
         redactor: &R,
-        persist_recovery: bool,
+        return_recovery: bool,
     ) -> Result<CompleteWorkStorageResult, StoreError> {
         inspect_work_request(redactor, request)?;
         assert_actor_session(&request.actor, &request.holder)?;
@@ -3266,17 +3276,6 @@ impl SqliteStore {
         )? {
             transaction.commit()?;
             return Ok(CompleteWorkStorageResult::Completed(Box::new(seal)));
-        }
-        if persist_recovery
-            && let Some(recovery) = replay_operation::<WorkCompletionRecovery>(
-                &transaction,
-                "complete_work_recovery",
-                &request.idempotency_key,
-                request_object.hash(),
-            )?
-        {
-            transaction.commit()?;
-            return Ok(CompleteWorkStorageResult::Recovery(recovery));
         }
         expire_handoff_offers(
             &transaction,
@@ -3360,16 +3359,9 @@ impl SqliteStore {
             request.actor.assurance,
         ) {
             Ok(value) => value,
-            Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) if persist_recovery => {
-                let recovery = persist_completion_recovery_on(
-                    &transaction,
-                    &item,
-                    cause,
-                    "complete_work_recovery",
-                    &request.idempotency_key,
-                    request_object.hash(),
-                )?;
-                transaction.commit()?;
+            Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) if return_recovery => {
+                let recovery =
+                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
                 return Ok(CompleteWorkStorageResult::Recovery(recovery));
             }
             Err(error) => return Err(error),
@@ -3446,16 +3438,9 @@ impl SqliteStore {
                 )));
             }
             let cause = WorkCompletionRecoveryCause::RequiredChildUnsealed { child };
-            if persist_recovery {
-                let recovery = persist_completion_recovery_on(
-                    &transaction,
-                    &item,
-                    cause,
-                    "complete_work_recovery",
-                    &request.idempotency_key,
-                    request_object.hash(),
-                )?;
-                transaction.commit()?;
+            if return_recovery {
+                let recovery =
+                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
                 return Ok(CompleteWorkStorageResult::Recovery(recovery));
             }
             return Err(StoreError::WorkCompletionRecoveryRequired {
@@ -3485,7 +3470,7 @@ impl SqliteStore {
             &completion_cut,
         ) {
             Ok(value) => value,
-            Err(StoreError::OpenWorkObligations { obligations, .. }) if persist_recovery => {
+            Err(StoreError::OpenWorkObligations { obligations, .. }) if return_recovery => {
                 let obligation = obligations.first().ok_or_else(|| {
                     StoreError::InvalidWorkProjection(
                         "open-obligation refusal contains no exact obligation".into(),
@@ -3496,15 +3481,8 @@ impl SqliteStore {
                     definition: obligation.definition.clone(),
                     required_check: obligation.required_check,
                 };
-                let recovery = persist_completion_recovery_on(
-                    &transaction,
-                    &item,
-                    cause,
-                    "complete_work_recovery",
-                    &request.idempotency_key,
-                    request_object.hash(),
-                )?;
-                transaction.commit()?;
+                let recovery =
+                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
                 return Ok(CompleteWorkStorageResult::Recovery(recovery));
             }
             Err(error) => return Err(error),
@@ -3537,16 +3515,9 @@ impl SqliteStore {
             let cause = WorkCompletionRecoveryCause::MissingContribution {
                 participant: participant.clone(),
             };
-            if persist_recovery {
-                let recovery = persist_completion_recovery_on(
-                    &transaction,
-                    &item,
-                    cause,
-                    "complete_work_recovery",
-                    &request.idempotency_key,
-                    request_object.hash(),
-                )?;
-                transaction.commit()?;
+            if return_recovery {
+                let recovery =
+                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
                 return Ok(CompleteWorkStorageResult::Recovery(recovery));
             }
             return Err(StoreError::WorkCompletionRecoveryRequired {
@@ -4801,6 +4772,148 @@ impl SqliteStore {
         )?;
         transaction.commit()?;
         Ok(checkpoint)
+    }
+
+    /// Captures or replays the completion checkpoint whose idempotency key is
+    /// derived from the exact run-feed cut acknowledged by that checkpoint.
+    /// Cut selection, replay proof, and checkpoint persistence share one
+    /// immediate transaction, so another writer cannot advance the feed
+    /// between the selected cut and the committed checkpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when authority is stale, cited evidence is
+    /// invalid, the derived key conflicts, or persistence fails.
+    pub(crate) fn checkpoint_work_for_completion<R, F>(
+        &mut self,
+        request: &crate::domain::CheckpointWorkRequest,
+        mut key_for_cut: F,
+        redactor: &R,
+    ) -> Result<(ObjectHash, FeedPosition), StoreError>
+    where
+        R: Redactor,
+        F: FnMut(&FeedPosition) -> Result<String, StoreError>,
+    {
+        inspect_work_request(redactor, request)?;
+        assert_actor_session(&request.actor, &request.holder)?;
+        let summary = normalize_text(&request.summary, "checkpoint summary")?;
+        let transaction = self.begin_work_mutation()?;
+        expire_handoff_offers(
+            &transaction,
+            request.run_id,
+            request.checkpointed_at,
+            &request.actor,
+        )?;
+        let (item, run, mut claim) = validate_live_claim_on(
+            &transaction,
+            request.work_id,
+            request.run_id,
+            request.expected_work_revision,
+            &request.holder,
+            request.claim_id,
+            request.claim_fence,
+            request.checkpointed_at,
+            false,
+        )?;
+        let evidence = match request.evidence.as_ref() {
+            Some(evidence) => unique_hashes(evidence),
+            None => work_run_evidence_on(&transaction, run.run_id)?,
+        };
+        ensure_run_evidence(&transaction, run.run_id, &evidence)?;
+        let current_cut = FeedPosition {
+            feed: FeedId::RunExecution(run.run_id),
+            position: feed_head(&transaction, &FeedId::RunExecution(run.run_id))?,
+        };
+
+        if let Some(checkpoint_hash) = run.last_checkpoint.as_ref() {
+            let checkpoint: WorkCheckpoint =
+                load_typed_work_object(&transaction, checkpoint_hash, "work_checkpoint")?;
+            let checkpoint_is_current = checkpoint.work_id == item.work_id
+                && checkpoint.run_id == run.run_id
+                && checkpoint.claim_id == claim.claim_id
+                && checkpoint.claim_fence == claim.fence
+                && checkpoint.evidence == evidence
+                && checkpoint.acknowledged_run_position.feed == current_cut.feed
+                && checkpoint_feed_end(checkpoint.acknowledged_run_position.position)?
+                    == current_cut.position;
+            if checkpoint_is_current {
+                let key = key_for_cut(&checkpoint.acknowledged_run_position)?;
+                let mut replay_request = request.clone();
+                replay_request.evidence = Some(evidence.clone());
+                replay_request.idempotency_key.clone_from(&key);
+                replay_request.checkpointed_at = checkpoint.created_at;
+                let request_object = request_object(&replay_request)?;
+                let stored: Option<(String, Vec<u8>)> = transaction
+                    .query_row(
+                        "SELECT request_hash, result_json FROM work_operation_results
+                         WHERE operation = 'checkpoint_work' AND idempotency_key = ?1",
+                        [&key],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?;
+                if let Some((stored_request_hash, result_json)) = stored
+                    && stored_request_hash == request_object.hash().as_str()
+                {
+                    let stored_checkpoint: ObjectHash = serde_json::from_slice(&result_json)?;
+                    if &stored_checkpoint != checkpoint_hash {
+                        return Err(StoreError::InvalidWorkProjection(
+                            "completion checkpoint result does not name the current checkpoint"
+                                .into(),
+                        ));
+                    }
+                    transaction.commit()?;
+                    return Ok((stored_checkpoint, checkpoint.acknowledged_run_position));
+                }
+            }
+        }
+
+        renew_holder_claim(&transaction, &mut claim, request.checkpointed_at)?;
+        let key = key_for_cut(&current_cut)?;
+        let mut persisted_request = request.clone();
+        persisted_request.evidence = Some(evidence.clone());
+        persisted_request.idempotency_key.clone_from(&key);
+        let request_object = request_object(&persisted_request)?;
+        if transaction
+            .query_row(
+                "SELECT 1 FROM work_operation_results
+                 WHERE operation = 'checkpoint_work' AND idempotency_key = ?1",
+                [&key],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some()
+        {
+            return Err(StoreError::WorkOperationIdempotencyConflict {
+                operation: "checkpoint_work".into(),
+                key,
+            });
+        }
+        let checkpoint = persist_work_checkpoint_on(
+            &transaction,
+            &item,
+            run,
+            claim,
+            summary,
+            evidence,
+            &request.actor,
+            request.checkpointed_at,
+        )?;
+        let persisted_checkpoint: WorkCheckpoint =
+            load_typed_work_object(&transaction, &checkpoint, "work_checkpoint")?;
+        if persisted_checkpoint.acknowledged_run_position != current_cut {
+            return Err(StoreError::InvalidWorkProjection(
+                "completion checkpoint did not retain its transaction-selected run-feed cut".into(),
+            ));
+        }
+        persist_operation_result(
+            &transaction,
+            "checkpoint_work",
+            &persisted_request.idempotency_key,
+            request_object.hash(),
+            &checkpoint,
+        )?;
+        transaction.commit()?;
+        Ok((checkpoint, current_cut))
     }
 
     /// Adds immutable evidence under the exact live claim basis.
@@ -13112,6 +13225,7 @@ mod tests {
     use crate::storage::test_database_shape_snapshot;
     use crate::work_service::{
         LocalWorkService, WorkAcceptanceInput, WorkCompleteInput, WorkCompleteResult,
+        WorkCompletionCaptureInput,
     };
     use crate::{ProjectId, VerificationEvidenceMatchInput, match_verification_evidence};
 
@@ -14034,6 +14148,99 @@ mod tests {
             &completion_request(work, claim, holder, evidence, key, second),
             &DevelopmentNoopRedactor,
         )
+    }
+
+    #[test]
+    fn completion_checkpoint_holds_the_writer_slot_across_cut_selection_and_append() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let mut store = SqliteStore::open(&database).expect("store");
+        let work = store
+            .create_work(
+                &root_request("completion-checkpoint-cut", "checkpoint-cut-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("completion work");
+        let claim = claim(&mut store, &work, "holder", "checkpoint-cut-claim", 1, 300);
+        let evidence_hash = evidence(
+            &mut store,
+            &work,
+            &claim,
+            "holder",
+            "checkpoint-cut-evidence",
+            2,
+        );
+        let request = CheckpointWorkRequest {
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: work.revision,
+            holder: SessionId("holder".into()),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            summary: "atomic completion checkpoint".into(),
+            evidence: Some(vec![evidence_hash]),
+            actor: actor("holder"),
+            idempotency_key: "completion-checkpoint-template".into(),
+            checkpointed_at: at(3),
+        };
+        let mut contender = SqliteStore::open(&database).expect("contending store");
+        contender
+            .connection
+            .busy_timeout(std::time::Duration::ZERO)
+            .expect("zero contender busy timeout");
+        let contender_request = RecordWorkEvidenceRequest {
+            work_id: work.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: work.revision,
+            holder: SessionId("holder".into()),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            summary: "must not interleave with the selected completion cut".into(),
+            refs: Vec::new(),
+            actor: actor("holder"),
+            idempotency_key: "checkpoint-cut-contender".into(),
+            recorded_at: at(3),
+        };
+        let mut probed = false;
+        let (checkpoint_hash, selected_cut) = store
+            .checkpoint_work_for_completion(
+                &request,
+                |cut| {
+                    probed = true;
+                    let Err(StoreError::Sqlite(error)) = contender
+                        .record_work_evidence(&contender_request, &DevelopmentNoopRedactor)
+                    else {
+                        panic!("a second writer must not enter after completion cut selection");
+                    };
+                    assert!(matches!(
+                        error.sqlite_error_code(),
+                        Some(
+                            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                        )
+                    ));
+                    Ok(format!("completion-cut-{}", cut.position))
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("atomic completion checkpoint");
+        assert!(probed);
+        let checkpoint: WorkCheckpoint = store
+            .get(&checkpoint_hash)
+            .expect("checkpoint read")
+            .expect("canonical checkpoint");
+        assert_eq!(checkpoint.acknowledged_run_position, selected_cut);
+        assert_eq!(
+            checkpoint_feed_end(selected_cut.position).expect("checkpoint feed end"),
+            store
+                .work_feed_head(&FeedId::RunExecution(claim.run_id))
+                .expect("current run feed head")
+        );
+        assert!(
+            store
+                .verify_all()
+                .expect("checkpoint integrity")
+                .is_healthy()
+        );
     }
 
     #[test]
@@ -20172,12 +20379,12 @@ mod tests {
     }
 
     #[test]
-    fn ambient_completion_returns_and_replays_a_typed_open_obligation_result() {
+    fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("project-protocol-obligations".into());
         let session = SessionId("runner".into());
-        let (work, evidence_hash, expected_obligation) = {
+        let (work, expected_obligation, binding, run_actor, source_basis) = {
             let mut store = SqliteStore::open(&database).expect("store");
             let work = store
                 .create_work(
@@ -20211,12 +20418,16 @@ mod tests {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .expect("protocol-obligation transaction");
+            let source_basis = ExecutionSourceBasis {
+                workspace_id: "workspace-protocol".into(),
+                source_revision: "revision-protocol".into(),
+            };
             append_control_execution_observation_on(
                 &transaction,
                 &ExecutionObservation {
                     schema_version: SCHEMA_VERSION,
                     project_id: project.clone(),
-                    binding,
+                    binding: binding.clone(),
                     session_id: session.clone(),
                     grant_id: "protocol-obligation-grant".into(),
                     observation_id: "protocol-source-mutation".into(),
@@ -20225,12 +20436,9 @@ mod tests {
                     outcome: ExecutionOutcome::Succeeded,
                     source_changed: true,
                     obligation_rule_set: builtin_rule_set_hash(),
-                    source_basis: Some(ExecutionSourceBasis {
-                        workspace_id: "workspace-protocol".into(),
-                        source_revision: "revision-protocol".into(),
-                    }),
+                    source_basis: Some(source_basis.clone()),
                     observed_at: Some(at(3)),
-                    actor: run_actor,
+                    actor: run_actor.clone(),
                     recorded_at: at(3),
                 },
             )
@@ -20241,7 +20449,7 @@ mod tests {
                 .expect("protocol obligation")
                 .pop()
                 .expect("one protocol obligation");
-            let evidence_hash = evidence(
+            evidence(
                 &mut store,
                 &work,
                 &claim,
@@ -20249,16 +20457,7 @@ mod tests {
                 "protocol-completion-evidence",
                 4,
             );
-            checkpoint(
-                &mut store,
-                &work,
-                &claim,
-                &session.0,
-                "protocol-completion-checkpoint",
-                5,
-                std::slice::from_ref(&evidence_hash),
-            );
-            (work, evidence_hash, obligation)
+            (work, obligation, binding, run_actor, source_basis)
         };
         let service = LocalWorkService::new(
             database.clone(),
@@ -20268,12 +20467,15 @@ mod tests {
             Some("obligation-protocol-test".into()),
         );
         let input = WorkCompleteInput {
-            capture: None,
-            evidence: vec![evidence_hash.to_string()],
+            capture: Some(WorkCompletionCaptureInput {
+                summary: "capture the exact completion evidence cut".into(),
+                refs: Vec::new(),
+            }),
+            evidence: Vec::new(),
             acceptance: Some(vec![WorkAcceptanceInput {
                 criterion: None,
                 satisfied: true,
-                evidence: vec![evidence_hash.to_string()],
+                evidence: Vec::new(),
                 note: "completion evidence is present".into(),
             }]),
             note: None,
@@ -20322,28 +20524,162 @@ mod tests {
             refusal.remedy,
             "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
         );
+        let run_id = binding.run_id;
+        let head_before_replay = SqliteStore::open(&database)
+            .expect("store before refusal replay")
+            .work_feed_head(&FeedId::RunExecution(run_id))
+            .expect("run feed before refusal replay");
         let replay = service
-            .work_complete(input, at(7))
-            .expect("typed refusal replays from the durable protocol attempt");
+            .work_complete(input.clone(), at(7))
+            .expect("typed refusal is recomputed from current state");
         assert_eq!(
             serde_json::to_value(replay).expect("replay JSON"),
             serde_json::to_value(first).expect("first JSON")
         );
+        assert_eq!(
+            SqliteStore::open(&database)
+                .expect("store after refusal replay")
+                .work_feed_head(&FeedId::RunExecution(run_id))
+                .expect("run feed after refusal replay"),
+            head_before_replay,
+            "an unchanged refusal reuses the exact current checkpoint"
+        );
+
+        let foreign_checkpoint_head = {
+            let mut store = SqliteStore::open(&database).expect("foreign checkpoint store");
+            let mut evidence = store
+                .work_run_evidence(run_id)
+                .expect("current run evidence");
+            evidence.sort();
+            store
+                .checkpoint_work(
+                    &CheckpointWorkRequest {
+                        work_id: work.work_id,
+                        run_id,
+                        expected_work_revision: work.revision,
+                        holder: SessionId("runner".into()),
+                        claim_id: binding.claim_id,
+                        claim_fence: binding.claim_fence,
+                        summary: "holder checkpoint outside completion".into(),
+                        evidence: Some(evidence),
+                        actor: run_actor.clone(),
+                        idempotency_key: "foreign-holder-checkpoint".into(),
+                        checkpointed_at: at(8),
+                    },
+                    &DevelopmentNoopRedactor,
+                )
+                .expect("holder writes an independent checkpoint");
+            store
+                .work_feed_head(&FeedId::RunExecution(run_id))
+                .expect("feed head after independent checkpoint")
+        };
+        assert!(matches!(
+            service
+                .work_complete(input.clone(), at(9))
+                .expect("completion owns a checkpoint after the independent one"),
+            WorkCompleteResult::Refused(_)
+        ));
+        let completion_checkpoint_head = SqliteStore::open(&database)
+            .expect("store after completion checkpoint")
+            .work_feed_head(&FeedId::RunExecution(run_id))
+            .expect("feed head after completion checkpoint");
+        assert!(completion_checkpoint_head > foreign_checkpoint_head);
+        assert!(matches!(
+            service
+                .work_complete(input.clone(), at(10))
+                .expect("unchanged retry reuses its own checkpoint"),
+            WorkCompleteResult::Refused(_)
+        ));
+        let refused_store = SqliteStore::open(&database).expect("store after stable refusal");
+        assert_eq!(
+            refused_store
+                .work_feed_head(&FeedId::RunExecution(run_id))
+                .expect("stable refusal feed head"),
+            completion_checkpoint_head,
+            "a foreign checkpoint is replaced once, then the completion-owned checkpoint converges"
+        );
+        let pending_attempts: i64 = refused_store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM work_protocol_attempts
+                 WHERE operation = 'work_complete' AND result_hash IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("pending completion attempt count");
+        assert_eq!(
+            pending_attempts, 1,
+            "refusals retain one pending target and caller-key binding"
+        );
+        drop(refused_store);
+
+        {
+            let store = SqliteStore::open(&database).expect("verification store");
+            let transaction = store
+                .connection
+                .unchecked_transaction()
+                .expect("verification transaction");
+            let producer = append_control_execution_observation_on(
+                &transaction,
+                &ExecutionObservation {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: work.project_id.clone(),
+                    binding: binding.clone(),
+                    session_id: SessionId("runner".into()),
+                    grant_id: "protocol-obligation-grant".into(),
+                    observation_id: "protocol-obligation-verification".into(),
+                    action_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"cargo test protocol obligation",
+                    ),
+                    effect: EffectClass::Observe,
+                    outcome: ExecutionOutcome::Succeeded,
+                    source_changed: false,
+                    obligation_rule_set: builtin_rule_set_hash(),
+                    source_basis: Some(source_basis.clone()),
+                    observed_at: Some(at(11)),
+                    actor: run_actor.clone(),
+                    recorded_at: at(11),
+                },
+            )
+            .expect("append verification producer");
+            append_control_verification_evidence_on(
+                &transaction,
+                &VerificationEvidence {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: work.project_id.clone(),
+                    binding: binding.clone(),
+                    session_id: SessionId("runner".into()),
+                    producer_observation: producer,
+                    source_basis,
+                    environment: None,
+                    check_kind: VerificationKind::Test,
+                    check_fingerprint: ObjectHash::from_canonical_bytes(
+                        b"cargo test protocol obligation",
+                    ),
+                    result: VerificationResult::Passed,
+                    completed_at: at(11),
+                    summary: "protocol obligation verification passed".into(),
+                    refs: Vec::new(),
+                    actor: run_actor,
+                    recorded_at: at(11),
+                },
+            )
+            .expect("append matching host verification");
+            transaction.commit().expect("commit host verification");
+        }
+        assert!(matches!(
+            service
+                .work_complete(input, at(12))
+                .expect("retry after host verification"),
+            WorkCompleteResult::Completed(_)
+        ));
         let stored = SqliteStore::open(&database).expect("inspect store");
         assert_eq!(
             stored
                 .get_work_item(work.work_id)
-                .expect("refused work remains readable")
+                .expect("completed work remains readable")
                 .lifecycle,
-            WorkLifecycle::Open
-        );
-        assert_eq!(
-            stored
-                .current_work_claim(work.work_id)
-                .expect("refused claim lookup")
-                .expect("refused claim remains live")
-                .state,
-            WorkClaimState::Active
+            WorkLifecycle::Completed
         );
         let report = stored.verify_all().expect("typed refusal integrity report");
         assert!(report.is_healthy(), "{report:?}");

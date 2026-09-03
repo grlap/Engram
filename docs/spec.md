@@ -1186,9 +1186,10 @@ private JSON-lines request is the enforced alternative: it is bound to the
 session's exact run and records the server-fixed actor beside an asserted
 `waived_by` human and reason. Typed binding refusals are replayable while token
 and transport faults remain request errors. Completion evaluates the cut-aware
-set at the exact pre-seal run-feed position. Open definitions return a bounded,
-durably replayable `open_work_obligations` protocol result. A new seal declares
-obligation schema V1 and binds every applicable definition to its
+set at the exact pre-seal run-feed position. Open definitions return a bounded
+`open_work_obligations` protocol result recomputed from one coherent current
+snapshot; it is guidance rather than a durable replay result. A new seal
+declares obligation schema V1 and binds every applicable definition to its
 satisfied/waived resolution; success and fresh-session focus reconstruct their
 pages from canonical history, and the final checkpoint acknowledges the
 matching typed verification evidence.

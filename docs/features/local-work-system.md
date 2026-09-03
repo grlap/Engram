@@ -444,8 +444,10 @@ work, the item's current claim/handoff basis, and the canonical intent: an
 identical call replays its receipt while nothing about the item changed, and
 becomes a new attempt once the item moved (so a repeated keyless claim after
 expiry claims again). Claiming work the session already holds returns the
-live claim, and completing work that is already sealed returns its seal, so
-the common retries are never refusals. Every mutation may also name its
+live claim, and a fresh completion call against work that is already sealed
+returns its seal, so the common retries are never refusals. An interrupted
+completion remains bound to its original work and run instead of adopting a
+later generation's seal. Every mutation may also name its
 target by `work_ref`; the target is resolved and bound inside the mutation, so
 a concurrent focus change by the same session cannot redirect it, and it
 becomes the ambient focus as a side effect. Durable attempts bind both caller
@@ -454,8 +456,11 @@ may replay a committed result, but an interrupted attempt must revalidate live
 authority and cannot follow a changed ambient focus into another work item.
 The retry-stable basis deliberately ignores only sliding claim expiry and
 claim revision. It retains the canonical work head and claim fence, which
-distinguish work and claim epochs; every resumed substep also re-reads evidence
-and revalidates the live claim inside its commit transaction.
+distinguish work and claim epochs. A recoverable refusal keeps that durable
+request/target binding while a later same-holder claim epoch refreshes the live
+basis by compare-and-swap; a different focus or holder conflicts. Every resumed
+substep also re-reads evidence and revalidates the live claim inside its commit
+transaction.
 
 `work_focus` is the explicit drill-down surface. It carries an exact history
 event count and only the newest bounded event summaries, plus body-free memory
@@ -484,8 +489,12 @@ and evidence references are validated before either capture substep commits;
 the completion transaction then revalidates the same rules against current
 run state. If the process stops after evidence or checkpoint
 commit, retry loads that canonical substep's original timestamp so its core
-idempotency hash replays exactly; any still-uncommitted substep uses the retry's
-current time and therefore cannot bypass an expired claim.
+idempotency hash replays exactly. Capture identity includes the work revision,
+run, claim, and fence, so a legitimate later holder epoch can record its own
+evidence without colliding with the earlier capture. The checkpoint's
+cut-derived key is selected in the same write transaction that appends it; any
+still-uncommitted substep uses the retry's current time and therefore cannot
+bypass an expired claim.
 
 Typed `verification_evidence` and `environment_evidence` are different from
 that generic capture. Only the host-private control checkpoint may mint them,
@@ -542,11 +551,16 @@ obligation, an unsealed required child, an unaccounted root participant, and
 the first missing acceptance criterion. The singular command
 keeps CLI and MCP recovery deterministic while the surrounding typed cause
 retains the obligation, child, participant, or criterion identity.
-That object is frozen and persisted inside the transaction that decides the
-refusal, so a lost-response retry cannot combine its cause with a newer item or
-command. Missing-contribution recovery hands the root to the named participant;
-the participant must then checkpoint/handoff or complete their own work rather
-than relying on a no-op claim by the current holder.
+Recovery guidance is not persisted as a replay result. It is rebuilt from one
+coherent current snapshot, including the bounded obligation page, so a retry
+observes a barrier that moved; only a successful completion receipt and
+committed capture/checkpoint substeps replay. The refused attempt row remains
+pending solely to retain caller-intent and target binding; it is not a frozen
+refusal receipt.
+See [CLI and MCP](cli-and-mcp.md#work-protocol-contract) for the
+retry contract. Missing-contribution recovery hands the root to the named
+participant; the participant must then checkpoint/handoff or complete their own
+work rather than relying on a no-op claim by the current holder.
 
 Agent-facing MCP and shell work use only the stable project plus non-empty
 asserted actor/session binding. There is no work grant file, hash, environment

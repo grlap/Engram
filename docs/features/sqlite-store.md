@@ -191,6 +191,13 @@ caller-visible response, but discard the inferred basis. The 12 KiB protocol
 ceiling keeps exact lost-response replay bounded without retaining unbounded
 history or memory bodies.
 
+A refused completion retains one pending attempt row with its request hash,
+work target, and current live basis, but no result. Recovery guidance and its
+bounded obligation page are rebuilt in one read transaction. A retry may
+compare-and-swap that basis to a later claim epoch for the same target; it
+cannot reuse the caller key after focus moves to another item. Completion
+checkpoint cut selection and append share one immediate transaction.
+
 ## Durability modes
 
 WAL mode, bounded busy timeouts, short transactions, and atomic claims/CAS
