@@ -468,17 +468,22 @@ transaction.
 
 `work_focus` is the explicit host drill-down surface. It carries an exact
 history event count and only the newest bounded event summaries, plus body-free
-memory index entries. The agent `show` word projects that view into a terse
-receipt with short refs, planning state, safe relation/blocker summaries,
+memory index entries. Direct children retain stable id order within lifecycle
+groups, with open or proposed children ahead of terminal children inside the
+ordinary eight-relation prefix. The exact child count preserves the omitted
+remainder; `unfinished_child_count_limit` and `terminal_child_count_limit`
+state which lifecycle class exceeded that prefix, while byte-budget omissions
+record later response fitting. The agent `show` word projects that view into a
+terse receipt with short refs, planning state, safe relation/blocker summaries,
 typed note summaries, meaningful history, a superseded item's successor short
 ref, and allowed actions. Actor and session references become relative words;
 the view excludes their raw identifiers, canonical UUIDs and hashes, revisions
 and fences, and host-only run, claim, control, obligation, seal, and
 memory-version fields. Active core blockers include their id, type, and compact
 detail; when exactly one blocker is active the agent word infers it for
-`unblock`. Authorized memory bodies remain available on demand
-through their version hash on host-only reads. `work_update` and `work_handoff`
-never rebuild this history: their success envelopes contain only the
+`unblock`. Authorized memory bodies remain available on demand through their
+version hash on host-only reads. `work_update` and `work_handoff` never rebuild
+this history: their success envelopes contain only the
 operation, compact receipt, one bounded `obligation_page`, generic readiness
 obligations, and `allowed_next`, so hundreds of historical events cannot grow
 a mutation response. The same page field appears on `work_focus`, nested

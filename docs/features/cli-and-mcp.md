@@ -52,21 +52,25 @@ default in text, JSON, and MCP: `next` and `ls` return only navigation rows
 and one-line changes, while `show REF` returns one safe detail view. Structured
 `show` keeps short refs, planning state, holder words, relations, blocker and
 note summaries with their evidence kind, meaningful history, a superseded
-item's successor short ref, and allowed actions. Actor and session references
-are relative words such as `you`, `another actor`, and `another session`; raw
-actor/session identifiers are not part of this view. It also omits canonical
-UUIDs and hashes, revision and fence counters, and host-only run, claim,
-control-binding, obligation-page, and memory-version fields. Humans and hosts
-that need the rich projection use host-only `work core focus`; full list
-projections remain available through `next --verbose` and `ls --verbose` (or
-the equivalent MCP arguments). Compact rows retain up to 80 UTF-8 bytes of
-title, omit redundant lifecycle and blocked fields, cap labels, and report
-`labels_omitted`. When fitting an oversized advisory response, `next` sheds
-labels from the
-least-important navigation rows before dropping rows; `ls` does not shed
-labels. Compact `next` uses the same 12 KiB agent-response ceiling as its core
-view, so the default limit of 20 remains meaningful. Section removal is
-recorded in explicit `omissions` instead of failing.
+item's successor short ref, and allowed actions. Open or proposed children
+precede terminal children inside the bounded relation page, so terminal
+history cannot hide unfinished work while page capacity remains. Text prints
+`(+N more)` and structured output carries the exact `children_omitted` total;
+typed count omissions distinguish unfinished from terminal children that did
+not fit. Actor and session references are relative words such as `you`,
+`another actor`, and `another session`; raw actor/session identifiers are not
+part of this view. It also omits canonical UUIDs and hashes, revision and fence
+counters, and host-only run, claim, control-binding, obligation-page, and
+memory-version fields. Humans and hosts that need the rich projection use
+host-only `work core focus`; full list projections remain available through
+`next --verbose` and `ls --verbose` (or the equivalent MCP arguments). Compact
+rows retain up to 80 UTF-8 bytes of title, omit redundant lifecycle and blocked
+fields, cap labels, and report `labels_omitted`. When fitting an oversized
+advisory response, `next` sheds labels from the least-important navigation rows
+before dropping rows; `ls` does not shed labels. Compact `next` uses the same
+12 KiB agent-response ceiling as its core view, so the default limit of 20
+remains meaningful. Section removal is recorded in explicit `omissions`
+instead of failing.
 
 Rules that matter:
 

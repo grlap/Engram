@@ -544,6 +544,8 @@ pub enum WorkSectionOmissionReason {
     /// Dense change entries remain unconsumed for a later staged page.
     Staged,
     CountLimit,
+    UnfinishedChildCountLimit,
+    TerminalChildCountLimit,
     DeadPrerequisiteCountLimit,
     PendingPrerequisiteCountLimit,
     SatisfiedPrerequisiteCountLimit,
@@ -634,6 +636,11 @@ pub struct WorkFocusView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control_binding: Option<ControlWorkBinding>,
     pub children: Vec<WorkItemSummary>,
+    /// Exact number of direct children before relation-count or byte-budget
+    /// trimming. Unfinished children precede the terminal remainder in the
+    /// bounded `children` prefix.
+    #[serde(default)]
+    pub child_count: usize,
     pub prerequisites: Vec<WorkItemSummary>,
     pub handoffs: Vec<WorkHandoffSummary>,
     pub blockers: Vec<WorkBlockerSummary>,
@@ -3496,7 +3503,21 @@ impl LocalWorkService {
                 delivery: WorkChangeProjection::Visible(agent_work_event_summary(&event)),
             });
         }
-        let children = store.work_children(work_id)?;
+        let mut children = store.work_children(work_id)?;
+        // Put unfinished children first inside the bounded relation prefix so
+        // terminal history cannot hide work that still needs attention.
+        // Stable sorting retains the store's stable id order within each
+        // lifecycle group.
+        children.sort_by_key(|child| child_lifecycle_priority(child.lifecycle));
+        let child_count = children.len();
+        let unfinished_child_count = children
+            .iter()
+            .take_while(|child| child_lifecycle_is_unfinished(child.lifecycle))
+            .count();
+        let visible_child_count = child_count.min(MAX_FOCUS_RELATIONS);
+        let visible_unfinished_child_count = unfinished_child_count.min(visible_child_count);
+        let terminal_child_count = child_count - unfinished_child_count;
+        let visible_terminal_child_count = visible_child_count - visible_unfinished_child_count;
         let prerequisite_page =
             store.work_prerequisites_with_state(work_id, MAX_FOCUS_RELATIONS)?;
         // The work-memory index is bound to the session's persisted focus; an
@@ -3515,11 +3536,19 @@ impl LocalWorkService {
         };
         let mut omissions = Vec::new();
         let blockers = status.blockers.clone();
-        if children.len() > MAX_FOCUS_RELATIONS {
-            omissions.push(count_omission(
-                WorkNextSection::Focus,
-                children.len() - MAX_FOCUS_RELATIONS,
-            ));
+        if unfinished_child_count > visible_unfinished_child_count {
+            omissions.push(WorkSectionOmission {
+                section: WorkNextSection::Focus,
+                reason: WorkSectionOmissionReason::UnfinishedChildCountLimit,
+                omitted_count: unfinished_child_count - visible_unfinished_child_count,
+            });
+        }
+        if terminal_child_count > visible_terminal_child_count {
+            omissions.push(WorkSectionOmission {
+                section: WorkNextSection::Focus,
+                reason: WorkSectionOmissionReason::TerminalChildCountLimit,
+                omitted_count: terminal_child_count - visible_terminal_child_count,
+            });
         }
         if handoffs.len() > MAX_FOCUS_RELATIONS {
             omissions.push(count_omission(
@@ -3563,9 +3592,10 @@ impl LocalWorkService {
             control_binding,
             children: children
                 .into_iter()
-                .take(MAX_FOCUS_RELATIONS)
+                .take(visible_child_count)
                 .map(|work| work_item_summary(&work))
                 .collect(),
+            child_count,
             prerequisites,
             handoffs: handoffs
                 .iter()
@@ -3753,6 +3783,21 @@ fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
         superseded_by: work.superseded_by,
         prerequisite_state: None,
         updated_at: work.updated_at,
+    }
+}
+
+const fn child_lifecycle_is_unfinished(lifecycle: WorkLifecycle) -> bool {
+    match lifecycle {
+        WorkLifecycle::Open | WorkLifecycle::Proposed => true,
+        WorkLifecycle::Completed | WorkLifecycle::Cancelled | WorkLifecycle::Superseded => false,
+    }
+}
+
+const fn child_lifecycle_priority(lifecycle: WorkLifecycle) -> u8 {
+    if child_lifecycle_is_unfinished(lifecycle) {
+        0
+    } else {
+        1
     }
 }
 
@@ -4475,9 +4520,13 @@ fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
         blocker.detail.clear();
         return true;
     }
-    focus.memories.pop().is_some()
-        || focus.children.pop().is_some()
-        || focus.prerequisites.pop().is_some()
+    if focus.memories.pop().is_some() {
+        return true;
+    }
+    if focus.children.pop().is_some() {
+        return true;
+    }
+    focus.prerequisites.pop().is_some()
         || focus.handoffs.pop().is_some()
         || trim_obligation_page_once(&mut focus.obligation_page)
         || trim_focus_evidence_once(focus)
@@ -5669,6 +5718,15 @@ mod tests {
             .single()
             .expect("fixed timestamp")
             + Duration::seconds(second)
+    }
+
+    #[test]
+    fn child_lifecycle_priority_keeps_every_unfinished_state_first() {
+        assert_eq!(child_lifecycle_priority(WorkLifecycle::Open), 0);
+        assert_eq!(child_lifecycle_priority(WorkLifecycle::Proposed), 0);
+        assert_eq!(child_lifecycle_priority(WorkLifecycle::Completed), 1);
+        assert_eq!(child_lifecycle_priority(WorkLifecycle::Cancelled), 1);
+        assert_eq!(child_lifecycle_priority(WorkLifecycle::Superseded), 1);
     }
 
     #[test]
@@ -11747,6 +11805,79 @@ mod tests {
         assert_eq!(
             serde_json::from_slice::<serde_json::Value>(&stored).expect("stored result JSON"),
             serde_json::to_value(first).expect("first result JSON")
+        );
+    }
+
+    #[test]
+    fn focus_bounds_repeated_direct_decomposition_at_the_root_open_work_limit() {
+        let directory = tempdir().expect("temp directory");
+        let database = directory.path().join("engram.sqlite3");
+        let service = LocalWorkService::new(
+            database,
+            ProjectId("repeated-direct-fanout".into()),
+            "agent".into(),
+            SessionId("repeated-direct-fanout-session".into()),
+            Some("protocol-test".into()),
+        );
+        let root = proposed_root(
+            service
+                .work_propose(root_input("Repeated direct fanout", "fanout-root"), at(0))
+                .expect("root proposal"),
+        );
+
+        for batch in 0..8 {
+            let second = 1 + i64::from(batch) * 2;
+            service
+                .work_focus(&root.short_ref, at(second))
+                .expect("refocus current parent revision");
+            service
+                .work_propose(
+                    WorkProposeInput::Decompose {
+                        children: (0..16)
+                            .map(|index| WorkChildInput {
+                                key: format!("batch-{batch}-child-{index}"),
+                                title: format!("Open child {batch}-{index} {}", "x".repeat(256)),
+                                outcome: format!("Open child {batch}-{index} outcome"),
+                                acceptance: vec![format!("Open child {batch}-{index} accepted")],
+                                requirement: Some(ChildRequirement::Required),
+                                kind: Some(WorkItemKind::Task),
+                                priority: Some(1),
+                                labels: Vec::new(),
+                                assigned_to: None,
+                                deferred_until: None,
+                            })
+                            .collect(),
+                        prerequisites: Vec::new(),
+                        idempotency_key: format!("fanout-batch-{batch}"),
+                    },
+                    at(second + 1),
+                )
+                .expect("add one direct-child batch");
+        }
+
+        let focus = service
+            .work_focus(&root.short_ref, at(20))
+            .expect("bounded focus at the root open-work limit");
+        assert_eq!(focus.child_count, 128);
+        assert_eq!(focus.children.len(), MAX_FOCUS_RELATIONS);
+        assert!(
+            focus
+                .children
+                .iter()
+                .all(|child| child.lifecycle == WorkLifecycle::Open)
+        );
+        assert!(focus.omissions.iter().any(|omission| {
+            omission.reason == WorkSectionOmissionReason::UnfinishedChildCountLimit
+                && omission.omitted_count == 128 - MAX_FOCUS_RELATIONS
+        }));
+        assert!(focus.omissions.iter().all(|omission| {
+            omission.reason != WorkSectionOmissionReason::TerminalChildCountLimit
+        }));
+        assert!(
+            serde_json::to_vec(&focus)
+                .expect("serialize bounded focus")
+                .len()
+                <= MAX_AGENT_WORK_RESPONSE_BYTES
         );
     }
 

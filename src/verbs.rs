@@ -218,6 +218,8 @@ struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
     held_until: Option<DateTime<Utc>>,
     children: Vec<ShowRelation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    children_omitted: Option<usize>,
     prerequisites: Vec<ShowRelation>,
     handoffs: Vec<ShowHandoff>,
     blockers: Vec<ShowBlocker>,
@@ -2696,15 +2698,22 @@ fn show_lines(
             ));
         }
     }
-    if !view.children.is_empty() {
-        lines.push(format!(
-            "children: {}",
-            view.children
+    let children_omitted = view.child_count.saturating_sub(view.children.len());
+    if !view.children.is_empty() || children_omitted > 0 {
+        if view.children.is_empty() {
+            lines.push(format!("children: {children_omitted} not shown"));
+        } else {
+            let mut children = view
+                .children
                 .iter()
                 .map(child_summary_line)
                 .collect::<Vec<_>>()
-                .join(", ")
-        ));
+                .join(", ");
+            if children_omitted > 0 {
+                let _ = write!(children, " (+{children_omitted} more)");
+            }
+            lines.push(format!("children: {children}"));
+        }
     }
     if !view.prerequisites.is_empty() {
         lines.push(format!(
@@ -2800,6 +2809,8 @@ fn show_receipt_value(
         holder,
         held_until,
         children: view.children.iter().map(show_relation).collect(),
+        children_omitted: (view.child_count > view.children.len())
+            .then(|| view.child_count - view.children.len()),
         prerequisites: view.prerequisites.iter().map(show_relation).collect(),
         handoffs: view
             .handoffs
@@ -4081,6 +4092,143 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(!actions.contains(&WORK_UPDATE_CLAIM_ACTION));
         assert!(actions.contains(&WORK_UPDATE_CLAIM_RECOVERY_ACTION));
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one end-to-end fixture proves child prioritization and both show representations"
+    )]
+    fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("show-open-children-first".into());
+        let session = SessionId("show-open-children-session".into());
+        let service = Arc::new(LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            session.clone(),
+            Some("show-open-children-test".into()),
+        ));
+        let parent = match service
+            .work_propose(
+                root_input("Child ordering parent", "child-ordering-parent"),
+                at(0),
+            )
+            .expect("parent")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        };
+        let decomposition = service
+            .work_propose(
+                WorkProposeInput::Decompose {
+                    children: (0..16)
+                        .map(|index| WorkChildInput {
+                            key: format!("child-{index}"),
+                            title: if index == 15 {
+                                format!("Open required child {index} {}", "x".repeat(256))
+                            } else {
+                                format!("Completed child {index}")
+                            },
+                            outcome: format!("Child {index} outcome"),
+                            acceptance: vec![format!("Child {index} accepted")],
+                            requirement: Some(ChildRequirement::Required),
+                            kind: Some(WorkItemKind::Task),
+                            priority: None,
+                            labels: Vec::new(),
+                            assigned_to: None,
+                            deferred_until: None,
+                        })
+                        .collect(),
+                    prerequisites: Vec::new(),
+                    idempotency_key: "child-ordering-decomposition".into(),
+                },
+                at(1),
+            )
+            .expect("decomposition");
+        let WorkProposeResult::Decomposition(decomposition) = decomposition else {
+            panic!("expected decomposition");
+        };
+        for (index, child) in decomposition.children.iter().take(15).enumerate() {
+            let timestamp = 2 + i64::try_from(index).expect("small child index") * 3;
+            service
+                .work_focus(&child.short_ref, at(timestamp))
+                .expect("focus child");
+            service
+                .work_update(
+                    WorkUpdateInput::Claim {
+                        ttl_seconds: Some(300),
+                        recovery_reason: None,
+                        idempotency_key: format!("claim-child-{index}"),
+                    },
+                    at(timestamp + 1),
+                )
+                .expect("claim child");
+            assert!(matches!(
+                service
+                    .work_complete(
+                        WorkCompleteInput {
+                            capture: Some(WorkCompletionCaptureInput {
+                                summary: format!("Completed child {index}"),
+                                refs: Vec::new(),
+                            }),
+                            evidence: Vec::new(),
+                            acceptance: None,
+                            note: None,
+                            idempotency_key: format!("complete-child-{index}"),
+                        },
+                        at(timestamp + 2),
+                    )
+                    .expect("complete child"),
+                WorkCompleteResult::Completed(_)
+            ));
+        }
+
+        let open_children = &decomposition.children[15..];
+        let mut fitted = service
+            .work_focus(&parent.short_ref, at(50))
+            .expect("focus parent");
+        assert_eq!(fitted.child_count, 16);
+        assert_eq!(fitted.children.len(), 8);
+        assert!(fitted.omissions.iter().all(|omission| {
+            omission.reason != WorkSectionOmissionReason::UnfinishedChildCountLimit
+        }));
+        assert!(fitted.omissions.iter().any(|omission| {
+            omission.reason == WorkSectionOmissionReason::TerminalChildCountLimit
+                && omission.omitted_count == 8
+        }));
+        assert_eq!(fitted.children[0].short_ref, open_children[0].short_ref);
+        assert_eq!(fitted.children[0].lifecycle, WorkLifecycle::Open);
+        assert!(
+            fitted.children[1..]
+                .iter()
+                .all(|child| child.lifecycle == WorkLifecycle::Completed)
+        );
+        let verbs = AgentVerbs::with_shared_service(service, "agent".into(), session.clone());
+        let receipt = verbs.show(&parent.short_ref, at(50)).expect("show parent");
+        let children = receipt.value["children"].as_array().expect("children");
+        assert_eq!(children.len(), 8);
+        assert_eq!(children[0]["short_ref"], open_children[0].short_ref);
+        assert_eq!(children[0]["lifecycle"], "open");
+        assert_eq!(receipt.value["children_omitted"], 8);
+        let text = receipt.text();
+        let children_line = text
+            .lines()
+            .find(|line| line.starts_with("children:"))
+            .expect("children line");
+        assert!(children_line.contains(&open_children[0].short_ref));
+        assert!(children_line.ends_with("(+8 more)"));
+
+        fitted.children.clear();
+        assert_eq!(
+            show_lines(&fitted, Holder::Nobody, "agent", &session, at(50))
+                .into_iter()
+                .find(|line| line.starts_with("children:"))
+                .as_deref(),
+            Some("children: 16 not shown")
+        );
     }
 
     #[test]
