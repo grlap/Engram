@@ -21,3 +21,5 @@
 
 # Codex split worktrees live inside the checkout under .worktrees/
 .worktrees/
+# Claude subagent worktrees live inside the checkout under .claude/worktrees/
+.claude/worktrees/
