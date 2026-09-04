@@ -20,7 +20,8 @@ backup/portable/sync, and publication are independent optional capabilities.
 - `src/domain.rs` owns substrate-neutral memory, task, report, and actor types.
 - `src/canonical.rs` owns RFC 8785 canonical bytes and SHA-256 object identity.
 - `src/storage.rs` owns V1 SQLite persistence and integrity verification.
-- `src/storage/work.rs` owns local-work projections, feeds, claims, and seals.
+- `src/storage/work/` owns local-work persistence, split by schema/session,
+  query, planning, execution, feed, completion, and integrity invariants.
 - `src/control.rs` owns pure deterministic control-policy evaluation.
 - `src/host.rs` owns the host-private JSON-lines transport only.
 - `src/work_service.rs` owns the six-operation ambient work protocol and its

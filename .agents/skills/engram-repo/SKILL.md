@@ -92,7 +92,8 @@ contract and keep the change narrow.
 - `canonical`: serialization and content identity only.
 - `storage`: exact-current SQLite validation, transactions, immutable rows,
   integrity, and explicit rebuildable-index repair.
-- `storage/work`: local-work projections, typed feeds, claims, and seals.
+- `storage/work`: local-work persistence split by schema/session, query,
+  planning, execution, feeds, completion, and integrity invariants.
 - `control`: pure control-policy evaluation without I/O.
 - `host`: host-private transport without policy forks.
 - `work_service`: six-operation ambient protocol translation into canonical
