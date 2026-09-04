@@ -16,7 +16,7 @@ references another.
 | [Local work system](local-work-system.md) | First-class local work graph, claims, typed verification/environment evidence, policy-selected immutable obligation rules, and exact completion seals |
 | [Local tasks & reports](local-tasks-and-reports.md) | Root execution, single-executor child runs, scoped leases, handoffs, completion seals, fenced report assembly, and optional receipted publication |
 | [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; sequential portability; deferred concurrent sync |
-| [Work-graph snapshot](work-graph-snapshot.md) | Shipped deterministic save of the agent-visible work graph and keyed project memories; load/recreation remains planned |
+| [Work-graph snapshot](work-graph-snapshot.md) | Shipped deterministic save/load of the agent-visible work graph, inert history, and keyed project memories |
 | [External adapters](tracker-adapter.md) | Optional snapshot intake, backup/portable storage, and separately authorized publication |
 | [Execution pipeline](execution-pipeline.md) | Layer map from external ticket to report, including shipped WorkRun-bound environment evidence, obligations, and completion gating |
 | [Security & trust](security-and-trust.md) | Asserted runtime identity with assurance levels; sensitivity labels; redaction; purge realism |

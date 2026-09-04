@@ -682,6 +682,11 @@ pub(super) fn validate_keyed_project_memory_shape(
     let Scope::Project { .. } = &version.scope else {
         return Err(invalid("project_key requires project scope"));
     };
+    let restored = version.source_snapshot.as_ref().is_some_and(|source| {
+        (source.source_ref == super::graph_snapshot::RESTORED_MEMORY_SOURCE
+            || source.source_ref == super::graph_snapshot::RESTORED_REDACTED_MEMORY_SOURCE)
+            && ObjectHash::from_stored(source.fingerprint.clone()).is_some()
+    });
     if version.parents.is_empty()
         && version.kind == MemoryKind::Episode
         && version.authority == Authority::Soft
@@ -694,10 +699,15 @@ pub(super) fn validate_keyed_project_memory_shape(
         && version.tags[0] == "project-memory"
         && version.evidence.is_empty()
         && version.refs.is_empty()
-        && version.source_snapshot.is_none()
+        && (version.source_snapshot.is_none() || restored)
         && version.confidence.is_none()
-        && version.sensitivity == Sensitivity::Internal
-        && version.classification_reason == "explicit project episode"
+        && (version.sensitivity == Sensitivity::Internal || restored)
+        && version.classification_reason
+            == if restored {
+                "restored project episode"
+            } else {
+                "explicit project episode"
+            }
         && version.delivery_override_reason.is_none()
         && version.valid_from.is_none()
         && version.valid_until.is_none()
@@ -715,12 +725,18 @@ pub(super) fn validate_keyed_project_memory_shape(
     }
     let lifecycle_matches = match assertion.status {
         MemoryStatus::Active => {
-            assertion.policy_reason == "project episodes are active immediately"
+            assertion.policy_reason
+                == if restored {
+                    "restored project episode is active immediately"
+                } else {
+                    "project episodes are active immediately"
+                }
                 && assertion.actor == version.actor
                 && assertion.created_at == version.created_at
         }
         MemoryStatus::Tombstoned => {
-            assertion.policy_reason == "explicit project-memory forget"
+            (assertion.policy_reason == "explicit project-memory forget"
+                || (restored && assertion.policy_reason == "restored project-memory tombstone"))
                 && assertion.created_at >= version.created_at
         }
         _ => false,
@@ -811,6 +827,7 @@ pub(super) fn lookup_project_memory_on(
             .ok_or_else(|| {
                 StoreError::InvalidMemoryProjection("project memory assertion is missing".into())
             })?;
+    validate_keyed_project_memory_shape(&version, &assertion)?;
     let expected_status =
         SqliteStore::expected_memory_head_status_on(connection, &version_hash, assertion.status)?;
     let expected = SqliteStore::expected_memory_head_projection(
@@ -826,7 +843,6 @@ pub(super) fn lookup_project_memory_on(
         && version.kind == MemoryKind::Episode
         && version.authority == Authority::Soft
         && version.delivery == Delivery::OnDemand
-        && version.sensitivity == Sensitivity::Internal
         && assertion.memory_id == version.memory_id
         && assertion.version == version_hash;
     if !shape_matches {

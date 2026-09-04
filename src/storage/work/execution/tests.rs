@@ -1013,7 +1013,7 @@ fn submillisecond_work_and_claim_times_bind_to_millisecond_projections() {
             &ClaimWorkRequest {
                 work_id: root.work_id,
                 expected_work_revision: root.revision,
-                expected_run_id: root.active_run_id.expect("active run"),
+                expected_run_id: Some(root.active_run_id.expect("active run")),
                 holder: SessionId("holder".into()),
                 ttl_seconds: 30,
                 recovery_reason: None,
@@ -1052,7 +1052,7 @@ fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
         &ClaimWorkRequest {
             work_id: root.work_id,
             expected_work_revision: root.revision,
-            expected_run_id: root.active_run_id.expect("active run"),
+            expected_run_id: Some(root.active_run_id.expect("active run")),
             holder: SessionId("agent-b".into()),
             ttl_seconds: 10,
             recovery_reason: None,
@@ -1068,7 +1068,7 @@ fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
         &ClaimWorkRequest {
             work_id: root.work_id,
             expected_work_revision: root.revision,
-            expected_run_id: root.active_run_id.expect("active run"),
+            expected_run_id: Some(root.active_run_id.expect("active run")),
             holder: SessionId("agent-b".into()),
             ttl_seconds: 20,
             recovery_reason: None,
@@ -1088,7 +1088,7 @@ fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
         &ClaimWorkRequest {
             work_id: root.work_id,
             expected_work_revision: root.revision,
-            expected_run_id: root.active_run_id.expect("active run"),
+            expected_run_id: Some(root.active_run_id.expect("active run")),
             holder: SessionId("agent-b".into()),
             ttl_seconds: 20,
             recovery_reason: Some("   ".into()),
@@ -1296,7 +1296,7 @@ fn same_holder_plain_claim_retakes_a_lapsed_claim_and_replays_exactly() {
     let request = ClaimWorkRequest {
         work_id: root.work_id,
         expected_work_revision: root.revision,
-        expected_run_id: active.run_id,
+        expected_run_id: Some(active.run_id),
         holder: active.holder.clone(),
         ttl_seconds: 60,
         recovery_reason: None,
@@ -1359,7 +1359,7 @@ fn same_holder_plain_retake_refuses_blocked_and_deferred_work() {
             &ClaimWorkRequest {
                 work_id: blocked.work_id,
                 expected_work_revision: blocked.revision,
-                expected_run_id: blocked.active_run_id.expect("active run"),
+                expected_run_id: Some(blocked.active_run_id.expect("active run")),
                 holder: SessionId("holder".into()),
                 ttl_seconds: 1,
                 recovery_reason: None,
@@ -1399,7 +1399,7 @@ fn same_holder_plain_retake_refuses_blocked_and_deferred_work() {
         &ClaimWorkRequest {
             work_id: blocked.work_id,
             expected_work_revision: blocked.revision,
-            expected_run_id: blocked_claim.run_id,
+            expected_run_id: Some(blocked_claim.run_id),
             holder: blocked_claim.holder.clone(),
             ttl_seconds: 60,
             recovery_reason: None,
@@ -1422,7 +1422,7 @@ fn same_holder_plain_retake_refuses_blocked_and_deferred_work() {
             &ClaimWorkRequest {
                 work_id: deferred.work_id,
                 expected_work_revision: deferred.revision,
-                expected_run_id: deferred.active_run_id.expect("active run"),
+                expected_run_id: Some(deferred.active_run_id.expect("active run")),
                 holder: SessionId("holder".into()),
                 ttl_seconds: 1,
                 recovery_reason: None,
@@ -1466,7 +1466,7 @@ fn same_holder_plain_retake_refuses_blocked_and_deferred_work() {
         &ClaimWorkRequest {
             work_id: deferred.work_id,
             expected_work_revision: deferred.revision,
-            expected_run_id: deferred_claim.run_id,
+            expected_run_id: Some(deferred_claim.run_id),
             holder: deferred_claim.holder.clone(),
             ttl_seconds: 60,
             recovery_reason: None,
@@ -1494,7 +1494,7 @@ fn same_holder_plain_retake_replays_across_connections() {
     let request = ClaimWorkRequest {
         work_id: root.work_id,
         expected_work_revision: root.revision,
-        expected_run_id: initial.run_id,
+        expected_run_id: Some(initial.run_id),
         holder: initial.holder.clone(),
         ttl_seconds: 60,
         recovery_reason: None,
@@ -1722,7 +1722,7 @@ fn holder_mutations_renew_refusals_do_not_and_plain_claim_retakes() {
             &ClaimWorkRequest {
                 work_id: retake_root.work_id,
                 expected_work_revision: retake_root.revision,
-                expected_run_id: active.run_id,
+                expected_run_id: Some(active.run_id),
                 holder: active.holder.clone(),
                 ttl_seconds: DEFAULT_WORK_CLAIM_TTL_SECONDS,
                 recovery_reason: None,
@@ -1886,7 +1886,7 @@ fn shared_work_capture_requires_the_exact_live_holder_and_renews_once() {
             &ClaimWorkRequest {
                 work_id: root.work_id,
                 expected_work_revision: root.revision,
-                expected_run_id: renewed.run_id,
+                expected_run_id: Some(renewed.run_id),
                 holder: renewed.holder.clone(),
                 ttl_seconds: DEFAULT_WORK_CLAIM_TTL_SECONDS,
                 recovery_reason: None,
@@ -2022,7 +2022,7 @@ fn release_requires_nonempty_waiver_reason_and_persists_audit_reasons() {
             &ClaimWorkRequest {
                 work_id: root.work_id,
                 expected_work_revision: root.revision,
-                expected_run_id: root.active_run_id.expect("active run"),
+                expected_run_id: Some(root.active_run_id.expect("active run")),
                 holder: next_holder,
                 ttl_seconds: 60,
                 recovery_reason: None,

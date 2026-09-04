@@ -26,6 +26,8 @@ pub(super) struct ShowWorkSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) assigned_to: Option<String>,
     pub(super) lifecycle: WorkLifecycle,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) restored: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) superseded_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -75,6 +77,8 @@ pub(super) struct ShowNote {
 
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowHistoryItem {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) generation: Option<usize>,
     pub(super) kind: String,
     pub(super) summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,6 +113,8 @@ pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) notes_omitted: Option<usize>,
     pub(super) history: ShowHistory,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) restored_history: Option<ShowHistory>,
     pub(super) allowed_next: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) omissions: Vec<WorkSectionOmission>,
@@ -158,6 +164,10 @@ pub(super) fn show_relation(item: &WorkItemSummary) -> ShowRelation {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the terse text projection renders each bounded focus section in display order"
+)]
 pub(super) fn show_lines(
     view: &WorkFocusView,
     holder: Holder<'_>,
@@ -166,7 +176,12 @@ pub(super) fn show_lines(
     now: DateTime<Utc>,
 ) -> Vec<String> {
     let work = &view.status.work;
-    let mut lines = vec![show_item_line(&view.status, holder, now)];
+    let mut lines = vec![show_item_line(
+        &view.status,
+        holder,
+        view.completed_by_record,
+        now,
+    )];
     let mut facts = vec![
         format!("kind: {}", kind_word(work.kind)),
         format!("priority: {}", work.priority),
@@ -263,9 +278,39 @@ pub(super) fn show_lines(
             short(&last.summary)
         ));
     }
+    if view.restored_history.total > 0 {
+        lines.push(format!(
+            "restored history: {} entries",
+            view.restored_history.total
+        ));
+        for entry in &view.restored_history.items {
+            let actor = relative_actor_label(
+                &entry.actor.actor_id,
+                entry.actor.attribution_context(),
+                current_actor,
+            );
+            lines.push(format!(
+                "  - generation {} {} by {}: {}",
+                entry.generation_index,
+                entry.kind,
+                actor,
+                short(&entry.summary)
+            ));
+        }
+        if view.restored_history.omitted > 0 {
+            lines.push(format!(
+                "  ({} earlier entries not shown)",
+                view.restored_history.omitted
+            ));
+        }
+    }
     lines
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the safe structured projection explicitly allowlists every terse show section"
+)]
 pub(super) fn show_receipt_value(
     view: &WorkFocusView,
     holder: Holder<'_>,
@@ -285,6 +330,7 @@ pub(super) fn show_receipt_value(
         .iter()
         .filter_map(|change| match &change.delivery {
             WorkChangeProjection::Visible(summary) => Some(ShowHistoryItem {
+                generation: None,
                 kind: summary.change_kind.clone(),
                 summary: strip_kind_prefix(&summary.summary, &summary.change_kind),
                 by: summary.actor_id.as_deref().map(|actor| {
@@ -296,6 +342,26 @@ pub(super) fn show_receipt_value(
         })
         .collect();
     let hidden_history = view.history.items.len().saturating_sub(history.len());
+    let restored_history = (view.restored_history.total > 0).then(|| ShowHistory {
+        total: view.restored_history.total,
+        omitted: view.restored_history.omitted,
+        items: view
+            .restored_history
+            .items
+            .iter()
+            .map(|entry| ShowHistoryItem {
+                generation: Some(entry.generation_index),
+                kind: entry.kind.clone(),
+                summary: entry.summary.clone(),
+                by: Some(relative_actor_label(
+                    &entry.actor.actor_id,
+                    entry.actor.attribution_context(),
+                    current_actor,
+                )),
+                created_at: entry.created_at,
+            })
+            .collect(),
+    });
     let notes = show_notes(view, current_actor);
     ShowReceiptValue {
         status: ShowStatus {
@@ -314,6 +380,7 @@ pub(super) fn show_receipt_value(
                     .as_deref()
                     .map(|actor| actor_word(actor, current_actor).to_owned()),
                 lifecycle: work.lifecycle,
+                restored: work.restored,
                 superseded_by: work.superseded_by.map(short_ref_for_work_id),
                 child_requirement: optional_child_requirement(work.child_requirement),
             },
@@ -351,6 +418,7 @@ pub(super) fn show_receipt_value(
             omitted: view.history.omitted.saturating_add(hidden_history),
             items: history,
         },
+        restored_history,
         allowed_next: view.allowed_next.clone(),
         omissions: view.omissions.clone(),
     }
@@ -385,6 +453,7 @@ pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowN
 pub(super) fn show_item_line(
     status: &ReadyWorkSummary,
     holder: Holder<'_>,
+    completed_by_record: bool,
     now: DateTime<Utc>,
 ) -> String {
     // Unlike the shared item_line used by lists, terse show deliberately
@@ -395,6 +464,7 @@ pub(super) fn show_item_line(
         Holder::Other(_, expires_at) => {
             format!("held by another session until {}", clock(expires_at, now))
         }
+        Holder::Nobody if completed_by_record => "completed (restored)".into(),
         Holder::Nobody => availability_words(status).to_owned(),
     };
     format!("{} \"{}\" — {state}", work.short_ref, short(&work.title))

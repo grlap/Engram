@@ -30,6 +30,10 @@ impl LocalWorkService {
 
     /// Like [`Self::work_gate`], but binds an explicit target through the same
     /// storage operation so concurrent focus changes cannot redirect evidence.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one protocol operation preserves native and restored evidence authority paths"
+    )]
     pub(crate) fn work_gate_on(
         &self,
         work_ref: Option<&str>,
@@ -44,6 +48,74 @@ impl LocalWorkService {
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("gate attempt has no bound focused work".into())
         })?;
+        if store.work_completed_by_restored_record(work.work_id)? {
+            let protocol_operation = "work_update:gate";
+            let payload = serde_json::json!({
+                "name": name,
+                "failed": failed,
+                "evidence_ref": evidence_ref,
+            });
+            let intent = self.protocol_intent(&payload);
+            let raw_key =
+                self.effective_idempotency_key("", protocol_operation, &basis, &intent, now)?;
+            let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                project_id: &self.project_id,
+                session_id: &self.session_id,
+                operation: protocol_operation,
+                idempotency_key: &raw_key,
+                intent: &intent,
+                basis: &basis,
+                now,
+            })?;
+            if let Some(result) = attempt.result {
+                return serde_json::from_value(result).map_err(StoreError::from);
+            }
+            ensure_protocol_basis(
+                retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?,
+                protocol_operation,
+                &raw_key,
+                false,
+            )?;
+            let scoped_key = self.core_operation_key(
+                protocol_operation,
+                &raw_key,
+                "record_restored_work_evidence",
+            )?;
+            let evidence = store.record_restored_work_evidence(
+                &RecordRestoredWorkEvidenceRequest {
+                    work_id: work.work_id,
+                    expected_work_revision: work.revision,
+                    holder: self.session_id.clone(),
+                    input: RestoredWorkEvidenceInput::Gate {
+                        name: name.to_owned(),
+                        failed: failed.to_owned(),
+                        evidence_ref: evidence_ref.map(str::to_owned),
+                    },
+                    actor: self.post_completion_actor(
+                        "work_update",
+                        "record a gate finding against restored completion history",
+                    ),
+                    idempotency_key: scoped_key,
+                    recorded_at: now,
+                },
+                &DevelopmentNoopRedactor,
+            )?;
+            let result = self.work_update_result(
+                &store,
+                "evidence",
+                work.work_id,
+                serde_json::to_value(&evidence)?,
+                now,
+            )?;
+            store.finish_work_protocol_attempt(
+                &self.project_id,
+                &self.session_id,
+                protocol_operation,
+                &raw_key,
+                &result,
+            )?;
+            return Ok(result);
+        }
         let (run_id, claim_id, claim_fence, actor) = if work.lifecycle == WorkLifecycle::Completed {
             let (run, seal) = Self::completed_evidence_basis(&store, &work)?;
             (
@@ -126,6 +198,10 @@ impl LocalWorkService {
     /// Captures one note under one explicit work target and one atomic storage
     /// operation. Open work also receives an acknowledging checkpoint; a
     /// completed item receives only evidence after its frozen seal cut.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one protocol operation preserves native and restored note authority paths"
+    )]
     pub(crate) fn work_note_on(
         &self,
         work_ref: Option<&str>,
@@ -187,6 +263,39 @@ impl LocalWorkService {
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("note attempt has no bound focused work".into())
         })?;
+        if store.work_completed_by_restored_record(work.work_id)? {
+            let evidence = store.record_restored_work_evidence(
+                &RecordRestoredWorkEvidenceRequest {
+                    work_id: work.work_id,
+                    expected_work_revision: work.revision,
+                    holder: self.session_id.clone(),
+                    input: RestoredWorkEvidenceInput::Note {
+                        summary: summary.to_owned(),
+                        refs: refs.to_owned(),
+                    },
+                    actor: self.post_completion_actor(
+                        "work_update",
+                        "record a note finding against restored completion history",
+                    ),
+                    idempotency_key: scoped_key,
+                    recorded_at: now,
+                },
+                &DevelopmentNoopRedactor,
+            )?;
+            let capture = WorkNoteCapture {
+                evidence,
+                checkpoint: None,
+            };
+            let result = self.work_note_result(&store, work.work_id, &capture, now)?;
+            store.finish_work_protocol_attempt(
+                &self.project_id,
+                &self.session_id,
+                protocol_operation,
+                &raw_key,
+                &result,
+            )?;
+            return Ok(result);
+        }
         let (run_id, claim_id, claim_fence, actor) =
             self.work_note_evidence_basis(&store, &basis, &work, now)?;
         let capture = store.record_work_note(
@@ -415,12 +524,11 @@ impl LocalWorkService {
                 recovery_reason,
                 idempotency_key: _,
             } => {
-                let run_id = active_run_id(&work)?;
                 let claim = store.claim_work(
                     &ClaimWorkRequest {
                         work_id: work.work_id,
                         expected_work_revision: work.revision,
-                        expected_run_id: run_id,
+                        expected_run_id: work.active_run_id,
                         holder: self.session_id.clone(),
                         ttl_seconds: ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
                         recovery_reason,

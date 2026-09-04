@@ -13,12 +13,13 @@ use super::feeds::{load_typed_work_object, validate_work_protocol_result_binding
 use super::planning::{encode_state, normalize_work_catalog_key, work_catalog_search_text};
 use super::query::{catalog_literal_fts_query, parse_work_id};
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectHash, RestoredWorkEvidence,
     domain::{
         CompletionSeal, EnvironmentEvidence, ExecutionObservation, MemoryAssertionEvent,
         MemoryVersion, RootExecution, SCHEMA_VERSION, VerificationEvidence, WorkCheckpoint,
         WorkClaim, WorkEvent, WorkEvidence, WorkHandoffOffer, WorkId, WorkItem, WorkObligation,
         WorkObligationId, WorkObligationResolutionEvent, WorkRun, WorkRunId,
+        normalize_gate_evidence_input,
     },
 };
 
@@ -419,6 +420,170 @@ pub(super) fn verify_evidence_rows(
     Ok(())
 }
 
+pub(super) fn verify_restored_evidence_rows(
+    connection: &Connection,
+    checked: &mut usize,
+    invalid: &mut Vec<String>,
+) -> Result<(), StoreError> {
+    let rows = connection
+        .prepare(
+            "SELECT evidence.evidence_hash, evidence.work_id, evidence.record_hash,
+                    evidence.sequence, evidence.gate_name, evidence.created_at_ms,
+                    object.object_kind, object.canonical_json,
+                    item.item_json
+             FROM work_restored_evidence AS evidence
+             LEFT JOIN objects AS object ON object.object_hash = evidence.evidence_hash
+             LEFT JOIN work_items AS item ON item.work_id = evidence.work_id
+             ORDER BY evidence.work_id, evidence.sequence, evidence.evidence_hash",
+        )?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<Vec<u8>>>(7)?,
+                row.get::<_, Option<Vec<u8>>>(8)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut projected = HashSet::with_capacity(rows.len());
+    let mut chains = HashMap::<(WorkId, String), HashMap<ObjectHash, Option<ObjectHash>>>::new();
+    let mut next_sequence = HashMap::<String, i64>::new();
+    for (
+        stored_hash,
+        stored_work_id,
+        stored_record,
+        stored_sequence,
+        stored_gate_name,
+        stored_created_at,
+        object_kind,
+        bytes,
+        item_json,
+    ) in rows
+    {
+        *checked += 1;
+        let label = format!("work_restored_evidence:{stored_hash}");
+        projected.insert(stored_hash.clone());
+        let Some(hash) = ObjectHash::from_stored(stored_hash) else {
+            invalid.push(label);
+            continue;
+        };
+        let Some(bytes) = bytes else {
+            invalid.push(label);
+            continue;
+        };
+        let evidence = CanonicalObject::verify(&hash, bytes)
+            .and_then(|object| object.decode::<RestoredWorkEvidence>());
+        let item = item_json
+            .as_deref()
+            .map(serde_json::from_slice::<WorkItem>)
+            .transpose();
+        let (Ok(evidence), Ok(Some(item))) = (evidence, item) else {
+            invalid.push(label);
+            continue;
+        };
+        let record_is_bound = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM work_restored_records
+                 WHERE work_id = ?1 AND record_hash = ?2
+             )",
+            params![stored_work_id, stored_record],
+            |row| row.get::<_, bool>(0),
+        )?;
+        let expected_sequence = next_sequence.entry(stored_work_id.clone()).or_insert(1);
+        let mut internally_bound = object_kind.as_deref() == Some("work_restored_evidence")
+            && evidence.schema_version == SCHEMA_VERSION
+            && item.restored
+            && evidence.work_id == item.work_id
+            && evidence.work_id.0.to_string() == stored_work_id
+            && evidence.restored_record.as_str() == stored_record
+            && evidence.sequence == stored_sequence
+            && stored_sequence == *expected_sequence
+            && evidence.gate.as_ref().map(|gate| gate.name.as_str()) == stored_gate_name.as_deref()
+            && evidence.created_at.timestamp_millis() == stored_created_at
+            && record_is_bound;
+        *expected_sequence = expected_sequence.saturating_add(1);
+        if let Some(gate) = &evidence.gate {
+            let evidence_ref = match evidence.refs.as_slice() {
+                [] => None,
+                [value] => Some(value.as_str()),
+                _ => {
+                    internally_bound = false;
+                    None
+                }
+            };
+            let normalized =
+                normalize_gate_evidence_input(&gate.name, &gate.failed, evidence_ref).ok();
+            internally_bound &= gate.schema_version == SCHEMA_VERSION
+                && gate.passed == gate.failed.is_empty()
+                && normalized.as_ref().is_some_and(|normalized| {
+                    normalized.name == gate.name
+                        && normalized.failed == gate.failed
+                        && normalized.evidence_ref.as_deref() == evidence_ref
+                });
+            chains
+                .entry((evidence.work_id, gate.name.clone()))
+                .or_default()
+                .insert(hash.clone(), gate.previous.clone());
+        }
+        if !internally_bound {
+            invalid.push(format!("{label}:projection_binding"));
+        }
+    }
+    for ((work_id, gate_name), chain) in chains {
+        *checked += 1;
+        if !restored_gate_chain_is_linear(&chain) {
+            invalid.push(format!(
+                "work_restored_evidence:{work_id:?}:{gate_name}:gate_chain"
+            ));
+        }
+    }
+    let orphaned = connection
+        .prepare(
+            "SELECT object_hash FROM objects
+             WHERE object_kind = 'work_restored_evidence'
+             ORDER BY object_hash",
+        )?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    for hash in orphaned {
+        if !projected.contains(&hash) {
+            *checked += 1;
+            invalid.push(format!("work_restored_evidence:{hash}:missing_projection"));
+        }
+    }
+    Ok(())
+}
+
+fn restored_gate_chain_is_linear(chain: &HashMap<ObjectHash, Option<ObjectHash>>) -> bool {
+    let mut referenced = HashSet::with_capacity(chain.len());
+    for previous in chain.values().flatten() {
+        if !chain.contains_key(previous) || !referenced.insert(previous.clone()) {
+            return false;
+        }
+    }
+    let heads = chain
+        .keys()
+        .filter(|hash| !referenced.contains(*hash))
+        .collect::<Vec<_>>();
+    if heads.len() != 1 {
+        return false;
+    }
+    let mut visited = HashSet::with_capacity(chain.len());
+    let mut cursor = Some(heads[0]);
+    while let Some(hash) = cursor {
+        if !visited.insert(hash.clone()) {
+            return false;
+        }
+        cursor = chain.get(hash).and_then(Option::as_ref);
+    }
+    visited.len() == chain.len()
+}
+
 pub(super) fn verify_obligation_rows(
     connection: &Connection,
     checked: &mut usize,
@@ -687,6 +852,10 @@ pub(super) fn verify_work_feed_integrity(
             "work_evidence" => object.decode::<WorkEvidence>().ok().and_then(|evidence| {
                 expected_feeds_for_work(work_items, evidence.work_id, Some(evidence.run_id))
             }),
+            "work_restored_evidence" => object
+                .decode::<RestoredWorkEvidence>()
+                .ok()
+                .and_then(|evidence| expected_feeds_for_work(work_items, evidence.work_id, None)),
             "execution_observation" => object
                 .decode::<ExecutionObservation>()
                 .ok()
@@ -872,7 +1041,7 @@ pub(super) fn verify_work_feed_integrity(
          LEFT JOIN work_feed_entries entry
            ON entry.object_hash = object.object_hash
          WHERE object.object_kind IN (
-             'work_event', 'work_checkpoint', 'work_evidence',
+             'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence',
              'verification_evidence', 'environment_evidence',
              'work_obligation', 'work_obligation_resolution'
          )

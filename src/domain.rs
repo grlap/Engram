@@ -1762,6 +1762,10 @@ pub struct WorkItem {
     pub lifecycle: WorkLifecycle,
     pub revision: i64,
     pub active_run_id: Option<WorkRunId>,
+    /// True when planning state was recreated from an inert work-graph
+    /// snapshot rather than produced by this store's native event feed.
+    #[serde(default)]
+    pub restored: bool,
     #[serde(default)]
     pub superseded_by: Option<WorkId>,
     pub created_by: ActorContext,
@@ -2254,6 +2258,14 @@ pub struct CompletionSeal {
     pub required_child_seals: Vec<ObjectHash>,
     #[serde(default)]
     pub required_child_waivers: Vec<RequiredChildWaiver>,
+    /// Completion proofs inherited from inert restored records rather than
+    /// from live child execution in this store.
+    #[serde(default)]
+    pub restored_child_completions: Vec<ObjectHash>,
+    /// Materialized transitive marker used to refuse report assembly without
+    /// recursively walking child seals.
+    #[serde(default)]
+    pub restored: bool,
     pub unfinished_optional_children: Vec<WorkId>,
     pub expected_contributors: Vec<SessionId>,
     pub contributions: Vec<RootContribution>,
@@ -2559,7 +2571,9 @@ pub struct ClearWorkBlockerRequest {
 pub struct ClaimWorkRequest {
     pub work_id: WorkId,
     pub expected_work_revision: i64,
-    pub expected_run_id: WorkRunId,
+    /// Existing active run expected by the caller. Restored work has no live
+    /// run until its first post-load claim and therefore expects `None`.
+    pub expected_run_id: Option<WorkRunId>,
     pub holder: SessionId,
     pub ttl_seconds: i64,
     pub recovery_reason: Option<String>,
@@ -2694,6 +2708,33 @@ pub(crate) struct RecordGateEvidenceRequest {
     pub failed: Vec<String>,
     pub evidence_ref: Option<String>,
     pub actor: ActorContext,
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Late-finding content bound to an inert restored completion record.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum RestoredWorkEvidenceInput {
+    Note {
+        summary: String,
+        refs: Vec<String>,
+    },
+    Gate {
+        name: String,
+        failed: Vec<String>,
+        evidence_ref: Option<String>,
+    },
+}
+
+/// Request to append one late finding to restored completed work.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct RecordRestoredWorkEvidenceRequest {
+    pub work_id: WorkId,
+    pub expected_work_revision: i64,
+    pub holder: SessionId,
+    pub input: RestoredWorkEvidenceInput,
+    pub actor: ActorContext,
+    pub idempotency_key: String,
     pub recorded_at: DateTime<Utc>,
 }
 

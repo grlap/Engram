@@ -5,29 +5,34 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 use serde_json::Value;
 
 use super::{
-    MemoryHeadProjectionRow, SqliteStore, StoreError, derived_project_memory_state_on,
-    project_memory_state_on, validate_stored_project_memory_key,
+    MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES, MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES,
+    MAX_PROJECT_MEMORY_PROVENANCE_LINKS, MemoryHeadProjectionRow, SqliteStore, StoreError,
+    derived_project_memory_state_on, project_memory_state_on, validate_keyed_project_memory_shape,
+    validate_stored_project_memory_key,
 };
 use crate::{
     ActorContext, CanonicalObject, CompletionSeal, EnvironmentEvidence, MemoryStatus,
-    MemoryVersion, ObjectHash, ProjectId, Scope, Sensitivity, VerificationEvidence, WorkCheckpoint,
-    WorkEvidence, WorkEvidenceKind, WorkGraphSnapshotBlocker, WorkGraphSnapshotBody,
-    WorkGraphSnapshotCompletion, WorkGraphSnapshotCut, WorkGraphSnapshotDestinationKind,
-    WorkGraphSnapshotDocument, WorkGraphSnapshotEvent, WorkGraphSnapshotExport,
-    WorkGraphSnapshotGate, WorkGraphSnapshotHistory, WorkGraphSnapshotItem,
-    WorkGraphSnapshotManifest, WorkGraphSnapshotMemory, WorkGraphSnapshotMemoryState,
-    WorkGraphSnapshotNote, WorkGraphSnapshotRecord, WorkGraphSnapshotRecordPayload,
-    WorkGraphSnapshotRedactedCounts, WorkGraphSnapshotSavedEvent, WorkGraphSnapshotSectionCounts,
-    WorkGraphSnapshotSource, WorkGraphSnapshotSummary, WorkGraphSnapshotText, WorkId,
-    WorkLifecycle, WorkSourceSnapshot, WorkTransition,
+    MemoryVersion, ObjectHash, ProjectId, RestoredRecord, RestoredWorkEvidence, Scope, Sensitivity,
+    VerificationEvidence, WorkCheckpoint, WorkEvidence, WorkEvidenceKind, WorkGraphSnapshotBlocker,
+    WorkGraphSnapshotBody, WorkGraphSnapshotCompletion, WorkGraphSnapshotCut,
+    WorkGraphSnapshotDestinationKind, WorkGraphSnapshotDocument, WorkGraphSnapshotEvent,
+    WorkGraphSnapshotExport, WorkGraphSnapshotGate, WorkGraphSnapshotHistory,
+    WorkGraphSnapshotItem, WorkGraphSnapshotLoadedEvent, WorkGraphSnapshotManifest,
+    WorkGraphSnapshotMemory, WorkGraphSnapshotMemoryState, WorkGraphSnapshotNote,
+    WorkGraphSnapshotRecord, WorkGraphSnapshotRecordPayload, WorkGraphSnapshotRedactedCounts,
+    WorkGraphSnapshotSavedEvent, WorkGraphSnapshotSectionCounts, WorkGraphSnapshotSource,
+    WorkGraphSnapshotSummary, WorkGraphSnapshotText, WorkId, WorkLifecycle, WorkSourceSnapshot,
+    WorkTransition,
     domain::{MemoryAssertionEvent, is_unsafe_rendered_text_char},
     memory::Redactor,
     work_graph_snapshot_exporting_build, work_graph_snapshot_format_fingerprint,
 };
 
-const MAX_SNAPSHOT_AUDIT_ATTRIBUTION_TEXT_BYTES: usize = 256;
-const MAX_SNAPSHOT_AUDIT_ATTRIBUTION_BYTES: usize = 4 * 1024;
-const MAX_SNAPSHOT_AUDIT_PROVENANCE_LINKS: usize = 16;
+mod load;
+
+pub(super) const REDACTED_MEMORY_PLACEHOLDER: &str = "[redacted in work-graph snapshot]";
+pub(super) const RESTORED_MEMORY_SOURCE: &str = "engram:work-graph-snapshot";
+pub(super) const RESTORED_REDACTED_MEMORY_SOURCE: &str = "engram:work-graph-snapshot:redacted";
 
 impl SqliteStore {
     /// Freezes one deterministic work-graph body and commits its disclosure
@@ -67,6 +72,7 @@ impl SqliteStore {
             summary: body.summary.clone(),
         };
         let document = WorkGraphSnapshotDocument { body, manifest };
+        load::validate_generated_snapshot_document(&document)?;
         inspect_serialized_strings(redactor, &serde_json::to_value(&document)?)?;
         transaction.commit()?;
 
@@ -117,8 +123,7 @@ impl SqliteStore {
                  FROM objects INDEXED BY objects_graph_snapshot_audit
                  WHERE object_kind = 'work_graph_snapshot_saved'
                    AND json_extract(canonical_json, '$.project_id') = ?1
-                 ORDER BY json_extract(canonical_json, '$.attempted_at'),
-                          json_extract(canonical_json, '$.attempt_id'), object_hash",
+                 ORDER BY json_extract(canonical_json, '$.attempt_id'), object_hash",
             )?
             .query_map([project_id.0.as_str()], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -168,9 +173,7 @@ impl SqliteStore {
                  FROM objects INDEXED BY objects_graph_snapshot_audit
                  WHERE object_kind = 'work_graph_snapshot_saved'
                    AND json_extract(canonical_json, '$.project_id') = ?1
-                 ORDER BY json_extract(canonical_json, '$.attempted_at') DESC,
-                          json_extract(canonical_json, '$.attempt_id') DESC,
-                          object_hash DESC
+                 ORDER BY json_extract(canonical_json, '$.attempt_id') DESC, object_hash DESC
                  LIMIT ?2",
             )?
             .query_map(rusqlite::params![project_id.0, limit], |row| {
@@ -191,6 +194,64 @@ impl SqliteStore {
         let total = usize::try_from(total).map_err(|_| {
             StoreError::InvalidWorkProjection(
                 "graph snapshot audit count exceeds process range".into(),
+            )
+        })?;
+        Ok((total, rows))
+    }
+
+    /// Returns the total successful-load count and the most recent bounded
+    /// page in stable chronological order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the limit is invalid or a matching audit
+    /// object is missing, malformed, or disagrees with its project binding.
+    pub fn recent_work_graph_snapshot_load_audits(
+        &self,
+        project_id: &ProjectId,
+        limit: usize,
+    ) -> Result<(usize, Vec<WorkGraphSnapshotLoadedEvent>), StoreError> {
+        let limit = i64::try_from(limit).map_err(|_| {
+            StoreError::InvalidWorkProjection(
+                "graph snapshot load-audit page limit exceeds SQLite range".into(),
+            )
+        })?;
+        let total = self.connection.query_row(
+            "SELECT COUNT(*)
+             FROM objects INDEXED BY objects_graph_snapshot_load_audit
+             WHERE object_kind = 'work_graph_snapshot_loaded'
+               AND json_extract(canonical_json, '$.project_id') = ?1",
+            [project_id.0.as_str()],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let mut rows = self
+            .connection
+            .prepare(
+                "SELECT object_hash, canonical_json
+                 FROM objects INDEXED BY objects_graph_snapshot_load_audit
+                 WHERE object_kind = 'work_graph_snapshot_loaded'
+                   AND json_extract(canonical_json, '$.project_id') = ?1
+                 ORDER BY json_extract(canonical_json, '$.attempt_id') DESC, object_hash DESC
+                 LIMIT ?2",
+            )?
+            .query_map(rusqlite::params![project_id.0, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|(stored_hash, bytes)| {
+                let hash = ObjectHash::from_stored(stored_hash.clone())
+                    .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+                let event: WorkGraphSnapshotLoadedEvent =
+                    CanonicalObject::verify(&hash, bytes)?.decode()?;
+                validate_loaded_event(&event, Some(project_id))?;
+                Ok(event)
+            })
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        rows.reverse();
+        let total = usize::try_from(total).map_err(|_| {
+            StoreError::InvalidWorkProjection(
+                "graph snapshot load-audit count exceeds process range".into(),
             )
         })?;
         Ok((total, rows))
@@ -231,7 +292,104 @@ pub(super) fn verify_work_graph_snapshot_saved_events_on(
             invalid.push(format!("work_graph_snapshot_saved:{stored_hash}"));
         }
     }
-    Ok((rows.len(), invalid))
+    let mut checked = rows.len();
+    let loaded_rows = connection
+        .prepare(
+            "SELECT object_hash, canonical_json
+             FROM objects WHERE object_kind = 'work_graph_snapshot_loaded'
+             ORDER BY object_hash",
+        )?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    checked += loaded_rows.len();
+    let mut load_attempt_ids = HashSet::new();
+    for (stored_hash, bytes) in loaded_rows {
+        let valid = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
+            .and_then(|hash| CanonicalObject::verify(&hash, bytes))
+            .and_then(|object| object.decode::<WorkGraphSnapshotLoadedEvent>())
+            .and_then(|event| {
+                validate_loaded_event(&event, None)?;
+                if !load_attempt_ids.insert(event.attempt_id) {
+                    return Err(StoreError::InvalidWorkProjection(
+                        "duplicate graph snapshot load attempt id".into(),
+                    ));
+                }
+                Ok(())
+            })
+            .is_ok();
+        if !valid {
+            invalid.push(format!("work_graph_snapshot_loaded:{stored_hash}"));
+        }
+    }
+    Ok((checked, invalid))
+}
+
+fn validate_loaded_event(
+    event: &WorkGraphSnapshotLoadedEvent,
+    project_id: Option<&ProjectId>,
+) -> Result<(), StoreError> {
+    validate_snapshot_audit_actor_shape(&event.actor).map_err(|detail| {
+        StoreError::InvalidWorkProjection(format!(
+            "snapshot load audit has invalid attribution: {detail}"
+        ))
+    })?;
+    let attempt_id = uuid::Uuid::parse_str(&event.attempt_id).map_err(|error| {
+        StoreError::InvalidWorkProjection(format!(
+            "snapshot load audit has invalid attempt id: {error}"
+        ))
+    })?;
+    validate_snapshot_audit_text(&event.exporting_build, "exporting build").map_err(|detail| {
+        StoreError::InvalidWorkProjection(format!(
+            "snapshot load audit has invalid exporting build: {detail}"
+        ))
+    })?;
+    if attempt_id.get_version_num() != 7
+        || event.schema_version != crate::WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION
+        || event.as_of.work_feed < 0
+        || event.as_of.project_memory < 0
+        || event.widened != event.widening_reason.is_some()
+        || !snapshot_redacted_counts_are_current(&event.redacted)
+        || project_id.is_some_and(|expected| expected != &event.project_id)
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "snapshot load audit disagrees with its binding".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(in crate::storage) fn work_graph_snapshot_load_origin_on(
+    connection: &Connection,
+    project_id: &ProjectId,
+) -> Result<WorkGraphSnapshotLoadedEvent, StoreError> {
+    // Empty graph loads leave the destination eligible for a later load. The
+    // newest attempt is the one that created its work, even with a supplied
+    // operation clock that moves backwards between loads.
+    let row = connection
+        .query_row(
+            "SELECT object_hash, canonical_json
+             FROM objects INDEXED BY objects_graph_snapshot_load_audit
+             WHERE object_kind = 'work_graph_snapshot_loaded'
+               AND json_extract(canonical_json, '$.project_id') = ?1
+             ORDER BY json_extract(canonical_json, '$.attempt_id') DESC LIMIT 1",
+            [project_id.0.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .optional()?;
+    let (stored_hash, bytes) = row.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(format!(
+            "restored project {:?} has no load audit",
+            project_id.0
+        ))
+    })?;
+    let hash = ObjectHash::from_stored(stored_hash.clone())
+        .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    let event: WorkGraphSnapshotLoadedEvent = CanonicalObject::verify(&hash, bytes)?.decode()?;
+    validate_loaded_event(&event, Some(project_id))?;
+    Ok(event)
 }
 
 fn validate_saved_event(
@@ -252,6 +410,9 @@ fn validate_saved_event(
     if attempt_id.get_version_num() != 7
         || event.schema_version != crate::WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION
         || event.widened != widening_reason.is_some()
+        || event.as_of.work_feed < 0
+        || event.as_of.project_memory < 0
+        || !snapshot_redacted_counts_are_current(&event.redacted)
         || project_id.is_some_and(|expected| expected != &event.project_id)
     {
         return Err(StoreError::InvalidWorkProjection(
@@ -259,6 +420,10 @@ fn validate_saved_event(
         ));
     }
     Ok(())
+}
+
+fn snapshot_redacted_counts_are_current(counts: &WorkGraphSnapshotRedactedCounts) -> bool {
+    counts.items == 0 && counts.blockers == 0 && counts.sources == 0 && counts.records == 0
 }
 
 fn validate_snapshot_audit_actor_shape(actor: &ActorContext) -> Result<(), String> {
@@ -282,9 +447,9 @@ fn validate_snapshot_audit_actor_shape(actor: &ActorContext) -> Result<(), Strin
         .as_ref()
         .ok_or_else(|| "session id is required".to_owned())?;
     validate_snapshot_audit_text(&session.0, "session id")?;
-    if actor.provenance_chain.len() > MAX_SNAPSHOT_AUDIT_PROVENANCE_LINKS {
+    if actor.provenance_chain.len() > MAX_PROJECT_MEMORY_PROVENANCE_LINKS {
         return Err(format!(
-            "provenance must contain at most {MAX_SNAPSHOT_AUDIT_PROVENANCE_LINKS} links"
+            "provenance must contain at most {MAX_PROJECT_MEMORY_PROVENANCE_LINKS} links"
         ));
     }
     for link in &actor.provenance_chain {
@@ -294,9 +459,9 @@ fn validate_snapshot_audit_actor_shape(actor: &ActorContext) -> Result<(), Strin
         }
     }
     let bytes = serde_json::to_vec(actor).map_err(|error| error.to_string())?;
-    if bytes.len() > MAX_SNAPSHOT_AUDIT_ATTRIBUTION_BYTES {
+    if bytes.len() > MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES {
         return Err(format!(
-            "serialized attribution exceeds {MAX_SNAPSHOT_AUDIT_ATTRIBUTION_BYTES} bytes"
+            "serialized attribution exceeds {MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES} bytes"
         ));
     }
     Ok(())
@@ -304,11 +469,11 @@ fn validate_snapshot_audit_actor_shape(actor: &ActorContext) -> Result<(), Strin
 
 fn validate_snapshot_audit_text(value: &str, label: &str) -> Result<(), String> {
     if value.trim().is_empty()
-        || value.len() > MAX_SNAPSHOT_AUDIT_ATTRIBUTION_TEXT_BYTES
+        || value.len() > MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES
         || value.chars().any(is_unsafe_rendered_text_char)
     {
         return Err(format!(
-            "{label} must contain 1 through {MAX_SNAPSHOT_AUDIT_ATTRIBUTION_TEXT_BYTES} UTF-8 bytes without control or format characters"
+            "{label} must contain 1 through {MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES} UTF-8 bytes without control or format characters"
         ));
     }
     Ok(())
@@ -432,9 +597,11 @@ fn work_sections_on(
                 item.work_id
             )));
         }
+        let restored_records = restored_records_on(connection, work_id)?;
         let events = super::work::canonical_work_events_for_item(connection, work_id)?;
         let prerequisites = super::work::load_prerequisite_projection_ids(connection, work_id)?;
-        items.push(snapshot_item(&item, prerequisites, &events)?);
+        let snapshot = snapshot_item(&item, prerequisites, &events, &restored_records)?;
+        items.push(snapshot.clone());
         blockers.extend(
             super::work::load_active_blocker_projections(connection, work_id)?
                 .into_iter()
@@ -452,19 +619,35 @@ fn work_sections_on(
         {
             sources.insert(hash.clone(), load_source_on(connection, hash)?);
         }
-        records.push(WorkGraphSnapshotRecord {
-            work_id,
-            // Save-only stores have no inherited restored layers. The load
-            // slice derives this index from those layers before adding native history.
-            generation_index: 0,
-            payload: WorkGraphSnapshotRecordPayload::Native {
-                history: Box::new(WorkGraphSnapshotHistory {
-                    notes: notes_for_item_on(connection, work_id)?,
-                    events: snapshot_events_on(connection, &events)?,
-                    completion: completion_from_events(connection, &item, &events)?,
-                }),
-            },
-        });
+        for (hash, canonical_json, record) in &restored_records {
+            records.push(WorkGraphSnapshotRecord {
+                work_id,
+                generation_index: record.generation_index,
+                payload: WorkGraphSnapshotRecordPayload::Restored {
+                    object_hash: hash.clone(),
+                    canonical_json: canonical_json.clone(),
+                },
+            });
+        }
+        let notes = notes_for_item_on(connection, work_id)?;
+        if !events.is_empty() || !notes.is_empty() {
+            records.push(WorkGraphSnapshotRecord {
+                work_id,
+                generation_index: restored_records.len(),
+                payload: WorkGraphSnapshotRecordPayload::Native {
+                    history: Box::new(WorkGraphSnapshotHistory {
+                        notes,
+                        events: snapshot_events_on(connection, &events)?,
+                        completion: completion_from_events(
+                            connection,
+                            &item,
+                            &events,
+                            &restored_records,
+                        )?,
+                    }),
+                },
+            });
+        }
     }
     Ok(SnapshotWorkSections {
         items,
@@ -492,6 +675,7 @@ fn snapshot_item(
     item: &crate::WorkItem,
     prerequisites: Vec<WorkId>,
     events: &[crate::WorkEvent],
+    restored_records: &[(ObjectHash, Value, RestoredRecord)],
 ) -> Result<WorkGraphSnapshotItem, StoreError> {
     Ok(WorkGraphSnapshotItem {
         work_id: item.work_id,
@@ -512,13 +696,14 @@ fn snapshot_item(
         superseded_by: item.superseded_by,
         assigned_to: item.assigned_to.clone(),
         deferred_until: item.deferred_until,
-        disposal_reason: current_disposal_reason(item.lifecycle, events)?,
+        disposal_reason: current_disposal_reason(item.lifecycle, events, restored_records)?,
     })
 }
 
 fn current_disposal_reason(
     lifecycle: WorkLifecycle,
     events: &[crate::WorkEvent],
+    restored_records: &[(ObjectHash, Value, RestoredRecord)],
 ) -> Result<Option<String>, StoreError> {
     if !matches!(
         lifecycle,
@@ -526,7 +711,7 @@ fn current_disposal_reason(
     ) {
         return Ok(None);
     }
-    events
+    let native_reason = events
         .iter()
         .rev()
         .find_map(|event| match &event.transition {
@@ -536,13 +721,53 @@ fn current_disposal_reason(
                 ..
             } if *disposed == lifecycle => Some(reason.clone()),
             _ => None,
+        });
+    let restored_reason = restored_records.iter().rev().find_map(|(_, _, record)| {
+        record.history.events.iter().rev().find_map(|event| {
+            (event.kind == "disposed" && event.lifecycle == Some(lifecycle))
+                .then(|| event.reason.clone())
+                .flatten()
         })
-        .map(Some)
-        .ok_or_else(|| {
-            StoreError::InvalidWorkProjection(
-                "terminal snapshot item has no matching disposal event".into(),
-            )
-        })
+    });
+    native_reason.or(restored_reason).map(Some).ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "terminal snapshot item has no matching disposal event".into(),
+        )
+    })
+}
+
+fn restored_records_on(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<(ObjectHash, Value, RestoredRecord)>, StoreError> {
+    let rows = connection
+        .prepare(
+            "SELECT generation_index, record_hash FROM work_restored_records
+             WHERE work_id = ?1 ORDER BY generation_index",
+        )?
+        .query_map([work_id.0.to_string()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut records = Vec::with_capacity(rows.len());
+    for (expected, (generation_index, stored_hash)) in rows.into_iter().enumerate() {
+        if i64::try_from(expected).ok() != Some(generation_index) {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "restored history for {work_id:?} is not dense"
+            )));
+        }
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let canonical_json = load_verified_value_on(connection, &hash, "work_restored_record")?;
+        let record: RestoredRecord = serde_json::from_value(canonical_json.clone())?;
+        if record.work_id != work_id || record.generation_index != expected {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "restored history for {work_id:?} differs from its projection binding"
+            )));
+        }
+        records.push((hash, canonical_json, record));
+    }
+    Ok(records)
 }
 
 fn load_source_on(
@@ -604,6 +829,71 @@ fn notes_for_item_on(
     let mut notes = Vec::with_capacity(rows.len());
     for row in rows {
         let (note, hash) = snapshot_note_from_row(work_id, row)?;
+        notes.push((note.recorded_at, hash, note));
+    }
+    let restored_rows = connection
+        .prepare(
+            "SELECT evidence.evidence_hash, evidence.record_hash,
+                    evidence.gate_name, evidence.created_at_ms,
+                    object.object_kind, object.canonical_json
+             FROM work_restored_evidence AS evidence
+                  INDEXED BY work_restored_evidence_work
+             JOIN objects AS object ON object.object_hash = evidence.evidence_hash
+             WHERE evidence.work_id = ?1",
+        )?
+        .query_map([work_id.0.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Vec<u8>>(5)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (stored_hash, record_hash, gate_name, created_at_ms, object_kind, bytes) in restored_rows {
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        if object_kind != "work_restored_evidence" {
+            return Err(StoreError::ObjectKindMismatch {
+                hash,
+                stored: object_kind,
+                requested: "work_restored_evidence".into(),
+            });
+        }
+        let evidence: RestoredWorkEvidence = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        let projection_matches = evidence.work_id == work_id
+            && evidence.restored_record.as_str() == record_hash
+            && evidence.gate.as_ref().map(|gate| gate.name.as_str()) == gate_name.as_deref()
+            && evidence.created_at.timestamp_millis() == created_at_ms
+            && connection.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM work_restored_records
+                     WHERE work_id = ?1 AND record_hash = ?2
+                 )",
+                rusqlite::params![work_id.0.to_string(), evidence.restored_record.as_str()],
+                |row| row.get::<_, bool>(0),
+            )?;
+        if !projection_matches {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "restored work evidence {hash} differs from its projection binding"
+            )));
+        }
+        let gate = evidence.gate.map(|gate| WorkGraphSnapshotGate {
+            name: gate.name,
+            passed: gate.passed,
+            failed: gate.failed,
+            evidence_ref: evidence.refs.first().cloned(),
+        });
+        let note = WorkGraphSnapshotNote {
+            evidence_kind: WorkEvidenceKind::Generic,
+            summary: evidence.summary,
+            refs: evidence.refs,
+            gate,
+            actor: evidence.actor,
+            recorded_at: evidence.created_at,
+        };
         notes.push((note.recorded_at, hash, note));
     }
     notes.sort_by(|left, right| (left.0, &left.1).cmp(&(right.0, &right.1)));
@@ -700,6 +990,7 @@ fn completion_from_events(
     connection: &Connection,
     item: &crate::WorkItem,
     events: &[crate::WorkEvent],
+    restored_records: &[(ObjectHash, Value, RestoredRecord)],
 ) -> Result<Option<WorkGraphSnapshotCompletion>, StoreError> {
     if item.lifecycle != WorkLifecycle::Completed {
         return Ok(None);
@@ -707,12 +998,24 @@ fn completion_from_events(
     let event = events
         .iter()
         .rev()
-        .find(|event| matches!(event.transition, WorkTransition::Completed { .. }))
-        .ok_or_else(|| {
-            StoreError::InvalidWorkProjection(
-                "completed snapshot item has no completion event".into(),
-            )
-        })?;
+        .find(|event| matches!(event.transition, WorkTransition::Completed { .. }));
+    let Some(event) = event else {
+        if item.restored {
+            return restored_records
+                .iter()
+                .rev()
+                .find_map(|(_, _, record)| record.history.completion.clone())
+                .map(Some)
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "completed restored snapshot item has no completion proof".into(),
+                    )
+                });
+        }
+        return Err(StoreError::InvalidWorkProjection(
+            "completed snapshot item has no completion event".into(),
+        ));
+    };
     let WorkTransition::Completed { seal } = &event.transition else {
         unreachable!("completion event was selected by its transition");
     };
@@ -979,6 +1282,7 @@ fn memories_on(
                 "snapshot project memory assertion is missing".into(),
             )
         })?;
+        validate_keyed_project_memory_shape(&version, &assertion)?;
         let projected_status = SqliteStore::expected_memory_head_status_on(
             connection,
             &version_hash,
@@ -1030,7 +1334,12 @@ fn snapshot_active_memory(
     version: crate::MemoryVersion,
     widened: bool,
 ) -> (WorkGraphSnapshotMemoryState, bool) {
-    let was_redacted = version.sensitivity == Sensitivity::Restricted && !widened;
+    let restored_redaction = version
+        .source_snapshot
+        .as_ref()
+        .is_some_and(|source| source.source_ref == RESTORED_REDACTED_MEMORY_SOURCE);
+    let was_redacted =
+        version.sensitivity == Sensitivity::Restricted && (!widened || restored_redaction);
     let body = if was_redacted {
         WorkGraphSnapshotText::Redacted {
             sensitivity: version.sensitivity,

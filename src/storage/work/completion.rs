@@ -5,7 +5,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::super::{SqliteStore, StoreError};
 use super::execution::{
-    ensure_run_evidence, validate_gate_evidence_chain, validate_work_evidence_event_phase_on,
+    ensure_restored_execution_state, ensure_run_evidence, validate_gate_evidence_chain,
+    validate_work_evidence_event_phase_on,
 };
 use super::feeds::{
     append_to_work_feeds, append_work_event, checkpoint_feed_end, current_run_feed_cut_on,
@@ -17,8 +18,8 @@ use super::integrity::{
     combined_graph_is_acyclic_with_dependency, expected_environment_projection,
     expected_verification_projection, verify_blocker_rows, verify_canonical_work_rows,
     verify_completion_rows, verify_evidence_rows, verify_json_projection, verify_obligation_rows,
-    verify_prerequisite_rows, verify_work_catalog_projections, verify_work_feed_integrity,
-    verify_work_protocol_attempts, verify_work_scalar_bindings,
+    verify_prerequisite_rows, verify_restored_evidence_rows, verify_work_catalog_projections,
+    verify_work_feed_integrity, verify_work_protocol_attempts, verify_work_scalar_bindings,
 };
 use super::planning::{
     add_root_contribution, apply_work_relation_transition, assert_actor_session, assert_revision,
@@ -29,17 +30,18 @@ use super::planning::{
 };
 use super::query::{
     active_root_execution, active_root_execution_optional, completion_recovery_snapshot_on,
-    feed_parts, incomplete_prerequisite_projections, load_root_execution, load_work_claim_optional,
-    load_work_item, load_work_run, parse_work_id, parse_work_run_id,
+    feed_parts, incomplete_prerequisite_projections, latest_canonical_work_event_for_item_optional,
+    load_root_execution, load_work_claim_optional, load_work_item, load_work_run, parse_work_id,
+    parse_work_run_id, work_completed_by_restored_record_on,
 };
 use super::{
     CompleteWorkStorageResult, ControlWorkObligationWaiverFingerprint, EvidenceProjectionRow,
     MAX_COMPLETION_ENVIRONMENT_EVIDENCE, MAX_OPEN_COMPLETION_OBLIGATIONS, ObligationProjectionRow,
-    WorkEventDraft, WorkObligationRecord, WorkObligationWaiverFingerprint,
-    empty_work_relation_basis,
+    WorkEventDraft, WorkObligationRecord, WorkObligationWaiverFingerprint, WorkRelationBasis,
+    WorkRelationBlockerBasis, empty_work_relation_basis,
 };
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectHash, RestoredRecord,
     domain::{
         AcceptanceResult, COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
         COMPLETION_OBLIGATION_SCHEMA_VERSION, ChildRequirement, CompleteWorkRequest,
@@ -85,6 +87,17 @@ impl SqliteStore {
         let mut evidence_rows = HashMap::new();
         let mut gate_heads = HashMap::new();
         let mut completion_rows = HashMap::new();
+
+        seed_restored_projection_expectations(
+            connection,
+            &mut work_items,
+            &mut blockers,
+            &mut prerequisite_rows,
+            &mut blocker_rows,
+            &mut relation_bases,
+            &mut checked,
+            &mut invalid,
+        )?;
 
         let mut statement = connection.prepare(
             "SELECT entry.feed_id, entry.position, entry.object_hash,
@@ -469,6 +482,7 @@ impl SqliteStore {
         verify_prerequisite_rows(connection, &prerequisite_rows, &mut checked, &mut invalid)?;
         verify_blocker_rows(connection, &blocker_rows, &mut checked, &mut invalid)?;
         verify_evidence_rows(connection, &evidence_rows, &mut checked, &mut invalid)?;
+        verify_restored_evidence_rows(connection, &mut checked, &mut invalid)?;
         verify_obligation_rows(connection, &mut checked, &mut invalid)?;
         verify_completion_rows(connection, &completion_rows, &mut checked, &mut invalid)?;
         verify_work_feed_integrity(connection, &work_items, &mut checked, &mut invalid)?;
@@ -633,6 +647,8 @@ impl SqliteStore {
         let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
         let required_child_seals =
             required_child_seals(&transaction, item.work_id, run.root_execution_id)?;
+        let restored_child_completions =
+            required_restored_child_completions(&transaction, item.work_id)?;
         let required_child_waivers =
             validated_required_child_waivers(&transaction, item.work_id, &root_execution)?;
         let unfinished_optional_children =
@@ -645,7 +661,11 @@ impl SqliteStore {
             |row| row.get::<_, i64>(0),
         )?;
         if usize::try_from(required_child_count).ok()
-            != Some(required_child_seals.len() + required_child_waivers.len())
+            != Some(
+                required_child_seals.len()
+                    + restored_child_completions.len()
+                    + required_child_waivers.len(),
+            )
         {
             let sealed_children = required_child_seals
                 .iter()
@@ -658,6 +678,17 @@ impl SqliteStore {
                 .iter()
                 .map(|waiver| waiver.work_id)
                 .collect::<HashSet<_>>();
+            let restored_children = restored_child_completions
+                .iter()
+                .map(|hash| {
+                    load_typed_work_object::<RestoredRecord>(
+                        &transaction,
+                        hash,
+                        "work_restored_record",
+                    )
+                    .map(|record| record.work_id)
+                })
+                .collect::<Result<HashSet<_>, StoreError>>()?;
             let mut statement = transaction.prepare(
                 "SELECT work_id FROM work_items
                  WHERE parent_id = ?1 AND child_requirement = 'required'
@@ -672,7 +703,11 @@ impl SqliteStore {
                 .map(|value| parse_work_id(&value))
                 .collect::<Result<Vec<_>, StoreError>>()?
                 .into_iter()
-                .find(|child| !sealed_children.contains(child) && !waived_children.contains(child))
+                .find(|child| {
+                    !sealed_children.contains(child)
+                        && !restored_children.contains(child)
+                        && !waived_children.contains(child)
+                })
                 .ok_or_else(|| {
                     StoreError::InvalidWorkProjection(
                         "required-child barrier count disagrees with its accounted identities"
@@ -773,6 +808,14 @@ impl SqliteStore {
                 cause,
             });
         }
+        let child_seal_is_restored = required_child_seals.iter().try_fold(
+            false,
+            |restored, hash| -> Result<bool, StoreError> {
+                let child: CompletionSeal =
+                    load_typed_work_object(&transaction, hash, "completion_seal")?;
+                Ok(restored || child.restored)
+            },
+        )?;
         let seal = CompletionSeal {
             schema_version: SCHEMA_VERSION,
             work_id: item.work_id,
@@ -794,6 +837,8 @@ impl SqliteStore {
             environment,
             required_child_seals,
             required_child_waivers,
+            restored: child_seal_is_restored || !restored_child_completions.is_empty(),
+            restored_child_completions,
             unfinished_optional_children,
             expected_contributors: root_execution.expected_contributors.clone(),
             contributions: root_execution.contributions.clone(),
@@ -938,6 +983,49 @@ impl SqliteStore {
                         .into(),
                 ));
             }
+        }
+        if work_completed_by_restored_record_on(&transaction, &item)? {
+            item.lifecycle = WorkLifecycle::Open;
+            item.revision += 1;
+            item.updated_at = request.reopened_at;
+            let (root_execution, run, created) =
+                ensure_restored_execution_state(&transaction, &mut item, request.reopened_at)?;
+            if !created {
+                return Err(StoreError::InvalidWorkProjection(
+                    "restored reopen did not create a fresh run".into(),
+                ));
+            }
+            let event = WorkEventDraft {
+                schema_version: SCHEMA_VERSION,
+                project_id: item.project_id.clone(),
+                root_id: item.root_id,
+                work_id: item.work_id,
+                run_id: Some(run.run_id),
+                revision: item.revision,
+                work: item,
+                run: Some(run.clone()),
+                root_execution: Some(root_execution),
+                claim: None,
+                handoff_offer: None,
+                blocker: None,
+                transition: WorkTransition::Reopened {
+                    run_id: run.run_id,
+                    generation: run.generation,
+                    reason,
+                },
+                actor: request.actor.clone(),
+                created_at: request.reopened_at,
+            };
+            append_work_event(&transaction, &event)?;
+            persist_operation_result(
+                &transaction,
+                "reopen_work",
+                &request.idempotency_key,
+                request_object.hash(),
+                &run,
+            )?;
+            transaction.commit()?;
+            return Ok(run);
         }
         let generation = transaction.query_row(
             "SELECT COALESCE(MAX(generation), 0) + 1 FROM work_runs WHERE work_id = ?1",
@@ -1169,11 +1257,25 @@ impl SqliteStore {
                 Some(replacement)
             }
         };
-        let mut run = item
-            .active_run_id
-            .map(|run_id| load_work_run(&transaction, run_id))
-            .transpose()?;
-        let mut claim = if let Some(run) = run.as_ref() {
+        let restored_execution = if item.active_run_id.is_none() {
+            Some(ensure_restored_execution_state(
+                &transaction,
+                &mut item,
+                request.disposed_at,
+            )?)
+        } else {
+            None
+        };
+        let mut run = if let Some((_, run, _)) = restored_execution.as_ref() {
+            Some(run.clone())
+        } else {
+            item.active_run_id
+                .map(|run_id| load_work_run(&transaction, run_id))
+                .transpose()?
+        };
+        let mut claim = if restored_execution.is_some() {
+            None
+        } else if let Some(run) = run.as_ref() {
             expire_handoff_offers(
                 &transaction,
                 run.run_id,
@@ -1228,7 +1330,9 @@ impl SqliteStore {
         item.revision += 1;
         item.updated_at = request.disposed_at;
         persist_work_item(&transaction, &item)?;
-        let mut root_execution = if let Some(current_run) = run.as_ref() {
+        let mut root_execution = if let Some((execution, _, _)) = restored_execution {
+            execution
+        } else if let Some(current_run) = run.as_ref() {
             load_root_execution(&transaction, current_run.root_execution_id)?
         } else {
             active_root_execution(&transaction, item.root_id)?
@@ -1670,6 +1774,166 @@ impl SqliteStore {
         transaction.commit()?;
         Ok(event)
     }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "integrity reconstruction fills the same projection maps as native event replay"
+)]
+fn seed_restored_projection_expectations(
+    connection: &Connection,
+    work_items: &mut HashMap<String, serde_json::Value>,
+    blockers: &mut HashMap<String, serde_json::Value>,
+    prerequisite_rows: &mut HashMap<(String, String), String>,
+    blocker_rows: &mut HashMap<String, (String, String, Option<String>)>,
+    relation_bases: &mut HashMap<WorkId, WorkRelationBasis>,
+    checked: &mut usize,
+    invalid: &mut Vec<String>,
+) -> Result<(), StoreError> {
+    let rows = connection
+        .prepare(
+            "SELECT record.work_id, record.generation_index, record.record_hash,
+                    object.object_kind, object.canonical_json
+             FROM work_restored_records record
+             LEFT JOIN objects object ON object.object_hash = record.record_hash
+             ORDER BY record.work_id, record.generation_index",
+        )?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<Vec<u8>>>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut latest = HashMap::<WorkId, (i64, ObjectHash, RestoredRecord)>::new();
+    let mut next_generation = HashMap::<WorkId, i64>::new();
+    for (stored_work_id, generation, stored_hash, object_kind, bytes) in rows {
+        *checked += 1;
+        let label = format!("work_restored_record:{stored_work_id}:{generation}:{stored_hash}");
+        let parsed = parse_work_id(&stored_work_id);
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()));
+        let Some(bytes) = bytes else {
+            invalid.push(label);
+            continue;
+        };
+        let record = hash.as_ref().ok().and_then(|hash| {
+            CanonicalObject::verify(hash, bytes)
+                .and_then(|object| object.decode::<RestoredRecord>())
+                .ok()
+        });
+        let (Ok(work_id), Ok(hash), Some(record)) = (parsed, hash, record) else {
+            invalid.push(label);
+            continue;
+        };
+        let expected_generation = next_generation.entry(work_id).or_default();
+        let internally_bound = object_kind.as_deref() == Some("work_restored_record")
+            && record.schema_version == crate::WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION
+            && record.work_id == work_id
+            && record.item.work_id == work_id
+            && i64::try_from(record.generation_index).ok() == Some(generation)
+            && generation == *expected_generation;
+        if !internally_bound {
+            invalid.push(label);
+            continue;
+        }
+        *expected_generation += 1;
+        latest.insert(work_id, (generation, hash, record));
+    }
+
+    let orphaned = connection
+        .prepare(
+            "SELECT object.object_hash FROM objects object
+             LEFT JOIN work_restored_records record
+               ON record.record_hash = object.object_hash
+             WHERE object.object_kind = 'work_restored_record'
+               AND record.record_hash IS NULL
+             ORDER BY object.object_hash",
+        )?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    for hash in orphaned {
+        *checked += 1;
+        invalid.push(format!("work_restored_record:{hash}:missing_projection"));
+    }
+
+    for (work_id, (_, anchor, record)) in latest {
+        let stored_item = connection
+            .query_row(
+                "SELECT item_json FROM work_items WHERE work_id = ?1",
+                [work_id.0.to_string()],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()?;
+        let Some(stored_item) = stored_item else {
+            invalid.push(format!("work_restored_record:{work_id:?}:missing_item"));
+            continue;
+        };
+        let Ok(item) = serde_json::from_slice::<WorkItem>(&stored_item) else {
+            invalid.push(format!("work_restored_record:{work_id:?}:invalid_item"));
+            continue;
+        };
+        let has_native_history =
+            latest_canonical_work_event_for_item_optional(connection, work_id)?.is_some();
+        if !has_native_history
+            && (!crate::graph_snapshot::restored_item_basis_matches(
+                &record.item,
+                &record.project_id,
+                &item,
+            ) || record.item.prerequisites != record.relations.prerequisites)
+        {
+            invalid.push(format!("work_restored_record:{work_id:?}:item_binding"));
+            continue;
+        }
+        work_items.insert(work_id.0.to_string(), serde_json::to_value(&item)?);
+
+        let mut restored_basis = WorkRelationBasis {
+            schema_version: SCHEMA_VERSION,
+            prerequisite_ids: record.relations.prerequisites.clone(),
+            active_blockers: Vec::with_capacity(record.relations.blockers.len()),
+        };
+        restored_basis.prerequisite_ids.sort_by_key(|id| id.0);
+        for prerequisite in &restored_basis.prerequisite_ids {
+            prerequisite_rows.insert(
+                (work_id.0.to_string(), prerequisite.0.to_string()),
+                anchor.as_str().to_owned(),
+            );
+        }
+        for snapshot in record.relations.blockers {
+            let blocker = crate::domain::WorkBlocker {
+                blocker_id: snapshot.blocker_id,
+                work_id: snapshot.work_id,
+                kind: snapshot.kind,
+                detail: snapshot.detail,
+                created_by: snapshot.created_by,
+                created_at: snapshot.created_at,
+            };
+            if blocker.work_id != work_id {
+                invalid.push(format!("work_restored_record:{work_id:?}:blocker_binding"));
+                continue;
+            }
+            let blocker_hash = CanonicalObject::freeze(&blocker)?.hash().clone();
+            restored_basis
+                .active_blockers
+                .push(WorkRelationBlockerBasis {
+                    blocker_id: blocker.blocker_id.clone(),
+                    blocker_hash,
+                });
+            blocker_rows.insert(
+                blocker.blocker_id.clone(),
+                ("active".into(), anchor.as_str().to_owned(), None),
+            );
+            blockers.insert(blocker.blocker_id.clone(), serde_json::to_value(blocker)?);
+        }
+        restored_basis
+            .active_blockers
+            .sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
+        relation_bases.insert(work_id, restored_basis);
+    }
+    Ok(())
 }
 
 pub(super) fn applicable_work_obligations_at_cut_on(
@@ -2784,6 +3048,8 @@ pub(super) fn validate_completion_seal_children_on(
         ));
     }
     let mut seen = HashSet::new();
+    let mut seen_children = HashSet::new();
+    let mut transitively_restored = false;
     for child_hash in &seal.required_child_seals {
         if !seen.insert(child_hash.clone()) {
             return Err(StoreError::InvalidWorkProjection(format!(
@@ -2794,6 +3060,12 @@ pub(super) fn validate_completion_seal_children_on(
         let child_seal: CompletionSeal =
             load_typed_work_object(connection, child_hash, "completion_seal")?;
         let child = load_work_item(connection, child_seal.work_id)?;
+        if !seen_children.insert(child.work_id) {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "completion seal for run {} repeats child work {:?}",
+                seal.run_id.0, child.work_id
+            )));
+        }
         if child.parent_id != Some(seal.work_id)
             || child.child_requirement != ChildRequirement::Required
             || child_seal.root_id != seal.root_id
@@ -2807,8 +3079,78 @@ pub(super) fn validate_completion_seal_children_on(
         validate_completion_seal_obligation_basis_on(connection, &child_seal)?;
         validate_completion_seal_environment_basis_on(connection, &child_seal)?;
         validate_completion_seal_children_on(connection, &child_seal, depth + 1)?;
+        transitively_restored |= child_seal.restored;
+    }
+    for record_hash in &seal.restored_child_completions {
+        if !seen.insert(record_hash.clone()) {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "completion seal for run {} repeats restored child record {record_hash}",
+                seal.run_id.0
+            )));
+        }
+        let record: RestoredRecord =
+            load_typed_work_object(connection, record_hash, "work_restored_record")?;
+        let child = load_work_item(connection, record.work_id)?;
+        let latest = super::query::latest_restored_record_hash(connection, child.work_id)?;
+        if latest.as_ref() != Some(record_hash)
+            || record.history.completion.is_none()
+            || !seen_children.insert(child.work_id)
+            || child.parent_id != Some(seal.work_id)
+            || child.root_id != seal.root_id
+            || child.child_requirement != ChildRequirement::Required
+            || child.lifecycle != WorkLifecycle::Completed
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "completion seal for run {} cites unrelated restored child record {record_hash}",
+                seal.run_id.0
+            )));
+        }
+        transitively_restored = true;
+    }
+    if seal.restored != transitively_restored {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "completion seal for run {} has an invalid restored marker",
+            seal.run_id.0
+        )));
     }
     Ok(())
+}
+
+fn required_restored_child_completions(
+    connection: &Connection,
+    parent_id: WorkId,
+) -> Result<Vec<ObjectHash>, StoreError> {
+    let child_ids = connection
+        .prepare(
+            "SELECT child.work_id FROM work_items child
+             WHERE child.parent_id = ?1
+               AND child.child_requirement = 'required'
+               AND child.lifecycle = 'completed'
+             ORDER BY child.work_id",
+        )?
+        .query_map([parent_id.0.to_string()], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut records = Vec::with_capacity(child_ids.len());
+    for child_id in child_ids {
+        let child_id = parse_work_id(&child_id)?;
+        let child = load_work_item(connection, child_id)?;
+        if !work_completed_by_restored_record_on(connection, &child)? {
+            continue;
+        }
+        let Some((hash, record)) = super::query::latest_restored_record(connection, child_id)?
+        else {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "completed restored child {child_id:?} has no restored completion record"
+            )));
+        };
+        if record.history.completion.is_none() {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "completed restored child {child_id:?} has no completion proof"
+            )));
+        }
+        records.push(hash);
+    }
+    Ok(records)
 }
 
 pub(super) fn required_child_seals(

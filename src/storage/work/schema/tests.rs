@@ -96,7 +96,7 @@ fn current_schema_missing_state_tables_is_refused_before_repair_ddl() {
                 &ClaimWorkRequest {
                     work_id: root.work_id,
                     expected_work_revision: root.revision,
-                    expected_run_id: root.active_run_id.expect("active run"),
+                    expected_run_id: Some(root.active_run_id.expect("active run")),
                     holder: SessionId("planner".into()),
                     ttl_seconds: 60,
                     recovery_reason: None,

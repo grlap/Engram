@@ -10,15 +10,18 @@ use super::super::{SqliteStore, StoreError};
 use super::completion::{
     ancestors_admit_execution, run_uses_active_root_execution, work_is_ancestor_of,
 };
+use super::execution::ensure_restored_execution_state;
 use super::feeds::{
     append_work_event, expire_handoff_offers, inspect_work_request, load_typed_work_object,
     replay_operation, request_object, validate_work_source_snapshot,
 };
 use super::integrity::combined_graph_is_acyclic;
+#[cfg(test)]
+use super::query::latest_canonical_work_event_for_item;
 use super::query::{
     active_root_execution, active_run_snapshot, canonical_work_events_for_item,
-    latest_canonical_work_event_for_item, load_active_blocker_projections,
-    load_prerequisite_projection_ids, load_work_claim_optional, load_work_item, load_work_run,
+    load_active_blocker_projections, load_prerequisite_projection_ids, load_work_claim_optional,
+    load_work_item, load_work_run,
 };
 use super::{
     MAX_CHILDREN_PER_DECOMPOSITION, MAX_OPEN_WORK_DESCENDANTS, MAX_WORK_DEPTH,
@@ -146,6 +149,7 @@ impl SqliteStore {
             lifecycle: WorkLifecycle::Open,
             revision: 1,
             active_run_id: Some(run_id),
+            restored: false,
             superseded_by: None,
             created_by: request.actor.clone(),
             created_at: request.created_at,
@@ -320,7 +324,19 @@ impl SqliteStore {
         if parent.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(parent.work_id));
         }
-        let mut root_execution = active_root_execution(&transaction, parent.root_id)?;
+        let restored_execution = if parent.active_run_id.is_none() {
+            Some(ensure_restored_execution_state(
+                &transaction,
+                &mut parent,
+                request.created_at,
+            )?)
+        } else {
+            None
+        };
+        let (mut root_execution, restored_run) = match restored_execution {
+            Some((execution, run, _)) => (execution, Some(run)),
+            None => (active_root_execution(&transaction, parent.root_id)?, None),
+        };
         let mut ids = HashMap::new();
         for child in &request.children {
             ids.insert(child.local_key.trim().to_owned(), WorkId::new());
@@ -335,6 +351,9 @@ impl SqliteStore {
             }
             let prerequisite = match &edge.prerequisite {
                 WorkDependencyRef::Existing(work_id) => {
+                    if *work_id == parent.work_id {
+                        return Err(StoreError::WorkDependencyCycle);
+                    }
                     let existing = load_work_item(&transaction, *work_id)?;
                     if existing.project_id != parent.project_id {
                         return Err(StoreError::InvalidWork(
@@ -349,9 +368,7 @@ impl SqliteStore {
                     if existing.lifecycle != WorkLifecycle::Open {
                         return Err(StoreError::WorkNotOpen(existing.work_id));
                     }
-                    if existing.work_id == parent.work_id
-                        || work_is_ancestor_of(&transaction, existing.work_id, &parent)?
-                    {
+                    if work_is_ancestor_of(&transaction, existing.work_id, &parent)? {
                         return Err(StoreError::WorkDependencyCycle);
                     }
                     *work_id
@@ -406,6 +423,7 @@ impl SqliteStore {
                 lifecycle: WorkLifecycle::Open,
                 revision: 1,
                 active_run_id: Some(run_id),
+                restored: false,
                 superseded_by: None,
                 created_by: request.actor.clone(),
                 created_at: request.created_at,
@@ -538,7 +556,10 @@ impl SqliteStore {
             work: parent.clone(),
             run: match rebased_run {
                 Some(run) => Some(run),
-                None => active_run_snapshot(&transaction, &parent)?,
+                None => match restored_run {
+                    Some(run) => Some(run),
+                    None => active_run_snapshot(&transaction, &parent)?,
+                },
             },
             root_execution: Some(root_execution.clone()),
             claim: claim_snapshot,
@@ -1146,10 +1167,49 @@ pub(super) fn validated_current_work_relation_basis(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkRelationBasis, StoreError> {
-    let latest = latest_canonical_work_event_for_item(connection, work_id)?;
     let basis = projected_work_relation_basis(connection, work_id)?;
     let actual = work_relation_fingerprint(&basis)?;
-    if actual != latest.relation_fingerprint {
+    let expected = if let Some(latest) =
+        super::query::latest_canonical_work_event_for_item_optional(connection, work_id)?
+    {
+        latest.relation_fingerprint
+    } else {
+        let (_, restored) =
+            super::query::latest_restored_record(connection, work_id)?.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "relations for {work_id:?} have no canonical history anchor"
+                ))
+            })?;
+        let mut restored_basis = WorkRelationBasis {
+            schema_version: SCHEMA_VERSION,
+            prerequisite_ids: restored.relations.prerequisites,
+            active_blockers: restored
+                .relations
+                .blockers
+                .into_iter()
+                .map(|blocker| {
+                    let blocker = WorkBlocker {
+                        blocker_id: blocker.blocker_id,
+                        work_id: blocker.work_id,
+                        kind: blocker.kind,
+                        detail: blocker.detail,
+                        created_by: blocker.created_by,
+                        created_at: blocker.created_at,
+                    };
+                    Ok(WorkRelationBlockerBasis {
+                        blocker_id: blocker.blocker_id.clone(),
+                        blocker_hash: CanonicalObject::freeze(&blocker)?.hash().clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, StoreError>>()?,
+        };
+        restored_basis.prerequisite_ids.sort_by_key(|id| id.0);
+        restored_basis
+            .active_blockers
+            .sort_by(|left, right| left.blocker_id.cmp(&right.blocker_id));
+        work_relation_fingerprint(&restored_basis)?
+    };
+    if actual != expected {
         return Err(StoreError::InvalidWorkProjection(format!(
             "relations for {work_id:?} differ from the latest canonical fingerprint"
         )));
@@ -1312,7 +1372,7 @@ pub(super) fn claim_expiry(
         .ok_or_else(|| StoreError::InvalidWork("claim expiry exceeds the supported clock".into()))
 }
 
-pub(super) fn encode_state<T: Serialize>(value: T) -> Result<String, StoreError> {
+pub(in crate::storage) fn encode_state<T: Serialize>(value: T) -> Result<String, StoreError> {
     let value = serde_json::to_value(value)?;
     value.as_str().map(str::to_owned).ok_or_else(|| {
         StoreError::InvalidWorkProjection("enum did not serialize as a string".into())
@@ -1514,7 +1574,7 @@ pub(super) fn work_catalog_search_text(
     Ok(normalize_work_catalog_key(&parts.join("\n")))
 }
 
-fn refresh_work_catalog_projection(
+pub(in crate::storage) fn refresh_work_catalog_projection(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<(), StoreError> {

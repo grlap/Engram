@@ -252,7 +252,7 @@ Neither authorizes resource mutation.
 A `RootExecution` is one aggregate execution generation for a root. It owns
 the contributor roster, current child-run membership, required child
 `CompletionSeal` hashes, root decisions/waivers, and the root completion
-barrier. The designed
+barrier. The shipped
 [work-graph snapshot](features/work-graph-snapshot.md) adds the one
 completion proof that is not a seal: an item loaded completed carries an
 inert `RestoredRecord`, a later parent seal lists it under
@@ -318,7 +318,7 @@ terminalizes the run claim, releases or transfers every dependent resource
 lease, and waits for its executor checkpoint or an authorized decision. A
 root barrier additionally freezes the expected `RootExecution` contributor
 roster and waits for required child seals or explicit disposed-child waivers
-(the designed work-graph snapshot adds restored child completions as the
+(the shipped work-graph snapshot adds restored child completions as the
 third admissible proof), plus contributions or attributed, audited waivers by
 a project-bound session.
 `completion_seal` captures one dense run-feed cut
@@ -1065,7 +1065,7 @@ engram action reconcile <action-id>
 engram import preview <adapter> <ref>        engram import apply <snapshot>
 engram export preview <adapter> <work-ref>   engram export apply <intent>
 
-# shipped save and designed load (features/work-graph-snapshot.md)
+# shipped save/load (features/work-graph-snapshot.md)
 engram graph save [--out FILE | --stdout] [--include-restricted --reason "<why>"]
 engram graph load FILE [--dry-run]
 ```
@@ -1335,7 +1335,7 @@ project-bound session records the omission. New seals also cite the exact
 bounded environment-evidence hash set
 at that cut; the component objects remain separate canonical evidence. A
 root whose completion transitively rests on a restored completion from the
-designed work-graph snapshot is refused here with `report_input_restored`.
+shipped work-graph snapshot is refused here with `report_input_restored`.
 Reopening the root before report
 freeze supersedes that run and aborts assembly; reopening after `report_ready`
 requires a superseding report rather than mutating frozen bytes.

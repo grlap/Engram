@@ -175,7 +175,7 @@ use crate::{
         MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryKind, MemoryRecord,
         MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility,
         OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleSet, ObservedTurnDecision,
-        OpenWorkObligation, PacketSafety, ParticipantMembership, ProjectMemoryFull,
+        OpenWorkObligation, PacketSafety, ParticipantMembership, ProjectId, ProjectMemoryFull,
         ProjectMemoryList, ProjectMemoryListRow, ProjectMemoryMutationReceipt,
         ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation,
         RememberProjectMemoryRequest, SCHEMA_VERSION, Scope, Sensitivity, SessionId, SessionPhase,
@@ -224,6 +224,7 @@ const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[&str] = &[
     "objects_memory_assertion_version",
     "objects_project_memory_key",
     "objects_graph_snapshot_audit",
+    "objects_graph_snapshot_load_audit",
     "memory_heads_scope",
     "memory_heads_work_scope",
     "project_memory_state",
@@ -744,6 +745,21 @@ pub enum StoreError {
     },
     #[error("work projection contains invalid data: {0}")]
     InvalidWorkProjection(String),
+    #[error(
+        "graph_destination_not_empty: destination project already contains work or project memory"
+    )]
+    GraphDestinationNotEmpty,
+    #[error(
+        "graph_project_mismatch: snapshot project {snapshot:?} does not match destination {destination:?}"
+    )]
+    GraphProjectMismatch {
+        snapshot: ProjectId,
+        destination: ProjectId,
+    },
+    #[error("snapshot format differs from this Engram build; use the build that wrote the file")]
+    GraphDifferentBuild,
+    #[error("graph_snapshot_corrupt: {0}")]
+    InvalidGraphSnapshot(String),
     #[error(
         "work revision changed for {work:?}: expected {expected}, current revision is {current}"
     )]

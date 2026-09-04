@@ -135,6 +135,9 @@ the same defaults wherever a label exists, records each exclusion as a typed
 placeholder, and reports the active redactor's no-op status before writing —
 and today only memory versions bear a label, so a snapshot's work items,
 blockers, evidence summaries, and source snapshots leave the host in full.
+The shipped load side always replaces restricted bodies with permanently
+typed, inert placeholders, including plaintext carried by a widened file;
+a later widened save cannot recover that text from the destination store.
 Agent-private scratch will never be portable. A configured remote is a
 disclosure boundary even when it is the same provider as the code repository;
 repository read access is not automatically work-state access.

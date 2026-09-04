@@ -591,6 +591,10 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkNotOpen(_)
         | StoreError::WorkClaimHeld { .. }
         | StoreError::WorkCompletionRefused { .. }
+        | StoreError::GraphDestinationNotEmpty
+        | StoreError::GraphProjectMismatch { .. }
+        | StoreError::GraphDifferentBuild
+        | StoreError::InvalidGraphSnapshot(_)
         | StoreError::OpenWorkObligations { .. } => "storage_error",
     }
 }

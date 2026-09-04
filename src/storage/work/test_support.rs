@@ -133,7 +133,7 @@ pub(super) fn claim(
             &ClaimWorkRequest {
                 work_id: work.work_id,
                 expected_work_revision: work.revision,
-                expected_run_id: work.active_run_id.expect("active run"),
+                expected_run_id: Some(work.active_run_id.expect("active run")),
                 holder: SessionId(holder.into()),
                 ttl_seconds,
                 recovery_reason: Some("recover abandoned test claim".into()),

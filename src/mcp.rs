@@ -780,6 +780,10 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
+        StoreError::GraphDestinationNotEmpty => "graph_destination_not_empty",
+        StoreError::GraphProjectMismatch { .. } => "graph_project_mismatch",
+        StoreError::GraphDifferentBuild => "different_build",
+        StoreError::InvalidGraphSnapshot(_) => "graph_snapshot_corrupt",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
         | StoreError::NonCanonicalObject(_)

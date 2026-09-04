@@ -211,9 +211,10 @@ WAL mode, bounded busy timeouts, short transactions, and atomic claims/CAS
 provide `local`: SQLite is the complete canonical local source of truth.
 A deterministic work-graph recovery snapshot with manifest hashes and a
 previewed, tested restore path may be copied to configured external storage to
-provide `local_backed_up`. The shipped save side of the
+provide `local_backed_up`. The shipped
 [work-graph snapshot](work-graph-snapshot.md) carries the manifest that
-`BackupAdapter.put_snapshot` expects; its load side remains planned. Until a
+`BackupAdapter.put_snapshot` expects and atomically recreates an empty project
+store after strict preflight. Until a
 configured copy and `doctor` freshness reporting ship, it is a recreation and
 hand-carry artifact, not `local_backed_up`. `portable` adds scheduled publication of that
 canonical, human-readable working snapshot plus explicit sequential

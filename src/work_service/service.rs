@@ -4,22 +4,46 @@ use super::{
     MAX_FOCUS_HISTORY, MAX_FOCUS_MEMORIES, MAX_FOCUS_RELATIONS, Mutex, MutexGuard, OnceLock,
     POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE, POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE,
     PROCESS_DEFAULT_WORK_SESSION_NAMESPACE, PathBuf, ProjectId, ProvenanceLink, ProvenanceRelation,
-    Serialize, SessionId, SqliteStore, StoreError, Utc, WorkActorDefaultSource,
-    WorkAttributionDefaults, WorkBlockerSummary, WorkChange, WorkChangeProjection, WorkClaim,
-    WorkClaimState, WorkCoreOperationKey, WorkDerivedKey, WorkFocusView,
-    WorkGraphSnapshotDestinationKind, WorkGraphSnapshotExport, WorkGuidance, WorkHistoryView,
-    WorkId, WorkItem, WorkNextSection, WorkObligationState, WorkPlanningAuthority,
-    WorkProtocolBasis, WorkProtocolIntent, WorkSectionOmission, WorkSectionOmissionReason,
-    agent_work_event_summary, agent_work_session, allowed_next, bounded_prerequisite_summaries,
-    child_lifecycle_is_unfinished, child_lifecycle_priority, compact_text, count_omission,
-    ensure_agent_response_budget, fit_focus_response, normalize_actor_context,
-    owned_control_work_binding, prioritized_focus_evidence, ready_work_summary,
-    required_child_waiver_candidate, validate_process_default_work_session, work_evidence_summary,
-    work_handoff_summary, work_item_summary, work_memory_index, work_obligation_page_from_records,
-    work_run_summary,
+    RestoredHistoryEntry, RestoredHistoryView, Serialize, SessionId, SqliteStore, StoreError, Utc,
+    WorkActorDefaultSource, WorkAttributionDefaults, WorkBlockerSummary, WorkChange,
+    WorkChangeProjection, WorkClaim, WorkClaimState, WorkCoreOperationKey, WorkDerivedKey,
+    WorkFocusView, WorkGraphSnapshotDestinationKind, WorkGraphSnapshotExport,
+    WorkGraphSnapshotLoadResult, WorkGuidance, WorkHistoryView, WorkId, WorkItem, WorkNextSection,
+    WorkObligationState, WorkPlanningAuthority, WorkProtocolBasis, WorkProtocolIntent,
+    WorkSectionOmission, WorkSectionOmissionReason, agent_work_event_summary, agent_work_session,
+    allowed_next, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
+    child_lifecycle_priority, compact_text, count_omission, ensure_agent_response_budget,
+    fit_focus_response, normalize_actor_context, owned_control_work_binding,
+    prioritized_focus_evidence, ready_work_summary, required_child_waiver_candidate,
+    restored_work_evidence_summary, validate_process_default_work_session, work_evidence_kind_word,
+    work_evidence_summary, work_handoff_summary, work_item_summary, work_lifecycle_word,
+    work_memory_index, work_obligation_page_from_records, work_run_summary,
 };
 
 impl LocalWorkService {
+    /// Validates and optionally recreates a saved planning/history graph.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the file or destination violates the graph
+    /// snapshot contract.
+    pub fn load_work_graph_snapshot(
+        &self,
+        bytes: &[u8],
+        dry_run: bool,
+        loaded_at: DateTime<Utc>,
+    ) -> Result<WorkGraphSnapshotLoadResult, StoreError> {
+        let mut store = self.lock_store_at(loaded_at)?;
+        store.load_work_graph_snapshot(
+            &self.project_id,
+            &self.actor("graph:load", "recreate the project work graph"),
+            bytes,
+            dry_run,
+            loaded_at,
+            &crate::DevelopmentNoopRedactor,
+        )
+    }
+
     /// Saves one deterministic planning/history snapshot and returns only
     /// after its source-store disclosure audit has committed.
     ///
@@ -411,6 +435,7 @@ impl LocalWorkService {
         } else {
             store.latest_work_run(work_id)?
         };
+        let completed_by_record = store.work_completed_by_restored_record(work_id)?;
         let obligation_records = run
             .as_ref()
             .map(|run| store.work_run_obligations(run.run_id))
@@ -423,7 +448,7 @@ impl LocalWorkService {
             .filter(|obligation| obligation.state == WorkObligationState::Open)
             .filter_map(|obligation| obligation.requirement.required_environment.clone())
             .collect::<Vec<_>>();
-        let evidence_count = run
+        let mut evidence_count = run
             .as_ref()
             .map(|run| store.work_run_evidence_count(run.run_id))
             .transpose()?
@@ -440,7 +465,7 @@ impl LocalWorkService {
             .transpose()?
             .unwrap_or_default();
         let evidence = prioritized_focus_evidence(evidence_candidates, &obligation_page);
-        let evidence_items = run
+        let native_evidence_items = run
             .as_ref()
             .map(|run| {
                 evidence
@@ -450,7 +475,7 @@ impl LocalWorkService {
             })
             .transpose()?
             .unwrap_or_default();
-        let latest_evidence_item = if with_latest_evidence {
+        let native_latest_evidence_item = if with_latest_evidence {
             run.as_ref()
                 .map(|run| {
                     store
@@ -463,6 +488,28 @@ impl LocalWorkService {
         } else {
             None
         };
+        let restored_evidence = store.restored_work_evidence(work_id)?;
+        evidence_count = evidence_count.saturating_add(restored_evidence.len());
+        let mut evidence_items = Vec::with_capacity(
+            restored_evidence
+                .len()
+                .saturating_add(native_evidence_items.len()),
+        );
+        for (hash, evidence) in restored_evidence {
+            evidence_items.push(restored_work_evidence_summary(hash, &evidence)?);
+        }
+        let restored_latest_evidence_item = with_latest_evidence
+            .then(|| evidence_items.last().cloned())
+            .flatten();
+        evidence_items.extend(native_evidence_items);
+        let latest_evidence_item = if completed_by_record {
+            restored_latest_evidence_item.or(native_latest_evidence_item)
+        } else {
+            native_latest_evidence_item.or(restored_latest_evidence_item)
+        };
+        if evidence_items.len() > MAX_FOCUS_RELATIONS {
+            evidence_items.drain(..evidence_items.len() - MAX_FOCUS_RELATIONS);
+        }
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {
@@ -485,6 +532,7 @@ impl LocalWorkService {
                 delivery: WorkChangeProjection::Visible(agent_work_event_summary(&event)),
             });
         }
+        let restored_history = restored_history_view(store.work_restored_records(work_id)?);
         let mut children = store.work_children(work_id)?;
         // Put unfinished children first inside the bounded relation prefix so
         // terminal history cannot hide work that still needs attention.
@@ -544,11 +592,11 @@ impl LocalWorkService {
                 blockers.len() - MAX_FOCUS_RELATIONS,
             ));
         }
-        if evidence_count > evidence.len() {
+        if evidence_count > evidence_items.len() {
             omissions.push(WorkSectionOmission {
                 section: WorkNextSection::Focus,
                 reason: WorkSectionOmissionReason::EvidenceCountLimit,
-                omitted_count: evidence_count - evidence.len(),
+                omitted_count: evidence_count - evidence_items.len(),
             });
         }
         if memories.len() > usize::try_from(MAX_FOCUS_MEMORIES).unwrap_or(usize::MAX) {
@@ -569,6 +617,7 @@ impl LocalWorkService {
         let mut view = WorkFocusView {
             session: agent_work_session(&session),
             status: ready_work_summary(status),
+            completed_by_record,
             outcome,
             run: run.as_ref().map(work_run_summary),
             claim,
@@ -609,6 +658,7 @@ impl LocalWorkService {
                 omitted: history_total.saturating_sub(history.len()),
                 items: history,
             },
+            restored_history,
             waivable_required_children,
             allowed_next,
             omissions,
@@ -664,6 +714,62 @@ impl LocalWorkService {
             claim,
             handoffs,
         })
+    }
+}
+
+fn restored_history_view(records: Vec<crate::RestoredRecord>) -> RestoredHistoryView {
+    let mut entries = Vec::new();
+    for record in records {
+        let generation_index = record.generation_index;
+        entries.extend(
+            record
+                .history
+                .notes
+                .into_iter()
+                .map(|note| RestoredHistoryEntry {
+                    generation_index,
+                    kind: work_evidence_kind_word(note.evidence_kind).to_owned(),
+                    summary: compact_text(&note.summary),
+                    actor: note.actor,
+                    created_at: note.recorded_at,
+                }),
+        );
+        entries.extend(record.history.events.into_iter().map(|event| {
+            let summary = event.reason.unwrap_or_else(|| {
+                event.lifecycle.map_or_else(
+                    || event.kind.clone(),
+                    |lifecycle| work_lifecycle_word(lifecycle).to_owned(),
+                )
+            });
+            RestoredHistoryEntry {
+                generation_index,
+                kind: event.kind,
+                summary: compact_text(&summary),
+                actor: event.actor,
+                created_at: event.occurred_at,
+            }
+        }));
+        if let Some(completion) = record.history.completion {
+            entries.push(RestoredHistoryEntry {
+                generation_index,
+                kind: "completed".into(),
+                summary: compact_text(&completion.summary),
+                actor: completion.actor,
+                created_at: completion.completed_at,
+            });
+        }
+    }
+    entries.sort_by_key(|entry| (entry.generation_index, entry.created_at));
+    let total = entries.len();
+    let keep = usize::try_from(MAX_FOCUS_HISTORY).unwrap_or(usize::MAX);
+    let omitted = total.saturating_sub(keep);
+    if omitted > 0 {
+        entries.drain(..omitted);
+    }
+    RestoredHistoryView {
+        total,
+        items: entries,
+        omitted,
     }
 }
 

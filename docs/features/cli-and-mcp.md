@@ -259,6 +259,7 @@ engram restore --from <backup-file> [--replace]   # stop other Engram processes 
 # therefore requires a disclosure reason carried in the body and save audit.
 engram graph save [--out <snapshot.json> | --stdout] \
   [--include-restricted --reason "<why>"]
+engram graph load <snapshot.json> [--dry-run]
 
 # Agent words use the stable project plus asserted actor/session binding.
 engram work --actor-id codex --session-id session-unique-id next
@@ -271,15 +272,19 @@ engram work --actor-id codex --session-id session-unique-id \
   core focus <short-ref>
 ```
 
-`graph save` is an operator-only CLI surface; it is not an MCP tool and does
-not change the thirteen agent words. It reads the work graph, native history,
-source provenance, and keyed project memories at one transaction cut, then
-commits an immutable disclosure-attempt audit before publishing bytes. The
-canonical body excludes the exporting build, so its digest remains content
+`graph save` and `graph load` are operator-only CLI surfaces; neither is an MCP
+tool or changes the thirteen agent words. Save reads the work graph, native
+history, source provenance, and keyed project memories at one transaction cut,
+then commits an immutable disclosure-attempt audit before publishing bytes.
+The canonical body excludes the exporting build, so its digest remains content
 identity across builds with the same runtime-derived format fingerprint. The
 default output is owner-only where the platform has file modes, no save may
 target an Engram project-store directory, and neither the default path nor
-`--out` replaces different bytes. See
+`--out` replaces different bytes. Load requires an empty destination project,
+revalidates the fingerprint, canonical body digest, manifest, relations,
+history proofs, and memories before one atomic recreation transaction, and
+records a separate immutable load audit. `--dry-run` performs the same
+validation and reports the landing plan without writing. See the
 [work-graph snapshot](work-graph-snapshot.md).
 
 Actor context currently binds only the work/MCP service. The behavioral

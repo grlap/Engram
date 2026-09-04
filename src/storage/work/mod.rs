@@ -57,15 +57,41 @@ use crate::{
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
-const MAX_WORK_DEPTH: u32 = 4;
-const MAX_OPEN_WORK_DESCENDANTS: u32 = 128;
-const MAX_CHILDREN_PER_DECOMPOSITION: usize = 16;
+pub(in crate::storage) const MAX_WORK_DEPTH: u32 = 4;
+pub(in crate::storage) const MAX_OPEN_WORK_DESCENDANTS: u32 = 128;
+pub(in crate::storage) const MAX_CHILDREN_PER_DECOMPOSITION: usize = 16;
 
 // A checkpoint acknowledges the run feed immediately before its own object and
 // its matching checkpoint event are appended.
 const CHECKPOINT_APPEND_COUNT: i64 = 2;
 const MAX_OPEN_COMPLETION_OBLIGATIONS: usize = 16;
 const MAX_COMPLETION_ENVIRONMENT_EVIDENCE: usize = 64;
+
+pub(in crate::storage) fn encode_state_for_restore<T: Serialize>(
+    value: T,
+) -> Result<String, super::StoreError> {
+    planning::encode_state(value)
+}
+
+pub(in crate::storage) fn load_work_item_projection_for_restore(
+    connection: &rusqlite::Connection,
+    work_id: WorkId,
+) -> Result<WorkItem, super::StoreError> {
+    query::load_work_item_projection(connection, work_id)
+}
+
+pub(in crate::storage) fn refresh_work_catalog_for_restore(
+    connection: &rusqlite::Connection,
+    item: &WorkItem,
+) -> Result<(), super::StoreError> {
+    planning::refresh_work_catalog_projection(connection, item)
+}
+
+pub(in crate::storage) fn validate_work_source_snapshot_for_restore(
+    snapshot: &crate::WorkSourceSnapshot,
+) -> Result<(), super::StoreError> {
+    feeds::validate_work_source_snapshot_shape(snapshot)
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct StageWorkSessionDelivery<'a> {

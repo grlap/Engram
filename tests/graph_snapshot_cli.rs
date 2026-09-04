@@ -147,6 +147,88 @@ fn graph_save_cli_uses_digest_paths_and_never_replaces() {
     );
     assert_eq!(diagnosis["graph_snapshot_disclosure_attempts"]["total"], 4);
 
+    let destination_directory = tempdir().expect("temporary destination home");
+    let destination_home = destination_directory.path();
+    let initialized = engram(destination_home)
+        .arg("init")
+        .output()
+        .expect("initialize destination");
+    assert!(
+        initialized.status.success(),
+        "{}",
+        output_text(&initialized.stderr)
+    );
+    let load = |dry_run: bool| {
+        let mut command = engram(destination_home);
+        command.args([
+            "graph",
+            "--actor-id",
+            "restore-operator",
+            "--session-id",
+            "restore-session",
+            "load",
+        ]);
+        command.arg(&snapshot_path);
+        if dry_run {
+            command.arg("--dry-run");
+        }
+        command.output().expect("run graph load")
+    };
+    let preview = load(true);
+    assert!(preview.status.success(), "{}", output_text(&preview.stderr));
+    let preview: Value = serde_json::from_slice(&preview.stdout).expect("parse load preview");
+    assert_eq!(preview["loaded"], false);
+    assert_eq!(preview["preview"]["summary"]["section_counts"]["items"], 1);
+    assert_eq!(preview["preview"]["refs"].as_array().map(Vec::len), Some(1));
+
+    let loaded = load(false);
+    assert!(loaded.status.success(), "{}", output_text(&loaded.stderr));
+    assert!(output_text(&loaded.stdout).starts_with("loaded 1 work items, 1 records"));
+    let work_ref = snapshot["body"]["items"][0]["ref"]
+        .as_str()
+        .expect("snapshot work ref");
+    let shown = engram(destination_home)
+        .args([
+            "work",
+            "--actor-id",
+            "restore-reader",
+            "--session-id",
+            "restore-reader-session",
+            "show",
+            work_ref,
+            "--json",
+        ])
+        .output()
+        .expect("show restored work");
+    assert!(shown.status.success(), "{}", output_text(&shown.stderr));
+    let shown: Value = serde_json::from_slice(&shown.stdout).expect("parse restored show");
+    assert_eq!(shown["status"]["work"]["restored"], true);
+    assert!(
+        shown["restored_history"]["total"]
+            .as_u64()
+            .unwrap_or_default()
+            > 0
+    );
+    let repeated_load = load(false);
+    assert!(!repeated_load.status.success());
+    assert!(output_text(&repeated_load.stderr).contains("graph_destination_not_empty"));
+    let destination_doctor = engram(destination_home)
+        .args(["doctor", "--json"])
+        .output()
+        .expect("run destination doctor");
+    assert!(
+        destination_doctor.status.success(),
+        "{}",
+        output_text(&destination_doctor.stderr)
+    );
+    let destination_diagnosis: Value =
+        serde_json::from_slice(&destination_doctor.stdout).expect("parse destination doctor");
+    assert_eq!(destination_diagnosis["graph_snapshot_loads"]["total"], 1);
+    assert_eq!(
+        destination_diagnosis["graph_snapshot_loads"]["items"][0]["body_sha256"],
+        snapshot["manifest"]["body_sha256"]
+    );
+
     let sidecar = format!(
         "{}-wal",
         diagnosis["database"].as_str().expect("database path")

@@ -524,11 +524,17 @@ impl SqliteStore {
              CREATE INDEX IF NOT EXISTS objects_graph_snapshot_audit
                  ON objects(
                      json_extract(canonical_json, '$.project_id'),
-                     json_extract(canonical_json, '$.attempted_at'),
                      json_extract(canonical_json, '$.attempt_id'),
                      object_hash
                  )
                  WHERE object_kind = 'work_graph_snapshot_saved';
+             CREATE INDEX IF NOT EXISTS objects_graph_snapshot_load_audit
+                 ON objects(
+                     json_extract(canonical_json, '$.project_id'),
+                     json_extract(canonical_json, '$.attempt_id'),
+                     object_hash
+                 )
+                 WHERE object_kind = 'work_graph_snapshot_loaded';
              CREATE TABLE IF NOT EXISTS memory_heads (
                  memory_id TEXT PRIMARY KEY,
                  version_hash TEXT NOT NULL REFERENCES objects(object_hash),
@@ -1383,11 +1389,17 @@ impl SqliteStore {
              CREATE INDEX IF NOT EXISTS objects_graph_snapshot_audit
                  ON objects(
                      json_extract(canonical_json, '$.project_id'),
-                     json_extract(canonical_json, '$.attempted_at'),
                      json_extract(canonical_json, '$.attempt_id'),
                      object_hash
                  )
                  WHERE object_kind = 'work_graph_snapshot_saved';
+             CREATE INDEX IF NOT EXISTS objects_graph_snapshot_load_audit
+                 ON objects(
+                     json_extract(canonical_json, '$.project_id'),
+                     json_extract(canonical_json, '$.attempt_id'),
+                     object_hash
+                 )
+                 WHERE object_kind = 'work_graph_snapshot_loaded';
              CREATE INDEX IF NOT EXISTS memory_heads_scope
                  ON memory_heads(project_id, task_id, work_id, agent_id, status);
              CREATE INDEX IF NOT EXISTS memory_heads_work_scope

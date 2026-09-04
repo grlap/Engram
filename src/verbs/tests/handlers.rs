@@ -810,6 +810,7 @@ fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
         labels: Vec::new(),
         assigned_to: None,
         lifecycle,
+        restored: false,
         revision: 1,
         active_run_id: None,
         superseded_by: None,

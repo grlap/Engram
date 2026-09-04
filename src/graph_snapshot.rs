@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
-    ActorContext, CanonicalObject, ChildRequirement, ObjectHash, ProjectId, Sensitivity,
-    WorkBlockerKind, WorkEvidenceKind, WorkId, WorkItemKind, WorkLifecycle, WorkOrigin,
-    WorkSourceSnapshot, storage::StoreError,
+    ActorContext, CanonicalObject, ChildRequirement, GateEvidenceRecord, ObjectHash, ProjectId,
+    Sensitivity, WorkBlockerKind, WorkEvidenceKind, WorkId, WorkItem, WorkItemKind, WorkLifecycle,
+    WorkOrigin, WorkSourceSnapshot, storage::StoreError,
 };
 
 /// Current pre-release work-graph snapshot schema.
@@ -87,6 +87,34 @@ pub struct WorkGraphSnapshotItem {
     pub assigned_to: Option<String>,
     pub deferred_until: Option<DateTime<Utc>>,
     pub disposal_reason: Option<String>,
+}
+
+pub(crate) fn restored_item_basis_matches(
+    snapshot: &WorkGraphSnapshotItem,
+    project_id: &ProjectId,
+    item: &WorkItem,
+) -> bool {
+    &item.project_id == project_id
+        && item.work_id == snapshot.work_id
+        && item.short_ref == snapshot.short_ref
+        && item.root_id == snapshot.root_id
+        && item.parent_id == snapshot.parent_id
+        && item.child_requirement == snapshot.child_requirement
+        && item.title == snapshot.title
+        && item.outcome == snapshot.outcome
+        && item.acceptance == snapshot.acceptance
+        && item.kind == snapshot.kind
+        && item.priority == snapshot.priority
+        && item.labels == snapshot.labels
+        && item.origin == snapshot.origin
+        && item.source_snapshot_id == snapshot.source_snapshot_id
+        && item.lifecycle == snapshot.lifecycle
+        && item.superseded_by == snapshot.superseded_by
+        && item.assigned_to == snapshot.assigned_to
+        && item.deferred_until == snapshot.deferred_until
+        && item.restored
+        && item.revision == 1
+        && item.active_run_id.is_none()
 }
 
 /// One active planning blocker.
@@ -186,6 +214,48 @@ pub struct WorkGraphSnapshotRecord {
     pub payload: WorkGraphSnapshotRecordPayload,
 }
 
+/// Immutable, inert history layer recreated by `graph load`.
+///
+/// The record deliberately carries no run, claim, feed, or completion-seal
+/// identity. Its hash binds the project, planning item, relation cut,
+/// generation, and history independently of the importing store.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestoredRecord {
+    pub schema_version: u16,
+    pub project_id: ProjectId,
+    pub work_id: WorkId,
+    pub generation_index: usize,
+    pub item: WorkGraphSnapshotItem,
+    pub relations: RestoredRelationBasis,
+    pub history: WorkGraphSnapshotHistory,
+}
+
+/// Planning relation cut bound into one inert restored history generation.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestoredRelationBasis {
+    pub prerequisites: Vec<WorkId>,
+    pub blockers: Vec<WorkGraphSnapshotBlocker>,
+}
+
+/// One attributed late finding whose immutable authority basis is a restored
+/// completion record rather than a native run or completion seal.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestoredWorkEvidence {
+    pub schema_version: u16,
+    pub work_id: WorkId,
+    pub restored_record: ObjectHash,
+    pub sequence: i64,
+    pub summary: String,
+    pub refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<GateEvidenceRecord>,
+    pub actor: ActorContext,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Typed text that is either present or retained as an inert placeholder.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
@@ -277,12 +347,301 @@ pub struct WorkGraphSnapshotSavedEvent {
     pub attempted_at: DateTime<Utc>,
 }
 
+/// Immutable destination-store audit of one successful snapshot load.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkGraphSnapshotLoadedEvent {
+    pub attempt_id: String,
+    pub schema_version: u16,
+    pub project_id: ProjectId,
+    pub as_of: WorkGraphSnapshotCut,
+    pub exporting_build: String,
+    pub widened: bool,
+    pub widening_reason: Option<String>,
+    pub redacted: WorkGraphSnapshotRedactedCounts,
+    pub body_sha256: ObjectHash,
+    pub actor: ActorContext,
+    pub loaded_at: DateTime<Utc>,
+}
+
+/// Exact validation result shared by dry-run and committed load receipts.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkGraphSnapshotLoadPreview {
+    pub body_sha256: ObjectHash,
+    pub summary: WorkGraphSnapshotSummary,
+    pub lifecycle_counts: WorkGraphSnapshotLifecycleCounts,
+    pub refs: Vec<String>,
+    pub placeholder_memories: Vec<String>,
+    pub completed_by_record: Vec<String>,
+}
+
+/// Exact item counts by durable planning lifecycle.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct WorkGraphSnapshotLifecycleCounts {
+    pub proposed: usize,
+    pub open: usize,
+    pub completed: usize,
+    pub cancelled: usize,
+    pub superseded: usize,
+}
+
+/// Result of either a dry-run or a committed graph load.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct WorkGraphSnapshotLoadResult {
+    pub loaded: bool,
+    pub preview: WorkGraphSnapshotLoadPreview,
+}
+
 /// Snapshot bytes and identity returned only after the save audit commits.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkGraphSnapshotExport {
     pub document: WorkGraphSnapshotDocument,
     pub body_sha256: ObjectHash,
     pub redactor_status: String,
+}
+
+/// Strictly parses one snapshot document, including the flattened container
+/// members whose save-side DTOs intentionally do not derive `Deserialize`.
+///
+/// # Errors
+///
+/// Returns [`StoreError`] when the JSON is malformed or any member or scalar
+/// representation would be discarded or rewritten by the compiled format.
+pub fn parse_work_graph_snapshot_document(
+    bytes: &[u8],
+) -> Result<WorkGraphSnapshotDocument, StoreError> {
+    let original: Value = serde_json::from_slice(bytes)?;
+    let parsed: StrictDocument = serde_json::from_value(original.clone())?;
+    let document: WorkGraphSnapshotDocument = parsed.into();
+    if serde_json::to_value(&document)? != original {
+        return Err(StoreError::InvalidGraphSnapshot(
+            "snapshot contains a member or scalar representation not preserved by this build"
+                .into(),
+        ));
+    }
+    Ok(document)
+}
+
+/// Reads only the build-discrimination fields before the current build's
+/// strict document decoder sees the rest of the payload. A future build may
+/// add members that this build cannot decode, but it must still receive the
+/// one generic different-build refusal rather than a misleading corruption
+/// error.
+pub(crate) fn preflight_work_graph_snapshot_build(bytes: &[u8]) -> Result<(), StoreError> {
+    let value: Value = serde_json::from_slice(bytes)
+        .map_err(|error| StoreError::InvalidGraphSnapshot(error.to_string()))?;
+    let body = value
+        .get("body")
+        .and_then(Value::as_object)
+        .ok_or_else(|| StoreError::InvalidGraphSnapshot("snapshot body is missing".into()))?;
+    let schema_version = body
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .ok_or_else(|| {
+            StoreError::InvalidGraphSnapshot("snapshot schema version is invalid".into())
+        })?;
+    let format_fingerprint: ObjectHash =
+        serde_json::from_value(body.get("format_fingerprint").cloned().ok_or_else(|| {
+            StoreError::InvalidGraphSnapshot("snapshot format fingerprint is missing".into())
+        })?)
+        .map_err(|error| StoreError::InvalidGraphSnapshot(error.to_string()))?;
+    if schema_version != WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION
+        || format_fingerprint != work_graph_snapshot_format_fingerprint()?
+    {
+        return Err(StoreError::GraphDifferentBuild);
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StrictDocument {
+    body: StrictBody,
+    manifest: StrictManifest,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StrictBody {
+    schema_version: u16,
+    format_fingerprint: ObjectHash,
+    project_id: ProjectId,
+    as_of: WorkGraphSnapshotCut,
+    widened: bool,
+    widening_reason: Option<String>,
+    redacted: WorkGraphSnapshotRedactedCounts,
+    redactor_status: String,
+    section_counts: WorkGraphSnapshotSectionCounts,
+    items: Vec<WorkGraphSnapshotItem>,
+    blockers: Vec<WorkGraphSnapshotBlocker>,
+    sources: Vec<WorkGraphSnapshotSource>,
+    records: Vec<StrictRecord>,
+    memories: Vec<StrictMemory>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StrictManifest {
+    exported_at: DateTime<Utc>,
+    exporting_build: String,
+    body_sha256: ObjectHash,
+    schema_version: u16,
+    format_fingerprint: ObjectHash,
+    project_id: ProjectId,
+    as_of: WorkGraphSnapshotCut,
+    widened: bool,
+    widening_reason: Option<String>,
+    redacted: WorkGraphSnapshotRedactedCounts,
+    redactor_status: String,
+    section_counts: WorkGraphSnapshotSectionCounts,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum StrictRecord {
+    Restored {
+        work_id: WorkId,
+        generation_index: usize,
+        object_hash: ObjectHash,
+        canonical_json: Value,
+    },
+    Native {
+        work_id: WorkId,
+        generation_index: usize,
+        history: Box<WorkGraphSnapshotHistory>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+enum StrictMemory {
+    Active {
+        key: String,
+        body: WorkGraphSnapshotText,
+        sensitivity: Sensitivity,
+        remembered_at: DateTime<Utc>,
+        actor: ActorContext,
+    },
+    Tombstone {
+        key: String,
+        retired_at: DateTime<Utc>,
+        actor: ActorContext,
+    },
+}
+
+impl StrictBody {
+    fn summary(&self) -> WorkGraphSnapshotSummary {
+        WorkGraphSnapshotSummary {
+            schema_version: self.schema_version,
+            format_fingerprint: self.format_fingerprint.clone(),
+            project_id: self.project_id.clone(),
+            as_of: self.as_of.clone(),
+            widened: self.widened,
+            widening_reason: self.widening_reason.clone(),
+            redacted: self.redacted.clone(),
+            redactor_status: self.redactor_status.clone(),
+            section_counts: self.section_counts.clone(),
+        }
+    }
+}
+
+impl StrictManifest {
+    fn summary(&self) -> WorkGraphSnapshotSummary {
+        WorkGraphSnapshotSummary {
+            schema_version: self.schema_version,
+            format_fingerprint: self.format_fingerprint.clone(),
+            project_id: self.project_id.clone(),
+            as_of: self.as_of.clone(),
+            widened: self.widened,
+            widening_reason: self.widening_reason.clone(),
+            redacted: self.redacted.clone(),
+            redactor_status: self.redactor_status.clone(),
+            section_counts: self.section_counts.clone(),
+        }
+    }
+}
+
+impl From<StrictRecord> for WorkGraphSnapshotRecord {
+    fn from(value: StrictRecord) -> Self {
+        match value {
+            StrictRecord::Restored {
+                work_id,
+                generation_index,
+                object_hash,
+                canonical_json,
+            } => Self {
+                work_id,
+                generation_index,
+                payload: WorkGraphSnapshotRecordPayload::Restored {
+                    object_hash,
+                    canonical_json,
+                },
+            },
+            StrictRecord::Native {
+                work_id,
+                generation_index,
+                history,
+            } => Self {
+                work_id,
+                generation_index,
+                payload: WorkGraphSnapshotRecordPayload::Native { history },
+            },
+        }
+    }
+}
+
+impl From<StrictMemory> for WorkGraphSnapshotMemory {
+    fn from(value: StrictMemory) -> Self {
+        match value {
+            StrictMemory::Active {
+                key,
+                body,
+                sensitivity,
+                remembered_at,
+                actor,
+            } => Self {
+                key,
+                state: WorkGraphSnapshotMemoryState::Active {
+                    body,
+                    sensitivity,
+                    remembered_at,
+                    actor,
+                },
+            },
+            StrictMemory::Tombstone {
+                key,
+                retired_at,
+                actor,
+            } => Self {
+                key,
+                state: WorkGraphSnapshotMemoryState::Tombstone { retired_at, actor },
+            },
+        }
+    }
+}
+
+impl From<StrictDocument> for WorkGraphSnapshotDocument {
+    fn from(value: StrictDocument) -> Self {
+        let body_summary = value.body.summary();
+        let manifest_summary = value.manifest.summary();
+        Self {
+            body: WorkGraphSnapshotBody {
+                summary: body_summary,
+                items: value.body.items,
+                blockers: value.body.blockers,
+                sources: value.body.sources,
+                records: value.body.records.into_iter().map(Into::into).collect(),
+                memories: value.body.memories.into_iter().map(Into::into).collect(),
+            },
+            manifest: WorkGraphSnapshotManifest {
+                exported_at: value.manifest.exported_at,
+                exporting_build: value.manifest.exporting_build,
+                body_sha256: value.manifest.body_sha256,
+                summary: manifest_summary,
+            },
+        }
+    }
 }
 
 /// Returns the exporting build label carried only by the non-canonical manifest.
@@ -308,14 +667,16 @@ fn compiled_work_graph_snapshot_format() -> Result<Value, StoreError> {
     let mut document_schema =
         serde_json::to_value(schemars::schema_for!(WorkGraphSnapshotDocument))?;
     let mut source_object_schema = serde_json::to_value(schemars::schema_for!(WorkSourceSnapshot))?;
+    let mut restored_record_schema = serde_json::to_value(schemars::schema_for!(RestoredRecord))?;
     strip_schema_annotations(&mut document_schema);
     strip_schema_annotations(&mut source_object_schema);
+    strip_schema_annotations(&mut restored_record_schema);
     Ok(json!({
         "schema_version": WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION,
         "schemas": {
             "document": document_schema,
             "source_canonical_json": source_object_schema,
-            "restored_record_canonical_json": "verified canonical object value"
+            "restored_record_canonical_json": restored_record_schema
         },
         "sections": ["items", "blockers", "sources", "records", "memories"],
         "record_rules": {
@@ -431,6 +792,23 @@ mod tests {
         assert_ne!(
             schema_hash::<NumericTitleShape>(),
             schema_hash::<TextTitleShape>()
+        );
+    }
+
+    #[test]
+    fn format_definition_carries_the_restored_record_schema() {
+        let format = compiled_work_graph_snapshot_format().unwrap();
+        let schema = &format["schemas"]["restored_record_canonical_json"];
+        assert!(schema.is_object());
+        assert!(
+            schema
+                .pointer("/properties/item")
+                .is_some_and(Value::is_object)
+        );
+        assert!(
+            schema
+                .pointer("/properties/relations")
+                .is_some_and(Value::is_object)
         );
     }
 }

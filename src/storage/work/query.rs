@@ -25,14 +25,15 @@ use super::{
     WorkPrerequisitePage,
 };
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectHash, RestoredRecord, RestoredWorkEvidence,
     domain::{
-        EnvironmentEvidence, FeedId, FeedPosition, ReadyWork, RootExecution, RootExecutionId,
-        SessionId, VerificationEvidence, WorkAvailability, WorkBlocker, WorkCatalogPage,
-        WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState, WorkCompletionRecovery,
-        WorkCompletionRecoveryCause, WorkEvent, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
-        WorkId, WorkItem, WorkLifecycle, WorkObligationId, WorkPrerequisiteState,
-        WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId, WorkTransition,
+        CompletionSeal, EnvironmentEvidence, FeedId, FeedPosition, ReadyWork, RootExecution,
+        RootExecutionId, SessionId, VerificationEvidence, WorkAvailability, WorkBlocker,
+        WorkCatalogPage, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimState,
+        WorkCompletionRecovery, WorkCompletionRecoveryCause, WorkEvent, WorkEvidenceKind,
+        WorkFeedEntry, WorkHandoffOffer, WorkId, WorkItem, WorkLifecycle, WorkObligationId,
+        WorkPrerequisiteState, WorkReadinessReason, WorkReferenceCandidate, WorkRun, WorkRunId,
+        WorkRunState, WorkTransition,
     },
 };
 
@@ -49,7 +50,7 @@ mod tests;
 const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
     CASE
         WHEN candidate.lifecycle != 'open' THEN 'closed'
-        WHEN NOT EXISTS (
+        WHEN (candidate.active_run_id IS NOT NULL AND NOT EXISTS (
             SELECT 1
             FROM work_runs run
             JOIN work_root_executions execution
@@ -59,7 +60,9 @@ const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
               AND execution.project_id = candidate.project_id
               AND execution.root_id = candidate.root_id
               AND execution.state = 'active'
-        ) OR EXISTS (
+        )) OR (candidate.active_run_id IS NULL
+               AND COALESCE(json_extract(candidate.item_json, '$.restored'), 0) != 1)
+          OR EXISTS (
             WITH RECURSIVE ancestors(work_id, parent_id, lifecycle) AS (
                 SELECT parent.work_id, parent.parent_id, parent.lifecycle
                 FROM work_items parent
@@ -134,6 +137,30 @@ const PROJECTED_WORK_HAS_BLOCKER_SQL: &str = r"
 ";
 
 impl SqliteStore {
+    pub(crate) fn work_completed_by_restored_record(
+        &self,
+        work_id: WorkId,
+    ) -> Result<bool, StoreError> {
+        let item = load_work_item(&self.connection, work_id)?;
+        work_completed_by_restored_record_on(&self.connection, &item)
+    }
+
+    /// Returns inert restored history generations in their dense order.
+    pub(crate) fn work_restored_records(
+        &self,
+        work_id: WorkId,
+    ) -> Result<Vec<RestoredRecord>, StoreError> {
+        restored_records_for_item(&self.connection, work_id)
+    }
+
+    /// Returns late findings bound to restored completion history.
+    pub(crate) fn restored_work_evidence(
+        &self,
+        work_id: WorkId,
+    ) -> Result<Vec<(ObjectHash, RestoredWorkEvidence)>, StoreError> {
+        restored_work_evidence_for_item(&self.connection, work_id)
+    }
+
     /// Returns every handoff offer for work in stable offer order.
     ///
     /// # Errors
@@ -1229,7 +1256,8 @@ fn derive_work_availability(
         why.push(format!("lifecycle is {:?}", work.lifecycle));
         WorkAvailability::Closed
     } else if !ancestors_admit_execution(connection, &work)?
-        || !work_run_uses_active_root_execution(connection, &work)?
+        || !((work.restored && work.active_run_id.is_none())
+            || work_run_uses_active_root_execution(connection, &work)?)
     {
         reason_codes.push(WorkReadinessReason::ParentDisallowsExecution);
         why.push("the ancestor or root-execution generation does not admit execution".into());
@@ -1292,6 +1320,9 @@ fn claim_availability(
     why: &mut Vec<String>,
 ) -> Result<WorkAvailability, StoreError> {
     let Some(run_id) = work.active_run_id else {
+        if work.restored {
+            return Ok(WorkAvailability::Ready);
+        }
         return Err(StoreError::InvalidWorkProjection(format!(
             "open work {:?} has no active run",
             work.work_id
@@ -1365,6 +1396,9 @@ fn projected_run_uses_active_root_execution(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<bool, StoreError> {
+    if item.restored && item.active_run_id.is_none() {
+        return Ok(true);
+    }
     let run_id = item.active_run_id.ok_or_else(|| {
         StoreError::InvalidWorkProjection(format!("open work {:?} has no active run", item.work_id))
     })?;
@@ -1396,6 +1430,9 @@ fn projected_claim_availability(
     reason_codes: &mut Vec<WorkReadinessReason>,
     why: &mut Vec<String>,
 ) -> Result<WorkAvailability, StoreError> {
+    if work.restored && work.active_run_id.is_none() {
+        return Ok(WorkAvailability::Ready);
+    }
     let run_id = work.active_run_id.ok_or_else(|| {
         StoreError::InvalidWorkProjection(format!("open work {:?} has no active run", work.work_id))
     })?;
@@ -1431,6 +1468,7 @@ fn projected_claim_availability(
     }
 }
 
+#[cfg(test)]
 pub(super) fn latest_canonical_work_event_for_item(
     connection: &Connection,
     work_id: WorkId,
@@ -1551,7 +1589,7 @@ fn decode_canonical_work_event(stored: (String, Vec<u8>)) -> Result<WorkEvent, S
     CanonicalObject::verify(&hash, bytes)?.decode()
 }
 
-fn load_work_item_projection(
+pub(super) fn load_work_item_projection(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkItem, StoreError> {
@@ -1614,7 +1652,10 @@ fn load_work_item_projection(
     #[cfg(test)]
     WORK_ITEM_PROJECTION_DECODE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
     let item: WorkItem = serde_json::from_slice(&bytes)?;
-    if !scalar_bound || item.work_id != work_id {
+    if !scalar_bound
+        || item.work_id != work_id
+        || item.schema_version != crate::schema::SCHEMA_VERSION
+    {
         return Err(StoreError::InvalidWorkProjection(format!(
             "work item {work_id:?} differs from its scalar projection binding"
         )));
@@ -1627,13 +1668,277 @@ pub(in crate::storage) fn load_work_item(
     work_id: WorkId,
 ) -> Result<WorkItem, StoreError> {
     let item = load_work_item_projection(connection, work_id)?;
-    let event = latest_canonical_work_event_for_item(connection, work_id)?;
-    if event.work != item {
-        return Err(StoreError::InvalidWorkProjection(format!(
-            "work item {work_id:?} differs from its latest canonical event"
-        )));
+    if let Some(event) = latest_canonical_work_event_for_item_optional(connection, work_id)? {
+        if event.work != item {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "work item {work_id:?} differs from its latest canonical event"
+            )));
+        }
+    } else {
+        let Some((_, record)) = latest_restored_record(connection, work_id)? else {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "work item {work_id:?} has neither canonical native nor restored history"
+            )));
+        };
+        if !crate::graph_snapshot::restored_item_basis_matches(
+            &record.item,
+            &record.project_id,
+            &item,
+        ) {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "work item {work_id:?} differs from its canonical restored record"
+            )));
+        }
+        let load = super::super::graph_snapshot::work_graph_snapshot_load_origin_on(
+            connection,
+            &item.project_id,
+        )?;
+        if item.created_by != load.actor
+            || item.created_at != load.loaded_at
+            || item.updated_at != load.loaded_at
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "work item {work_id:?} differs from its canonical load attribution"
+            )));
+        }
+        super::planning::validated_current_work_relation_basis(connection, work_id)?;
     }
     Ok(item)
+}
+
+pub(super) fn work_completed_by_restored_record_on(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<bool, StoreError> {
+    if !item.restored || item.lifecycle != WorkLifecycle::Completed || item.active_run_id.is_some()
+    {
+        return Ok(false);
+    }
+    if let Some(event) = latest_canonical_work_event_for_item_optional(connection, item.work_id)? {
+        let run = event.run.as_ref().ok_or_else(|| {
+            StoreError::InvalidWorkProjection("native completed work has no canonical run".into())
+        })?;
+        let seal_hash = run.completion_seal.as_ref().ok_or_else(|| {
+            StoreError::InvalidWorkProjection("native completed work has no canonical seal".into())
+        })?;
+        let projected = connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM work_completion_seals
+                 WHERE work_id = ?1 AND run_id = ?2 AND seal_hash = ?3
+             )",
+            params![
+                item.work_id.0.to_string(),
+                run.run_id.0.to_string(),
+                seal_hash.as_str()
+            ],
+            |row| row.get::<_, bool>(0),
+        )?;
+        let seal: CompletionSeal =
+            load_typed_work_object(connection, seal_hash, "completion_seal")?;
+        if event.work != *item
+            || run.work_id != item.work_id
+            || run.state != WorkRunState::Completed
+            || !projected
+            || seal.work_id != item.work_id
+            || seal.run_id != run.run_id
+            || seal.root_id != item.root_id
+            || seal.root_execution_id != run.root_execution_id
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "native completed work differs from its canonical seal or seal projection".into(),
+            ));
+        }
+        return Ok(false);
+    }
+    let has_native_seal = connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM work_completion_seals WHERE work_id = ?1
+         )",
+        [item.work_id.0.to_string()],
+        |row| row.get::<_, bool>(0),
+    )?;
+    let (_, record) = latest_restored_record(connection, item.work_id)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection("completed-by-record work has no restored record".into())
+    })?;
+    if has_native_seal
+        || record.history.completion.is_none()
+        || !crate::graph_snapshot::restored_item_basis_matches(
+            &record.item,
+            &record.project_id,
+            item,
+        )
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "completed-by-record work differs from its canonical restored completion".into(),
+        ));
+    }
+    Ok(true)
+}
+
+pub(in crate::storage) fn latest_restored_record_hash(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Option<ObjectHash>, StoreError> {
+    Ok(latest_restored_record(connection, work_id)?.map(|(hash, _)| hash))
+}
+
+pub(super) fn latest_restored_record(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Option<(ObjectHash, RestoredRecord)>, StoreError> {
+    let row = connection
+        .query_row(
+            "SELECT generation_index, record_hash
+             FROM work_restored_records WHERE work_id = ?1
+             ORDER BY generation_index DESC LIMIT 1",
+            [work_id.0.to_string()],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    row.map(|(generation_index, stored_hash)| {
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let record: RestoredRecord =
+            load_typed_work_object(connection, &hash, "work_restored_record")?;
+        if record.work_id != work_id
+            || i64::try_from(record.generation_index).ok() != Some(generation_index)
+        {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "restored record for {work_id:?} differs from its projection binding"
+            )));
+        }
+        Ok((hash, record))
+    })
+    .transpose()
+}
+
+fn restored_records_for_item(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<RestoredRecord>, StoreError> {
+    let rows = connection
+        .prepare(
+            "SELECT generation_index, record_hash FROM work_restored_records
+             WHERE work_id = ?1 ORDER BY generation_index",
+        )?
+        .query_map([work_id.0.to_string()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    rows.into_iter()
+        .enumerate()
+        .map(|(expected, (generation, stored_hash))| {
+            if i64::try_from(expected).ok() != Some(generation) {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "restored history for {work_id:?} is not dense"
+                )));
+            }
+            let hash = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let record: RestoredRecord =
+                load_typed_work_object(connection, &hash, "work_restored_record")?;
+            if record.work_id != work_id || record.generation_index != expected {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "restored history for {work_id:?} differs from its projection binding"
+                )));
+            }
+            Ok(record)
+        })
+        .collect()
+}
+
+fn restored_record_binds_work(
+    connection: &Connection,
+    record_hash: &ObjectHash,
+    work_id: WorkId,
+) -> Result<bool, StoreError> {
+    let projected: bool = connection.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM work_restored_records
+             WHERE work_id = ?1 AND record_hash = ?2
+         )",
+        params![work_id.0.to_string(), record_hash.as_str()],
+        |row| row.get(0),
+    )?;
+    if !projected {
+        return Ok(false);
+    }
+    let record: RestoredRecord =
+        load_typed_work_object(connection, record_hash, "work_restored_record")?;
+    Ok(record.work_id == work_id)
+}
+
+fn native_work_event_optional(
+    connection: &Connection,
+    hash: &ObjectHash,
+) -> Result<Option<WorkEvent>, StoreError> {
+    let stored = connection
+        .query_row(
+            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            [hash.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .optional()?;
+    let Some((kind, bytes)) = stored else {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "relation anchor {hash} is missing"
+        )));
+    };
+    if kind != "work_event" {
+        return Ok(None);
+    }
+    Ok(Some(CanonicalObject::verify(hash, bytes)?.decode()?))
+}
+
+fn restored_work_evidence_for_item(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<(ObjectHash, RestoredWorkEvidence)>, StoreError> {
+    let rows = connection
+        .prepare(
+            "SELECT evidence_hash, record_hash, sequence, gate_name, created_at_ms
+             FROM work_restored_evidence INDEXED BY work_restored_evidence_work
+             WHERE work_id = ?1
+             ORDER BY sequence, evidence_hash",
+        )?
+        .query_map([work_id.0.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    rows.into_iter()
+        .enumerate()
+        .map(
+            |(index, (stored_hash, stored_record, sequence, gate_name, created_at_ms))| {
+                let expected_sequence = i64::try_from(index)
+                    .ok()
+                    .and_then(|value| value.checked_add(1));
+                let hash = ObjectHash::from_stored(stored_hash.clone())
+                    .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+                let evidence: RestoredWorkEvidence =
+                    load_typed_work_object(connection, &hash, "work_restored_evidence")?;
+                let scalar_bound = evidence.work_id == work_id
+                    && evidence.restored_record.as_str() == stored_record
+                    && evidence.sequence == sequence
+                    && Some(sequence) == expected_sequence
+                    && evidence.gate.as_ref().map(|gate| gate.name.as_str())
+                        == gate_name.as_deref()
+                    && evidence.created_at.timestamp_millis() == created_at_ms
+                    && restored_record_binds_work(connection, &evidence.restored_record, work_id)?;
+                if !scalar_bound {
+                    return Err(StoreError::InvalidWorkProjection(format!(
+                        "restored evidence {hash} differs from its projection binding"
+                    )));
+                }
+                Ok((hash, evidence))
+            },
+        )
+        .collect()
 }
 
 pub(in crate::storage) fn verified_work_identity(
@@ -1895,16 +2200,18 @@ pub(in crate::storage) fn load_active_blocker_projections(
             let blocker: WorkBlocker = serde_json::from_slice(&bytes)?;
             let event_hash = ObjectHash::from_stored(event_hash.clone())
                 .ok_or(StoreError::InvalidStoredHash(event_hash))?;
-            let event: WorkEvent = load_typed_work_object(connection, &event_hash, "work_event")?;
-            if !scalar_bound
-                || blocker.work_id != work_id
-                || event.work_id != work_id
-                || event.blocker.as_ref() != Some(&blocker)
-                || !matches!(
-                    event.transition,
-                    WorkTransition::Blocked { ref blocker_id }
-                        if blocker_id == &blocker.blocker_id
-                )
+            let native_binding =
+                native_work_event_optional(connection, &event_hash)?.is_some_and(|event| {
+                    event.work_id == work_id
+                        && event.blocker.as_ref() == Some(&blocker)
+                        && matches!(
+                            event.transition,
+                            WorkTransition::Blocked { ref blocker_id }
+                                if blocker_id == &blocker.blocker_id
+                        )
+                });
+            let restored_binding = restored_record_binds_work(connection, &event_hash, work_id)?;
+            if !scalar_bound || blocker.work_id != work_id || !(native_binding || restored_binding)
             {
                 return Err(StoreError::InvalidWorkProjection(format!(
                     "active blocker {} differs from its scalar or event binding",
@@ -1999,18 +2306,20 @@ pub(in crate::storage) fn load_prerequisite_projection_ids(
     };
     let mut bound = Vec::with_capacity(prerequisite_ids.len());
     for (prerequisite_id, event_hash) in prerequisite_ids {
-        let event: WorkEvent = load_typed_work_object(connection, &event_hash, "work_event")?;
-        let event_binds_edge = event.work_id == work_id
-            && match &event.transition {
-                WorkTransition::Created { prerequisites, .. } => {
-                    prerequisites.contains(&prerequisite_id)
-                }
-                WorkTransition::PrerequisiteAdded {
-                    prerequisite_id: added,
-                    ..
-                } => *added == prerequisite_id,
-                _ => false,
-            };
+        let event_binds_edge =
+            native_work_event_optional(connection, &event_hash)?.is_some_and(|event| {
+                event.work_id == work_id
+                    && match &event.transition {
+                        WorkTransition::Created { prerequisites, .. } => {
+                            prerequisites.contains(&prerequisite_id)
+                        }
+                        WorkTransition::PrerequisiteAdded {
+                            prerequisite_id: added,
+                            ..
+                        } => *added == prerequisite_id,
+                        _ => false,
+                    }
+            }) || restored_record_binds_work(connection, &event_hash, work_id)?;
         if !event_binds_edge {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "prerequisite edge {work_id:?}->{prerequisite_id:?} differs from its event binding"

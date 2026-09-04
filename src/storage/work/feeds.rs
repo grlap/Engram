@@ -672,6 +672,18 @@ pub(super) fn validate_work_source_snapshot(
     snapshot: &WorkSourceSnapshot,
     imported_at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    validate_work_source_snapshot_shape(snapshot)?;
+    if snapshot.captured_at > imported_at {
+        return Err(StoreError::InvalidWork(
+            "work source snapshot capture time is in the future".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_work_source_snapshot_shape(
+    snapshot: &WorkSourceSnapshot,
+) -> Result<(), StoreError> {
     let required_text_is_valid = [
         &snapshot.adapter_kind,
         &snapshot.canonical_ref,
@@ -691,10 +703,9 @@ pub(super) fn validate_work_source_snapshot(
     if snapshot.schema_version != SCHEMA_VERSION
         || !required_text_is_valid
         || !optional_text_is_valid
-        || snapshot.captured_at > imported_at
     {
         return Err(StoreError::InvalidWork(
-            "work source snapshot has invalid schema, canonical text, or capture time".into(),
+            "work source snapshot has invalid schema or canonical text".into(),
         ));
     }
     let object = CanonicalObject::freeze(snapshot)?;

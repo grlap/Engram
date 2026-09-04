@@ -100,7 +100,7 @@ Accepted risk while the dogfood runs: manual backup/restore exists, but
 backups stay host-local unless copied off-host by hand, `doctor` reports no
 backup freshness, and nothing runs automatically — so there is no off-host
 recovery guarantee until `local_backed_up` ships, and losing the active
-host can lose local work state. The designed
+host can lose local work state. The shipped
 [work-graph snapshot](features/work-graph-snapshot.md) is the first artifact
 on that path: one deterministic file that recreates a store on a build whose
 snapshot format matches and moves a project between machines by hand; it
@@ -112,10 +112,9 @@ reduces the risk only once a copy leaves the host.
 - Episodic compaction automation
 - Post-publication retention compaction
 - Budget tuning from retrieval decision logs
-- Work-graph snapshot export/restore
-  ([designed](features/work-graph-snapshot.md)), then optional configured
-  external backup automation: an off-host copy with `doctor` freshness
-  reporting for `local_backed_up`
+- Optional configured external backup automation over the shipped work-graph
+  snapshot save/load path: an off-host copy with `doctor` freshness reporting
+  for `local_backed_up`
 
 ## V2+ — widen the loop
 

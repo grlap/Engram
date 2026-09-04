@@ -75,15 +75,18 @@ pub use domain::{
     WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot, WorkTransition,
 };
 pub use graph_snapshot::{
+    RestoredRecord, RestoredRelationBasis, RestoredWorkEvidence,
     WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION, WorkGraphSnapshotBlocker, WorkGraphSnapshotBody,
     WorkGraphSnapshotCompletion, WorkGraphSnapshotCut, WorkGraphSnapshotDestinationKind,
     WorkGraphSnapshotDocument, WorkGraphSnapshotEvent, WorkGraphSnapshotExport,
     WorkGraphSnapshotGate, WorkGraphSnapshotHistory, WorkGraphSnapshotItem,
-    WorkGraphSnapshotManifest, WorkGraphSnapshotMemory, WorkGraphSnapshotMemoryState,
-    WorkGraphSnapshotNote, WorkGraphSnapshotRecord, WorkGraphSnapshotRecordPayload,
-    WorkGraphSnapshotRedactedCounts, WorkGraphSnapshotSavedEvent, WorkGraphSnapshotSectionCounts,
-    WorkGraphSnapshotSource, WorkGraphSnapshotSummary, WorkGraphSnapshotText,
-    work_graph_snapshot_exporting_build, work_graph_snapshot_format_fingerprint,
+    WorkGraphSnapshotLifecycleCounts, WorkGraphSnapshotLoadPreview, WorkGraphSnapshotLoadResult,
+    WorkGraphSnapshotLoadedEvent, WorkGraphSnapshotManifest, WorkGraphSnapshotMemory,
+    WorkGraphSnapshotMemoryState, WorkGraphSnapshotNote, WorkGraphSnapshotRecord,
+    WorkGraphSnapshotRecordPayload, WorkGraphSnapshotRedactedCounts, WorkGraphSnapshotSavedEvent,
+    WorkGraphSnapshotSectionCounts, WorkGraphSnapshotSource, WorkGraphSnapshotSummary,
+    WorkGraphSnapshotText, parse_work_graph_snapshot_document, work_graph_snapshot_exporting_build,
+    work_graph_snapshot_format_fingerprint,
 };
 pub use host::{HostControlRequest, HostControlServer};
 pub use mcp::{McpServer, store_error_value};

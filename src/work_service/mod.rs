@@ -23,24 +23,26 @@ use crate::{
     DecomposeWorkRequest, DevelopmentNoopRedactor, DisposeWorkRequest, EnvironmentEvidence,
     ExecutionObservation, FeedId, FeedPosition, MemorySummary, MemoryVersion, ObjectHash,
     OfferWorkHandoffRequest, ProjectId, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
-    ReopenWorkRequest, ReviseWorkRequest, SessionId, SqliteStore, TaskId, VerificationEvidence,
-    VerificationKind, VerificationResult, WaiveRequiredChildRequest, WorkAvailability,
-    WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState,
-    WorkCompletionRecovery, WorkDecomposition, WorkDependencyRef, WorkDisposition, WorkEvent,
-    WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkGraphSnapshotDestinationKind,
-    WorkGraphSnapshotExport, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem, WorkItemKind,
-    WorkLifecycle, WorkObligation, WorkObligationResolution, WorkObligationResolutionEvent,
-    WorkObligationState, WorkOrigin, WorkPlanningAuthority, WorkPrerequisiteState,
-    WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState, WorkTransition,
+    ReopenWorkRequest, RestoredWorkEvidence, ReviseWorkRequest, SessionId, SqliteStore, TaskId,
+    VerificationEvidence, VerificationKind, VerificationResult, WaiveRequiredChildRequest,
+    WorkAvailability, WorkBlockerKind, WorkCatalogQuery, WorkCheckpoint, WorkClaim, WorkClaimId,
+    WorkClaimState, WorkCompletionRecovery, WorkDecomposition, WorkDependencyRef, WorkDisposition,
+    WorkEvent, WorkEvidence, WorkEvidenceKind, WorkFeedEntry, WorkGraphSnapshotDestinationKind,
+    WorkGraphSnapshotExport, WorkGraphSnapshotLoadResult, WorkHandoffOffer, WorkHandoffState,
+    WorkId, WorkItem, WorkItemKind, WorkLifecycle, WorkObligation, WorkObligationResolution,
+    WorkObligationResolutionEvent, WorkObligationState, WorkOrigin, WorkPlanningAuthority,
+    WorkPrerequisiteState, WorkRevisionPatch, WorkRun, WorkRunId, WorkRunState, WorkSessionState,
+    WorkTransition,
     domain::{
         ACTOR_CONTEXT_NORMALIZED_REFERENCE, ACTOR_CONTEXT_PROVENANCE_REFERENCE, AssuranceLevel,
         ForgetProjectMemoryRequest, MAX_ACTOR_CONTEXT_BYTES, MemoryAssertionEvent,
         MemoryContradictionEvent, POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE,
         POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE, ProjectMemoryFull, ProjectMemoryList,
         ProjectMemoryMutationReceipt, ProvenanceLink, ProvenanceRelation,
-        RecordGateEvidenceRequest, RecordWorkNoteRequest, RememberProjectMemoryRequest,
-        SCHEMA_VERSION, Scope, Sensitivity, WorkCompletionRecoveryCause,
-        is_unsafe_rendered_text_char, validate_gate_evidence_payload,
+        RecordGateEvidenceRequest, RecordRestoredWorkEvidenceRequest, RecordWorkNoteRequest,
+        RememberProjectMemoryRequest, RestoredWorkEvidenceInput, SCHEMA_VERSION, Scope,
+        Sensitivity, WorkCompletionRecoveryCause, is_unsafe_rendered_text_char,
+        validate_gate_evidence_payload,
     },
     storage::{
         BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, CompleteWorkStorageResult,
@@ -618,6 +620,8 @@ pub struct WorkItemSummary {
     pub labels: Vec<String>,
     pub assigned_to: Option<String>,
     pub lifecycle: WorkLifecycle,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restored: bool,
     pub revision: i64,
     pub active_run_id: Option<WorkRunId>,
     pub superseded_by: Option<WorkId>,
@@ -664,11 +668,33 @@ pub struct WorkHistoryView {
     pub omitted: usize,
 }
 
+/// One compact inert history entry recreated from a work-graph snapshot.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RestoredHistoryEntry {
+    pub generation_index: usize,
+    pub kind: String,
+    pub summary: String,
+    pub actor: ActorContext,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Bounded restored history with an exact source-entry count.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct RestoredHistoryView {
+    pub total: usize,
+    pub items: Vec<RestoredHistoryEntry>,
+    pub omitted: usize,
+}
+
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
     pub session: AgentWorkSession,
     pub status: ReadyWorkSummary,
+    /// True only while restored completion history, rather than a native
+    /// completion seal, is the current completion authority.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub completed_by_record: bool,
     /// The item's full outcome text; `status.work.outcome` is the compact
     /// summary used in lists.
     #[serde(default)]
@@ -693,17 +719,22 @@ pub struct WorkFocusView {
     /// Exact evidence membership count before the bounded focus selection.
     #[serde(default)]
     pub evidence_count: usize,
-    /// Last run evidence by dense run-feed position, selected independently
-    /// from the obligation-prioritized evidence page. Evidence timestamps are
-    /// asserted metadata, never ordering authority. This fixed-size advisory
-    /// is populated only for drill-down reads and retained while other focus
-    /// rows trim.
+    /// Last evidence by authoritative order: native run-feed position when a
+    /// run has evidence, otherwise restored per-item append position. Selected
+    /// independently from the obligation-prioritized evidence page. Evidence
+    /// timestamps are asserted metadata, never ordering authority. This
+    /// fixed-size advisory is populated only for drill-down reads and retained
+    /// while other focus rows trim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_evidence_item: Option<WorkEvidenceSummary>,
     pub obligation_page: WorkObligationPage,
     #[serde(default)]
     pub memories: Vec<WorkMemoryIndexEntry>,
     pub history: WorkHistoryView,
+    /// Inert history imported from earlier stores. These entries never enter
+    /// native feeds or completion authority.
+    #[serde(default, skip_serializing_if = "restored_history_is_empty")]
+    pub restored_history: RestoredHistoryView,
     /// Direct disposed required children for which the current project-bound
     /// caller can execute `work_update:waive_required_child` now.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -711,6 +742,10 @@ pub struct WorkFocusView {
     pub allowed_next: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omissions: Vec<WorkSectionOmission>,
+}
+
+fn restored_history_is_empty(history: &RestoredHistoryView) -> bool {
+    history.total == 0
 }
 
 /// Compact agent-facing summary of one canonical run evidence object.
@@ -1390,6 +1425,7 @@ fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
             .collect(),
         assigned_to: work.assigned_to.as_deref().map(compact_text),
         lifecycle: work.lifecycle,
+        restored: work.restored,
         revision: work.revision,
         active_run_id: work.active_run_id,
         superseded_by: work.superseded_by,
@@ -1776,8 +1812,25 @@ fn compact_work_evidence(evidence: &WorkEvidence) -> Result<String, StoreError> 
         return Ok(compact_text(&evidence.summary));
     };
     validate_gate_evidence_payload(evidence).map_err(StoreError::InvalidWorkProjection)?;
+    Ok(compact_gate_evidence(gate))
+}
+
+fn compact_restored_work_evidence(evidence: &RestoredWorkEvidence) -> Result<String, StoreError> {
+    let Some(gate) = evidence.gate.as_ref() else {
+        return Ok(compact_text(&evidence.summary));
+    };
+    if gate.schema_version != crate::domain::SCHEMA_VERSION || gate.passed != gate.failed.is_empty()
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "restored gate evidence is inconsistent".into(),
+        ));
+    }
+    Ok(compact_gate_evidence(gate))
+}
+
+fn compact_gate_evidence(gate: &crate::GateEvidenceRecord) -> String {
     if gate.passed {
-        return Ok(compact_text(&format!("gate {} passed", gate.name)));
+        return compact_text(&format!("gate {} passed", gate.name));
     }
     let count = gate.failed.len();
     let listed = gate
@@ -1793,10 +1846,10 @@ fn compact_work_evidence(evidence: &WorkEvidence) -> Result<String, StoreError> 
     } else {
         format!(" (+{omitted} more)")
     };
-    Ok(compact_text(&format!(
+    compact_text(&format!(
         "gate {} failed ({count} failures): {listed}{suffix}",
         gate.name
-    )))
+    ))
 }
 
 fn work_evidence_summary(
@@ -1879,6 +1932,36 @@ fn work_evidence_summary(
             })
         }
     }
+}
+
+fn restored_work_evidence_summary(
+    hash: ObjectHash,
+    evidence: &RestoredWorkEvidence,
+) -> Result<WorkEvidenceSummary, StoreError> {
+    let summary = compact_restored_work_evidence(evidence)?;
+    let gate = evidence.gate.as_ref().map(|gate| WorkGateEvidenceSummary {
+        name: gate.name.clone(),
+        passed: gate.passed,
+        failed_count: gate.failed.len(),
+    });
+    Ok(WorkEvidenceSummary {
+        evidence: hash,
+        evidence_kind: WorkEvidenceKind::Generic,
+        gate,
+        workspace_id: None,
+        source_revision: None,
+        producer_session_id: evidence.actor.session_id.clone(),
+        actor_id: Some(compact_text(&evidence.actor.actor_id)),
+        actor_context: projected_actor_context(&evidence.actor),
+        check_kind: None,
+        check_fingerprint: None,
+        verification_result: None,
+        environment_fingerprint: None,
+        environment: None,
+        environment_components: None,
+        summary,
+        created_at: evidence.created_at,
+    })
 }
 
 fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> WorkObligationSummary {
@@ -2129,6 +2212,10 @@ fn trim_focus_once(focus: &mut WorkFocusView) -> bool {
         focus.history.omitted = focus.history.omitted.saturating_add(1);
         return true;
     }
+    if focus.restored_history.items.pop().is_some() {
+        focus.restored_history.omitted = focus.restored_history.omitted.saturating_add(1);
+        return true;
+    }
     if let Some(blocker) = focus
         .blockers
         .iter_mut()
@@ -2170,12 +2257,6 @@ fn ensure_agent_response_budget<T: Serialize>(
         )));
     }
     Ok(())
-}
-
-fn active_run_id(work: &WorkItem) -> Result<crate::WorkRunId, StoreError> {
-    work.active_run_id.ok_or_else(|| {
-        StoreError::InvalidWorkProjection("work has no active run for this operation".into())
-    })
 }
 
 fn propose_metadata(input: &WorkProposeInput) -> (&'static str, &'static str, &str) {
@@ -2610,6 +2691,22 @@ fn agent_change_object(
                 revision: None,
                 change_kind: "evidence".into(),
                 summary: compact_work_evidence(&evidence)?,
+                actor_id: Some(compact_text(&evidence.actor.actor_id)),
+                actor_context: projected_actor_context(&evidence.actor),
+                created_at: evidence.created_at,
+            }))
+        }
+        "work_restored_evidence" => {
+            let evidence = serde_json::from_value::<RestoredWorkEvidence>(object)?;
+            let item = store.get_work_item(evidence.work_id)?;
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: evidence.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(evidence.work_id),
+                work_ref: Some(item.short_ref),
+                revision: None,
+                change_kind: "evidence".into(),
+                summary: compact_restored_work_evidence(&evidence)?,
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 actor_context: projected_actor_context(&evidence.actor),
                 created_at: evidence.created_at,

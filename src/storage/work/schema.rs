@@ -1,8 +1,9 @@
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use super::super::{SchemaDurability, SchemaOwner, StoreError};
 use super::CURRENT_WORK_SCHEMA_VERSION;
 use super::integrity::verify_work_catalog_projections;
+use crate::{CanonicalObject, ObjectHash, RestoredRecord, RestoredWorkEvidence};
 
 #[cfg(test)]
 mod tests;
@@ -31,6 +32,10 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_run_evidence_run",
     "work_run_evidence_work",
     "work_run_obligations_run",
+    "work_restored_records",
+    "work_restored_evidence",
+    "work_restored_evidence_work",
+    "work_restored_evidence_gate",
     "work_session_state_retention",
     "work_feed_entries_require_work_id",
 ];
@@ -289,6 +294,28 @@ pub(in crate::storage) fn initialize_schema(
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_blockers_active
              ON work_blockers(work_id, state);
+         CREATE TABLE IF NOT EXISTS work_restored_records (
+             work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
+             generation_index INTEGER NOT NULL,
+             record_hash TEXT NOT NULL UNIQUE REFERENCES objects(object_hash),
+             PRIMARY KEY(work_id, generation_index),
+             CHECK(generation_index >= 0)
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS work_restored_evidence (
+             evidence_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+             work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
+             record_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             sequence INTEGER NOT NULL,
+             gate_name TEXT,
+             created_at_ms INTEGER NOT NULL,
+             UNIQUE(work_id, sequence),
+             CHECK(sequence > 0)
+         ) STRICT;
+         CREATE INDEX IF NOT EXISTS work_restored_evidence_work
+             ON work_restored_evidence(work_id, sequence, evidence_hash);
+         CREATE INDEX IF NOT EXISTS work_restored_evidence_gate
+             ON work_restored_evidence(work_id, gate_name, sequence, evidence_hash)
+             WHERE gate_name IS NOT NULL;
          CREATE TABLE IF NOT EXISTS work_run_evidence (
              evidence_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
@@ -484,6 +511,28 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_prerequisites(prerequisite_id, work_id);
          CREATE INDEX IF NOT EXISTS work_blockers_active
              ON work_blockers(work_id, state);
+         CREATE TABLE IF NOT EXISTS work_restored_records (
+             work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
+             generation_index INTEGER NOT NULL,
+             record_hash TEXT NOT NULL UNIQUE REFERENCES objects(object_hash),
+             PRIMARY KEY(work_id, generation_index),
+             CHECK(generation_index >= 0)
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS work_restored_evidence (
+             evidence_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+             work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
+             record_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             sequence INTEGER NOT NULL,
+             gate_name TEXT,
+             created_at_ms INTEGER NOT NULL,
+             UNIQUE(work_id, sequence),
+             CHECK(sequence > 0)
+         ) STRICT;
+         CREATE INDEX IF NOT EXISTS work_restored_evidence_work
+             ON work_restored_evidence(work_id, sequence, evidence_hash);
+         CREATE INDEX IF NOT EXISTS work_restored_evidence_gate
+             ON work_restored_evidence(work_id, gate_name, sequence, evidence_hash)
+             WHERE gate_name IS NOT NULL;
          CREATE INDEX IF NOT EXISTS work_run_evidence_run
              ON work_run_evidence(run_id, evidence_hash);
          CREATE INDEX IF NOT EXISTS work_run_evidence_work
@@ -517,9 +566,10 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              END;
          CREATE INDEX IF NOT EXISTS work_items_assigned
              ON work_items(project_id, assigned_to_key, work_id);
-          CREATE INDEX IF NOT EXISTS work_items_catalog_after
+         CREATE INDEX IF NOT EXISTS work_items_catalog_after
              ON work_items(project_id, work_id);",
     )?;
+    rebuild_restored_projections_on(connection)?;
     connection.execute("DELETE FROM work_catalog_fts", [])?;
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text)
@@ -541,6 +591,60 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
         ));
     }
     Ok(true)
+}
+
+fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT object_hash, canonical_json FROM objects
+         WHERE object_kind = ?1 ORDER BY object_hash",
+    )?;
+    let restored_records = statement
+        .query_map(["work_restored_record"], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (stored_hash, bytes) in restored_records {
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let record: RestoredRecord = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        connection.execute(
+            "INSERT INTO work_restored_records (work_id, generation_index, record_hash)
+             VALUES (?1, ?2, ?3)",
+            params![
+                record.work_id.0.to_string(),
+                i64::try_from(record.generation_index).map_err(|_| {
+                    StoreError::InvalidWorkProjection(
+                        "restored generation exceeds SQLite range during repair".into(),
+                    )
+                })?,
+                hash.as_str(),
+            ],
+        )?;
+    }
+    let restored_evidence = statement
+        .query_map(["work_restored_evidence"], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (stored_hash, bytes) in restored_evidence {
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let evidence: RestoredWorkEvidence = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        connection.execute(
+            "INSERT INTO work_restored_evidence (
+                 evidence_hash, work_id, record_hash, sequence, gate_name, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                hash.as_str(),
+                evidence.work_id.0.to_string(),
+                evidence.restored_record.as_str(),
+                evidence.sequence,
+                evidence.gate.as_ref().map(|gate| gate.name.as_str()),
+                evidence.created_at.timestamp_millis(),
+            ],
+        )?;
+    }
+    Ok(())
 }
 
 fn current_work_schema_is_complete(connection: &Connection) -> Result<bool, StoreError> {

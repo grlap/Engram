@@ -1137,7 +1137,7 @@ Before Engram claims Beads-equivalent off-host durability, it should ship:
 
 - deterministic, human-readable work-graph recovery snapshots that can be
   committed or copied off-host without copying a live SQLite file — the
-  designed [work-graph snapshot](work-graph-snapshot.md);
+  shipped [work-graph snapshot](work-graph-snapshot.md);
 - manifest hashes and a previewed restore path, exercised in CI;
 - referential-integrity verification for work/events/edges/evidence plus
   projection rebuild-and-compare checks, not only canonical object hashes;

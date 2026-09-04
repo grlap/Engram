@@ -131,7 +131,7 @@ enum Command {
         #[arg(long)]
         replace: bool,
     },
-    /// Save the deterministic project work graph; load remains planned.
+    /// Save or load the deterministic project work graph.
     Graph {
         /// Actor identity asserted by the invoking host or operator wrapper.
         #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
@@ -383,6 +383,14 @@ enum GraphCommand {
         /// Audit reason required when restricted memory bodies are included.
         #[arg(long, requires = "include_restricted")]
         reason: Option<String>,
+    },
+    /// Recreate planning state and inert history in an empty project store.
+    Load {
+        /// Snapshot file written by `engram graph save`.
+        file: PathBuf,
+        /// Validate and report the exact landing plan without writing.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -740,6 +748,7 @@ enum AuthorityCommand {
 
 const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS: usize = 32;
+const MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES: usize = 256;
 
 fn main() -> Result<ExitCode> {
     // The combined clap command graph is parsed and driven on this named
@@ -1722,6 +1731,10 @@ fn run_graph_from_cli(
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the operator graph dispatcher keeps save disclosure and load recreation sequencing explicit"
+)]
 fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
     match operation {
         GraphCommand::Save {
@@ -1808,6 +1821,40 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
                         println!("already saved: {}", out.display());
                     }
                 }
+            }
+        }
+        GraphCommand::Load { file, dry_run } => {
+            const MAX_GRAPH_SNAPSHOT_BYTES: u64 = 128 * 1024 * 1024;
+            let metadata = fs::metadata(&file)
+                .with_context(|| format!("failed to inspect snapshot {}", file.display()))?;
+            if metadata.len() > MAX_GRAPH_SNAPSHOT_BYTES {
+                bail!(
+                    "snapshot {} exceeds the {MAX_GRAPH_SNAPSHOT_BYTES}-byte load limit",
+                    file.display()
+                );
+            }
+            let bytes = fs::read(&file)
+                .with_context(|| format!("failed to read snapshot {}", file.display()))?;
+            let service = LocalWorkService::new_with_attribution(
+                context.database,
+                context.project_id,
+                context.actor_id,
+                context.session_id,
+                context.source_skill,
+                context.actor_context,
+                context.attribution_defaults,
+            );
+            let result = service.load_work_graph_snapshot(&bytes, dry_run, chrono::Utc::now())?;
+            if dry_run {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!(
+                    "loaded {} work items, {} records, and {} memories from {}",
+                    result.preview.summary.section_counts.items,
+                    result.preview.summary.section_counts.records,
+                    result.preview.summary.section_counts.memories,
+                    file.display()
+                );
             }
         }
     }
@@ -2229,7 +2276,32 @@ fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> R
                 + audit.redacted.memories,
             audit.body_sha256,
             audit.destination_kind,
-            audit.actor.actor_id,
+            bounded_doctor_snapshot_actor(&audit.actor.actor_id),
+        );
+    }
+    let (total, audits) = store
+        .recent_work_graph_snapshot_load_audits(project_id, MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS)?;
+    if total > audits.len() {
+        println!(
+            "Graph snapshot loads: {total} total; showing the latest {}",
+            audits.len()
+        );
+    }
+    for audit in audits {
+        println!(
+            "Graph snapshot loaded at {}: cut work={} memory={}, widened={}, redacted={}, body={}, exporting build={}, actor={}",
+            audit.loaded_at,
+            audit.as_of.work_feed,
+            audit.as_of.project_memory,
+            audit.widened,
+            audit.redacted.items
+                + audit.redacted.blockers
+                + audit.redacted.sources
+                + audit.redacted.records
+                + audit.redacted.memories,
+            audit.body_sha256,
+            audit.exporting_build,
+            bounded_doctor_snapshot_actor(&audit.actor.actor_id),
         );
     }
     Ok(())
@@ -2304,6 +2376,21 @@ fn build_doctor_json_report(
     let graph_snapshot_disclosures = if report.invalid_graph_snapshot_audits.is_empty() {
         let (total, items) = store
             .recent_work_graph_snapshot_save_audits(project_id, MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS)?;
+        let items = items
+            .iter()
+            .map(|item| compact_graph_snapshot_audit_json(item, &item.actor.actor_id))
+            .collect::<Result<Vec<_>>>()?;
+        serde_json::json!({ "total": total, "items": items })
+    } else {
+        serde_json::Value::Null
+    };
+    let graph_snapshot_loads = if report.invalid_graph_snapshot_audits.is_empty() {
+        let (total, items) = store
+            .recent_work_graph_snapshot_load_audits(project_id, MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS)?;
+        let items = items
+            .iter()
+            .map(|item| compact_graph_snapshot_audit_json(item, &item.actor.actor_id))
+            .collect::<Result<Vec<_>>>()?;
         serde_json::json!({ "total": total, "items": items })
     } else {
         serde_json::Value::Null
@@ -2326,6 +2413,7 @@ fn build_doctor_json_report(
             "work_records": report.invalid_work_records,
         },
         "graph_snapshot_disclosure_attempts": graph_snapshot_disclosures,
+        "graph_snapshot_loads": graph_snapshot_loads,
         "host_path_policy": stored_path_policy.map(describe_host_path_policy),
         "control": control_value,
     });
@@ -2354,6 +2442,36 @@ fn build_doctor_json_report(
         control,
         failure,
     })
+}
+
+fn compact_graph_snapshot_audit_json<T: serde::Serialize>(
+    audit: &T,
+    actor_id: &str,
+) -> Result<serde_json::Value> {
+    let mut value = serde_json::to_value(audit)?;
+    let serde_json::Value::Object(fields) = &mut value else {
+        bail!("graph snapshot audit did not serialize as an object");
+    };
+    fields.insert(
+        "actor".into(),
+        serde_json::json!({
+            "actor_id": bounded_doctor_snapshot_actor(actor_id),
+            "details_omitted": true,
+        }),
+    );
+    Ok(value)
+}
+
+fn bounded_doctor_snapshot_actor(actor_id: &str) -> String {
+    if actor_id.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES {
+        return actor_id.to_owned();
+    }
+    let suffix = "…";
+    let mut end = MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES.saturating_sub(suffix.len());
+    while !actor_id.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{suffix}", &actor_id[..end])
 }
 
 fn canonical_database_path(database: &Path) -> Result<String> {
@@ -2527,6 +2645,15 @@ mod tests {
                 .join("project-digest")
                 .join(format!("graph-17-4-{body_prefix}.json"))
         );
+    }
+
+    #[test]
+    fn doctor_snapshot_actor_rendering_is_utf8_safe_and_bounded() {
+        let actor = format!("{}é", "x".repeat(300));
+        let rendered = bounded_doctor_snapshot_actor(&actor);
+        assert!(rendered.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES);
+        assert!(rendered.ends_with('…'));
+        assert!(std::str::from_utf8(rendered.as_bytes()).is_ok());
     }
 
     #[test]

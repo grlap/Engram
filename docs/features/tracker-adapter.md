@@ -117,10 +117,10 @@ implements this publication role, not external tracker ownership.
 ## Portable durability and deferred integrations
 
 Beads snapshot import/export and portable sequential handoff are the first
-compatibility/durability targets. Producing Engram's own work-graph file is
-core — its [work-graph snapshot](work-graph-snapshot.md) save path is shipped
-while load remains planned — and storing it off-host remains `BackupAdapter`
-and `PortableStoreAdapter` work.
+compatibility/durability targets. Producing and recreating Engram's own
+work-graph file is core — its
+[work-graph snapshot](work-graph-snapshot.md) save/load path is shipped — and
+storing it off-host remains `BackupAdapter` and `PortableStoreAdapter` work.
 A configured portable target carries durable replication authority, so
 scheduled pushes do not need a model to approve each
 transition; configuring or changing that disclosure boundary is a user/policy

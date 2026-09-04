@@ -256,7 +256,7 @@ fn disposing_claimed_child_records_an_attributed_participant_waiver() {
             &ClaimWorkRequest {
                 work_id: child.work_id,
                 expected_work_revision: child.revision,
-                expected_run_id: child.active_run_id.expect("child run"),
+                expected_run_id: Some(child.active_run_id.expect("child run")),
                 holder: SessionId("child-agent".into()),
                 ttl_seconds: 100,
                 recovery_reason: None,
