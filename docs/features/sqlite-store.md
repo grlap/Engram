@@ -181,10 +181,18 @@ Current work projections are checked by `engram doctor` against canonical typed
 work events: exact item/run/root/claim/handoff/blocker snapshots, prerequisite
 and blocker-event bindings, evidence/run bindings, completion seals, dense feed
 heads, typed feed membership, and cross-feed order.
-Exact JSON snapshots come from verified canonical bytes, not reserialized
-typed values that can materialize omitted serde defaults. Typed decoding and
-binding checks still apply; neither verification nor repair rewrites canonical
-objects to fill those defaults.
+Projection equality decodes both the projection and its verified canonical
+source into the same domain type and compares every field structurally.
+An omitted serde default and its writer-serialized explicit value are equal,
+including after a writer refreshes a projection without appending an event.
+One shared representation guard also requires every present JSON member to
+survive typed re-serialization unchanged, recursively. Unknown members and
+alternate scalar spellings (such as a timestamp offset instead of the writer's
+`Z`) are refused, not silently discarded or normalized. Projection bytes are
+decoded directly into the domain type before JSON normalization, so duplicate
+known members are refused before a `Value` could collapse them. Hash, kind, relation,
+and authority bindings are still verified independently; neither verification
+nor repair rewrites canonical objects to fill those defaults.
 
 Ordinary lifecycle mutations validate the exact canonical item/run/root/claim,
 handoff, authority, and relation basis they consume under the write lock. A

@@ -49,12 +49,13 @@ use crate::{
         EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition, MemoryAssertionEvent,
         MemoryVersion, OpenWorkObligation, ReopenWorkRequest, RequiredChildWaiver, RootExecution,
         RootExecutionId, RootExecutionState, SCHEMA_VERSION, SessionId, VerificationEvidence,
-        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkCheckpoint, WorkClaimState,
-        WorkCompletionRecoveryCause, WorkDisposition, WorkEvent, WorkEvidence, WorkEvidenceKind,
-        WorkHandoffState, WorkId, WorkItem, WorkLifecycle, WorkObligation, WorkObligationId,
-        WorkObligationResolution, WorkObligationResolutionEvent, WorkObligationState,
-        WorkObligationWaiverDecision, WorkObligationWaiverReceipt, WorkObligationWaiverRefusalCode,
-        WorkRun, WorkRunId, WorkRunState, WorkTransition,
+        WaiveRequiredChildRequest, WaiveWorkObligationRequest, WorkBlocker, WorkCheckpoint,
+        WorkClaim, WorkClaimState, WorkCompletionRecoveryCause, WorkDisposition, WorkEvent,
+        WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffState, WorkId, WorkItem,
+        WorkLifecycle, WorkObligation, WorkObligationId, WorkObligationResolution,
+        WorkObligationResolutionEvent, WorkObligationState, WorkObligationWaiverDecision,
+        WorkObligationWaiverReceipt, WorkObligationWaiverRefusalCode, WorkRun, WorkRunId,
+        WorkRunState, WorkTransition,
     },
     memory::Redactor,
 };
@@ -414,9 +415,9 @@ impl SqliteStore {
                 }
                 _ => {}
             }
-            // Projection equality is against the verified canonical representation.
-            // Re-serializing typed values materializes omitted serde defaults and
-            // would falsely diagnose unchanged projections as corrupt.
+            // Retain the verified source representation. The projection verifier
+            // decodes both sides into the same domain type: a writer may refresh
+            // a projection with explicit defaults without appending a new event.
             work_items.insert(event.work_id.0.to_string(), event_json["work"].take());
             if let Some(run) = event.run {
                 runs.insert(run.run_id.0.to_string(), event_json["run"].take());
@@ -442,7 +443,7 @@ impl SqliteStore {
         }
         drop(statement);
 
-        verify_json_projection(
+        verify_json_projection::<WorkItem>(
             connection,
             "work_item",
             "SELECT work_id, item_json FROM work_items ORDER BY work_id",
@@ -450,7 +451,7 @@ impl SqliteStore {
             &mut checked,
             &mut invalid,
         )?;
-        verify_json_projection(
+        verify_json_projection::<WorkRun>(
             connection,
             "work_run",
             "SELECT run_id, run_json FROM work_runs ORDER BY run_id",
@@ -458,7 +459,7 @@ impl SqliteStore {
             &mut checked,
             &mut invalid,
         )?;
-        verify_json_projection(
+        verify_json_projection::<RootExecution>(
             connection,
             "work_root_execution",
             "SELECT root_execution_id, execution_json FROM work_root_executions ORDER BY root_execution_id",
@@ -466,7 +467,7 @@ impl SqliteStore {
             &mut checked,
             &mut invalid,
         )?;
-        verify_json_projection(
+        verify_json_projection::<WorkClaim>(
             connection,
             "work_claim",
             "SELECT run_id, claim_json FROM work_claims ORDER BY run_id",
@@ -474,7 +475,7 @@ impl SqliteStore {
             &mut checked,
             &mut invalid,
         )?;
-        verify_json_projection(
+        verify_json_projection::<WorkHandoffOffer>(
             connection,
             "work_handoff_offer",
             "SELECT offer_id, offer_json FROM work_handoff_offers ORDER BY offer_id",
@@ -482,7 +483,7 @@ impl SqliteStore {
             &mut checked,
             &mut invalid,
         )?;
-        verify_json_projection(
+        verify_json_projection::<WorkBlocker>(
             connection,
             "work_blocker",
             "SELECT blocker_id, blocker_json FROM work_blockers ORDER BY blocker_id",

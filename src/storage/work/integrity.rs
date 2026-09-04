@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use super::super::StoreError;
 use super::EvidenceProjectionRow;
@@ -123,7 +125,7 @@ pub(super) fn combined_graph_is_acyclic_with_dependency(
     Ok(removed == incoming.len())
 }
 
-pub(super) fn verify_json_projection(
+pub(super) fn verify_json_projection<T: DeserializeOwned + Serialize + PartialEq>(
     connection: &Connection,
     kind: &str,
     sql: &str,
@@ -140,8 +142,12 @@ pub(super) fn verify_json_projection(
         let (id, bytes) = row?;
         *checked += 1;
         seen.insert(id.clone());
-        let projected = serde_json::from_slice::<serde_json::Value>(&bytes);
-        if projected.as_ref().ok() != expected.get(&id) {
+        let matches = expected.get(&id).is_some_and(|expected| {
+            let projected = decode_projection_bytes::<T>(&bytes);
+            let canonical = decode_preserved_projection::<T>(expected);
+            matches!((projected, canonical), (Some(projected), Some(canonical)) if projected == canonical)
+        });
+        if !matches {
             invalid.push(format!("{kind}:{id}"));
         }
     }
@@ -719,21 +725,21 @@ pub(super) fn verify_completion_rows(
         let (seal_hash, work_id, run_id, root_execution_id, bytes) = row?;
         *checked += 1;
         seen.insert(seal_hash.clone());
-        let projected = serde_json::from_slice::<serde_json::Value>(&bytes).ok();
+        let Some(seal) = decode_projection_bytes::<CompletionSeal>(&bytes) else {
+            invalid.push(format!("completion_seal:{seal_hash}:projection_binding"));
+            continue;
+        };
         let valid = expected.get(&seal_hash).is_some_and(|expected| {
             expected.0 == work_id
                 && expected.1 == run_id
                 && expected.2 == root_execution_id
-                && projected.as_ref() == Some(&expected.3)
+                && decode_preserved_projection::<CompletionSeal>(&expected.3)
+                    .is_some_and(|canonical| seal == canonical)
         });
         if !valid {
             invalid.push(format!("completion_seal:{seal_hash}:projection_binding"));
             continue;
         }
-        let Ok(seal) = serde_json::from_slice::<CompletionSeal>(&bytes) else {
-            invalid.push(format!("completion_seal:{seal_hash}:decode"));
-            continue;
-        };
         if validate_completion_seal_obligation_basis_on(connection, &seal).is_err() {
             invalid.push(format!("completion_seal:{seal_hash}:obligation_basis"));
             continue;
@@ -1630,7 +1636,7 @@ pub(super) fn verify_canonical_work_rows(
              FROM work_completion_seals projection
              LEFT JOIN objects object ON object.object_hash = projection.seal_hash
              ORDER BY projection.seal_hash",
-            "completion_seal",
+            typed_projection_bytes_equal::<CompletionSeal> as fn(&[u8], &[u8]) -> bool,
         ),
         (
             "work_handoff_offer",
@@ -1639,10 +1645,10 @@ pub(super) fn verify_canonical_work_rows(
              FROM work_handoff_offers projection
              LEFT JOIN objects object ON object.object_hash = projection.offer_hash
              ORDER BY projection.offer_id",
-            "work_handoff_offer",
+            typed_projection_bytes_equal::<WorkHandoffOffer> as fn(&[u8], &[u8]) -> bool,
         ),
     ];
-    for (label, sql, expected_kind) in projections {
+    for (kind, sql, equivalent) in projections {
         let mut statement = connection.prepare(sql)?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -1661,18 +1667,71 @@ pub(super) fn verify_canonical_work_rows(
             ) {
                 (Some(hash), Some(bytes)) => {
                     CanonicalObject::verify(&hash, bytes.clone()).is_ok()
-                        && object_kind.as_deref() == Some(expected_kind)
-                        && serde_json::from_slice::<serde_json::Value>(&projection).ok()
-                            == serde_json::from_slice::<serde_json::Value>(bytes).ok()
+                        && object_kind.as_deref() == Some(kind)
+                        && equivalent(&projection, bytes)
                 }
                 _ => false,
             };
             if !valid {
-                invalid.push(format!("{label}:{stored_hash}"));
+                invalid.push(format!("{kind}:{stored_hash}"));
             }
         }
     }
     Ok(())
+}
+
+// Both sources use one guard: typed equality may materialize omitted
+// defaults, but must not silently discard stored fields or normalize scalars.
+fn decode_preserved_projection<T: DeserializeOwned + Serialize>(
+    stored: &serde_json::Value,
+) -> Option<T> {
+    let decoded = T::deserialize(stored).ok()?;
+    preserves_projection_representation(stored, &decoded).then_some(decoded)
+}
+
+fn preserves_projection_representation<T: Serialize>(
+    stored: &serde_json::Value,
+    decoded: &T,
+) -> bool {
+    serde_json::to_value(decoded)
+        .is_ok_and(|serialized| json_members_preserved(stored, &serialized))
+}
+
+fn json_members_preserved(stored: &serde_json::Value, serialized: &serde_json::Value) -> bool {
+    match (stored, serialized) {
+        (serde_json::Value::Object(stored), serde_json::Value::Object(serialized)) => {
+            stored.iter().all(|(key, value)| {
+                serialized
+                    .get(key)
+                    .is_some_and(|expected| json_members_preserved(value, expected))
+            })
+        }
+        (serde_json::Value::Array(stored), serde_json::Value::Array(serialized)) => {
+            stored.len() == serialized.len()
+                && stored
+                    .iter()
+                    .zip(serialized)
+                    .all(|(value, expected)| json_members_preserved(value, expected))
+        }
+        _ => stored == serialized,
+    }
+}
+
+fn decode_projection_bytes<T: DeserializeOwned + Serialize>(bytes: &[u8]) -> Option<T> {
+    // Decode the original bytes first: Value would collapse duplicate known
+    // members before serde could reject them, including nested/enum fields.
+    let decoded = serde_json::from_slice::<T>(bytes).ok()?;
+    let stored = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
+    preserves_projection_representation(&stored, &decoded).then_some(decoded)
+}
+
+// Malformed input never equals malformed input, even when both fail decoding.
+fn typed_projection_bytes_equal<T: DeserializeOwned + Serialize + PartialEq>(
+    projected: &[u8],
+    canonical: &[u8],
+) -> bool {
+    matches!((decode_projection_bytes::<T>(projected), decode_projection_bytes::<T>(canonical)),
+        (Some(projected), Some(canonical)) if projected == canonical)
 }
 
 pub(super) fn verify_work_protocol_attempts(
