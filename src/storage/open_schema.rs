@@ -128,11 +128,20 @@ impl SqliteStore {
         let after = store.verify_all()?;
         if !after.is_healthy() {
             return Err(StoreError::InvalidControlProjection(format!(
-                "projection repair refused because verification found {} invalid object(s), {} invalid graph snapshot audit(s), {} invalid control record(s), and {} invalid work record(s)",
+                "projection repair refused because verification found {} invalid object(s), {} invalid graph snapshot audit(s), {} invalid control record(s), and {} invalid work record(s); invalid labels: {}",
                 after.invalid_objects.len(),
                 after.invalid_graph_snapshot_audits.len(),
                 after.invalid_control_records.len(),
-                after.invalid_work_records.len()
+                after.invalid_work_records.len(),
+                after
+                    .invalid_objects
+                    .iter()
+                    .chain(&after.invalid_graph_snapshot_audits)
+                    .chain(&after.invalid_control_records)
+                    .chain(&after.invalid_work_records)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )));
         }
         store.connection.execute_batch("COMMIT;")?;

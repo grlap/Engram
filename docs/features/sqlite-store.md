@@ -142,6 +142,8 @@ recreates every declared rebuildable object, repopulates FTS from verified
 durable rows in one transaction, and runs full integrity verification
 afterward. Missing or malformed durable tables are never recreated, and a
 uniqueness violation makes the projection transaction roll back.
+An integrity refusal includes the invalid-record labels as well as counts;
+the failed repair rolls back its rebuildable changes too.
 
 The read-only `--recover-policy` path cannot run SQLite crash recovery. When a
 non-clean shutdown leaves a WAL that SQLite itself must recover, diagnostics
@@ -179,6 +181,10 @@ Current work projections are checked by `engram doctor` against canonical typed
 work events: exact item/run/root/claim/handoff/blocker snapshots, prerequisite
 and blocker-event bindings, evidence/run bindings, completion seals, dense feed
 heads, typed feed membership, and cross-feed order.
+Exact JSON snapshots come from verified canonical bytes, not reserialized
+typed values that can materialize omitted serde defaults. Typed decoding and
+binding checks still apply; neither verification nor repair rewrites canonical
+objects to fill those defaults.
 
 Ordinary lifecycle mutations validate the exact canonical item/run/root/claim,
 handoff, authority, and relation basis they consume under the write lock. A

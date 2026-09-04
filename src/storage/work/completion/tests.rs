@@ -3,6 +3,8 @@ use super::super::test_support::*;
 use super::super::*;
 use super::*;
 
+mod native_projection;
+
 #[test]
 fn completed_gate_attempt_mismatch_refuses_before_appending() {
     let project = "completed-gate-attempt-mismatch";

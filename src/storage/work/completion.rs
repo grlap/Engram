@@ -132,9 +132,13 @@ impl SqliteStore {
                 invalid.push(label);
                 continue;
             }
-            let event = CanonicalObject::verify(&hash, bytes)
-                .and_then(|object| object.decode::<WorkEvent>());
-            let Ok(event) = event else {
+            let event = CanonicalObject::verify(&hash, bytes).and_then(|object| {
+                Ok((
+                    object.decode::<WorkEvent>()?,
+                    object.decode::<serde_json::Value>()?,
+                ))
+            });
+            let Ok((event, mut event_json)) = event else {
                 invalid.push(label);
                 continue;
             };
@@ -375,12 +379,16 @@ impl SqliteStore {
                     }
                 }
                 WorkTransition::Completed { seal } => {
-                    match load_typed_work_object::<CompletionSeal>(
+                    match load_typed_work_object::<serde_json::Value>(
                         connection,
                         seal,
                         "completion_seal",
-                    ) {
-                        Ok(value)
+                    )
+                    .and_then(|json| {
+                        let value = serde_json::from_value::<CompletionSeal>(json.clone())?;
+                        Ok((value, json))
+                    }) {
+                        Ok((value, json))
                             if value.work_id == event.work_id
                                 && value.root_id == event.root_id
                                 && Some(value.run_id) == event.run_id
@@ -397,7 +405,7 @@ impl SqliteStore {
                                     value.work_id.0.to_string(),
                                     value.run_id.0.to_string(),
                                     value.root_execution_id.0.to_string(),
-                                    serde_json::to_value(value)?,
+                                    json,
                                 ),
                             );
                         }
@@ -406,27 +414,30 @@ impl SqliteStore {
                 }
                 _ => {}
             }
-            work_items.insert(
-                event.work_id.0.to_string(),
-                serde_json::to_value(&event.work)?,
-            );
+            // Projection equality is against the verified canonical representation.
+            // Re-serializing typed values materializes omitted serde defaults and
+            // would falsely diagnose unchanged projections as corrupt.
+            work_items.insert(event.work_id.0.to_string(), event_json["work"].take());
             if let Some(run) = event.run {
-                runs.insert(run.run_id.0.to_string(), serde_json::to_value(run)?);
+                runs.insert(run.run_id.0.to_string(), event_json["run"].take());
             }
             if let Some(execution) = event.root_execution {
                 root_executions.insert(
                     execution.root_execution_id.0.to_string(),
-                    serde_json::to_value(execution)?,
+                    event_json["root_execution"].take(),
                 );
             }
             if let Some(claim) = event.claim {
-                claims.insert(claim.run_id.0.to_string(), serde_json::to_value(claim)?);
+                claims.insert(claim.run_id.0.to_string(), event_json["claim"].take());
             }
             if let Some(offer) = event.handoff_offer {
-                handoffs.insert(offer.offer_id.0.to_string(), serde_json::to_value(offer)?);
+                handoffs.insert(
+                    offer.offer_id.0.to_string(),
+                    event_json["handoff_offer"].take(),
+                );
             }
             if let Some(blocker) = event.blocker {
-                blockers.insert(blocker.blocker_id.clone(), serde_json::to_value(blocker)?);
+                blockers.insert(blocker.blocker_id.clone(), event_json["blocker"].take());
             }
         }
         drop(statement);
