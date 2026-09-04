@@ -59,7 +59,9 @@ it requires the host to mediate turns or actions.
 
 An external coordinator that launches `claude` directly gets the whole base
 tier from three pieces, because Claude Code starts one MCP child per session
-and runs hooks whose stdout enters the model's context.
+and runs hooks whose stdout enters the model's context. The recipe is
+verified by hand against Claude Code's documented hook and `.mcp.json`
+behavior; nothing in this repository exercises it yet.
 
 1. **Set the identity in the environment of the `claude` process** before
    launching it: an absolute `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, one opaque
@@ -76,8 +78,9 @@ and runs hooks whose stdout enters the model's context.
    Claude Code supports in `command`, `args`, and `env`. The child reads
    `.engram-project` from its working directory, which Claude Code sets to
    the project root; both `--actor-id` and `--session-id` are required, so a
-   `claude` started without the coordinator's environment gets an MCP child
-   that fails to start rather than one that guesses an identity:
+   `claude` started without the coordinator's environment fails at the
+   host's `${…}` expansion, and one started with them exported empty gets a
+   child whose every word is refused — never one that guesses an identity:
 
    ```json
    {

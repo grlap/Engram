@@ -56,8 +56,8 @@ only repeats the body's own summary for adapters and readers.
 
 | Member | Fields | Role |
 | --- | --- | --- |
-| `body` | `schema_version: 1`, snapshot format fingerprint, exporting build, project id, as-of cut, `widened`, redacted count per section, redactor status at save, and the five ordered sections below | Canonical bytes; on one exporting build, identical store state at the same cut and the same widening yields identical bytes and the same SHA-256, and a build change alone changes the digest |
-| `manifest` | exported-at, body SHA-256, and a verbatim copy of the body's summary fields (format fingerprint, exporting build, project id, as-of cut, widening, redacted counts, redactor status, per-section counts) | Backup metadata and human preflight; the loader re-derives the body's RFC 8785 bytes, recomputes the digest and every summary field, and refuses a manifest that disagrees |
+| `body` | `schema_version: 1`, snapshot format fingerprint, project id, as-of cut, `widened` with its reason, redacted count per section, redactor status at save, and the five ordered sections below | Canonical bytes; identical store state at the same cut and the same widening yields identical bytes and the same SHA-256 on every build that shares the format fingerprint, so the digest is a content identity, not a build identity |
+| `manifest` | exported-at, exporting build, body SHA-256, and a verbatim copy of the body's summary fields (format fingerprint, project id, as-of cut, widening and its reason, redacted counts, redactor status, per-section counts) | Backup metadata and human preflight; the loader re-derives the body's RFC 8785 bytes, recomputes the digest and every summary field, and refuses a manifest that disagrees |
 
 The **as-of cut** is a vector, not one number: the project work-feed head
 plus the project-memory change position, because memories advance their own
@@ -96,8 +96,11 @@ exactly where the store carries a label. Today only memory versions bear
 one, and the `remember` word writes project memories as `internal`; work
 items, blockers, evidence, and source snapshots carry no label and export in
 full. Wherever a label exists the rule is fixed: `restricted` text is
-excluded unless the operator widens the save with `--include-restricted`;
-`secret-ref` values are never widened, and what appears in the file is
+excluded unless the operator widens the save with `--include-restricted
+--reason "<why>"`, and that reason travels verbatim in the body and in the
+save audit event, because widening is a disclosure decision like every other
+attributed authority in the system; `secret-ref` values are never widened,
+and what appears in the file is
 always and only the vault reference. An excluded text lands in the file as a
 typed placeholder that keeps the entry present with its key and relations,
 never as silent absence, and the body counts every placeholder per section
@@ -110,13 +113,16 @@ assurance. The file is a disclosure: stdout, a configured remote, and a
 repository are each a disclosure boundary, repository read access is not
 automatically work-state access, and committing a snapshot is a deliberate
 decision, not a default. `save` itself writes only to the local host, and
-its default file is created with owner-only permission (`0600` where the
-platform has modes); a configured off-host copy is `BackupAdapter` work and
+its default file is created owner-only: mode `0600` on Unix, and on Windows
+the ACL inherited from `ENGRAM_HOME`, which is why the host checklist wants
+a user-private `ENGRAM_HOME`; `backup` makes no such promise today and that
+stays its own decision. A configured off-host copy is `BackupAdapter` work and
 stays under the security brief's authorized-destination rule — a destination
 not authorized for placeholder metadata receives the marked-truncated export
 that brief defines, never this file. Save commits one audit event on the
-source store — as-of cut, `widened`, redacted counts, body hash, destination
-kind, and the saving actor — before any byte reaches the destination; its
+source store — as-of cut, `widened` and its reason, redacted counts, body
+hash, destination kind, and the saving actor — before any byte reaches the
+destination; its
 durable fact is that a disclosure was attempted, which is the conservative
 fact `doctor` should show, and a destination failure after it is `save`'s
 own reported failure with the attempt on record. If the event cannot be
@@ -127,7 +133,10 @@ written, nothing is written or printed.
 Load targets an empty project store: no work items, no work events, no
 project memories, and no memory tombstones under the destination project id
 (a freshly initialized store, with its policy rows and audit records, is
-empty). A nonempty destination is refused with the typed
+empty). Emptiness is checked when validation starts and re-verified inside
+the write transaction, so a concurrent `add` or `remember` that lands in
+between produces the same refusal, never a store that mixes native and
+loaded state. A nonempty destination is refused with the typed
 `graph_destination_not_empty`; a file whose project id differs from the
 destination's is refused with `graph_project_mismatch` (there is no
 cross-project opt-in in V1); a format-fingerprint mismatch is the generic
@@ -137,6 +146,12 @@ identity — and refuses as a corrupt file a manifest whose digest or summary
 fields disagree with them. Validation runs before the write: a dangling
 parent, prerequisite, supersession, blocker, source, or record target, or a
 duplicate work id, short ref, blocker id, or memory key is a typed refusal;
+the imported graph must pass the same invariant validation ordinary
+mutations apply under the destination's policy — one parent per item, no
+cycle through parents, prerequisites, or supersession, the depth, fanout,
+and open-descendant bounds, origin and source consistency, scalar and
+timestamp constraints — and a violation is a typed refusal, because a body
+digest anyone can recompute makes relations verifiable, not trustworthy;
 lifecycle and proof must agree both ways — an item is `completed` exactly
 when its newest layer carries a completion summary and time, `cancelled` or
 `superseded` exactly when it carries a disposal reason or a successor, and
@@ -197,7 +212,17 @@ lands, or nothing does.
   is itself `restored` — so `show`, `done`, `doctor`, and report assembly
   read one field instead of walking the tree; report assembly consumes seals
   only and refuses a `restored` seal with the typed `report_input_restored`;
-  reopen creates a new run exactly as it does after a seal.
+  reopen creates a new run exactly as it does after a seal. Wherever a seal
+  would otherwise be the basis, the newest `RestoredRecord` is: `show`
+  reports `completed (restored)`, a late `note` or `gate` binds to the
+  record as its historical basis, `done` refuses as on any completed item,
+  reopen supersedes the record with a new run, and a root whose own
+  completion is restored — which has no seal at all — is refused by report
+  assembly with `report_input_restored`, never with a missing-seal error. A
+  restored child that is reopened and genuinely re-sealed appears under
+  `required_child_seals` in its parent's next seal instead of
+  `restored_child_completions`, and the parent's `restored` flag follows
+  that recomputation.
 - Memories land as project memories with their original label and asserted
   `ActorContext` carried as-is — a session id that exists in no destination
   table included, because attribution is asserted everywhere — plus one
@@ -220,26 +245,30 @@ writing.
 A store that was loaded and then worked on saves both histories: the
 inherited `RestoredRecord`s verbatim and its own native layer, so the chain
 build A → B → C keeps A's restoration provenance, B's work, and nothing
-twice — a second load of the same file, or of a later save carrying the same
-layers, re-inserts the same content-addressed records rather than minting
-new ones.
+twice — a load of the same file, or of a later save carrying the same
+layers, into another fresh store re-inserts the same content-addressed
+records rather than minting new ones.
 
 ## Words
 
 Operator words, not agent words; the thirteen-word agent surface is unchanged.
 
 ```bash
-engram graph save [--out FILE | --stdout] [--include-restricted]
+engram graph save [--out FILE | --stdout] [--include-restricted --reason "<why>"]
 engram graph load FILE [--dry-run]
 ```
 
 `save` writes `snapshots/<project digest>/graph-<work-feed head>-<memory
-position>.json` under `ENGRAM_HOME` — `-widened` appended before the
-extension when `--include-restricted` was given, so a redacted and a widened
-save at one cut never share a path — with the same SHA-256 project digest
-the store and backup paths use, so no project id ever enters a path and two
-saves at different cuts never collide; it prints the path. `--out` chooses
-another file and `--stdout` is the explicit pipe form, because stdout is a
+position>-<first twelve hex digits of the body digest>.json` under
+`ENGRAM_HOME`, with the same SHA-256 project digest the store and backup
+paths use: no project id ever enters a path, a redacted and a widened save
+at one cut differ in digest and therefore in path, and two recreation
+generations that both sit at position zero cannot collide on different
+bytes. `save` never replaces an existing file — it stages and publishes
+exactly as `backup` does, and an existing path holding the same bytes is
+reported as already saved; it prints the path. `--out` chooses another file
+under the same no-replace rule, and `--stdout` is the explicit pipe form,
+because stdout is a
 disclosure boundary and the default must not cross one. Both words use the
 ordinary `ENGRAM_HOME` / project-file resolution and the same asserted
 attribution as `engram work`. The verbs are deliberately neither
@@ -287,33 +316,41 @@ a nonempty destination where `engram restore --replace` overwrites one.
   claim creates the parent's root execution; a restored parent whose earlier
   generation waived a required child cannot seal until it waives that child
   again, and the earlier waiver is visible in its restored history.
-- Save is deterministic on one exporting build: the same store state at the
-  same as-of cut with the same widening produces a byte-identical body and
-  the same body SHA-256, and two consecutive saves on an idle store produce
-  the same cut, body, and digest; the manifest may differ only in
-  exported-at, and a manifest whose digest or summary disagrees with the
+- Save is deterministic across builds that share the format fingerprint:
+  the same store state at the same as-of cut with the same widening produces
+  a byte-identical body and the same body SHA-256, and two consecutive saves
+  on an idle store produce the same cut, body, digest, and path, the second
+  reported as already saved; the manifest may differ only in exported-at and
+  exporting build, and a manifest whose digest or summary disagrees with the
   re-canonicalized body is refused on load.
 - Load refuses a nonempty destination (items, events, memories, or
   tombstones), a project-id mismatch, a format-fingerprint mismatch, a
   dangling relation or record target, a duplicate id, ref, or memory key, a
-  lifecycle that disagrees with its newest layer's proof in either
-  direction, and any carried text that fails the live write checks, each
-  with its typed refusal, and a refused load leaves the destination
-  unchanged; a freshly initialized store that carries only policy rows and
-  audit records loads; `--dry-run` reports the same counts and refusals and
-  writes nothing.
+  parent or prerequisite cycle, a graph outside the destination policy's
+  depth, fanout, or open-descendant bounds, a lifecycle that disagrees with
+  its newest layer's proof in either direction, and any carried text that
+  fails the live write checks, each with its typed refusal, and a refused
+  load leaves the destination unchanged; a destination that becomes nonempty
+  between validation and the write is refused inside the transaction; a
+  freshly initialized store that carries only policy rows and audit records
+  loads; `--dry-run` reports the same counts and refusals and writes
+  nothing.
 - A parent whose required child loaded completed-by-record seals with that
   child in `restored_child_completions` under the widened completion count
   and with `restored: true`; a grandparent that binds that seal is
   `restored: true` without any restored child of its own; report assembly
-  refuses both with `report_input_restored`; `show` and `doctor` report the
-  flag without walking the tree, and `doctor` verifies a loaded store as
-  healthy and reports the load audit event.
+  refuses both, and a root whose own completion is restored, with
+  `report_input_restored`; a late `note` or `gate` on a restored-completed
+  item binds to its record; a restored child reopened and re-sealed appears
+  under `required_child_seals` in the parent's next seal; `show` and
+  `doctor` report the flag without walking the tree, and `doctor` verifies a
+  loaded store as healthy and reports the load audit event.
 - Under a `restricted` memory version — constructed through storage test
   support, since no shipped word writes one — a save without widening
   carries a typed placeholder, a `redacted` count, and `widened: false`, and
-  with widening carries the body, `widened: true`, and the `-widened` path
-  beside the redacted file rather than over it; a `secret-ref` version
+  with widening carries the body, `widened: true`, the reason, and a path
+  that differs from the redacted file's by digest rather than replacing it;
+  a `secret-ref` version
   exports exactly its vault reference and never its value either way; the
   audited save event exists before the file does; and the default
   destination is under the project-digest directory in `ENGRAM_HOME` with

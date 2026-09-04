@@ -24,7 +24,9 @@ This project tracks its work in Engram — the thirteen agent words, documented 
   words. Once the exporter ships, the designed
   [work-graph snapshot](features/work-graph-snapshot.md) will replace that
   with `graph save` on the old build and `graph load` on the new one for
-  stores written by a build that has it; older stores keep the manual path.
+  stores written by a build that has it, whenever the two builds share the
+  snapshot format fingerprint; a format change or an older store keeps the
+  manual path.
   Either way the file carries no control policy: `engram init` on the new
   build repeats the project's `--required-assurance … --authorized-by …
   --reason …` bootstrap and any obligation rule set is re-applied by hand.

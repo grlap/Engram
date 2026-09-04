@@ -113,9 +113,9 @@ reduces the risk only once a copy leaves the host.
 - Post-publication retention compaction
 - Budget tuning from retrieval decision logs
 - Work-graph snapshot export/restore
-  ([designed](features/work-graph-snapshot.md)), then a configured off-host
-  copy with `doctor` freshness reporting for `local_backed_up`
-- Optional configured external backup automation
+  ([designed](features/work-graph-snapshot.md)), then optional configured
+  external backup automation: an off-host copy with `doctor` freshness
+  reporting for `local_backed_up`
 
 ## V2+ — widen the loop
 
