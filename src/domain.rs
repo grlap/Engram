@@ -2018,7 +2018,10 @@ fn gate_input_too_large(detail: &str) -> String {
     )
 }
 
-/// Evidence captured under the live work claim and later consumed by completion.
+/// Evidence captured under a live work claim or appended as an attributed late
+/// finding after completion. Post-completion evidence retains the completed
+/// seal's historical claim basis and is marked in the actor provenance chain;
+/// it is never part of that already-frozen seal.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkEvidence {
     pub schema_version: u16,
@@ -2996,6 +2999,10 @@ pub struct ActorContext {
     pub reason: String,
 }
 
+/// Provenance reference carried by evidence appended after its work completed.
+pub(crate) const POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE: &str = "post_completion";
+/// Stable provenance source paired with the post-completion evidence marker.
+pub(crate) const POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE: &str = "work_evidence:post_completion";
 /// Marker used inside [`ActorContext::provenance_chain`] for optional,
 /// host-asserted execution context that describes an actor without changing
 /// the actor principal used by assignment or authority checks.

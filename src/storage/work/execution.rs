@@ -11,14 +11,15 @@ use super::completion::feed_head;
 use super::feeds::{
     append_to_work_feeds, append_work_event, checkpoint_feed_end, expire_handoff_offers,
     inspect_work_request, load_handoff_offer_projection, load_typed_work_object, replay_operation,
-    request_object,
+    request_object, run_feed_position_for_object_on,
 };
 use super::integrity::{expected_environment_projection, expected_verification_projection};
 use super::planning::{
     add_root_contribution, assert_actor_session, assert_revision, claim_expiry,
     expect_root_contributor, normalize_strings, normalize_text, persist_claim,
     persist_operation_result, persist_root_execution, persist_work_run, renew_holder_claim,
-    root_participant_is_accounted, unique_hashes, validate_live_claim_on, waive_root_contributor,
+    root_participant_is_accounted, unique_hashes, validate_live_claim_for_item_on,
+    validate_live_claim_on, waive_root_contributor,
 };
 use super::query::{
     inspect_work_canonical_on, load_root_execution, load_work_claim_optional, load_work_item,
@@ -33,13 +34,15 @@ use crate::{
     CanonicalObject, ObjectHash,
     domain::{
         AcceptWorkHandoffRequest, ActorContext, CancelWorkHandoffRequest, ClaimWorkRequest,
-        EnvironmentEvidence, FeedId, FeedPosition, GATE_EVIDENCE_SUMMARY, GateEvidenceRecord,
-        OfferWorkHandoffRequest, RecordGateEvidenceRequest, RecordWorkEvidenceRequest,
-        RecordWorkNoteRequest, ReleaseWorkRequest, SCHEMA_VERSION, VerificationEvidence,
-        WorkAvailability, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState, WorkEvent,
-        WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
-        WorkItem, WorkLifecycle, WorkRun, WorkRunId, WorkRunState, WorkTransition,
-        normalize_gate_evidence_input, validate_gate_evidence_payload,
+        CompletionSeal, EnvironmentEvidence, FeedId, FeedPosition, GATE_EVIDENCE_SUMMARY,
+        GateEvidenceRecord, OfferWorkHandoffRequest, POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE,
+        POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE, RecordGateEvidenceRequest,
+        RecordWorkEvidenceRequest, RecordWorkNoteRequest, ReleaseWorkRequest, SCHEMA_VERSION,
+        VerificationEvidence, WorkAvailability, WorkCheckpoint, WorkClaim, WorkClaimId,
+        WorkClaimState, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer,
+        WorkHandoffOfferId, WorkHandoffState, WorkItem, WorkLifecycle, WorkRun, WorkRunId,
+        WorkRunState, WorkTransition, normalize_gate_evidence_input,
+        validate_gate_evidence_payload,
     },
     memory::Redactor,
 };
@@ -687,15 +690,59 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(capture);
         }
+        let item = load_work_item(&transaction, request.work_id)?;
+        if item.lifecycle == WorkLifecycle::Completed {
+            let (item, run, claim) = validate_post_completion_evidence_basis_on(
+                &transaction,
+                item,
+                request.run_id,
+                request.expected_work_revision,
+                request.claim_id,
+                request.claim_fence,
+                request.recorded_at,
+            )?;
+            let evidence = WorkEvidence {
+                schema_version: SCHEMA_VERSION,
+                work_id: item.work_id,
+                run_id: run.run_id,
+                claim_id: request.claim_id,
+                claim_fence: request.claim_fence,
+                summary,
+                refs: normalize_strings(&request.refs),
+                gate: None,
+                actor: request.actor.clone(),
+                created_at: request.recorded_at,
+            };
+            let evidence_hash = persist_post_completion_work_evidence_on(
+                &transaction,
+                &item,
+                &run,
+                claim,
+                &evidence,
+            )?;
+            let capture = WorkNoteCapture {
+                evidence: evidence_hash,
+                checkpoint: None,
+            };
+            persist_operation_result(
+                &transaction,
+                "record_work_note",
+                &request.idempotency_key,
+                request_object.hash(),
+                &capture,
+            )?;
+            transaction.commit()?;
+            return Ok(capture);
+        }
         expire_handoff_offers(
             &transaction,
             request.run_id,
             request.recorded_at,
             &request.actor,
         )?;
-        let (item, run, mut claim) = validate_live_claim_on(
+        let (item, run, mut claim) = validate_live_claim_for_item_on(
             &transaction,
-            request.work_id,
+            item,
             request.run_id,
             request.expected_work_revision,
             &request.holder,
@@ -732,7 +779,7 @@ impl SqliteStore {
         )?;
         let capture = WorkNoteCapture {
             evidence: evidence_hash,
-            checkpoint: checkpoint_hash,
+            checkpoint: Some(checkpoint_hash),
         };
         persist_operation_result(
             &transaction,
@@ -902,6 +949,7 @@ impl SqliteStore {
     ) -> Result<WorkHandoffOffer, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.from)?;
+        validate_evidence_phase_marker(WorkLifecycle::Open, &request.actor)?;
         if request.from == request.to {
             return Err(StoreError::InvalidWork(
                 "handoff source and destination must differ".into(),
@@ -1325,6 +1373,7 @@ fn persist_work_checkpoint_on(
     actor: &crate::domain::ActorContext,
     checkpointed_at: DateTime<Utc>,
 ) -> Result<ObjectHash, StoreError> {
+    validate_evidence_phase_marker(WorkLifecycle::Open, actor)?;
     let acknowledged_run_position = FeedPosition {
         feed: FeedId::RunExecution(run.run_id),
         position: feed_head(transaction, &FeedId::RunExecution(run.run_id))?,
@@ -1397,6 +1446,7 @@ fn persist_work_evidence_on(
     claim: WorkClaim,
     evidence: &WorkEvidence,
 ) -> Result<ObjectHash, StoreError> {
+    validate_evidence_phase_marker(WorkLifecycle::Open, &evidence.actor)?;
     let object = CanonicalObject::freeze(evidence)?;
     SqliteStore::insert_object(transaction, "work_evidence", &object)?;
     transaction.execute(
@@ -1458,15 +1508,52 @@ fn append_gate_evidence_on(
     refs: Vec<String>,
     previous: Option<ObjectHash>,
 ) -> Result<ObjectHash, StoreError> {
+    let item = load_work_item(transaction, request.work_id)?;
+    if item.lifecycle == WorkLifecycle::Completed {
+        let (item, run, claim) = validate_post_completion_evidence_basis_on(
+            transaction,
+            item,
+            request.run_id,
+            request.expected_work_revision,
+            request.claim_id,
+            request.claim_fence,
+            request.recorded_at,
+        )?;
+        let evidence = WorkEvidence {
+            schema_version: SCHEMA_VERSION,
+            work_id: item.work_id,
+            run_id: run.run_id,
+            claim_id: request.claim_id,
+            claim_fence: request.claim_fence,
+            summary: GATE_EVIDENCE_SUMMARY.into(),
+            refs,
+            gate: Some(GateEvidenceRecord {
+                schema_version: SCHEMA_VERSION,
+                name,
+                passed: failed.is_empty(),
+                failed,
+                previous,
+            }),
+            actor: request.actor.clone(),
+            created_at: request.recorded_at,
+        };
+        return persist_post_completion_work_evidence_on(
+            transaction,
+            &item,
+            &run,
+            claim,
+            &evidence,
+        );
+    }
     expire_handoff_offers(
         transaction,
         request.run_id,
         request.recorded_at,
         &request.actor,
     )?;
-    let (item, run, mut claim) = validate_live_claim_on(
+    let (item, run, mut claim) = validate_live_claim_for_item_on(
         transaction,
-        request.work_id,
+        item,
         request.run_id,
         request.expected_work_revision,
         &request.holder,
@@ -1496,6 +1583,230 @@ fn append_gate_evidence_on(
         created_at: request.recorded_at,
     };
     persist_work_evidence_on(transaction, &item, &run, claim, &evidence)
+}
+
+fn post_completion_evidence_marker_count(actor: &ActorContext) -> usize {
+    actor
+        .provenance_chain
+        .iter()
+        .filter(|link| {
+            link.relation == crate::domain::ProvenanceRelation::DerivedFrom
+                && link.source == POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE
+                && link.reference.as_deref() == Some(POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE)
+        })
+        .count()
+}
+
+pub(super) fn validate_evidence_phase_marker(
+    lifecycle: WorkLifecycle,
+    actor: &ActorContext,
+) -> Result<(), StoreError> {
+    let marker_count = post_completion_evidence_marker_count(actor);
+    match lifecycle {
+        WorkLifecycle::Completed if marker_count == 1 => Ok(()),
+        WorkLifecycle::Completed => Err(StoreError::InvalidWorkProjection(
+            "post-completion evidence must carry exactly one late-finding provenance marker".into(),
+        )),
+        WorkLifecycle::Proposed
+        | WorkLifecycle::Open
+        | WorkLifecycle::Cancelled
+        | WorkLifecycle::Superseded
+            if marker_count == 0 =>
+        {
+            Ok(())
+        }
+        WorkLifecycle::Proposed
+        | WorkLifecycle::Open
+        | WorkLifecycle::Cancelled
+        | WorkLifecycle::Superseded => Err(StoreError::InvalidWorkProjection(
+            "late-finding provenance is reserved for evidence on completed work".into(),
+        )),
+    }
+}
+
+pub(super) fn validate_work_evidence_event_phase_on(
+    connection: &Connection,
+    evidence_hash: &ObjectHash,
+    evidence: &WorkEvidence,
+    event: &WorkEvent,
+) -> Result<(), StoreError> {
+    validate_evidence_phase_marker(event.work.lifecycle, &evidence.actor)?;
+    if event.work.lifecycle != WorkLifecycle::Completed {
+        return Ok(());
+    }
+    let run = event.run.as_ref().ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "post-completion evidence event has no completed run".into(),
+        )
+    })?;
+    let claim = event.claim.as_ref().ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "post-completion evidence event has no historical claim".into(),
+        )
+    })?;
+    let seal_hash = run.completion_seal.as_ref().ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "post-completion evidence event run has no completion seal".into(),
+        )
+    })?;
+    let seal: CompletionSeal = load_typed_work_object(connection, seal_hash, "completion_seal")?;
+    let evidence_position = run_feed_position_for_object_on(connection, run.run_id, evidence_hash)?;
+    let completed_claim_fence = seal.claim_fence.checked_add(1).ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "completed claim fence overflowed its sealed basis".into(),
+        )
+    })?;
+    let bound = event.work.active_run_id.is_none()
+        && run.work_id == event.work_id
+        && run.state == WorkRunState::Completed
+        && run.completion_seal.as_ref() == Some(seal_hash)
+        && claim.work_id == event.work_id
+        && claim.run_id == run.run_id
+        && claim.claim_id == seal.claim_id
+        && claim.state == WorkClaimState::Completed
+        && claim.fence == completed_claim_fence
+        && evidence.claim_id == seal.claim_id
+        && evidence.claim_fence == seal.claim_fence
+        && evidence.created_at >= seal.completed_at
+        && event.created_at == evidence.created_at
+        && event.actor == evidence.actor
+        && seal.work_id == event.work_id
+        && seal.run_id == run.run_id
+        && seal.completion_cut.feed == FeedId::RunExecution(run.run_id)
+        && evidence_position.position > seal.completion_cut.position;
+    if bound {
+        Ok(())
+    } else {
+        Err(StoreError::InvalidWorkProjection(
+            "post-completion evidence event does not bind the frozen completion basis".into(),
+        ))
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the completed evidence basis is an exact immutable work/run/seal/claim cut"
+)]
+fn validate_post_completion_evidence_basis_on(
+    connection: &Connection,
+    item: WorkItem,
+    run_id: WorkRunId,
+    expected_work_revision: i64,
+    claim_id: WorkClaimId,
+    claim_fence: i64,
+    recorded_at: DateTime<Utc>,
+) -> Result<(WorkItem, WorkRun, WorkClaim), StoreError> {
+    assert_revision(&item, expected_work_revision)?;
+    if item.lifecycle != WorkLifecycle::Completed || item.active_run_id.is_some() {
+        return Err(StoreError::WorkNotOpen(item.work_id));
+    }
+    let run = load_work_run(connection, run_id)?;
+    if run.work_id != item.work_id || run.state != WorkRunState::Completed {
+        return Err(StoreError::InvalidWorkProjection(
+            "post-completion evidence does not bind the completed work run".into(),
+        ));
+    }
+    let seal_hash = run.completion_seal.as_ref().ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "post-completion evidence run has no completion seal".into(),
+        )
+    })?;
+    let seal: CompletionSeal = load_typed_work_object(connection, seal_hash, "completion_seal")?;
+    if seal.work_id != item.work_id || seal.run_id != run.run_id {
+        return Err(StoreError::InvalidWorkProjection(
+            "post-completion evidence seal crosses its work or run binding".into(),
+        ));
+    }
+    if seal.claim_id != claim_id || seal.claim_fence != claim_fence {
+        return Err(StoreError::InvalidWorkProjection(
+            "post-completion evidence does not bind the sealed claim".into(),
+        ));
+    }
+    if seal.completion_cut.feed != FeedId::RunExecution(run.run_id) {
+        return Err(StoreError::InvalidWorkProjection(
+            "post-completion evidence seal has the wrong completion feed".into(),
+        ));
+    }
+    if recorded_at < seal.completed_at {
+        return Err(StoreError::InvalidWork(
+            "post-completion evidence cannot precede the completed item".into(),
+        ));
+    }
+    let claim = load_work_claim_optional(connection, run.run_id)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "post-completion evidence run has no historical claim".into(),
+        )
+    })?;
+    if claim.work_id != item.work_id
+        || claim.run_id != run.run_id
+        || claim.claim_id != seal.claim_id
+        || claim.state != WorkClaimState::Completed
+        || claim.fence
+            != seal.claim_fence.checked_add(1).ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "completed claim fence overflowed its sealed basis".into(),
+                )
+            })?
+    {
+        return Err(StoreError::InvalidWorkProjection(
+            "post-completion evidence does not bind the historical completed claim".into(),
+        ));
+    }
+    Ok((item, run, claim))
+}
+
+fn persist_post_completion_work_evidence_on(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run: &WorkRun,
+    claim: WorkClaim,
+    evidence: &WorkEvidence,
+) -> Result<ObjectHash, StoreError> {
+    validate_evidence_phase_marker(WorkLifecycle::Completed, &evidence.actor)?;
+    let object = CanonicalObject::freeze(evidence)?;
+    SqliteStore::insert_object(transaction, "work_evidence", &object)?;
+    transaction.execute(
+        "INSERT INTO work_run_evidence (evidence_hash, work_id, run_id)
+         VALUES (?1, ?2, ?3)",
+        params![
+            object.hash().as_str(),
+            item.work_id.0.to_string(),
+            run.run_id.0.to_string()
+        ],
+    )?;
+    append_to_work_feeds(
+        transaction,
+        &item.project_id,
+        item.root_id,
+        Some(run.run_id),
+        None,
+        "work_evidence",
+        &object,
+    )?;
+    let root_execution = load_root_execution(transaction, run.root_execution_id)?;
+    append_work_event(
+        transaction,
+        &WorkEventDraft {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: Some(run.run_id),
+            revision: item.revision,
+            work: item.clone(),
+            run: Some(run.clone()),
+            root_execution: Some(root_execution),
+            claim: Some(claim),
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::EvidenceAdded {
+                evidence: object.hash().clone(),
+            },
+            actor: evidence.actor.clone(),
+            created_at: evidence.created_at,
+        },
+    )?;
+    Ok(object.hash().clone())
 }
 
 const LATEST_GATE_EVIDENCE_SQL: &str = "SELECT entry.object_hash

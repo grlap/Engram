@@ -28,11 +28,11 @@ use crate::{
     domain::normalize_gate_evidence_input,
     storage::StoreError,
     work_service::{
-        MAX_AGENT_WORK_RESPONSE_BYTES, MAX_TEXT_NEXT_COMMANDS, ProjectMemorySignal,
-        ReadyWorkSummary, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
-        WorkAttributionDefaults, WorkChange, WorkChangeProjection, WorkItemSummary,
-        WorkSectionOmission, WorkSectionOmissionReason, actor_label, render_agent_receipt_text,
-        terminal_safe_actor_label, terminal_safe_multiline,
+        COMPLETED_WORK_LATE_FINDING_REFUSAL, MAX_AGENT_WORK_RESPONSE_BYTES, MAX_TEXT_NEXT_COMMANDS,
+        ProjectMemorySignal, ReadyWorkSummary, WORK_UPDATE_CLAIM_ACTION,
+        WORK_UPDATE_CLAIM_RECOVERY_ACTION, WorkAttributionDefaults, WorkChange,
+        WorkChangeProjection, WorkItemSummary, WorkSectionOmission, WorkSectionOmissionReason,
+        actor_label, render_agent_receipt_text, terminal_safe_actor_label, terminal_safe_multiline,
     },
 };
 
@@ -337,9 +337,11 @@ pub enum UpdateAction {
     },
 }
 
-/// `gate`: one bounded pass/fail observation on the focused item.
+/// `gate`: one observation on held open work or late evidence on completed focus.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GateInput {
+    #[serde(default)]
+    pub work_ref: Option<String>,
     pub name: String,
     #[serde(default)]
     pub failed: Vec<String>,
@@ -368,7 +370,7 @@ pub struct ForgetInput {
     pub key: String,
 }
 
-/// `note`: one finding, decision, or evidence pointer.
+/// `note`: one finding on held open work or late evidence on completed work.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NoteInput {
     pub work_ref: Option<String>,
@@ -598,6 +600,14 @@ impl VerbError {
                 (
                     vec![reason.clone()],
                     vec![format!("engram work claim {target} --recover \"…\"")],
+                )
+            }
+            StoreError::InvalidWork(reason)
+                if reason == COMPLETED_WORK_LATE_FINDING_REFUSAL =>
+            {
+                (
+                    vec![reason.clone()],
+                    vec![format!("engram work note {target} \"…\"")],
                 )
             }
             StoreError::WorkRevisionConflict { .. } => (
@@ -1519,7 +1529,7 @@ impl AgentVerbs {
         })
     }
 
-    /// `gate`: record one bounded pass/fail observation on the focused item.
+    /// `gate`: record an observation on held open work or completed focus.
     ///
     /// # Errors
     ///
@@ -1529,11 +1539,12 @@ impl AgentVerbs {
     pub fn gate(&self, input: GateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let normalized = normalize_gate_input(&input)?;
         let GateInput {
+            work_ref: target_ref,
             name,
             failed,
             evidence_ref,
         } = input;
-        let view = self.target(None, now)?;
+        let view = self.target(target_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let passed = normalized.failed.is_empty();
         let result = self
@@ -2218,7 +2229,10 @@ fn next_commands(
     if has(WORK_UPDATE_CLAIM_RECOVERY_ACTION) {
         push(format!("engram work claim {work_ref} --recover \"…\""));
     }
-    if has("work_update:checkpoint") || has("work_update:evidence") {
+    if has("work_update:checkpoint")
+        || has("work_update:evidence")
+        || (word == "show" && (has("work_update:note") || has("work_update:gate")))
+    {
         push(format!("engram work note {work_ref} \"…\""));
     }
     if has("work_complete") {
@@ -3249,6 +3263,7 @@ fn normalize_gate_input(input: &GateInput) -> Result<GateInput, VerbError> {
             .map_err(StoreError::InvalidWork)?;
 
     Ok(GateInput {
+        work_ref: input.work_ref.clone(),
         name: normalized.name,
         failed: normalized.failed,
         evidence_ref: normalized.evidence_ref,
@@ -4804,6 +4819,24 @@ mod tests {
     }
 
     #[test]
+    fn completed_show_advertises_late_note_without_hijacking_done_navigation() {
+        let tags = [
+            "work_focus".into(),
+            "work_update:gate".into(),
+            "work_update:note".into(),
+            "work_update:reopen".into(),
+        ];
+        assert_eq!(
+            next_commands(&tags, "w-0123456789ab", "show", false, false, &[],),
+            vec!["engram work note w-0123456789ab \"…\""]
+        );
+        assert_eq!(
+            next_commands(&tags, "w-0123456789ab", "done", false, false, &[],),
+            vec!["engram work next"]
+        );
+    }
+
+    #[test]
     #[allow(
         clippy::too_many_lines,
         reason = "one table test covers authority, pending, dead, and bounded command priority"
@@ -5034,6 +5067,30 @@ mod tests {
     }
 
     #[test]
+    fn completed_holder_word_refusal_supplies_only_the_late_note_command() {
+        let work_ref = "w-0123456789ab";
+        let guidance = VerbError::at(
+            StoreError::InvalidWork(COMPLETED_WORK_LATE_FINDING_REFUSAL.into()),
+            work_ref,
+        )
+        .guidance();
+        assert_eq!(
+            guidance.reminders,
+            vec![COMPLETED_WORK_LATE_FINDING_REFUSAL]
+        );
+        assert_eq!(
+            guidance.next,
+            vec![format!("engram work note {work_ref} \"…\"")]
+        );
+        assert!(
+            guidance
+                .next
+                .iter()
+                .all(|command| !command.contains("reopen"))
+        );
+    }
+
+    #[test]
     fn invalid_context_generation_guidance_retries_next_without_the_bad_advisory() {
         let reason = "context_generation must be at most 256 bytes without control characters";
         let guidance = VerbError::from(StoreError::InvalidProjectMemory(reason.into())).guidance();
@@ -5153,6 +5210,7 @@ mod tests {
     #[test]
     fn gate_input_normalizes_identity_and_deduplicates_failures() {
         let normalized = normalize_gate_input(&GateInput {
+            work_ref: None,
             name: "  CARGO-TEST  ".into(),
             failed: vec![" test_b ".into(), "test_a".into(), "test_a".into()],
             evidence_ref: Some(" target/cafe\u{301}.log ".into()),
@@ -5164,6 +5222,7 @@ mod tests {
         assert_eq!(normalized.evidence_ref.as_deref(), Some("target/café.log"));
         assert_eq!(
             normalize_gate_input(&GateInput {
+                work_ref: None,
                 name: "cargo-test".into(),
                 failed: vec!["same".into(); MAX_GATE_FAILURES + 1],
                 evidence_ref: None,
@@ -5177,11 +5236,13 @@ mod tests {
     #[test]
     fn gate_evidence_preserves_exact_failure_boundaries() {
         let left = GateInput {
+            work_ref: None,
             name: "cargo-test".into(),
             failed: vec!["a | b".into(), "c".into()],
             evidence_ref: None,
         };
         let right = GateInput {
+            work_ref: None,
             name: "cargo-test".into(),
             failed: vec!["a".into(), "b | c".into()],
             evidence_ref: None,
@@ -5223,6 +5284,7 @@ mod tests {
         for (input, expected) in [
             (
                 GateInput {
+                    work_ref: None,
                     name: "x".repeat(MAX_GATE_NAME_BYTES + 1),
                     failed: Vec::new(),
                     evidence_ref: None,
@@ -5233,6 +5295,7 @@ mod tests {
             ),
             (
                 GateInput {
+                    work_ref: None,
                     name: "gate".into(),
                     failed: vec!["x".repeat(MAX_GATE_FAILURE_BYTES + 1)],
                     evidence_ref: None,
@@ -5243,6 +5306,7 @@ mod tests {
             ),
             (
                 GateInput {
+                    work_ref: None,
                     name: "gate".into(),
                     failed: (0..=MAX_GATE_FAILURES)
                         .map(|index| format!("test-{index}"))
@@ -5255,6 +5319,7 @@ mod tests {
             ),
             (
                 GateInput {
+                    work_ref: None,
                     name: "gate".into(),
                     failed: oversized_total,
                     evidence_ref: None,
@@ -5265,6 +5330,7 @@ mod tests {
             ),
             (
                 GateInput {
+                    work_ref: None,
                     name: "gate".into(),
                     failed: vec!["same".into(); MAX_GATE_FAILURE_INPUTS + 1],
                     evidence_ref: None,
@@ -5286,6 +5352,7 @@ mod tests {
     #[test]
     fn gate_input_enforces_reference_bound_and_shape() {
         let oversized_ref = normalize_gate_input(&GateInput {
+            work_ref: None,
             name: "gate".into(),
             failed: Vec::new(),
             evidence_ref: Some("x".repeat(MAX_GATE_REF_BYTES + 1)),
@@ -5299,6 +5366,7 @@ mod tests {
         );
 
         let unsafe_ref = normalize_gate_input(&GateInput {
+            work_ref: None,
             name: "gate".into(),
             failed: Vec::new(),
             evidence_ref: Some("bad\nref".into()),
@@ -5315,21 +5383,25 @@ mod tests {
     fn gate_input_refuses_control_and_format_characters() {
         for input in [
             GateInput {
+                work_ref: None,
                 name: "bad\ngate".into(),
                 failed: Vec::new(),
                 evidence_ref: None,
             },
             GateInput {
+                work_ref: None,
                 name: "gate".into(),
                 failed: vec!["bad\u{1b}test".into()],
                 evidence_ref: None,
             },
             GateInput {
+                work_ref: None,
                 name: "gate".into(),
                 failed: vec!["bad\u{202e}test".into()],
                 evidence_ref: None,
             },
             GateInput {
+                work_ref: None,
                 name: "gate".into(),
                 failed: vec!["bad\u{e0020}test".into()],
                 evidence_ref: None,
@@ -5344,16 +5416,19 @@ mod tests {
     fn gate_input_rejects_oversized_raw_strings_before_normalization() {
         for input in [
             GateInput {
+                work_ref: None,
                 name: "x".repeat(MAX_GATE_NAME_BYTES * 4 + 1),
                 failed: Vec::new(),
                 evidence_ref: None,
             },
             GateInput {
+                work_ref: None,
                 name: "gate".into(),
                 failed: vec!["x".repeat(MAX_GATE_FAILURE_BYTES * 4 + 1)],
                 evidence_ref: None,
             },
             GateInput {
+                work_ref: None,
                 name: "gate".into(),
                 failed: Vec::new(),
                 evidence_ref: Some("x".repeat(MAX_GATE_REF_BYTES * 4 + 1)),

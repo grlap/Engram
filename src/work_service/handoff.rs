@@ -81,6 +81,11 @@ impl LocalWorkService {
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("handoff attempt has no bound focused work".into())
         })?;
+        if work.lifecycle == WorkLifecycle::Completed {
+            return Err(StoreError::InvalidWork(
+                COMPLETED_WORK_LATE_FINDING_REFUSAL.into(),
+            ));
+        }
         let receipt =
             self.execute_work_handoff(&mut store, &basis, &work, input, scoped_key, now)?;
         let result = self.work_handoff_result(&store, operation, work.work_id, receipt, now)?;

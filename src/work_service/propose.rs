@@ -69,6 +69,17 @@ impl LocalWorkService {
             &raw_key,
             core_result.is_some(),
         )?;
+        if matches!(&input, WorkProposeInput::Decompose { .. })
+            && core_result.is_none()
+            && basis
+                .focused_work
+                .as_ref()
+                .is_some_and(|work| work.lifecycle == WorkLifecycle::Completed)
+        {
+            return Err(StoreError::InvalidWork(
+                COMPLETED_WORK_LATE_FINDING_REFUSAL.into(),
+            ));
+        }
         let result = match input {
             WorkProposeInput::Root {
                 title,

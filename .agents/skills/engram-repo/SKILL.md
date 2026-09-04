@@ -131,7 +131,7 @@ engram work show REF              # one item: outcome, acceptance, holder, block
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
-engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
+engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
@@ -151,13 +151,17 @@ Rules that matter:
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. `--under REF` creates a required child;
   add `--optional` when that child must not gate its parent's completion.
-- `claim` before you change anything. Only the holder can `note` and `done`.
+- `claim` before you change open work. Only the holder can `note`, `gate`, and
+  `done` while it is open. After completion, any project-bound session may use
+  `note` or `gate` for a late finding without claiming or reopening the item;
+  the existing seal stays frozen.
 - Bare `gate NAME` records a pass. Repeat `--failed FAILURE` for bounded
   failure labels; when a check has no test id, use the check command or check
   name. Use `--ref` as an opaque external-evidence reference (a path or URL by
   convention); Engram does not shape-validate it.
-- `note` is for decisions, findings, and evidence pointers. One note feeds
-  peers, handoff, and the final report; never repeat it elsewhere.
+- `note` is for decisions, findings, and evidence pointers. Before completion
+  one note feeds peers, handoff, and the final report. A late note feeds peers
+  but remains outside the frozen seal; never repeat either elsewhere.
 - `remember` is for attributed project notes and observations, never rules or
   secrets. `memories` is the source of truth; `forget` tombstones rather than
   erases and permanently retires the safe key.

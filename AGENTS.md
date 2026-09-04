@@ -123,22 +123,28 @@ phases without the Unix-only file-descriptor-limit adjustment.
 After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
 acceptable flaky test.
-On the focused item you hold, record each executed gate once: `engram work
-gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
-opaque-reference` for bounded failure evidence. Bare `gate NAME` always means
-pass; when a failed check has no test id, use the check command or check name
-as its `--failed` label. A failed gate is an
-investigation, never a stop. For every failing test or check, classify the
-cause and act in the same session:
+On the focused open item you hold, record each executed gate once: `engram
+work gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
+opaque-reference` for bounded failure evidence. For a late gate on completed
+work, any project-bound session records it once with `engram work gate NAME
+--work-ref REF ...`, without claiming or reopening the item. Bare `gate NAME`
+always means pass; when a failed check has no test id, use the check command or
+check name as its `--failed` label. A failed gate is an investigation, never a
+stop. For every failing test or check, classify the cause and act in the same
+session:
 
 - **Test or environment defect** (wrong assertion, stale fixture, host
   contention, missing prerequisite): fix it in the current changeset and
   rerun the gates.
-- **Product defect**: file one Engram item per defect with the failing
-  test named as the acceptance criterion (`engram work add "…" --accept
-  "<test> passes" --kind bug --label gate --under <current item>`), mark the
-  current item blocked on it if landing depends on it, and fix it now when it
-  is in scope. Never delete, skip, or loosen the test to pass.
+- **Product defect**: for open work, file one Engram child per defect with the
+  failing test named as the acceptance criterion (`engram work add "…"
+  --accept "<test> passes" --kind bug --label gate --under <current item>`),
+  mark the current item blocked on it if landing depends on it, and fix it now
+  when it is in scope. For a late failed gate on completed work, record the
+  gate against that item and file an independent root follow-up (`engram work
+  add "Follow up the late gate failure" --accept "<test> passes" --kind bug
+  --label gate`); never make completed work its parent or reopen it merely to
+  file the finding. Never delete, skip, or loosen the test to pass.
 
 Report the classification for every failure before asking for a decision;
 "the suite failed" alone is not a report.
@@ -197,7 +203,7 @@ engram work ls | show REF
 engram work add "Title" [--under REF [--optional]] [--kind KIND] [--label L]
 engram work claim REF
 engram work update REF [--after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why"]
-engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
+engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note "what you found or decided"
 engram work done ["what was delivered"]
 engram work remember "project note" [--key KEY]
@@ -208,6 +214,9 @@ engram work forget KEY
 - Claim before you change anything; note decisions and evidence once;
   `done` tells you what is still owed. Receipts carry `next:` commands —
   follow them.
+- After completion, any project-bound session may use `note` or `gate` for a
+  late finding without claiming or reopening the item; the existing seal stays
+  frozen.
 - File follow-up work with `engram work add`; findings and decisions go
   into `note` on the item they concern.
 - Never place work refs in source comments, identifiers, or docs prose.

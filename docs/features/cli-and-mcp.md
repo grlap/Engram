@@ -55,7 +55,7 @@ engram work show REF              # one item: outcome, acceptance, holder, block
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
-engram work gate NAME [--failed FAILURE]... [--ref opaque-reference]
+engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
@@ -102,12 +102,16 @@ Rules that matter:
 
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against.
-- `claim` before you change anything. Only the holder can `note` and `done`.
+- `claim` before you change open work. Only the holder can `note`, `gate`, and
+  `done` while it is open. After completion, any project-bound session may use
+  `note` or `gate` for a late finding without claiming or reopening the item;
+  the existing seal stays frozen.
 - `update --kind`, repeatable `--label`, and repeatable `--unlabel` revise
   indexed planning metadata through the same audited holder path as the other
   update fields.
-- `note` is for decisions, findings, and evidence pointers. One note feeds
-  peers, handoff, and the final report; never repeat it elsewhere.
+- `note` is for decisions, findings, and evidence pointers. Before completion
+  one note feeds peers, handoff, and the final report. A late note feeds peers
+  but remains outside the frozen seal; never repeat either elsewhere.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
   `done` again.
@@ -122,7 +126,8 @@ Rules that matter:
   lost the entire notice too, inspect with `ls`/`show` before repeating a
   mutation; exact replay cannot cross processes without the printed session.
 - A failed gate is work, not a stop — `gate NAME --failed FAILURE`
-  records the failures as evidence on the focused item you hold, nothing more.
+  records the failures as evidence on held open work, or as a late finding on
+  completed work selected by focus or `--work-ref`, nothing more.
   Gate names follow the repository's
   [quality gates](../development.md#quality-gates).
   Classification stays your judgment: a product defect gets a required
@@ -403,8 +408,8 @@ operation enforces the live control-session/run binding described above.
 | `add` | A root from a title, or one child with `under`; `optional` makes that child non-blocking; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
 | `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, `waive`, or `supersede` |
-| `gate` | Record one bounded pass/fail observation on the explicitly bound focused item |
-| `note` | Record evidence and checkpoint it in one call, both keyless |
+| `gate` | Record one bounded pass/fail observation; completed work accepts it as a late finding without a claim or reopen |
+| `note` | Record evidence and checkpoint open work; completed work records only late evidence, both keyless |
 | `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |
 | `search` | `ls` over every lifecycle |
 | `handoff` | `offer`, `accept`, or `cancel` the unique checkpoint-coupled handoff |
@@ -424,7 +429,9 @@ edits (`--blocked`, `--release`, `handoff --to`, `add --under`, `--title`,
 `--cancel`, `--after`, `--waive`, `--supersede-with`) are not synthesized as
 general next commands; their tags stay in `allowed_next` on the structured
 receipt. A required-child completion refusal supplies the exact waiver command.
-The host-only reopen operation remains structured-only.
+The host-only reopen operation remains structured-only. A holder-only mutation
+against completed work instead names `note` as the late-finding path and never
+suggests reopening merely to record evidence.
 Errors keep their stable code and details and add the same two fields. The
 shell prints a one-line receipt followed by `reminders:` and `next:`; `--json`
 prints the structured receipt plus `effective_session_id` only for a successful
@@ -439,10 +446,13 @@ item when this session holds it; claims on other items are visible through
 through `work_propose:decompose`; adding `--optional` instead records an
 optional child that is shown as such and does not gate parent completion (a
 decomposition admits one through 16 children). Either form then focuses that
-child exactly as a root `add` focuses the new root. `note`
-records evidence and then checkpoints the run's current evidence set;
-repeating an identical `note`, `add`, `claim`, or `done` replays its receipt
-because the core derives the idempotency key.
+child exactly as a root `add` focuses the new root. On open work, `note`
+records evidence and then checkpoints the run's current evidence set. On
+completed work, `note` records only attributed late evidence after the frozen
+completion cut; it creates no checkpoint, does not reopen or reseal the run,
+and cannot enter the existing `CompletionSeal`. Repeating an identical `note`,
+`add`, `claim`, or `done` replays its receipt because the core derives the
+idempotency key.
 
 ### Work protocol contract
 
@@ -505,9 +515,11 @@ supersede, deferral, assignment, revision, or prerequisite change. Update and
 handoff success responses contain only a compact receipt, one bounded
 `obligation_page`, generic readiness `obligations`, and `allowed_next`;
 their size does not grow with item history. A successful holder note, update,
-evidence, checkpoint, or handoff advances claim expiry to at least one hour
-after that mutation without shortening a longer explicit TTL;
-successful completion terminalizes it. A holder mutation on a lapsed claim is
+evidence, checkpoint, or handoff on open work advances claim expiry to at
+least one hour after that mutation without shortening a longer explicit TTL;
+successful completion terminalizes it. A completed `note` or `gate` instead
+appends attributed evidence without a live claim, claim renewal, checkpoint,
+reopen, or reseal. A holder mutation on a lapsed claim is
 refused with exactly one next command: `engram work claim <ref>`. Once the work
 is ready, that ordinary claim command retakes the same holder's claim, advances
 the fence, preserves an active run, and needs
@@ -737,6 +749,10 @@ leaking host authority.
 Every new completion seal declares obligation schema V1 and freezes the exact
 definition/resolution hash pairs applicable at its dense pre-seal cut. The
 final checkpoint must acknowledge the matching typed verification evidence.
+A later `note` or `gate` from any project-bound session is marked in the
+evidence actor's existing provenance chain and appended after that cut. It is
+visible in `show` notes and peer `next` changes but never changes the frozen
+seal or adds a completion barrier.
 A new seal also declares environment schema V1 and cites the sorted, distinct
 environment-evidence hashes at or before that cut. It refuses more than 64
 environment records and never copies the component payload into the seal. A

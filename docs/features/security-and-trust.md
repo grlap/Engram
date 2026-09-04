@@ -39,6 +39,12 @@ project-memory replay identity: an identical retry through those surfaces
 returns the originally attributed result. Core storage request hashes still
 bind the complete asserted actor context supplied to that request.
 
+When a project-bound session records a `note` or `gate` after work completes,
+its current asserted identity remains the evidence actor. A
+`work_evidence:post_completion` / `post_completion` link in the same provenance
+chain marks the late-finding path; the completed seal's historical claim and
+fence bind the run but do not authenticate the new actor or restore authority.
+
 The shell work surface does not turn missing host attribution into false
 assurance. When `ENGRAM_ACTOR_ID` is absent it derives an actor from the first
 nonblank conventional OS-user environment variable, or uses a synthetic

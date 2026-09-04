@@ -1679,6 +1679,35 @@ pub(super) fn validate_live_claim_on(
     allow_pending_handoff: bool,
 ) -> Result<(WorkItem, WorkRun, WorkClaim), StoreError> {
     let item = load_work_item(connection, work_id)?;
+    validate_live_claim_for_item_on(
+        connection,
+        item,
+        run_id,
+        expected_work_revision,
+        holder,
+        claim_id,
+        claim_fence,
+        now,
+        allow_pending_handoff,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the exact authority basis is intentionally explicit at the storage boundary"
+)]
+pub(super) fn validate_live_claim_for_item_on(
+    connection: &Connection,
+    item: WorkItem,
+    run_id: WorkRunId,
+    expected_work_revision: i64,
+    holder: &SessionId,
+    claim_id: WorkClaimId,
+    claim_fence: i64,
+    now: DateTime<Utc>,
+    allow_pending_handoff: bool,
+) -> Result<(WorkItem, WorkRun, WorkClaim), StoreError> {
+    let work_id = item.work_id;
     assert_revision(&item, expected_work_revision)?;
     if item.lifecycle != WorkLifecycle::Open || item.active_run_id != Some(run_id) {
         return Err(StoreError::WorkClaimMismatch { work: work_id });

@@ -481,8 +481,11 @@ enum WorkCommand {
         #[arg(long, value_name = "REF")]
         supersede_with: Option<String>,
     },
-    /// Record one bounded gate pass/fail observation on the focused item you hold.
+    /// Record a gate on held open work or a late finding on completed work.
     Gate {
+        /// Item to record the gate on; defaults to the focus.
+        #[arg(long, value_name = "REF")]
+        work_ref: Option<String>,
         /// Stable gate name, normalized case-insensitively.
         name: String,
         /// Failure label; repeatable. Omit only when the gate passed.
@@ -517,7 +520,7 @@ enum WorkCommand {
     },
     /// Permanently retire one project-memory key.
     Forget { key: String },
-    /// Record one finding, decision, or evidence pointer on the item you hold.
+    /// Record a note on held open work or a late finding on completed work.
     Note {
         /// An optional item ref, then the note text.
         #[arg(required = true, num_args = 1..=2, value_name = "[REF] TEXT")]
@@ -1239,11 +1242,13 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             verbs.update(UpdateInput { work_ref, action }, now)
         }
         WorkCommand::Gate {
+            work_ref,
             name,
             failed,
             evidence_ref,
         } => verbs.gate(
             GateInput {
+                work_ref,
                 name,
                 failed,
                 evidence_ref,
@@ -2249,6 +2254,8 @@ mod tests {
             "--session-id",
             "session",
             "gate",
+            "--work-ref",
+            "w-000000000001",
             "cargo-test",
             "--failed",
             "one::test",
@@ -2259,7 +2266,7 @@ mod tests {
         assert!(matches!(
             gate.command,
             Command::Work { operation, .. }
-                if matches!(&*operation, WorkCommand::Gate { failed, evidence_ref: Some(_), .. } if failed == &["one::test"])
+                if matches!(&*operation, WorkCommand::Gate { work_ref: Some(work_ref), failed, evidence_ref: Some(_), .. } if work_ref == "w-000000000001" && failed == &["one::test"])
         ));
 
         let failures_before_name = Cli::try_parse_from([

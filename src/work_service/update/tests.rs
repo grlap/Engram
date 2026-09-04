@@ -555,7 +555,13 @@ fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
     );
     assert_eq!(
         recovered.receipt.result,
-        serde_json::to_value(&committed.checkpoint).expect("checkpoint value")
+        serde_json::to_value(
+            committed
+                .checkpoint
+                .as_ref()
+                .expect("open note checkpoint value"),
+        )
+        .expect("checkpoint value")
     );
     let store = SqliteStore::open(&database).expect("store");
     assert_eq!(
@@ -570,7 +576,7 @@ fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
             .expect("run read")
             .expect("run")
             .last_checkpoint,
-        Some(committed.checkpoint)
+        committed.checkpoint
     );
 }
 
@@ -659,6 +665,310 @@ fn pending_gate_attempt_recovers_without_appending_again() {
             .len(),
         1
     );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one lifecycle regression proves the completed seal, late evidence, peer feed, and holder-word boundary together"
+)]
+fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_cut() {
+    let directory = tempdir().expect("temp directory");
+    let database = directory.path().join("engram.sqlite3");
+    let project = ProjectId("post-completion-evidence".into());
+    let owner = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "owner".into(),
+        SessionId("completion-owner".into()),
+        Some("protocol-test".into()),
+    );
+    let peer = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "peer".into(),
+        SessionId("late-finding-peer".into()),
+        Some("protocol-test".into()),
+    );
+    let observer = LocalWorkService::new(
+        database.clone(),
+        project,
+        "observer".into(),
+        SessionId("late-finding-observer".into()),
+        Some("protocol-test".into()),
+    );
+    let work = proposed_root(
+        owner
+            .work_propose(
+                root_input("Completed item with a late finding", "late-finding-root"),
+                at(0),
+            )
+            .expect("root"),
+    );
+    owner
+        .work_update(
+            WorkUpdateInput::Claim {
+                ttl_seconds: Some(300),
+                recovery_reason: None,
+                idempotency_key: "late-finding-claim".into(),
+            },
+            at(1),
+        )
+        .expect("claim");
+    owner
+        .work_gate(
+            "cargo-test",
+            &["late::regression".into()],
+            Some("review:late-gate"),
+            at(2),
+        )
+        .expect("pre-completion gate establishes the same-name chain head");
+    let completed = owner
+        .work_complete(
+            completion_input("completed before the late finding", "late-finding-complete"),
+            at(3),
+        )
+        .expect("complete");
+    let WorkCompleteResult::Completed(completed) = completed else {
+        panic!("completion must seal");
+    };
+    let mut store = SqliteStore::open(&database).expect("store after completion");
+    let seal_before = store
+        .get::<CompletionSeal>(&completed.seal)
+        .expect("completion seal read")
+        .expect("completion seal");
+    let run_before = store
+        .latest_work_run(work.work_id)
+        .expect("latest run read")
+        .expect("completed run");
+    let evidence_before = store
+        .work_run_evidence(completed.run_id)
+        .expect("sealed evidence membership");
+    let completed_work = store
+        .get_work_item(work.work_id)
+        .expect("completed work item");
+    assert!(matches!(
+        store.record_work_note(
+            &RecordWorkNoteRequest {
+                work_id: work.work_id,
+                run_id: completed.run_id,
+                expected_work_revision: completed_work.revision,
+                holder: owner.session_id.clone(),
+                claim_id: seal_before.claim_id,
+                claim_fence: seal_before.claim_fence,
+                summary: "unmarked completed evidence must be refused".into(),
+                refs: Vec::new(),
+                actor: owner.actor("test", "attempt unmarked post-completion evidence"),
+                idempotency_key: "unmarked-post-completion-note".into(),
+                recorded_at: at(3),
+            },
+            &DevelopmentNoopRedactor,
+        ),
+        Err(StoreError::InvalidWorkProjection(message))
+            if message.contains("exactly one late-finding provenance marker")
+    ));
+    drop(store);
+
+    observer
+        .work_next(
+            100,
+            WorkNextQuery {
+                sections: vec![WorkNextSection::Changes],
+                ..WorkNextQuery::default()
+            },
+            at(3),
+        )
+        .expect("observer establishes its pre-finding project cursor");
+    peer.work_focus(&work.short_ref, at(3))
+        .expect("project-bound peer focuses completed work");
+    let late_note = peer
+        .work_note_on(
+            Some(&work.short_ref),
+            "late review found a documentation mismatch",
+            &["review:late-note".into()],
+            at(4),
+        )
+        .expect("peer appends a late note without a claim or reopen");
+    let note_hash: ObjectHash =
+        serde_json::from_value(late_note.evidence.result.clone()).expect("late note hash");
+    assert_eq!(
+        serde_json::from_value::<ObjectHash>(late_note.receipt.result.clone())
+            .expect("late note primary hash"),
+        note_hash,
+        "a late note has no post-completion checkpoint"
+    );
+    let replayed_note = peer
+        .work_note_on(
+            Some(&work.short_ref),
+            "late review found a documentation mismatch",
+            &["review:late-note".into()],
+            at(5),
+        )
+        .expect("an identical late note replays");
+    assert_eq!(replayed_note.evidence.result, late_note.evidence.result);
+
+    let late_gate = peer
+        .work_gate_on(
+            Some(&work.short_ref),
+            "cargo-test",
+            &["late::regression".into()],
+            Some("review:late-gate"),
+            at(6),
+        )
+        .expect("peer appends failed late gate without a claim or reopen");
+    let gate_hash: ObjectHash =
+        serde_json::from_value(late_gate.receipt.result).expect("late gate hash");
+
+    let store = SqliteStore::open(&database).expect("store after late findings");
+    let seal_after = store
+        .get::<CompletionSeal>(&completed.seal)
+        .expect("completion seal reread")
+        .expect("completion seal remains");
+    assert_eq!(seal_after, seal_before);
+    assert_eq!(
+        store
+            .latest_work_run(work.work_id)
+            .expect("latest run reread")
+            .expect("completed run after late findings"),
+        run_before
+    );
+    assert_eq!(seal_after.evidence, evidence_before);
+    assert!(!seal_after.evidence.contains(&note_hash));
+    assert!(!seal_after.evidence.contains(&gate_hash));
+    let run_entries = store
+        .work_feed_after(&FeedId::RunExecution(completed.run_id), 0, 100)
+        .expect("run feed");
+    for late_hash in [&note_hash, &gate_hash] {
+        let position = run_entries
+            .iter()
+            .find(|entry| &entry.object_hash == late_hash)
+            .expect("late evidence is in the completed run feed")
+            .position
+            .position;
+        assert!(position > seal_after.completion_cut.position);
+    }
+    for late_hash in [&note_hash, &gate_hash] {
+        let evidence = store
+            .get::<WorkEvidence>(late_hash)
+            .expect("late evidence read")
+            .expect("late evidence");
+        assert_eq!(evidence.actor.actor_id, "peer");
+        assert_eq!(
+            evidence.actor.session_id,
+            Some(SessionId("late-finding-peer".into()))
+        );
+        assert_eq!(evidence.claim_id, seal_after.claim_id);
+        assert_eq!(evidence.claim_fence, seal_after.claim_fence);
+        assert!(evidence.actor.provenance_chain.iter().any(|link| {
+            link.relation == ProvenanceRelation::DerivedFrom
+                && link.source == POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE
+                && link.reference.as_deref() == Some(POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE)
+        }));
+    }
+    assert!(store.verify_all().expect("integrity report").is_healthy());
+    drop(store);
+
+    let focus = peer
+        .inspect_work(&work.short_ref, at(7))
+        .expect("show projection after late findings");
+    assert_eq!(focus.status.work.lifecycle, WorkLifecycle::Completed);
+    assert!(focus.allowed_next.contains(&"work_update:note".into()));
+    assert!(focus.allowed_next.contains(&"work_update:gate".into()));
+    assert!(focus.allowed_next.contains(&"work_update:reopen".into()));
+    assert!(focus.evidence_items.iter().any(|item| {
+        item.evidence == note_hash && item.summary == "late review found a documentation mismatch"
+    }));
+    assert!(focus.evidence_items.iter().any(|item| {
+        item.evidence == gate_hash
+            && item
+                .gate
+                .as_ref()
+                .is_some_and(|gate| gate.name == "cargo-test" && !gate.passed)
+    }));
+    assert_eq!(
+        focus
+            .latest_evidence_item
+            .as_ref()
+            .map(|item| &item.evidence),
+        Some(&gate_hash)
+    );
+
+    let changes = observer
+        .work_next(
+            100,
+            WorkNextQuery {
+                sections: vec![WorkNextSection::Changes],
+                ..WorkNextQuery::default()
+            },
+            at(8),
+        )
+        .expect("observer receives late findings");
+    let delivered_changes = changes.changes.expect("changes");
+    let late_change_count = delivered_changes
+        .iter()
+        .filter(|change| {
+            matches!(
+                &change.delivery,
+                WorkChangeProjection::Visible(summary)
+                    if summary.work_id == Some(work.work_id)
+                        && summary.change_kind == "evidence_added"
+            )
+        })
+        .count();
+    assert_eq!(late_change_count, 2);
+
+    assert!(matches!(
+        peer.work_update_on(
+            Some(&work.short_ref),
+            WorkUpdateInput::Revise {
+                patch: WorkRevisionPatch {
+                    title: Some("completed work must stay frozen".into()),
+                    ..WorkRevisionPatch::default()
+                },
+                idempotency_key: "late-finding-revise".into(),
+            },
+            at(9),
+        ),
+        Err(StoreError::InvalidWork(message))
+            if message == COMPLETED_WORK_LATE_FINDING_REFUSAL
+    ));
+    assert!(matches!(
+        peer.work_handoff_on(
+            Some(&work.short_ref),
+            WorkHandoffInput::Offer {
+                to: "late-finding-observer".into(),
+                ttl_seconds: Some(300),
+                checkpoint_summary: "completed work cannot be handed off".into(),
+                idempotency_key: "late-finding-handoff".into(),
+            },
+            at(10),
+        ),
+        Err(StoreError::InvalidWork(message))
+            if message == COMPLETED_WORK_LATE_FINDING_REFUSAL
+    ));
+    assert!(matches!(
+        peer.work_propose(
+            WorkProposeInput::Decompose {
+                children: vec![WorkChildInput {
+                    key: "late-child".into(),
+                    title: "completed work cannot gain a child".into(),
+                    outcome: "no child is created".into(),
+                    acceptance: vec!["no child exists".into()],
+                    requirement: Some(ChildRequirement::Required),
+                    kind: None,
+                    priority: None,
+                    labels: Vec::new(),
+                    assigned_to: None,
+                    deferred_until: None,
+                }],
+                prerequisites: Vec::new(),
+                idempotency_key: "late-finding-decompose".into(),
+            },
+            at(11),
+        ),
+        Err(StoreError::InvalidWork(message))
+            if message == COMPLETED_WORK_LATE_FINDING_REFUSAL
+    ));
 }
 
 #[test]

@@ -322,7 +322,8 @@ pub(crate) struct GateWorkProtocolAttempt {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct WorkNoteCapture {
     pub(crate) evidence: ObjectHash,
-    pub(crate) checkpoint: ObjectHash,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) checkpoint: Option<ObjectHash>,
 }
 
 pub(crate) struct WorkPrerequisitePage {

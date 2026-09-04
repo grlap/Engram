@@ -2,6 +2,7 @@ use super::{
     ACTOR_CONTEXT_NORMALIZED_REFERENCE, ACTOR_CONTEXT_PROVENANCE_REFERENCE, ActorContext,
     AllowedNextContext, AssuranceLevel, CanonicalObject, DateTime, LocalWorkService,
     MAX_FOCUS_HISTORY, MAX_FOCUS_MEMORIES, MAX_FOCUS_RELATIONS, Mutex, MutexGuard, OnceLock,
+    POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE, POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE,
     PROCESS_DEFAULT_WORK_SESSION_NAMESPACE, PathBuf, ProjectId, ProvenanceLink, ProvenanceRelation,
     Serialize, SessionId, SqliteStore, StoreError, Utc, WorkActorDefaultSource,
     WorkAttributionDefaults, WorkBlockerSummary, WorkChange, WorkChangeProjection, WorkClaim,
@@ -268,6 +269,16 @@ impl LocalWorkService {
             provenance_chain,
             reason: reason.into(),
         }
+    }
+
+    pub(super) fn post_completion_actor(&self, tool_name: &str, reason: &str) -> ActorContext {
+        let mut actor = self.actor(tool_name, reason);
+        actor.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE.into(),
+            reference: Some(POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE.into()),
+        });
+        actor
     }
 
     pub(super) fn focused_item(

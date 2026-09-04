@@ -165,6 +165,10 @@ A successful note, update, evidence, checkpoint, or handoff by the current
 holder advances work-claim expiry to at least one hour after that mutation
 without shortening a longer explicit TTL. Successful
 completion instead terminalizes the claim at the completion timestamp. A
+later `note` or `gate` is the narrow exception: any project-bound session may
+append an attributed late finding to the completed run without a claim,
+checkpoint, renewal, reopen, or reseal. Other holder words remain refused and
+name `note` as that path rather than suggesting a reopen. A
 holder mutation on a lapsed claim is refused with one recovery command:
 `engram work claim <ref>`. When the work is ready, that ordinary claim command
 retakes the same holder's claim under the stable project/session binding,
@@ -200,6 +204,14 @@ exact `(definition, terminal resolution)` pairs applicable at its pre-seal
 dense run-feed cut. An open obligation refuses sealing before any terminal
 work mutation. A required child seal is decoded and checked recursively, and
 every accepted seal carries the current obligation-schema binding.
+
+Post-completion `note` and `gate` evidence is appended after that immutable
+cut. It reuses the sealed claim identity and fence only as historical binding,
+while its `ActorContext` names the current project-bound session and carries a
+`work_evidence:post_completion` / `post_completion` marker in the existing
+provenance chain. The late evidence appears in `show` and project/run feeds,
+but never enters the old seal, mutates root contributions, adds a completion
+barrier, or makes completed work active again.
 
 New seals also declare environment schema V1 and bind the exact sorted,
 distinct set of environment-evidence hashes visible at the same dense cut.
@@ -668,11 +680,13 @@ agent-facing syntax is summarized in
 [CLI & MCP](cli-and-mcp.md#using-engram-as-an-agent); the memory rules
 cross-link [security & trust](security-and-trust.md).
 
-**Gate results become auditable evidence.** `gate NAME [--failed FAILURE]...
-[--ref opaque-reference]` records exactly one bounded pass or fail evidence
-entry on the focused item you hold (otherwise the typed claim guidance) —
-gate name, the bounded failure-label list, any `--ref` — through the ordinary
-`WorkEvidence` path. Consecutive identical results under the same claim
+**Gate results become auditable evidence.** `gate NAME [--work-ref REF]
+[--failed FAILURE]... [--ref opaque-reference]` records exactly one bounded pass or fail evidence
+entry through the ordinary `WorkEvidence` path: on open work the focused item
+must be held (otherwise the typed claim guidance); on completed work any
+project-bound session may append it as a marked late finding without reopening.
+The entry contains the gate name, bounded failure-label list, and any `--ref`.
+Consecutive identical results under the same live claim
 generation replay after a lost response without renewing the claim: replay is
 the recorded fact again — it records no new evidence and does not renew the
 claim. Release,
@@ -680,9 +694,10 @@ handoff, or recovery creates a new claim identity, so even the same result
 becomes a fresh observation; the
 same result after a different state is likewise fresh. Pass → fail → pass
 therefore preserves all three observations. That is all it does:
-no extra completion barrier, no children, no obligation, no waiver — the
-entry rides the ordinary evidence feed, contribution, and `CompletionSeal`
-binding like any other evidence, and completion semantics do not change. The
+no extra completion barrier, no children, no obligation, no waiver. Before
+completion the entry rides the ordinary evidence, contribution, and seal
+binding; afterward it rides the evidence feeds after the frozen seal cut and
+does not modify contributions or completion semantics. The
 workflow
 rule stays where it belongs, in the instruction files: the agent classifies
 every failure, and a product defect gets a required child through the ordinary
@@ -737,9 +752,11 @@ and pass/fail evidence receipt.
 
 Every explicit agent word resolves the exact target and binds it through the
 core mutation, so a concurrent focus change by the same session cannot retarget
-`claim`, `update`, `note`, `done`, `gate`, or `handoff`. One `note` commits its
-evidence and acknowledging checkpoint in one storage transaction and replays
-that pair as one operation.
+`claim`, `update`, `note`, `done`, `gate`, or `handoff`; `gate --work-ref REF`
+and the MCP `work_ref` field make the gate target explicit. On held open work,
+one `note` commits its evidence and acknowledging checkpoint in one storage
+transaction and replays that pair as one operation. On completed work, it
+commits only marked evidence after the frozen cut.
 
 **Prerequisites between arbitrary items.** `update REF --after OTHER` records
 that `REF` must not become ready until `OTHER` is complete; `--drop-after
@@ -1166,14 +1183,18 @@ off-host durability and control-binding gates; teams needing a concurrently
 writable multi-machine backlog still need an external system or later
 Engram sync.
 
-The agent-facing `note` tool binds directly to persisted local work focus. It
-requires the session's exact live claim and records one shared finding plus its
-evidence/checkpoint state for peers, handoff, and report assembly. The service
-derives the idempotency key; an exact retry returns the first receipt while
-changed prose is a new intent. Generic task memory and private scratch are not
-separate MCP tools. Work focus still returns a bounded, actor-filtered memory
-summary built from authorized canonical state, so the work graph and its
-execution memory do not require an external tracker identity shim.
+For open work, the agent-facing `note` tool binds directly to persisted local
+work focus. It requires the session's exact live claim and records one shared
+finding plus its evidence/checkpoint state for peers, handoff, and report
+assembly. For completed work, `note` instead requires only a project-bound
+session and appends attributed, marked post-seal evidence: it creates no
+checkpoint or handoff contribution and never changes the frozen completion or
+report basis. The service derives the idempotency key; an exact retry returns
+the first receipt while changed prose is a new intent. Generic task memory and
+private scratch are not separate MCP tools. Work focus still returns a bounded,
+actor-filtered memory summary built from authorized canonical state, so the
+work graph and its execution memory do not require an external tracker identity
+shim.
 Restricted-sensitivity bodies are omitted from task and work search/focus
 views and remain unavailable through direct show in V1. `work_next` also
 replaces restricted work memory and memory outside the currently focused root

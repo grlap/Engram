@@ -122,6 +122,108 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
       shownText.stdout,
       /completion_seal|control_binding|obligation_page|\bfence\b|\brevision\b/iu,
     );
+
+    const peerContext = [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      "parity-late-finding-peer",
+      "--session-id",
+      "parity-late-finding-peer",
+    ];
+    const observerContext = [
+      "--home",
+      engramHome,
+      "work",
+      "--actor-id",
+      "parity-late-finding-observer",
+      "--session-id",
+      "parity-late-finding-observer",
+    ];
+    assert.equal(run([...observerContext, "next", "--json"]).status, 0);
+    const lateNote = run([
+      ...peerContext,
+      "note",
+      ref,
+      "peer found a late documentation mismatch",
+      "--ref",
+      "review:late-note",
+      "--json",
+    ]);
+    assert.equal(lateNote.status, 0, lateNote.stderr);
+    assert.equal(JSON.parse(lateNote.stdout).operation, "note");
+    const lateGate = run([
+      ...observerContext,
+      "gate",
+      "--work-ref",
+      ref,
+      "cargo-test",
+      "--failed",
+      "late::regression",
+      "--ref",
+      "review:late-gate",
+      "--json",
+    ]);
+    assert.equal(lateGate.status, 0, lateGate.stderr);
+    assert.deepEqual(JSON.parse(lateGate.stdout).gate, {
+      name: "cargo-test",
+      passed: false,
+      failed_count: 1,
+      referenced: true,
+    });
+    const lateShow = run([...peerContext, "show", ref, "--json"]);
+    assert.equal(lateShow.status, 0, lateShow.stderr);
+    const lateView = JSON.parse(lateShow.stdout);
+    assert.equal(lateView.status.work.lifecycle, "completed");
+    assert.deepEqual(lateView.next, [`engram work note ${ref} "…"`]);
+    assert.ok(
+      lateView.notes.some(
+        ({ summary }) => summary === "peer found a late documentation mismatch",
+      ),
+    );
+    assert.ok(
+      lateView.notes.some(({ summary }) => /^gate cargo-test failed/u.test(summary)),
+    );
+    const lateChanges = run([...observerContext, "next", "--json"]);
+    assert.equal(lateChanges.status, 0, lateChanges.stderr);
+    assert.ok(
+      JSON.parse(lateChanges.stdout).changes.some((change) =>
+        change.includes("peer found a late documentation mismatch"),
+      ),
+      lateChanges.stdout,
+    );
+    const refusedMutation = run([
+      ...peerContext,
+      "update",
+      ref,
+      "--title",
+      "completed work remains frozen",
+      "--json",
+    ]);
+    assert.notEqual(refusedMutation.status, 0);
+    const refusal = JSON.parse(refusedMutation.stderr);
+    assert.equal(refusal.error.code, "work_invalid");
+    assert.equal(
+      refusal.error.details.remedy,
+      "use note to record a late finding without reopening the completed item",
+    );
+    assert.deepEqual(refusal.error.next, [`engram work note ${ref} "…"`]);
+    assert.doesNotMatch(JSON.stringify(refusal.error.next), /reopen/u);
+    const followUp = run([
+      ...peerContext,
+      "add",
+      "Follow up the late gate failure",
+      "--kind",
+      "bug",
+      "--json",
+    ]);
+    assert.equal(followUp.status, 0, followUp.stderr);
+    assert.equal(JSON.parse(followUp.stdout).work.kind, "bug");
+    assert.equal(JSON.parse(followUp.stdout).work.parent_id, null);
+    const completedAgain = run([...peerContext, "show", ref, "--json"]);
+    assert.equal(completedAgain.status, 0, completedAgain.stderr);
+    assert.equal(JSON.parse(completedAgain.stdout).status.work.lifecycle, "completed");
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
   }

@@ -35,7 +35,8 @@ use crate::{
     domain::{
         ACTOR_CONTEXT_NORMALIZED_REFERENCE, ACTOR_CONTEXT_PROVENANCE_REFERENCE, AssuranceLevel,
         ForgetProjectMemoryRequest, MAX_ACTOR_CONTEXT_BYTES, MemoryAssertionEvent,
-        MemoryContradictionEvent, ProjectMemoryFull, ProjectMemoryList,
+        MemoryContradictionEvent, POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE,
+        POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE, ProjectMemoryFull, ProjectMemoryList,
         ProjectMemoryMutationReceipt, ProvenanceLink, ProvenanceRelation,
         RecordGateEvidenceRequest, RecordWorkNoteRequest, RememberProjectMemoryRequest,
         SCHEMA_VERSION, Scope, Sensitivity, WorkCompletionRecoveryCause,
@@ -92,6 +93,7 @@ pub(crate) const MAX_TEXT_NEXT_COMMANDS: usize = 4;
 pub(crate) const WORK_UPDATE_CLAIM_ACTION: &str = "work_update:claim";
 pub(crate) const WORK_UPDATE_CLAIM_RECOVERY_ACTION: &str =
     "work_update:claim(recovery_reason_required)";
+pub(crate) const COMPLETED_WORK_LATE_FINDING_REFUSAL: &str = "completed work cannot be mutated; use note or gate to record a late finding without reopening it";
 
 /// Exact structured agent response for one full project-memory read.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3299,7 +3301,11 @@ fn append_claim_actions(
 fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<String> {
     let mut allowed = vec!["work_focus".into()];
     if status.work.lifecycle == WorkLifecycle::Completed {
-        allowed.push("work_update:reopen".into());
+        allowed.extend([
+            "work_update:gate".into(),
+            "work_update:note".into(),
+            "work_update:reopen".into(),
+        ]);
         return allowed;
     }
     if status.work.lifecycle != WorkLifecycle::Open {

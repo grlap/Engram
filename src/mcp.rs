@@ -19,6 +19,7 @@ use crate::{
     Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError, WorkItemKind,
     parse_defer_date,
     storage::{PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL, StoreError},
+    work_service::COMPLETED_WORK_LATE_FINDING_REFUSAL,
 };
 
 /// Immutable host context asserted for one MCP connection.
@@ -182,6 +183,8 @@ struct UpdateArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct GateArgs {
+    /// Item to record the gate on; defaults to the focus.
+    work_ref: Option<String>,
     /// Stable gate name, normalized case-insensitively.
     name: String,
     /// Failure labels (test ids or check names). Omit only when the gate passed.
@@ -413,14 +416,15 @@ impl McpServer {
         ))
     }
 
-    /// Record one bounded gate observation on the focused item you hold.
+    /// Record a gate on held open work or a late finding on completed work.
     #[tool(
         name = "gate",
-        description = "Record a gate pass or bounded failure-label list on the item you hold; evidence_ref is opaque (a path or URL by convention) and never ingested"
+        description = "Record a gate on held open work or an attributed late finding on completed work; work_ref defaults to focus and evidence_ref is opaque"
     )]
     fn gate(&self, Parameters(args): Parameters<GateArgs>) -> CallToolResult {
         verb(self.verbs().gate(
             GateInput {
+                work_ref: args.work_ref,
                 name: args.name,
                 failed: args.failed.unwrap_or_default(),
                 evidence_ref: args.evidence_ref,
@@ -475,7 +479,7 @@ impl McpServer {
     /// Record one finding once.
     #[tool(
         name = "note",
-        description = "Record one finding, decision, or evidence pointer on the item you hold; it feeds peers, handoff, and the final report"
+        description = "Record a note on held open work or an attributed late finding on completed work; it feeds peer views without changing a frozen seal"
     )]
     fn note(&self, Parameters(args): Parameters<NoteArgs>) -> CallToolResult {
         verb(self.verbs().note(
@@ -548,7 +552,7 @@ impl McpServer {
     router = self.tool_router,
     name = "engram",
     version = "0.1.0",
-    instructions = "Thirteen words: next, ls, show, add, claim, update, gate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before changing work; gate records bounded pass/fail evidence; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer ends with reminders and runnable next commands. Identical calls are safe to repeat."
+    instructions = "Thirteen words: next, ls, show, add, claim, update, gate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before changing open work; completed note/gate append late evidence without reopening; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer ends with reminders and runnable next commands. Identical calls are safe to repeat."
 )]
 impl ServerHandler for McpServer {}
 
@@ -640,6 +644,12 @@ pub fn store_error_value(error: &StoreError) -> Value {
             json!({
                 "reason": message,
                 "remedy": PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL,
+            })
+        }
+        StoreError::InvalidWork(message) if message == COMPLETED_WORK_LATE_FINDING_REFUSAL => {
+            json!({
+                "reason": message,
+                "remedy": "use note to record a late finding without reopening the completed item",
             })
         }
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
@@ -884,6 +894,24 @@ mod tests {
             value["error"]["details"]["remedy"],
             PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL
         );
+    }
+
+    #[test]
+    fn completed_holder_word_refusal_points_to_late_note_without_reopening() {
+        let error = StoreError::InvalidWork(COMPLETED_WORK_LATE_FINDING_REFUSAL.into());
+        let value = store_error_value(&error);
+        assert_eq!(
+            value["error"]["details"]["reason"],
+            COMPLETED_WORK_LATE_FINDING_REFUSAL
+        );
+        let remedy = value["error"]["details"]["remedy"]
+            .as_str()
+            .expect("late-finding remedy");
+        assert_eq!(
+            remedy,
+            "use note to record a late finding without reopening the completed item"
+        );
+        assert!(!remedy.contains("next"));
     }
 
     #[test]

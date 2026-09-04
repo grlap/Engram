@@ -321,21 +321,26 @@ attributed abort before it returns to `open`. Reopen preserves root-work
 memory but creates a clean run generation.
 
 The `gate` word is an audit wrapper over existing machinery: one pass/fail
-`WorkEvidence` entry on the focused item the session holds (gate name, bounded
-failure-label list, optional reference) through the ordinary evidence path.
-Bare `gate NAME` records a pass; a failure carries at least one label, using
-the check command or check name when no test id exists. Hidden
+`WorkEvidence` entry on held open work, or an attributed late-finding entry on
+completed work, with a gate name, bounded failure-label list, and optional
+reference. `--work-ref REF` selects an exact item without relying on ambient
+focus. Bare `gate NAME` records a pass; a failure carries at least one label,
+using the check command or check name when no test id exists. Hidden
 idempotency replays a consecutive identical result after a lost response only
-within the same claim generation. Release, handoff, or recovery creates a new
-claim identity and therefore a fresh observation even when the result is
-unchanged; the same result after a different state is also fresh — nothing
-else. The gate payload is a structural field on `WorkEvidence`, not a
+within the same open claim generation or the same immutable completed-seal
+basis. Release, handoff, recovery, or different asserted attribution creates a
+fresh observation even when the result is unchanged; the same result after a
+different state is also fresh — nothing else. The gate payload is a structural
+field on `WorkEvidence`, not a
 classification inferred from generic evidence prose. It adds no canonical kind,
-no obligation, no completion barrier, and no waiver; a product defect becomes
-a required child through the ordinary propose path, which existing
-completion machinery already enforces. The feature brief defines the input
-bounds; the domain/storage boundary owns and revalidates their normalized
-form.
+no obligation, no completion barrier, and no waiver. Before completion, a
+product defect becomes a required child through the ordinary propose path,
+which existing completion machinery already enforces. After completion, the
+agent records the failed gate on the closed item and files a separate follow-up
+with `engram work add "Follow up the late gate failure" --kind bug`; a completed
+item is never reopened merely to attach the evidence or made the parent of new
+work. The feature brief defines the input bounds; the domain/storage boundary
+owns and revalidates their normalized form.
 
 Optional report state is separate from work completion:
 
@@ -1063,6 +1068,10 @@ six-operation work core: `work_next`, `work_focus`, `work_propose`,
 supplies project, actor, current work, and cursors. Typed `gate` and atomic
 `note` are word-only `work_update:gate` and `work_update:note` service
 suboperations, not variants exposed by the direct `work core update` surface.
+They require the live holder on open work. After completion, any project-bound
+session may append either as attributed, provenance-marked late evidence after
+the immutable completion cut; this does not checkpoint, reopen, reseal, or add
+a completion barrier, and the existing `CompletionSeal` never absorbs it.
 Optional generic memory capture, import, publication, and administrative
 queries remain separate tools rather than expanding every model turn.
 

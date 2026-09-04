@@ -57,20 +57,26 @@ phases without the Unix-only file-descriptor-limit adjustment.
 
 On any failure, do not spawn reviewers. A failed gate is an investigation,
 never a stop: classify every failing test or check in this same turn.
-Record every executed gate on the focused item you hold: `engram work gate
-NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
-opaque-reference` for bounded failure evidence. Bare `gate NAME` always means
-pass; when a failed check has no test id, use the check command or check name
-as its `--failed` label.
+Record every executed gate on the focused open item you hold: `engram work
+gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
+opaque-reference` for bounded failure evidence. For a late gate on completed
+work, any project-bound session records it with `engram work gate NAME
+--work-ref REF ...`, without claiming or reopening the item. Bare `gate NAME`
+always means pass; when a failed check has no test id, use the check command or
+check name as its `--failed` label.
 
 - Test or environment defect (wrong assertion, stale fixture, host
   contention, missing prerequisite): fix it in the current changeset, rerun
   the gates, and continue the review.
-- Product defect: file one Engram item per defect with the failing test as
-  its acceptance criterion (`engram work add "…" --accept "<test> passes"
-  --kind bug --label gate --under <current item>`), mark the current item
-  blocked on it when landing depends on it, and fix it now when it is in
-  scope.
+- Product defect: for open work, file one Engram child per defect with the
+  failing test as its acceptance criterion (`engram work add "…" --accept
+  "<test> passes" --kind bug --label gate --under <current item>`), mark the
+  current item blocked on it when landing depends on it, and fix it now when
+  it is in scope. For a late failed gate on completed work, record the gate
+  against that item and file an independent root follow-up (`engram work add
+  "Follow up the late gate failure" --accept "<test> passes" --kind bug
+  --label gate`); never make completed work its parent or reopen it merely to
+  file the finding.
 
 End the turn with the classification of every failure (test name, cause,
 action); "the suite failed" alone is not a report.
@@ -149,12 +155,17 @@ Deduplicate overlapping findings and tracker suggestions.
 ## 7. Record findings in Engram from the parent
 
 Only after consolidation, search Engram for each actionable finding
-(`engram work ls --search "<phrase>" --all`). Add an item only when it is
-not already tracked (`engram work add "<finding>" --kind bug --label review
---priority <0 for Critical … 3 for Low> --under <item under review>`);
-otherwise `note` the evidence on the existing item. Do not
-complete implementation items here — record evidence and leave `done` to
-the implementer. Informational notes need no tracker mutation.
+(`engram work ls --search "<phrase>" --all`). When the item under review is
+open, add an untracked finding beneath it (`engram work add "<finding>"
+--kind bug --label review --priority <0 for Critical … 3 for Low> --under
+<item under review>`), or `note` the evidence on an existing finding. When
+the item under review is completed, record late evidence on it with `note`
+when appropriate, then add an untracked finding as an independent root
+(`engram work add "<finding>" --kind bug --label review --priority <0 for
+Critical … 3 for Low>`), or `note` the existing follow-up. Never make
+completed work the parent or reopen it merely to record a finding. Do not
+complete implementation items here — record evidence and leave `done` to the
+implementer. Informational notes need no tracker mutation.
 
 Do not fix source files during this command. Review findings begin a separate
 implementation iteration followed by fresh gates and review.

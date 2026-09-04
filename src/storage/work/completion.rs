@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::super::{SqliteStore, StoreError};
-use super::execution::{ensure_run_evidence, validate_gate_evidence_chain};
+use super::execution::{
+    ensure_run_evidence, validate_gate_evidence_chain, validate_work_evidence_event_phase_on,
+};
 use super::feeds::{
     append_to_work_feeds, append_work_event, checkpoint_feed_end, current_run_feed_cut_on,
     expire_handoff_offers, inspect_work_request, latest_source_mutation_on,
@@ -264,6 +266,14 @@ impl SqliteStore {
                             if value.work_id == event.work_id
                                 && Some(value.run_id) == event.run_id =>
                         {
+                            if validate_work_evidence_event_phase_on(
+                                connection, evidence, &value, &event,
+                            )
+                            .is_err()
+                            {
+                                invalid.push(format!("{label}:invalid_evidence_phase"));
+                                continue;
+                            }
                             if validate_gate_evidence_chain(evidence, &value, &mut gate_heads)
                                 .is_err()
                             {

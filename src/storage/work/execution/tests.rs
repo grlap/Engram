@@ -748,6 +748,187 @@ fn gate_integrity_requires_a_valid_payload_and_prior_same_name_head() {
 }
 
 #[test]
+fn late_finding_marker_is_reserved_for_completed_work_evidence() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("post-completion-marker", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let claim = claim(&mut store, &root, "holder", "claim", 1, 300);
+    let mut marked_actor = actor("holder");
+    marked_actor.provenance_chain.push(ProvenanceLink {
+        relation: ProvenanceRelation::DerivedFrom,
+        source: POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE.into(),
+        reference: Some(POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE.into()),
+    });
+
+    let marked_evidence = store.record_work_evidence(
+        &RecordWorkEvidenceRequest {
+            work_id: root.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: root.revision,
+            holder: claim.holder.clone(),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            summary: "must not masquerade as a late finding".into(),
+            refs: Vec::new(),
+            actor: marked_actor.clone(),
+            idempotency_key: "marked-open-evidence".into(),
+            recorded_at: at(2),
+        },
+        &DevelopmentNoopRedactor,
+    );
+    assert!(matches!(
+        marked_evidence,
+        Err(StoreError::InvalidWorkProjection(message))
+            if message.contains("reserved for evidence on completed work")
+    ));
+
+    let marked_checkpoint = store.checkpoint_work(
+        &CheckpointWorkRequest {
+            work_id: root.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: root.revision,
+            holder: claim.holder.clone(),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            summary: "must not carry the late marker".into(),
+            evidence: None,
+            actor: marked_actor.clone(),
+            idempotency_key: "marked-open-checkpoint".into(),
+            checkpointed_at: at(2),
+        },
+        &DevelopmentNoopRedactor,
+    );
+    assert!(matches!(
+        marked_checkpoint,
+        Err(StoreError::InvalidWorkProjection(message))
+            if message.contains("reserved for evidence on completed work")
+    ));
+    let marked_handoff = store.offer_work_handoff(
+        &OfferWorkHandoffRequest {
+            work_id: root.work_id,
+            run_id: claim.run_id,
+            expected_work_revision: root.revision,
+            from: claim.holder.clone(),
+            to: SessionId("next-holder".into()),
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+            ttl_seconds: 30,
+            checkpoint_summary: "must not carry the late marker".into(),
+            actor: marked_actor.clone(),
+            idempotency_key: "marked-open-handoff".into(),
+            offered_at: at(2),
+        },
+        &DevelopmentNoopRedactor,
+    );
+    assert!(matches!(
+        marked_handoff,
+        Err(StoreError::InvalidWorkProjection(message))
+            if message.contains("reserved for evidence on completed work")
+    ));
+    assert!(
+        store
+            .work_run_evidence(claim.run_id)
+            .expect("open run evidence")
+            .is_empty()
+    );
+}
+
+#[test]
+fn completed_evidence_phase_validator_rejects_corrupt_frozen_basis_bindings() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("completed-evidence-phase", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let claim = claim(&mut store, &root, "holder", "claim", 1, 300);
+    let sealed_evidence = evidence(&mut store, &root, &claim, "holder", "sealed-evidence", 2);
+    checkpoint(
+        &mut store,
+        &root,
+        &claim,
+        "holder",
+        "seal-checkpoint",
+        3,
+        std::slice::from_ref(&sealed_evidence),
+    );
+    let seal = complete(
+        &mut store,
+        &root,
+        &claim,
+        "holder",
+        &sealed_evidence,
+        "complete",
+        4,
+    )
+    .expect("complete work");
+    let completed = store.get_work_item(root.work_id).expect("completed item");
+    let mut late_actor = actor("peer");
+    late_actor.provenance_chain.push(ProvenanceLink {
+        relation: ProvenanceRelation::DerivedFrom,
+        source: POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE.into(),
+        reference: Some(POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE.into()),
+    });
+    let capture = store
+        .record_work_note(
+            &RecordWorkNoteRequest {
+                work_id: root.work_id,
+                run_id: claim.run_id,
+                expected_work_revision: completed.revision,
+                holder: SessionId("peer".into()),
+                claim_id: seal.claim_id,
+                claim_fence: seal.claim_fence,
+                summary: "late finding".into(),
+                refs: Vec::new(),
+                actor: late_actor,
+                idempotency_key: "late-note".into(),
+                recorded_at: at(5),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("late note");
+    let evidence = store
+        .get::<WorkEvidence>(&capture.evidence)
+        .expect("late evidence read")
+        .expect("late evidence");
+    let event = canonical_work_events_for_item(&store.connection, root.work_id)
+        .expect("work history")
+        .into_iter()
+        .last()
+        .expect("late evidence event");
+    validate_work_evidence_event_phase_on(&store.connection, &capture.evidence, &evidence, &event)
+        .expect("valid completed evidence basis");
+
+    let mut wrong_actor = event.clone();
+    wrong_actor.actor.actor_id = "forged-peer".into();
+    assert!(
+        validate_work_evidence_event_phase_on(
+            &store.connection,
+            &capture.evidence,
+            &evidence,
+            &wrong_actor,
+        )
+        .is_err()
+    );
+    let mut before_completion = evidence;
+    before_completion.created_at = seal.completed_at - chrono::Duration::seconds(1);
+    assert!(
+        validate_work_evidence_event_phase_on(
+            &store.connection,
+            &capture.evidence,
+            &before_completion,
+            &event,
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn delegated_planning_cannot_revise_a_foreign_live_claim() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let root = store

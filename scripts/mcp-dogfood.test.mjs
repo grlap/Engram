@@ -479,7 +479,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const gateProperties = aToolDefinitions.find(
       ({ name }) => name === "gate",
     ).inputSchema.properties;
-    for (const field of ["name", "failed", "evidence_ref"]) {
+    for (const field of ["work_ref", "name", "failed", "evidence_ref"]) {
       assert.ok(gateProperties[field], `gate is missing ${field}`);
     }
     assert.match(
@@ -841,6 +841,54 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assertTerseShow(completed);
     assert.equal(completed.reminders.length, 0);
+
+    const lateNote = receipt(
+      await a.call("note", {
+        work_ref: workRef,
+        text: "peer found a late MCP documentation mismatch",
+        refs: ["review:mcp-late-note"],
+      }),
+    );
+    assert.equal(lateNote.operation, "note");
+    assert.equal(lateNote.receipt.result, lateNote.evidence.result);
+    const lateGate = receipt(
+      await a.call("gate", {
+        work_ref: workRef,
+        name: "cargo-test",
+        failed: ["late::mcp-regression"],
+        evidence_ref: "review:mcp-late-gate",
+      }),
+    );
+    assert.equal(lateGate.operation, "gate");
+    assert.equal(lateGate.gate.passed, false);
+    const afterLateFindings = receipt(await a.call("show", { work_ref: workRef }));
+    assert.equal(afterLateFindings.status.work.lifecycle, "completed");
+    assert.deepEqual(afterLateFindings.next, [`engram work note ${workRef} "…"`]);
+    assert.ok(
+      afterLateFindings.notes.some(
+        ({ summary }) => summary === "peer found a late MCP documentation mismatch",
+      ),
+      JSON.stringify(afterLateFindings.notes),
+    );
+    assert.ok(
+      afterLateFindings.notes.some(({ summary }) => /^gate cargo-test failed/u.test(summary)),
+      JSON.stringify(afterLateFindings.notes),
+    );
+    const completedMutation = structuredError(
+      await a.call("update", {
+        work_ref: workRef,
+        action: "revise",
+        title: "completed work remains frozen",
+      }),
+      "work_invalid",
+    );
+    assert.equal(
+      completedMutation.details.remedy,
+      "use note to record a late finding without reopening the completed item",
+    );
+    assert.deepEqual(completedMutation.next, [`engram work note ${workRef} "…"`]);
+    assert.doesNotMatch(JSON.stringify(completedMutation.next), /reopen/u);
+
     const openOnly = receipt(await b.call("ls", { search: "dogfood local work" }));
     assert.equal(openOnly.items.length, 0);
     const completedCatalog = receipt(
