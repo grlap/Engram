@@ -43,8 +43,10 @@ use crate::{
     },
     storage::{
         BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, CompleteWorkStorageResult,
-        CompletionRecoverySnapshot, ProjectMemoryAdvertisement, StageWorkSessionDelivery,
-        StoreError, WorkEvidenceProjectionSummary, WorkNoteCapture,
+        CompletionRecoverySnapshot, PROCESS_DEFAULT_WORK_SESSION_NAMESPACE,
+        PROCESS_DEFAULT_WORK_SESSION_PREFIX, PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS,
+        PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL, ProjectMemoryAdvertisement,
+        StageWorkSessionDelivery, StoreError, WorkEvidenceProjectionSummary, WorkNoteCapture,
         normalize_completion_acceptance_shape,
     },
 };
@@ -222,6 +224,7 @@ pub struct LocalWorkService {
     attribution_defaults: WorkAttributionDefaults,
     source_skill: Option<String>,
     cached_store: OnceLock<Mutex<SqliteStore>>,
+    process_default_session_initialized: OnceLock<()>,
     #[cfg(test)]
     delivery_stage_hook: Option<DeliveryStageTestHook>,
 }
@@ -241,6 +244,7 @@ impl Clone for LocalWorkService {
             // handle independent preserves the real cross-connection CAS and
             // delivery-race semantics exercised by hosts and tests.
             cached_store: OnceLock::new(),
+            process_default_session_initialized: OnceLock::new(),
             #[cfg(test)]
             delivery_stage_hook: self.delivery_stage_hook.clone(),
         }
@@ -260,6 +264,10 @@ impl fmt::Debug for LocalWorkService {
             .field("attribution_defaults", &self.attribution_defaults)
             .field("source_skill", &self.source_skill)
             .field("store_initialized", &self.cached_store.get().is_some())
+            .field(
+                "process_default_session_initialized",
+                &self.process_default_session_initialized.get().is_some(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -1176,6 +1184,7 @@ impl LocalWorkService {
             attribution_defaults,
             source_skill,
             cached_store: OnceLock::new(),
+            process_default_session_initialized: OnceLock::new(),
             #[cfg(test)]
             delivery_stage_hook: None,
         }
@@ -1245,7 +1254,7 @@ impl LocalWorkService {
         now: DateTime<Utc>,
         defer_memory_acknowledgement: bool,
     ) -> Result<WorkNextView, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         if let Some(through) = acknowledge_through {
             store.acknowledge_work_session_delivery(
                 &self.project_id,
@@ -1511,11 +1520,11 @@ impl LocalWorkService {
 
     /// Acknowledges the exact project-memory advisory candidate retained in an
     /// agent response after its final byte shedding and rendering pass.
-    pub(crate) fn acknowledge_work_next_memories(&self, view: &WorkNextView) {
+    pub(crate) fn acknowledge_work_next_memories(&self, view: &WorkNextView, now: DateTime<Utc>) {
         let Some(advertisement) = &view.memory_advertisement else {
             return;
         };
-        let Ok(mut store) = self.store() else {
+        let Ok(mut store) = self.store_at(now) else {
             return;
         };
         acknowledge_project_memory_advertisement_best_effort(
@@ -1539,7 +1548,7 @@ impl LocalWorkService {
         key: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        self.store()?.remember_project_memory_with_admission(
+        self.store_at(now)?.remember_project_memory_with_admission(
             &RememberProjectMemoryRequest {
                 project_id: self.project_id.clone(),
                 session_id: self.session_id.clone(),
@@ -1563,8 +1572,9 @@ impl LocalWorkService {
         &self,
         query: Option<&str>,
         after: Option<&str>,
+        now: DateTime<Utc>,
     ) -> Result<ProjectMemoryList, StoreError> {
-        self.store()?.project_memories(
+        self.store_at(now)?.project_memories(
             &self.project_id,
             &self.session_id,
             &self.actor("memories", "list attributed project memories"),
@@ -1582,8 +1592,9 @@ impl LocalWorkService {
     pub(crate) fn project_memory_full(
         &self,
         key: &str,
+        now: DateTime<Utc>,
     ) -> Result<ProjectMemoryFullResponse, StoreError> {
-        let full = self.store()?.project_memory_full(
+        let full = self.store_at(now)?.project_memory_full(
             &self.project_id,
             &self.session_id,
             &self.actor("memories", "read attributed project memory"),
@@ -1606,7 +1617,7 @@ impl LocalWorkService {
         key: String,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
-        self.store()?.forget_project_memory(
+        self.store_at(now)?.forget_project_memory(
             &ForgetProjectMemoryRequest {
                 project_id: self.project_id.clone(),
                 session_id: self.session_id.clone(),
@@ -1625,7 +1636,7 @@ impl LocalWorkService {
     ///
     /// Returns [`StoreError`] when the reference is absent or outside the project.
     pub fn select_work(&self, work_ref: &str, now: DateTime<Utc>) -> Result<(), StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         self.bind_target(&mut store, Some(work_ref), now)?;
         Ok(())
     }
@@ -1640,7 +1651,7 @@ impl LocalWorkService {
         &self,
         now: DateTime<Utc>,
     ) -> Result<Vec<(WorkId, DateTime<Utc>)>, StoreError> {
-        let store = self.store()?;
+        let store = self.store_at(now)?;
         store.work_held_by(&self.session_id, now)
     }
 
@@ -1654,7 +1665,7 @@ impl LocalWorkService {
         &self,
         now: DateTime<Utc>,
     ) -> Result<Vec<(WorkId, SessionId, DateTime<Utc>)>, StoreError> {
-        let store = self.store()?;
+        let store = self.store_at(now)?;
         store.live_work_claims(&self.project_id, now)
     }
 
@@ -1669,15 +1680,20 @@ impl LocalWorkService {
         work_ref: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
-        let store = self.store()?;
+        let store = self.store_at(now)?;
         let work = store.resolve_work_ref(&self.project_id, work_ref)?;
         self.focus_view(&store, work.work_id, false, true, now)
     }
 
     /// Resolves one work reference without projecting or changing ambient
     /// focus. Agent translations use this only to attribute core refusals.
-    pub(crate) fn resolve_work_reference(&self, work_ref: &str) -> Result<WorkItem, StoreError> {
-        self.store()?.resolve_work_ref(&self.project_id, work_ref)
+    pub(crate) fn resolve_work_reference(
+        &self,
+        work_ref: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkItem, StoreError> {
+        self.store_at(now)?
+            .resolve_work_ref(&self.project_id, work_ref)
     }
 
     /// Selects and inspects ambient work without implicitly changing its claim.
@@ -1690,7 +1706,7 @@ impl LocalWorkService {
         work_ref: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         let item = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
         self.focus_view(&store, item.work_id, true, true, now)
@@ -1727,7 +1743,7 @@ impl LocalWorkService {
         input: WorkProposeInput,
         now: DateTime<Utc>,
     ) -> Result<WorkProposeResult, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(
             &store,
@@ -1946,7 +1962,7 @@ impl LocalWorkService {
         evidence_ref: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let work = basis.focused_work.clone().ok_or_else(|| {
@@ -2021,7 +2037,7 @@ impl LocalWorkService {
         refs: &[String],
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let note = WorkNoteIntent { summary, refs };
@@ -2152,7 +2168,7 @@ impl LocalWorkService {
         input: WorkUpdateInput,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let intent = self.protocol_intent(&input);
@@ -2604,7 +2620,7 @@ impl LocalWorkService {
         input: WorkCompleteInput,
         now: DateTime<Utc>,
     ) -> Result<WorkCompleteResult, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let intent = self.protocol_intent(&input);
@@ -3035,7 +3051,7 @@ impl LocalWorkService {
         input: WorkHandoffInput,
         now: DateTime<Utc>,
     ) -> Result<WorkHandoffResult, StoreError> {
-        let mut store = self.store()?;
+        let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, true, target, now)?;
         let intent = self.protocol_intent(&input);
@@ -3219,12 +3235,17 @@ impl LocalWorkService {
         }
     }
 
-    fn store(&self) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+    fn store_at(&self, now: DateTime<Utc>) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
         if self.actor_id.trim().is_empty() || self.session_id.0.trim().is_empty() {
             return Err(StoreError::InvalidWork(
                 "local work requires a non-empty asserted actor and session binding".into(),
             ));
         }
+        validate_process_default_work_session(
+            &self.session_id,
+            self.attribution_defaults.session,
+            now,
+        )?;
         if self.cached_store.get().is_none() {
             let opened = SqliteStore::open_unresolved(&self.database)?;
             // A simultaneous first call may win initialization. Dropping this
@@ -3236,11 +3257,30 @@ impl LocalWorkService {
                 "local work service could not initialize its SQLite connection".into(),
             )
         })?;
-        cached.lock().map_err(|_| {
+        let mut store = cached.lock().map_err(|_| {
             StoreError::InvalidWorkProjection(
                 "local work service SQLite connection lock is poisoned".into(),
             )
-        })
+        })?;
+        if self
+            .session_id
+            .0
+            .starts_with(PROCESS_DEFAULT_WORK_SESSION_NAMESPACE)
+            && self.process_default_session_initialized.get().is_none()
+        {
+            store.initialize_process_default_work_session(
+                &self.project_id,
+                &self.session_id,
+                now,
+            )?;
+            let _ = self.process_default_session_initialized.set(());
+        }
+        Ok(store)
+    }
+
+    #[cfg(test)]
+    fn store(&self) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+        self.store_at(Utc::now())
     }
 
     fn protocol_intent<'a, T>(&'a self, input: &'a T) -> WorkProtocolIntent<'a, T> {
@@ -3750,6 +3790,86 @@ impl LocalWorkService {
             handoffs,
         })
     }
+}
+
+/// Generates the reserved, time-bearing identity used when the shell did not
+/// receive a durable session from its host or operator.
+#[must_use]
+pub fn new_process_default_work_session_id() -> String {
+    format!(
+        "{PROCESS_DEFAULT_WORK_SESSION_PREFIX}{}-{}",
+        std::process::id(),
+        uuid::Uuid::now_v7()
+    )
+}
+
+fn process_default_work_session_started_at(
+    session_id: &SessionId,
+) -> Result<Option<DateTime<Utc>>, StoreError> {
+    if !session_id
+        .0
+        .starts_with(PROCESS_DEFAULT_WORK_SESSION_NAMESPACE)
+    {
+        return Ok(None);
+    }
+    let encoded = session_id
+        .0
+        .strip_prefix(PROCESS_DEFAULT_WORK_SESSION_PREFIX)
+        .ok_or_else(process_default_work_session_reuse_refusal)?;
+    let (process_id, uuid) = encoded
+        .split_once('-')
+        .ok_or_else(process_default_work_session_reuse_refusal)?;
+    process_id
+        .parse::<u32>()
+        .map_err(|_| process_default_work_session_reuse_refusal())?;
+    let uuid =
+        uuid::Uuid::parse_str(uuid).map_err(|_| process_default_work_session_reuse_refusal())?;
+    if uuid.get_version_num() != 7 {
+        return Err(process_default_work_session_reuse_refusal());
+    }
+    let (seconds, nanos) = uuid
+        .get_timestamp()
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "version 7 process-default session has no creation timestamp".into(),
+            )
+        })?
+        .to_unix();
+    let seconds = i64::try_from(seconds).map_err(|_| {
+        StoreError::InvalidWorkProjection(
+            "process-default session creation timestamp overflowed".into(),
+        )
+    })?;
+    DateTime::from_timestamp(seconds, nanos)
+        .map(Some)
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "process-default session creation timestamp is invalid".into(),
+            )
+        })
+}
+
+fn process_default_work_session_reuse_refusal() -> StoreError {
+    StoreError::InvalidWork(PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL.into())
+}
+
+fn validate_process_default_work_session(
+    session_id: &SessionId,
+    was_defaulted: bool,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    let started_at = process_default_work_session_started_at(session_id)?;
+    if was_defaulted && started_at.is_none() {
+        return Err(process_default_work_session_reuse_refusal());
+    }
+    if started_at.is_some_and(|started_at| {
+        started_at > now
+            || now.signed_duration_since(started_at).num_seconds()
+                >= PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS
+    }) {
+        return Err(process_default_work_session_reuse_refusal());
+    }
+    Ok(())
 }
 
 fn acknowledge_project_memory_advertisement_best_effort(
@@ -5867,6 +5987,122 @@ mod tests {
             + Duration::seconds(second)
     }
 
+    fn process_default_session_at(pid: u32, created_at: DateTime<Utc>) -> SessionId {
+        let seconds = u64::try_from(created_at.timestamp()).expect("positive test timestamp");
+        let timestamp = uuid::Timestamp::from_unix(
+            uuid::NoContext,
+            seconds,
+            created_at.timestamp_subsec_nanos(),
+        );
+        SessionId(format!(
+            "{PROCESS_DEFAULT_WORK_SESSION_PREFIX}{pid}-{}",
+            uuid::Uuid::new_v7(timestamp)
+        ))
+    }
+
+    #[test]
+    fn process_default_work_session_reuse_expires_before_protocol_mutation() {
+        let retained = process_default_session_at(10, at(0));
+        validate_process_default_work_session(
+            &retained,
+            true,
+            at(PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS - 1),
+        )
+        .expect("session remains reusable within the window");
+        assert!(matches!(
+            validate_process_default_work_session(
+                &retained,
+                false,
+                at(PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS)
+            ),
+            Err(StoreError::InvalidWork(detail))
+                if detail == "process-default work session cannot be reused; run without --session-id to receive a fresh process default"
+        ));
+        assert!(matches!(
+            validate_process_default_work_session(
+                &SessionId(format!("local-process-10-{}", uuid::Uuid::new_v4())),
+                false,
+                at(0)
+            ),
+            Err(StoreError::InvalidWork(detail))
+                if detail == "process-default work session cannot be reused; run without --session-id to receive a fresh process default"
+        ));
+        assert!(matches!(
+            validate_process_default_work_session(&SessionId("ordinary-session".into()), true, at(0)),
+            Err(StoreError::InvalidWork(detail))
+                if detail == "process-default work session cannot be reused; run without --session-id to receive a fresh process default"
+        ));
+        assert!(matches!(
+            validate_process_default_work_session(
+                &process_default_session_at(12, at(1)),
+                false,
+                at(0)
+            ),
+            Err(StoreError::InvalidWork(detail))
+                if detail == "process-default work session cannot be reused; run without --session-id to receive a fresh process default"
+        ));
+
+        let directory = tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let retained_session = process_default_session_at(11, at(0));
+        let service = LocalWorkService::new_with_attribution(
+            database.clone(),
+            ProjectId("expired-process-session-project".into()),
+            "agent".into(),
+            retained_session.clone(),
+            None,
+            None,
+            WorkAttributionDefaults {
+                actor: None,
+                session: true,
+            },
+        );
+        service
+            .work_next(
+                1,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Ready],
+                    ..WorkNextQuery::default()
+                },
+                at(PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS - 1),
+            )
+            .expect("retained service accepts the session inside the window");
+        let before_expiry = SqliteStore::open(&database)
+            .expect("inspect retained session")
+            .work_session_state(
+                &ProjectId("expired-process-session-project".into()),
+                &retained_session,
+                at(PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS - 1),
+            )
+            .expect("retained state before expiry");
+        assert!(matches!(
+            service.work_next(
+                1,
+                WorkNextQuery::default(),
+                at(PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS)
+            ),
+            Err(StoreError::InvalidWork(detail))
+                if detail == "process-default work session cannot be reused; run without --session-id to receive a fresh process default"
+        ));
+        let refused_store = SqliteStore::open(&database).expect("inspect refused store");
+        assert_eq!(
+            refused_store
+                .work_session_state(
+                    &ProjectId("expired-process-session-project".into()),
+                    &retained_session,
+                    at(PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS),
+                )
+                .expect("retained state after refusal"),
+            before_expiry
+        );
+        assert!(
+            refused_store
+                .verify_all()
+                .expect("refusal left a healthy store")
+                .is_healthy()
+        );
+    }
+
     #[test]
     fn child_lifecycle_priority_keeps_every_unfinished_state_first() {
         assert_eq!(child_lifecycle_priority(WorkLifecycle::Open), 0);
@@ -6724,11 +6960,12 @@ mod tests {
         let directory = tempdir().expect("temporary directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId("defaulted-attribution-project".into());
+        let process_session = process_default_session_at(11, at(0));
         let service = LocalWorkService::new_with_attribution(
             database.clone(),
             project,
             "os-user".into(),
-            SessionId("process-session".into()),
+            process_session.clone(),
             None,
             None,
             WorkAttributionDefaults {
@@ -6756,7 +6993,7 @@ mod tests {
             .expect("canonical defaulted attribution event");
         let actor = event.actor;
         assert_eq!(actor.actor_id, "os-user");
-        assert_eq!(actor.session_id, Some(SessionId("process-session".into())));
+        assert_eq!(actor.session_id, Some(process_session));
         assert!(actor.provenance_chain.contains(&ProvenanceLink {
             relation: ProvenanceRelation::DerivedFrom,
             source: "defaulted:os_user_environment".into(),
@@ -12010,7 +12247,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|signal| signal.changed)
         );
-        service.acknowledge_work_next_memories(&first);
+        service.acknowledge_work_next_memories(&first, at(2));
         let stable = service
             .work_next_for_agent(20, query, at(3))
             .expect("acknowledged signal is stable");

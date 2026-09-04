@@ -182,7 +182,9 @@ PATH and `ENGRAM_HOME`. Hosts normally inject `ENGRAM_ACTOR_ID` and
 `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT` adds attribution without
 changing the actor principal. A local shell may omit them and receives explicitly
 audited OS-user-environment or synthetic-actor and process-session defaults.
-Reuse the generated session id printed by the CLI for session-bound follow-up:
+The `local-process-` prefix is reserved for generated process-default work
+sessions; a `local-process-v1-*` id may be reused for seven days, after which
+the caller must omit `--session-id` to receive a fresh process default.
 
 ```bash
 engram work next                  # what you hold, what is ready, what changed

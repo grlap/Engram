@@ -8,6 +8,11 @@ pub(crate) use work::{
     WorkNoteCapture, normalize_completion_acceptance_shape,
 };
 
+pub(crate) const PROCESS_DEFAULT_WORK_SESSION_NAMESPACE: &str = "local-process-";
+pub(crate) const PROCESS_DEFAULT_WORK_SESSION_PREFIX: &str = "local-process-v1-";
+pub(crate) const PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS: i64 = 7 * 24 * 60 * 60;
+pub(crate) const PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL: &str = "process-default work session cannot be reused; run without --session-id to receive a fresh process default";
+
 #[cfg(test)]
 pub(crate) use work::{
     reset_work_event_decode_count, reset_work_item_projection_decode_count,

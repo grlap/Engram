@@ -116,8 +116,9 @@ else is the host's business. The host sets `ENGRAM_HOME` and normally injects
 adds attribution without changing the actor principal. You type only the word. A local
 shell may omit either attribution value and receives explicitly audited
 OS-user-environment or synthetic-actor and process-session defaults. The
-generated session lasts only for that CLI process; reuse the id printed in its
-notice for a cross-process claim follow-up or exact retry.
+`local-process-` prefix is reserved for generated process-default work
+sessions; a `local-process-v1-*` id may be reused for seven days, after which
+the caller must omit `--session-id` to receive a fresh process default.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed

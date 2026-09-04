@@ -440,6 +440,17 @@ response is at most 12,288 serialized JSON bytes. Advisory truncation is
 declared through a typed omission manifest, and catalog continuation points at
 the last item actually emitted.
 
+The `local-process-` prefix is reserved for generated process-default work
+sessions; a `local-process-v1-*` id may be reused for seven days, after which
+the caller must omit `--session-id` to receive a fresh process default. The
+transaction that creates a new process-default session row pays for one
+index-bounded reclamation page of at most 64 older inactive rows and their
+protocol attempts; operations under an existing row take the primary-key path
+and do no retention scan. Recent activity, an explicit task binding, staged
+delivery, a pending protocol attempt, a live claim, or an open handoff offer
+prevents reclamation. Those tables are operational only; canonical work,
+events, evidence, and result objects remain intact.
+
 A staged page never blocks anything. Changing focus discards the un-delivered
 page, because its omission decisions were made under the previous focus; the
 next call recomputes the same interval under the new visibility basis and the

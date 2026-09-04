@@ -36,12 +36,14 @@ Durable actor provenance distinguishes `defaulted:os_user_environment`,
 `defaulted:process_actor`, and `defaulted:process_session`. Explicit actor and
 session ids are recorded verbatim. Because separate shell invocations are
 separate processes, multi-command ambient workflows still need a host-injected
-stable session id. Every defaulted-session invocation prints its generated id
-and the exact `--session-id` reuse instruction, so a shell can safely continue
-a claim or retry; the process default itself does not claim cross-process
-continuity. A successful mutating word with `--json` also returns that id as
-top-level `effective_session_id`; read receipts, explicitly bound CLI or MCP
-receipts, and the host-only `work core` protocol retain their existing shape.
+stable session id. The `local-process-` prefix is reserved for generated
+process-default work sessions; a `local-process-v1-*` id may be reused for
+seven days, after which the caller must omit `--session-id` to receive a fresh
+process default. Every defaulted-session invocation prints its generated id and
+that exact reuse instruction. A successful mutating word with `--json` also
+returns that id as top-level `effective_session_id`; read receipts, explicitly
+bound CLI or MCP receipts, and the host-only `work core` protocol retain their
+existing shape.
 `next` can stage a delivery cursor, but remains a read receipt by this
 contract: compact `next` relies on the stderr notice, while verbose `next`
 already returns its session object.

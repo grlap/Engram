@@ -855,7 +855,7 @@ impl AgentVerbs {
             .get("memories")
             .is_some_and(|memories| !memories.is_null())
         {
-            self.service.acknowledge_work_next_memories(&view);
+            self.service.acknowledge_work_next_memories(&view, now);
         }
         Ok(Receipt::assemble(lines, guidance, value, false))
     }
@@ -1262,13 +1262,13 @@ impl AgentVerbs {
             {
                 let prerequisite = self
                     .service
-                    .resolve_work_reference(prerequisite)
+                    .resolve_work_reference(prerequisite, now)
                     .map_err(|error| VerbError::at(error, prerequisite))?;
                 Some((prerequisite.work_id, prerequisite.short_ref))
             }
             UpdateAction::WaiveRequiredChild { child, .. } if !child.trim().is_empty() => {
                 self.service
-                    .resolve_work_reference(child)
+                    .resolve_work_reference(child, now)
                     .map_err(|error| VerbError::at(error, child))?;
                 None
             }
@@ -1603,7 +1603,11 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when the query/full-read shape is invalid or the
     /// core refuses authorization, key resolution, or projection validation.
-    pub fn memories(&self, input: &MemoriesInput) -> Result<Receipt, VerbError> {
+    pub fn memories(
+        &self,
+        input: &MemoriesInput,
+        now: DateTime<Utc>,
+    ) -> Result<Receipt, VerbError> {
         if input.full {
             if input.after.is_some() {
                 return Err(StoreError::InvalidProjectMemory(
@@ -1614,7 +1618,7 @@ impl AgentVerbs {
             let key = input.query.as_deref().ok_or_else(|| {
                 StoreError::InvalidProjectMemory("--full requires a memory key".into())
             })?;
-            let envelope = self.service.project_memory_full(key)?;
+            let envelope = self.service.project_memory_full(key, now)?;
             let lines = envelope.terminal_lines();
             return Ok(Receipt::assemble(
                 lines,
@@ -1630,9 +1634,9 @@ impl AgentVerbs {
             .query
             .as_deref()
             .is_some_and(|query| !query.trim().is_empty());
-        let mut result = self
-            .service
-            .project_memories(input.query.as_deref(), input.after.as_deref())?;
+        let mut result =
+            self.service
+                .project_memories(input.query.as_deref(), input.after.as_deref(), now)?;
         loop {
             let receipt = project_memory_list_receipt(&result, filtered)?;
             let structured_bytes = serde_json::to_vec(&receipt.value)?.len();
@@ -3808,19 +3812,25 @@ mod tests {
             Some("project-memory-verb-test".into()),
         );
         let full_after = verbs
-            .memories(&MemoriesInput {
-                query: Some("memory-key".into()),
-                after: Some("after-key".into()),
-                full: true,
-            })
+            .memories(
+                &MemoriesInput {
+                    query: Some("memory-key".into()),
+                    after: Some("after-key".into()),
+                    full: true,
+                },
+                at(0),
+            )
             .expect_err("full plus after must refuse");
         assert!(full_after.to_string().contains("cannot be combined"));
         let full_without_key = verbs
-            .memories(&MemoriesInput {
-                query: None,
-                after: None,
-                full: true,
-            })
+            .memories(
+                &MemoriesInput {
+                    query: None,
+                    after: None,
+                    full: true,
+                },
+                at(0),
+            )
             .expect_err("full without a key must refuse");
         assert!(
             full_without_key
@@ -3838,11 +3848,14 @@ mod tests {
             )
             .expect("maximum plain body is admitted");
         let full = verbs
-            .memories(&MemoriesInput {
-                query: Some("plain-boundary".into()),
-                after: None,
-                full: true,
-            })
+            .memories(
+                &MemoriesInput {
+                    query: Some("plain-boundary".into()),
+                    after: None,
+                    full: true,
+                },
+                at(0),
+            )
             .expect("full response");
         assert!(
             serde_json::to_vec(&full.value)
@@ -3880,11 +3893,14 @@ mod tests {
             )
             .expect("control-bearing body is stored as structured data");
         let rendered = verbs
-            .memories(&MemoriesInput {
-                query: Some("terminal-safe".into()),
-                after: None,
-                full: true,
-            })
+            .memories(
+                &MemoriesInput {
+                    query: Some("terminal-safe".into()),
+                    after: None,
+                    full: true,
+                },
+                at(2),
+            )
             .expect("read control-bearing body");
         let text = rendered.text();
         assert!(!text.contains('\u{1b}'));
@@ -3903,11 +3919,14 @@ mod tests {
         assert_eq!(rendered.value["body"], raw_control_body);
 
         let listed = verbs
-            .memories(&MemoriesInput {
-                query: Some("terminal-safe".into()),
-                after: None,
-                full: false,
-            })
+            .memories(
+                &MemoriesInput {
+                    query: Some("terminal-safe".into()),
+                    after: None,
+                    full: false,
+                },
+                at(2),
+            )
             .expect("list control-bearing memory");
         let list_text = listed.text();
         assert!(!list_text.contains('\u{1b}'));
@@ -3941,11 +3960,14 @@ mod tests {
             )
             .expect("store unsafe asserted actor as structured attribution");
         let unsafe_actor_list = unsafe_actor_verbs
-            .memories(&MemoriesInput {
-                query: Some("unsafe-actor-label".into()),
-                after: None,
-                full: false,
-            })
+            .memories(
+                &MemoriesInput {
+                    query: Some("unsafe-actor-label".into()),
+                    after: None,
+                    full: false,
+                },
+                at(3),
+            )
             .expect("render unsafe asserted actor");
         let unsafe_actor_text = unsafe_actor_list.text();
         assert!(!unsafe_actor_text.contains('\u{1b}'));
@@ -3979,10 +4001,13 @@ mod tests {
         }
 
         let mut receipt = verbs
-            .memories(&MemoriesInput {
-                query: Some(" \t ".into()),
-                ..MemoriesInput::default()
-            })
+            .memories(
+                &MemoriesInput {
+                    query: Some(" \t ".into()),
+                    ..MemoriesInput::default()
+                },
+                at(20),
+            )
             .expect("fit project-memory listing");
         assert!(
             receipt.value["memories"]
@@ -4011,10 +4036,13 @@ mod tests {
                 break;
             };
             receipt = verbs
-                .memories(&MemoriesInput {
-                    after: Some(after.to_owned()),
-                    ..MemoriesInput::default()
-                })
+                .memories(
+                    &MemoriesInput {
+                        after: Some(after.to_owned()),
+                        ..MemoriesInput::default()
+                    },
+                    at(20),
+                )
                 .expect("continue shed listing");
         }
         seen.sort();

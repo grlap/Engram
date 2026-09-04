@@ -98,5 +98,5 @@ pub use work_service::{
     WorkEvidenceSummary, WorkFocusView, WorkHandoffInput, WorkHandoffResult, WorkNextQuery,
     WorkNextSection, WorkNextView, WorkObligationGuidance, WorkObligationPage,
     WorkObligationSummary, WorkPrerequisiteInput, WorkProposeInput, WorkProposeResult,
-    WorkUpdateInput, WorkUpdateResult,
+    WorkUpdateInput, WorkUpdateResult, new_process_default_work_session_id,
 };

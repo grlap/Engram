@@ -304,7 +304,7 @@ test("shell words default missing local attribution without losing explicit targ
     assert.equal(defaultedAdd.status, 0, defaultedAdd.stderr);
     const defaultedAddReceipt = JSON.parse(defaultedAdd.stdout);
     const defaultedAddSession = defaultedAdd.stderr.match(
-      /this command uses (local-process-\d+-[0-9a-f-]{36})\./u,
+      /this command uses (local-process-v1-\d+-[0-9a-f-]{36})\./u,
     )?.[1];
     assert.ok(defaultedAddSession, defaultedAdd.stderr);
     assert.equal(defaultedAddReceipt.effective_session_id, defaultedAddSession);
@@ -326,6 +326,36 @@ test("shell words default missing local attribution without losing explicit targ
       defaultedAddReceipt.work.work_id,
     );
     assert.equal("effective_session_id" in continuedAddReceipt, false);
+    const expiredMilliseconds = BigInt(Date.UTC(2020, 0, 1));
+    const expiredTimestamp = expiredMilliseconds.toString(16).padStart(12, "0");
+    const expiredSession = `local-process-v1-7-${expiredTimestamp.slice(0, 8)}-${expiredTimestamp.slice(8)}-7000-8000-000000000000`;
+    for (const refusedSession of [expiredSession, "local-process-bogus"]) {
+      const refusedReuse = run(
+        [
+          "work",
+          "next",
+          "--json",
+          "--session-id",
+          refusedSession,
+        ],
+        { env: environment },
+      );
+      assert.notEqual(refusedReuse.status, 0);
+      const refusal = JSON.parse(
+        refusedReuse.stderr.slice(refusedReuse.stderr.indexOf("{")),
+      ).error;
+      const expectedRefusal =
+        "process-default work session cannot be reused; run without --session-id to receive a fresh process default";
+      assert.equal(refusal.details.reason, expectedRefusal);
+      assert.equal(refusal.details.remedy, expectedRefusal);
+      assert.equal(refusal.reminders.length, 1);
+      assert.ok(refusal.reminders[0].endsWith(expectedRefusal));
+      assert.deepEqual(
+        refusal.next,
+        [],
+        "an invalid process-default session must not loop back to next",
+      );
+    }
     const refusedMutation = run(
       [
         "work",
@@ -355,7 +385,10 @@ test("shell words default missing local attribution without losing explicit targ
       next.stderr,
       /attribution uses the asserted OS-user environment|attribution uses a synthetic process actor/u,
     );
-    assert.match(next.stderr, /Reuse it with --session-id local-process-/u);
+    assert.match(
+      next.stderr,
+      /Reuse it within seven days with --session-id local-process-v1-/u,
+    );
 
     const shown = run(
       ["work", "show", workRef, "--json"],
@@ -369,7 +402,7 @@ test("shell words default missing local attribution without losing explicit targ
     });
     assert.equal(claimed.status, 0, claimed.stderr);
     const claimedSession = claimed.stderr.match(
-      /this command uses (local-process-\d+-[0-9a-f-]{36})\./u,
+      /this command uses (local-process-v1-\d+-[0-9a-f-]{36})\./u,
     )?.[1];
     assert.ok(claimedSession, claimed.stderr);
     assert.equal(JSON.parse(claimed.stdout).effective_session_id, claimedSession);

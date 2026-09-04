@@ -48,10 +48,13 @@ stable id for that process. Durable actor provenance distinguishes
 `defaulted:os_user_environment`, `defaulted:process_actor`, and
 `defaulted:process_session`; injected values remain verbatim. A process-local
 session id does not itself provide cross-command continuity between separate
-CLI processes, so the CLI prints its generated id and an exact `--session-id`
-reuse instruction on every such invocation. A successful default-session
-mutation with `--json` repeats that caller-owned process-local fencing handle
-as `effective_session_id`; it is not an authenticated principal.
+CLI processes. The `local-process-` prefix is reserved for generated
+process-default work sessions; a `local-process-v1-*` id may be reused for
+seven days, after which the caller must omit `--session-id` to receive a fresh
+process default. The CLI prints the generated id and that exact reuse
+instruction on every such invocation. A successful default-session mutation
+with `--json` repeats that caller-owned process-local fencing handle as
+`effective_session_id`; it is not an authenticated principal.
 
 If compliance-grade attribution ever becomes a deployment promise, a trusted
 write gateway or `Signer`-backed signatures must ship with that deployment —

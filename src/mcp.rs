@@ -17,7 +17,8 @@ use crate::{
     AddInput, AgentVerbs, ClaimInput, DoneInput, ForgetInput, GateInput, HandoffAction,
     HandoffInput, LocalWorkService, LsInput, MemoriesInput, NextInput, NoteInput, ProjectId,
     Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError, WorkItemKind,
-    parse_defer_date, storage::StoreError,
+    parse_defer_date,
+    storage::{PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL, StoreError},
 };
 
 /// Immutable host context asserted for one MCP connection.
@@ -449,11 +450,14 @@ impl McpServer {
         description = "List compact project-memory rows, search them, or set full with an exact key to read one body"
     )]
     fn memories(&self, Parameters(args): Parameters<MemoriesArgs>) -> CallToolResult {
-        verb(self.verbs().memories(&MemoriesInput {
-            query: args.query,
-            after: args.after,
-            full: args.full.unwrap_or(false),
-        }))
+        verb(self.verbs().memories(
+            &MemoriesInput {
+                query: args.query,
+                after: args.after,
+                full: args.full.unwrap_or(false),
+            },
+            Utc::now(),
+        ))
     }
 
     /// Permanently retire one project-memory key.
@@ -630,6 +634,14 @@ pub fn store_error_value(error: &StoreError) -> Value {
             candidates,
             more,
         } => ambiguous_work_reference_details(reference, candidates, *more),
+        StoreError::InvalidWork(message)
+            if message == PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL =>
+        {
+            json!({
+                "reason": message,
+                "remedy": PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL,
+            })
+        }
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
             "reason": message,
             "remedy": "run next, then show the affected item and follow next",
@@ -857,6 +869,20 @@ mod tests {
         assert_eq!(
             value["error"]["details"]["remedy"],
             "omit context_generation or use at most 256 bytes without control characters"
+        );
+    }
+
+    #[test]
+    fn process_default_reuse_refusal_has_a_non_looping_structured_remedy() {
+        let error = StoreError::InvalidWork(PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL.into());
+        let value = store_error_value(&error);
+        assert_eq!(
+            value["error"]["details"]["reason"],
+            PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL
+        );
+        assert_eq!(
+            value["error"]["details"]["remedy"],
+            PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL
         );
     }
 

@@ -22,8 +22,9 @@ use engram::{
     WaiveWorkObligationRequest, WorkActorDefaultSource, WorkAttributionDefaults, WorkAvailability,
     WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind, WorkLifecycle,
     WorkNextQuery, WorkNextSection, WorkObligationId, WorkProposeInput, WorkUpdateInput,
-    describe_host_path_policy, looks_like_work_ref, parse_defer_date, parse_host_path_policy,
-    probe_host_path_policy, project_database_path, store_error_value,
+    describe_host_path_policy, looks_like_work_ref, new_process_default_work_session_id,
+    parse_defer_date, parse_host_path_policy, probe_host_path_policy, project_database_path,
+    store_error_value,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -823,8 +824,8 @@ struct WorkContext {
 /// Shell attribution resolved before the CLI dispatches a work word.
 ///
 /// Defaulted origins become durable actor provenance. The generated session
-/// lasts for this process only, so its notice exposes the exact value a human
-/// must reuse for a session-bound follow-up from another process.
+/// is stable for this process and reusable for seven days, so its notice
+/// exposes the exact value a human may reuse for a session-bound follow-up.
 struct ShellWorkAttribution {
     actor_id: String,
     session_id: String,
@@ -846,7 +847,7 @@ impl ShellWorkAttribution {
         }
         if self.defaults.session {
             eprintln!(
-                "NOTICE: ENGRAM_SESSION_ID was absent; this command uses {}. Reuse it with --session-id {} for a follow-up that must retain focus, claim authority, or exact retry identity.",
+                "NOTICE: ENGRAM_SESSION_ID was absent; this command uses {}. Reuse it within seven days with --session-id {} for a follow-up that must retain focus, claim authority, or exact retry identity.",
                 self.session_id, self.session_id
             );
         }
@@ -903,10 +904,11 @@ fn default_shell_actor_from(
         )
 }
 
-/// Returns one opaque session id whose lifetime is this CLI process.
+/// Returns one opaque session id that is stable for this CLI process and
+/// reusable during the bounded process-default retention window.
 fn default_process_session_id() -> String {
     DEFAULT_WORK_SESSION_ID
-        .get_or_init(|| format!("local-process-{}-{}", process::id(), uuid::Uuid::new_v4()))
+        .get_or_init(new_process_default_work_session_id)
         .clone()
 }
 
@@ -1250,7 +1252,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         ),
         WorkCommand::Remember { text, key } => verbs.remember(RememberInput { text, key }, now),
         WorkCommand::Memories { query, after, full } => {
-            verbs.memories(&MemoriesInput { query, after, full })
+            verbs.memories(&MemoriesInput { query, after, full }, now)
         }
         WorkCommand::Forget { key } => verbs.forget(ForgetInput { key }, now),
         WorkCommand::Note { mut args, refs } => {
@@ -2133,7 +2135,7 @@ mod tests {
         assert_eq!(first.session_id, second.session_id);
         assert!(first.defaults.actor.is_some());
         assert!(first.defaults.session);
-        assert!(first.session_id.starts_with("local-process-"));
+        assert!(first.session_id.starts_with("local-process-v1-"));
 
         let default_actor = resolve_shell_work_attribution(None, Some("host session".into()));
         assert!(default_actor.defaults.actor.is_some());

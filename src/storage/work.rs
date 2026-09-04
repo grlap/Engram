@@ -65,8 +65,11 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_feed_entries_work_event_item",
     "work_feed_entries_environment_cut",
     "work_blockers_active",
+    "work_claims_holder_live",
     "work_claims_live",
     "work_handoff_offer_active",
+    "work_handoff_offer_from_live",
+    "work_handoff_offer_to_live",
     "work_items_parent",
     "work_items_assigned",
     "work_items_catalog_after",
@@ -78,6 +81,7 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_run_active",
     "work_run_evidence_run",
     "work_run_obligations_run",
+    "work_session_state_retention",
     "work_feed_entries_require_work_id",
 ];
 
@@ -601,6 +605,8 @@ pub(super) fn initialize_schema(
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_claims_live
              ON work_claims(work_id, state, expires_at_ms);
+         CREATE INDEX IF NOT EXISTS work_claims_holder_live
+             ON work_claims(holder_session_id, state, expires_at_ms, work_id);
          CREATE TABLE IF NOT EXISTS work_handoff_offers (
              offer_id TEXT PRIMARY KEY,
              run_id TEXT NOT NULL REFERENCES work_runs(run_id),
@@ -612,6 +618,14 @@ pub(super) fn initialize_schema(
          ) STRICT;
          CREATE UNIQUE INDEX IF NOT EXISTS work_handoff_offer_active
              ON work_handoff_offers(run_id) WHERE state = 'offered';
+         CREATE INDEX IF NOT EXISTS work_handoff_offer_from_live
+             ON work_handoff_offers(
+                 json_extract(offer_json, '$.from'), expires_at_ms, work_id
+             ) WHERE state = 'offered';
+         CREATE INDEX IF NOT EXISTS work_handoff_offer_to_live
+             ON work_handoff_offers(
+                 json_extract(offer_json, '$.to'), expires_at_ms, work_id
+             ) WHERE state = 'offered';
          CREATE TABLE IF NOT EXISTS work_prerequisites (
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              prerequisite_id TEXT NOT NULL REFERENCES work_items(work_id),
@@ -769,7 +783,9 @@ pub(super) fn initialize_schema(
          CREATE INDEX IF NOT EXISTS work_items_assigned
              ON work_items(project_id, assigned_to_key, work_id);
          CREATE INDEX IF NOT EXISTS work_items_catalog_after
-             ON work_items(project_id, work_id);",
+             ON work_items(project_id, work_id);
+         CREATE INDEX IF NOT EXISTS work_session_state_retention
+             ON work_session_state(project_id, updated_at_ms, session_id);",
     )?;
     transaction.execute(
         "UPDATE work_schema_metadata SET schema_version = ?1 WHERE singleton = 1",
@@ -804,8 +820,18 @@ pub(super) fn repair_rebuildable_schema_on(connection: &Connection) -> Result<bo
              ON work_runs(work_id) WHERE state != 'completed' AND state != 'cancelled';
          CREATE INDEX IF NOT EXISTS work_claims_live
              ON work_claims(work_id, state, expires_at_ms);
+         CREATE INDEX IF NOT EXISTS work_claims_holder_live
+             ON work_claims(holder_session_id, state, expires_at_ms, work_id);
          CREATE UNIQUE INDEX IF NOT EXISTS work_handoff_offer_active
              ON work_handoff_offers(run_id) WHERE state = 'offered';
+         CREATE INDEX IF NOT EXISTS work_handoff_offer_from_live
+             ON work_handoff_offers(
+                 json_extract(offer_json, '$.from'), expires_at_ms, work_id
+             ) WHERE state = 'offered';
+         CREATE INDEX IF NOT EXISTS work_handoff_offer_to_live
+             ON work_handoff_offers(
+                 json_extract(offer_json, '$.to'), expires_at_ms, work_id
+             ) WHERE state = 'offered';
          CREATE INDEX IF NOT EXISTS work_prerequisites_reverse
              ON work_prerequisites(prerequisite_id, work_id);
          CREATE INDEX IF NOT EXISTS work_blockers_active
@@ -831,6 +857,8 @@ pub(super) fn repair_rebuildable_schema_on(connection: &Connection) -> Result<bo
              ON work_feed_entries(feed_id, position, object_hash)
              WHERE feed_kind = 'run_execution'
                AND object_kind = 'environment_evidence';
+         CREATE INDEX IF NOT EXISTS work_session_state_retention
+             ON work_session_state(project_id, updated_at_ms, session_id);
          CREATE TRIGGER IF NOT EXISTS work_feed_entries_require_work_id
              BEFORE INSERT ON work_feed_entries
              WHEN NEW.object_kind = 'work_event' AND NEW.work_id IS NULL
@@ -1000,6 +1028,113 @@ struct WorkProtocolAttemptRow {
     basis_json: Option<Vec<u8>>,
     result_hash: Option<String>,
     result_json: Option<Vec<u8>>,
+}
+
+const MAX_PROCESS_DEFAULT_SESSION_RECLAIMS_PER_CREATION: usize = 64;
+const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
+    SELECT stale.session_id
+    FROM work_session_state AS stale INDEXED BY work_session_state_retention
+    WHERE stale.project_id = ?1
+      AND stale.updated_at_ms <= ?2
+      AND stale.session_id GLOB ?3
+      AND stale.session_id != ?4
+      AND stale.tentative_delivery_token IS NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM session_bindings AS binding
+          WHERE binding.session_id = stale.session_id
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM work_protocol_attempts AS recent
+          WHERE recent.project_id = ?1
+            AND recent.session_id = stale.session_id
+            AND recent.initiated_at_ms > ?2
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM work_protocol_attempts AS pending
+          WHERE pending.project_id = ?1
+            AND pending.session_id = stale.session_id
+            AND (pending.result_hash IS NULL OR pending.result_json IS NULL)
+      )
+      AND NOT EXISTS (
+          SELECT 1
+          FROM work_claims AS claim INDEXED BY work_claims_holder_live
+          JOIN work_items AS item ON item.work_id = claim.work_id
+          WHERE claim.holder_session_id = stale.session_id
+            AND claim.state = 'active'
+            AND claim.expires_at_ms > ?5
+            AND item.project_id = ?1
+      )
+      AND NOT EXISTS (
+          SELECT 1
+          FROM work_handoff_offers AS offer INDEXED BY work_handoff_offer_from_live
+          JOIN work_items AS item ON item.work_id = offer.work_id
+          WHERE json_extract(offer.offer_json, '$.from') = stale.session_id
+            AND offer.state = 'offered'
+            AND offer.expires_at_ms > ?5
+            AND item.project_id = ?1
+      )
+      AND NOT EXISTS (
+          SELECT 1
+          FROM work_handoff_offers AS offer INDEXED BY work_handoff_offer_to_live
+          JOIN work_items AS item ON item.work_id = offer.work_id
+          WHERE json_extract(offer.offer_json, '$.to') = stale.session_id
+            AND offer.state = 'offered'
+            AND offer.expires_at_ms > ?5
+            AND item.project_id = ?1
+      )
+    ORDER BY stale.updated_at_ms, stale.session_id
+    LIMIT ?6
+";
+
+/// Reclaims one bounded page of inactive CLI-generated session projections.
+///
+/// This runs only inside the transaction that creates another process-default
+/// session row. The row being created, every previously bound session,
+/// staged deliveries, pending protocol attempts, and live claim or handoff
+/// authority are retained fail-closed.
+pub(super) fn reclaim_inactive_process_default_work_sessions_on(
+    transaction: &Transaction<'_>,
+    project_id: &crate::domain::ProjectId,
+    creating_session_id: &SessionId,
+    retained_since: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> Result<usize, StoreError> {
+    let process_default_glob = format!("{}*", super::PROCESS_DEFAULT_WORK_SESSION_NAMESPACE);
+    let mut statement = transaction.prepare(PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL)?;
+    let candidates = statement
+        .query_map(
+            params![
+                project_id.0,
+                retained_since.timestamp_millis(),
+                process_default_glob,
+                creating_session_id.0,
+                now.timestamp_millis(),
+                i64::try_from(MAX_PROCESS_DEFAULT_SESSION_RECLAIMS_PER_CREATION).map_err(|_| {
+                    StoreError::InvalidWorkProjection(
+                        "process-default session reclamation bound overflowed".into(),
+                    )
+                })?
+            ],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+
+    let mut reclaimed = 0;
+    for session_id in candidates {
+        transaction.execute(
+            "DELETE FROM work_protocol_attempts
+             WHERE project_id = ?1 AND session_id = ?2",
+            params![project_id.0, session_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM work_session_state
+             WHERE project_id = ?1 AND session_id = ?2",
+            params![project_id.0, session_id],
+        )?;
+        reclaimed += 1;
+    }
+    Ok(reclaimed)
 }
 
 fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
@@ -1199,6 +1334,72 @@ impl SqliteStore {
             completion_recovery_snapshot_on(&transaction, &work, claim.run_id, cause.clone())?;
         transaction.commit()?;
         Ok(recovery)
+    }
+
+    /// Creates the operational row for one validated process-default session.
+    ///
+    /// Only the creator runs one bounded reclamation page. Existing rows take
+    /// the primary-key read path and never scan the retention index again.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the row or reclamation projection cannot be
+    /// read or written atomically.
+    pub(crate) fn initialize_process_default_work_session(
+        &mut self,
+        project_id: &crate::domain::ProjectId,
+        session_id: &SessionId,
+        now: DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let exists = self.connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM work_session_state
+                 WHERE project_id = ?1 AND session_id = ?2
+             )",
+            params![project_id.0, session_id.0],
+            |row| row.get::<_, i64>(0),
+        )? == 1;
+        if exists {
+            return Ok(false);
+        }
+
+        let retained_since = now
+            .checked_sub_signed(chrono::TimeDelta::seconds(
+                super::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS,
+            ))
+            .ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "process-default session retention boundary overflowed".into(),
+                )
+            })?;
+        let transaction = self.begin_work_mutation()?;
+        let exists = transaction.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM work_session_state
+                 WHERE project_id = ?1 AND session_id = ?2
+             )",
+            params![project_id.0, session_id.0],
+            |row| row.get::<_, i64>(0),
+        )? == 1;
+        if exists {
+            transaction.commit()?;
+            return Ok(false);
+        }
+        reclaim_inactive_process_default_work_sessions_on(
+            &transaction,
+            project_id,
+            session_id,
+            retained_since,
+            now,
+        )?;
+        transaction.execute(
+            "INSERT INTO work_session_state (
+                 project_id, session_id, focused_work_id, project_cursor, updated_at_ms
+             ) VALUES (?1, ?2, NULL, 0, ?3)",
+            params![project_id.0, session_id.0, now.timestamp_millis()],
+        )?;
+        transaction.commit()?;
+        Ok(true)
     }
 
     /// Returns ambient navigation state, defaulting to no focus and cursor zero.
@@ -13327,6 +13528,350 @@ mod tests {
             .single()
             .expect("fixed test timestamp")
             + Duration::seconds(second)
+    }
+
+    fn process_default_session_at(pid: u32, created_at: DateTime<Utc>) -> SessionId {
+        let seconds = u64::try_from(created_at.timestamp()).expect("positive test timestamp");
+        let timestamp = uuid::Timestamp::from_unix(
+            uuid::NoContext,
+            seconds,
+            created_at.timestamp_subsec_nanos(),
+        );
+        SessionId(format!(
+            "local-process-v1-{pid}-{}",
+            uuid::Uuid::new_v7(timestamp)
+        ))
+    }
+
+    #[test]
+    fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_authority() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId("process-default-retention-project".into());
+        let cleanup_second = crate::storage::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS + 100;
+        let expired = process_default_session_at(10, at(0));
+        let recent = process_default_session_at(11, at(cleanup_second - 10));
+        let legacy = SessionId(format!("local-process-12-{}", uuid::Uuid::new_v4()));
+        let live = SessionId(format!("local-process-13-{}", uuid::Uuid::new_v4()));
+        let handoff = process_default_session_at(14, at(0));
+        let bound = process_default_session_at(15, at(0));
+        let pending = process_default_session_at(16, at(0));
+        let staged = process_default_session_at(17, at(0));
+        let stable = SessionId("stable-host-session".into());
+        let mut first = SqliteStore::open(&database).expect("first store");
+        let binder = SessionId("retention-binder".into());
+        first
+            .start_task(
+                &project,
+                "retention-task",
+                "Retention task",
+                &binder,
+                actor(&binder.0),
+                at(0),
+            )
+            .expect("task session bind");
+        first
+            .join_task(&project, "retention-task", &bound, actor(&bound.0), at(0))
+            .expect("explicit process session binding");
+        let root = first
+            .create_work(
+                &root_request(&project.0, "retention-root", 0),
+                &DevelopmentNoopRedactor,
+            )
+            .expect("root work");
+        let live_claim = claim(
+            &mut first,
+            &root,
+            &live.0,
+            "live-claim",
+            cleanup_second - 10,
+            1_000,
+        );
+        first
+            .offer_work_handoff(
+                &OfferWorkHandoffRequest {
+                    work_id: root.work_id,
+                    run_id: live_claim.run_id,
+                    expected_work_revision: root.revision,
+                    from: live.clone(),
+                    to: handoff.clone(),
+                    claim_id: live_claim.claim_id,
+                    claim_fence: live_claim.fence,
+                    ttl_seconds: 1_000,
+                    checkpoint_summary: "retain the open handoff".into(),
+                    actor: actor(&live.0),
+                    idempotency_key: "retention-handoff".into(),
+                    offered_at: at(cleanup_second - 9),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("open handoff");
+        for (index, (session, seen_at)) in [
+            (&expired, at(0)),
+            (&recent, at(cleanup_second - 10)),
+            (&legacy, at(0)),
+            (&live, at(0)),
+            (&handoff, at(0)),
+            (&bound, at(0)),
+            (&pending, at(0)),
+            (&staged, at(0)),
+            (&stable, at(0)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            first
+                .connection
+                .execute(
+                    "INSERT INTO work_session_state (
+                         project_id, session_id, focused_work_id, project_cursor, updated_at_ms
+                     ) VALUES (?1, ?2, NULL, 0, ?3)",
+                    params![project.0, session.0, seen_at.timestamp_millis()],
+                )
+                .expect("session state");
+            first
+                .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                    project_id: &project,
+                    session_id: session,
+                    operation: "work_update:gate",
+                    idempotency_key: &format!("attempt-{index}"),
+                    intent: &serde_json::json!({"name": "retention"}),
+                    basis: &serde_json::json!({"revision": root.revision}),
+                    now: seen_at,
+                })
+                .expect("protocol attempt");
+            if *session != pending {
+                first
+                    .finish_work_protocol_attempt(
+                        &project,
+                        session,
+                        "work_update:gate",
+                        &format!("attempt-{index}"),
+                        &serde_json::json!({"receipt": {"work_id": root.work_id}}),
+                    )
+                    .expect("completed protocol attempt");
+            }
+        }
+        let staged_payload =
+            CanonicalObject::freeze(&serde_json::json!({"staged": true})).expect("staged payload");
+        first
+            .connection
+            .execute(
+                "UPDATE work_session_state SET
+                     tentative_project_cursor = 0,
+                     tentative_delivery_token = 'retained-delivery-token',
+                     tentative_delivery_payload_hash = ?3,
+                     tentative_delivery_payload = ?4
+                 WHERE project_id = ?1 AND session_id = ?2",
+                params![
+                    project.0,
+                    staged.0,
+                    staged_payload.hash().as_str(),
+                    staged_payload.bytes()
+                ],
+            )
+            .expect("stage an unconfirmed delivery");
+        let bulk_expired = MAX_PROCESS_DEFAULT_SESSION_RECLAIMS_PER_CREATION + 6;
+        for index in 0..bulk_expired {
+            let session = process_default_session_at(
+                1_000 + u32::try_from(index).expect("bounded test pid"),
+                at(0),
+            );
+            first
+                .connection
+                .execute(
+                    "INSERT INTO work_session_state (
+                         project_id, session_id, focused_work_id, project_cursor, updated_at_ms
+                     ) VALUES (?1, ?2, NULL, 0, ?3)",
+                    params![project.0, session.0, at(0).timestamp_millis()],
+                )
+                .expect("bulk expired session state");
+        }
+        let second = SqliteStore::open(&database).expect("second store");
+
+        let first_creator = process_default_session_at(20, at(cleanup_second));
+        assert!(
+            first
+                .initialize_process_default_work_session(
+                    &project,
+                    &first_creator,
+                    at(cleanup_second)
+                )
+                .expect("session creation triggers bounded reclamation")
+        );
+        assert_eq!(
+            second
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM work_session_state WHERE project_id = ?1",
+                    [project.0.as_str()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("remaining session states"),
+            i64::try_from(bulk_expired + 10 - MAX_PROCESS_DEFAULT_SESSION_RECLAIMS_PER_CREATION)
+                .expect("bounded remaining count")
+        );
+        assert!(
+            !first
+                .initialize_process_default_work_session(
+                    &project,
+                    &first_creator,
+                    at(cleanup_second + 1)
+                )
+                .expect("an existing session never scans reclamation again")
+        );
+        let second_creator = process_default_session_at(21, at(cleanup_second + 1));
+        assert!(
+            first
+                .initialize_process_default_work_session(
+                    &project,
+                    &second_creator,
+                    at(cleanup_second + 1)
+                )
+                .expect("second session creation drains the next bounded page")
+        );
+        assert_eq!(
+            second
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM work_session_state WHERE project_id = ?1",
+                    [project.0.as_str()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("retained session states"),
+            9
+        );
+        assert_eq!(
+            second
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM work_protocol_attempts WHERE project_id = ?1",
+                    [project.0.as_str()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("retained protocol attempts"),
+            7
+        );
+        for retained in [
+            &recent,
+            &live,
+            &handoff,
+            &bound,
+            &pending,
+            &staged,
+            &stable,
+            &first_creator,
+            &second_creator,
+        ] {
+            let count = second
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM work_session_state
+                     WHERE project_id = ?1 AND session_id = ?2",
+                    params![project.0, retained.0],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("retained session state");
+            assert_eq!(count, 1, "session {} remains", retained.0);
+        }
+
+        let explain =
+            format!("EXPLAIN QUERY PLAN {PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL}");
+        let process_default_glob = format!(
+            "{}*",
+            crate::storage::PROCESS_DEFAULT_WORK_SESSION_NAMESPACE
+        );
+        let mut statement = first
+            .connection
+            .prepare(&explain)
+            .expect("prepare retention candidate plan");
+        let plan = statement
+            .query_map(
+                params![
+                    project.0,
+                    at(1).timestamp_millis(),
+                    process_default_glob,
+                    first_creator.0,
+                    at(cleanup_second).timestamp_millis(),
+                    i64::try_from(MAX_PROCESS_DEFAULT_SESSION_RECLAIMS_PER_CREATION)
+                        .expect("bounded reclamation limit")
+                ],
+                |row| row.get::<_, String>(3),
+            )
+            .expect("explain retention candidates")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("retention candidate plan");
+        drop(statement);
+        for required_index in [
+            "work_session_state_retention",
+            "work_claims_holder_live",
+            "work_handoff_offer_from_live",
+            "work_handoff_offer_to_live",
+        ] {
+            assert!(
+                plan.iter().any(|detail| detail.contains(required_index)),
+                "retention plan does not use {required_index}: {plan:?}"
+            );
+        }
+        assert!(
+            plan.iter()
+                .all(|detail| !detail.contains("USE TEMP B-TREE")),
+            "retention candidate discovery sorts through a temporary B-tree: {plan:?}"
+        );
+
+        let rollback_candidate = process_default_session_at(30, at(0));
+        first
+            .connection
+            .execute(
+                "INSERT INTO work_session_state (
+                     project_id, session_id, focused_work_id, project_cursor, updated_at_ms
+                 ) VALUES (?1, ?2, NULL, 0, ?3)",
+                params![project.0, rollback_candidate.0, at(0).timestamp_millis()],
+            )
+            .expect("rollback candidate");
+        let rollback_creator = process_default_session_at(31, at(cleanup_second + 2));
+        first
+            .connection
+            .execute_batch(&format!(
+                "CREATE TEMP TRIGGER refuse_retention_creator
+                 BEFORE INSERT ON work_session_state
+                 WHEN NEW.session_id = '{}'
+                 BEGIN
+                     SELECT RAISE(ABORT, 'refuse creator after reclamation');
+                 END;",
+                rollback_creator.0
+            ))
+            .expect("install rollback trigger");
+        assert!(
+            first
+                .initialize_process_default_work_session(
+                    &project,
+                    &rollback_creator,
+                    at(cleanup_second + 2)
+                )
+                .is_err(),
+            "a refused creator must abort the reclamation transaction"
+        );
+        first
+            .connection
+            .execute_batch("DROP TRIGGER refuse_retention_creator;")
+            .expect("drop rollback trigger");
+        for (session, expected) in [(&rollback_candidate, 1_i64), (&rollback_creator, 0_i64)] {
+            assert_eq!(
+                second
+                    .connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM work_session_state
+                         WHERE project_id = ?1 AND session_id = ?2",
+                        params![project.0, session.0],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .expect("rollback state count"),
+                expected,
+                "rollback preserves prior rows and refuses the creator"
+            );
+        }
+        assert!(second.verify_all().expect("integrity report").is_healthy());
     }
 
     fn builtin_rule_set_hash() -> ObjectHash {

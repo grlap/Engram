@@ -189,7 +189,14 @@ The exhaustive reconstruction remains an operator `doctor` and recovery check.
 Completed `work_protocol_attempts` retain their request hash and exact bounded
 caller-visible response, but discard the inferred basis. The 12 KiB protocol
 ceiling keeps exact lost-response replay bounded without retaining unbounded
-history or memory bodies.
+history or memory bodies. The `local-process-` prefix is reserved for generated
+process-default work sessions; a `local-process-v1-*` id may be reused for
+seven days, after which the caller must omit `--session-id` to receive a fresh
+process default. Creating a new process-default session atomically removes at
+most 64 index-selected inactive session rows and their attempt rows. The
+retention indexes are declared rebuildable projections repaired by
+`doctor --repair-projections`; staged delivery, pending attempts, explicit task
+bindings, and live claim or handoff authority are fail-closed exclusions.
 
 A refused completion retains one pending attempt row with its request hash,
 work target, and current live basis, but no result. Recovery guidance and its
