@@ -23,8 +23,9 @@ are independent optional capabilities.
   planning, execution, feed, completion, and integrity invariants.
 - `src/control.rs`: pure deterministic control-policy evaluation.
 - `src/host.rs`: host-private JSON-lines transport only.
-- `src/work_service.rs`: six-operation ambient work protocol translation into
-  canonical storage operations.
+- `src/work_service/`: six-operation ambient work protocol translation split
+  by service setup, next/delivery, focus, propose, update, completion, handoff,
+  and memory operation families around shared projection helpers.
 - `src/tracker.rs`: current neutral external adapter port and side-effect-free
   dummy publication adapter.
 - Engram owns host-local work. An imported item cites an immutable external

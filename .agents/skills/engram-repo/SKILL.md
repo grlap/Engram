@@ -96,8 +96,9 @@ contract and keep the change narrow.
   planning, execution, feeds, completion, and integrity invariants.
 - `control`: pure control-policy evaluation without I/O.
 - `host`: host-private transport without policy forks.
-- `work_service`: six-operation ambient protocol translation into canonical
-  storage operations.
+- `work_service`: six-operation ambient protocol translation split by service
+  setup, next/delivery, focus, propose, update, completion, handoff, and memory
+  operation families around shared projection helpers.
 - external adapters: backend-neutral source snapshots, backup, portable
   handoff, later concurrent sync, frozen publication, idempotency, and receipt
   capabilities.

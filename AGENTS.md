@@ -24,8 +24,9 @@ backup/portable/sync, and publication are independent optional capabilities.
   query, planning, execution, feed, completion, and integrity invariants.
 - `src/control.rs` owns pure deterministic control-policy evaluation.
 - `src/host.rs` owns the host-private JSON-lines transport only.
-- `src/work_service.rs` owns the six-operation ambient work protocol and its
-  translation into canonical storage operations.
+- `src/work_service/` owns the six-operation ambient work protocol, split by
+  service setup, next/delivery, focus, propose, update, completion, handoff,
+  and memory operation families around shared projection helpers.
 - `src/tracker.rs` currently owns the neutral external adapter port and dummy
   publication adapter; vendor-specific types stay outside the core.
 - Engram owns host-local work from creation/decomposition through completion.
