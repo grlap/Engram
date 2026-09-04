@@ -104,9 +104,12 @@ contract and keep the change narrow.
 - external adapters: backend-neutral source snapshots, backup, portable
   handoff, later concurrent sync, frozen publication, idempotency, and receipt
   capabilities.
-- `verbs`: the thirteen-word agent surface; flat CLI flags and MCP arguments
-  translate into the unchanged six-operation core and every receipt gains
-  `reminders` and `next` from fixed tables.
+- `verbs`: the thirteen-word agent surface whose `mod.rs` holds shared
+  vocabulary; receipt shaping, terse show rendering, and word handlers live in
+  owning modules, with mirrored tests under `src/verbs/tests/`; flat CLI flags
+  and MCP arguments translate into the unchanged six-operation core, public
+  re-exports preserve `crate::verbs` paths, and every receipt gains `reminders`
+  and `next` from fixed tables.
 - CLI/MCP front doors translate requests; they do not redefine domain rules.
 
 Keep proprietary tracker types, authentication schemes, and organization

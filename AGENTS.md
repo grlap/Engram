@@ -30,6 +30,10 @@ backup/portable/sync, and publication are independent optional capabilities.
 - `src/work_service/` owns the six-operation ambient work protocol, split by
   service setup, next/delivery, focus, propose, update, completion, handoff,
   and memory operation families around shared projection helpers.
+- `src/verbs/` owns the thirteen-word agent surface: `mod.rs` holds shared
+  vocabulary; receipt shaping, terse show rendering, and word handlers live
+  in owning modules, and `src/verbs/tests/` mirrors those modules; its public
+  re-exports preserve the existing `crate::verbs` paths.
 - `src/tracker.rs` currently owns the neutral external adapter port and dummy
   publication adapter; vendor-specific types stay outside the core.
 - Engram owns host-local work from creation/decomposition through completion.

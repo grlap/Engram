@@ -29,6 +29,10 @@ are independent optional capabilities.
 - `src/work_service/`: six-operation ambient work protocol translation split
   by service setup, next/delivery, focus, propose, update, completion, handoff,
   and memory operation families around shared projection helpers.
+- `src/verbs/`: thirteen-word agent surface whose `mod.rs` holds shared
+  vocabulary; receipt shaping, terse show rendering, and word handlers live
+  in owning modules, with mirrored tests under `src/verbs/tests/`; public
+  re-exports keep the existing `crate::verbs` paths stable.
 - `src/tracker.rs`: current neutral external adapter port and side-effect-free
   dummy publication adapter.
 - Engram owns host-local work. An imported item cites an immutable external
