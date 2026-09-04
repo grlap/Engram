@@ -128,8 +128,9 @@ impl SqliteStore {
         let after = store.verify_all()?;
         if !after.is_healthy() {
             return Err(StoreError::InvalidControlProjection(format!(
-                "projection repair refused because verification found {} invalid object(s), {} invalid control record(s), and {} invalid work record(s)",
+                "projection repair refused because verification found {} invalid object(s), {} invalid graph snapshot audit(s), {} invalid control record(s), and {} invalid work record(s)",
                 after.invalid_objects.len(),
+                after.invalid_graph_snapshot_audits.len(),
                 after.invalid_control_records.len(),
                 after.invalid_work_records.len()
             )));
@@ -249,9 +250,10 @@ impl SqliteStore {
         let report = store.verify_all()?;
         if !report.is_healthy() {
             return Err(StoreError::InvalidWork(format!(
-                "backup {} failed verification: {} object(s), {} control record(s), {} work record(s) invalid",
+                "backup {} failed verification: {} object(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) invalid",
                 path.display(),
                 report.invalid_objects.len(),
+                report.invalid_graph_snapshot_audits.len(),
                 report.invalid_control_records.len(),
                 report.invalid_work_records.len()
             )));
@@ -508,6 +510,9 @@ impl SqliteStore {
                  title,
                  body
              );
+             CREATE INDEX IF NOT EXISTS objects_memory_assertion_version
+                 ON objects(json_extract(canonical_json, '$.version'))
+                 WHERE object_kind = 'memory_assertion_event';
              CREATE UNIQUE INDEX IF NOT EXISTS objects_project_memory_key
                  ON objects(
                      json_extract(canonical_json, '$.scope.project'),
@@ -516,6 +521,14 @@ impl SqliteStore {
                  WHERE object_kind = 'memory_version'
                    AND json_extract(canonical_json, '$.scope.kind') = 'project'
                    AND json_type(canonical_json, '$.project_key') = 'text';
+             CREATE INDEX IF NOT EXISTS objects_graph_snapshot_audit
+                 ON objects(
+                     json_extract(canonical_json, '$.project_id'),
+                     json_extract(canonical_json, '$.attempted_at'),
+                     json_extract(canonical_json, '$.attempt_id'),
+                     object_hash
+                 )
+                 WHERE object_kind = 'work_graph_snapshot_saved';
              CREATE TABLE IF NOT EXISTS memory_heads (
                  memory_id TEXT PRIMARY KEY,
                  version_hash TEXT NOT NULL REFERENCES objects(object_hash),
@@ -1356,6 +1369,9 @@ impl SqliteStore {
                  title,
                  body
              );
+             CREATE INDEX IF NOT EXISTS objects_memory_assertion_version
+                 ON objects(json_extract(canonical_json, '$.version'))
+                 WHERE object_kind = 'memory_assertion_event';
              CREATE UNIQUE INDEX IF NOT EXISTS objects_project_memory_key
                  ON objects(
                      json_extract(canonical_json, '$.scope.project'),
@@ -1364,6 +1380,14 @@ impl SqliteStore {
                  WHERE object_kind = 'memory_version'
                    AND json_extract(canonical_json, '$.scope.kind') = 'project'
                    AND json_type(canonical_json, '$.project_key') = 'text';
+             CREATE INDEX IF NOT EXISTS objects_graph_snapshot_audit
+                 ON objects(
+                     json_extract(canonical_json, '$.project_id'),
+                     json_extract(canonical_json, '$.attempted_at'),
+                     json_extract(canonical_json, '$.attempt_id'),
+                     object_hash
+                 )
+                 WHERE object_kind = 'work_graph_snapshot_saved';
              CREATE INDEX IF NOT EXISTS memory_heads_scope
                  ON memory_heads(project_id, task_id, work_id, agent_id, status);
              CREATE INDEX IF NOT EXISTS memory_heads_work_scope
@@ -1534,6 +1558,23 @@ impl SqliteStore {
         assertion: &MemoryAssertionEvent,
         status: MemoryStatus,
     ) -> Result<MemoryHeadProjectionRow, StoreError> {
+        validate_keyed_project_memory_shape(version, assertion)?;
+        Self::expected_memory_head_projection_from_canonical(
+            version_hash,
+            assertion_hash,
+            version,
+            assertion,
+            status,
+        )
+    }
+
+    pub(super) fn expected_memory_head_projection_from_canonical(
+        version_hash: &ObjectHash,
+        assertion_hash: &ObjectHash,
+        version: &MemoryVersion,
+        assertion: &MemoryAssertionEvent,
+        status: MemoryStatus,
+    ) -> Result<MemoryHeadProjectionRow, StoreError> {
         if version.schema_version != SCHEMA_VERSION
             || assertion.schema_version != SCHEMA_VERSION
             || version.memory_id != assertion.memory_id
@@ -1543,7 +1584,6 @@ impl SqliteStore {
                 "version and assertion identities do not agree".into(),
             ));
         }
-        validate_keyed_project_memory_shape(version, assertion)?;
         let (scope_kind, project_id, task_id, work_id, agent_id) = match &version.scope {
             Scope::Project { project } => ("project", project.0.clone(), None, None, None),
             Scope::Task { project, task } => (

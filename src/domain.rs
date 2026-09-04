@@ -28,12 +28,12 @@ pub(crate) const MAX_GATE_REF_BYTES: usize = 2 * 1024;
 const MAX_GATE_RAW_EXPANSION: usize = 4;
 
 /// Stable host-local project identity shared by every session and worktree.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ProjectId(pub String);
 
 /// Runtime session identity asserted by the host integration.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct SessionId(pub String);
 
@@ -671,7 +671,7 @@ pub struct EnvironmentEvidence {
 }
 
 /// Typed evidence category retained by the run-evidence projection.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkEvidenceKind {
     Generic,
@@ -1443,7 +1443,7 @@ impl Default for TaskId {
 }
 
 /// Stable planning identity for first-class local work.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct WorkId(pub Uuid);
 
@@ -1620,7 +1620,7 @@ pub enum ChildRequirement {
 }
 
 /// How a local work item entered Engram.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkOrigin {
     Local,
@@ -2916,7 +2916,7 @@ pub enum MemoryStatus {
 }
 
 /// Assurance attached to actor and authority text supplied by the host.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AssuranceLevel {
     Asserted,
@@ -2925,7 +2925,7 @@ pub enum AssuranceLevel {
 }
 
 /// Retrieval classification applied before context is assembled.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Sensitivity {
     Public,
@@ -2935,7 +2935,7 @@ pub enum Sensitivity {
 }
 
 /// How an assertion reached the actor recording it.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProvenanceRelation {
     AssertedBy,
@@ -2944,7 +2944,7 @@ pub enum ProvenanceRelation {
 }
 
 /// One retained hop in an assertion's provenance chain.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct ProvenanceLink {
     pub relation: ProvenanceRelation,
     pub source: String,
@@ -2960,7 +2960,7 @@ pub struct SourceSnapshot {
 }
 
 /// Selected external fields retained when organizational work is imported.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct WorkSourceProjection {
     pub title: Option<String>,
     pub body: Option<String>,
@@ -2969,7 +2969,7 @@ pub struct WorkSourceProjection {
 }
 
 /// Immutable, backend-neutral provenance for one explicit work import.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct WorkSourceSnapshot {
     pub schema_version: u16,
     pub adapter_kind: String,
@@ -2985,7 +2985,7 @@ pub struct WorkSourceSnapshot {
 }
 
 /// Attribution retained on every durable object.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct ActorContext {
     pub actor_id: String,
     pub actor_kind: String,

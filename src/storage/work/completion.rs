@@ -67,7 +67,7 @@ impl SqliteStore {
         Self::verify_work_projections_on(&self.connection)
     }
 
-    fn verify_work_projections_on(
+    pub(in crate::storage) fn verify_work_projections_on(
         connection: &Connection,
     ) -> Result<(usize, Vec<String>), StoreError> {
         let mut checked = 0_usize;

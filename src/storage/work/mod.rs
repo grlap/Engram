@@ -293,13 +293,17 @@ pub(super) use completion::{
 pub(super) use feeds::{
     append_context_object_to_work_feeds, append_memory_capture_to_work_feeds,
     load_control_environment_evidence_on, load_control_execution_observation_on,
+    load_typed_work_object,
 };
 #[cfg(test)]
 use planning::persist_work_item;
 pub(super) use planning::validate_control_work_binding_on;
 #[cfg(test)]
-use query::{canonical_work_events_for_item, feed_parts};
-pub(super) use query::{context_work_feed_heads, verified_work_identity};
+use query::feed_parts;
+pub(super) use query::{
+    canonical_work_events_for_item, context_work_feed_heads, load_active_blocker_projections,
+    load_prerequisite_projection_ids, load_work_item, verified_work_identity,
+};
 pub(super) use schema::{
     initialize_schema, is_rebuildable_schema_object, owns_schema_object, preflight_schema,
     repair_rebuildable_schema_on, require_work_schema_version, schema_version,

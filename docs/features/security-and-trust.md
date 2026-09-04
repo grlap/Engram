@@ -127,9 +127,11 @@ packet, an agent-facing local-work delta, or an off-host projection. Dense
 local-work delivery retains unauthorized positions as typed omission markers
 rather than returning the protected canonical payload. The planned
 JSONL/recovery/portable exporters exclude `restricted` records unless
-explicitly widened and export `secret-ref` only as its vault reference; the
-designed [work-graph snapshot](work-graph-snapshot.md) applies the same
-defaults wherever a label exists, records each exclusion as a typed
+explicitly widened. The `secret-ref` label is writer-asserted; snapshot save
+carries that labelled body without dereferencing it and still runs the
+redactor. The shipped save side of the
+[work-graph snapshot](work-graph-snapshot.md) applies
+the same defaults wherever a label exists, records each exclusion as a typed
 placeholder, and reports the active redactor's no-op status before writing —
 and today only memory versions bear a label, so a snapshot's work items,
 blockers, evidence summaries, and source snapshots leave the host in full.

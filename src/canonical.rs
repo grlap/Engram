@@ -10,6 +10,7 @@ use std::str::FromStr;
 #[cfg(test)]
 use std::cell::Cell;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 
@@ -31,7 +32,7 @@ pub(crate) fn canonical_decode_count() -> usize {
 }
 
 /// A lowercase SHA-256 digest of RFC 8785 canonical JSON bytes.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct ObjectHash(String);
 

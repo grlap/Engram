@@ -6,8 +6,9 @@ use super::{
     PROCESS_DEFAULT_WORK_SESSION_NAMESPACE, PathBuf, ProjectId, ProvenanceLink, ProvenanceRelation,
     Serialize, SessionId, SqliteStore, StoreError, Utc, WorkActorDefaultSource,
     WorkAttributionDefaults, WorkBlockerSummary, WorkChange, WorkChangeProjection, WorkClaim,
-    WorkClaimState, WorkCoreOperationKey, WorkDerivedKey, WorkFocusView, WorkGuidance,
-    WorkHistoryView, WorkId, WorkItem, WorkNextSection, WorkObligationState, WorkPlanningAuthority,
+    WorkClaimState, WorkCoreOperationKey, WorkDerivedKey, WorkFocusView,
+    WorkGraphSnapshotDestinationKind, WorkGraphSnapshotExport, WorkGuidance, WorkHistoryView,
+    WorkId, WorkItem, WorkNextSection, WorkObligationState, WorkPlanningAuthority,
     WorkProtocolBasis, WorkProtocolIntent, WorkSectionOmission, WorkSectionOmissionReason,
     agent_work_event_summary, agent_work_session, allowed_next, bounded_prerequisite_summaries,
     child_lifecycle_is_unfinished, child_lifecycle_priority, compact_text, count_omission,
@@ -19,6 +20,30 @@ use super::{
 };
 
 impl LocalWorkService {
+    /// Saves one deterministic planning/history snapshot and returns only
+    /// after its source-store disclosure audit has committed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the store, canonical snapshot, redactor, or
+    /// audit transaction is invalid.
+    pub fn save_work_graph_snapshot(
+        &self,
+        widening_reason: Option<&str>,
+        destination_kind: WorkGraphSnapshotDestinationKind,
+        exported_at: DateTime<Utc>,
+    ) -> Result<WorkGraphSnapshotExport, StoreError> {
+        let mut store = self.lock_store_at(exported_at)?;
+        store.save_work_graph_snapshot(
+            &self.project_id,
+            &self.actor("graph:save", "save the project work graph"),
+            widening_reason,
+            destination_kind,
+            exported_at,
+            &crate::DevelopmentNoopRedactor,
+        )
+    }
+
     /// Constructs a project-bound local-work service.
     #[must_use]
     pub fn new(
@@ -71,6 +96,24 @@ impl LocalWorkService {
         &self,
         now: DateTime<Utc>,
     ) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+        let mut store = self.lock_store_at(now)?;
+        if self
+            .session_id
+            .0
+            .starts_with(PROCESS_DEFAULT_WORK_SESSION_NAMESPACE)
+            && self.process_default_session_initialized.get().is_none()
+        {
+            store.initialize_process_default_work_session(
+                &self.project_id,
+                &self.session_id,
+                now,
+            )?;
+            let _ = self.process_default_session_initialized.set(());
+        }
+        Ok(store)
+    }
+
+    fn lock_store_at(&self, now: DateTime<Utc>) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
         if self.actor_id.trim().is_empty() || self.session_id.0.trim().is_empty() {
             return Err(StoreError::InvalidWork(
                 "local work requires a non-empty asserted actor and session binding".into(),
@@ -92,24 +135,11 @@ impl LocalWorkService {
                 "local work service could not initialize its SQLite connection".into(),
             )
         })?;
-        let mut store = cached.lock().map_err(|_| {
+        let store = cached.lock().map_err(|_| {
             StoreError::InvalidWorkProjection(
                 "local work service SQLite connection lock is poisoned".into(),
             )
         })?;
-        if self
-            .session_id
-            .0
-            .starts_with(PROCESS_DEFAULT_WORK_SESSION_NAMESPACE)
-            && self.process_default_session_initialized.get().is_none()
-        {
-            store.initialize_process_default_work_session(
-                &self.project_id,
-                &self.session_id,
-                now,
-            )?;
-            let _ = self.process_default_session_initialized.set(());
-        }
         Ok(store)
     }
 

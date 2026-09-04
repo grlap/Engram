@@ -3,6 +3,7 @@
 mod control_runtime;
 mod control_support;
 mod doctor;
+mod graph_snapshot;
 mod objects_tasks;
 mod open_schema;
 mod policy_admin;
@@ -20,8 +21,9 @@ use control_support::{
     normalize_control_text,
 };
 use project_memory::{
-    derived_project_memory_state_rows_on, lookup_project_memory_on,
-    validate_keyed_project_memory_shape,
+    derived_project_memory_state_on, derived_project_memory_state_rows_on,
+    lookup_project_memory_on, project_memory_state_on, validate_keyed_project_memory_shape,
+    validate_stored_project_memory_key,
 };
 use task_memory::{claim_expiry, fts_query, normalize_project_memory_query};
 
@@ -219,7 +221,9 @@ struct SchemaDefinition {
 // verified project-memory versions and assertion events.
 const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[&str] = &[
     "object_fts",
+    "objects_memory_assertion_version",
     "objects_project_memory_key",
+    "objects_graph_snapshot_audit",
     "memory_heads_scope",
     "memory_heads_work_scope",
     "project_memory_state",
@@ -792,6 +796,8 @@ pub enum StoreError {
 pub struct IntegrityReport {
     pub checked_objects: usize,
     pub invalid_objects: Vec<String>,
+    pub checked_graph_snapshot_audits: usize,
+    pub invalid_graph_snapshot_audits: Vec<String>,
     pub checked_control_records: usize,
     pub invalid_control_records: Vec<String>,
     pub checked_work_records: usize,
@@ -1203,6 +1209,7 @@ impl IntegrityReport {
     #[must_use]
     pub fn is_healthy(&self) -> bool {
         self.invalid_objects.is_empty()
+            && self.invalid_graph_snapshot_audits.is_empty()
             && self.invalid_control_records.is_empty()
             && self.invalid_work_records.is_empty()
     }

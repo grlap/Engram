@@ -841,7 +841,9 @@ pub(super) fn lookup_project_memory_on(
     }))
 }
 
-fn validate_stored_project_memory_key(key: &str) -> Result<String, StoreError> {
+pub(in crate::storage) fn validate_stored_project_memory_key(
+    key: &str,
+) -> Result<String, StoreError> {
     validate_project_memory_key(key).map_err(|_| {
         StoreError::InvalidMemoryProjection(
             "project memory list candidate has an unsafe canonical key".into(),
@@ -968,7 +970,7 @@ fn project_memory_list_row(key: String, stored: &StoredProjectMemory) -> Project
     }
 }
 
-fn project_memory_state_on(
+pub(super) fn project_memory_state_on(
     connection: &Connection,
     project_id: &crate::domain::ProjectId,
 ) -> Result<(usize, i64), StoreError> {
@@ -1075,6 +1077,80 @@ pub(super) fn derived_project_memory_state_rows_on(
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?)
+}
+
+pub(super) fn derived_project_memory_state_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+) -> Result<(i64, i64), StoreError> {
+    let heads = connection
+        .prepare(
+            "SELECT head.memory_id, head.status, head.version_hash
+             FROM objects AS version INDEXED BY objects_project_memory_key
+             JOIN memory_heads AS head ON head.version_hash = version.object_hash
+             WHERE version.object_kind = 'memory_version'
+               AND json_extract(version.canonical_json, '$.scope.kind') = 'project'
+               AND json_type(version.canonical_json, '$.project_key') = 'text'
+               AND json_extract(version.canonical_json, '$.scope.project') = ?1
+             ORDER BY json_extract(version.canonical_json, '$.project_key')",
+        )?
+        .query_map([project_id.0.as_str()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut active_count = 0_i64;
+    let mut change_position = 0_i64;
+    let mut assertion_statement = connection.prepare(
+        "SELECT object_hash
+         FROM objects INDEXED BY objects_memory_assertion_version
+         WHERE object_kind = 'memory_assertion_event'
+           AND json_extract(canonical_json, '$.version') = ?1
+         ORDER BY object_hash",
+    )?;
+    for (memory_id, status, version_hash) in heads {
+        active_count = active_count
+            .checked_add(i64::from(status == "active"))
+            .ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(
+                    "project memory active count exceeds SQLite range".into(),
+                )
+            })?;
+        let assertion_hashes = assertion_statement
+            .query_map([version_hash.as_str()], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        for stored_hash in assertion_hashes {
+            let assertion_hash = ObjectHash::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let assertion: MemoryAssertionEvent = SqliteStore::get_typed_object_on(
+                connection,
+                &assertion_hash,
+                "memory_assertion_event",
+            )?
+            .ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(format!(
+                    "project memory assertion {assertion_hash} is missing"
+                ))
+            })?;
+            if assertion.schema_version != SCHEMA_VERSION
+                || assertion.memory_id.0.to_string() != memory_id
+                || assertion.version.as_str() != version_hash
+            {
+                return Err(StoreError::InvalidMemoryProjection(format!(
+                    "project memory assertion {assertion_hash} disagrees with its head"
+                )));
+            }
+            change_position = change_position.checked_add(1).ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(
+                    "project memory change position exceeds SQLite range".into(),
+                )
+            })?;
+        }
+    }
+    Ok((active_count, change_position))
 }
 
 fn project_memory_first_line(body: &str) -> String {

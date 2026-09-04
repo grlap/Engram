@@ -253,6 +253,13 @@ engram control \
 engram backup                      # → <home>/backups/<project>/engram-<utc>.db + manifest
 engram restore --from <backup-file> [--replace]   # stop other Engram processes first
 
+# Deterministic planning/history disclosure. The default path is
+# <home>/snapshots/<project>/graph-<work-cut>-<memory-cut>-<first-12-body-digest>.json.
+# --include-restricted deliberately widens restricted project-memory bodies and
+# therefore requires a disclosure reason carried in the body and save audit.
+engram graph save [--out <snapshot.json> | --stdout] \
+  [--include-restricted --reason "<why>"]
+
 # Agent words use the stable project plus asserted actor/session binding.
 engram work --actor-id codex --session-id session-unique-id next
 engram work --actor-id codex --session-id session-unique-id \
@@ -263,6 +270,17 @@ engram mcp --actor-id codex --session-id session-unique-id
 engram work --actor-id codex --session-id session-unique-id \
   core focus <short-ref>
 ```
+
+`graph save` is an operator-only CLI surface; it is not an MCP tool and does
+not change the thirteen agent words. It reads the work graph, native history,
+source provenance, and keyed project memories at one transaction cut, then
+commits an immutable disclosure-attempt audit before publishing bytes. The
+canonical body excludes the exporting build, so its digest remains content
+identity across builds with the same runtime-derived format fingerprint. The
+default output is owner-only where the platform has file modes, no save may
+target an Engram project-store directory, and neither the default path nor
+`--out` replaces different bytes. See
+[work-graph snapshot](work-graph-snapshot.md).
 
 Actor context currently binds only the work/MCP service. The behavioral
 control plane keeps its existing actor/session and environment-evidence

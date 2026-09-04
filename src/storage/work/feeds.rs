@@ -510,7 +510,7 @@ pub(super) fn request_object<T: Serialize>(request: &T) -> Result<CanonicalObjec
     CanonicalObject::freeze(request)
 }
 
-pub(super) fn load_typed_work_object<T: DeserializeOwned>(
+pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
     connection: &Connection,
     hash: &ObjectHash,
     object_kind: &str,

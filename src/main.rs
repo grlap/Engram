@@ -2,7 +2,7 @@
 
 use std::{
     env, fs,
-    io::{self, BufReader, BufWriter, Read},
+    io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     process::{self, ExitCode},
     str::FromStr,
@@ -20,11 +20,11 @@ use engram::{
     ObligationRuleSet, ProjectId, ProjectPolicyAuthorityDecision, RememberInput, SessionId,
     SqliteStore, StoreError, UpdateAction, UpdateInput, VerificationKind, VerificationRequirement,
     WaiveWorkObligationRequest, WorkActorDefaultSource, WorkAttributionDefaults, WorkAvailability,
-    WorkCompleteInput, WorkCompleteResult, WorkHandoffInput, WorkItemKind, WorkLifecycle,
-    WorkNextQuery, WorkNextSection, WorkObligationId, WorkProposeInput, WorkUpdateInput,
-    describe_host_path_policy, looks_like_work_ref, new_process_default_work_session_id,
-    parse_defer_date, parse_host_path_policy, probe_host_path_policy, project_database_path,
-    store_error_value,
+    WorkCompleteInput, WorkCompleteResult, WorkGraphSnapshotCut, WorkGraphSnapshotDestinationKind,
+    WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
+    WorkObligationId, WorkProposeInput, WorkUpdateInput, describe_host_path_policy,
+    looks_like_work_ref, new_process_default_work_session_id, parse_defer_date,
+    parse_host_path_policy, probe_host_path_policy, project_database_path, store_error_value,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -130,6 +130,23 @@ enum Command {
         /// Replace an existing store instead of refusing.
         #[arg(long)]
         replace: bool,
+    },
+    /// Save the deterministic project work graph; load remains planned.
+    Graph {
+        /// Actor identity asserted by the invoking host or operator wrapper.
+        #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
+        actor_id: Option<String>,
+        /// Session identity retained only as asserted audit attribution.
+        #[arg(long, env = "ENGRAM_SESSION_ID", global = true)]
+        session_id: Option<String>,
+        /// Optional free-form execution context attributed to this actor.
+        #[arg(long, env = "ENGRAM_ACTOR_CONTEXT", global = true)]
+        actor_context: Option<String>,
+        /// Skill instruction that supplied this actor context, when available.
+        #[arg(long, env = "ENGRAM_SOURCE_SKILL")]
+        source_skill: Option<String>,
+        #[command(subcommand)]
+        operation: GraphCommand,
     },
     /// Serve the coding-agent local-work tools over MCP stdio.
     Mcp {
@@ -348,6 +365,25 @@ impl From<CliObligationRuleDefinition> for ObligationRuleDefinition {
             },
         }
     }
+}
+
+#[derive(Debug, Subcommand)]
+enum GraphCommand {
+    /// Save planning state and inert history without execution authority.
+    Save {
+        /// Write to this file instead of the project-digest snapshot path.
+        #[arg(long, conflicts_with = "stdout")]
+        out: Option<PathBuf>,
+        /// Write the disclosure artifact to stdout.
+        #[arg(long, conflicts_with = "out")]
+        stdout: bool,
+        /// Include restricted memory bodies; secret references never widen.
+        #[arg(long, requires = "reason")]
+        include_restricted: bool,
+        /// Audit reason required when restricted memory bodies are included.
+        #[arg(long, requires = "include_restricted")]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -703,6 +739,7 @@ enum AuthorityCommand {
 }
 
 const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
+const MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS: usize = 32;
 
 fn main() -> Result<ExitCode> {
     // The combined clap command graph is parsed and driven on this named
@@ -721,6 +758,10 @@ fn main() -> Result<ExitCode> {
 }
 
 #[tokio::main]
+#[allow(
+    clippy::too_many_lines,
+    reason = "top-level CLI dispatch keeps every operator and agent surface exhaustive in one match"
+)]
 async fn run_cli() -> Result<ExitCode> {
     let cli = Cli::parse();
     let (project_id, database, root) = resolve_project(&cli.project_file, cli.home)?;
@@ -751,6 +792,21 @@ async fn run_cli() -> Result<ExitCode> {
         )?,
         Command::Backup { out } => backup(&database, out)?,
         Command::Restore { from, replace } => restore(&database, &from, replace)?,
+        Command::Graph {
+            actor_id,
+            session_id,
+            actor_context,
+            source_skill,
+            operation,
+        } => run_graph_from_cli(
+            database,
+            project_id,
+            actor_id,
+            session_id,
+            actor_context,
+            source_skill,
+            operation,
+        )?,
         Command::Mcp {
             actor_id,
             session_id,
@@ -1642,6 +1698,285 @@ fn initialize(
     Ok(())
 }
 
+fn run_graph_from_cli(
+    database: PathBuf,
+    project_id: ProjectId,
+    actor_id: Option<String>,
+    session_id: Option<String>,
+    actor_context: Option<String>,
+    source_skill: Option<String>,
+    operation: GraphCommand,
+) -> Result<()> {
+    let attribution = resolve_shell_work_attribution(actor_id, session_id);
+    run_graph(
+        WorkContext {
+            database,
+            project_id,
+            actor_id: attribution.actor_id,
+            session_id: SessionId(attribution.session_id),
+            actor_context,
+            attribution_defaults: attribution.defaults,
+            source_skill,
+        },
+        operation,
+    )
+}
+
+fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
+    match operation {
+        GraphCommand::Save {
+            out,
+            stdout,
+            include_restricted,
+            reason,
+        } => {
+            if include_restricted != reason.is_some() {
+                bail!("--include-restricted and --reason must be supplied together");
+            }
+            let attribution = ShellWorkAttribution {
+                actor_id: context.actor_id.clone(),
+                session_id: context.session_id.0.clone(),
+                defaults: context.attribution_defaults,
+            };
+            let database = context.database.clone();
+            let destination_kind = if stdout {
+                WorkGraphSnapshotDestinationKind::Stdout
+            } else if out.is_some() {
+                WorkGraphSnapshotDestinationKind::File
+            } else {
+                WorkGraphSnapshotDestinationKind::DefaultFile
+            };
+            let service = LocalWorkService::new_with_attribution(
+                context.database,
+                context.project_id,
+                context.actor_id,
+                context.session_id,
+                context.source_skill,
+                context.actor_context,
+                context.attribution_defaults,
+            );
+            let export = service.save_work_graph_snapshot(
+                reason.as_deref(),
+                destination_kind,
+                chrono::Utc::now(),
+            )?;
+            let mut bytes = serde_json::to_vec_pretty(&export.document)?;
+            bytes.push(b'\n');
+
+            // All notices are deliberately delayed until the disclosure audit
+            // above has committed. A failed audit therefore prints no bytes.
+            attribution.print_notices();
+            eprintln!("REDACTOR: {}", export.redactor_status);
+            if include_restricted {
+                let widened_memories = export
+                    .document
+                    .body
+                    .memories
+                    .iter()
+                    .filter(|memory| {
+                        matches!(
+                            &memory.state,
+                            engram::WorkGraphSnapshotMemoryState::Active {
+                                sensitivity: engram::Sensitivity::Restricted,
+                                ..
+                            }
+                        )
+                    })
+                    .count();
+                eprintln!(
+                    "WARNING: --include-restricted widened {widened_memories} restricted project-memory bod{} into this disclosure because: {}",
+                    if widened_memories == 1 { "y" } else { "ies" },
+                    reason.as_deref().unwrap_or_default()
+                );
+            }
+            if stdout {
+                let mut output = io::stdout().lock();
+                output.write_all(&bytes)?;
+                output.flush()?;
+            } else {
+                let out = match out {
+                    Some(out) => out,
+                    None => graph_snapshot_default_path(
+                        &database,
+                        &export.document.body.summary.as_of,
+                        &export.body_sha256,
+                    )?,
+                };
+                match write_graph_snapshot_file(&database, &out, &bytes)? {
+                    GraphSnapshotWriteOutcome::Saved => println!("{}", out.display()),
+                    GraphSnapshotWriteOutcome::AlreadySaved => {
+                        println!("already saved: {}", out.display());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn graph_snapshot_default_path(
+    database: &Path,
+    cut: &WorkGraphSnapshotCut,
+    body_sha256: &engram::ObjectHash,
+) -> Result<PathBuf> {
+    let (home, digest) = engram_home_and_project_digest(database)?;
+    let body_prefix = body_sha256
+        .as_str()
+        .get(..12)
+        .context("snapshot body digest is shorter than twelve hex digits")?;
+    Ok(home.join("snapshots").join(digest).join(format!(
+        "graph-{}-{}-{body_prefix}.json",
+        cut.work_feed, cut.project_memory
+    )))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GraphSnapshotWriteOutcome {
+    Saved,
+    AlreadySaved,
+}
+
+fn write_graph_snapshot_file(
+    database: &Path,
+    out: &Path,
+    bytes: &[u8],
+) -> Result<GraphSnapshotWriteOutcome> {
+    validate_graph_snapshot_destination(database, out)?;
+    if out.try_exists()? {
+        let existing = fs::read(out)
+            .with_context(|| format!("failed to inspect existing snapshot {}", out.display()))?;
+        if graph_snapshot_files_are_equivalent(&existing, bytes) {
+            return Ok(GraphSnapshotWriteOutcome::AlreadySaved);
+        }
+        bail!(
+            "snapshot destination {} already exists with different bytes",
+            out.display()
+        );
+    }
+    let parent = out
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    validate_graph_snapshot_destination(database, out)?;
+
+    let temp = out.with_file_name(format!(
+        ".{}.graph-save-{}.tmp",
+        out.file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("snapshot"))
+            .to_string_lossy(),
+        uuid::Uuid::now_v7()
+    ));
+    let mut options = fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&temp)
+        .with_context(|| format!("failed to create snapshot stage {}", temp.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    let staged = (|| -> Result<()> {
+        file.write_all(bytes)
+            .with_context(|| format!("failed to write snapshot stage {}", temp.display()))?;
+        file.sync_all()
+            .with_context(|| format!("failed to sync snapshot stage {}", temp.display()))?;
+        Ok(())
+    })();
+    drop(file);
+    if let Err(error) = staged {
+        let _ = fs::remove_file(&temp);
+        return Err(error);
+    }
+    if let Err(error) = fs::hard_link(&temp, out) {
+        let result = if error.kind() == io::ErrorKind::AlreadyExists
+            && fs::read(out)
+                .is_ok_and(|existing| graph_snapshot_files_are_equivalent(&existing, bytes))
+        {
+            Ok(())
+        } else {
+            Err(error).with_context(|| {
+                format!(
+                    "failed to publish snapshot {} without replacing it",
+                    out.display()
+                )
+            })
+        };
+        let _ = fs::remove_file(&temp);
+        result?;
+        return Ok(GraphSnapshotWriteOutcome::AlreadySaved);
+    }
+    fs::remove_file(&temp)
+        .with_context(|| format!("failed to remove staged snapshot {}", temp.display()))?;
+    #[cfg(unix)]
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .with_context(|| format!("failed to sync snapshot directory {}", parent.display()))?;
+    Ok(GraphSnapshotWriteOutcome::Saved)
+}
+
+fn graph_snapshot_files_are_equivalent(left: &[u8], right: &[u8]) -> bool {
+    fn without_varying_manifest_fields(bytes: &[u8]) -> Option<serde_json::Value> {
+        let mut value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+        let manifest = value.get_mut("manifest")?.as_object_mut()?;
+        manifest.get("exported_at")?.as_str()?;
+        manifest.get("exporting_build")?.as_str()?;
+        manifest.remove("exported_at")?;
+        manifest.remove("exporting_build")?;
+        Some(value)
+    }
+    left == right
+        || matches!(
+            (
+                without_varying_manifest_fields(left),
+                without_varying_manifest_fields(right)
+            ),
+            (Some(left), Some(right)) if left == right
+        )
+}
+
+fn engram_home_and_project_digest(database: &Path) -> Result<(&Path, &std::ffi::OsStr)> {
+    let project_dir = database
+        .parent()
+        .context("store path has no project directory")?;
+    let digest = project_dir
+        .file_name()
+        .context("store path has no project digest")?;
+    let home = project_dir
+        .parent()
+        .and_then(Path::parent)
+        .context("store path is not below an Engram home")?;
+    Ok((home, digest))
+}
+
+fn validate_graph_snapshot_destination(database: &Path, out: &Path) -> Result<()> {
+    let (home, _) = engram_home_and_project_digest(database)?;
+    let projects = std::path::absolute(home.join("projects"))?;
+    let destination = std::path::absolute(out)?;
+    if destination.starts_with(&projects) {
+        bail!("snapshot destination must be outside Engram's project stores");
+    }
+    let canonical_projects = fs::canonicalize(&projects).unwrap_or(projects);
+    let mut ancestor = destination.parent();
+    while let Some(candidate) = ancestor {
+        if candidate.try_exists()? {
+            let canonical = fs::canonicalize(candidate)?;
+            if canonical.starts_with(&canonical_projects) {
+                bail!("snapshot destination must be outside Engram's project stores");
+            }
+            break;
+        }
+        ancestor = candidate.parent();
+    }
+    Ok(())
+}
+
 fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
     let store = SqliteStore::open_unresolved(database)
         .with_context(|| format!("failed to open {}", database.display()))?;
@@ -1650,16 +1985,7 @@ fn backup(database: &Path, out: Option<PathBuf>) -> Result<()> {
     } else {
         {
             // <home>/projects/<digest>/engram.db → <home>/backups/<digest>/engram-<utc>.db
-            let project_dir = database
-                .parent()
-                .context("store path has no project directory")?;
-            let digest = project_dir
-                .file_name()
-                .context("store path has no project digest")?;
-            let home = project_dir
-                .parent()
-                .and_then(Path::parent)
-                .context("store path is not below an Engram home")?;
+            let (home, digest) = engram_home_and_project_digest(database)?;
             home.join("backups").join(digest).join(format!(
                 "engram-{}.db",
                 chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
@@ -1829,8 +2155,9 @@ fn doctor(
     }
     if !report.is_healthy() {
         bail!(
-            "integrity check failed for {} object(s), {} control record(s), and {} work record(s)",
+            "integrity check failed for {} object(s), {} graph snapshot audit(s), {} control record(s), and {} work record(s)",
             report.invalid_objects.len(),
+            report.invalid_graph_snapshot_audits.len(),
             report.invalid_control_records.len(),
             report.invalid_work_records.len()
         );
@@ -1838,9 +2165,13 @@ fn doctor(
     let control = store.control_diagnostics_at(chrono::Utc::now())?;
     let stored_path_policy = store.stored_host_path_policy()?;
     println!(
-        "Engram store is healthy ({} immutable object(s), {} control record(s), {} work record(s) checked)",
-        report.checked_objects, report.checked_control_records, report.checked_work_records
+        "Engram store is healthy ({} immutable object(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) checked)",
+        report.checked_objects,
+        report.checked_graph_snapshot_audits,
+        report.checked_control_records,
+        report.checked_work_records
     );
+    print_graph_snapshot_audits(&store, project_id)?;
     println!(
         "Control policy schema={} id={} epoch={} required={} obligation_rules={} supported={:?}; sessions={} issued={} begun={}",
         control.control_schema_version,
@@ -1874,6 +2205,36 @@ fn doctor(
     Ok(())
 }
 
+fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> Result<()> {
+    let (total, audits) = store
+        .recent_work_graph_snapshot_save_audits(project_id, MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS)?;
+    if total > audits.len() {
+        println!(
+            "Graph snapshot disclosure attempts: {total} total; showing the latest {}",
+            audits.len()
+        );
+    }
+    for audit in audits {
+        println!(
+            "Graph snapshot disclosure attempted at {}: cut work={} memory={}, widened={}, widening reason={}, redacted={}, body={}, destination={:?}, actor={}",
+            audit.attempted_at,
+            audit.as_of.work_feed,
+            audit.as_of.project_memory,
+            audit.widened,
+            audit.widening_reason.as_deref().unwrap_or("none"),
+            audit.redacted.items
+                + audit.redacted.blockers
+                + audit.redacted.sources
+                + audit.redacted.records
+                + audit.redacted.memories,
+            audit.body_sha256,
+            audit.destination_kind,
+            audit.actor.actor_id,
+        );
+    }
+    Ok(())
+}
+
 fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool) -> Result<()> {
     let report = SqliteStore::repair_rebuildable_projections(database)
         .with_context(|| format!("failed to repair {}", database.display()))?;
@@ -1887,17 +2248,22 @@ fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool)
                 "database": canonical_database_path(database)?,
                 "healthy": report.is_healthy(),
                 "checked_objects": report.checked_objects,
+                "checked_graph_snapshot_audits": report.checked_graph_snapshot_audits,
                 "checked_control_records": report.checked_control_records,
                 "checked_work_records": report.checked_work_records,
                 "invalid_objects": report.invalid_objects,
+                "invalid_graph_snapshot_audits": report.invalid_graph_snapshot_audits,
                 "invalid_control_records": report.invalid_control_records,
                 "invalid_work_records": report.invalid_work_records,
             }))?
         );
     } else {
         println!(
-            "Engram rebuildable projections repaired and verified ({} immutable object(s), {} control record(s), {} work record(s) checked)",
-            report.checked_objects, report.checked_control_records, report.checked_work_records
+            "Engram rebuildable projections repaired and verified ({} immutable object(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) checked)",
+            report.checked_objects,
+            report.checked_graph_snapshot_audits,
+            report.checked_control_records,
+            report.checked_work_records
         );
     }
     Ok(())
@@ -1935,6 +2301,13 @@ fn build_doctor_json_report(
         }
         Err(error) => (None, serde_json::Value::Null, Some(error.to_string())),
     };
+    let graph_snapshot_disclosures = if report.invalid_graph_snapshot_audits.is_empty() {
+        let (total, items) = store
+            .recent_work_graph_snapshot_save_audits(project_id, MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS)?;
+        serde_json::json!({ "total": total, "items": items })
+    } else {
+        serde_json::Value::Null
+    };
     let mut value = serde_json::json!({
         "healthy": report.is_healthy(),
         "project_id": project_id,
@@ -1942,14 +2315,17 @@ fn build_doctor_json_report(
         "work_schema_version": store.work_schema_version(),
         "checked": {
             "objects": report.checked_objects,
+            "graph_snapshot_audits": report.checked_graph_snapshot_audits,
             "control_records": report.checked_control_records,
             "work_records": report.checked_work_records,
         },
         "invalid": {
             "objects": report.invalid_objects,
+            "graph_snapshot_audits": report.invalid_graph_snapshot_audits,
             "control_records": report.invalid_control_records,
             "work_records": report.invalid_work_records,
         },
+        "graph_snapshot_disclosure_attempts": graph_snapshot_disclosures,
         "host_path_policy": stored_path_policy.map(describe_host_path_policy),
         "control": control_value,
     });
@@ -1966,8 +2342,9 @@ fn build_doctor_json_report(
         control_error.map(|error| format!("control diagnostics failed: {error}"))
     } else {
         Some(format!(
-            "integrity check failed for {} object(s), {} control record(s), and {} work record(s)",
+            "integrity check failed for {} object(s), {} graph snapshot audit(s), {} control record(s), and {} work record(s)",
             report.invalid_objects.len(),
+            report.invalid_graph_snapshot_audits.len(),
             report.invalid_control_records.len(),
             report.invalid_work_records.len()
         ))
@@ -2060,6 +2437,167 @@ mod tests {
             .expect("spawn CLI command-graph test")
             .join()
             .expect("CLI command graph remains valid");
+    }
+
+    #[test]
+    fn graph_save_is_operator_only_and_has_exclusive_destinations() {
+        let parsed = Cli::try_parse_from([
+            "engram",
+            "graph",
+            "--actor-id",
+            "operator",
+            "--session-id",
+            "operator-session",
+            "save",
+            "--stdout",
+            "--include-restricted",
+            "--reason",
+            "incident recovery",
+        ])
+        .expect("parse graph save");
+        let Command::Graph { operation, .. } = parsed.command else {
+            panic!("graph save did not parse as the operator graph command");
+        };
+        assert!(matches!(
+            operation,
+            GraphCommand::Save {
+                stdout: true,
+                include_restricted: true,
+                reason: Some(ref reason),
+                out: None,
+            } if reason == "incident recovery"
+        ));
+        assert!(
+            Cli::try_parse_from([
+                "engram",
+                "graph",
+                "save",
+                "--stdout",
+                "--out",
+                "snapshot.json",
+            ])
+            .is_err()
+        );
+        assert!(Cli::try_parse_from(["engram", "work", "graph", "save", "--stdout"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "engram",
+                "graph",
+                "save",
+                "--stdout",
+                "--include-restricted",
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "engram",
+                "graph",
+                "save",
+                "--stdout",
+                "--reason",
+                "not widening",
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn graph_default_path_uses_the_project_digest_and_cut() {
+        let database = Path::new("engram-home")
+            .join("projects")
+            .join("project-digest")
+            .join("engram.db");
+        let cut = WorkGraphSnapshotCut {
+            work_feed: 17,
+            project_memory: 4,
+        };
+        let body_sha256 = engram::CanonicalObject::freeze(&serde_json::json!({
+            "derived": "snapshot body"
+        }))
+        .expect("canonical fixture")
+        .hash()
+        .clone();
+        let body_prefix = body_sha256.as_str().get(..12).expect("body hash prefix");
+        assert_eq!(
+            graph_snapshot_default_path(&database, &cut, &body_sha256)
+                .expect("default snapshot path"),
+            Path::new("engram-home")
+                .join("snapshots")
+                .join("project-digest")
+                .join(format!("graph-17-4-{body_prefix}.json"))
+        );
+    }
+
+    #[test]
+    fn graph_snapshot_writer_never_replaces_store_or_destination_bytes() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let home = directory.path().join("engram-home");
+        let project_dir = home.join("projects").join("project-digest");
+        fs::create_dir_all(&project_dir).expect("project directory");
+        let database = project_dir.join("engram.db");
+        fs::write(&database, b"canonical-store").expect("store fixture");
+        let wal = project_dir.join("engram.db-wal");
+        fs::write(&wal, b"committed-wal").expect("wal fixture");
+        let output = home
+            .join("snapshots")
+            .join("project-digest")
+            .join("graph.json");
+
+        let store_error = write_graph_snapshot_file(&database, &database, b"snapshot")
+            .expect_err("active store destination");
+        assert!(
+            store_error
+                .to_string()
+                .contains("outside Engram's project stores")
+        );
+        let wal_error =
+            write_graph_snapshot_file(&database, &wal, b"snapshot").expect_err("wal destination");
+        assert!(
+            wal_error
+                .to_string()
+                .contains("outside Engram's project stores")
+        );
+        assert_eq!(
+            fs::read(&database).expect("store preserved"),
+            b"canonical-store"
+        );
+        assert_eq!(fs::read(&wal).expect("wal preserved"), b"committed-wal");
+
+        assert_eq!(
+            write_graph_snapshot_file(&database, &output, b"snapshot\n").expect("publish snapshot"),
+            GraphSnapshotWriteOutcome::Saved
+        );
+        assert_eq!(
+            write_graph_snapshot_file(&database, &output, b"snapshot\n").expect("identical retry"),
+            GraphSnapshotWriteOutcome::AlreadySaved
+        );
+        let replacement_error = write_graph_snapshot_file(&database, &output, b"different\n")
+            .expect_err("different replacement");
+        assert!(replacement_error.to_string().contains("different bytes"));
+        assert_eq!(
+            fs::read(&output).expect("snapshot preserved"),
+            b"snapshot\n"
+        );
+        let staged_files = fs::read_dir(output.parent().expect("snapshot parent"))
+            .expect("snapshot directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".graph-save-"))
+            .count();
+        assert_eq!(staged_files, 0);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&output)
+                    .expect("snapshot metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
     }
 
     #[test]

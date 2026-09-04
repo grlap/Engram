@@ -21,12 +21,12 @@ This project tracks its work in Engram — the thirteen agent words, documented 
   expiry. Stores created by the prerelease grant-bearing build must be
   recreated; schema marker 1 intentionally has no migration chain. Today
   recreation is archive + `engram init` + re-adding open items with the
-  words. Once the exporter ships, the designed
-  [work-graph snapshot](features/work-graph-snapshot.md) will replace that
-  with `graph save` on the old build and `graph load` on the new one for
-  stores written by a build that has it, whenever the two builds share the
-  snapshot format fingerprint; a format change or an older store keeps the
-  manual path.
+  words. The shipped [work-graph snapshot](features/work-graph-snapshot.md)
+  exporter now replaces archive capture with `graph save` for stores written
+  by a build that has it. Loading that file into a new build remains planned;
+  until `graph load` ships, recreation still uses the manual re-add path.
+  Once it ships, the two builds must share the snapshot format fingerprint;
+  a format change or an older store keeps the manual path.
   Either way the file carries no control policy: `engram init` on the new
   build repeats the project's `--required-assurance … --authorized-by …
   --reason …` bootstrap and any obligation rule set is re-applied by hand.

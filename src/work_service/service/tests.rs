@@ -106,6 +106,55 @@ fn process_default_work_session_reuse_expires_before_protocol_mutation() {
 }
 
 #[test]
+fn graph_save_retains_process_default_attribution_without_registering_ambient_session_state() {
+    let directory = tempdir().expect("temporary directory");
+    let database = directory.path().join("engram.sqlite3");
+    let project = ProjectId("snapshot-attribution-only-project".into());
+    let session = process_default_session_at(17, at(0));
+    let service = LocalWorkService::new_with_attribution(
+        database.clone(),
+        project.clone(),
+        "snapshot-operator".into(),
+        session.clone(),
+        None,
+        None,
+        WorkAttributionDefaults {
+            actor: None,
+            session: true,
+        },
+    );
+
+    service
+        .save_work_graph_snapshot(None, WorkGraphSnapshotDestinationKind::Stdout, at(1))
+        .expect("save attributed snapshot");
+    let connection = rusqlite::Connection::open(&database).expect("inspect snapshot store");
+    let registered = connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_session_state
+             WHERE project_id = ?1 AND session_id = ?2",
+            rusqlite::params![project.0, session.0],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("count ambient session rows");
+    assert_eq!(registered, 0, "graph save attribution is audit-only");
+    drop(connection);
+
+    service
+        .work_next(1, WorkNextQuery::default(), at(2))
+        .expect("later ambient word registers the same process session");
+    let registered = rusqlite::Connection::open(&database)
+        .expect("inspect ambient store")
+        .query_row(
+            "SELECT COUNT(*) FROM work_session_state
+             WHERE project_id = ?1 AND session_id = ?2",
+            rusqlite::params![project.0, session.0],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("count registered session rows");
+    assert_eq!(registered, 1);
+}
+
+#[test]
 fn core_operation_keys_separate_protocol_variants_and_suboperations() {
     let service = LocalWorkService::new(
         PathBuf::from("unused.sqlite3"),

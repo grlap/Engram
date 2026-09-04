@@ -1491,7 +1491,7 @@ pub(super) fn latest_canonical_work_event_for_item_optional(
     }
 }
 
-pub(super) fn canonical_work_events_for_item(
+pub(in crate::storage) fn canonical_work_events_for_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<WorkEvent>, StoreError> {
@@ -1622,7 +1622,7 @@ fn load_work_item_projection(
     Ok(item)
 }
 
-pub(super) fn load_work_item(
+pub(in crate::storage) fn load_work_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<WorkItem, StoreError> {
@@ -1870,7 +1870,7 @@ pub(super) fn load_work_claim_optional(
     }
 }
 
-pub(super) fn load_active_blocker_projections(
+pub(in crate::storage) fn load_active_blocker_projections(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<WorkBlocker>, StoreError> {
@@ -1974,7 +1974,7 @@ pub(super) fn incomplete_prerequisite_projections(
         .collect())
 }
 
-pub(super) fn load_prerequisite_projection_ids(
+pub(in crate::storage) fn load_prerequisite_projection_ids(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<WorkId>, StoreError> {

@@ -300,6 +300,10 @@ impl SqliteStore {
         let (checked_work_records, invalid_work_records) = self.verify_work_projections()?;
         report.checked_work_records = checked_work_records;
         report.invalid_work_records = invalid_work_records;
+        let (checked_graph_snapshot_audits, invalid_graph_snapshot_audits) =
+            super::graph_snapshot::verify_work_graph_snapshot_saved_events_on(&self.connection)?;
+        report.checked_graph_snapshot_audits = checked_graph_snapshot_audits;
+        report.invalid_graph_snapshot_audits = invalid_graph_snapshot_audits;
         Ok(report)
     }
 

@@ -1065,8 +1065,8 @@ engram action reconcile <action-id>
 engram import preview <adapter> <ref>        engram import apply <snapshot>
 engram export preview <adapter> <work-ref>   engram export apply <intent>
 
-# designed work-graph snapshot (features/work-graph-snapshot.md)
-engram graph save [--out FILE | --stdout] [--include-restricted]
+# shipped save and designed load (features/work-graph-snapshot.md)
+engram graph save [--out FILE | --stdout] [--include-restricted --reason "<why>"]
 engram graph load FILE [--dry-run]
 ```
 

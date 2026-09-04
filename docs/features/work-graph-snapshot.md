@@ -7,16 +7,18 @@
 > [security & trust](security-and-trust.md), and
 > [development](../development.md).
 >
-> Status: designed, not yet shipped. The installed inventory is
+> Status: save shipped; load, `--dry-run`, and restored-record recreation are
+> designed but not yet shipped. The installed inventory is
 > [shipped today](../shipped.md).
 
 A work-graph snapshot is one deterministic, human-readable file that holds
 the planning state of one project — its work graph, blockers, source
-provenance, and project memories — and the read-only history of that work,
+provenance, and permanent keyed project memories — and the read-only history of that work,
 and that a fresh store can load. It is the deterministic, human-readable
 work-graph recovery snapshot the [sqlite store](sqlite-store.md) brief
-promises, and once it ships it replaces archive-and-script recreation of
-stores for every build that ships the exporter. It restores planning, never
+promises. The shipped exporter replaces archive-and-script capture for
+current stores; the still-planned loader will replace recreation scripts. It
+restores planning, never
 execution: no run, root execution, claim, lease, seal, checkpoint, waiver,
 or evidence object is ever created by a load. It is not `portable`, not a
 live sync path, and not canonical-object interchange.
@@ -41,7 +43,8 @@ live sync path, and not canonical-object interchange.
 - **A recovery artifact with a manifest.** The file carries the manifest that
   `BackupAdapter.put_snapshot(project, manifest, bytes)` expects, so a
   configured copy of a save can later raise `local_backed_up`. Every save is
-  referentially complete — no node, edge, or key is ever dropped — so every
+  referentially complete for the work graph and permanent keyed project-memory
+  surface — no node, edge, or key in those surfaces is ever dropped — so every
   save is a recovery snapshot of record; a redacted save restores a typed
   placeholder where a sensitivity label excluded a text, and its body and
   manifest say so. A hand-run save by itself reduces no risk until the file
@@ -84,7 +87,7 @@ changes far less often than the store schema.
 | `blockers` | per item, every active `WorkBlocker`: blocker id, kind, detail, creator, time | cleared blockers (they remain in records) |
 | `sources` | every `WorkSourceSnapshot` cited by an item, verbatim canonical JSON | nothing; no source bears a label today, and the build that first labels sources defines their exclusion |
 | `records` | per item, an ordered list of history layers, oldest first, each layer carrying its generation index: every `RestoredRecord` the item already carries, verbatim, then the store's own **native layer** — notes (evidence kind, summary, gate name / failures / opaque ref, recorded-at), compact events (transition kind, time, reason, including waivers with the child's exact disposed revision), and for a completed item its completion summary and time — each entry carrying the original `ActorContext` verbatim (actor id, kind, assurance, session, context), so asserted and stronger attribution stay distinguishable | evidence object hashes as authority (they may appear as provenance strings), verification and environment evidence bodies, delivery cursors, session focus, handoff offers |
-| `memories` | key, body, sensitivity label, remembered-at, and the original `ActorContext` verbatim; retired keys as tombstones with their retiring `ActorContext` and time | agent-private scratch (never part of the work graph); `restricted` bodies unless widened; `secret-ref` bodies are always their vault reference; the store-side `restored` link, which is write-only |
+| `memories` | every permanent project-memory key, body, sensitivity label, remembered-at, and the original `ActorContext` verbatim; retired keys as tombstones with their retiring `ActorContext` and time | unkeyed typed project-scope observations and agent-private scratch; `restricted` bodies unless widened; the store-side `restored` link, which is write-only |
 
 Items are ordered by short ref, blockers by item then blocker id, sources by
 hash, records by item then generation index, memories by key. Work ids,
@@ -124,7 +127,10 @@ not authorized for placeholder metadata receives the marked-truncated export
 that brief defines, never this file. Save commits one audit event on the
 source store — as-of cut, `widened` and its reason, redacted counts, body
 hash, destination kind, and the saving actor — before any byte reaches the
-destination; its
+destination. Audit attribution is retained verbatim only after each text
+field passes the 256-byte control-and-format-free bound, the provenance chain
+fits 16 links, and the serialized actor stays within 4 KiB; this keeps routine
+`doctor` text and JSON bounded without weakening the immutable audit. Its
 durable fact is that a disclosure was attempted, which is the conservative
 fact `doctor` should show, and a destination failure after it is `save`'s
 own reported failure with the attempt on record. If the event cannot be

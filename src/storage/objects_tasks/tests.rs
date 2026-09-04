@@ -93,6 +93,8 @@ fn append_is_idempotent_and_round_trips_verified_content() {
         IntegrityReport {
             checked_objects: 4,
             invalid_objects: Vec::new(),
+            checked_graph_snapshot_audits: 0,
+            invalid_graph_snapshot_audits: Vec::new(),
             checked_control_records: 2,
             invalid_control_records: Vec::new(),
             checked_work_records: 1,

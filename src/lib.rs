@@ -7,6 +7,7 @@
 pub mod canonical;
 pub mod control;
 pub mod domain;
+pub mod graph_snapshot;
 pub mod host;
 pub mod mcp;
 pub mod memory;
@@ -72,6 +73,17 @@ pub use domain::{
     WorkObligationWaiverRefusalCode, WorkOrigin, WorkPlanningAuthority, WorkPrerequisiteState,
     WorkReadinessReason, WorkReferenceCandidate, WorkRevisionPatch, WorkRun, WorkRunId,
     WorkRunState, WorkSessionState, WorkSourceProjection, WorkSourceSnapshot, WorkTransition,
+};
+pub use graph_snapshot::{
+    WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION, WorkGraphSnapshotBlocker, WorkGraphSnapshotBody,
+    WorkGraphSnapshotCompletion, WorkGraphSnapshotCut, WorkGraphSnapshotDestinationKind,
+    WorkGraphSnapshotDocument, WorkGraphSnapshotEvent, WorkGraphSnapshotExport,
+    WorkGraphSnapshotGate, WorkGraphSnapshotHistory, WorkGraphSnapshotItem,
+    WorkGraphSnapshotManifest, WorkGraphSnapshotMemory, WorkGraphSnapshotMemoryState,
+    WorkGraphSnapshotNote, WorkGraphSnapshotRecord, WorkGraphSnapshotRecordPayload,
+    WorkGraphSnapshotRedactedCounts, WorkGraphSnapshotSavedEvent, WorkGraphSnapshotSectionCounts,
+    WorkGraphSnapshotSource, WorkGraphSnapshotSummary, WorkGraphSnapshotText,
+    work_graph_snapshot_exporting_build, work_graph_snapshot_format_fingerprint,
 };
 pub use host::{HostControlRequest, HostControlServer};
 pub use mcp::{McpServer, store_error_value};

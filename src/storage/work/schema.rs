@@ -29,6 +29,7 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_root_execution_active",
     "work_run_active",
     "work_run_evidence_run",
+    "work_run_evidence_work",
     "work_run_obligations_run",
     "work_session_state_retention",
     "work_feed_entries_require_work_id",
@@ -306,6 +307,8 @@ pub(in crate::storage) fn initialize_schema(
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_run_evidence_run
              ON work_run_evidence(run_id, evidence_hash);
+         CREATE INDEX IF NOT EXISTS work_run_evidence_work
+             ON work_run_evidence(work_id, evidence_hash);
          CREATE TABLE IF NOT EXISTS work_run_obligations (
              obligation_id TEXT PRIMARY KEY,
              definition_hash TEXT NOT NULL UNIQUE REFERENCES objects(object_hash),
@@ -483,6 +486,8 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_blockers(work_id, state);
          CREATE INDEX IF NOT EXISTS work_run_evidence_run
              ON work_run_evidence(run_id, evidence_hash);
+         CREATE INDEX IF NOT EXISTS work_run_evidence_work
+             ON work_run_evidence(work_id, evidence_hash);
          CREATE INDEX IF NOT EXISTS work_run_obligations_run
              ON work_run_obligations(run_id, state, trigger_position, obligation_id);
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
