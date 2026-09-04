@@ -18,3 +18,6 @@
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Codex split worktrees live inside the checkout under .worktrees/
+.worktrees/

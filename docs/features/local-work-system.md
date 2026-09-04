@@ -194,7 +194,12 @@ additionally binds every required child seal or an explicit
 `CompletionWaiver`-authorized omission with the child's exact disposed
 revision, plus the `RootExecution` roster, contributions, decisions, and
 attributed waivers. Cancelling or superseding a required child never satisfies
-the barrier by itself or through an unrelated replacement. Sealing terminalizes
+the barrier by itself or through an unrelated replacement. The designed
+[work-graph snapshot](work-graph-snapshot.md) adds the one completion proof
+that is not a seal: a child loaded completed carries an inert
+`RestoredRecord`, the parent seal lists it under `restored_child_completions`
+beside its required seals and waivers, and report assembly refuses a root
+whose completion transitively rests on one. Sealing terminalizes
 the run's `WorkClaim` and releases or transfers every dependent
 `ResourceLease`; completed execution authority is never kept alive for report
 work.
@@ -1131,7 +1136,8 @@ result may be a marked-truncated backup but not a portable working store.
 Before Engram claims Beads-equivalent off-host durability, it should ship:
 
 - deterministic, human-readable work-graph recovery snapshots that can be
-  committed or copied off-host without copying a live SQLite file;
+  committed or copied off-host without copying a live SQLite file — the
+  designed [work-graph snapshot](work-graph-snapshot.md);
 - manifest hashes and a previewed restore path, exercised in CI;
 - referential-integrity verification for work/events/edges/evidence plus
   projection rebuild-and-compare checks, not only canonical object hashes;

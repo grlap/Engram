@@ -4,17 +4,20 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
+const SKIPPED_DIRECTORIES = new Set([
+  ".git",
+  ".beads",
+  ".worktrees",
+  "target",
+  "target-verify",
+  "node_modules",
+]);
 
 function markdownFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) {
-      if (
-        [".git", ".beads", "target", "target-verify", "node_modules"].includes(
-          entry.name,
-        )
-      )
-        return [];
+      if (SKIPPED_DIRECTORIES.has(entry.name)) return [];
       return markdownFiles(path);
     }
     return entry.isFile() && extname(entry.name) === ".md" ? [path] : [];

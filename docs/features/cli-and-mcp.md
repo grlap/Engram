@@ -174,7 +174,10 @@ what is missing instead of closing anyway.
 
 ## Host integration
 
-Integration has two tiers, and a host picks per project:
+The [host checklist](../host-checklist.md) is the authoritative base-tier
+recipe, including the Claude Code hooks form; this section keeps the
+two-tier contract and the control-plane details. Integration has two tiers,
+and a host picks per project:
 
 - **Base** — the tracker for agents: the `engram mcp` server injected into
   every session of a declared project (the repository declares with its
@@ -184,10 +187,11 @@ Integration has two tiers, and a host picks per project:
   after compaction and injects its text as context. Any host that can register
   an MCP server and run a hook can do this. It carried every benefit measured
   so far.
-- **Premium** — behavioral control: the host-private JSON-lines turn
-  channel below (bind, evaluate, begin, checkpoint), dispatch withheld
-  until a turn is granted, resource leases for writers, obligations before
-  completion. Opt-in per project, off by default, for hosts that need
+- **Turn-gated** (`turn_gated`, the optional tier of the checklist and of
+  [shipped today](../shipped.md)) — behavioral control: the host-private
+  JSON-lines turn channel below (bind, evaluate, begin, checkpoint), dispatch
+  withheld until a turn is granted, resource leases for writers, obligations
+  before completion. Opt-in per project, off by default, for hosts that need
   enforcement rather than coordination.
 
 The agent-facing MCP interface is **advisory**. A model can omit an MCP call,

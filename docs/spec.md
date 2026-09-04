@@ -252,7 +252,13 @@ Neither authorizes resource mutation.
 A `RootExecution` is one aggregate execution generation for a root. It owns
 the contributor roster, current child-run membership, required child
 `CompletionSeal` hashes, root decisions/waivers, and the root completion
-barrier. A `WorkRun` is one execution generation for one work item. V1 gives
+barrier. The designed
+[work-graph snapshot](features/work-graph-snapshot.md) adds the one
+completion proof that is not a seal: an item loaded completed carries an
+inert `RestoredRecord`, a later parent seal lists it under
+`restored_child_completions` beside required seals and waivers, and report
+assembly refuses any root whose completion transitively rests on one.
+A `WorkRun` is one execution generation for one work item. V1 gives
 it exactly one ordinary executor and at most one live `WorkClaim`; parallel
 sessions execute distinct child runs under the same root execution. A run
 owns its ordered execution feed, executor checkpoint, evidence, claim,
@@ -311,8 +317,10 @@ returning holder to reconcile. Pause remains host process state.
 terminalizes the run claim, releases or transfers every dependent resource
 lease, and waits for its executor checkpoint or an authorized decision. A
 root barrier additionally freezes the expected `RootExecution` contributor
-roster and waits for required child seals or explicit disposed-child waivers,
-plus contributions or attributed, audited waivers by a project-bound session.
+roster and waits for required child seals or explicit disposed-child waivers
+(the designed work-graph snapshot adds restored child completions as the
+third admissible proof), plus contributions or attributed, audited waivers by
+a project-bound session.
 `completion_seal` captures one dense run-feed cut
 plus the accepted work revision, run/claim fences, action reconciliation,
 acceptance results, and evidence hashes; a root seal also binds those child
@@ -1056,6 +1064,10 @@ engram action reconcile <action-id>
 # optional external adapters (§9)
 engram import preview <adapter> <ref>        engram import apply <snapshot>
 engram export preview <adapter> <work-ref>   engram export apply <intent>
+
+# designed work-graph snapshot (features/work-graph-snapshot.md)
+engram graph save [--out FILE | --stdout] [--include-restricted]
+engram graph load FILE [--dry-run]
 ```
 
 ### 8.2 Agent-facing MCP server
@@ -1321,7 +1333,9 @@ acceptance, and closed every obligation applicable at the exact completion cut
 with a bound terminal resolution—or an attributed, audited waiver by a
 project-bound session records the omission. New seals also cite the exact
 bounded environment-evidence hash set
-at that cut; the component objects remain separate canonical evidence.
+at that cut; the component objects remain separate canonical evidence. A
+root whose completion transitively rests on a restored completion from the
+designed work-graph snapshot is refused here with `report_input_restored`.
 Reopening the root before report
 freeze supersedes that run and aborts assembly; reopening after `report_ready`
 requires a superseding report rather than mutating frozen bytes.
