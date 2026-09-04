@@ -99,9 +99,11 @@ full. Wherever a label exists the rule is fixed: `restricted` text is
 excluded unless the operator widens the save with `--include-restricted
 --reason "<why>"`, and that reason travels verbatim in the body and in the
 save audit event, because widening is a disclosure decision like every other
-attributed authority in the system; `secret-ref` values are never widened,
-and what appears in the file is
-always and only the vault reference. An excluded text lands in the file as a
+attributed authority in the system; `secret-ref` is an asserted label — the
+writer asserts that the body is a vault reference, Engram defines and
+validates no reference syntax in V1 — and save carries that body verbatim
+under its label, never widened and never dereferenced or inspected for
+shape. An excluded text lands in the file as a
 typed placeholder that keeps the entry present with its key and relations,
 never as silent absence, and the body counts every placeholder per section
 as `redacted`. A placeholder is inert: it is never a claimable item and never
@@ -351,7 +353,7 @@ a nonempty destination where `engram restore --replace` overwrites one.
   with widening carries the body, `widened: true`, the reason, and a path
   that differs from the redacted file's by digest rather than replacing it;
   a `secret-ref` version
-  exports exactly its vault reference and never its value either way; the
+  is carried byte-for-byte under its label with widening on and off; the
   audited save event exists before the file does; and the default
   destination is under the project-digest directory in `ENGRAM_HOME` with
   owner-only permission, whatever characters the project id contains.
