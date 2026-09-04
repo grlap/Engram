@@ -875,7 +875,7 @@ fn restored_completion_accepts_late_notes_and_gate_transitions() {
         serde_json::to_vec_pretty(&saved_again.document).expect("serialize late snapshot");
     let replayed = LocalWorkService::new(
         directory.path().join("replayed-late-findings.sqlite3"),
-        project,
+        project.clone(),
         "replay-agent".into(),
         SessionId("replay-session".into()),
         Some("protocol-test".into()),
@@ -903,6 +903,76 @@ fn restored_completion_accepts_late_notes_and_gate_transitions() {
         repaired
             .verify_all()
             .expect("verify restored late findings")
+            .is_healthy()
+    );
+
+    // Keep the original bounded-history and repair checks above unchanged;
+    // the additional observation is asserted through its own live receipt.
+    let operational = rusqlite::Connection::open(&destination_database).expect("operational rows");
+    let operation_counts = || {
+        ["work_operation_results", "work_protocol_attempts"].map(|table| {
+            operational
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("operation count")
+        })
+    };
+    let before_append = operation_counts();
+    let repeated_gate = destination
+        .work_gate_on(
+            Some(&root.short_ref),
+            "cargo-test",
+            &[],
+            Some("review:passed-gate"),
+            at(7),
+        )
+        .expect("identical late gate appends even at the same timestamp");
+    let repeated_gate_hash: ObjectHash =
+        serde_json::from_value(repeated_gate.receipt.result).expect("repeated gate hash");
+    assert_ne!(repeated_gate_hash, passed_gate_hash);
+    assert_eq!(
+        operation_counts(),
+        before_append,
+        "append-only gates create no unreachable retry rows"
+    );
+    let evidence = repaired
+        .restored_work_evidence(root.work_id)
+        .expect("repeated evidence");
+    assert_eq!(evidence.len(), 4);
+    let repeated = evidence
+        .iter()
+        .find(|(hash, _)| hash == &repeated_gate_hash)
+        .and_then(|(_, evidence)| evidence.gate.as_ref())
+        .expect("repeated gate evidence");
+    assert!(repeated.passed);
+    assert_eq!(repeated.previous.as_ref(), Some(&passed_gate_hash));
+    let words = crate::AgentVerbs::new(
+        destination_database,
+        project,
+        "review-agent".into(),
+        SessionId("review-session".into()),
+        Some("protocol-test".into()),
+    );
+    let shown = words
+        .show(&root.short_ref, at(12))
+        .expect("show repeated gates");
+    assert_eq!(
+        shown.value["notes"]
+            .as_array()
+            .expect("show notes")
+            .iter()
+            .filter(|note| note["summary"]
+                .as_str()
+                .is_some_and(|summary| summary.starts_with("gate cargo-test passed")))
+            .count(),
+        2,
+        "show retains both identical late passing observations"
+    );
+    assert!(
+        repaired
+            .verify_all()
+            .expect("verify repeated late gate")
             .is_healthy()
     );
 }

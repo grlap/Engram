@@ -327,6 +327,20 @@ pub(crate) struct RecordRestoredWorkEvidenceRequest {
     pub recorded_at: DateTime<Utc>,
 }
 
+/// Append-only gate observation against a verified restored completion record.
+/// Each call records a distinct observation; this is not a retryable command.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct AppendRestoredWorkGateRequest {
+    pub work_id: WorkId,
+    pub expected_work_revision: i64,
+    pub holder: SessionId,
+    pub name: String,
+    pub failed: Vec<String>,
+    pub evidence_ref: Option<String>,
+    pub actor: ActorContext,
+    pub recorded_at: DateTime<Utc>,
+}
+
 /// Request to seal a run at a fenced, evidence-backed completion cut.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompleteWorkRequest {

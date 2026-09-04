@@ -655,6 +655,48 @@ fn validate_inherited_record(
             "restored record lifecycle disagrees with its completion proof",
         ));
     }
+    validate_disposal_proof(&record.item, &record.history)?;
+    Ok(())
+}
+
+fn validate_disposal_proof(
+    item: &crate::WorkGraphSnapshotItem,
+    history: &WorkGraphSnapshotHistory,
+) -> Result<(), StoreError> {
+    let terminal = matches!(
+        item.lifecycle,
+        WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+    );
+    // Check both directions. An earlier disposal cannot describe this layer
+    // after a later lifecycle transition, nor can a trailing disposal coexist
+    // with a live/completed item. Empty layers may carry restored late notes.
+    let latest_lifecycle_event = history.events.iter().rev().find(|event| {
+        matches!(
+            event.kind.as_str(),
+            "created" | "reopened" | "completed" | "disposed"
+        )
+    });
+    if !terminal {
+        if latest_lifecycle_event.is_some_and(|event| event.kind == "disposed") {
+            return Err(corrupt(
+                "disposal history disagrees with a non-terminal layer",
+            ));
+        }
+        return Ok(());
+    }
+    let disposal = history
+        .events
+        .last()
+        .filter(|event| event.kind == "disposed")
+        .ok_or_else(|| corrupt("terminal history layer has no final disposal event"))?;
+    if disposal.lifecycle != Some(item.lifecycle)
+        || disposal.reason != item.disposal_reason
+        || disposal.related_work_id != item.superseded_by
+    {
+        return Err(corrupt(
+            "terminal history layer disagrees with its latest disposal event",
+        ));
+    }
     Ok(())
 }
 

@@ -176,7 +176,9 @@ Rules that matter:
   idempotency keys; if you see one, it is a bug. Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`.
 - With a host-injected or explicitly reused stable session, a lost-response
-  retry of the same command is safe. If a shell used the process default and
+  retry of the same command is safe except for a late `gate` on completed-by-record
+  restored work: every call appends an observation, so inspect `show` before
+  repeating an uncertain call. If a shell used the process default and
   lost the entire notice too, inspect with `ls`/`show` before repeating a
   mutation; exact replay cannot cross processes without the printed session.
 

@@ -34,17 +34,17 @@ use super::{
 use crate::{
     CanonicalObject, ObjectHash, RestoredWorkEvidence, WorkId,
     domain::{
-        AcceptWorkHandoffRequest, ActorContext, CancelWorkHandoffRequest, ClaimWorkRequest,
-        CompletionSeal, EnvironmentEvidence, FeedId, FeedPosition, GATE_EVIDENCE_SUMMARY,
-        GateEvidenceRecord, OfferWorkHandoffRequest, POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE,
-        POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE, RecordGateEvidenceRequest,
-        RecordRestoredWorkEvidenceRequest, RecordWorkEvidenceRequest, RecordWorkNoteRequest,
-        ReleaseWorkRequest, RestoredWorkEvidenceInput, RootExecution, RootExecutionId,
-        RootExecutionState, SCHEMA_VERSION, VerificationEvidence, WorkAvailability, WorkCheckpoint,
-        WorkClaim, WorkClaimId, WorkClaimState, WorkEvent, WorkEvidence, WorkEvidenceKind,
-        WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkItem, WorkLifecycle, WorkRun,
-        WorkRunId, WorkRunState, WorkTransition, normalize_gate_evidence_input,
-        validate_gate_evidence_payload,
+        AcceptWorkHandoffRequest, ActorContext, AppendRestoredWorkGateRequest,
+        CancelWorkHandoffRequest, ClaimWorkRequest, CompletionSeal, EnvironmentEvidence, FeedId,
+        FeedPosition, GATE_EVIDENCE_SUMMARY, GateEvidenceRecord, OfferWorkHandoffRequest,
+        POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE, POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE,
+        RecordGateEvidenceRequest, RecordRestoredWorkEvidenceRequest, RecordWorkEvidenceRequest,
+        RecordWorkNoteRequest, ReleaseWorkRequest, RestoredWorkEvidenceInput, RootExecution,
+        RootExecutionId, RootExecutionState, SCHEMA_VERSION, VerificationEvidence,
+        WorkAvailability, WorkCheckpoint, WorkClaim, WorkClaimId, WorkClaimState, WorkEvent,
+        WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState,
+        WorkItem, WorkLifecycle, WorkRun, WorkRunId, WorkRunState, WorkTransition,
+        normalize_gate_evidence_input, validate_gate_evidence_payload,
     },
     memory::Redactor,
 };
@@ -284,7 +284,136 @@ pub(super) fn ensure_restored_execution_state(
     Ok((execution, run, true))
 }
 
+fn append_restored_work_evidence_on(
+    transaction: &Transaction<'_>,
+    work_id: WorkId,
+    expected_work_revision: i64,
+    input: &RestoredWorkEvidenceInput,
+    actor: &ActorContext,
+    recorded_at: DateTime<Utc>,
+) -> Result<ObjectHash, StoreError> {
+    let item = load_work_item(transaction, work_id)?;
+    assert_revision(&item, expected_work_revision)?;
+    if !work_completed_by_restored_record_on(transaction, &item)? {
+        return Err(StoreError::InvalidWork(
+            "restored late findings require completed-by-record work".into(),
+        ));
+    }
+    let (record_hash, record) =
+        latest_restored_record(transaction, item.work_id)?.ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "restored completed work has no history record".into(),
+            )
+        })?;
+    if record.history.completion.is_none() {
+        return Err(StoreError::InvalidWorkProjection(
+            "restored completed work has no completion proof".into(),
+        ));
+    }
+    let (summary, refs, gate) = match input {
+        RestoredWorkEvidenceInput::Note { summary, refs } => (
+            normalize_text(summary, "note summary")?,
+            normalize_strings(refs),
+            None,
+        ),
+        RestoredWorkEvidenceInput::Gate {
+            name,
+            failed,
+            evidence_ref,
+        } => {
+            let normalized = normalize_gate_evidence_input(name, failed, evidence_ref.as_deref())
+                .map_err(StoreError::InvalidWork)?;
+            let previous =
+                latest_restored_gate_evidence_on(transaction, item.work_id, &normalized.name)?;
+            (
+                GATE_EVIDENCE_SUMMARY.into(),
+                normalized.evidence_ref.into_iter().collect(),
+                Some(GateEvidenceRecord {
+                    schema_version: SCHEMA_VERSION,
+                    name: normalized.name,
+                    passed: normalized.failed.is_empty(),
+                    failed: normalized.failed,
+                    previous,
+                }),
+            )
+        }
+    };
+    let sequence = transaction.query_row(
+        "SELECT COALESCE(MAX(sequence), 0) + 1
+         FROM work_restored_evidence WHERE work_id = ?1",
+        [item.work_id.0.to_string()],
+        |row| row.get::<_, i64>(0),
+    )?;
+    if sequence <= 0 {
+        return Err(StoreError::InvalidWorkProjection(
+            "restored evidence sequence exceeds SQLite range".into(),
+        ));
+    }
+    let evidence = RestoredWorkEvidence {
+        schema_version: SCHEMA_VERSION,
+        work_id: item.work_id,
+        restored_record: record_hash,
+        sequence,
+        summary,
+        refs,
+        gate,
+        actor: actor.clone(),
+        created_at: recorded_at,
+    };
+    let object = CanonicalObject::freeze(&evidence)?;
+    SqliteStore::insert_object(transaction, "work_restored_evidence", &object)?;
+    transaction.execute(
+        "INSERT INTO work_restored_evidence (
+              evidence_hash, work_id, record_hash, sequence, gate_name, created_at_ms
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            object.hash().as_str(),
+            item.work_id.0.to_string(),
+            evidence.restored_record.as_str(),
+            evidence.sequence,
+            evidence.gate.as_ref().map(|gate| gate.name.as_str()),
+            evidence.created_at.timestamp_millis(),
+        ],
+    )?;
+    append_to_work_feeds(
+        transaction,
+        &item.project_id,
+        item.root_id,
+        None,
+        None,
+        "work_restored_evidence",
+        &object,
+    )?;
+    Ok(object.hash().clone())
+}
+
 impl SqliteStore {
+    /// Appends one distinct restored gate observation without retry bookkeeping.
+    pub(crate) fn append_restored_work_gate<R: Redactor>(
+        &mut self,
+        request: &AppendRestoredWorkGateRequest,
+        redactor: &R,
+    ) -> Result<ObjectHash, StoreError> {
+        inspect_work_request(redactor, request, &request.actor)?;
+        assert_actor_session(&request.actor, &request.holder)?;
+        validate_evidence_phase_marker(WorkLifecycle::Completed, &request.actor)?;
+        let transaction = self.begin_work_mutation()?;
+        let hash = append_restored_work_evidence_on(
+            &transaction,
+            request.work_id,
+            request.expected_work_revision,
+            &RestoredWorkEvidenceInput::Gate {
+                name: request.name.clone(),
+                failed: request.failed.clone(),
+                evidence_ref: request.evidence_ref.clone(),
+            },
+            &request.actor,
+            request.recorded_at,
+        )?;
+        transaction.commit()?;
+        Ok(hash)
+    }
+
     /// Appends one note or gate whose immutable basis is the newest restored
     /// completion record. No run, seal, claim, or native work event is minted.
     pub(crate) fn record_restored_work_evidence<R: Redactor>(
@@ -306,108 +435,23 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(hash);
         }
-        let item = load_work_item(&transaction, request.work_id)?;
-        assert_revision(&item, request.expected_work_revision)?;
-        if !work_completed_by_restored_record_on(&transaction, &item)? {
-            return Err(StoreError::InvalidWork(
-                "restored late findings require completed-by-record work".into(),
-            ));
-        }
-        let (record_hash, record) = latest_restored_record(&transaction, item.work_id)?
-            .ok_or_else(|| {
-                StoreError::InvalidWorkProjection(
-                    "restored completed work has no history record".into(),
-                )
-            })?;
-        if record.history.completion.is_none() {
-            return Err(StoreError::InvalidWorkProjection(
-                "restored completed work has no completion proof".into(),
-            ));
-        }
-        let (summary, refs, gate) = match &request.input {
-            RestoredWorkEvidenceInput::Note { summary, refs } => (
-                normalize_text(summary, "note summary")?,
-                normalize_strings(refs),
-                None,
-            ),
-            RestoredWorkEvidenceInput::Gate {
-                name,
-                failed,
-                evidence_ref,
-            } => {
-                let normalized =
-                    normalize_gate_evidence_input(name, failed, evidence_ref.as_deref())
-                        .map_err(StoreError::InvalidWork)?;
-                let previous =
-                    latest_restored_gate_evidence_on(&transaction, item.work_id, &normalized.name)?;
-                (
-                    GATE_EVIDENCE_SUMMARY.into(),
-                    normalized.evidence_ref.into_iter().collect(),
-                    Some(GateEvidenceRecord {
-                        schema_version: SCHEMA_VERSION,
-                        name: normalized.name,
-                        passed: normalized.failed.is_empty(),
-                        failed: normalized.failed,
-                        previous,
-                    }),
-                )
-            }
-        };
-        let sequence = transaction.query_row(
-            "SELECT COALESCE(MAX(sequence), 0) + 1
-             FROM work_restored_evidence WHERE work_id = ?1",
-            [item.work_id.0.to_string()],
-            |row| row.get::<_, i64>(0),
-        )?;
-        if sequence <= 0 {
-            return Err(StoreError::InvalidWorkProjection(
-                "restored evidence sequence exceeds SQLite range".into(),
-            ));
-        }
-        let evidence = RestoredWorkEvidence {
-            schema_version: SCHEMA_VERSION,
-            work_id: item.work_id,
-            restored_record: record_hash,
-            sequence,
-            summary,
-            refs,
-            gate,
-            actor: request.actor.clone(),
-            created_at: request.recorded_at,
-        };
-        let object = CanonicalObject::freeze(&evidence)?;
-        SqliteStore::insert_object(&transaction, "work_restored_evidence", &object)?;
-        transaction.execute(
-            "INSERT INTO work_restored_evidence (
-                  evidence_hash, work_id, record_hash, sequence, gate_name, created_at_ms
-              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                object.hash().as_str(),
-                item.work_id.0.to_string(),
-                evidence.restored_record.as_str(),
-                evidence.sequence,
-                evidence.gate.as_ref().map(|gate| gate.name.as_str()),
-                evidence.created_at.timestamp_millis(),
-            ],
-        )?;
-        append_to_work_feeds(
+        let hash = append_restored_work_evidence_on(
             &transaction,
-            &item.project_id,
-            item.root_id,
-            None,
-            None,
-            "work_restored_evidence",
-            &object,
+            request.work_id,
+            request.expected_work_revision,
+            &request.input,
+            &request.actor,
+            request.recorded_at,
         )?;
         persist_operation_result(
             &transaction,
             "record_restored_work_evidence",
             &request.idempotency_key,
             request_object.hash(),
-            object.hash(),
+            &hash,
         )?;
         transaction.commit()?;
-        Ok(object.hash().clone())
+        Ok(hash)
     }
 
     /// Atomically claims ready work or recovers an expired/released claim.

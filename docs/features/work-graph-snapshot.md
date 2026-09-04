@@ -159,6 +159,9 @@ identity — and refuses as a corrupt file a manifest whose digest or summary
 fields disagree with them. Validation runs before the write: a dangling
 parent, prerequisite, supersession, blocker, source, or record target, or a
 duplicate work id, short ref, blocker id, or memory key is a typed refusal;
+duplicate JSON object members at any depth (including carried canonical JSON)
+are refused before build discrimination or canonical hashing, not collapsed
+by a last-value-wins decoder;
 the imported graph must pass the same invariant validation ordinary
 mutations apply under the destination's policy — one parent per item, no
 cycle through parents, prerequisites, or supersession, the depth and
@@ -168,8 +171,14 @@ because a body
 digest anyone can recompute makes relations verifiable, not trustworthy;
 lifecycle and proof must agree both ways — an item is `completed` exactly
 when its newest layer carries a completion summary and time, `cancelled` or
-`superseded` exactly when it carries a disposal reason or a successor, and
-any other pairing is a corrupt file; every carried text field — titles,
+`superseded` only with a disposal reason and the appropriate successor shape.
+Every cancelled or superseded history layer must end in a `disposed` event
+matching its lifecycle, reason, and successor. Conversely, a layer whose
+newest lifecycle transition is disposal must have that terminal lifecycle;
+an older layer or a disposal followed by reopening cannot supply missing
+proof. Any other pairing is a corrupt file. A supersession target may itself
+be disposed later; target liveness is an admission rule, not a perpetual
+snapshot constraint. Every carried text field — titles,
 outcomes, acceptance, details, summaries, gate names, failure labels, refs,
 reasons, actor ids, actor contexts, memory bodies — must already be normalized
 and free of unsafe control/format characters (carried prose admits newlines
@@ -218,7 +227,12 @@ lands, or nothing does.
   that record and a dense per-item append position; it enters the ordinary
   project/root change feeds and the next save's native history layer without
   altering the completion proof. Asserted evidence timestamps never decide
-  which same-time gate transition is latest. `show`
+  which same-time gate transition is latest. Each late restored `gate` call
+  appends a new observation, including an identical repeated call, chained
+  to the prior same-name gate, without durable retry bookkeeping. After an
+  uncertain response, inspect `show` before repeating it: another call is
+  another observation. Native gate and restored note retry semantics are
+  unchanged. `show`
   renders records oldest first with each entry's original `ActorContext`, and
   `doctor` verifies them like any other canonical object.
 - **A completed item lands completed**, its proof being the completion

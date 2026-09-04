@@ -85,8 +85,8 @@ pub use graph_snapshot::{
     WorkGraphSnapshotMemoryState, WorkGraphSnapshotNote, WorkGraphSnapshotRecord,
     WorkGraphSnapshotRecordPayload, WorkGraphSnapshotRedactedCounts, WorkGraphSnapshotSavedEvent,
     WorkGraphSnapshotSectionCounts, WorkGraphSnapshotSource, WorkGraphSnapshotSummary,
-    WorkGraphSnapshotText, parse_work_graph_snapshot_document, work_graph_snapshot_exporting_build,
-    work_graph_snapshot_format_fingerprint,
+    WorkGraphSnapshotText, graph_snapshot_files_are_equivalent, parse_work_graph_snapshot_document,
+    work_graph_snapshot_exporting_build, work_graph_snapshot_format_fingerprint,
 };
 pub use host::{HostControlRequest, HostControlServer};
 pub use mcp::{McpServer, store_error_value};

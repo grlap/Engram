@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::AppendRestoredWorkGateRequest;
 
 impl LocalWorkService {
     /// Applies one typed update to ambient focused work.
@@ -15,8 +16,9 @@ impl LocalWorkService {
     }
 
     /// Records one typed gate transition through the evidence path. Storage
-    /// serializes the latest same-name observation with the append, so an
-    /// exact consecutive retry is atomic across sessions and processes.
+    /// serializes the latest same-name observation with the append. Native
+    /// gates retain exact consecutive retry; completed-by-record gates always
+    /// append a distinct observation, including an identical repeated call.
     #[cfg(test)]
     pub(crate) fn work_gate(
         &self,
@@ -32,7 +34,7 @@ impl LocalWorkService {
     /// storage operation so concurrent focus changes cannot redirect evidence.
     #[allow(
         clippy::too_many_lines,
-        reason = "one protocol operation preserves native and restored evidence authority paths"
+        reason = "gate routing keeps native retry and restored append-only authority paths together"
     )]
     pub(crate) fn work_gate_on(
         &self,
@@ -49,72 +51,34 @@ impl LocalWorkService {
             StoreError::InvalidWorkProjection("gate attempt has no bound focused work".into())
         })?;
         if store.work_completed_by_restored_record(work.work_id)? {
-            let protocol_operation = "work_update:gate";
-            let payload = serde_json::json!({
-                "name": name,
-                "failed": failed,
-                "evidence_ref": evidence_ref,
-            });
-            let intent = self.protocol_intent(&payload);
-            let raw_key =
-                self.effective_idempotency_key("", protocol_operation, &basis, &intent, now)?;
-            let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
-                project_id: &self.project_id,
-                session_id: &self.session_id,
-                operation: protocol_operation,
-                idempotency_key: &raw_key,
-                intent: &intent,
-                basis: &basis,
-                now,
-            })?;
-            if let Some(result) = attempt.result {
-                return serde_json::from_value(result).map_err(StoreError::from);
-            }
-            ensure_protocol_basis(
-                retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?,
-                protocol_operation,
-                &raw_key,
-                false,
-            )?;
-            let scoped_key = self.core_operation_key(
-                protocol_operation,
-                &raw_key,
-                "record_restored_work_evidence",
-            )?;
-            let evidence = store.record_restored_work_evidence(
-                &RecordRestoredWorkEvidenceRequest {
+            // Each late restored gate call records a new observation, even
+            // with identical text and time. There is no caller retry key on
+            // this word; do not replay a receipt against the immutable item
+            // basis. Storage binds the current restored proof, next dense
+            // position, and prior gate hash in the same append transaction.
+            let evidence = store.append_restored_work_gate(
+                &AppendRestoredWorkGateRequest {
                     work_id: work.work_id,
                     expected_work_revision: work.revision,
                     holder: self.session_id.clone(),
-                    input: RestoredWorkEvidenceInput::Gate {
-                        name: name.to_owned(),
-                        failed: failed.to_owned(),
-                        evidence_ref: evidence_ref.map(str::to_owned),
-                    },
+                    name: name.to_owned(),
+                    failed: failed.to_owned(),
+                    evidence_ref: evidence_ref.map(str::to_owned),
                     actor: self.post_completion_actor(
                         "work_update",
                         "record a gate finding against restored completion history",
                     ),
-                    idempotency_key: scoped_key,
                     recorded_at: now,
                 },
                 &DevelopmentNoopRedactor,
             )?;
-            let result = self.work_update_result(
+            return self.work_update_result(
                 &store,
                 "evidence",
                 work.work_id,
                 serde_json::to_value(&evidence)?,
                 now,
-            )?;
-            store.finish_work_protocol_attempt(
-                &self.project_id,
-                &self.session_id,
-                protocol_operation,
-                &raw_key,
-                &result,
-            )?;
-            return Ok(result);
+            );
         }
         let (run_id, claim_id, claim_fence, actor) = if work.lifecycle == WorkLifecycle::Completed {
             let (run, seal) = Self::completed_evidence_basis(&store, &work)?;

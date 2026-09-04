@@ -10,6 +10,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use engram::{
     LocalWorkService, ProjectId, SessionId, WorkGraphSnapshotCut, WorkGraphSnapshotDestinationKind,
+    graph_snapshot_files_are_equivalent,
 };
 
 use crate::{GraphCommand, WorkContext};
@@ -277,26 +278,6 @@ fn write_graph_snapshot_file(
     Ok(GraphSnapshotWriteOutcome::Saved)
 }
 
-fn graph_snapshot_files_are_equivalent(left: &[u8], right: &[u8]) -> bool {
-    fn without_varying_manifest_fields(bytes: &[u8]) -> Option<serde_json::Value> {
-        let mut value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
-        let manifest = value.get_mut("manifest")?.as_object_mut()?;
-        manifest.get("exported_at")?.as_str()?;
-        manifest.get("exporting_build")?.as_str()?;
-        manifest.remove("exported_at")?;
-        manifest.remove("exporting_build")?;
-        Some(value)
-    }
-    left == right
-        || matches!(
-            (
-                without_varying_manifest_fields(left),
-                without_varying_manifest_fields(right)
-            ),
-            (Some(left), Some(right)) if left == right
-        )
-}
-
 pub(crate) fn engram_home_and_project_digest(database: &Path) -> Result<(&Path, &std::ffi::OsStr)> {
     let project_dir = database
         .parent()
@@ -365,6 +346,44 @@ mod tests {
     }
 
     #[test]
+    fn graph_snapshot_writer_refuses_duplicate_member_destinations() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let database = directory.path().join("projects/digest/engram.db");
+        let output = directory.path().join("snapshots/graph.json");
+        fs::create_dir_all(output.parent().expect("snapshot parent")).expect("directory");
+        let bytes = br#"{"body":{"items":[]},"manifest":{"exported_at":"first","exporting_build":"build"}}"#;
+        let text = std::str::from_utf8(bytes).expect("fixture text");
+        for poisoned in [
+            text.replacen('{', "{\"body\":null,", 1),
+            text.replacen("\"items\":", "\"items\":null,\"items\":", 1),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&poisoned).expect("collapsed JSON"),
+                serde_json::from_slice::<serde_json::Value>(bytes).expect("original JSON")
+            );
+            fs::write(&output, &poisoned).expect("poisoned destination");
+            let error = write_graph_snapshot_file(&database, &output, bytes)
+                .expect_err("duplicate destination is not an already-saved snapshot");
+            assert!(error.to_string().contains("different bytes"));
+            assert_eq!(
+                fs::read(&output).expect("existing bytes"),
+                poisoned.as_bytes()
+            );
+            assert!(!graph_snapshot_files_are_equivalent(
+                poisoned.as_bytes(),
+                poisoned.as_bytes()
+            ));
+        }
+        let varied = text
+            .replace("first", "second")
+            .replace("\"build\"", "\"other\"");
+        assert!(graph_snapshot_files_are_equivalent(
+            bytes,
+            varied.as_bytes()
+        ));
+    }
+
+    #[test]
     fn graph_snapshot_writer_never_replaces_store_or_destination_bytes() {
         let directory = tempfile::tempdir().expect("tempdir");
         let home = directory.path().join("engram-home");
@@ -399,21 +418,19 @@ mod tests {
         );
         assert_eq!(fs::read(&wal).expect("wal preserved"), b"committed-wal");
 
+        let snapshot = br#"{"body":{},"manifest":{"exported_at":"now","exporting_build":"build"}}"#;
         assert_eq!(
-            write_graph_snapshot_file(&database, &output, b"snapshot\n").expect("publish snapshot"),
+            write_graph_snapshot_file(&database, &output, snapshot).expect("publish snapshot"),
             GraphSnapshotWriteOutcome::Saved
         );
         assert_eq!(
-            write_graph_snapshot_file(&database, &output, b"snapshot\n").expect("identical retry"),
+            write_graph_snapshot_file(&database, &output, snapshot).expect("identical retry"),
             GraphSnapshotWriteOutcome::AlreadySaved
         );
         let replacement_error = write_graph_snapshot_file(&database, &output, b"different\n")
             .expect_err("different replacement");
         assert!(replacement_error.to_string().contains("different bytes"));
-        assert_eq!(
-            fs::read(&output).expect("snapshot preserved"),
-            b"snapshot\n"
-        );
+        assert_eq!(fs::read(&output).expect("snapshot preserved"), snapshot);
         let staged_files = fs::read_dir(output.parent().expect("snapshot parent"))
             .expect("snapshot directory")
             .filter_map(Result::ok)

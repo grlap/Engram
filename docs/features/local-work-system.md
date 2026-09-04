@@ -499,6 +499,10 @@ becomes the ambient focus as a side effect. Durable attempts bind both caller
 intent and the exact focused work/claim/handoff basis. A lost-response retry
 may replay a committed result, but an interrupted attempt must revalidate live
 authority and cannot follow a changed ambient focus into another work item.
+Late `gate` on completed-by-record restored work is the append-only exception:
+each call records another observation without a retry receipt. Inspect `show`
+after an uncertain response before repeating it; native gate and restored note
+retry behavior is unchanged. See [work-graph snapshots](work-graph-snapshot.md).
 The retry-stable basis deliberately ignores only sliding claim expiry and
 claim revision. It retains the canonical work head and claim fence, which
 distinguish work and claim epochs. A recoverable refusal keeps that durable

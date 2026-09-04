@@ -15,6 +15,8 @@ use crate::{
     WorkOrigin, WorkSourceSnapshot, storage::StoreError,
 };
 
+mod json_input;
+
 /// Current pre-release work-graph snapshot schema.
 pub const WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION: u16 = 1;
 
@@ -400,6 +402,24 @@ pub struct WorkGraphSnapshotExport {
     pub redactor_status: String,
 }
 
+/// Compares snapshot JSON without the two intentionally varying manifest fields.
+/// Malformed JSON and duplicate members are never equivalent, even byte-for-byte.
+pub fn graph_snapshot_files_are_equivalent(left: &[u8], right: &[u8]) -> bool {
+    fn without_varying_manifest_fields(bytes: &[u8]) -> Option<Value> {
+        let mut value = json_input::parse(bytes).ok()?;
+        let manifest = value.get_mut("manifest")?.as_object_mut()?;
+        manifest.get("exported_at")?.as_str()?;
+        manifest.get("exporting_build")?.as_str()?;
+        manifest.remove("exported_at")?;
+        manifest.remove("exporting_build")?;
+        Some(value)
+    }
+    matches!(
+        (without_varying_manifest_fields(left), without_varying_manifest_fields(right)),
+        (Some(left), Some(right)) if left == right
+    )
+}
+
 /// Strictly parses one snapshot document, including the flattened container
 /// members whose save-side DTOs intentionally do not derive `Deserialize`.
 ///
@@ -410,7 +430,7 @@ pub struct WorkGraphSnapshotExport {
 pub fn parse_work_graph_snapshot_document(
     bytes: &[u8],
 ) -> Result<WorkGraphSnapshotDocument, StoreError> {
-    let original: Value = serde_json::from_slice(bytes)?;
+    let original = json_input::parse(bytes)?;
     let parsed: StrictDocument = serde_json::from_value(original.clone())?;
     let document: WorkGraphSnapshotDocument = parsed.into();
     if serde_json::to_value(&document)? != original {
@@ -428,8 +448,7 @@ pub fn parse_work_graph_snapshot_document(
 /// one generic different-build refusal rather than a misleading corruption
 /// error.
 pub(crate) fn preflight_work_graph_snapshot_build(bytes: &[u8]) -> Result<(), StoreError> {
-    let value: Value = serde_json::from_slice(bytes)
-        .map_err(|error| StoreError::InvalidGraphSnapshot(error.to_string()))?;
+    let value = json_input::parse(bytes)?;
     let body = value
         .get("body")
         .and_then(Value::as_object)
