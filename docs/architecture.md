@@ -48,7 +48,7 @@ Ports (Rust traits) keep domain semantics independent of backends:
 
 `domain.rs` owns substrate-neutral control records and valid state
 representations. `control.rs` owns deterministic turn, turn-begin,
-turn-checkpoint, and action-begin decisions. `storage.rs` atomically derives
+turn-checkpoint, and action-begin decisions. `storage/` atomically derives
 work/run lifecycle, membership, context, and named feed heads; persists sessions and
 short-lived grants; consumes grants at begin; and emits canonical checkpoint
 events. `host.rs` is the thin JSON-lines host transport. The earlier shadow

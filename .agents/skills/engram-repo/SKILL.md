@@ -90,8 +90,10 @@ contract and keep the change narrow.
 
 - `domain`: substrate-neutral meaning and state transitions.
 - `canonical`: serialization and content identity only.
-- `storage`: exact-current SQLite validation, transactions, immutable rows,
-  integrity, and explicit rebuildable-index repair.
+- `storage`: the façade and shared persistence types, with open/schema guards,
+  canonical objects/task feeds, task memory/notes, project memory, control
+  runtime/support, policy administration, and doctor/integrity split into
+  concern modules.
 - `storage/work`: local-work persistence split by schema/session, query,
   planning, execution, feeds, completion, and integrity invariants.
 - `control`: pure control-policy evaluation without I/O.

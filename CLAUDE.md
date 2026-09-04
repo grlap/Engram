@@ -18,7 +18,10 @@ are independent optional capabilities.
 
 - `src/domain.rs`: substrate-neutral memory, task, report, and actor types.
 - `src/canonical.rs`: RFC 8785 canonical bytes and SHA-256 object identity.
-- `src/storage.rs`: V1 SQLite persistence and integrity checks.
+- `src/storage/mod.rs`: V1 SQLite façade and shared persistence types; sibling
+  modules split open/schema guards, canonical objects/task feeds, task
+  memory/notes, project memory, control runtime/support, policy administration,
+  and doctor/integrity checks.
 - `src/storage/work/`: local-work persistence, split by schema/session, query,
   planning, execution, feed, completion, and integrity invariants.
 - `src/control.rs`: pure deterministic control-policy evaluation.
