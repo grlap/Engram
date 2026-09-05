@@ -537,6 +537,7 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         None,
         "execution_observation",
         serde_json::to_value(observation).expect("observation json"),
+        None,
     )
     .expect("agent projection");
     let WorkChangeProjection::Visible(summary) = projection else {
@@ -627,7 +628,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         actor,
         created_at: at(1),
     };
-    let claimed_summary = agent_work_event_summary(&event);
+    let claimed_summary = agent_work_event_summary(&event, &[]);
     assert_eq!(
         claimed_summary.summary,
         "claimed: by a session: \"Projection boundary\""
@@ -645,7 +646,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         checkpoint: checkpoint.clone(),
         offer: offer.clone(),
     };
-    let offered_summary = agent_work_event_summary(&event);
+    let offered_summary = agent_work_event_summary(&event, &[]);
     assert_eq!(
         offered_summary.summary,
         "handoff_offered: to another session: \"Projection boundary\""
@@ -660,7 +661,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         claim,
         recovered: true,
     };
-    let long_claim = agent_work_event_summary(&event).summary;
+    let long_claim = agent_work_event_summary(&event, &[]).summary;
     assert!(long_claim.starts_with("claimed: after recovery by a session: \""));
     assert!(long_claim.len() <= MAX_SUMMARY_BYTES);
 
@@ -669,7 +670,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         evidence_kind: WorkEvidenceKind::Verification,
     };
     assert!(
-        agent_work_event_summary(&event)
+        agent_work_event_summary(&event, &[])
             .summary
             .starts_with("typed_evidence_added: verification evidence: \"")
     );
@@ -679,7 +680,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         replacement_id: None,
         reason: "bounded reason ".repeat(40),
     };
-    let disposed = agent_work_event_summary(&event).summary;
+    let disposed = agent_work_event_summary(&event, &[]).summary;
     assert!(disposed.starts_with("disposed: to cancelled because bounded reason"));
     assert!(disposed.len() <= MAX_SUMMARY_BYTES);
 }

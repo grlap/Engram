@@ -551,15 +551,46 @@ impl SqliteStore {
         now: DateTime<Utc>,
         query: &WorkCatalogQuery,
     ) -> Result<WorkCatalogPage, StoreError> {
-        let ids = query_work_catalog_ids(&self.connection, project_id, now, query)?;
-        let limit = query.limit.clamp(1, 1_000) as usize;
-        let mut items = Vec::with_capacity(limit.saturating_add(1));
-        for work_id in ids {
-            items.push(inspect_work_catalog_on(&self.connection, work_id, now)?);
+        let transaction = self.connection.unchecked_transaction()?;
+        let page = work_catalog_page_on(&transaction, project_id, now, query)?;
+        transaction.commit()?;
+        Ok(page)
+    }
+
+    /// The counted agent list shares its count, page and displayed holders in
+    /// one read snapshot. Ambient catalog callers never pay for this count.
+    pub(crate) fn query_work_catalog_listing(
+        &self,
+        project_id: &crate::domain::ProjectId,
+        now: DateTime<Utc>,
+        query: &WorkCatalogQuery,
+    ) -> Result<(WorkCatalogPage, usize, Vec<WorkClaim>), StoreError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let (sql, parameters) = work_catalog_sql(project_id, now, query, false)?;
+        #[cfg(test)]
+        super::WORK_CATALOG_COUNT_QUERIES.with(|count| count.set(count.get() + 1));
+        let total: i64 =
+            transaction.query_row(&sql, rusqlite::params_from_iter(parameters.iter()), |row| {
+                row.get(0)
+            })?;
+        let total = usize::try_from(total).map_err(|_| {
+            StoreError::InvalidWorkProjection("catalog count is outside the supported range".into())
+        })?;
+        #[cfg(test)]
+        tests::after_catalog_count();
+        let page = work_catalog_page_on(&transaction, project_id, now, query)?;
+        let mut claims = Vec::new();
+        for item in &page.items {
+            if let Some(run_id) = item.work.active_run_id
+                && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
+                && claim.state == WorkClaimState::Active
+                && claim.expires_at > now
+            {
+                claims.push(claim);
+            }
         }
-        let next_after = (items.len() > limit).then(|| items[limit - 1].work.work_id);
-        items.truncate(limit);
-        Ok(WorkCatalogPage { items, next_after })
+        transaction.commit()?;
+        Ok((page, total, claims))
     }
 
     /// Reads immutable entries after a dense position in one exact feed.
@@ -787,6 +818,65 @@ impl SqliteStore {
                 })
             })
             .collect()
+    }
+
+    /// Reads the adjacent canonical planning snapshot, even outside a displayed
+    /// history page. Restored work starts from its immutable restore record.
+    pub(crate) fn work_planning_before(
+        &self,
+        position: &FeedPosition,
+        event: &WorkEvent,
+    ) -> Result<serde_json::Value, StoreError> {
+        let (kind, feed_id) = feed_parts(&position.feed);
+        if position.feed != FeedId::Project(event.project_id.clone())
+            && position.feed != FeedId::RootWork(event.root_id)
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "revision history feed does not bind the work item".into(),
+            ));
+        }
+        let row = self
+            .connection
+            .query_row(
+                "SELECT object.object_hash, object.canonical_json
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_hash = entry.object_hash
+             WHERE entry.feed_kind = ?1 AND entry.feed_id = ?2
+               AND entry.work_id = ?3 AND entry.object_kind = 'work_event'
+               AND object.object_kind = 'work_event' AND entry.position < ?4
+             ORDER BY entry.position DESC LIMIT 1",
+                params![
+                    kind,
+                    feed_id,
+                    event.work_id.0.to_string(),
+                    position.position
+                ],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .optional()?;
+        if let Some(row) = row {
+            let previous = decode_canonical_work_event(row)?;
+            if previous.project_id != event.project_id
+                || previous.root_id != event.root_id
+                || previous.work_id != event.work_id
+                || previous.revision >= event.revision
+            {
+                return Err(StoreError::InvalidWorkProjection(
+                    "adjacent revision snapshot has invalid identity or order".into(),
+                ));
+            }
+            return Ok(serde_json::to_value(previous.work)?);
+        }
+        if event.work.restored
+            && let Some((_, record)) = latest_restored_record(&self.connection, event.work_id)?
+            && record.project_id == event.project_id
+            && record.item.root_id == event.root_id
+        {
+            return Ok(serde_json::to_value(record.item)?);
+        }
+        Err(StoreError::InvalidWorkProjection(
+            "revision history has no preceding canonical planning snapshot".into(),
+        ))
     }
 
     /// Counts canonical lifecycle events for one exact work item.
@@ -1017,21 +1107,41 @@ pub(super) fn catalog_literal_fts_query(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
-fn query_work_catalog_ids(
+fn work_catalog_page_on(
     connection: &Connection,
     project_id: &crate::domain::ProjectId,
     now: DateTime<Utc>,
     query: &WorkCatalogQuery,
-) -> Result<Vec<WorkId>, StoreError> {
+) -> Result<WorkCatalogPage, StoreError> {
+    let (sql, parameters) = work_catalog_sql(project_id, now, query, true)?;
+    let mut statement = connection.prepare(&sql)?;
+    let ids = statement
+        .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+            row.get::<_, String>(0)
+        })?
+        .map(|row| parse_work_id(&row?))
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    let limit = query.limit.clamp(1, 1_000) as usize;
+    let mut items = Vec::with_capacity(ids.len());
+    for work_id in ids {
+        items.push(inspect_work_catalog_on(connection, work_id, now)?);
+    }
+    let next_after = (items.len() > limit).then(|| items[limit - 1].work.work_id);
+    items.truncate(limit);
+    Ok(WorkCatalogPage { items, next_after })
+}
+
+fn work_catalog_sql(
+    project_id: &crate::domain::ProjectId,
+    now: DateTime<Utc>,
+    query: &WorkCatalogQuery,
+    page: bool,
+) -> Result<(String, Vec<Value>), StoreError> {
     let mut parameters = vec![
         Value::Text(project_id.0.clone()),
         Value::Integer(now.timestamp_millis()),
     ];
     let mut candidate_filters = vec!["candidate.project_id = ?1".to_owned()];
-    if let Some(after) = query.after {
-        let parameter = push_catalog_parameter(&mut parameters, Value::Text(after.0.to_string()));
-        candidate_filters.push(format!("candidate.work_id > {parameter}"));
-    }
     if !query.lifecycles.is_empty() {
         let placeholders = query
             .lifecycles
@@ -1048,6 +1158,7 @@ fn query_work_catalog_ids(
             placeholders.join(", ")
         ));
     }
+    let mut ownership_filters = Vec::new();
     if let Some(assigned_to) = query
         .assigned_to
         .as_deref()
@@ -1058,7 +1169,19 @@ fn query_work_catalog_ids(
             &mut parameters,
             Value::Text(normalize_work_catalog_key(assigned_to)),
         );
-        candidate_filters.push(format!("candidate.assigned_to_key = {parameter}"));
+        ownership_filters.push(format!("candidate.assigned_to_key = {parameter}"));
+    }
+    if let Some(session) = &query.held_by {
+        let parameter = push_catalog_parameter(&mut parameters, Value::Text(session.0.clone()));
+        ownership_filters.push(format!(
+            "EXISTS (SELECT 1 FROM work_claims claim
+                     WHERE claim.run_id = candidate.active_run_id
+                       AND claim.holder_session_id = {parameter}
+                       AND claim.state = 'active' AND claim.expires_at_ms > ?2)"
+        ));
+    }
+    if !ownership_filters.is_empty() {
+        candidate_filters.push(format!("({})", ownership_filters.join(" OR ")));
     }
     if let Some(label) = query
         .label
@@ -1122,12 +1245,21 @@ fn query_work_catalog_ids(
     if query.blocked_only {
         candidate_filters.push(format!("({PROJECTED_WORK_HAS_BLOCKER_SQL})"));
     }
-    let limit = i64::from(query.limit.clamp(1, 1_000)).saturating_add(1);
-    let limit_parameter = push_catalog_parameter(&mut parameters, Value::Integer(limit));
+    if page && let Some(after) = query.after {
+        let parameter = push_catalog_parameter(&mut parameters, Value::Text(after.0.to_string()));
+        candidate_filters.push(format!("candidate.work_id > {parameter}"));
+    }
     let classified_where = if classified_filters.is_empty() {
         String::new()
     } else {
         format!("WHERE {}", classified_filters.join(" AND "))
+    };
+    let selection = if page {
+        let limit = i64::from(query.limit.clamp(1, 1_000)).saturating_add(1);
+        let parameter = push_catalog_parameter(&mut parameters, Value::Integer(limit));
+        format!("work_id FROM classified {classified_where} ORDER BY work_id LIMIT {parameter}")
+    } else {
+        format!("COUNT(*) FROM classified {classified_where}")
     };
     let sql = format!(
         "WITH classified AS (
@@ -1136,19 +1268,10 @@ fn query_work_catalog_ids(
              FROM work_items candidate
              WHERE {}
          )
-         SELECT work_id FROM classified
-         {classified_where}
-         ORDER BY work_id
-         LIMIT {limit_parameter}",
+         SELECT {selection}",
         candidate_filters.join(" AND ")
     );
-    let mut statement = connection.prepare(&sql)?;
-    statement
-        .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
-            row.get::<_, String>(0)
-        })?
-        .map(|row| parse_work_id(&row?))
-        .collect()
+    Ok((sql, parameters))
 }
 
 pub(super) fn inspect_work_on(

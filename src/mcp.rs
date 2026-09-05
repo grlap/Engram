@@ -162,6 +162,9 @@ struct UpdateArgs {
     text: Option<String>,
     title: Option<String>,
     outcome: Option<String>,
+    /// Replace the whole acceptance list for revise. Omission preserves it;
+    /// an empty list or blank criterion is refused.
+    acceptance: Option<Vec<String>>,
     assignee: Option<String>,
     /// 0 (highest) through 4.
     priority: Option<i32>,
@@ -365,6 +368,12 @@ impl McpServer {
         description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), waive (child plus reason), or supersede (replacement plus reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
+        if args.acceptance.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
+            return invalid_argument(
+                "acceptance",
+                "acceptance replacement requires action revise",
+            );
+        }
         let action = match args.action {
             UpdateActionArg::Release => UpdateAction::Release {
                 reason: args.reason,
@@ -381,6 +390,7 @@ impl McpServer {
                 UpdateAction::Revise {
                     title: args.title,
                     outcome: args.outcome,
+                    acceptance: args.acceptance,
                     assignee: args.assignee,
                     priority: args.priority,
                     defer,

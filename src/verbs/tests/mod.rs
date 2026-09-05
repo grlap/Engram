@@ -145,6 +145,7 @@ fn assert_recovery_claim_guidance(receipt: &Receipt, work_ref: &str) {
 }
 
 mod handlers;
+mod planning;
 mod receipts;
 mod shared;
 mod show;

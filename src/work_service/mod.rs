@@ -788,6 +788,7 @@ fn verified_bounded_work_changes(
             bound_task_id,
             &entry.object_kind,
             object,
+            Some(&entry.position),
         )?;
         changes.push(WorkChange {
             from_current_session: matches!(&delivery, WorkChangeProjection::Visible(_))
@@ -930,12 +931,20 @@ fn agent_change_object(
     bound_task_id: Option<TaskId>,
     object_kind: &str,
     object: serde_json::Value,
+    position: Option<&FeedPosition>,
 ) -> Result<WorkChangeProjection, StoreError> {
     match object_kind {
-        "work_event" => serde_json::from_value::<WorkEvent>(object)
-            .map(|event| agent_work_event_summary(&event))
-            .map(WorkChangeProjection::Visible)
-            .map_err(StoreError::from),
+        "work_event" => {
+            let event = serde_json::from_value::<WorkEvent>(object)?;
+            let position = position.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "work event delivery is missing its feed position".into(),
+                )
+            })?;
+            Ok(WorkChangeProjection::Visible(project_work_event(
+                store, &event, position,
+            )?))
+        }
         "work_checkpoint" => {
             let checkpoint = serde_json::from_value::<WorkCheckpoint>(object)?;
             let item = store.get_work_item(checkpoint.work_id)?;
@@ -1408,7 +1417,34 @@ fn omitted_work_change(
     })
 }
 
-fn agent_work_event_summary(event: &WorkEvent) -> WorkChangeSummary {
+fn project_work_event(
+    store: &SqliteStore,
+    event: &WorkEvent,
+    position: &FeedPosition,
+) -> Result<WorkChangeSummary, StoreError> {
+    let fields = if matches!(event.transition, WorkTransition::Revised { .. }) {
+        let previous = store.work_planning_before(position, event)?;
+        let current = serde_json::to_value(&event.work)?;
+        [
+            ("title", "title"),
+            ("outcome", "outcome"),
+            ("acceptance", "acceptance"),
+            ("kind", "kind"),
+            ("priority", "priority"),
+            ("labels", "labels"),
+            ("assigned_to", "assignment"),
+            ("deferred_until", "deferral"),
+        ]
+        .into_iter()
+        .filter_map(|(key, word)| (previous[key] != current[key]).then_some(word))
+        .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    Ok(agent_work_event_summary(event, &fields))
+}
+
+fn agent_work_event_summary(event: &WorkEvent, revised_fields: &[&str]) -> WorkChangeSummary {
     let change_kind = work_transition_kind(&event.transition);
     WorkChangeSummary {
         schema_version: event.schema_version,
@@ -1419,7 +1455,7 @@ fn agent_work_event_summary(event: &WorkEvent) -> WorkChangeSummary {
         change_kind: change_kind.into(),
         summary: compact_text(&format!(
             "{change_kind}: {}",
-            work_transition_summary(event)
+            work_transition_summary(event, revised_fields)
         )),
         actor_id: Some(compact_text(&event.actor.actor_id)),
         actor_context: projected_actor_context(&event.actor),
@@ -1427,7 +1463,7 @@ fn agent_work_event_summary(event: &WorkEvent) -> WorkChangeSummary {
     }
 }
 
-fn work_transition_summary(event: &WorkEvent) -> String {
+fn work_transition_summary(event: &WorkEvent, revised_fields: &[&str]) -> String {
     let title = compact_text_to(&event.work.title, MAX_HISTORY_TITLE_BYTES);
     let detail = |value: &str| compact_text_to(value, MAX_HISTORY_DETAIL_BYTES);
     match &event.transition {
@@ -1440,7 +1476,14 @@ fn work_transition_summary(event: &WorkEvent) -> String {
         WorkTransition::Decomposed { children, .. } => {
             format!("added {} child item(s): \"{title}\"", children.len())
         }
-        WorkTransition::Revised { .. } => format!("planning fields: \"{title}\""),
+        WorkTransition::Revised { .. } => {
+            let fields = if revised_fields.is_empty() {
+                "no planning change".into()
+            } else {
+                revised_fields.join(", ")
+            };
+            format!("{fields}: \"{title}\"")
+        }
         WorkTransition::PrerequisiteAdded { .. } => {
             format!("added one prerequisite: \"{title}\"")
         }

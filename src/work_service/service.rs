@@ -10,11 +10,11 @@ use super::{
     WorkFocusView, WorkGraphSnapshotDestinationKind, WorkGraphSnapshotExport,
     WorkGraphSnapshotLoadResult, WorkGuidance, WorkHistoryView, WorkId, WorkItem, WorkNextSection,
     WorkObligationState, WorkPlanningAuthority, WorkProtocolBasis, WorkProtocolIntent,
-    WorkSectionOmission, WorkSectionOmissionReason, agent_work_event_summary, agent_work_session,
-    allowed_next, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
-    child_lifecycle_priority, compact_text, count_omission, ensure_agent_response_budget,
-    fit_focus_response, normalize_actor_context, owned_control_work_binding,
-    prioritized_focus_evidence, ready_work_summary, required_child_waiver_candidate,
+    WorkSectionOmission, WorkSectionOmissionReason, agent_work_session, allowed_next,
+    bounded_prerequisite_summaries, child_lifecycle_is_unfinished, child_lifecycle_priority,
+    compact_text, count_omission, ensure_agent_response_budget, fit_focus_response,
+    normalize_actor_context, owned_control_work_binding, prioritized_focus_evidence,
+    project_work_event, ready_work_summary, required_child_waiver_candidate,
     restored_work_evidence_summary, validate_process_default_work_session, work_evidence_kind_word,
     work_evidence_summary, work_handoff_summary, work_item_summary, work_lifecycle_word,
     work_memory_index, work_obligation_page_from_records, work_observation_summary,
@@ -569,10 +569,11 @@ impl LocalWorkService {
                     event.work_id.0, work_id.0
                 )));
             }
+            let summary = project_work_event(store, &event, &entry.position)?;
             history.push(WorkChange {
                 from_current_session: event.actor.session_id.as_ref() == Some(&self.session_id),
                 entry,
-                delivery: WorkChangeProjection::Visible(agent_work_event_summary(&event)),
+                delivery: WorkChangeProjection::Visible(summary),
             });
         }
         let restored_history = restored_history_view(store.work_restored_records(work_id)?);

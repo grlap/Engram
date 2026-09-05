@@ -607,6 +607,13 @@ impl SqliteStore {
                 "deferral cannot be set and cleared in one revision".into(),
             ));
         }
+        if let Some(acceptance) = &request.patch.acceptance
+            && (acceptance.is_empty() || acceptance.iter().any(|value| value.trim().is_empty()))
+        {
+            return Err(StoreError::InvalidWork(
+                "acceptance replacement needs at least one nonblank criterion; omit acceptance to leave it unchanged".into(),
+            ));
+        }
         if request.patch.labels.is_some()
             && (!request.patch.add_labels.is_empty() || !request.patch.remove_labels.is_empty())
         {

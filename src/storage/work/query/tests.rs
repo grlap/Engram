@@ -3,6 +3,210 @@ use super::super::test_support::*;
 use super::super::*;
 use super::*;
 
+thread_local! {
+    static AFTER_CATALOG_COUNT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(super) fn after_catalog_count() {
+    let hook = AFTER_CATALOG_COUNT.with(|hook| hook.borrow_mut().take());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[test]
+fn phoenix_catalog_count_uses_the_same_filters_and_deduplicated_mine_union() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("catalog-count-union".into());
+    let mut items = Vec::new();
+    for index in 0..6 {
+        let mut request = root_request(&project.0, &format!("item-{index}"), index);
+        request.title = format!("Matching Straße {index}");
+        request.labels = vec!["Größe".into()];
+        if index < 3 {
+            request.assigned_to = Some("Straße".into());
+        }
+        let item = store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect("item");
+        // Assigned-only, assigned+held, held-only, and neither all exist.
+        if (2..=3).contains(&index) {
+            claim(
+                &mut store,
+                &item,
+                "holder",
+                &format!("claim-{index}"),
+                10,
+                300,
+            );
+        }
+        items.push(item);
+    }
+    let query = WorkCatalogQuery {
+        assigned_to: Some("STRASSE".into()),
+        held_by: Some(SessionId("holder".into())),
+        search: Some("MATCHING STRASSE".into()),
+        label: Some("GRÖSSE".into()),
+        lifecycles: vec![WorkLifecycle::Open],
+        limit: 2,
+        ..WorkCatalogQuery::default()
+    };
+    reset_work_item_projection_decode_count();
+    let (page, total, _) = store
+        .query_work_catalog_listing(&project, at(11), &query)
+        .expect("page");
+    assert_eq!(total, 4);
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(
+        work_item_projection_decode_count(),
+        3,
+        "decode only page plus sentinel, not the count"
+    );
+    let (second, total, _) = store
+        .query_work_catalog_listing(
+            &project,
+            at(11),
+            &WorkCatalogQuery {
+                after: page.next_after,
+                ..query.clone()
+            },
+        )
+        .expect("second");
+    assert_eq!(total, 4, "total precedes cursor");
+    assert_eq!(second.items.len(), 2);
+    assert!(second.next_after.is_none());
+    let mut ids = page
+        .items
+        .iter()
+        .chain(&second.items)
+        .map(|row| row.work.work_id)
+        .collect::<Vec<_>>();
+    ids.sort_by_key(|id| id.0);
+    ids.dedup();
+    assert_eq!(ids.len(), 4);
+    let (exhausted, total, _) = store
+        .query_work_catalog_listing(
+            &project,
+            at(11),
+            &WorkCatalogQuery {
+                after: ids.last().copied(),
+                ..query.clone()
+            },
+        )
+        .expect("past last");
+    assert_eq!(total, 4);
+    assert!(exhausted.items.is_empty());
+    let (_, total, _) = store
+        .query_work_catalog_listing(&project, at(310), &query)
+        .expect("claims expired");
+    assert_eq!(total, 3);
+    let (empty, total, _) = store
+        .query_work_catalog_listing(
+            &project,
+            at(11),
+            &WorkCatalogQuery {
+                label: Some("different".into()),
+                ..query
+            },
+        )
+        .expect("no matching label");
+    assert_eq!(total, 0);
+    assert!(empty.items.is_empty());
+    assert!(store.verify_all().expect("integrity").is_healthy());
+}
+
+#[test]
+fn phoenix_catalog_cursor_plan_seeks_without_sorting_with_availability_filters() {
+    let store = SqliteStore::open_in_memory().expect("store");
+    let query = WorkCatalogQuery {
+        lifecycles: vec![WorkLifecycle::Open],
+        availabilities: vec![WorkAvailability::Ready, WorkAvailability::Claimed],
+        after: Some(WorkId::new()),
+        limit: 2,
+        ..WorkCatalogQuery::default()
+    };
+    let project = ProjectId("catalog-plan".into());
+    let (sql, parameters) = work_catalog_sql(&project, at(0), &query, true).expect("page SQL");
+    assert!(!sql.contains("COUNT(*)"));
+    let mut statement = store
+        .connection
+        .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+        .expect("plan");
+    let plan = statement
+        .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+            row.get::<_, String>(3)
+        })
+        .expect("explain")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("plan rows")
+        .join("\n");
+    assert!(
+        plan.contains(
+            "SEARCH candidate USING INDEX work_items_catalog_after (project_id=? AND work_id>?)"
+        ),
+        "{plan}"
+    );
+    assert!(!plan.contains("USE TEMP B-TREE"), "{plan}");
+    let (count, _) = work_catalog_sql(&project, at(0), &query, false).expect("count SQL");
+    assert!(count.contains("COUNT(*)"));
+    assert!(!count.contains("candidate.work_id >"));
+}
+
+#[test]
+fn phoenix_catalog_count_page_and_holders_share_one_snapshot() {
+    let directory = tempfile::tempdir().expect("temp");
+    let database = directory.path().join("catalog.sqlite3");
+    let mut store = SqliteStore::open(&database).expect("store");
+    let item = store
+        .create_work(
+            &root_request("catalog-snapshot", "held", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("item");
+    let held = claim(&mut store, &item, "holder", "held-claim", 1, 300);
+    let item = store.get_work_item(item.work_id).expect("claimed item");
+    let mut writer = SqliteStore::open(&database).expect("concurrent writer");
+    let release = ReleaseWorkRequest {
+        work_id: item.work_id,
+        run_id: held.run_id,
+        expected_work_revision: item.revision,
+        holder: held.holder.clone(),
+        claim_id: held.claim_id,
+        claim_fence: held.fence,
+        reason: "release between count and page".into(),
+        waiver_reason: Some("no execution was performed; release test fixture authority".into()),
+        actor: actor("holder"),
+        idempotency_key: "interleaved-release".into(),
+        released_at: at(2),
+    };
+    AFTER_CATALOG_COUNT.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move || {
+            writer
+                .release_work(&release, &DevelopmentNoopRedactor)
+                .expect("release during reader snapshot");
+        }));
+    });
+    let query = WorkCatalogQuery {
+        held_by: Some(held.holder.clone()),
+        limit: 2,
+        ..WorkCatalogQuery::default()
+    };
+    let (page, total, holders) = store
+        .query_work_catalog_listing(&item.project_id, at(3), &query)
+        .expect("snapshot list");
+    assert_eq!(total, 1);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].work.work_id, item.work_id);
+    assert_eq!(holders, vec![held]);
+    let (page, total, holders) = store
+        .query_work_catalog_listing(&item.project_id, at(3), &query)
+        .expect("later list");
+    assert_eq!(total, 0);
+    assert!(page.items.is_empty());
+    assert!(holders.is_empty());
+    assert!(store.verify_all().expect("integrity").is_healthy());
+}
+
 #[test]
 fn resolver_sql_bounds_collisions_and_recovers_an_omitted_target_by_full_id() {
     let mut store = SqliteStore::open_in_memory().expect("collision fixture");

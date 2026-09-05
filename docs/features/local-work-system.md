@@ -88,6 +88,13 @@ up to eight ordered candidates, reports how many additional matches exist, and
 requires the caller to retry with one full id; it never picks a candidate
 implicitly.
 
+`update --accept` replaces the whole acceptance list through the same revision
+path, preserving omitted fields and refusing empty or blank criteria. Native
+revision history derives changed planning field names uniformly from adjacent
+canonical snapshots, without extra persisted revision metadata. A restored
+item's first native revision compares against its immutable restore record.
+Previous criteria remain in immutable events. Completed work cannot be revised.
+
 `parent_id` expresses decomposition. A child is part of its parent's outcome;
 it is not automatically a prerequisite of every sibling. Each child is
 `required` or `optional` for parent completion. Parent and child remain
@@ -299,6 +306,14 @@ full Unicode case folding; trigram FTS covers title, outcome, labels, short
 reference, and active-blocker detail. Deferral has an explicit time or event
 wake condition; reaching it only recomputes readiness and does not auto-claim
 or start a process.
+
+The flat `ls` word reads its filtered count, bounded page, and displayed
+holders in one read transaction. Only this counted listing pays for a total;
+ambient `next` and held-item catalogs stay bounded. Assignment and live-session
+holding form a deduplicated union for `--mine`, alongside the other filters
+and counted once before the page limit. Its exact `total`
+is independent of the limit; `omitted` is total minus emitted rows after
+final byte fitting. The truncation hint is part of the bounded receipt.
 
 Completion is local and final for that run. Report readiness and external
 publication are separate projections; a work item can be completed with no

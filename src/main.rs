@@ -479,58 +479,7 @@ enum WorkCommand {
         recover: Option<String>,
     },
     /// Exactly one action: lifecycle change or one audited field revision.
-    Update {
-        /// Item to act on; defaults to the focus.
-        work_ref: Option<String>,
-        /// Release your claim.
-        #[arg(long)]
-        release: bool,
-        /// Reason recorded with --release or required by --waive and --supersede-with.
-        #[arg(long)]
-        reason: Option<String>,
-        /// Mark the item blocked and say why.
-        #[arg(long, value_name = "WHY")]
-        blocked: Option<String>,
-        /// Clear the item's single active blocker.
-        #[arg(long)]
-        unblock: bool,
-        #[arg(long)]
-        assignee: Option<String>,
-        /// 0 (highest) through 4.
-        #[arg(long)]
-        priority: Option<i32>,
-        /// Defer until DATE (RFC 3339, YYYY-MM-DD, or YYYY-MM-DDTHH:MM:SS UTC).
-        #[arg(long, value_name = "DATE")]
-        defer: Option<String>,
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long)]
-        outcome: Option<String>,
-        /// Replace the work kind.
-        #[arg(long, value_enum)]
-        kind: Option<WorkKindArg>,
-        /// Add a label; repeatable.
-        #[arg(long = "label", value_name = "LABEL")]
-        labels: Vec<String>,
-        /// Remove a label; repeatable.
-        #[arg(long = "unlabel", value_name = "LABEL")]
-        unlabels: Vec<String>,
-        /// Cancel the item and say why.
-        #[arg(long, value_name = "REASON")]
-        cancel: Option<String>,
-        /// Make this item wait for another open item.
-        #[arg(long, value_name = "REF")]
-        after: Option<String>,
-        /// Remove one prerequisite edge from this item.
-        #[arg(long, value_name = "REF")]
-        drop_after: Option<String>,
-        /// Waive one cancelled or superseded required child; requires --reason.
-        #[arg(long, value_name = "REF")]
-        waive: Option<String>,
-        /// Supersede this item with another item; requires --reason.
-        #[arg(long, value_name = "REF")]
-        supersede_with: Option<String>,
-    },
+    Update(Box<WorkUpdateArgs>),
     /// Record a gate on held open work or a late finding on completed work.
     Gate {
         /// Item to record the gate on; defaults to the focus.
@@ -1130,26 +1079,28 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             },
             now,
         ),
-        WorkCommand::Update {
-            work_ref,
-            release,
-            reason,
-            blocked,
-            unblock,
-            assignee,
-            priority,
-            defer,
-            title,
-            outcome,
-            kind,
-            labels,
-            unlabels,
-            cancel,
-            after,
-            drop_after,
-            waive,
-            supersede_with,
-        } => {
+        WorkCommand::Update(args) => {
+            let WorkUpdateArgs {
+                work_ref,
+                release,
+                reason,
+                blocked,
+                unblock,
+                assignee,
+                priority,
+                defer,
+                title,
+                outcome,
+                kind,
+                acceptance,
+                labels,
+                unlabels,
+                cancel,
+                after,
+                drop_after,
+                waive,
+                supersede_with,
+            } = *args;
             if reason.is_some() && !release && supersede_with.is_none() && waive.is_none() {
                 bail!("--reason is only valid with --release, --waive, or --supersede-with");
             }
@@ -1158,6 +1109,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 || defer.is_some()
                 || title.is_some()
                 || outcome.is_some()
+                || acceptance.is_some()
                 || kind.is_some()
                 || !labels.is_empty()
                 || !unlabels.is_empty();
@@ -1172,7 +1124,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --assignee, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1209,6 +1161,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 UpdateAction::Revise {
                     title,
                     outcome,
+                    acceptance,
                     assignee,
                     priority,
                     defer,
@@ -1563,6 +1516,64 @@ async fn serve_mcp(server: McpServer) -> Result<()> {
     Ok(())
 }
 
+/// Flat flags for one planning/lifecycle update, boxed in the command enum.
+#[derive(clap::Args, Debug)]
+struct WorkUpdateArgs {
+    /// Item to act on; defaults to the focus.
+    work_ref: Option<String>,
+    /// Release your claim.
+    #[arg(long)]
+    release: bool,
+    /// Reason recorded with --release or required by --waive and --supersede-with.
+    #[arg(long)]
+    reason: Option<String>,
+    /// Mark the item blocked and say why.
+    #[arg(long, value_name = "WHY")]
+    blocked: Option<String>,
+    /// Clear the item's single active blocker.
+    #[arg(long)]
+    unblock: bool,
+    #[arg(long)]
+    assignee: Option<String>,
+    /// 0 (highest) through 4.
+    #[arg(long)]
+    priority: Option<i32>,
+    /// Defer until DATE (RFC 3339, YYYY-MM-DD, or YYYY-MM-DDTHH:MM:SS UTC).
+    #[arg(long, value_name = "DATE")]
+    defer: Option<String>,
+    #[arg(long)]
+    title: Option<String>,
+    #[arg(long)]
+    outcome: Option<String>,
+    /// Replace the work kind.
+    #[arg(long, value_enum)]
+    kind: Option<WorkKindArg>,
+    /// Replace the whole acceptance list; repeat for multiple criteria.
+    #[arg(long = "accept", value_name = "CRITERION", action = ArgAction::Append, num_args = 1)]
+    acceptance: Option<Vec<String>>,
+    /// Add a label; repeatable.
+    #[arg(long = "label", value_name = "LABEL")]
+    labels: Vec<String>,
+    /// Remove a label; repeatable.
+    #[arg(long = "unlabel", value_name = "LABEL")]
+    unlabels: Vec<String>,
+    /// Cancel the item and say why.
+    #[arg(long, value_name = "REASON")]
+    cancel: Option<String>,
+    /// Make this item wait for another open item.
+    #[arg(long, value_name = "REF")]
+    after: Option<String>,
+    /// Remove one prerequisite edge from this item.
+    #[arg(long, value_name = "REF")]
+    drop_after: Option<String>,
+    /// Waive one cancelled or superseded required child; requires --reason.
+    #[arg(long, value_name = "REF")]
+    waive: Option<String>,
+    /// Supersede this item with another item; requires --reason.
+    #[arg(long, value_name = "REF")]
+    supersede_with: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use clap::CommandFactory;
@@ -1760,7 +1771,7 @@ mod tests {
         assert!(matches!(
             prerequisite.command,
             Command::Work { operation, .. }
-                if matches!(*operation, WorkCommand::Update { after: Some(_), .. })
+                if matches!(*operation, WorkCommand::Update(ref args) if args.after.is_some())
         ));
 
         let supersede = Cli::try_parse_from([
@@ -1781,7 +1792,7 @@ mod tests {
         assert!(matches!(
             supersede.command,
             Command::Work { operation, .. }
-                if matches!(*operation, WorkCommand::Update { supersede_with: Some(_), reason: Some(_), .. })
+                if matches!(*operation, WorkCommand::Update(ref args) if args.supersede_with.is_some() && args.reason.is_some())
         ));
 
         let gate = Cli::try_parse_from([
@@ -1877,7 +1888,7 @@ mod tests {
         assert!(matches!(
             waive.command,
             Command::Work { operation, .. }
-                if matches!(*operation, WorkCommand::Update { waive: Some(_), reason: Some(_), .. })
+                if matches!(*operation, WorkCommand::Update(ref args) if args.waive.is_some() && args.reason.is_some())
         ));
     }
 }

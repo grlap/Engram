@@ -54,7 +54,7 @@ engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbo
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
@@ -103,6 +103,23 @@ instead of failing.
 
 Rules that matter:
 
+- `update REF --accept "criterion"...` replaces the whole acceptance list in
+  one attributed revision. Omission preserves it; empty lists and any blank
+  criterion are refused. The core trims, sorts, and deduplicates criteria.
+  History names the supplied fields, and prior canonical criteria remain in
+  history. Completed work is immutable; `note` is the late-finding path.
+- `ls` prints `showing X of N` and returns exact `total` and `omitted` counts
+  beside `more`. Count and page share the same normalized filters and SQLite
+  read transaction. `--mine` is assignment to this actor OR a live claim held
+  by this session, counted once before limiting. The default limit is 20
+  (explicit limits clamp to 1–1000). The complete text and JSON receipts,
+  including truncation hints, fit 12 KiB; rows removed for bytes also count
+  as omitted. Use `--limit`, narrower filters, or `show REF` to inspect more.
+  MCP `search { query: TEXT }` is shell `ls --search TEXT --all`; both search
+  every lifecycle, while plain `ls --search TEXT` defaults to open work.
+- Shell notes take the target positionally: `engram work note REF "text"`.
+  MCP uses `note { work_ref: REF, text: TEXT }`; the shell has no `note
+  --work-ref` flag (that flag belongs to `gate`).
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against.
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim

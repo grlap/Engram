@@ -51,6 +51,46 @@ function withoutInjectedWorkAttribution(engramHome) {
   delete environment.ENGRAM_ACTOR_CONTEXT;
   return environment;
 }
+test("Phoenix update --accept replaces criteria and ls reports exact totals", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-planning-"));
+  try {
+    hostSetup(engramHome);
+    const context = ["--home", engramHome, "work", "--actor-id", "planner", "--session-id", "planner"];
+    const json = (...args) => {
+      const result = run([...context, ...args, "--json"]);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const first = json("add", "Planning first", "--accept", "Original").work.short_ref;
+    json("add", "Planning second");
+    json("update", first, "--accept", "B", "--accept", "A");
+    assert.deepEqual(json("show", first).status.work.acceptance, ["A", "B"]);
+    assert.ok(json("show", first).history.items.some(({ kind, summary }) => kind === "revised" && summary.startsWith("acceptance:")));
+    json("update", first, "--title", "Planning renamed");
+    assert.deepEqual(json("show", first).status.work.acceptance, ["A", "B"]);
+    for (const args of [["--accept"], ["--accept", ""], ["--accept", "good", "--accept", " "]]) {
+      const refused = run([...context, "update", first, ...args, "--json"]);
+      assert.notEqual(refused.status, 0, refused.stdout);
+      assert.deepEqual(json("show", first).status.work.acceptance, ["A", "B"]);
+    }
+    const listed = json("ls", "--limit", "1");
+    assert.equal(listed.total, 2);
+    assert.equal(listed.omitted, 1);
+    assert.equal(listed.items.length, 1);
+    const text = run([...context, "ls", "--limit", "1"]);
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /showing 1 of 2/u);
+    assert.match(text.stdout, /--limit/u);
+    json("claim", first);
+    json("done", first, "A and B verified");
+    assert.notEqual(run([...context, "update", first, "--accept", "Cannot rewrite seal"]).status, 0);
+    assert.equal(json("ls").total, 1);
+    assert.equal(json("ls", "--search", "Planning", "--all").total, 2);
+    assert.equal(json("ls", "--search", "absent").total, 0);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
 
 test("add -> claim -> done takes three commands and at most three fields", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-"));

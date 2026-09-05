@@ -15,7 +15,7 @@ use super::{
     held_suffix, item_line, json, lifecycle_word, nonempty,
     receipts::{
         append_changes_lines, compact_next_lines, compact_next_receipt, compact_next_value,
-        compact_row, compact_row_line, ready_line,
+        fit_list_receipt, ready_line,
     },
     section_word, short,
     show::{live, show_lines, show_receipt_value},
@@ -108,6 +108,8 @@ pub enum UpdateAction {
     Revise {
         title: Option<String>,
         outcome: Option<String>,
+        /// Replace the whole acceptance list; omission leaves it unchanged.
+        acceptance: Option<Vec<String>>,
         assignee: Option<String>,
         priority: Option<i32>,
         defer: Option<DateTime<Utc>>,
@@ -537,73 +539,40 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when the catalog cannot be read.
     pub fn ls(&self, input: &LsInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
-        let query = WorkNextQuery {
-            sections: vec![WorkNextSection::Catalog],
-            search: input.search.clone(),
-            lifecycles: if input.all {
-                Vec::new()
-            } else {
-                vec![WorkLifecycle::Open]
+        self.ls_with_budget(input, now, MAX_AGENT_WORK_RESPONSE_BYTES)
+    }
+
+    // Production always uses the protocol budget; tests can exercise the
+    // zero-row boundary without bypassing the bounded item projection.
+    pub(super) fn ls_with_budget(
+        &self,
+        input: &LsInput,
+        now: DateTime<Utc>,
+        budget: usize,
+    ) -> Result<Receipt, VerbError> {
+        let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 1_000);
+        let (source_items, total, claims) = self.service.work_catalog_page(
+            &crate::domain::WorkCatalogQuery {
+                search: input.search.clone(),
+                lifecycles: if input.all {
+                    Vec::new()
+                } else {
+                    vec![WorkLifecycle::Open]
+                },
+                blocked_only: input.blocked,
+                assigned_to: input.mine.then(|| self.actor_id.clone()),
+                held_by: input.mine.then(|| self.session_id.clone()),
+                label: input.label.clone(),
+                limit,
+                ..crate::domain::WorkCatalogQuery::default()
             },
-            availabilities: Vec::new(),
-            blocked_only: input.blocked,
-            assigned_to: input.mine.then(|| self.actor_id.clone()),
-            label: input.label.clone(),
-            after: None,
-            context_generation: None,
-        };
-        let mut items = self.catalog(&query, limit.saturating_add(1), now)?;
-        let more = items.len() > limit as usize;
-        items.truncate(limit as usize);
-        if input.mine {
-            for (held, _) in self.held_items(limit, now)? {
-                if catalog_filters_admit(&held, input)
-                    && !items
-                        .iter()
-                        .any(|item| item.work.work_id == held.work.work_id)
-                {
-                    items.insert(0, held);
-                }
-            }
-        }
-        let claims = self.live_claim_map(now)?;
-        let compact_items = items
-            .iter()
-            .map(|item| compact_row(item, &claims))
-            .collect::<Vec<_>>();
-        let mut lines = vec![format!("{} item(s):", items.len())];
-        for item in &compact_items {
-            lines.push(format!("  {}", compact_row_line(item)));
-        }
-        if more {
-            lines.push(format!(
-                "  (more than {limit}; raise --limit or narrow with --search or --label)"
-            ));
-        }
-        let mut next = Vec::new();
-        if let Some(first) = items.first() {
-            next.push(format!("engram work show {}", first.work.short_ref));
-        }
-        if next.is_empty() {
-            next.push("engram work add \"…\"".into());
-        }
-        Ok(Receipt::assemble(
-            lines,
-            Guidance {
-                reminders: Vec::new(),
-                next,
-            },
-            if input.verbose {
-                json!({ "items": items, "more": more })
-            } else {
-                json!({
-                    "items": compact_items,
-                    "more": more,
-                })
-            },
-            false,
-        ))
+            now,
+        )?;
+        let claims = claims
+            .into_iter()
+            .map(|claim| (claim.work_id, (claim.holder, claim.expires_at)))
+            .collect::<HashMap<_, _>>();
+        fit_list_receipt(input.verbose, &source_items, total, &claims, budget)
     }
 
     /// `show`: one item in agent detail; selects it as ambient focus without
@@ -932,6 +901,7 @@ impl AgentVerbs {
             UpdateAction::Revise {
                 title: new_title,
                 outcome,
+                acceptance,
                 assignee,
                 priority,
                 defer,
@@ -944,7 +914,7 @@ impl AgentVerbs {
                 let patch = WorkRevisionPatch {
                     title: nonempty(new_title),
                     outcome: nonempty(outcome),
-                    acceptance: None,
+                    acceptance,
                     kind,
                     priority: validate_priority(priority)?,
                     labels: None,
@@ -961,6 +931,9 @@ impl AgentVerbs {
                 }
                 if patch.outcome.is_some() {
                     fields.push("outcome");
+                }
+                if patch.acceptance.is_some() {
+                    fields.push("acceptance");
                 }
                 if patch.assigned_to.is_some() {
                     fields.push("assignee");
@@ -1782,42 +1755,6 @@ pub(super) fn next_commands(
         out.push("engram work next".into());
     }
     out
-}
-
-fn catalog_filters_admit(status: &ReadyWorkSummary, input: &LsInput) -> bool {
-    let work = &status.work;
-    if !input.all && work.lifecycle != WorkLifecycle::Open {
-        return false;
-    }
-    if input.blocked && status.blocker_count == 0 && status.blocked_by.is_empty() {
-        return false;
-    }
-    if let Some(label) = input.label.as_deref().map(str::trim)
-        && !label.is_empty()
-        && !work
-            .labels
-            .iter()
-            .any(|value| value.eq_ignore_ascii_case(label))
-    {
-        return false;
-    }
-    if let Some(search) = input.search.as_deref().map(str::trim)
-        && !search.is_empty()
-    {
-        let needle = search.to_lowercase();
-        let haystack = format!(
-            "{} {} {} {}",
-            work.short_ref,
-            work.title,
-            work.outcome,
-            work.labels.join(" ")
-        )
-        .to_lowercase();
-        if !haystack.contains(&needle) {
-            return false;
-        }
-    }
-    true
 }
 
 fn project_memory_list_receipt(

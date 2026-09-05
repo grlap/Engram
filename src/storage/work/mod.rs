@@ -292,6 +292,17 @@ struct StoredWorkEvidenceSelectionRow {
 thread_local! {
     static WORK_EVENT_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
     static WORK_ITEM_PROJECTION_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
+    static WORK_CATALOG_COUNT_QUERIES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_work_catalog_count_queries() {
+    WORK_CATALOG_COUNT_QUERIES.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn work_catalog_count_queries() -> usize {
+    WORK_CATALOG_COUNT_QUERIES.with(Cell::get)
 }
 
 #[cfg(test)]

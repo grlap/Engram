@@ -133,7 +133,7 @@ engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbo
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
@@ -151,6 +151,13 @@ it. Host-only `work core` reads remain full.
 
 Rules that matter:
 
+- `update REF --accept "criterion"...` replaces the whole acceptance list;
+  omitting it preserves the list. Empty or blank criteria are refused, and
+  completed work cannot be revised. History names the revised fields.
+- `ls` reports an exact filtered total and omitted count, with a `--limit`
+  hint when truncated. `--mine` is the deduplicated union of assignment to
+  your actor and live claims held by your session. MCP `search` corresponds
+  to shell `ls --search TEXT --all` (search includes terminal work).
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. `--under REF` creates a required child;
   add `--optional` when that child must not gate its parent's completion.

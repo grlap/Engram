@@ -766,6 +766,8 @@ pub struct WorkCatalogQuery {
     pub availabilities: Vec<WorkAvailability>,
     pub blocked_only: bool,
     pub assigned_to: Option<String>,
+    /// Include this session's live claims in a union with assignment when both are set.
+    pub held_by: Option<SessionId>,
     pub label: Option<String>,
     pub after: Option<WorkId>,
     pub limit: u32,

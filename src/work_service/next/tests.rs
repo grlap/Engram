@@ -876,6 +876,7 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
             "memory_contradiction_event",
             serde_json::to_value(restricted_contradiction)
                 .expect("serialize restricted contradiction"),
+            None,
         )
         .expect("restricted contradiction projection"),
         WorkChangeProjection::Omitted(WorkChangeOmission {

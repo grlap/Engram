@@ -202,6 +202,45 @@ async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+test("Phoenix planning revisions and exact list counts through MCP", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-phoenix-planning-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "planning-agent");
+    await client.initialize();
+    const first = receipt(await client.call("add", { title: "Searchable first", acceptance: ["Original"] })).work;
+    receipt(await client.call("add", { title: "Searchable second" }));
+    receipt(await client.call("update", { work_ref: first.short_ref, action: "revise", acceptance: [" B ", "A", "A"] }));
+    let shown = receipt(await client.call("show", { work_ref: first.short_ref }));
+    assert.deepEqual(shown.status.work.acceptance, ["A", "B"]);
+    assert.equal(shown.status.work.title, "Searchable first");
+    assert.ok(shown.history.items.some(({ kind, summary }) => kind === "revised" && summary.startsWith("acceptance:")));
+    for (const acceptance of [[], [""], ["good", " "]]) {
+      structuredError(await client.call("update", { work_ref: first.short_ref, action: "revise", acceptance }), "work_invalid");
+    }
+    receipt(await client.call("update", { work_ref: first.short_ref, action: "revise", title: "Searchable renamed" }));
+    shown = receipt(await client.call("show", { work_ref: first.short_ref }));
+    assert.deepEqual(shown.status.work.acceptance, ["A", "B"]);
+    const listed = receipt(await client.call("ls", { limit: 1 }));
+    assert.equal(listed.total, 2);
+    assert.equal(listed.items.length, 1);
+    assert.equal(listed.omitted, 1);
+    assert.equal(listed.more, true);
+    assert.match(listed.hint, /--limit/u);
+    receipt(await client.call("claim", { work_ref: first.short_ref }));
+    const done = receipt(await client.call("done", { work_ref: first.short_ref, summary: "A and B verified" }));
+    assert.match(done.seal, HASH);
+    structuredError(await client.call("update", { work_ref: first.short_ref, action: "revise", acceptance: ["Cannot replace sealed acceptance"] }), "work_invalid");
+    assert.equal(receipt(await client.call("ls", {})).total, 1);
+    assert.equal(receipt(await client.call("search", { query: "Searchable" })).total, 2);
+    assert.equal(receipt(await client.call("ls", { search: "Searchable", all: true })).total, 2);
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 function buildAndInit(engramHome) {
   const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
     cwd: root,
@@ -282,10 +321,10 @@ test("CLI words translate the same ambient lifecycle service", () => {
     const listed = cliText(engramHome, actor, "ls", "--label", "dogfood");
     assert.match(
       listed,
-      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 ready "Dogfood work CLI" labels:dogfood/u,
+      /^showing 1 of 1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 ready "Dogfood work CLI" labels:dogfood/u,
     );
     const nothingMine = cliText(engramHome, actor, "ls", "--mine");
-    assert.match(nothingMine, /^0 item\(s\):/u);
+    assert.match(nothingMine, /^showing 0 of 0 item\(s\):/u);
 
     const claimed = cliText(engramHome, actor, "claim", workRef, "--ttl", "300");
     assert.match(claimed, /^claimed w-[0-9a-f]{12} "Dogfood work CLI" \(held by you until \d{2}:\d{2} UTC\)/u);
@@ -321,7 +360,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.equal(coreRefusalReceipt.recovery.cause.kind, "missing_acceptance");
     assert.equal(coreRefusalReceipt.recovery.item.ref, workRef);
     const mine = cliText(engramHome, actor, "ls", "--mine");
-    assert.match(mine, /^1 item\(s\):/u);
+    assert.match(mine, /^showing 1 of 1 item\(s\):/u);
 
     const shown = cliText(engramHome, actor, "show", workRef);
     assert.match(shown, /^w-[0-9a-f]{12} "Dogfood work CLI" — held by you until/u);
@@ -337,7 +376,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.match(blocked, /reminders:\n(?:.*\n)*\s+- blocked: waiting on a review/u);
     assert.match(blocked, new RegExp(`\\s+engram work update ${workRef} --unblock`, "u"));
     const blockedList = cliText(engramHome, actor, "ls", "--blocked");
-    assert.match(blockedList, /^1 item\(s\):/u);
+    assert.match(blockedList, /^showing 1 of 1 item\(s\):/u);
     const unblocked = cliText(engramHome, actor, "update", workRef, "--unblock");
     assert.match(unblocked, /^unblocked w-/u);
 
@@ -374,11 +413,11 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.equal(focused.notes.length, 1);
     assertTerseShow(focused);
     const closedList = cliText(engramHome, actor, "ls");
-    assert.match(closedList, /^0 item\(s\):/u);
+    assert.match(closedList, /^showing 0 of 0 item\(s\):/u);
     const allList = cliText(engramHome, actor, "ls", "--all", "--search", "dogfood work");
     assert.match(
       allList,
-      /^1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 completed/u,
+      /^showing 1 of 1 item\(s\):\n\s+w-[0-9a-f]{12} \[chore\] p1 completed/u,
     );
 
     // `add --under` translates to a one-child decomposition and focuses the
@@ -471,6 +510,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       "kind",
       "labels",
       "unlabels",
+      "acceptance",
       "prerequisite",
       "child",
       "replacement",
