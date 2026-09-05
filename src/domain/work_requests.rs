@@ -16,6 +16,8 @@ use super::{
 /// Request to create a root or child work item.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateWorkRequest {
+    /// Ordered initial observations, committed atomically with creation.
+    pub notes: Vec<String>,
     pub project_id: ProjectId,
     pub parent_id: Option<WorkId>,
     pub child_requirement: ChildRequirement,
@@ -37,6 +39,8 @@ pub struct CreateWorkRequest {
 /// One direct child proposed during an atomic decomposition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildWorkDraft {
+    /// Ordered initial observations, committed atomically with decomposition.
+    pub notes: Vec<String>,
     pub local_key: String,
     pub child_requirement: ChildRequirement,
     pub title: String,

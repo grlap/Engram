@@ -139,6 +139,7 @@ fn phoenix_note_under_completed_parent_survives_snapshot_and_rebuild() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    notes: Vec::new(),
                     key: "optional".into(),
                     title: "Review later".into(),
                     outcome: "reviewed".into(),

@@ -1,5 +1,6 @@
 use super::*;
 
+mod creation;
 mod review;
 
 fn fixture() -> (tempfile::TempDir, AgentVerbs, PathBuf, ProjectId) {
@@ -261,6 +262,7 @@ fn phoenix_add_under_terminal_parent_returns_typed_root_followup_remedy_without_
                 parent_id: parent_before.work_id,
                 expected_parent_revision: parent_before.revision,
                 children: vec![crate::ChildWorkDraft {
+                    notes: Vec::new(),
                     local_key: "refused".into(),
                     child_requirement: if optional {
                         ChildRequirement::Optional

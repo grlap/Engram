@@ -32,6 +32,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
             WorkProposeInput::Decompose {
                 children: (0..16)
                     .map(|index| WorkChildInput {
+                        notes: Vec::new(),
                         key: format!("child-{index}"),
                         title: if index == 15 {
                             format!("Open required child {index} {}", "x".repeat(256))

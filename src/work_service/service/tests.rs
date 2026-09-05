@@ -431,6 +431,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let root = match a
         .work_propose(
             WorkProposeInput::Root {
+                notes: Vec::new(),
                 title: "Ship ambient work".into(),
                 outcome: "The six-operation protocol works end to end".into(),
                 acceptance: vec!["handoff completion is sealed".into()],
@@ -460,6 +461,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let concurrent = match b
         .work_propose(
             WorkProposeInput::Root {
+                notes: Vec::new(),
                 title: "Concurrent project event".into(),
                 outcome: "Appending after delivery does not change the staged page".into(),
                 acceptance: vec!["event is durable".into()],
@@ -813,6 +815,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let replacement = match b
         .work_propose(
             WorkProposeInput::Root {
+                notes: Vec::new(),
                 title: "Replacement approach".into(),
                 outcome: "A better local execution plan is tracked".into(),
                 acceptance: vec!["replacement is evaluated".into()],
@@ -833,6 +836,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let obsolete = match b
         .work_propose(
             WorkProposeInput::Root {
+                notes: Vec::new(),
                 title: "Obsolete approach".into(),
                 outcome: "This plan is explicitly superseded".into(),
                 acceptance: vec!["obsolete plan is not completed".into()],

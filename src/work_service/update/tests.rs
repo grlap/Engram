@@ -959,6 +959,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
         peer.work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    notes: Vec::new(),
                     key: "late-child".into(),
                     title: "completed work cannot gain a child".into(),
                     outcome: "no child is created".into(),

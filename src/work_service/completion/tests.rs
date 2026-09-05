@@ -146,6 +146,7 @@ fn restored_completed_child_is_bound_into_a_new_parent_seal() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    notes: Vec::new(),
                     key: "required-child".into(),
                     title: "Restored required child".into(),
                     outcome: "child outcome".into(),
@@ -456,6 +457,7 @@ fn restored_native_completed_child(
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    notes: Vec::new(),
                     key: "child".into(),
                     title: "Required child".into(),
                     outcome: "Child outcome".into(),
@@ -996,6 +998,7 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
     service
         .work_propose(
             WorkProposeInput::Root {
+                notes: Vec::new(),
                 title: "Safe defaults".into(),
                 outcome: "omitted fields do the safe thing".into(),
                 acceptance: vec!["first criterion".into(), "second criterion".into()],
@@ -1490,6 +1493,7 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
                 ]
                 .into_iter()
                 .map(|(key, requirement)| WorkChildInput {
+                    notes: Vec::new(),
                     key: key.into(),
                     title: key.replace('-', " "),
                     outcome: format!("{key} outcome"),
@@ -1755,6 +1759,7 @@ fn refused_explicit_completion_stays_target_bound_and_rotates_with_holder_claim_
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    notes: Vec::new(),
                     key: "required-child".into(),
                     title: "Required child".into(),
                     outcome: "Required child outcome".into(),
@@ -1877,6 +1882,7 @@ fn refused_explicit_completion_cannot_refresh_across_work_revision() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    notes: Vec::new(),
                     key: "required-child".into(),
                     title: "Required child".into(),
                     outcome: "Required child outcome".into(),
@@ -1972,6 +1978,7 @@ fn capture_completion_rejects_bad_acceptance_without_substeps() {
     let root = match service
         .work_propose(
             WorkProposeInput::Root {
+                notes: Vec::new(),
                 title: "Prevalidate completion".into(),
                 outcome: "Invalid acceptance never writes capture substeps".into(),
                 acceptance: vec!["criterion one".into(), "criterion two".into()],

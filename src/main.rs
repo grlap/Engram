@@ -446,6 +446,9 @@ enum WorkCommand {
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
+        /// Initial attributed note; repeatable and atomic with creation.
+        #[arg(long = "note", value_name = "TEXT")]
+        notes: Vec<String>,
         title: String,
         /// Defaults to the title.
         #[arg(long)]
@@ -1047,6 +1050,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         ),
         WorkCommand::Show { work_ref, notes } => verbs.show_with_notes(&work_ref, notes, now),
         WorkCommand::Add {
+            notes,
             title,
             outcome,
             acceptance,
@@ -1058,6 +1062,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             kind,
         } => verbs.add(
             AddInput {
+                notes,
                 title,
                 outcome,
                 acceptance,

@@ -45,6 +45,7 @@ fn create_root(
     store
         .create_work(
             &CreateWorkRequest {
+                notes: Vec::new(),
                 project_id: project.clone(),
                 parent_id: None,
                 child_requirement: ChildRequirement::Required,
@@ -99,6 +100,7 @@ fn create_imported_root(
     let item = store
         .create_work(
             &CreateWorkRequest {
+                notes: Vec::new(),
                 project_id: project.clone(),
                 parent_id: None,
                 child_requirement: ChildRequirement::Required,
@@ -548,6 +550,97 @@ fn save_refuses_project_memory_head_projection_drift() {
             .expect("save audit query")
             .is_empty()
     );
+}
+
+#[test]
+fn initial_note_order_survives_snapshot_recreation() {
+    let mut source = SqliteStore::open_in_memory().expect("source");
+    let project = ProjectId("initial-note-order".into());
+    let notes: Vec<String> = (0..16)
+        .map(|index| format!("Initial finding {index}"))
+        .collect();
+    let item = source
+        .create_work(
+            &CreateWorkRequest {
+                notes: notes.clone(),
+                project_id: project.clone(),
+                parent_id: None,
+                child_requirement: ChildRequirement::Required,
+                title: "Ordered initial observations".into(),
+                outcome: "Preserve submission order".into(),
+                acceptance: vec!["Round trip preserves notes".into()],
+                kind: WorkItemKind::Task,
+                priority: 2,
+                labels: Vec::new(),
+                assigned_to: None,
+                deferred_until: None,
+                origin: WorkOrigin::Local,
+                source_snapshot_id: None,
+                actor: actor("creator"),
+                idempotency_key: "initial-note-order".into(),
+                created_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create with notes");
+    let (_, observations) = source
+        .work_observation_tail(item.work_id, notes.len())
+        .expect("observations");
+    assert!(
+        observations
+            .iter()
+            .all(|(_, note)| note.created_at == at(1))
+    );
+    let mut hash_order = observations.clone();
+    hash_order.sort_by(|left, right| left.0.cmp(&right.0));
+    assert_ne!(
+        hash_order, observations,
+        "fixture must distinguish hash order from submission order"
+    );
+    let source_notes = source
+        .work_notes(&project, item.work_id, usize::MAX)
+        .expect("native notes");
+    assert_eq!(
+        source_notes
+            .items
+            .iter()
+            .map(|note| &note.summary)
+            .collect::<Vec<_>>(),
+        notes.iter().collect::<Vec<_>>()
+    );
+    let saved = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("saver"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save");
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("loader"),
+            &snapshot_bytes(&saved.document),
+            false,
+            at(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("load");
+    let loaded = destination
+        .work_notes(&project, item.work_id, usize::MAX)
+        .expect("inherited notes");
+    assert_eq!(
+        loaded
+            .items
+            .iter()
+            .map(|note| &note.summary)
+            .collect::<Vec<_>>(),
+        notes.iter().collect::<Vec<_>>()
+    );
+    assert!(destination.verify_all().expect("verify").is_healthy());
 }
 
 #[test]
@@ -1934,6 +2027,7 @@ fn runless_restored_work_supports_blocked_planning_and_disposal() {
         parent_id: decompose.work_id,
         expected_parent_revision: 1,
         children: vec![ChildWorkDraft {
+            notes: Vec::new(),
             local_key: "native-child".into(),
             child_requirement: ChildRequirement::Required,
             title: "Native child after load".into(),
@@ -2024,6 +2118,7 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         let parent = source.get_work_item(root.work_id).expect("current parent");
         let children = (0..16)
             .map(|index| ChildWorkDraft {
+                notes: Vec::new(),
                 local_key: format!("child-{batch:02}-{index:02}"),
                 child_requirement: ChildRequirement::Optional,
                 title: format!("Terminal child {batch:02}-{index:02}"),

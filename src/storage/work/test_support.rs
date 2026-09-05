@@ -86,6 +86,7 @@ impl Redactor for RejectingRedactor {
 
 pub(super) fn root_request(project: &str, key: &str, second: i64) -> CreateWorkRequest {
     CreateWorkRequest {
+        notes: Vec::new(),
         project_id: crate::domain::ProjectId(project.into()),
         parent_id: None,
         child_requirement: ChildRequirement::Required,
@@ -107,6 +108,7 @@ pub(super) fn root_request(project: &str, key: &str, second: i64) -> CreateWorkR
 
 pub(super) fn child(key: &str, requirement: ChildRequirement, title: &str) -> ChildWorkDraft {
     ChildWorkDraft {
+        notes: Vec::new(),
         local_key: key.into(),
         child_requirement: requirement,
         title: title.into(),

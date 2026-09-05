@@ -802,6 +802,10 @@ pub enum StoreError {
         parent: crate::domain::WorkId,
         lifecycle: crate::domain::WorkLifecycle,
     },
+    #[error(
+        "a peer may propose only optional children without prerequisites beneath held work; ask the parent holder to add required children or prerequisites"
+    )]
+    WorkPeerDecompositionRefused { parent: crate::domain::WorkId },
     #[error("work {work:?} is claimed by session {holder} until {expires_at}")]
     WorkClaimHeld {
         work: crate::domain::WorkId,

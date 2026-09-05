@@ -86,6 +86,7 @@ impl LocalWorkService {
         }
         let result = match input {
             WorkProposeInput::Root {
+                notes,
                 title,
                 outcome,
                 acceptance,
@@ -121,6 +122,7 @@ impl LocalWorkService {
                 }
                 let work = store.create_work(
                     &CreateWorkRequest {
+                        notes,
                         project_id: self.project_id.clone(),
                         parent_id: None,
                         child_requirement: ChildRequirement::Required,
@@ -168,6 +170,7 @@ impl LocalWorkService {
                     let children = children
                         .into_iter()
                         .map(|child| ChildWorkDraft {
+                            notes: child.notes,
                             local_key: child.key,
                             child_requirement: child
                                 .requirement

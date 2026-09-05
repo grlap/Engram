@@ -99,7 +99,10 @@ preserved; nothing in the file is a foreign identifier.
 
 Non-holder work observations are carried as native-layer notes with their
 original non-holder provenance marker; on load they become inert history, not
-execution credit. Claim renewals use the compact `claimed` event with a renewal
+execution credit. Native notes use their shared dense project-feed order,
+including same-timestamp initial observations; timestamps and hashes never
+break ordering ties. Inherited generations retain their saved order.
+Claim renewals use the compact `claimed` event with a renewal
 reason; no live claim identity or expiry is restored.
 
 Sensitivity follows [security & trust](security-and-trust.md) and applies

@@ -1467,6 +1467,15 @@ fn work_transition_summary(event: &WorkEvent, revised_fields: &[&str]) -> String
     let title = compact_text_to(&event.work.title, MAX_HISTORY_TITLE_BYTES);
     let detail = |value: &str| compact_text_to(value, MAX_HISTORY_DETAIL_BYTES);
     match &event.transition {
+        WorkTransition::Created { .. }
+            if event
+                .actor
+                .provenance_chain
+                .iter()
+                .any(crate::domain::is_peer_child_proposal_marker) =>
+        {
+            format!("peer optional-child proposal: \"{title}\"")
+        }
         WorkTransition::Created { prerequisites } if prerequisites.is_empty() => {
             format!("without prerequisites: \"{title}\"")
         }

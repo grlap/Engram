@@ -359,6 +359,35 @@ revision and idempotency key.
 - The agent word `add --under REF` creates a required child by default;
   `add --under REF --optional` records an optional child, and `show REF` marks
   that distinction without requiring a lower-level decomposition request.
+  Under a foreign-live-held parent, project-bound peers may create only
+  optional children and may not add prerequisite edges. These are ordinary
+  Open, unclaimed children with an exact derived proposal marker in their
+  canonical creator/event provenance, visible to the holder in `next`.
+  This branch changes root child-run membership and creation feeds only;
+  it preserves the parent's item, run, claim, expiry, fence, and checkpoint.
+  The holder can claim, revise, or cancel it, or create a separate required
+  child. Optional-to-required promotion is not implemented; no approval
+  queue or activation exists.
+  Required or prerequisite-bearing peer plans receive a typed
+  `work_peer_decomposition_refused` directing them to the parent holder.
+  Holder and unclaimed-parent decomposition retain their ordinary rules.
+  Peer admission requires project authority, an attributed session, and a
+  foreign Active, unexpired parent claim; every child must be optional and
+  no prerequisite edge may be supplied. A pending handoff offer is irrelevant
+  to this peer-only path and is neither expired nor changed. The core's
+  expected-parent-revision guard still rejects stale requests, but peer
+  creation does not advance the parent's revision or consume its authority.
+  Repeatable `add --note TEXT` records initial non-holder observations in
+  creation's transaction, for roots and children alike. The ordered list is
+  part of the creation intent: a failed append rolls back the entire graph
+  change. Exact creation replay under the
+  [session and intent retry rule](#agent-native-protocol) does not append
+  observations again.
+  Repeated identical entries each record an observation. One creation or
+  decomposition accepts at most 16 initial notes in total, across all its
+  children. Count and blank-entry validation precede writes; refusals name
+  the limit/count or the invalid note and child indices. Initial notes confer
+  no claim, checkpoint, or execution credit.
   Both forms refuse terminal parents with the typed `work_parent_not_open`
   remedy: file an independent root follow-up or add under an open ancestor.
   Proposed parents also refuse new children, but their remedy is to inspect
@@ -514,11 +543,17 @@ compare-and-swaps the confirmed cursor, empty pending slot, focused work, and
 task binding under the SQLite write lock; a focus or task rebind that commits
 first forces projection to restart on the new read basis.
 
-Model-originated mutations may supply a caller-stable idempotency key. When
-none is supplied the server normally derives one from the session, operation, focused
-work, the item's current claim/handoff basis, and the canonical intent: an
-identical call replays its receipt while nothing about the item changed, and
-becomes a new attempt once the item moved. Keyless claim is an explicit
+Model-originated mutations may supply a caller-stable idempotency key, which
+overrides automatic key derivation. Otherwise the server normally derives one
+from the session, operation, focused work, the current work/claim/handoff
+basis, and canonical intent. An identical keyless call replays its receipt
+while that basis is unchanged and becomes a new attempt once it changes.
+Ordinary decomposition advances the parent's revision itself, so a keyless
+child-add retry after that advance is a new creation today, not a replay of
+the child or its initial notes. This also applies when a restored parent's
+first decomposition creates its native run. Inspect `ls`/`show` before
+repeating an uncertain child add; replay across these basis changes is
+deferred. Keyless claim is an explicit
 exception: each call renews the same live claim, or claims again after expiry
 under the ordinary readiness and recovery checks. A fresh completion call against work that is already sealed
 returns its seal, so the common retries are never refusals. An interrupted
@@ -574,7 +609,7 @@ remain available on demand through their version hash on host-only reads.
 An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
 bodies and references in recorded oldest-first order. Inherited generations
 retain their saved order, followed by every native note family in dense
-root-feed order across run generations. The count and note prefix share one
+project-feed order across run generations. The count and note prefix share one
 read transaction. Full text is never cut: whole trailing notes are omitted
 until the complete text and JSON receipts fit 12 KiB. `notes_omitted` is the
 exact total minus the emitted prefix, including zero. This opt-in mode does

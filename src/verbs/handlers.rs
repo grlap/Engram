@@ -64,6 +64,8 @@ pub struct LsInput {
 /// `add`: a root, or one required/optional child under `under`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AddInput {
+    #[serde(default)]
+    pub notes: Vec<String>,
     pub title: String,
     pub outcome: Option<String>,
     pub acceptance: Vec<String>,
@@ -636,7 +638,9 @@ impl AgentVerbs {
     /// # Errors
     ///
     /// Returns [`VerbError`] when input is empty or the core refuses admission.
-    pub fn add(&self, input: AddInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+    pub fn add(&self, mut input: AddInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        input.notes = crate::domain::normalize_initial_work_notes(&input.notes)
+            .map_err(StoreError::InvalidWork)?;
         if input
             .acceptance
             .iter()
@@ -652,7 +656,13 @@ impl AgentVerbs {
                 short(&terminal_safe_multiline(input.title.trim()))
             )
         });
-        let receipt = self.add_inner(input, now)?;
+        let has_initial_notes = !input.notes.is_empty();
+        let mut receipt = self.add_inner(input, now)?;
+        if has_initial_notes {
+            receipt = receipt.with_reminder(
+                "initial observations (no execution credit) recorded at creation".into(),
+            )?;
+        }
         match reminder {
             Some(text) => receipt.with_reminder(text),
             None => Ok(receipt),
@@ -699,6 +709,7 @@ impl AgentVerbs {
             return self.add_child(
                 under,
                 WorkChildInput {
+                    notes: input.notes,
                     key: slug(&title),
                     title,
                     outcome,
@@ -715,6 +726,7 @@ impl AgentVerbs {
         }
         let result = self.service.work_propose(
             WorkProposeInput::Root {
+                notes: input.notes,
                 title,
                 outcome,
                 acceptance,

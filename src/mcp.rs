@@ -108,6 +108,8 @@ struct ShowArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AddArgs {
+    /// Ordered initial notes, committed atomically with creation.
+    notes: Option<Vec<String>>,
     /// Only required field.
     title: String,
     /// Defaults to the title.
@@ -337,6 +339,7 @@ impl McpServer {
     fn add(&self, Parameters(args): Parameters<AddArgs>) -> CallToolResult {
         verb(self.verbs().add(
             AddInput {
+                notes: args.notes.unwrap_or_default(),
                 title: args.title,
                 outcome: args.outcome,
                 acceptance: args.acceptance.unwrap_or_default(),
@@ -709,6 +712,10 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "parent_lifecycle": lifecycle,
             "remedy": crate::storage::parent_not_open_remedy(*lifecycle),
         }),
+        StoreError::WorkPeerDecompositionRefused { parent } => json!({
+            "work_id": parent,
+            "remedy": "ask the parent holder to add required children or prerequisites; a peer may use add --under REF --optional",
+        }),
         StoreError::WorkPrerequisiteAlreadySatisfied(work) => json!({
             "work_id": work,
             "remedy": "no edge is needed; run show for the prerequisite before choosing another action",
@@ -807,6 +814,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkPrerequisiteAlreadySatisfied(_) => "work_prerequisite_already_satisfied",
         StoreError::WorkNotOpen(_) => "work_not_open",
         StoreError::WorkParentNotOpen { .. } => "work_parent_not_open",
+        StoreError::WorkPeerDecompositionRefused { .. } => "work_peer_decomposition_refused",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",

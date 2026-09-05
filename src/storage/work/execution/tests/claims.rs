@@ -26,7 +26,10 @@ fn delegated_planning_cannot_revise_a_foreign_live_claim() {
         },
         &DevelopmentNoopRedactor,
     );
-    assert!(matches!(delegated_result, Err(StoreError::InvalidWork(_))));
+    assert!(matches!(
+        delegated_result,
+        Err(StoreError::WorkPeerDecompositionRefused { parent }) if parent == root.work_id
+    ));
     assert_eq!(store.get_work_item(root.work_id).unwrap(), root);
     assert_eq!(
         store.current_work_claim(root.work_id).unwrap(),

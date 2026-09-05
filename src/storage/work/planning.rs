@@ -16,6 +16,7 @@ use super::feeds::{
     replay_operation, request_object, validate_work_source_snapshot,
 };
 use super::integrity::combined_graph_is_acyclic;
+use super::observation::append_initial_notes_on;
 #[cfg(test)]
 use super::query::latest_canonical_work_event_for_item;
 use super::query::{
@@ -56,6 +57,8 @@ impl SqliteStore {
         request: &CreateWorkRequest,
         redactor: &R,
     ) -> Result<WorkItem, StoreError> {
+        let initial_notes = crate::domain::normalize_initial_work_notes(&request.notes)
+            .map_err(StoreError::InvalidWork)?;
         inspect_work_request(redactor, request, &request.actor)?;
         if request.parent_id.is_some() {
             return Err(StoreError::InvalidWork(
@@ -258,6 +261,7 @@ impl SqliteStore {
             created_at: request.created_at,
         };
         append_work_event(&transaction, &event)?;
+        append_initial_notes_on(&transaction, &item, &initial_notes, redactor)?;
         persist_operation_result(
             &transaction,
             "create_work",
@@ -280,12 +284,26 @@ impl SqliteStore {
         request: &DecomposeWorkRequest,
         redactor: &R,
     ) -> Result<WorkDecomposition, StoreError> {
-        inspect_work_request(redactor, request, &request.actor)?;
         if request.children.is_empty() || request.children.len() > MAX_CHILDREN_PER_DECOMPOSITION {
             return Err(StoreError::InvalidWork(format!(
                 "decomposition must contain from 1 through {MAX_CHILDREN_PER_DECOMPOSITION} children"
             )));
         }
+        let count = request.children.iter().fold(0_usize, |count, child| {
+            count.saturating_add(child.notes.len())
+        });
+        crate::domain::validate_initial_work_note_count(count).map_err(StoreError::InvalidWork)?;
+        let initial_notes = request
+            .children
+            .iter()
+            .enumerate()
+            .map(|(index, child)| {
+                crate::domain::normalize_initial_work_notes(&child.notes).map_err(|reason| {
+                    StoreError::InvalidWork(format!("child {}: {reason}", index + 1))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        inspect_work_request(redactor, request, &request.actor)?;
         let mut keys = HashSet::new();
         for child in &request.children {
             let key = normalize_text(&child.local_key, "child local key")?;
@@ -319,13 +337,21 @@ impl SqliteStore {
                 lifecycle: parent.lifecycle,
             });
         }
-        validate_planning_authority(
-            &transaction,
-            &parent,
-            &request.authority,
-            &request.actor,
-            request.created_at,
-        )?;
+        let peer_proposal = peer_decomposition_admitted(&transaction, &parent, request)?;
+        if !peer_proposal {
+            validate_planning_authority(
+                &transaction,
+                &parent,
+                &request.authority,
+                &request.actor,
+                request.created_at,
+            )?;
+        }
+        let child_actor = if peer_proposal {
+            crate::domain::peer_child_proposal_actor(request.actor.clone())
+        } else {
+            request.actor.clone()
+        };
         validate_decomposition_budget(&transaction, &parent, request.children.len())?;
         let restored_execution = if parent.active_run_id.is_none() {
             Some(ensure_restored_execution_state(
@@ -428,7 +454,7 @@ impl SqliteStore {
                 active_run_id: Some(run_id),
                 restored: false,
                 superseded_by: None,
-                created_by: request.actor.clone(),
+                created_by: child_actor.clone(),
                 created_at: request.created_at,
                 updated_at: request.created_at,
             };
@@ -498,7 +524,7 @@ impl SqliteStore {
         root_execution.revision += 1;
         root_execution.updated_at = request.created_at;
         persist_root_execution(&transaction, &root_execution)?;
-        for (draft, item) in request.children.iter().zip(&children) {
+        for ((draft, item), notes) in request.children.iter().zip(&children).zip(&initial_notes) {
             let item_prerequisites = prerequisites
                 .get(draft.local_key.trim())
                 .cloned()
@@ -521,7 +547,7 @@ impl SqliteStore {
                 transition: WorkTransition::Created {
                     prerequisites: item_prerequisites.clone(),
                 },
-                actor: request.actor.clone(),
+                actor: child_actor.clone(),
                 created_at: request.created_at,
             };
             let (event_hash, _) = append_work_event(&transaction, &event)?;
@@ -536,46 +562,51 @@ impl SqliteStore {
                     ],
                 )?;
             }
+            append_initial_notes_on(&transaction, item, notes, redactor)?;
         }
         if !combined_graph_is_acyclic(&transaction, &parent.project_id.0)? {
             return Err(StoreError::WorkDependencyCycle);
         }
-        parent.revision += 1;
-        parent.updated_at = request.created_at;
-        persist_work_item(&transaction, &parent)?;
-        let (claim_snapshot, rebased_run) = rebase_planning_claim(
-            &transaction,
-            &parent,
-            &request.authority,
-            request.created_at,
-        )?;
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: parent.project_id.clone(),
-            root_id: parent.root_id,
-            work_id: parent.work_id,
-            run_id: parent.active_run_id,
-            revision: parent.revision,
-            work: parent.clone(),
-            run: match rebased_run {
-                Some(run) => Some(run),
-                None => match restored_run {
+        // A peer proposal creates optional child runs, not a mutation of the
+        // holder's planning revision, run feed, or fenced authority.
+        if !peer_proposal {
+            parent.revision += 1;
+            parent.updated_at = request.created_at;
+            persist_work_item(&transaction, &parent)?;
+            let (claim_snapshot, rebased_run) = rebase_planning_claim(
+                &transaction,
+                &parent,
+                &request.authority,
+                request.created_at,
+            )?;
+            let event = WorkEventDraft {
+                schema_version: SCHEMA_VERSION,
+                project_id: parent.project_id.clone(),
+                root_id: parent.root_id,
+                work_id: parent.work_id,
+                run_id: parent.active_run_id,
+                revision: parent.revision,
+                work: parent.clone(),
+                run: match rebased_run {
                     Some(run) => Some(run),
-                    None => active_run_snapshot(&transaction, &parent)?,
+                    None => match restored_run {
+                        Some(run) => Some(run),
+                        None => active_run_snapshot(&transaction, &parent)?,
+                    },
                 },
-            },
-            root_execution: Some(root_execution.clone()),
-            claim: claim_snapshot,
-            handoff_offer: None,
-            blocker: None,
-            transition: WorkTransition::Decomposed {
-                children: children.iter().map(|child| child.work_id).collect(),
-                authority: request.authority.clone(),
-            },
-            actor: request.actor.clone(),
-            created_at: request.created_at,
-        };
-        append_work_event(&transaction, &event)?;
+                root_execution: Some(root_execution.clone()),
+                claim: claim_snapshot,
+                handoff_offer: None,
+                blocker: None,
+                transition: WorkTransition::Decomposed {
+                    children: children.iter().map(|child| child.work_id).collect(),
+                    authority: request.authority.clone(),
+                },
+                actor: request.actor.clone(),
+                created_at: request.created_at,
+            };
+            append_work_event(&transaction, &event)?;
+        }
         let decomposition = WorkDecomposition { parent, children };
         persist_operation_result(
             &transaction,
@@ -1414,6 +1445,57 @@ pub(super) fn assert_actor_session(
             expected.0
         )))
     }
+}
+
+/// True selects peer-only creation; false retains ordinary planning authority;
+/// an error refuses the plan. This probe never renews claims or sweeps offers.
+fn peer_decomposition_admitted(
+    transaction: &Transaction<'_>,
+    parent: &WorkItem,
+    request: &DecomposeWorkRequest,
+) -> Result<bool, StoreError> {
+    if !matches!(request.authority, WorkPlanningAuthority::Project) {
+        return Ok(false);
+    }
+    let Some(run_id) = parent.active_run_id else {
+        return Ok(false);
+    };
+    let Some(claim) = load_work_claim_optional(transaction, run_id)? else {
+        return Ok(false);
+    };
+    if claim.state != WorkClaimState::Active || claim.expires_at <= request.created_at {
+        return Ok(false);
+    }
+    let session = request.actor.session_id.as_ref().ok_or_else(|| {
+        StoreError::InvalidWork("peer proposals require an attributed session".into())
+    })?;
+    if session == &claim.holder {
+        return Ok(false);
+    }
+    if !request.prerequisites.is_empty()
+        || request
+            .children
+            .iter()
+            .any(|child| child.child_requirement != crate::domain::ChildRequirement::Optional)
+    {
+        return Err(StoreError::WorkPeerDecompositionRefused {
+            parent: parent.work_id,
+        });
+    }
+    // Verify current authority without expiring offers, renewing the claim,
+    // or appending anything to the parent's execution feed.
+    validate_live_claim_on(
+        transaction,
+        parent.work_id,
+        run_id,
+        parent.revision,
+        &claim.holder,
+        claim.claim_id,
+        claim.fence,
+        request.created_at,
+        true,
+    )?;
+    Ok(true)
 }
 
 fn validate_planning_authority(

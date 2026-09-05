@@ -1,4 +1,4 @@
-//! Full note reads: inherited generation order followed by dense root-feed order.
+//! Full note reads: inherited generation order followed by dense project-feed order.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
@@ -100,15 +100,14 @@ impl SqliteStore {
             "SELECT notes.hash, notes.family, entry.position, entry.object_kind
              FROM ({NOTE_OBJECTS}) notes
              LEFT JOIN work_feed_entries entry ON entry.object_hash = notes.hash
-                 AND entry.feed_kind = 'root_work' AND entry.feed_id = ?2
+                 AND entry.feed_kind = 'project' AND entry.feed_id = ?2
              ORDER BY entry.position"
         ))?;
-        let mut rows =
-            statement.query(params![work_id.0.to_string(), item.root_id.0.to_string()])?;
+        let mut rows = statement.query(params![work_id.0.to_string(), project.0])?;
         while let Some(row) = rows.next()? {
             let position: Option<i64> = row.get(2)?;
             if position.is_none() {
-                return Err(invalid("note is missing its root-feed position"));
+                return Err(invalid("note is missing its project-feed position"));
             }
             let raw: String = row.get(0)?;
             let hash =

@@ -11,6 +11,8 @@ use super::{
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkProposeInput {
     Root {
+        #[serde(default)]
+        notes: Vec<String>,
         title: String,
         outcome: String,
         acceptance: Vec<String>,
@@ -36,6 +38,8 @@ pub enum WorkProposeInput {
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkChildInput {
+    #[serde(default)]
+    pub notes: Vec<String>,
     pub key: String,
     pub title: String,
     pub outcome: String,

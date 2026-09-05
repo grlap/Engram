@@ -337,13 +337,9 @@ impl LocalWorkService {
     }
 
     pub(super) fn non_holder_note_actor(&self) -> ActorContext {
-        let mut actor = self.actor("work_update", "record a non-holder work observation");
-        actor.provenance_chain.push(ProvenanceLink {
-            relation: ProvenanceRelation::DerivedFrom,
-            source: crate::domain::NON_HOLDER_NOTE_SOURCE.into(),
-            reference: Some(crate::domain::NON_HOLDER_NOTE_REFERENCE.into()),
-        });
-        actor
+        crate::domain::non_holder_note_actor(
+            self.actor("work_update", "record a non-holder work observation"),
+        )
     }
 
     pub(super) fn focused_item(

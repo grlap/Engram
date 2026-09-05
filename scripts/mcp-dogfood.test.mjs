@@ -202,6 +202,38 @@ async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+test("Phoenix atomic initial notes and peer child proposals through MCP", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-creation-"));
+  let holder;
+  let peer;
+  try {
+    buildAndInit(engramHome);
+    holder = new McpClient(engramHome, "holder");
+    peer = new McpClient(engramHome, "peer");
+    await holder.initialize();
+    await peer.initialize();
+    assert.ok((await holder.tools()).find(({ name }) => name === "add").inputSchema.properties.notes);
+    const parent = receipt(await holder.call("add", { title: "Parent", notes: ["Root rationale"] })).work.short_ref;
+    assert.deepEqual(receipt(await holder.call("show", { work_ref: parent, notes: true })).notes.map(({ summary }) => summary), ["Root rationale"]);
+    receipt(await holder.call("claim", { work_ref: parent }));
+    const before = receipt(await holder.call("ls", { all: true })).total;
+    const error = structuredError(await peer.call("add", { title: "Required peer", under: parent }), "work_peer_decomposition_refused");
+    assert.match(error.details.remedy, /parent holder/u);
+    assert.equal((await peer.call("add", { title: "Blank initial note", under: parent, optional: true, notes: ["first", " "] })).isError, true);
+    assert.equal(receipt(await holder.call("ls", { all: true })).total, before);
+    const child = receipt(await peer.call("add", { title: "Peer suggestion", under: parent, optional: true, notes: ["Initial rationale", "Initial rationale"] })).work.short_ref;
+    const shown = receipt(await peer.call("show", { work_ref: child, notes: true }));
+    assert.deepEqual(shown.notes.map(({ summary }) => summary), ["Initial rationale", "Initial rationale"]);
+    assert.ok(shown.notes.every(({ non_holder }) => non_holder === true));
+    assert.match(JSON.stringify(receipt(await holder.call("next", {}))), /peer optional-child proposal/u);
+    assert.equal(receipt(await holder.call("ls", { all: true })).total, before + 1);
+  } finally {
+    if (peer) await peer.close();
+    if (holder) await holder.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("Phoenix full notes, defaulted acceptance and terminal-parent remedy through MCP", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-phoenix-notes-"));
   let client;

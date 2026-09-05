@@ -629,7 +629,7 @@ fn work_sections_on(
                 },
             });
         }
-        let notes = notes_for_item_on(connection, work_id)?;
+        let notes = notes_for_item_on(connection, project_id, work_id)?;
         if !events.is_empty() || !notes.is_empty() {
             records.push(WorkGraphSnapshotRecord {
                 work_id,
@@ -807,6 +807,7 @@ fn load_verified_value_on(
 
 fn notes_for_item_on(
     connection: &Connection,
+    project_id: &ProjectId,
     work_id: WorkId,
 ) -> Result<Vec<WorkGraphSnapshotNote>, StoreError> {
     let rows = connection
@@ -836,11 +837,11 @@ fn notes_for_item_on(
             actor: observation.actor,
             recorded_at: observation.created_at,
         };
-        notes.push((note.recorded_at, hash, note));
+        notes.push((hash, note));
     }
     for row in rows {
         let (note, hash) = snapshot_note_from_row(work_id, row)?;
-        notes.push((note.recorded_at, hash, note));
+        notes.push((hash, note));
     }
     let restored_rows = connection
         .prepare(
@@ -905,10 +906,34 @@ fn notes_for_item_on(
             actor: evidence.actor,
             recorded_at: evidence.created_at,
         };
-        notes.push((note.recorded_at, hash, note));
+        notes.push((hash, note));
     }
-    notes.sort_by(|left, right| (left.0, &left.1).cmp(&(right.0, &right.1)));
-    Ok(notes.into_iter().map(|(_, _, note)| note).collect())
+    order_snapshot_notes_on(connection, project_id, notes)
+}
+
+fn order_snapshot_notes_on(
+    connection: &Connection,
+    project_id: &ProjectId,
+    notes: Vec<(ObjectHash, WorkGraphSnapshotNote)>,
+) -> Result<Vec<WorkGraphSnapshotNote>, StoreError> {
+    // Every native note family enters the project feed. Asserted timestamps
+    // and content hashes cannot order observations, including initial batches.
+    let mut positions = connection.prepare(
+        "SELECT position FROM work_feed_entries
+         WHERE feed_kind = 'project' AND feed_id = ?1 AND object_hash = ?2",
+    )?;
+    let mut ordered = notes
+        .into_iter()
+        .map(|(hash, note)| {
+            let position: i64 = positions
+                .query_row(rusqlite::params![project_id.0, hash.as_str()], |row| {
+                    row.get(0)
+                })?;
+            Ok((position, note))
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    ordered.sort_by_key(|(position, _)| *position);
+    Ok(ordered.into_iter().map(|(_, note)| note).collect())
 }
 
 fn snapshot_note_from_row(

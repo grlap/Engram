@@ -472,6 +472,10 @@ impl VerbError {
                     vec!["engram work add \"Follow-up title\" --accept \"Delivery criterion\"".into()]
                 },
             ),
+            StoreError::WorkPeerDecompositionRefused { .. } => (
+                vec!["ask the parent holder to add required children or prerequisites; peers may propose optional children".into()],
+                vec![format!("engram work add \"Proposal title\" --under {target} --optional")],
+            ),
             StoreError::WorkPrerequisiteAlreadySatisfied(_) => (
                 vec!["this prerequisite is already satisfied; no edge is needed".into()],
                 vec![format!("engram work show {target}")],

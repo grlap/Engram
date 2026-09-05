@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Transaction, params};
 
 use super::super::{SqliteStore, StoreError};
 use super::WorkNoteCapture;
@@ -55,75 +55,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(capture);
         }
-        let item = load_work_item(&transaction, request.work_id)?;
-        assert_revision(&item, request.expected_work_revision)?;
-        if item.project_id != request.project_id || item.lifecycle != WorkLifecycle::Open {
-            return Err(StoreError::InvalidWork(
-                "non-holder notes require open work in this project".into(),
-            ));
-        }
-        if let Some(run_id) = item.active_run_id
-            && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
-            && claim.holder == request.session_id
-            && claim.state == WorkClaimState::Active
-            && claim.expires_at > request.recorded_at
-        {
-            return Err(StoreError::WorkClaimMismatch { work: item.work_id });
-        }
-        // load_work_item verified this projected hash against the canonical
-        // feed head. Keep its original bytes' identity, never re-freeze it.
-        let event_hash: Option<String> = transaction.query_row(
-            "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
-            [item.work_id.0.to_string()],
-            |row| row.get(0),
-        )?;
-        let basis = if let Some(hash) = event_hash {
-            WorkObservationBasis::NativeEvent {
-                event: parse_hash(hash)?,
-            }
-        } else {
-            let (record, _) = latest_restored_record(&transaction, item.work_id)?
-                .ok_or_else(|| invalid("observation has no canonical planning basis"))?;
-            WorkObservationBasis::RestoredRecord { record }
-        };
-        let head: i64 = transaction.query_row(
-            "SELECT COALESCE(MAX(sequence), 0) FROM work_observations WHERE work_id = ?1",
-            [item.work_id.0.to_string()],
-            |row| row.get(0),
-        )?;
-        let observation = WorkObservation {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id,
-            root_id: item.root_id,
-            work_id: item.work_id,
-            work_revision: item.revision,
-            basis,
-            sequence: head
-                .checked_add(1)
-                .ok_or_else(|| invalid("observation sequence overflow"))?,
-            summary: normalize_text(&request.summary, "note summary")?,
-            refs: normalize_strings(&request.refs),
-            actor: request.actor.clone(),
-            created_at: request.recorded_at,
-        };
-        validate(&transaction, &observation)?;
-        let object = CanonicalObject::freeze(&observation)?;
-        SqliteStore::insert_object(&transaction, "work_observation", &object)?;
-        insert_projection(&transaction, object.hash(), &observation)?;
-        append_to_work_feeds(
-            &transaction,
-            &observation.project_id,
-            observation.root_id,
-            None,
-            None,
-            "work_observation",
-            &object,
-        )?;
-        let capture = WorkNoteCapture {
-            non_holder: true,
-            evidence: object.hash().clone(),
-            checkpoint: None,
-        };
+        let capture = append_work_observation_on(&transaction, request)?;
         persist_operation_result(
             &transaction,
             "record_work_note",
@@ -150,6 +82,147 @@ impl SqliteStore {
             .map_err(|_| invalid("observation count exceeds its representable range"))?;
         Ok((total, observations))
     }
+}
+
+/// The caller owns atomicity and replay, including creation with initial notes.
+fn append_work_observation_on(
+    transaction: &Transaction<'_>,
+    request: &RecordWorkObservationRequest,
+) -> Result<WorkNoteCapture, StoreError> {
+    let observation = prepare_work_observation_on(transaction, request)?;
+    persist_work_observation_on(transaction, &observation)
+}
+
+fn prepare_work_observation_on(
+    transaction: &Transaction<'_>,
+    request: &RecordWorkObservationRequest,
+) -> Result<WorkObservation, StoreError> {
+    assert_actor_session(&request.actor, &request.session_id)?;
+    let item = load_work_item(transaction, request.work_id)?;
+    assert_revision(&item, request.expected_work_revision)?;
+    if item.project_id != request.project_id || item.lifecycle != WorkLifecycle::Open {
+        return Err(StoreError::InvalidWork(
+            "non-holder notes require open work in this project".into(),
+        ));
+    }
+    if let Some(run_id) = item.active_run_id
+        && let Some(claim) = load_work_claim_optional(transaction, run_id)?
+        && claim.holder == request.session_id
+        && claim.state == WorkClaimState::Active
+        && claim.expires_at > request.recorded_at
+    {
+        return Err(StoreError::WorkClaimMismatch { work: item.work_id });
+    }
+    // load_work_item verified this projected hash against the canonical
+    // feed head. Keep its original bytes' identity, never re-freeze it.
+    let event_hash: Option<String> = transaction.query_row(
+        "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+        [item.work_id.0.to_string()],
+        |row| row.get(0),
+    )?;
+    let basis = if let Some(hash) = event_hash {
+        WorkObservationBasis::NativeEvent {
+            event: parse_hash(hash)?,
+        }
+    } else {
+        let (record, _) = latest_restored_record(transaction, item.work_id)?
+            .ok_or_else(|| invalid("observation has no canonical planning basis"))?;
+        WorkObservationBasis::RestoredRecord { record }
+    };
+    let head: i64 = transaction.query_row(
+        "SELECT COALESCE(MAX(sequence), 0) FROM work_observations WHERE work_id = ?1",
+        [item.work_id.0.to_string()],
+        |row| row.get(0),
+    )?;
+    let observation = WorkObservation {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id,
+        root_id: item.root_id,
+        work_id: item.work_id,
+        work_revision: item.revision,
+        basis,
+        sequence: head
+            .checked_add(1)
+            .ok_or_else(|| invalid("observation sequence overflow"))?,
+        summary: normalize_text(&request.summary, "note summary")?,
+        refs: normalize_strings(&request.refs),
+        actor: request.actor.clone(),
+        created_at: request.recorded_at,
+    };
+    validate(transaction, &observation)?;
+    Ok(observation)
+}
+
+/// Persists a validated observation; callers own the transaction and replay.
+fn persist_work_observation_on(
+    transaction: &Transaction<'_>,
+    observation: &WorkObservation,
+) -> Result<WorkNoteCapture, StoreError> {
+    let object = CanonicalObject::freeze(observation)?;
+    SqliteStore::insert_object(transaction, "work_observation", &object)?;
+    insert_projection(transaction, object.hash(), observation)?;
+    append_to_work_feeds(
+        transaction,
+        &observation.project_id,
+        observation.root_id,
+        None,
+        None,
+        "work_observation",
+        &object,
+    )?;
+    Ok(WorkNoteCapture {
+        non_holder: true,
+        evidence: object.hash().clone(),
+        checkpoint: None,
+    })
+}
+
+pub(super) fn append_initial_notes_on<R: Redactor>(
+    transaction: &Transaction<'_>,
+    item: &crate::domain::WorkItem,
+    notes: &[String],
+    redactor: &R,
+) -> Result<(), StoreError> {
+    if notes.is_empty() {
+        return Ok(());
+    }
+    let actor = crate::domain::non_holder_note_actor(item.created_by.clone());
+    let session_id = actor.session_id.clone().ok_or_else(|| {
+        StoreError::InvalidWork("initial notes require an attributed session".into())
+    })?;
+    // The caller has normalized and bounded the entire plan before writing.
+    // Item, claim, canonical basis and starting sequence cannot change during
+    // this batch. Validate that basis once, then validate each note's shape.
+    let mut previous: Option<WorkObservation> = None;
+    for summary in notes {
+        let request = RecordWorkObservationRequest {
+            project_id: item.project_id.clone(),
+            work_id: item.work_id,
+            expected_work_revision: item.revision,
+            session_id: session_id.clone(),
+            summary: summary.clone(),
+            refs: Vec::new(),
+            actor: actor.clone(),
+            // The outer creation attempt owns replay for the entire ordered list.
+            idempotency_key: String::new(),
+            recorded_at: item.created_at,
+        };
+        inspect_work_request(redactor, &request, &actor)?;
+        let observation = if let Some(mut observation) = previous {
+            observation.sequence = observation
+                .sequence
+                .checked_add(1)
+                .ok_or_else(|| invalid("observation sequence overflow"))?;
+            observation.summary.clone_from(summary);
+            validate_shape(&observation)?;
+            observation
+        } else {
+            prepare_work_observation_on(transaction, &request)?
+        };
+        persist_work_observation_on(transaction, &observation)?;
+        previous = Some(observation);
+    }
+    Ok(())
 }
 
 pub(in crate::storage) fn observations_on(
@@ -194,6 +267,11 @@ pub(in crate::storage) fn observations_on(
 }
 
 pub(super) fn validate(connection: &Connection, value: &WorkObservation) -> Result<(), StoreError> {
+    validate_shape(value)?;
+    validate_basis(connection, value)
+}
+
+fn validate_shape(value: &WorkObservation) -> Result<(), StoreError> {
     let marker_count = value
         .actor
         .provenance_chain
@@ -210,6 +288,10 @@ pub(super) fn validate(connection: &Connection, value: &WorkObservation) -> Resu
     {
         return Err(invalid("work observation has invalid shape or provenance"));
     }
+    Ok(())
+}
+
+fn validate_basis(connection: &Connection, value: &WorkObservation) -> Result<(), StoreError> {
     let bound = match &value.basis {
         WorkObservationBasis::NativeEvent { event } => {
             let event: WorkEvent = load_typed_work_object(connection, event, "work_event")?;

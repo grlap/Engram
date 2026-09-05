@@ -1074,6 +1074,7 @@ fn required_child_waiver_guidance_is_exact_and_carries_an_actionable_child() {
                 children: ["disposed", "open"]
                     .into_iter()
                     .map(|key| WorkChildInput {
+                        notes: Vec::new(),
                         key: key.into(),
                         title: format!("{key} child"),
                         outcome: format!("{key} outcome"),
@@ -1174,6 +1175,7 @@ fn focus_bounds_repeated_direct_decomposition_at_the_root_open_work_limit() {
                 WorkProposeInput::Decompose {
                     children: (0..16)
                         .map(|index| WorkChildInput {
+                            notes: Vec::new(),
                             key: format!("batch-{batch}-child-{index}"),
                             title: format!("Open child {batch}-{index} {}", "x".repeat(256)),
                             outcome: format!("Open child {batch}-{index} outcome"),

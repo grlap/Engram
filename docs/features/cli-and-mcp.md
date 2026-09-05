@@ -52,7 +52,7 @@ already returns its session object.
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF [--notes]    # full oldest-first notes only when requested
-engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
+engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
@@ -137,6 +137,22 @@ Rules that matter:
   That title is bounded and terminal-safe; the final receipt includes the
   reminder in its response budget.
   Explicit acceptance suppresses that reminder; blank criteria are refused.
+  Repeatable `--note TEXT` (MCP `notes: [TEXT, ...]`) records ordered initial
+  non-holder observations atomically with creation, at most 16 across the
+  complete creation/decomposition batch. Blank or excess notes refuse the
+  whole creation; identical entries are distinct observations. Only an exact
+  creation replay recovers the original item and notes; see the limits in the
+  [session and intent retry rule](local-work-system.md#agent-native-protocol).
+  These notes
+  carry creator attribution verbatim, not a claim or checkpoint; receipts
+  call them initial observations (no execution credit). Observation markers
+  never replace the supplied source tool or reason.
+  Under a parent held by another live session, a peer may use `--optional`
+  to create an Open, unclaimed child with attributed proposal provenance.
+  The holder sees that proposal in `next`; their item, run, claim, expiry,
+  fence, and checkpoint remain unchanged. Required children and prerequisite
+  edits need the parent holder; peer attempts receive
+  `work_peer_decomposition_refused`. There is no approval or activation word.
   `add --under` refuses completed, cancelled, or superseded parents with
   `work_parent_not_open`: file an independent root follow-up or add under an
   open ancestor. Proposed parents also refuse new children, with guidance to
@@ -169,11 +185,10 @@ Rules that matter:
   intentional navigation tokens for `memories` and `forget`. JSON retains the
   complete command list; the text renderer shows at most four and prints
   `(+N more)` when it omits any.
-- With a host-injected or explicitly reused stable session, a lost-response
-  retry of the same command replays, except `claim` renews a live claim again
-  and a late `gate` on completed-by-record
-  restored work: every call appends an observation, so inspect `show` before
-  repeating an uncertain call. If a shell used the process default and
+- Before repeating an uncertain mutation, follow the
+  [session and intent retry rule](local-work-system.md#agent-native-protocol),
+  including its child-creation and append-only exceptions. If a shell used
+  the process default and
   lost the entire notice too, inspect with `ls`/`show` before repeating a
   mutation; exact replay cannot cross processes without the printed session.
 - A failed gate is work, not a stop — `gate NAME --failed FAILURE`
@@ -484,7 +499,7 @@ operation enforces the live control-session/run binding described above.
 | `next` | What is ready, what this session holds, and the changes since its previous call |
 | `ls` | Open items with flat `search`, `blocked`, `mine`, `all`, and `label` filters |
 | `show` | One item in safe agent detail; selects it as focus without claiming |
-| `add` | A root from a title, or one child with `under`; `optional` makes that child non-blocking; outcome and acceptance default from the title |
+| `add` | A root from a title, or one child with `under`; `optional` permits a peer proposal beneath a foreign-held parent; `notes` records ordered initial observations atomically; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
 | `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, `waive`, or `supersede` |
 | `gate` | Record one bounded pass/fail observation; completed work accepts it as a late finding without a claim or reopen |
@@ -529,9 +544,9 @@ child exactly as a root `add` focuses the new root. On open work, `note`
 records evidence and then checkpoints the run's current evidence set. On
 completed work, `note` records only attributed late evidence after the frozen
 completion cut; it creates no checkpoint, does not reopen or reseal the run,
-and cannot enter the existing `CompletionSeal`. Repeating an identical `note`,
-`add`, `claim`, or `done` replays its receipt because the core derives the
-idempotency key.
+and cannot enter the existing `CompletionSeal`. Repeated commands follow the
+[session and intent retry rule](local-work-system.md#agent-native-protocol);
+not every keyless repeat is a replay.
 
 ### Work protocol contract
 
@@ -678,11 +693,10 @@ The host-only JSON core schemas for `work_propose`, `work_update`,
 Each accepts an optional `work_ref`; the target is resolved and bound inside
 the mutation, so a concurrent focus change by the same session cannot redirect
 it, and it becomes the ambient focus as a side effect. `idempotency_key` is
-optional on every mutating branch: when omitted, the server derives one from
-the session, operation, focused work, the item's current claim/handoff basis,
-and canonical intent, so an identical repeated call replays its receipt while
-nothing about the item changed and is a new attempt once it moved; a supplied
-key keeps the explicit contract. Durable attempts bind caller intent separately
+optional on every mutating branch; the
+[session and intent retry rule](local-work-system.md#agent-native-protocol)
+defines automatic keys, explicit overrides, and current replay limits.
+Durable attempts bind caller intent separately
 from the current focused work/claim/handoff basis. A pending refused completion
 may refresh its live claim basis only after the original target binding is
 verified; committed successes replay, and an interrupted attempt cannot mutate

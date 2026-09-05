@@ -2,6 +2,8 @@ use super::super::test_support::*;
 use super::super::*;
 use super::*;
 
+mod creation;
+
 #[test]
 fn revision_kind_and_label_deltas_preserve_unmentioned_labels() {
     let project = "revision-metadata";

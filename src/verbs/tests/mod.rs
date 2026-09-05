@@ -35,6 +35,7 @@ fn at(second: i64) -> DateTime<Utc> {
 
 fn root_input(title: &str, key: &str) -> WorkProposeInput {
     WorkProposeInput::Root {
+        notes: Vec::new(),
         title: title.into(),
         outcome: format!("{title} outcome"),
         acceptance: vec![format!("{title} accepted")],

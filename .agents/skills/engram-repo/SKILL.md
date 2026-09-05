@@ -131,7 +131,7 @@ the caller must omit `--session-id` to receive a fresh process default.
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF [--notes]    # full oldest-first notes only when requested
-engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
+engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
@@ -150,6 +150,16 @@ the full structured list projection for a human or host that explicitly needs
 it. Host-only `work core` reads remain full.
 
 Rules that matter:
+
+- `add --note TEXT` is repeatable (MCP `notes` array). Creation and all initial
+  observations commit together; only an exact creation replay recovers the
+  original observations. See the retry rule below before repeating a call.
+  These are attributed non-holder notes, not execution credit or checkpoints.
+- Beneath another session's live-held parent, use `add --under REF --optional`
+  for an attributed peer proposal. It is Open and unclaimed; the holder sees
+  it in `next`, with their item/run/claim/checkpoint untouched. Required
+  children or prerequisite changes need the holder. There is no separate
+  approval or activation word.
 
 - `show REF --notes` returns full note bodies and references oldest first,
   including inherited history and all native generations. The complete text
@@ -204,11 +214,10 @@ Rules that matter:
   (commands you can run now). Nothing asks you to copy hashes, fences, or
   idempotency keys; if you see one, it is a bug. Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`.
-- With a host-injected or explicitly reused stable session, a lost-response
-  retry of the same command replays, except `claim` renews a live claim again
-  and a late `gate` on completed-by-record
-  restored work: every call appends an observation, so inspect `show` before
-  repeating an uncertain call. If a shell used the process default and
+- Before repeating an uncertain mutation, follow the
+  [session and intent retry rule](../../../docs/features/local-work-system.md#agent-native-protocol),
+  including its child-creation and append-only exceptions. If a shell used
+  the process default and
   lost the entire notice too, inspect with `ls`/`show` before repeating a
   mutation; exact replay cannot cross processes without the printed session.
 

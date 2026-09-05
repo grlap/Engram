@@ -51,6 +51,39 @@ function withoutInjectedWorkAttribution(engramHome) {
   delete environment.ENGRAM_ACTOR_CONTEXT;
   return environment;
 }
+test("Phoenix atomic initial notes and peer child proposals through CLI", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-creation-"));
+  try {
+    hostSetup(engramHome);
+    const call = (session, ...args) => run(["--home", engramHome, "work", "--actor-id", "shared", "--session-id", session, ...args, "--json"]);
+    const json = (session, ...args) => {
+      const result = call(session, ...args);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const rootRef = json("holder", "add", "Parent", "--note", "Root note").work.short_ref;
+    assert.deepEqual(json("holder", "show", rootRef, "--notes").notes.map(({ summary }) => summary), ["Root note"]);
+    json("holder", "claim", rootRef);
+    const before = json("holder", "ls", "--all").total;
+    const refusal = call("peer", "add", "Required peer", "--under", rootRef);
+    assert.notEqual(refusal.status, 0);
+    const error = JSON.parse(refusal.stderr.slice(refusal.stderr.indexOf("{"))).error;
+    assert.equal(error.code, "work_peer_decomposition_refused");
+    assert.match(error.details.remedy, /parent holder/u);
+    const bad = call("peer", "add", "Blank initial note", "--under", rootRef, "--optional", "--note", "first", "--note", " ");
+    assert.notEqual(bad.status, 0);
+    assert.equal(json("holder", "ls", "--all").total, before);
+    const childRef = json("peer", "add", "Peer suggestion", "--under", rootRef, "--optional", "--note", "Initial rationale", "--note", "Initial rationale").work.short_ref;
+    const notes = json("peer", "show", childRef, "--notes").notes;
+    assert.deepEqual(notes.map(({ summary }) => summary), ["Initial rationale", "Initial rationale"]);
+    assert.ok(notes.every(({ non_holder }) => non_holder === true));
+    assert.match(JSON.stringify(json("holder", "next")), /peer optional-child proposal/u);
+    assert.equal(json("holder", "ls", "--all").total, before + 1);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("Phoenix full notes, acceptance reminders and terminal-parent refusal through CLI", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-notes-"));
   try {
