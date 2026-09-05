@@ -305,14 +305,7 @@ impl Receipt {
     }
 }
 
-/// Full-note mode fits whole notes after projecting away internal identities.
-/// Its count includes inherited history and every native execution generation.
-pub(super) fn fit_show_notes(
-    mut receipt: Receipt,
-    page: crate::storage::WorkNotePage,
-    current_actor: &str,
-    budget: usize,
-) -> Result<Receipt, super::VerbError> {
+fn prepare_show_notes(mut receipt: Receipt) -> Receipt {
     receipt.lines.retain(|line| !line.starts_with("notes:"));
     if let Some(omissions) = receipt
         .value
@@ -344,6 +337,30 @@ pub(super) fn fit_show_notes(
     {
         fields.remove("omissions");
     }
+    receipt
+}
+
+/// The mandatory full-note shape, measured even when no note row can fit.
+/// Share cleanup and rendering with the final note-prefix fitter.
+pub(super) fn show_note_envelope(
+    receipt: &Receipt,
+    total: usize,
+) -> Result<Receipt, super::VerbError> {
+    let mut receipt = prepare_show_notes(receipt.clone());
+    let base_lines = receipt.lines.clone();
+    render_note_prefix(&mut receipt, &base_lines, &[], total)?;
+    Ok(receipt)
+}
+
+/// Full-note mode fits whole notes after projecting away internal identities.
+/// Its count includes inherited history and every native execution generation.
+pub(super) fn fit_show_notes(
+    receipt: Receipt,
+    page: crate::storage::WorkNotePage,
+    current_actor: &str,
+    budget: usize,
+) -> Result<Receipt, super::VerbError> {
+    let mut receipt = prepare_show_notes(receipt);
     let base_lines = receipt.lines.clone();
     let notes = page
         .items

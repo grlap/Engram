@@ -249,6 +249,46 @@ test("resume discovery agrees across claimless MCP and CLI sessions", async () =
   }
 });
 
+test("full contract text round-trips through CLI and MCP show", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-full-contract-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "contract-reader");
+    await client.initialize();
+    const criterion = "c".repeat(600);
+    const work = receipt(await client.call("add", { title: "Full criterion", acceptance: [criterion] })).work.short_ref;
+    const mcpShown = await client.call("show", { work_ref: work });
+    assert.equal(receipt(mcpShown).status.work.acceptance[0], criterion);
+    assert.deepEqual(JSON.parse(mcpShown.content[0].text), receipt(mcpShown));
+    assert.equal(receipt(await client.call("show", { work_ref: work, notes: true })).status.work.acceptance[0], criterion);
+    const context = ["--home", engramHome, "work", "--actor-id", "contract-reader", "--session-id", "contract-reader"];
+    const cli = (args) => {
+      const result = spawnSync(binary, [...context, ...args], { cwd: root, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      assert.ok(Buffer.byteLength(result.stdout) <= 12 * 1024);
+      return result.stdout;
+    };
+    assert.equal(JSON.parse(cli(["show", work, "--json"])).status.work.acceptance[0], criterion);
+    assert.ok(cli(["show", work]).includes(`  - ${criterion}\n`));
+    assert.equal(JSON.parse(cli(["show", work, "--notes", "--json"])).status.work.acceptance[0], criterion);
+    const parent = receipt(await client.call("add", { title: "Parent" })).work.short_ref;
+    const child = receipt(await client.call("add", { title: "Optional", under: parent, optional: true })).work.short_ref;
+    receipt(await client.call("claim", { work_ref: parent }));
+    receipt(await client.call("done", { work_ref: parent, summary: "Delivered" }));
+    const reason = "r".repeat(600);
+    const successor = receipt(await client.call("update", { work_ref: child, action: "detach", reason })).receipt.work_ref;
+    assert.equal(receipt(await client.call("show", { work_ref: successor })).detached_from.reason, reason);
+    assert.equal(receipt(await client.call("show", { work_ref: successor, notes: true })).detached_from.reason, reason);
+    assert.equal(JSON.parse(cli(["show", successor, "--json"])).detached_from.reason, reason);
+    assert.equal(JSON.parse(cli(["show", successor, "--notes", "--json"])).detached_from.reason, reason);
+    assert.ok(cli(["show", successor]).includes(`detached from: ${child} — ${reason}\n`));
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("detach exposes the same remedy and independent root through MCP", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-detach-"));
   let client;

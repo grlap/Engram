@@ -1015,9 +1015,11 @@ After an uncertain response, inspect the old child to find its successor.
 prints the source and recorded reason in text, and offers `show ORIGINAL` in
 its next commands. This navigation is derived from creator provenance plus
 the source's canonical supersession event, not from an asserted marker alone.
-An oversized reason is shortened with `reason_truncated: true`; inspect the
-original for its history. Source notes retain their authors there: no note,
-gate, contribution, or completion credit is copied into the successor.
+The reason is returned in full without an ellipsis. If it cannot fit the final
+safe receipt, the entire reason is omitted with `reason_omitted: 1`; the source
+ref and `show ORIGINAL` navigation remain. Source notes retain their authors
+there: no note, gate, contribution, or completion credit is copied into the
+successor.
 The origin is omitted when the native source history is not present locally.
 
 **Project memories.** `remember "text" [--key KEY]` stores one attributed,

@@ -276,7 +276,14 @@ impl LocalWorkService {
                             if fit_core {
                                 self.focus_view(store, work_id, true, false, now)
                             } else {
-                                self.focus_view_for_projection(store, work_id, true, false, now)
+                                self.focus_view_for_projection(
+                                    store,
+                                    work_id,
+                                    true,
+                                    false,
+                                    super::service::FocusText::Summary,
+                                    now,
+                                )
                             }
                         })
                         .transpose()?

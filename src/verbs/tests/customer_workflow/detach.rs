@@ -1,6 +1,6 @@
 use super::*;
 
-fn stranded_child(verbs: &AgentVerbs) -> (String, String) {
+pub(super) fn stranded_child(verbs: &AgentVerbs) -> (String, String) {
     let parent = add(verbs, "Parent", None, false, 0);
     let child = add(verbs, "Follow-up", Some(&parent), true, 1);
     note(verbs, &child, "Original finding stays with the source", 2);
@@ -264,10 +264,10 @@ fn detached_origin_requires_reciprocal_canonical_history() {
 }
 
 #[test]
-fn detached_origin_marks_a_bounded_reason_without_copying_source_notes() {
+fn detached_origin_preserves_a_full_reason_without_copying_source_notes() {
     let (_directory, verbs, _database, _project) = fixture();
     let (_, child) = stranded_child(&verbs);
-    let reason = "Long recorded detach reason. ".repeat(80);
+    let reason = "Long recorded detach reason. ".repeat(80).trim().to_owned();
     let receipt = verbs
         .update(
             UpdateInput {
@@ -284,15 +284,14 @@ fn detached_origin_marks_a_bounded_reason_without_copying_source_notes() {
         .show_with_notes(successor, true, at(6))
         .expect("bounded show");
     assert_eq!(shown.value["detached_from"]["ref"], child);
-    assert_eq!(shown.value["detached_from"]["reason_truncated"], true);
+    assert_eq!(shown.value["detached_from"]["reason"], reason);
+    assert!(shown.value["detached_from"].get("reason_omitted").is_none());
     assert!(
-        shown.value["detached_from"]["reason"]
-            .as_str()
-            .unwrap()
-            .len()
-            < reason.len()
+        shown.value["detached_from"]
+            .get("reason_truncated")
+            .is_none()
     );
-    assert!(shown.text().contains("detach reason shortened"));
+    assert!(shown.text().contains(&reason));
     assert!(shown.next.contains(&format!("engram work show {child}")));
     assert_eq!(shown.value["notes"], serde_json::json!([]));
     assert!(shown.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);

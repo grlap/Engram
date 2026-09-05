@@ -145,7 +145,8 @@ impl LocalWorkService {
     }
 
     /// The safe agent renderer owns the final byte budget, not this richer
-    /// intermediate view. Field and relation-count limits still apply.
+    /// intermediate view. Contract text stays whole; summary and relation
+    /// bounds still apply to the other fields.
     pub(crate) fn work_focus_for_agent(
         &self,
         work_ref: &str,
@@ -154,7 +155,14 @@ impl LocalWorkService {
         let mut store = self.store_at(now)?;
         let item = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
-        self.focus_view_for_projection(&store, item.work_id, true, true, now)
+        self.focus_view_for_projection(
+            &store,
+            item.work_id,
+            true,
+            true,
+            super::service::FocusText::Full,
+            now,
+        )
     }
 }
 

@@ -105,8 +105,13 @@ instead of failing.
 Compact `next` and safe `show` fit their complete emitted text and JSON,
 including guidance (and the `next` build footer), after projection. Hidden
 core metadata does not consume that budget or cause visible rows to disappear.
-Field and count limits still apply; host-only core and verbose views retain
-their own rich-response fitting.
+Summary and relation limits still apply; host-only core and verbose views
+retain their own rich-response fitting. Safe `show` reads acceptance criteria
+in full, without the summary's 192-byte truncation or six-criterion cap. If the
+final receipt cannot fit, it removes whole criteria from the end and reports
+the exact `status.work.acceptance_omitted` count; retained criteria never gain
+an ellipsis. JSON retains their stored bytes. Terminal output escapes unsafe
+controls and frames every continuation line as criterion data.
 
 Rules that matter:
 
@@ -124,6 +129,10 @@ Rules that matter:
   and its claim command. `show` on that root exposes `detached_from` with the
   original ref and recorded reason, plus a `show ORIGINAL` next command;
   source notes and gates stay on the original with their attribution.
+  The reason is complete, or omitted whole with `reason_omitted: 1` when the
+  final response budget requires it. The original ref and navigation remain;
+  `show` never substitutes a shortened reason. JSON preserves stored text and
+  terminal output uses safe single-line framing.
   No parent reopen or old claim/fence change occurs.
   Sealed/terminal root executions stay unchanged; a still-open root's live
   execution receives cancellation's audited waiver for a missing contributor.
@@ -209,8 +218,9 @@ Rules that matter:
   the frozen seal; never repeat either elsewhere.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
-  `done` again. A successful CLI/MCP receipt also reports direct open optional
-  children in `child_obligations.open_optional`: exact `count`, at most five
+  `done` again. Only when the completed parent has direct open optional
+  children, the successful CLI/MCP receipt adds `child_obligations.open_optional`:
+  exact `count`, at most five
   `items` (`ref`, bounded `title`, `remedy`, and `resolve_first` when needed),
   exact `omitted`, and a `navigation` command. Final text and JSON byte pressure
   can reduce the shown rows further. Detach is offered only when its current
@@ -219,8 +229,10 @@ Rules that matter:
   `ls --blocked` view once, not a child-filtered listing. This is read-only
   advice after completion, not a new completion obligation or an automatic
   mutation. With no remaining children the group is absent. If the diagnostic
-  read fails, `child_obligations_unavailable: true` and parent navigation retain
-  the successful outcome without pretending the remaining count is zero.
+  read fails, `child_obligations_unavailable: true`, a fixed
+  `child_obligations_error_class`, and parent navigation retain the successful
+  outcome without pretending the remaining count is zero. The diagnostic
+  class never contains the underlying error body, path, hash, or actor text.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Nothing asks you to copy hashes, fences, or
   idempotency keys; if you see one, it is a bug. Safe project-memory keys are

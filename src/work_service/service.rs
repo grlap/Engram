@@ -21,6 +21,14 @@ use super::{
     work_run_summary,
 };
 
+/// Only safe agent detail requests full contract text. Core/list projections
+/// retain their existing summary shape and field bounds.
+#[derive(Clone, Copy)]
+pub(super) enum FocusText {
+    Summary,
+    Full,
+}
+
 impl LocalWorkService {
     /// Validates and optionally recreates a saved planning/history graph.
     ///
@@ -432,6 +440,7 @@ impl LocalWorkService {
             work_id,
             with_memories,
             with_latest_evidence,
+            FocusText::Summary,
             now,
         )?;
         fit_focus_response(&mut view)?;
@@ -451,6 +460,7 @@ impl LocalWorkService {
         work_id: WorkId,
         with_memories: bool,
         with_latest_evidence: bool,
+        text: FocusText,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
         let session = store.work_session_state(&self.project_id, &self.session_id, now)?;
@@ -678,20 +688,29 @@ impl LocalWorkService {
             prerequisite_page.omitted_by_state,
         );
         omissions.extend(prerequisite_omissions);
+        let full_acceptance =
+            matches!(text, FocusText::Full).then(|| status.work.acceptance.clone());
         let detached_from = store
             .detached_work_origin(&status.work)?
             .map(|(source, reason)| {
-                let bounded = compact_text(&reason);
+                let bounded = match text {
+                    FocusText::Summary => compact_text(&reason),
+                    FocusText::Full => reason.clone(),
+                };
                 super::WorkDetachedFrom {
                     work_ref: source,
                     reason_truncated: bounded != reason,
                     reason: bounded,
                 }
             });
+        let mut status = ready_work_summary(status);
+        if let Some(acceptance) = full_acceptance {
+            status.work.acceptance = acceptance;
+        }
         let view = WorkFocusView {
             session: agent_work_session(&session),
             detached_from,
-            status: ready_work_summary(status),
+            status,
             completed_by_record,
             outcome,
             run: run.as_ref().map(work_run_summary),

@@ -14,8 +14,34 @@ use super::{
 /// Measure the actual safe projection, including guidance, before shedding.
 /// Hidden core metadata must not consume an agent receipt's byte budget.
 pub(super) fn fit_show_receipt(
+    view: WorkFocusView,
+    render: impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
+    max_bytes: usize,
+) -> Result<super::Receipt, super::VerbError> {
+    fit_show_projection(view, &render, None, max_bytes)
+}
+
+/// Fit contract text against the exact mandatory full-note envelope before
+/// selecting the complete-note prefix. Compact notes are not emitted here.
+pub(super) fn fit_show_receipt_with_notes(
     mut view: WorkFocusView,
     render: impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
+    page: crate::storage::WorkNotePage,
+    current_actor: &str,
+    max_bytes: usize,
+) -> Result<super::Receipt, super::VerbError> {
+    view.evidence_items.clear();
+    view.latest_evidence_item = None;
+    view.omissions
+        .retain(|entry| entry.reason != WorkSectionOmissionReason::EvidenceCountLimit);
+    let receipt = fit_show_projection(view, &render, Some(page.total), max_bytes)?;
+    super::receipts::fit_show_notes(receipt, page, current_actor, max_bytes)
+}
+
+fn fit_show_projection(
+    mut view: WorkFocusView,
+    render: &impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
+    note_total: Option<usize>,
     max_bytes: usize,
 ) -> Result<super::Receipt, super::VerbError> {
     // Normalize the independently loaded latest note exactly as show does,
@@ -24,35 +50,92 @@ pub(super) fn fit_show_receipt(
     let original_note_rows = view.evidence_items.len();
     loop {
         let mut receipt = render(&view)?;
-        // Match compact next's conservative strict ceiling for both formats.
-        if receipt.text().len() < max_bytes
-            && serde_json::to_vec_pretty(&receipt.value)?.len() < max_bytes
-        {
+        if show_fits(&receipt, note_total, max_bytes)? {
             receipt.compact_note_byte_omissions = original_note_rows - view.evidence_items.len();
             return Ok(receipt);
         }
-        if !shed_show_once(&mut view) {
-            return Err(super::StoreError::InvalidWorkProjection(
-                "show metadata exceeds the agent response byte budget".into(),
-            )
-            .into());
+        if !shed_show_context_once(&mut view) {
+            let mut receipt = fit_acceptance_prefix(&mut view, render, note_total, max_bytes)?;
+            receipt.compact_note_byte_omissions = original_note_rows - view.evidence_items.len();
+            return Ok(receipt);
         }
-        if let Some(omission) = view.omissions.iter_mut().find(|entry| {
-            entry.section == WorkNextSection::Focus
-                && entry.reason == WorkSectionOmissionReason::ByteBudget
-        }) {
-            omission.omitted_count += 1;
-        } else {
-            view.omissions.push(WorkSectionOmission {
-                section: WorkNextSection::Focus,
-                reason: WorkSectionOmissionReason::ByteBudget,
-                omitted_count: 1,
-            });
-        }
+        record_show_omission(&mut view, 1);
     }
 }
 
-fn shed_show_once(view: &mut WorkFocusView) -> bool {
+fn show_fits(
+    receipt: &super::Receipt,
+    note_total: Option<usize>,
+    max_bytes: usize,
+) -> Result<bool, super::VerbError> {
+    let envelope = note_total
+        .map(|total| super::receipts::show_note_envelope(receipt, total))
+        .transpose()?;
+    let measured = envelope.as_ref().unwrap_or(receipt);
+    // Match compact next's conservative strict ceiling for both formats.
+    Ok(measured.text().len() < max_bytes
+        && serde_json::to_vec_pretty(&measured.value)?.len() < max_bytes)
+}
+
+fn record_show_omission(view: &mut WorkFocusView, count: usize) {
+    if let Some(omission) = view.omissions.iter_mut().find(|entry| {
+        entry.section == WorkNextSection::Focus
+            && entry.reason == WorkSectionOmissionReason::ByteBudget
+    }) {
+        omission.omitted_count += count;
+    } else {
+        view.omissions.push(WorkSectionOmission {
+            section: WorkNextSection::Focus,
+            reason: WorkSectionOmissionReason::ByteBudget,
+            omitted_count: count,
+        });
+    }
+}
+
+fn fit_acceptance_prefix(
+    view: &mut WorkFocusView,
+    render: &impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
+    note_total: Option<usize>,
+    max_bytes: usize,
+) -> Result<super::Receipt, super::VerbError> {
+    // The full list already failed. Search only whole proper prefixes, with
+    // exact omission metadata in every probe, rather than rendering N tails.
+    let criteria = std::mem::take(&mut view.status.work.acceptance);
+    let omissions = view.omissions.clone();
+    let (mut lower, mut upper) = (0, criteria.len());
+    let mut best = None;
+    while lower < upper {
+        let visible = lower + (upper - lower) / 2;
+        view.status.work.acceptance = criteria[..visible].to_vec();
+        view.omissions.clone_from(&omissions);
+        record_show_omission(view, criteria.len() - visible);
+        let receipt = render(view)?;
+        if show_fits(&receipt, note_total, max_bytes)? {
+            best = Some(receipt);
+            lower = visible + 1;
+        } else {
+            upper = visible;
+        }
+    }
+    best.ok_or_else(|| {
+        super::StoreError::InvalidWorkProjection(
+            "show metadata exceeds the agent response byte budget".into(),
+        )
+        .into()
+    })
+}
+
+fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
+    // Omit the whole recoverable reason before sacrificing useful context or
+    // the item's own contract. Its origin and navigation remain visible.
+    if let Some(origin) = view.detached_from.as_mut()
+        && !origin.reason.is_empty()
+    {
+        origin.reason.clear();
+        // On the full-text path the carrier's loss flag means whole omission.
+        origin.reason_truncated = true;
+        return true;
+    }
     // Only remove fields actually emitted by show. In particular, memories,
     // obligations, and child acceptance metadata are not presentation rows.
     if let Some(index) = view
@@ -178,13 +261,23 @@ pub(super) struct ShowHistory {
     pub(super) items: Vec<ShowHistoryItem>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowDetachedFrom {
+    #[serde(rename = "ref")]
+    pub(super) work_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reason_omitted: Option<usize>,
+}
+
 /// Terse projection shared by CLI `show --json` and the agent-facing MCP
 /// tool. The rich [`WorkFocusView`] remains available through `work core
 /// focus` for hosts that need authority and integrity fields.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) detached_from: Option<crate::work_service::WorkDetachedFrom>,
+    pub(super) detached_from: Option<ShowDetachedFrom>,
     pub(super) status: ShowStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) holder: Option<String>,
@@ -284,19 +377,27 @@ pub(super) fn show_lines(
         lines.push(format!("successor: {}", short_ref_for_work_id(replacement)));
     }
     if let Some(origin) = &view.detached_from {
-        lines.push(format!(
-            "detached from: {} — {}",
-            origin.work_ref,
-            super::terminal_safe_line(&origin.reason)
-        ));
         if origin.reason_truncated {
-            lines.push("  (detach reason shortened)".into());
+            lines.push(format!(
+                "detached from: {} (1 detach reason not shown)",
+                origin.work_ref
+            ));
+        } else {
+            lines.push(format!(
+                "detached from: {} — {}",
+                origin.work_ref,
+                super::terminal_safe_line(&origin.reason)
+            ));
         }
     }
     lines.push(format!("outcome: {}", view.outcome));
     lines.push("acceptance:".into());
     for criterion in &work.acceptance {
-        lines.push(format!("  - {criterion}"));
+        let safe = super::terminal_safe_multiline(criterion);
+        for (index, line) in safe.split('\n').enumerate() {
+            let prefix = if index == 0 { "  - " } else { "    " };
+            lines.push(format!("{prefix}{line}"));
+        }
     }
     if work.acceptance_count > work.acceptance.len() {
         lines.push(format!(
@@ -462,7 +563,11 @@ pub(super) fn show_receipt_value(
     });
     let notes = show_notes(view, current_actor);
     ShowReceiptValue {
-        detached_from: view.detached_from.clone(),
+        detached_from: view.detached_from.as_ref().map(|origin| ShowDetachedFrom {
+            work_ref: origin.work_ref.clone(),
+            reason: (!origin.reason_truncated).then(|| origin.reason.clone()),
+            reason_omitted: origin.reason_truncated.then_some(1),
+        }),
         status: ShowStatus {
             work: ShowWorkSummary {
                 short_ref: work.short_ref.clone(),

@@ -553,16 +553,20 @@ impl AgentVerbs {
         notes: bool,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
-        let receipt = self.show(work_ref, now)?;
         if !notes {
-            return Ok(receipt);
+            return self.show(work_ref, now);
         }
+        let view = self
+            .service
+            .work_focus_for_agent(work_ref, now)
+            .map_err(|error| VerbError::at(error, work_ref))?;
         let page = self
             .service
             .work_notes(work_ref, now)
             .map_err(|error| VerbError::at(error, work_ref))?;
-        super::receipts::fit_show_notes(
-            receipt,
+        super::show::fit_show_receipt_with_notes(
+            view,
+            |view| self.render_show(view, now),
             page,
             &self.actor_id,
             MAX_AGENT_WORK_RESPONSE_BYTES,

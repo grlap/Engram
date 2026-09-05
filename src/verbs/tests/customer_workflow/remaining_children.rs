@@ -398,7 +398,84 @@ fn remaining_child_diagnostic_failure_never_changes_success_to_refusal() {
     assert!(!receipt.owed);
     assert_eq!(receipt.value["completed"], true);
     assert_eq!(receipt.value["child_obligations_unavailable"], true);
+    assert_eq!(
+        receipt.value["child_obligations_error_class"],
+        "work_projection_invalid"
+    );
     assert!(receipt.value.get("child_obligations").is_none());
     assert!(receipt.text().contains("engram work show parent"));
     assert!(!receipt.text().contains("diagnostic failed"));
+}
+
+#[test]
+fn done_retains_success_when_real_child_diagnostics_find_damaged_canonical_data() {
+    let (_directory, verbs, path, project) = fixture();
+    let parent = add(&verbs, "Parent", None, false, 0);
+    let child = add(&verbs, "Optional child", Some(&parent), true, 1);
+    claim_for_completion(&verbs, &parent, 2);
+    let store = SqliteStore::open(&path).unwrap();
+    let parent_id = store.resolve_work_ref(&project, &parent).unwrap().work_id;
+    let child_id = store.resolve_work_ref(&project, &child).unwrap().work_id;
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    let (hash, original): (String, Vec<u8>) = connection
+        .query_row(
+            "SELECT object.object_hash, object.canonical_json
+         FROM work_feed_entries entry JOIN objects object USING (object_hash)
+         WHERE entry.feed_kind = 'project' AND entry.work_id = ?1
+           AND entry.object_kind = 'work_event' ORDER BY entry.position DESC LIMIT 1",
+            [child_id.0.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    // The fixture is healthy through admission. Inject the storage fault only
+    // once the parent's completed row is persisted, after seal validation;
+    // the existing child projection still decodes in the refreshed parent.
+    // Both interpolated identifiers are runtime-derived trusted UUID/hash data.
+    connection
+        .execute_batch(&format!(
+            "CREATE TRIGGER damage_optional_event AFTER UPDATE ON work_items
+         WHEN NEW.work_id = '{}' AND NEW.lifecycle = 'completed'
+         BEGIN UPDATE objects SET canonical_json = CAST('{{}}' AS BLOB)
+         WHERE object_hash = '{hash}'; END;",
+            parent_id.0,
+        ))
+        .unwrap();
+    let receipt = finish(&verbs, &parent, 3);
+    assert_eq!(receipt.value["child_obligations_unavailable"], true);
+    assert_eq!(
+        receipt.value["child_obligations_error_class"],
+        "canonical_object_invalid"
+    );
+    assert!(receipt.value.get("child_obligations").is_none());
+    assert!(receipt.value.get("seal").is_some());
+    assert!(!receipt.text().contains("--detach"));
+    assert!(!receipt.text().contains(&hash));
+    let damaged: Vec<u8> = connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            [&hash],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_ne!(damaged, original);
+    assert_eq!(
+        store.resolve_work_ref(&project, &parent).unwrap().lifecycle,
+        WorkLifecycle::Completed
+    );
+    // Restore only the test-injected fault, then prove the completion itself
+    // has a healthy seal and did not dispose the optional child.
+    connection
+        .execute_batch("DROP TRIGGER damage_optional_event")
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            rusqlite::params![original, hash],
+        )
+        .unwrap();
+    assert_eq!(
+        store.resolve_work_ref(&project, &child).unwrap().lifecycle,
+        WorkLifecycle::Open
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
 }

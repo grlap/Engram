@@ -66,15 +66,17 @@ pub(super) fn done_with_child_obligations(
     let page = match children {
         Ok(page) if page.total == 0 => return Ok(Receipt::assemble(lines, guidance, value, false)),
         Ok(page) => page,
-        Err(_) => {
+        Err(error) => {
             // Completion already committed. A diagnostic failure must never
             // relabel success as refusal or claim there are no remaining rows.
+            let class = advisory_error_class(&error);
             let mut lines = lines;
             lines.push(format!(
-                "remaining optional children unavailable; {navigation}"
+                "remaining optional children unavailable ({class}); {navigation}"
             ));
             let mut value = value;
             value["child_obligations_unavailable"] = json!(true);
+            value["child_obligations_error_class"] = json!(class);
             return Ok(Receipt::assemble(lines, guidance, value, false));
         }
     };
@@ -96,7 +98,7 @@ pub(super) fn done_with_child_obligations(
         .collect::<Vec<_>>();
     let mut group = ChildObligationGroup {
         count: page.total,
-        omitted: page.total - items.len(),
+        omitted: page.total.saturating_sub(items.len()),
         items,
         navigation,
     };
@@ -121,5 +123,21 @@ pub(super) fn done_with_child_obligations(
             // fixed count/navigation metadata. Only advisory rows are shed.
             return Ok(receipt);
         }
+    }
+}
+
+/// A fixed diagnostic class, never an error body, path, hash, or actor text.
+fn advisory_error_class(error: &StoreError) -> &'static str {
+    match error {
+        StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
+        StoreError::Sqlite(_) => "sqlite_error",
+        StoreError::Json(_) => "stored_json_invalid",
+        StoreError::HashMismatch { .. }
+        | StoreError::NonCanonicalObject(_)
+        | StoreError::ImmutableCollision(_)
+        | StoreError::ObjectKindMismatch { .. }
+        | StoreError::InvalidStoredHash(_) => "canonical_object_invalid",
+        // Unclassified failures stay unavailable, not a corruption claim.
+        _ => "store_error",
     }
 }
