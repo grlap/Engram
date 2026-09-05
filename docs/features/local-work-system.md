@@ -320,6 +320,19 @@ publication are separate projections; a work item can be completed with no
 report or target, and publication failure never makes completed work active
 again.
 
+Completion suggestions in `show`, `next`, and mutation receipts are advisory.
+They use indexed current child/run/seal bindings and the canonical-bound root
+execution's current waivers, without replaying root history or recursively
+verifying child completion proofs on each read. A missing seal binding for a
+listed required child stops the suggestion. Actual completion still verifies
+the full canonical seal and waiver proofs inside its transaction; `doctor`
+retains the exhaustive integrity checks. A suggestion never substitutes for
+those checks or grants authority.
+
+The suggestion remains conservative for required children completed through
+restored records: it does not count those records, so it can omit `done` even
+when actual completion accepts their restored completion proofs.
+
 Every completed run has a `CompletionSeal`: accepted work revision, run and
 claim fences, dense completion-cut position, executor checkpoint state,
 reconciled action outcomes, released/transferred resource leases, acceptance

@@ -6,8 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params, types::Value};
 use super::super::{SqliteStore, StoreError};
 use super::completion::{
     ancestors_admit_execution, applicable_work_obligations_at_cut_on, feed_head,
-    load_work_obligation_records_on, required_child_seals, validated_required_child_waivers,
-    work_run_uses_active_root_execution,
+    load_work_obligation_records_on, work_run_uses_active_root_execution,
 };
 use super::execution::{
     work_evidence_kind_on, work_run_evidence_on, work_run_evidence_projection_on,
@@ -46,6 +45,9 @@ use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEven
 
 #[cfg(test)]
 mod tests;
+
+mod readiness;
+pub(super) use readiness::current_required_child_waivers;
 
 const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
     CASE
@@ -376,9 +378,10 @@ impl SqliteStore {
         inspect_work_on(&self.connection, work_id, now)
     }
 
-    /// Whether current local projections satisfy every non-acceptance
-    /// completion precondition for this session. The final call must still
-    /// supply criterion results and pass authority revalidation atomically.
+    /// Advisory completion readiness from current local bindings for this
+    /// session. Child seals and waivers are not replayed as historical proof
+    /// while shaping guidance. The final call must supply criterion results
+    /// and verify all canonical proofs and current authority atomically.
     ///
     /// # Errors
     ///
@@ -450,14 +453,8 @@ impl SqliteStore {
             |row| row.get::<_, i64>(0),
         )?;
         if required_child_count != 0 {
-            let required_child_seal_count =
-                required_child_seals(&self.connection, work_id, run.root_execution_id)?.len();
             let root_execution = load_root_execution(&self.connection, run.root_execution_id)?;
-            let required_child_waiver_count =
-                validated_required_child_waivers(&self.connection, work_id, &root_execution)?.len();
-            if usize::try_from(required_child_count).ok()
-                != Some(required_child_seal_count + required_child_waiver_count)
-            {
+            if !readiness::required_children_ready(&self.connection, work_id, &root_execution)? {
                 return Ok((false, false));
             }
         }

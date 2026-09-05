@@ -245,4 +245,10 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
 `scripts/test-rust.sh`.
 
 Use `/review-changes` for the two-agent read-only review after the gates pass.
+In pair work, the implementer continues after review consolidation without
+waiting for another prompt: fix in-scope actionable findings, rerun the gates,
+and freeze the corrected input for review. After clean acceptance, record the
+delivered outcome and complete owned implementation items when their obligations
+are satisfied. Pause only for a real blocker, disputed acceptance, or a decision
+outside the agreed scope or authority; reviewer leaves remain read-only.
 Do not commit, push, or sync remotes without explicit authority.

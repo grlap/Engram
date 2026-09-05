@@ -1,11 +1,9 @@
-use std::collections::HashSet;
-
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::super::{BeginWorkProtocolAttempt, SqliteStore, StoreError};
-use super::completion::{feed_head, validated_required_child_waivers};
+use super::completion::feed_head;
 use super::feeds::{
     load_typed_work_object, require_work_protocol_result_object,
     validate_work_protocol_result_binding,
@@ -13,8 +11,9 @@ use super::feeds::{
 use super::planning::{normalize_text, root_participant_is_accounted, validate_live_claim_on};
 use super::query::{
     active_root_execution, bounded_prerequisite_projection_rows, completion_recovery_snapshot_on,
-    feed_parts, load_root_execution, load_work_claim_optional, load_work_item,
-    load_work_items_query, load_work_run, parse_work_id, parse_work_run_id, resolve_work_ref_on,
+    current_required_child_waivers, feed_parts, load_root_execution, load_work_claim_optional,
+    load_work_item, load_work_items_query, load_work_run, parse_work_id, parse_work_run_id,
+    resolve_work_ref_on,
 };
 use super::schema::require_work_schema_version;
 use super::{
@@ -503,13 +502,13 @@ impl SqliteStore {
         })
     }
 
-    /// Returns direct required children that can be waived from this parent's
-    /// completion barrier under the local project's binding-only policy.
+    /// Returns advisory direct-child waiver candidates from current bindings.
+    /// Completion and doctor, not this listing, verify canonical waiver history.
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError`] when the parent/root projections or canonical
-    /// waiver history are invalid, or when candidate children cannot be read.
+    /// Returns [`StoreError`] when parent/root projections or current waiver
+    /// bindings are invalid, or when candidate children cannot be read.
     pub fn waivable_required_children(
         &self,
         parent: &WorkItem,
@@ -536,10 +535,7 @@ impl SqliteStore {
         }
         let root_execution = active_root_execution(&self.connection, parent.root_id)?;
         let waived =
-            validated_required_child_waivers(&self.connection, parent.work_id, &root_execution)?
-                .into_iter()
-                .map(|waiver| waiver.work_id)
-                .collect::<HashSet<_>>();
+            current_required_child_waivers(&self.connection, parent.work_id, &root_execution)?;
 
         let mut eligible = Vec::new();
         for stored_id in child_ids {

@@ -163,9 +163,19 @@ the item under review is completed, record late evidence on it with `note`
 when appropriate, then add an untracked finding as an independent root
 (`engram work add "<finding>" --kind bug --label review --priority <0 for
 Critical … 3 for Low>`), or `note` the existing follow-up. Never make
-completed work the parent or reopen it merely to record a finding. Do not
-complete implementation items here — record evidence and leave `done` to the
-implementer. Informational notes need no tracker mutation.
+completed work the parent or reopen it merely to record a finding.
+Informational notes need no tracker mutation.
 
-Do not fix source files during this command. Review findings begin a separate
-implementation iteration followed by fresh gates and review.
+Consolidation itself records evidence, not source changes or implementation
+completion. In pair work, when this writable parent is also the implementer,
+continue directly into the next authorized implementation iteration without
+waiting for another prompt: fix in-scope actionable findings, rerun the required
+gates, freeze the corrected input, and obtain review of that input. Keep the
+coordinator informed of material changes; pause for a real blocker, disputed
+acceptance, or a decision outside the agreed scope or authority. A review-only
+parent hands the findings to the implementer instead of assuming write authority.
+
+After clean acceptance, the implementer records the delivered outcome and uses
+`done` on owned implementation items when their acceptance and obligations are
+satisfied. Review completion does not authorize Git or external actions. The
+two `/review-code` children remain read-only, non-nesting leaves throughout.
