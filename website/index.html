@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3efe5" />
+    <meta
+      name="description"
+      content="A notebook for coding agents. Engram brings local work, typed memory, and evidence-backed completion into one Rust and SQLite core."
+    />
+    <meta property="og:title" content="Engram — The art of remembering" />
+    <meta
+      property="og:description"
+      content="Local work. Lasting context. A trace of every decision. Discover a notebook for coding agents."
+    />
+    <meta property="og:type" content="website" />
+    <title>Engram — The art of remembering</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page-grain" aria-hidden="true"></div>
+    <header class="site-header wrap">
+      <a class="brand" href="#" aria-label="Engram home">
+        <svg
+          class="brand-mark"
+          viewBox="0 0 44 44"
+          fill="none"
+          aria-hidden="true"
+        >
+          <circle cx="22" cy="22" r="18" />
+          <ellipse
+            cx="22"
+            cy="22"
+            rx="9"
+            ry="18"
+            transform="rotate(35 22 22)"
+          />
+          <path d="M4 22h36M22 4v36" />
+          <circle cx="22" cy="22" r="3" />
+        </svg>
+        <span>engram<span class="brand-period">.</span></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#principles">The philosophy</a>
+        <a href="#mechanism">The mechanism</a>
+        <a href="#field-notes">Field notes</a>
+      </nav>
+      <a class="header-cta" href="https://github.com/grlap/Engram"
+        >Explore the source <span aria-hidden="true">↗</span></a
+      >
+      <button
+        class="menu-toggle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="mobile-nav"
+        aria-label="Open navigation"
+      >
+        <span></span><span></span>
+      </button>
+      <nav
+        id="mobile-nav"
+        class="mobile-nav"
+        aria-label="Mobile navigation"
+        hidden
+      >
+        <a href="#principles">The philosophy</a
+        ><a href="#mechanism">The mechanism</a
+        ><a href="#field-notes">Field notes</a><a href="#begin">Get started</a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow">
+            <span class="small-star" aria-hidden="true">✳</span> A NOTEBOOK FOR
+            CODING AGENTS
+          </div>
+          <h1 id="hero-title">The art of<br /><em>remembering.</em></h1>
+          <p class="hero-description">
+            Great work begins with what we remember.<br class="desktop-break" />
+            Give your agents a place to think, a system to act,<br
+              class="desktop-break"
+            />
+            and a record of how they got there.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-dark" href="#begin"
+              >Begin your notebook <span aria-hidden="true">↗</span></a
+            ><a class="text-link" href="#mechanism"
+              >See the mechanism <span aria-hidden="true">↓</span></a
+            >
+          </div>
+          <p class="hero-caption">
+            <span class="status-dot" aria-hidden="true"></span> Local-first.
+            Built in Rust. In active exploration.
+          </p>
+        </div>
+        <figure class="hero-figure">
+          <div class="machine-stage">
+            <img
+              class="machine-image"
+              src="assets/memory-machine.png"
+              alt="An imagined Renaissance memory machine: a hand-drawn brain held inside an intricate armillary sphere."
+              width="1254"
+              height="1254"
+              fetchpriority="high"
+            />
+            <svg
+              class="machine-overlay"
+              viewBox="0 0 700 700"
+              fill="none"
+              aria-hidden="true"
+            >
+              <g class="orbit orbit-one">
+                <circle cx="350" cy="305" r="248" />
+                <circle class="orbit-dot" cx="350" cy="57" r="4" />
+                <path d="M94 305h16M590 305h16M350 49v16M350 545v16" />
+              </g>
+              <g class="orbit orbit-two">
+                <ellipse
+                  cx="350"
+                  cy="305"
+                  rx="286"
+                  ry="109"
+                  transform="rotate(-28 350 305)"
+                />
+                <circle class="orbit-dot" cx="96" cy="433" r="3" />
+              </g>
+            </svg>
+            <span class="art-note art-note-top"
+              >fig. I — apparatus of memory</span
+            >
+            <span class="art-note art-note-bottom"
+              >Every thought leaves a trace.</span
+            >
+          </div>
+          <figcaption>
+            <span>PLATE I</span> A study in persistent intelligence
+            <span aria-hidden="true">↗</span>
+          </figcaption>
+        </figure>
+        <span class="hero-side-note" aria-hidden="true"
+          >OBSERVATION · INTENTION · EVIDENCE</span
+        >
+      </section>
+
+      <div class="material-strip wrap">
+        <span class="strip-label">A CONSIDERED FOUNDATION</span>
+        <span
+          ><svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="m10 2 7 4v8l-7 4-7-4V6Z M3 6l7 4 7-4 M10 10v8" />
+          </svg>
+          Rust at the core</span
+        >
+        <span
+          ><svg viewBox="0 0 20 20" aria-hidden="true">
+            <ellipse cx="10" cy="4" rx="7" ry="2.5" />
+            <path d="M3 4v11c0 4 14 4 14 0V4 M3 9c0 4 14 4 14 0" />
+          </svg>
+          SQLite on your machine</span
+        >
+        <span
+          ><svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="m3 5 5 5-5 5 M10 15h7" />
+          </svg>
+          CLI + MCP</span
+        >
+        <span class="alpha-label"
+          ><i aria-hidden="true"></i> ALPHA / IN DEVELOPMENT</span
+        >
+      </div>
+
+      <section
+        id="principles"
+        class="principles section wrap"
+        aria-labelledby="principles-title"
+      >
+        <div class="section-heading reveal">
+          <p class="eyebrow">I. THE PHILOSOPHY</p>
+          <div>
+            <h2 id="principles-title">
+              Intelligence needs<br /><em>a place to return to.</em>
+            </h2>
+            <p>
+              A new session shouldn’t mean a blank page. Engram holds the
+              constraints, decisions, and evidence that let the next agent carry
+              the work forward.
+            </p>
+          </div>
+        </div>
+        <div class="principle-grid">
+          <article class="principle reveal">
+            <div class="sketch" aria-hidden="true">
+              <svg viewBox="0 0 260 150" fill="none">
+                <g class="sketch-lines">
+                  <path
+                    d="M64 112 132 131 205 108V33l-72 20L64 33v79Z M133 53v78 M64 33l14-9 55 18 57-17 15 8 M77 47l41 12 M77 58l41 12 M77 69l27 9 M147 66l42-12 M147 78l42-12 M147 90l29-8"
+                  />
+                  <path
+                    class="faint"
+                    d="M47 130h177 M133 14v127 M54 19v104 M214 21v99"
+                  />
+                  <circle cx="187" cy="105" r="23" />
+                  <path d="m177 105 7 7 14-15" />
+                </g>
+              </svg>
+            </div>
+            <span class="article-number">01 / MEMORY</span>
+            <h3>Context with meaning.</h3>
+            <p>
+              Constraints, decisions, facts, and conventions. Typed memory gives
+              every thought a purpose, an authority, and a place in the next
+              context packet.
+            </p>
+            <a
+              class="text-link"
+              href="https://github.com/grlap/Engram/blob/master/docs/features/typed-memory-model.md"
+              >Explore typed memory <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="principle reveal">
+            <div class="sketch" aria-hidden="true">
+              <svg viewBox="0 0 260 150" fill="none">
+                <g class="sketch-lines">
+                  <circle cx="130" cy="75" r="51" />
+                  <circle class="faint" cx="130" cy="75" r="60" />
+                  <path
+                    d="M130 9v132 M64 75h132 M88 33l84 84 M88 117l84-84"
+                    class="faint"
+                  />
+                  <path d="m130 25 27 48-27 52-28-52Z M102 73h55 M130 25v100" />
+                  <circle cx="130" cy="75" r="8" />
+                  <path d="m74 19 7 1-1 7 M180 122l-1 7 7-1" />
+                </g>
+              </svg>
+            </div>
+            <span class="article-number">02 / INTENTION</span>
+            <h3>A deliberate next step.</h3>
+            <p>
+              Turn a goal into bounded work. Dependencies shape what’s ready;
+              fenced claims make ownership explicit. Every agent knows where to
+              begin.
+            </p>
+            <a
+              class="text-link"
+              href="https://github.com/grlap/Engram/blob/master/docs/features/local-work-system.md"
+              >Understand local work <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="principle reveal">
+            <div class="sketch" aria-hidden="true">
+              <svg viewBox="0 0 260 150" fill="none">
+                <g class="sketch-lines">
+                  <path
+                    d="M70 32h86l32 31v68H70Z M156 32v31h32 M84 51h49 M84 65h49 M84 80h32 M84 95h36"
+                  />
+                  <circle cx="160" cy="104" r="25" />
+                  <circle class="faint" cx="160" cy="104" r="20" />
+                  <path d="m148 104 8 8 16-18 M145 126l-4 18 18-9 18 9-4-18" />
+                  <path
+                    class="faint"
+                    d="M58 20v121 M58 20h139 M65 14v14 M190 14v14 M53 32h12 M53 131h12"
+                  />
+                </g>
+              </svg>
+            </div>
+            <span class="article-number">03 / EVIDENCE</span>
+            <h3>A trace you can trust.</h3>
+            <p>
+              Capture a finding once. Carry it into handoffs and evidence-backed
+              completion. Immutable history preserves the path, not just the
+              destination.
+            </p>
+            <a
+              class="text-link"
+              href="https://github.com/grlap/Engram/blob/master/docs/features/local-tasks-and-reports.md"
+              >Follow the evidence <span aria-hidden="true">↗</span></a
+            >
+          </article>
+        </div>
+      </section>
+
+      <section
+        id="mechanism"
+        class="mechanism"
+        aria-labelledby="mechanism-title"
+      >
+        <div class="wrap mechanism-inner">
+          <div class="mechanism-copy reveal">
+            <p class="eyebrow">II. THE MECHANISM</p>
+            <h2 id="mechanism-title">
+              From a thought<br />to a <em>finished work.</em>
+            </h2>
+            <p>
+              A small vocabulary for a complete working loop. The next step, the
+              remembered constraint, the evidence of progress—all in one local
+              notebook.
+            </p>
+            <div
+              class="cycle-steps"
+              role="tablist"
+              aria-label="Explore the work cycle"
+              aria-orientation="vertical"
+            >
+              <button
+                id="step-observe"
+                type="button"
+                class="cycle-step active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="cycle-panel"
+                data-step="observe"
+              >
+                <span>01</span> Observe
+                <span aria-hidden="true">↗</span></button
+              ><button
+                id="step-claim"
+                type="button"
+                class="cycle-step"
+                role="tab"
+                aria-selected="false"
+                aria-controls="cycle-panel"
+                tabindex="-1"
+                data-step="claim"
+              >
+                <span>02</span> Take ownership
+                <span aria-hidden="true">↗</span></button
+              ><button
+                id="step-capture"
+                type="button"
+                class="cycle-step"
+                role="tab"
+                aria-selected="false"
+                aria-controls="cycle-panel"
+                tabindex="-1"
+                data-step="capture"
+              >
+                <span>03</span> Leave a trace
+                <span aria-hidden="true">↗</span></button
+              ><button
+                id="step-complete"
+                type="button"
+                class="cycle-step"
+                role="tab"
+                aria-selected="false"
+                aria-controls="cycle-panel"
+                tabindex="-1"
+                data-step="complete"
+              >
+                <span>04</span> Close the loop <span aria-hidden="true">↗</span>
+              </button>
+            </div>
+          </div>
+          <div class="notebook-demo reveal">
+            <div class="notebook-topline">
+              <span>THE WORKING NOTEBOOK</span><span>SPECIMEN No. 01</span>
+            </div>
+            <div
+              id="cycle-panel"
+              class="cycle-panel"
+              role="tabpanel"
+              aria-labelledby="step-observe"
+              tabindex="0"
+            >
+              <div class="demo-diagram" aria-hidden="true">
+                <svg viewBox="0 0 430 190" fill="none">
+                  <path class="diagram-guide" d="M20 95h390 M215 15v160" />
+                  <ellipse
+                    class="diagram-orbit"
+                    cx="215"
+                    cy="95"
+                    rx="159"
+                    ry="65"
+                  />
+                  <g class="diagram-node" data-node="observe">
+                    <circle cx="65" cy="95" r="24" />
+                    <path d="m54 95 9 6 13-13" />
+                    <text x="65" y="147">observe</text>
+                  </g>
+                  <g class="diagram-node" data-node="claim">
+                    <circle cx="165" cy="95" r="24" />
+                    <path d="M157 96v-8a8 8 0 0 1 16 0v8 M154 96h22v13h-22Z" />
+                    <text x="165" y="147">claim</text>
+                  </g>
+                  <g class="diagram-node" data-node="capture">
+                    <circle cx="265" cy="95" r="24" />
+                    <path d="m258 102 3-9 11-11 6 6-11 11-9 3Z M258 107h16" />
+                    <text x="265" y="147">capture</text>
+                  </g>
+                  <g class="diagram-node" data-node="complete">
+                    <circle cx="365" cy="95" r="24" />
+                    <path d="m354 95 8 8 14-16" />
+                    <text x="365" y="147">seal</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="terminal">
+                <div class="terminal-bar">
+                  <span><i></i><i></i><i></i></span
+                  ><span>engram / local session</span><span>↗</span>
+                </div>
+                <div class="terminal-body">
+                  <p class="terminal-command">
+                    <span aria-hidden="true">❯</span>
+                    <code id="demo-command">engram work next</code>
+                  </p>
+                  <pre id="demo-output">
+Your next piece of work is ready.
+
+  Improve the search experience
+  Acceptance: relevant results come first
+
+Remembered constraint
+  Keep the search index on the local host.</pre>
+                  <span class="terminal-caret" aria-hidden="true"></span>
+                </div>
+                <div class="terminal-footer">
+                  <span><i></i> LOCAL SQLITE</span
+                  ><span>ILLUSTRATIVE SESSION</span>
+                </div>
+              </div>
+              <div class="demo-explanation">
+                <span class="handwritten" id="demo-aside"
+                  >First, understand the work.</span
+                >
+                <p id="demo-description">
+                  Find what you hold, what is ready, and what changed. Start
+                  with the context that matters.
+                </p>
+              </div>
+            </div>
+            <div class="notebook-bottomline">
+              <span>One capture. Many useful views.</span><span>fig. II</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="field-notes"
+        class="field-notes section wrap"
+        aria-labelledby="notes-title"
+      >
+        <div class="section-heading reveal">
+          <p class="eyebrow">III. FIELD NOTES</p>
+          <div>
+            <h2 id="notes-title">
+              An open notebook.<br /><em>A considered direction.</em>
+            </h2>
+            <p>
+              Engram is an evolving alpha. Explore what works today, the
+              boundaries of its trust model, and the ideas still taking shape.
+            </p>
+          </div>
+        </div>
+        <div class="notes-list reveal">
+          <a
+            class="note-row"
+            href="https://github.com/grlap/Engram/blob/master/docs/shipped.md"
+            ><span class="note-index">01</span
+            ><span class="note-main"
+              ><span class="note-tag">THE PRESENT</span>
+              <h3>What’s on the workbench</h3>
+              <span
+                >Local work, typed memory, fenced claims, and a host-private
+                control loop.</span
+              ></span
+            ><span class="note-status">Shipped alpha</span
+            ><span class="note-arrow" aria-hidden="true">↗</span></a
+          >
+          <a
+            class="note-row"
+            href="https://github.com/grlap/Engram/blob/master/docs/features/security-and-trust.md"
+            ><span class="note-index">02</span
+            ><span class="note-main"
+              ><span class="note-tag">THE BOUNDARIES</span>
+              <h3>Memory with an honest trust model</h3>
+              <span
+                >Agent tools remain advisory. Enforced turn gates require a
+                conforming host.</span
+              ></span
+            ><span class="note-status">Design principles</span
+            ><span class="note-arrow" aria-hidden="true">↗</span></a
+          >
+          <a
+            class="note-row"
+            href="https://github.com/grlap/Engram/blob/master/docs/roadmap.md"
+            ><span class="note-index">03</span
+            ><span class="note-main"
+              ><span class="note-tag">THE HORIZON</span>
+              <h3>The studies still in progress</h3>
+              <span
+                >Host enforcement SDK, portable handoff, and optional frozen
+                publication.</span
+              ></span
+            ><span class="note-status">Planned work</span
+            ><span class="note-arrow" aria-hidden="true">↗</span></a
+          >
+        </div>
+      </section>
+
+      <section id="begin" class="begin wrap" aria-labelledby="begin-title">
+        <div class="begin-copy reveal">
+          <p class="eyebrow">IV. YOUR FIRST PAGE</p>
+          <h2 id="begin-title">Make room<br />for <em>what’s next.</em></h2>
+          <p>
+            Start with a local, advisory notebook. Build the alpha from source
+            with Rust, then initialize Engram inside your project.
+          </p>
+          <a
+            class="text-link"
+            href="https://github.com/grlap/Engram/blob/master/docs/host-checklist.md"
+            >Read the host setup guide <span aria-hidden="true">↗</span></a
+          ><span class="begin-scribble handwritten" aria-hidden="true"
+            >The beginning of a longer thought. ⤴</span
+          >
+        </div>
+        <div class="setup-panel reveal">
+          <div class="setup-header">
+            <div
+              class="os-tabs"
+              role="tablist"
+              aria-label="Setup operating system"
+            >
+              <button
+                id="os-unix"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="setup-code-panel"
+                data-os="unix"
+              >
+                macOS / Linux</button
+              ><button
+                id="os-windows"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="setup-code-panel"
+                tabindex="-1"
+                data-os="windows"
+              >
+                Windows
+              </button>
+            </div>
+            <button
+              id="copy-setup"
+              class="copy-button"
+              type="button"
+              aria-label="Copy setup commands"
+            >
+              <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <rect x="6" y="6" width="9" height="10" rx="1" />
+                <path d="M11 6V2H2v10h4" /></svg
+              ><span>Copy</span>
+            </button>
+          </div>
+          <div
+            id="setup-code-panel"
+            role="tabpanel"
+            aria-labelledby="os-unix"
+            tabindex="0"
+          >
+            <pre><code id="setup-code"># 01 — Build from source (Rust required)
+git clone https://github.com/grlap/Engram.git
+cd Engram
+cargo install --path .
+
+# 02 — Open a local advisory notebook
+export ENGRAM_HOME="$HOME/.engram"
+engram init --required-assurance advisory \
+  --authorized-by "$USER" --reason "Local advisory setup"
+engram work next</code></pre>
+          </div>
+          <p class="setup-footnote">
+            For another project, run the initialization commands from that
+            project’s directory. Your host sets session identity for agent use.
+          </p>
+          <p
+            id="copy-feedback"
+            class="sr-only"
+            role="status"
+            aria-live="polite"
+          ></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer wrap">
+      <div class="footer-top">
+        <a class="brand" href="#" aria-label="Engram home"
+          ><svg
+            class="brand-mark"
+            viewBox="0 0 44 44"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle cx="22" cy="22" r="18" />
+            <ellipse
+              cx="22"
+              cy="22"
+              rx="9"
+              ry="18"
+              transform="rotate(35 22 22)"
+            />
+            <path d="M4 22h36M22 4v36" />
+            <circle cx="22" cy="22" r="3" /></svg
+          ><span>engram.</span></a
+        >
+        <p>For the work worth remembering.</p>
+        <div>
+          <a href="https://github.com/grlap/Engram">GitHub ↗</a
+          ><a href="https://github.com/grlap/Engram/tree/master/docs"
+            >Documentation ↗</a
+          >
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>A LOCAL-FIRST EXPERIMENT IN PERSISTENT INTELLIGENCE.</span
+        ><button id="motion-toggle" type="button" aria-pressed="false">
+          <span class="motion-icon" aria-hidden="true">Ⅱ</span
+          ><span class="motion-label">Pause motion</span></button
+        ><a href="#">Back to the beginning ↑</a>
+      </div>
+    </footer>
+  </body>
+</html>

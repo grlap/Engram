@@ -33,6 +33,8 @@ The target core has a local work graph plus two deliberate lifecycle layers:
 The local-work/control design is in the [specification](docs/spec.md) (Draft 0.8).
 Start with the [vision](docs/vision.md) for the short version.
 
+Explore the animated project website with the [local preview guide](docs/website.md).
+
 ## Highlights
 
 - **Typed memory, not a bag of strings** — every memory has a `kind`
