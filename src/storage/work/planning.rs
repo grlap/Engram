@@ -1809,7 +1809,7 @@ pub(super) fn validate_live_claim_for_item_on(
             .optional()?;
         if pending.is_some() {
             return Err(StoreError::InvalidWork(
-                "a live handoff offer must be accepted or expire before this operation".into(),
+                super::super::PENDING_HANDOFF_REFUSAL.into(),
             ));
         }
     }

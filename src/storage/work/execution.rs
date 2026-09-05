@@ -454,7 +454,9 @@ impl SqliteStore {
         Ok(hash)
     }
 
-    /// Atomically claims ready work or recovers an expired/released claim.
+    /// Atomically claims ready work, renews a live claim held by the caller,
+    /// or recovers an expired/released claim. Only a nonempty explicit key
+    /// requests exact replay; a keyless call is a fresh claim/renewal.
     ///
     /// # Errors
     ///
@@ -470,12 +472,15 @@ impl SqliteStore {
         let expires_at = claim_expiry(request.claimed_at, request.ttl_seconds)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
-        if let Some(claim) = replay_operation::<WorkClaim>(
-            &transaction,
-            "claim_work",
-            &request.idempotency_key,
-            request_object.hash(),
-        )? {
+        let keyed = !request.idempotency_key.is_empty();
+        if keyed
+            && let Some(claim) = replay_operation::<WorkClaim>(
+                &transaction,
+                "claim_work",
+                &request.idempotency_key,
+                request_object.hash(),
+            )?
+        {
             transaction.commit()?;
             return Ok(claim);
         }
@@ -492,6 +497,61 @@ impl SqliteStore {
         if item.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(item.work_id));
         }
+        if let Some(run_id) = item.active_run_id
+            && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
+            && claim.holder == request.holder
+            && claim.state == WorkClaimState::Active
+            && claim.expires_at > request.claimed_at
+        {
+            let (item, run, mut claim) = validate_live_claim_for_item_on(
+                &transaction,
+                item,
+                run_id,
+                request.expected_work_revision,
+                &request.holder,
+                claim.claim_id,
+                claim.fence,
+                request.claimed_at,
+                false,
+            )?;
+            let root_execution = load_root_execution(&transaction, run.root_execution_id)?;
+            claim.expires_at = claim.expires_at.max(expires_at);
+            claim.revision += 1;
+            persist_claim(&transaction, &claim)?;
+            append_work_event(
+                &transaction,
+                &WorkEventDraft {
+                    schema_version: SCHEMA_VERSION,
+                    project_id: item.project_id.clone(),
+                    root_id: item.root_id,
+                    work_id: item.work_id,
+                    run_id: Some(run_id),
+                    revision: item.revision,
+                    work: item,
+                    run: Some(run),
+                    root_execution: Some(root_execution),
+                    claim: Some(claim.clone()),
+                    handoff_offer: None,
+                    blocker: None,
+                    transition: WorkTransition::ClaimRenewed {
+                        claim: claim.clone(),
+                    },
+                    actor: request.actor.clone(),
+                    created_at: request.claimed_at,
+                },
+            )?;
+            if keyed {
+                persist_operation_result(
+                    &transaction,
+                    "claim_work",
+                    &request.idempotency_key,
+                    request_object.hash(),
+                    &claim,
+                )?;
+            }
+            transaction.commit()?;
+            return Ok(claim);
+        }
         let view = inspect_work_canonical_on(&transaction, item.work_id, request.claimed_at)?;
         if !matches!(view.availability, WorkAvailability::Ready) {
             if matches!(
@@ -500,15 +560,6 @@ impl SqliteStore {
             ) && let Some(run_id) = item.active_run_id
                 && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
             {
-                // Claiming work this session already holds is a no-op that
-                // returns the live claim; only another holder is a conflict.
-                if claim.holder == request.holder
-                    && claim.state == WorkClaimState::Active
-                    && claim.expires_at > request.claimed_at
-                {
-                    transaction.commit()?;
-                    return Ok(claim);
-                }
                 return Err(StoreError::WorkClaimHeld {
                     work: item.work_id,
                     holder: claim.holder.0,
@@ -613,13 +664,15 @@ impl SqliteStore {
             created_at: request.claimed_at,
         };
         append_work_event(&transaction, &event)?;
-        persist_operation_result(
-            &transaction,
-            "claim_work",
-            &request.idempotency_key,
-            request_object.hash(),
-            &claim,
-        )?;
+        if keyed {
+            persist_operation_result(
+                &transaction,
+                "claim_work",
+                &request.idempotency_key,
+                request_object.hash(),
+                &claim,
+            )?;
+        }
         transaction.commit()?;
         Ok(claim)
     }
@@ -1069,6 +1122,7 @@ impl SqliteStore {
                 &evidence,
             )?;
             let capture = WorkNoteCapture {
+                non_holder: false,
                 evidence: evidence_hash,
                 checkpoint: None,
             };
@@ -1126,6 +1180,7 @@ impl SqliteStore {
             request.recorded_at,
         )?;
         let capture = WorkNoteCapture {
+            non_holder: false,
             evidence: evidence_hash,
             checkpoint: Some(checkpoint_hash),
         };

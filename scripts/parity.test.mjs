@@ -141,7 +141,17 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
       "--session-id",
       "parity-late-finding-observer",
     ];
-    assert.equal(run([...observerContext, "next", "--json"]).status, 0);
+    // Establish the baseline across however many bounded pages it needs.
+    for (let pages = 0; ; pages += 1) {
+      assert.ok(pages < 20, "the small observer backlog must drain");
+      const baseline = run([...observerContext, "next", "--json"]);
+      assert.equal(baseline.status, 0, baseline.stderr);
+      const page = JSON.parse(baseline.stdout);
+      const moreChanges = page.omissions?.some(({ section, omitted_count }) =>
+        section === "changes" && omitted_count > 0,
+      );
+      if (page.changes.length === 0 && !moreChanges) break;
+    }
     const lateNote = run([
       ...peerContext,
       "note",
@@ -461,7 +471,7 @@ test("shell words default missing local attribution without losing explicit targ
     const refusedMutation = run(
       [
         "work",
-        "note",
+        "done",
         defaultedAddReceipt.work.short_ref,
         "not held",
         "--json",
@@ -939,17 +949,20 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
     assert.equal(added.status, 0, added.stderr);
     const ref = added.stdout.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
     assert.ok(ref, added.stdout);
-    // Nothing is held yet: inspect exact claim guidance before mutating it.
-    const unheld = run([...hostContext, "note", "too early"]);
-    assert.notEqual(unheld.status, 0);
-    assert.match(unheld.stderr, /claim it before/u);
-    assert.match(unheld.stderr, new RegExp(`engram work show ${ref}`, "u"));
-    assert.doesNotMatch(unheld.stderr, HASH);
+    // Without a claim this is an observation, not execution evidence.
+    const unheld = run([...hostContext, "note", "early observation", "--json"]);
+    assert.equal(unheld.status, 0, unheld.stderr);
+    const observation = JSON.parse(unheld.stdout);
+    assert.equal(observation.non_holder, true);
+    assert.equal(observation.receipt.result, observation.evidence.result);
+    const observed = run([...hostContext, "show", ref, "--json"]);
+    assert.equal(observed.status, 0, observed.stderr);
+    assert.equal(JSON.parse(observed.stdout).notes.at(-1).non_holder, true);
     assert.equal(run([...hostContext, "claim", ref]).status, 0);
-    // Nothing noted and no summary: one sentence plus the resolving command.
+    // No execution evidence or summary: the observation supplies no run credit.
     const bare = run([...hostContext, "done"]);
     assert.notEqual(bare.status, 0);
-    assert.match(bare.stderr, /nothing has been noted on this item yet/u);
+    assert.match(bare.stderr, /nothing has been noted for this execution yet/u);
     assert.match(bare.stderr, new RegExp(`engram work done ${ref} "…"`, "u"));
     assert.doesNotMatch(bare.stdout + bare.stderr, HASH);
     const noted = run([...hostContext, "note", "found the missing piece", "--ref", "src/lib.rs"]);

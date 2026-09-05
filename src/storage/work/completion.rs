@@ -495,6 +495,7 @@ impl SqliteStore {
         verify_blocker_rows(connection, &blocker_rows, &mut checked, &mut invalid)?;
         verify_evidence_rows(connection, &evidence_rows, &mut checked, &mut invalid)?;
         verify_restored_evidence_rows(connection, &mut checked, &mut invalid)?;
+        super::observation::verify_rows(connection, &mut checked, &mut invalid)?;
         verify_obligation_rows(connection, &mut checked, &mut invalid)?;
         verify_completion_rows(connection, &completion_rows, &mut checked, &mut invalid)?;
         verify_work_feed_integrity(connection, &work_items, &mut checked, &mut invalid)?;

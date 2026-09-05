@@ -194,7 +194,7 @@ impl VerbError {
                 vec![format!("engram work show {target}")],
             ),
             StoreError::WorkClaimMismatch { .. } => (
-                vec!["you do not hold this item; claim it before you note or complete it".into()],
+                vec!["this operation needs current claim authority; show the item before retrying".into()],
                 vec![format!("engram work show {target}")],
             ),
             StoreError::WorkClaimLapsed { expired_at, .. } => (
@@ -208,7 +208,7 @@ impl VerbError {
                 let words = if reason.contains("at least one evidence")
                     || reason.contains("no checkpoint")
                 {
-                    "nothing has been noted on this item yet; say what was delivered".into()
+                    "nothing has been noted for this execution yet; say what was delivered".into()
                 } else {
                     reason.clone()
                 };
@@ -275,9 +275,17 @@ impl VerbError {
             StoreError::InvalidWork(reason) if reason.contains("does not exist") => {
                 (vec!["no such item".into()], vec!["engram work ls".into()])
             }
+            StoreError::InvalidWork(reason) if reason == super::GATE_WORK_REF_REQUIRED => (
+                vec![super::GATE_WORK_REF_REQUIRED.into()],
+                Vec::new(),
+            ),
             StoreError::InvalidWork(reason) if reason.contains("no focused work") => (
                 vec!["no item is selected; name one or claim one first".into()],
                 vec!["engram work next".into()],
+            ),
+            StoreError::InvalidWork(reason) if reason == crate::storage::PENDING_HANDOFF_REFUSAL => (
+                vec![reason.clone()],
+                vec![format!("engram work handoff {target} --cancel \"…\"")],
             ),
             StoreError::InvalidWork(reason) if reason.starts_with("work is not ready:") => (
                 vec!["this item is not ready; inspect its blockers or deferral".into()],

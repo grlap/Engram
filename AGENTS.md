@@ -215,9 +215,14 @@ engram work memories [QUERY] | engram work memories --after KEY | engram work me
 engram work forget KEY
 ```
 
-- Claim before you change anything; note decisions and evidence once;
+- Claim before implementation; note decisions and evidence once;
   `done` tells you what is still owed. Receipts carry `next:` commands —
   follow them.
+- `claim REF --ttl SECONDS` renews your live claim without changing its
+  identity/fence or shortening expiry. A non-holder may `note` open or blocked
+  work, including a child of a completed parent, as a marked observation only;
+  it grants no execution or completion credit. Unclaimed planning updates
+  remain available. With no focus, use `gate NAME --work-ref REF`.
 - After completion, any project-bound session may use `note` or `gate` for a
   late finding without claiming or reopening the item; the existing seal stays
   frozen.

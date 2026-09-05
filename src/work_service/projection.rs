@@ -597,6 +597,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Generic,
+                non_holder: false,
                 gate,
                 workspace_id: None,
                 source_revision: None,
@@ -618,6 +619,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Verification,
+                non_holder: false,
                 gate: None,
                 workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
                 source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
@@ -639,6 +641,7 @@ pub(super) fn work_evidence_summary(
             Ok(WorkEvidenceSummary {
                 evidence: hash.clone(),
                 evidence_kind: WorkEvidenceKind::Environment,
+                non_holder: false,
                 gate: None,
                 workspace_id: Some(compact_text(&evidence.source_basis.workspace_id)),
                 source_revision: Some(compact_text(&evidence.source_basis.source_revision)),
@@ -670,6 +673,7 @@ pub(super) fn restored_work_evidence_summary(
     });
     Ok(WorkEvidenceSummary {
         evidence: hash,
+        non_holder: false,
         evidence_kind: WorkEvidenceKind::Generic,
         gate,
         workspace_id: None,
@@ -686,6 +690,31 @@ pub(super) fn restored_work_evidence_summary(
         summary,
         created_at: evidence.created_at,
     })
+}
+
+pub(super) fn work_observation_summary(
+    hash: ObjectHash,
+    observation: &crate::domain::WorkObservation,
+) -> WorkEvidenceSummary {
+    WorkEvidenceSummary {
+        evidence: hash,
+        non_holder: true,
+        evidence_kind: WorkEvidenceKind::Generic,
+        gate: None,
+        workspace_id: None,
+        source_revision: None,
+        producer_session_id: observation.actor.session_id.clone(),
+        actor_id: Some(compact_text(&observation.actor.actor_id)),
+        actor_context: projected_actor_context(&observation.actor),
+        check_kind: None,
+        check_fingerprint: None,
+        verification_result: None,
+        environment_fingerprint: None,
+        environment: None,
+        environment_components: None,
+        summary: compact_text(&observation.summary),
+        created_at: observation.created_at,
+    }
 }
 
 fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> WorkObligationSummary {

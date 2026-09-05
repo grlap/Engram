@@ -28,6 +28,25 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+impl SqliteStore {
+    /// Orders note families in their shared dense root feed, never by the
+    /// caller-asserted observation timestamp.
+    pub(crate) fn work_root_object_position(
+        &self,
+        root_id: WorkId,
+        hash: &ObjectHash,
+    ) -> Result<i64, StoreError> {
+        self.connection
+            .query_row(
+                "SELECT position FROM work_feed_entries
+             WHERE feed_kind = 'root_work' AND feed_id = ?1 AND object_hash = ?2",
+                params![root_id.0.to_string(), hash.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::from)
+    }
+}
+
 pub(super) fn reserve_feed_position(
     transaction: &Transaction<'_>,
     feed: &FeedId,

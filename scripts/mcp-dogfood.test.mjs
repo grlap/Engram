@@ -148,7 +148,8 @@ class McpClient {
       name,
       arguments: arguments_,
     });
-    assert.ok(performance.now() - started < 1000, `${name} exceeded one second`);
+    const elapsed = performance.now() - started;
+    assert.ok(elapsed < 1000, `${name} took ${elapsed.toFixed(1)}ms; limit is 1000ms`);
     return result;
   }
 
@@ -271,7 +272,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
     const workRef = added.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
     assert.ok(workRef, added);
     assert.match(added, /^added w-[0-9a-f]{12} "Dogfood work CLI"\n/u);
-    assert.match(added, /reminders:\n\s+- unclaimed: claim it before you change anything/u);
+    assert.match(added, /reminders:\n\s+- unclaimed: claim it before execution/u);
     assert.match(added, new RegExp(`next:\\n(?:.*\\n)*\\s+engram work claim ${workRef}`, "u"));
 
     const next = cliJson(engramHome, actor, "next", "--verbose");
@@ -645,7 +646,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(added.kind, "root");
     assert.equal("effective_session_id" in added, false);
     const workRef = added.work.short_ref;
-    assert.ok(added.reminders.includes("unclaimed: claim it before you change anything"));
+    assert.ok(added.reminders.includes("unclaimed: claim it before execution"));
     assert.ok(added.next.includes(`engram work claim ${workRef}`));
     const typicalShow = receipt(await a.call("show", { work_ref: workRef }));
     assertTerseShow(typicalShow);
@@ -664,11 +665,21 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(next.session.confirmed_project_cursor, 0);
     // The previous page counts as delivered once the session asks again; no
     // agent-side acknowledgement exists.
-    const following = receipt(
+    let following = receipt(
       await a.call("next", { limit: 20, verbose: true }),
     );
     assert.equal(following.session.confirmed_project_cursor, next.delivered_through);
-    assert.equal(following.delivered_through, next.delivered_through);
+    // Session-relative attribution adds a field to the bounded staged page;
+    // the initial backlog may require another page. Assert every exact ack
+    // before asserting the empty page, rather than assuming one page fits.
+    for (let pages = 0; following.changes.length > 0; pages += 1) {
+      assert.ok(pages < 20, "the small fixture must drain its bounded backlog");
+      const delivered = following.delivered_through;
+      following = receipt(await a.call("next", { limit: 20, verbose: true }));
+      assert.equal(following.session.confirmed_project_cursor, delivered);
+      assert.ok(following.delivered_through >= delivered);
+    }
+    assert.equal(following.delivered_through, following.session.confirmed_project_cursor);
     assert.deepEqual(following.changes, []);
     const compactNext = receipt(await a.call("next", { limit: 20 }));
     assert.equal(compactNext.focus.ref, workRef);
@@ -813,11 +824,19 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       ),
       JSON.stringify(acceptedFocus.history),
     );
-    const stale = structuredError(
-      await a.call("note", { text: "must be rejected after handoff" }),
-      "work_claim_mismatch",
-    );
-    assert.deepEqual(stale.next, [`engram work show ${workRef}`]);
+    // A prior holder is now a non-holder: explicit MCP work_ref records an
+    // observation without regaining the recipient's execution authority.
+    const observationInput = { work_ref: workRef, text: "peer observation after handoff" };
+    const observation = receipt(await a.call("note", observationInput));
+    assert.equal(observation.operation, "note");
+    assert.equal(observation.non_holder, true);
+    assert.equal(observation.receipt.result, observation.evidence.result);
+    assert.deepEqual(receipt(await a.call("note", observationInput)), observation);
+    const observationShown = receipt(await b.call("show", { work_ref: workRef }));
+    assert.equal(observationShown.held_until, acceptedFocus.held_until);
+    assert.equal(observationShown.notes.filter(({ summary }) => summary === observationInput.text).length, 1);
+    assert.equal(observationShown.notes.at(-1).non_holder, true);
+    assertTerseShow(observationShown);
     receipt(
       await b.call("note", {
         text: "recipient validated evidence and completion criterion",
@@ -842,6 +861,16 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assertTerseShow(completed);
     assert.equal(completed.reminders.length, 0);
 
+    // Reproduce Phoenix's exact surface: same MCP process/session, explicit
+    // work_ref, immediately after done. No claim or reopen is needed.
+    const sameSessionLate = receipt(await b.call("note", {
+      work_ref: workRef,
+      text: "completing session records a late finding",
+    }));
+    assert.equal(sameSessionLate.operation, "note");
+    assert.equal(sameSessionLate.receipt.result, sameSessionLate.evidence.result);
+    assert.equal(sameSessionLate.non_holder, undefined);
+    assert.equal(receipt(await b.call("done", { summary: "validated by the receiving MCP session" })).seal, seal.seal);
     const lateNote = receipt(
       await a.call("note", {
         work_ref: workRef,
@@ -851,6 +880,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assert.equal(lateNote.operation, "note");
     assert.equal(lateNote.receipt.result, lateNote.evidence.result);
+    assert.equal(lateNote.non_holder, undefined);
     const lateGate = receipt(
       await a.call("gate", {
         work_ref: workRef,

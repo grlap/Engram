@@ -87,12 +87,12 @@ fn item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) 
     format!("{} \"{}\" — {state}", work.short_ref, short(&work.title))
 }
 
-/// One line per change by another actor. Your own actions are already in
+/// One line per change by another session. Your own actions are already in
 /// your receipts and are skipped. A single `note` appends an
 /// evidence object, an evidence-added event, and a checkpoint; they collapse
 /// into one `noted` line. Summaries that repeat their change kind as a prefix
 /// lose the prefix.
-fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
+fn collapse_changes(changes: &[WorkChange]) -> Vec<String> {
     let visible = changes
         .iter()
         .map(|change| match &change.delivery {
@@ -123,7 +123,7 @@ fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
             continue;
         };
         // Your own actions are already in your receipts.
-        if actor_id.as_deref() == Some(own_actor) {
+        if change.from_current_session {
             last_note = None;
             continue;
         }
@@ -163,6 +163,9 @@ fn collapse_changes(changes: &[WorkChange], own_actor: &str) -> Vec<String> {
     }
     lines
 }
+
+pub(crate) const GATE_WORK_REF_REQUIRED: &str =
+    "no item is selected for this gate; use gate NAME --work-ref REF, or show REF first";
 
 fn strip_kind_prefix(summary: &str, kind: &str) -> String {
     let prefix = format!("{kind}: ");

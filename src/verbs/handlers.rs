@@ -320,14 +320,13 @@ impl AgentVerbs {
             limit,
             now,
         )?;
-        let mut changes =
-            collapse_changes(view.changes.as_deref().unwrap_or_default(), &self.actor_id);
+        let mut changes = collapse_changes(view.changes.as_deref().unwrap_or_default());
         let mut not_delivered = changes_not_delivered(&view);
-        // A page that held only this actor's own actions is not worth another
-        // call: keep reading, bounded, until another actor's change shows up
-        // or the backlog is drained.
+        // Compact output may drain own-session-only pages within its bound.
+        // Verbose output exposes the original exact page and its cursor, so
+        // it must not acknowledge additional pages behind that receipt.
         let mut pages = 1;
-        while changes.is_empty() && not_delivered > 0 && pages < MAX_NEXT_PAGES {
+        while !input.verbose && changes.is_empty() && not_delivered > 0 && pages < MAX_NEXT_PAGES {
             let more = self.service.work_next(
                 change_limit,
                 WorkNextQuery {
@@ -336,7 +335,7 @@ impl AgentVerbs {
                 },
                 now,
             )?;
-            changes = collapse_changes(more.changes.as_deref().unwrap_or_default(), &self.actor_id);
+            changes = collapse_changes(more.changes.as_deref().unwrap_or_default());
             not_delivered = changes_not_delivered(&more);
             pages += 1;
         }
@@ -1114,7 +1113,13 @@ impl AgentVerbs {
             failed,
             evidence_ref,
         } = input;
-        let view = self.target(target_ref.as_deref(), now)?;
+        let view = self.target(target_ref.as_deref(), now).map_err(|error| {
+            if matches!(&error.error, StoreError::InvalidWork(reason) if reason.contains("no focused work")) {
+                VerbError::from(StoreError::InvalidWork(super::GATE_WORK_REF_REQUIRED.into()))
+            } else {
+                error
+            }
+        })?;
         let work_ref = view.status.work.short_ref.clone();
         let passed = normalized.failed.is_empty();
         let result = self
@@ -1270,12 +1275,13 @@ impl AgentVerbs {
         ))
     }
 
-    /// `note`: record evidence, then checkpoint it, both keyless.
+    /// `note`: record an attributed observation; only a live holder also
+    /// checkpoints its execution. Non-holders need no claim on open work.
     ///
     /// # Errors
     ///
-    /// Returns [`VerbError`] when the text is empty or this session does not
-    /// hold the item.
+    /// Returns [`VerbError`] for empty text, invalid project/lifecycle binding,
+    /// or a stale holder authority basis.
     pub fn note(&self, input: &NoteInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let text = input.text.trim().to_owned();
         if text.is_empty() {
@@ -1291,8 +1297,13 @@ impl AgentVerbs {
         let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "note", now);
         let value = serde_json::to_value(&result)?;
+        let observation = if result.non_holder {
+            " (observation, no run credit)"
+        } else {
+            ""
+        };
         let lines = vec![format!(
-            "noted on {work_ref} \"{}\": {}{}",
+            "noted on {work_ref} \"{}\"{observation}: {}{}",
             short(&after.status.work.title),
             short(&text),
             held_suffix(self.holder(&after, now), now)
@@ -1647,7 +1658,7 @@ pub(super) fn reminder_for_reason(
             format!("blocked: {}", blockers.join("; "))
         }),
         "open, admitted, unblocked, and unclaimed" => {
-            Some("unclaimed: claim it before you change anything".into())
+            Some("unclaimed: claim it before execution".into())
         }
         "prior claim is recoverable" => claim_recovery_required
             .then(|| "a previous holder's claim lapsed; claiming needs a recovery reason".into()),
@@ -1750,6 +1761,7 @@ pub(super) fn next_commands(
     }
     if has("work_update:checkpoint")
         || has("work_update:evidence")
+        || (open && has("work_update:note"))
         || (word == "show" && (has("work_update:note") || has("work_update:gate")))
     {
         push(format!("engram work note {work_ref} \"…\""));

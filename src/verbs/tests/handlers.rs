@@ -590,7 +590,7 @@ fn readiness_reasons_become_words() {
             false,
         )
         .as_deref(),
-        Some("unclaimed: claim it before you change anything")
+        Some("unclaimed: claim it before execution")
     );
     assert_eq!(
         reminder_for_reason("prior claim is recoverable", Holder::Nobody, &[], false,),

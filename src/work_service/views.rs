@@ -116,6 +116,10 @@ impl FromStr for WorkNextSection {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChange {
     pub entry: WorkFeedEntry,
+    /// Derived from the verified source actor for this receiving session;
+    /// persisted in the exact staged page without exposing session identity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub from_current_session: bool,
     pub delivery: WorkChangeProjection,
 }
 
@@ -361,6 +365,8 @@ fn restored_history_is_empty(history: &RestoredHistoryView) -> bool {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkEvidenceSummary {
     pub evidence: ObjectHash,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub non_holder: bool,
     pub evidence_kind: WorkEvidenceKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gate: Option<WorkGateEvidenceSummary>,

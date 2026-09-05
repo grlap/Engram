@@ -744,9 +744,14 @@ fn work_delivery_boundary(
     Ok((focused_root_id, bound_task_id))
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the receiving session and visibility boundary bind the exact budgeted delivery page"
+)]
 fn verified_bounded_work_changes(
     store: &SqliteStore,
     project_id: &ProjectId,
+    session_id: &SessionId,
     focused_root_id: Option<WorkId>,
     bound_task_id: Option<TaskId>,
     entries: Vec<WorkFeedEntry>,
@@ -775,15 +780,19 @@ fn verified_bounded_work_changes(
                     entry.object_hash
                 ))
             })?;
+        let from_current_session = source_is_from_session(&object, session_id);
+        let delivery = agent_change_object(
+            store,
+            project_id,
+            focused_root_id,
+            bound_task_id,
+            &entry.object_kind,
+            object,
+        )?;
         changes.push(WorkChange {
-            delivery: agent_change_object(
-                store,
-                project_id,
-                focused_root_id,
-                bound_task_id,
-                &entry.object_kind,
-                object,
-            )?,
+            from_current_session: matches!(&delivery, WorkChangeProjection::Visible(_))
+                && from_current_session,
+            delivery,
             entry,
         });
         if serde_json::to_vec(&changes)?.len() > budget {
@@ -801,6 +810,7 @@ fn verified_bounded_work_changes(
 
 fn verify_staged_work_change_page(
     store: &SqliteStore,
+    session_id: &SessionId,
     feed: &FeedId,
     confirmed_through: i64,
     delivered_through: i64,
@@ -824,18 +834,32 @@ fn verify_staged_work_change_page(
             "staged work delivery payload does not bind its exact dense source interval".into(),
         ));
     }
-    for entry in entries {
-        if store
+    for (entry, change) in entries.into_iter().zip(&page.changes) {
+        let object = store
             .get::<serde_json::Value>(&entry.object_hash)?
-            .is_none()
-        {
-            return Err(StoreError::InvalidWorkProjection(format!(
-                "staged project-feed object {} is missing",
-                entry.object_hash
-            )));
+            .ok_or_else(|| {
+                StoreError::InvalidWorkProjection(format!(
+                    "staged project-feed object {} is missing",
+                    entry.object_hash
+                ))
+            })?;
+        let expected = matches!(&change.delivery, WorkChangeProjection::Visible(_))
+            && source_is_from_session(&object, session_id);
+        if change.from_current_session != expected {
+            return Err(StoreError::InvalidWorkProjection(
+                "staged work attribution differs from the receiving session".into(),
+            ));
         }
     }
     Ok(())
+}
+
+fn source_is_from_session(object: &serde_json::Value, session_id: &SessionId) -> bool {
+    object
+        .get("actor")
+        .and_then(|actor| actor.get("session_id"))
+        .and_then(serde_json::Value::as_str)
+        == Some(session_id.0.as_str())
 }
 
 fn ensure_protocol_basis(
@@ -942,6 +966,27 @@ fn agent_change_object(
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 actor_context: projected_actor_context(&evidence.actor),
                 created_at: evidence.created_at,
+            }))
+        }
+        "work_observation" => {
+            let observation = serde_json::from_value::<crate::domain::WorkObservation>(object)?;
+            let item = store.get_work_item(observation.work_id)?;
+            if &observation.project_id != project_id || observation.root_id != item.root_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "observation crosses its work project".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: observation.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(observation.work_id),
+                work_ref: Some(item.short_ref),
+                revision: None,
+                change_kind: "evidence".into(),
+                summary: compact_text(&format!("non-holder: {}", observation.summary)),
+                actor_id: Some(compact_text(&observation.actor.actor_id)),
+                actor_context: projected_actor_context(&observation.actor),
+                created_at: observation.created_at,
             }))
         }
         "work_restored_evidence" => {
@@ -1413,6 +1458,7 @@ fn work_transition_summary(event: &WorkEvent) -> String {
         WorkTransition::Claimed {
             recovered: false, ..
         } => format!("by a session: \"{title}\""),
+        WorkTransition::ClaimRenewed { .. } => format!("renewed by its holder: \"{title}\""),
         WorkTransition::Released { reason, .. }
         | WorkTransition::HandoffCancelled { reason, .. }
         | WorkTransition::Reopened { reason, .. } => {
@@ -1481,6 +1527,7 @@ fn work_transition_kind(transition: &WorkTransition) -> &'static str {
         WorkTransition::Blocked { .. } => "blocked",
         WorkTransition::Unblocked { .. } => "unblocked",
         WorkTransition::Claimed { .. } => "claimed",
+        WorkTransition::ClaimRenewed { .. } => "claim_renewed",
         WorkTransition::Released { .. } => "released",
         WorkTransition::Checkpointed { .. } => "checkpointed",
         WorkTransition::HandoffOffered { .. } => "handoff_offered",
@@ -1656,6 +1703,7 @@ fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<Stri
     if status.work.lifecycle != WorkLifecycle::Open {
         return allowed;
     }
+    allowed.push("work_update:note".into());
     let another_session_holds_live_claim = context.claim.is_some_and(|claim| {
         claim.state == WorkClaimState::Active
             && claim.holder != *context.session

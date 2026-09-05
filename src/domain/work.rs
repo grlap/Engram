@@ -833,6 +833,9 @@ pub enum WorkTransition {
         claim: WorkClaim,
         recovered: bool,
     },
+    ClaimRenewed {
+        claim: WorkClaim,
+    },
     Released {
         claim_id: WorkClaimId,
         fence: i64,

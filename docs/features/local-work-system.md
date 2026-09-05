@@ -164,7 +164,15 @@ These are deliberately different:
 A successful note, update, evidence, checkpoint, or handoff by the current
 holder advances work-claim expiry to at least one hour after that mutation
 without shortening a longer explicit TTL. Successful
-completion instead terminalizes the claim at the completion timestamp. A
+completion instead terminalizes the claim at the completion timestamp.
+Keyless `claim REF [--ttl SECONDS]` explicitly renews a current holder's live
+claim to `max(existing expiry, now + TTL)`, with a one-hour default. Its claim
+identity and fence stay fixed; an immutable `claim_renewed` event records the
+renewal. An explicit core idempotency key replays its original result instead.
+Renewal is refused while a live handoff offer is pending: cancel the offer,
+or let it be accepted or expire before attempting another holder mutation.
+A non-holder `note` on open work is a project/root observation only: it neither
+renews a claim nor creates a checkpoint or run contribution. A
 later `note` or `gate` is the narrow exception: any project-bound session may
 append an attributed late finding to the completed run without a claim,
 checkpoint, renewal, reopen, or reseal. Other holder words remain refused and
@@ -484,12 +492,12 @@ task binding under the SQLite write lock; a focus or task rebind that commits
 first forces projection to restart on the new read basis.
 
 Model-originated mutations may supply a caller-stable idempotency key. When
-none is supplied the server derives one from the session, operation, focused
+none is supplied the server normally derives one from the session, operation, focused
 work, the item's current claim/handoff basis, and the canonical intent: an
 identical call replays its receipt while nothing about the item changed, and
-becomes a new attempt once the item moved (so a repeated keyless claim after
-expiry claims again). Claiming work the session already holds returns the
-live claim, and a fresh completion call against work that is already sealed
+becomes a new attempt once the item moved. Keyless claim is an explicit
+exception: each call renews the same live claim, or claims again after expiry
+under the ordinary readiness and recovery checks. A fresh completion call against work that is already sealed
 returns its seal, so the common retries are never refusals. An interrupted
 completion remains bound to its original work and run instead of adopting a
 later generation's seal. Every mutation may also name its
@@ -523,9 +531,11 @@ terse receipt with short refs, planning state, safe relation/blocker summaries,
 typed note summaries, meaningful history, a superseded item's successor short
 ref, and allowed actions. It preserves the exact evidence count and the latest
 note independently from the bounded evidence page; latest means the highest
-dense run-feed position because evidence timestamps are asserted metadata,
-never ordering authority. The latest note is emitted last in `notes`; on a full
-page, it replaces the least-priority selected note. `notes_omitted` is the
+dense run-feed position for execution evidence, or their shared root-feed
+position when non-holder observations are present. Evidence timestamps are
+asserted metadata, never ordering authority. The latest note is emitted last
+in `notes`; on a full page, it replaces the least-priority selected note.
+`notes_omitted` is the
 exact remainder after all fitting, while `evidence_count_limit` reports its
 count-limit share. Actor and session references become relative words;
 optional actor context follows the
@@ -765,7 +775,27 @@ core mutation, so a concurrent focus change by the same session cannot retarget
 and the MCP `work_ref` field make the gate target explicit. On held open work,
 one `note` commits its evidence and acknowledging checkpoint in one storage
 transaction and replays that pair as one operation. On completed work, it
-commits only marked evidence after the frozen cut.
+commits only marked evidence after the frozen cut. Without focus, `gate`
+names `gate NAME --work-ref REF` as its remedy and never guesses a global
+last-completed item.
+
+On open work not held by the noting session, `note` instead commits a typed
+`WorkObservation`. Project, lifecycle, current holder, and canonical planning
+basis are checked inside its append transaction. The observation carries a
+non-holder provenance marker and enters the project and root-work feeds, not
+the run-execution feed. It changes no work/run/root state, claim, checkpoint,
+or completion seal, including for blocked work and children of completed
+parents. Exact same-session retries recover the original append. Both the
+immediate note receipt and `show` mark non-holder notes; the receipt states
+that they carry no run credit. Their attribution and text survive snapshot
+history and projection rebuild. Latest across native evidence and observations uses
+their shared dense root-feed position, never an asserted timestamp.
+Doctor checks that each observation follows its native basis and that its
+canonical sequence agrees with both dense parent feeds. Observation rows fill
+spare evidence-page slots; selected execution evidence retains priority.
+Peer delivery is session-relative: another session using the same actor is
+still a peer. The own-session classification is bound to verified canonical
+attribution in the staged page; terse receipts add no raw session identifiers.
 
 **Prerequisites between arbitrary items.** `update REF --after OTHER` records
 that `REF` must not become ready until `OTHER` is complete; `--drop-after
@@ -1193,10 +1223,11 @@ off-host durability and control-binding gates; teams needing a concurrently
 writable multi-machine backlog still need an external system or later
 Engram sync.
 
-For open work, the agent-facing `note` tool binds directly to persisted local
-work focus. It requires the session's exact live claim and records one shared
-finding plus its evidence/checkpoint state for peers, handoff, and report
-assembly. For completed work, `note` instead requires only a project-bound
+For open work, the agent-facing `note` tool binds to persisted local focus or
+an explicit `work_ref`. The holder records one shared finding plus its
+evidence/checkpoint state for peers, handoff, and report assembly; a non-holder
+records only the marked work observation described above. For completed work,
+`note` instead requires only a project-bound
 session and appends attributed, marked post-seal evidence: it creates no
 checkpoint or handoff contribution and never changes the frozen completion or
 report basis. The service derives the idempotency key; an exact retry returns

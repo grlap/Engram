@@ -3,6 +3,7 @@ use super::*;
 #[test]
 fn checkpoint_before_completion_collapses_by_work_identity() {
     let change = |position, kind: &str, summary: &str| WorkChange {
+        from_current_session: false,
         entry: crate::domain::WorkFeedEntry {
             position: crate::domain::FeedPosition {
                 feed: crate::domain::FeedId::Project(ProjectId("collapse-project".into())),
@@ -30,7 +31,7 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
     ];
 
     assert_eq!(
-        collapse_changes(&changes, "current actor"),
+        collapse_changes(&changes),
         vec!["w-000000000001 completed by peer (model=peer;reasoning=high): \"Delivered title\""]
     );
 }

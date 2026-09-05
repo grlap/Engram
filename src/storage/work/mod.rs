@@ -9,6 +9,7 @@ mod completion;
 mod execution;
 mod feeds;
 mod integrity;
+mod observation;
 mod planning;
 mod query;
 mod schema;
@@ -54,6 +55,8 @@ use crate::{
     },
     memory::Redactor,
 };
+
+pub(in crate::storage) use observation::observations_on;
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
@@ -351,6 +354,8 @@ pub(crate) struct GateWorkProtocolAttempt {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct WorkNoteCapture {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) non_holder: bool,
     pub(crate) evidence: ObjectHash,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) checkpoint: Option<ObjectHash>,

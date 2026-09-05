@@ -17,7 +17,8 @@ use super::{
     prioritized_focus_evidence, ready_work_summary, required_child_waiver_candidate,
     restored_work_evidence_summary, validate_process_default_work_session, work_evidence_kind_word,
     work_evidence_summary, work_handoff_summary, work_item_summary, work_lifecycle_word,
-    work_memory_index, work_obligation_page_from_records, work_run_summary,
+    work_memory_index, work_obligation_page_from_records, work_observation_summary,
+    work_run_summary,
 };
 
 impl LocalWorkService {
@@ -335,6 +336,16 @@ impl LocalWorkService {
         actor
     }
 
+    pub(super) fn non_holder_note_actor(&self) -> ActorContext {
+        let mut actor = self.actor("work_update", "record a non-holder work observation");
+        actor.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: crate::domain::NON_HOLDER_NOTE_SOURCE.into(),
+            reference: Some(crate::domain::NON_HOLDER_NOTE_REFERENCE.into()),
+        });
+        actor
+    }
+
     pub(super) fn focused_item(
         &self,
         store: &SqliteStore,
@@ -502,13 +513,44 @@ impl LocalWorkService {
             .then(|| evidence_items.last().cloned())
             .flatten();
         evidence_items.extend(native_evidence_items);
-        let latest_evidence_item = if completed_by_record {
+        if evidence_items.len() > MAX_FOCUS_RELATIONS {
+            evidence_items.drain(..evidence_items.len() - MAX_FOCUS_RELATIONS);
+        }
+        let mut latest_evidence_item = if completed_by_record {
             restored_latest_evidence_item.or(native_latest_evidence_item)
         } else {
             native_latest_evidence_item.or(restored_latest_evidence_item)
         };
-        if evidence_items.len() > MAX_FOCUS_RELATIONS {
-            evidence_items.drain(..evidence_items.len() - MAX_FOCUS_RELATIONS);
+        let (observation_count, observations) =
+            store.work_observation_tail(work_id, MAX_FOCUS_RELATIONS)?;
+        evidence_count = evidence_count.saturating_add(observation_count);
+        let mut latest_position = if with_latest_evidence && !observations.is_empty() {
+            latest_evidence_item
+                .as_ref()
+                .map(|latest| {
+                    store.work_root_object_position(status.work.root_id, &latest.evidence)
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let observation_slots = MAX_FOCUS_RELATIONS.saturating_sub(evidence_items.len());
+        let omitted_observations = observations.len().saturating_sub(observation_slots);
+        for (index, (hash, observation)) in observations.into_iter().enumerate() {
+            let summary = work_observation_summary(hash, &observation);
+            if with_latest_evidence {
+                let position =
+                    store.work_root_object_position(status.work.root_id, &summary.evidence)?;
+                if latest_position.is_none_or(|latest| latest < position) {
+                    latest_evidence_item = Some(summary.clone());
+                    latest_position = Some(position);
+                }
+            }
+            // Keep the existing native/restored evidence priority. Peer notes
+            // fill spare slots; the latest note is also exposed separately.
+            if index >= omitted_observations {
+                evidence_items.push(summary);
+            }
         }
         let history_total = store.work_event_count(work_id)?;
         let mut history = Vec::new();
@@ -528,6 +570,7 @@ impl LocalWorkService {
                 )));
             }
             history.push(WorkChange {
+                from_current_session: event.actor.session_id.as_ref() == Some(&self.session_id),
                 entry,
                 delivery: WorkChangeProjection::Visible(agent_work_event_summary(&event)),
             });
@@ -721,19 +764,24 @@ fn restored_history_view(records: Vec<crate::RestoredRecord>) -> RestoredHistory
     let mut entries = Vec::new();
     for record in records {
         let generation_index = record.generation_index;
-        entries.extend(
-            record
-                .history
-                .notes
-                .into_iter()
-                .map(|note| RestoredHistoryEntry {
-                    generation_index,
-                    kind: work_evidence_kind_word(note.evidence_kind).to_owned(),
-                    summary: compact_text(&note.summary),
-                    actor: note.actor,
-                    created_at: note.recorded_at,
-                }),
-        );
+        entries.extend(record.history.notes.into_iter().map(|note| {
+            RestoredHistoryEntry {
+                generation_index,
+                kind: if note
+                    .actor
+                    .provenance_chain
+                    .iter()
+                    .any(crate::domain::is_non_holder_note_marker)
+                {
+                    "non_holder_note".to_owned()
+                } else {
+                    work_evidence_kind_word(note.evidence_kind).to_owned()
+                },
+                summary: compact_text(&note.summary),
+                actor: note.actor,
+                created_at: note.recorded_at,
+            }
+        }));
         entries.extend(record.history.events.into_iter().map(|event| {
             let summary = event.reason.unwrap_or_else(|| {
                 event.lifecycle.map_or_else(

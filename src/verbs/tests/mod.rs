@@ -100,9 +100,15 @@ fn page(kind: VerificationKind, state: WorkObligationState) -> WorkObligationPag
 fn assert_ordinary_claim_guidance(receipt: &Receipt, work_ref: &str) {
     assert_eq!(
         receipt.reminders,
-        vec!["unclaimed: claim it before you change anything"]
+        vec!["unclaimed: claim it before execution"]
     );
-    assert_eq!(receipt.next, vec![format!("engram work claim {work_ref}")]);
+    assert_eq!(
+        receipt.next,
+        vec![
+            format!("engram work claim {work_ref}"),
+            format!("engram work note {work_ref} \"…\"")
+        ]
+    );
     let actions = receipt.value["allowed_next"]
         .as_array()
         .expect("ordinary allowed_next")
@@ -118,12 +124,15 @@ fn assert_recovery_claim_guidance(receipt: &Receipt, work_ref: &str) {
         receipt.reminders,
         vec![
             "a previous holder's claim lapsed; claiming needs a recovery reason",
-            "unclaimed: claim it before you change anything",
+            "unclaimed: claim it before execution",
         ]
     );
     assert_eq!(
         receipt.next,
-        vec![format!("engram work claim {work_ref} --recover \"…\"")]
+        vec![
+            format!("engram work claim {work_ref} --recover \"…\""),
+            format!("engram work note {work_ref} \"…\"")
+        ]
     );
     let actions = receipt.value["allowed_next"]
         .as_array()

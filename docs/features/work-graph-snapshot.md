@@ -97,6 +97,11 @@ hash, records by item then generation index, memories by key. Work ids,
 short refs, blocker ids, and source snapshot hashes are Engram's own and are
 preserved; nothing in the file is a foreign identifier.
 
+Non-holder work observations are carried as native-layer notes with their
+original non-holder provenance marker; on load they become inert history, not
+execution credit. Claim renewals use the compact `claimed` event with a renewal
+reason; no live claim identity or expiry is restored.
+
 Sensitivity follows [security & trust](security-and-trust.md) and applies
 exactly where the store carries a label. Today only memory versions bear
 one, and the `remember` word writes project memories as `internal`; work

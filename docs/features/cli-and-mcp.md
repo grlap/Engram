@@ -53,10 +53,10 @@ engram work next [--verbose]      # what is ready, what you hold, what others ch
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
-engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
+engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
-engram work note "What you found or decided" [--ref path-or-url]
+engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
 engram work remember "Project note" [--key KEY]
@@ -71,9 +71,12 @@ and one-line changes, while `show REF` returns one safe detail view. Structured
 note summaries with their evidence kind, meaningful history, a superseded
 item's successor short ref, and allowed actions. Its exact note total and
 latest note are independent of the bounded evidence page; latest means the
-highest dense run-feed position because evidence timestamps are asserted
-metadata, never ordering authority. The latest note is emitted last in
-`notes`; on a full page, it replaces the least-priority selected note.
+highest dense run-feed position for execution evidence, or their shared
+root-feed position when non-holder observations are present. Evidence
+timestamps are asserted metadata, never ordering authority. Observations fill
+spare evidence-page slots without displacing selected execution evidence.
+The latest note is emitted last in `notes`; on a full page, it replaces the
+least-priority selected note.
 `notes_omitted` is the exact remainder after all fitting, while
 `evidence_count_limit` reports its count-limit share. Open or proposed children
 precede terminal children inside the bounded relation page,
@@ -102,16 +105,24 @@ Rules that matter:
 
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against.
-- `claim` before you change open work. Only the holder can `note`, `gate`, and
-  `done` while it is open. After completion, any project-bound session may use
+- Claim before execution. `claim REF --ttl SECONDS` renews your live claim
+  with the same identity and fence; expiry becomes the later of its existing
+  expiry and now plus the requested TTL (one hour by default).
+  Open-work `gate` and `done` require the holder. A non-holder may `note`
+  open work, including blocked work or a child of a completed parent: this
+  produces a marked observation, never execution or completion credit.
+  After completion, any project-bound session may use
   `note` or `gate` for a late finding without claiming or reopening the item;
   the existing seal stays frozen.
 - `update --kind`, repeatable `--label`, and repeatable `--unlabel` revise
-  indexed planning metadata through the same audited holder path as the other
-  update fields.
-- `note` is for decisions, findings, and evidence pointers. Before completion
-  one note feeds peers, handoff, and the final report. A late note feeds peers
-  but remains outside the frozen seal; never repeat either elsewhere.
+  indexed planning metadata through the existing audited planning path;
+  unclaimed planning updates remain allowed.
+- `note` is for decisions, findings, and evidence pointers. A holder note
+  feeds peers, handoff, and the final report. A non-holder observation feeds
+  project/root peers without a checkpoint, claim renewal, or run credit.
+  Its immediate receipt marks `non_holder: true` and says
+  `(observation, no run credit)`. A late note feeds peers but remains outside
+  the frozen seal; never repeat either elsewhere.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
   `done` again.
@@ -122,14 +133,16 @@ Rules that matter:
   complete command list; the text renderer shows at most four and prints
   `(+N more)` when it omits any.
 - With a host-injected or explicitly reused stable session, a lost-response
-  retry of the same command is safe except for a late `gate` on completed-by-record
+  retry of the same command replays, except `claim` renews a live claim again
+  and a late `gate` on completed-by-record
   restored work: every call appends an observation, so inspect `show` before
   repeating an uncertain call. If a shell used the process default and
   lost the entire notice too, inspect with `ls`/`show` before repeating a
   mutation; exact replay cannot cross processes without the printed session.
 - A failed gate is work, not a stop — `gate NAME --failed FAILURE`
   records the failures as evidence on held open work, or as a late finding on
-  completed work selected by focus or `--work-ref`, nothing more.
+  completed work selected by focus or `--work-ref`, nothing more. With no
+  focus, use `gate NAME --work-ref REF`; no last-completed item is inferred.
   Gate names follow the repository's
   [quality gates](../development.md#quality-gates).
   Classification stays your judgment: a product defect gets a required
@@ -925,9 +938,9 @@ is shared; the MCP processes are not.
 `engram init` as host setup outside the count,
 then drives `add → claim → done` and fails if the agent needed more than three
 commands or three supplied fields, typed JSON, or saw a hash, fence, or key in
-text output. It also checks that an unheld `note` answers with one sentence and
-the exact-guidance inspection command, while an unnoted `done` supplies its
-resolving command.
+text output. It also checks that an unheld `note` records a marked observation
+without execution credit, while an unnoted `done` supplies its resolving
+command even when observations exist.
 
 `scripts/mcp-dogfood.test.mjs` launches real stdio MCP processes against a
 fresh home. Its main lifecycle uses only the agent-facing MCP tools: one session

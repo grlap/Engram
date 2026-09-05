@@ -862,6 +862,12 @@ pub(super) fn verify_work_feed_integrity(
                 .decode::<RestoredWorkEvidence>()
                 .ok()
                 .and_then(|evidence| expected_feeds_for_work(work_items, evidence.work_id, None)),
+            "work_observation" => object
+                .decode::<crate::domain::WorkObservation>()
+                .ok()
+                .and_then(|observation| {
+                    expected_feeds_for_work(work_items, observation.work_id, None)
+                }),
             "execution_observation" => object
                 .decode::<ExecutionObservation>()
                 .ok()
@@ -1047,7 +1053,7 @@ pub(super) fn verify_work_feed_integrity(
          LEFT JOIN work_feed_entries entry
            ON entry.object_hash = object.object_hash
          WHERE object.object_kind IN (
-             'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence',
+             'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation',
              'verification_evidence', 'environment_evidence',
              'work_obligation', 'work_obligation_resolution'
          )

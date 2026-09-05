@@ -3,6 +3,9 @@ use super::super::*;
 use crate::domain::GATE_EVIDENCE_SUMMARY;
 use tempfile::tempdir;
 
+mod observations;
+mod renewal;
+
 #[test]
 fn work_update_does_not_admit_obligation_waivers() {
     let attempted = serde_json::json!({
@@ -156,15 +159,21 @@ fn omitted_idempotency_key_replays_identical_calls_and_separates_different_ones(
     };
     let claimed = service.work_update(claim.clone(), at(3)).expect("claim");
     assert_eq!(claimed.receipt.work_id, first.work_id);
-    // The item moved (it is now claimed), so the identical keyless call is
-    // a new attempt; claiming work this session already holds returns the
-    // same live claim instead of a refusal.
+    // Keyless claims renew while keeping the existing claim identity/fence.
     let claimed_again = service
         .work_update(claim, at(4))
-        .expect("re-claiming held work returns the live claim");
+        .expect("re-claiming held work renews the live claim");
     assert_eq!(
-        serde_json::to_value(&claimed_again.receipt).expect("receipt"),
-        serde_json::to_value(&claimed.receipt).expect("receipt")
+        claimed_again.receipt.result["claim_id"],
+        claimed.receipt.result["claim_id"]
+    );
+    assert_eq!(
+        claimed_again.receipt.result["fence"],
+        claimed.receipt.result["fence"]
+    );
+    assert_eq!(
+        claimed_again.receipt.result["expires_at"],
+        serde_json::json!(at(304))
     );
     let checkpoint = |summary: &str| WorkUpdateInput::Checkpoint {
         summary: summary.into(),

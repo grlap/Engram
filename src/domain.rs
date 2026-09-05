@@ -6,6 +6,7 @@ mod memory;
 mod provenance;
 mod task;
 mod work;
+mod work_observation;
 mod work_requests;
 
 pub use crate::schema::{
@@ -18,4 +19,5 @@ pub use memory::*;
 pub use provenance::*;
 pub use task::*;
 pub use work::*;
+pub use work_observation::*;
 pub use work_requests::*;

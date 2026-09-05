@@ -201,6 +201,9 @@ pub struct WorkUpdateResult {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct WorkNoteResult {
+    /// This note is an observation, not execution/checkpoint credit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) non_holder: bool,
     pub(crate) operation: String,
     pub(crate) receipt: WorkMutationReceipt,
     pub(crate) obligations: Vec<String>,

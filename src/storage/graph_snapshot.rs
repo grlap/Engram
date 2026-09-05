@@ -827,6 +827,17 @@ fn notes_for_item_on(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut notes = Vec::with_capacity(rows.len());
+    for (hash, observation) in super::work::observations_on(connection, work_id, usize::MAX)? {
+        let note = WorkGraphSnapshotNote {
+            evidence_kind: WorkEvidenceKind::Generic,
+            summary: observation.summary,
+            refs: observation.refs,
+            gate: None,
+            actor: observation.actor,
+            recorded_at: observation.created_at,
+        };
+        notes.push((note.recorded_at, hash, note));
+    }
     for row in rows {
         let (note, hash) = snapshot_note_from_row(work_id, row)?;
         notes.push((note.recorded_at, hash, note));
@@ -1100,6 +1111,15 @@ fn snapshot_event_on(
         WorkTransition::Claimed { recovered, .. } => (
             "claimed",
             recovered.then(|| "recovered lapsed claim".into()),
+            None,
+            None,
+            None,
+        ),
+        // The compact snapshot vocabulary records claim activity without live
+        // claim authority. Keep renewal detail in its existing reason field.
+        WorkTransition::ClaimRenewed { .. } => (
+            "claimed",
+            Some("renewed existing claim".into()),
             None,
             None,
             None,

@@ -916,7 +916,10 @@ fn allowed_next_distinguishes_ordinary_claim_from_attributed_recovery() {
     let live_foreign_guidance = successor
         .work_focus(&root.short_ref, at(2))
         .expect("focus while another session holds the live claim");
-    assert_eq!(live_foreign_guidance.allowed_next, vec!["work_focus"]);
+    assert_eq!(
+        live_foreign_guidance.allowed_next,
+        vec!["work_focus", "work_update:note"]
+    );
 
     let guidance = successor
         .work_focus(&root.short_ref, at(4))
@@ -998,6 +1001,7 @@ fn allowed_next_advertises_plain_claim_without_recovery_for_a_ready_lapsed_holde
         "work_update:add_prerequisite",
         "work_update:block",
         "work_update:cancel",
+        "work_update:note",
         "work_update:remove_prerequisite",
         "work_update:revise",
         "work_update:supersede",

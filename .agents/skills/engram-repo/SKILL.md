@@ -120,8 +120,8 @@ policy outside the core. Extend ports using neutral request/response records.
 Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME` and normally injects
 `ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT`
-adds attribution without changing the actor principal. You type only the word. A local
-shell may omit either attribution value and receives explicitly audited
+adds attribution without changing the actor principal. You type only the word.
+A local shell may omit either attribution value and receives explicitly audited
 OS-user-environment or synthetic-actor and process-session defaults. The
 `local-process-` prefix is reserved for generated process-default work
 sessions; a `local-process-v1-*` id may be reused for seven days, after which
@@ -132,10 +132,10 @@ engram work next [--verbose]      # what is ready, what you hold, what others ch
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
-engram work claim REF [--recover "why"]   # --recover is only for a different prior holder
+engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
-engram work note "What you found or decided" [--ref path-or-url]
+engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
 engram work remember "Project note" [--key KEY]
@@ -154,16 +154,24 @@ Rules that matter:
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. `--under REF` creates a required child;
   add `--optional` when that child must not gate its parent's completion.
-- `claim` before you change open work. Only the holder can `note`, `gate`, and
-  `done` while it is open. After completion, any project-bound session may use
-  `note` or `gate` for a late finding without claiming or reopening the item;
+- Claim before execution. `claim REF --ttl SECONDS` renews your live claim
+  without changing its identity or fence, and never shortens its expiry.
+  Open-work `gate` and `done` require the holder. A non-holder may `note`
+  open work, including blocked work or a child of a completed parent: this is
+  a marked observation, not a checkpoint, renewal, or completion credit.
+  Existing unclaimed planning updates remain available. After completion,
+  any project-bound session may use `note` or `gate` for a late finding
+  without claiming or reopening the item;
   the existing seal stays frozen.
 - Bare `gate NAME` records a pass. Repeat `--failed FAILURE` for bounded
   failure labels; when a check has no test id, use the check command or check
   name. Use `--ref` as an opaque external-evidence reference (a path or URL by
-  convention); Engram does not shape-validate it.
-- `note` is for decisions, findings, and evidence pointers. Before completion
-  one note feeds peers, handoff, and the final report. A late note feeds peers
+  convention); Engram does not shape-validate it. With no focus, use
+  `gate NAME --work-ref REF`; there is no global last-completed target.
+- `note` is for decisions, findings, and evidence pointers. A holder note
+  feeds peers, handoff, and the final report. A non-holder observation feeds
+  project/root peers without execution authority; its receipt explicitly says
+  `(observation, no run credit)`. A late note feeds peers
   but remains outside the frozen seal; never repeat either elsewhere.
 - `remember` is for attributed project notes and observations, never rules or
   secrets. `memories` is the source of truth; `forget` tombstones rather than
@@ -176,7 +184,8 @@ Rules that matter:
   idempotency keys; if you see one, it is a bug. Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`.
 - With a host-injected or explicitly reused stable session, a lost-response
-  retry of the same command is safe except for a late `gate` on completed-by-record
+  retry of the same command replays, except `claim` renews a live claim again
+  and a late `gate` on completed-by-record
   restored work: every call appends an observation, so inspect `show` before
   repeating an uncertain call. If a shell used the process default and
   lost the entire notice too, inspect with `ls`/`show` before repeating a

@@ -11,6 +11,9 @@ mod project_memory;
 mod task_memory;
 mod work;
 
+pub(crate) const PENDING_HANDOFF_REFUSAL: &str =
+    "a live handoff offer blocks this operation; cancel the offer, or let it be accepted or expire";
+
 #[cfg(test)]
 mod test_support;
 

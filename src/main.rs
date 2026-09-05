@@ -570,7 +570,7 @@ enum WorkCommand {
     },
     /// Permanently retire one project-memory key.
     Forget { key: String },
-    /// Record a note on held open work or a late finding on completed work.
+    /// Record a note on open work (an observation without a claim), or a late finding on completed work.
     Note {
         /// An optional item ref, then the note text.
         #[arg(required = true, num_args = 1..=2, value_name = "[REF] TEXT")]
@@ -1832,6 +1832,29 @@ mod tests {
                             && failed == &["cargo fmt --check", "doc-links"]
                 )
         ));
+    }
+
+    #[test]
+    fn phoenix_note_cli_accepts_positional_target_and_describes_observations() {
+        let parsed = Cli::try_parse_from([
+            "engram",
+            "work",
+            "note",
+            "w-000000000001",
+            "review finding",
+            "--ref",
+            "review:detail",
+        ])
+        .unwrap();
+        assert!(matches!(parsed.command, Command::Work { operation, .. }
+            if matches!(&*operation, WorkCommand::Note { args, refs }
+                if args == &["w-000000000001", "review finding"] && refs == &["review:detail"])));
+        let help = Cli::try_parse_from(["engram", "work", "note", "--help"]).unwrap_err();
+        assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
+        let text = help.to_string();
+        assert!(text.contains("observation without a claim"));
+        assert!(text.contains("[REF] TEXT"));
+        assert!(!text.contains("--work-ref"));
     }
 
     #[test]

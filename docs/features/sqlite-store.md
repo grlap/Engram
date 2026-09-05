@@ -181,6 +181,11 @@ Current work projections are checked by `engram doctor` against canonical typed
 work events: exact item/run/root/claim/handoff/blocker snapshots, prerequisite
 and blocker-event bindings, evidence/run bindings, completion seals, dense feed
 heads, typed feed membership, and cross-feed order.
+Non-holder `WorkObservation` objects bind the canonical planning state they
+observed and a non-holder attribution marker. Their `work_observations` index
+is rebuildable; verification checks its exact bindings and dense per-item
+sequence. They belong only to the project/root feeds, not execution evidence
+or the run feed, and repair never promotes them into completion authority.
 Projection equality decodes both the projection and its verified canonical
 source into the same domain type and compares every field structurally.
 An omitted serde default and its writer-serialized explicit value are equal,

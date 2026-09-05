@@ -33,6 +33,7 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_run_evidence_work",
     "work_run_obligations_run",
     "work_restored_records",
+    "work_observations",
     "work_restored_evidence",
     "work_restored_evidence_work",
     "work_restored_evidence_gate",
@@ -460,6 +461,7 @@ pub(in crate::storage) fn initialize_schema(
          CREATE INDEX IF NOT EXISTS work_session_state_retention
              ON work_session_state(project_id, updated_at_ms, session_id);",
     )?;
+    super::observation::create_schema(&transaction)?;
     transaction.execute(
         "UPDATE work_schema_metadata SET schema_version = ?1 WHERE singleton = 1",
         [CURRENT_WORK_SCHEMA_VERSION],
@@ -569,7 +571,9 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
          CREATE INDEX IF NOT EXISTS work_items_catalog_after
              ON work_items(project_id, work_id);",
     )?;
+    super::observation::create_schema(connection)?;
     rebuild_restored_projections_on(connection)?;
+    super::observation::rebuild(connection)?;
     connection.execute("DELETE FROM work_catalog_fts", [])?;
     connection.execute(
         "INSERT INTO work_catalog_fts (work_id, search_text)

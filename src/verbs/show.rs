@@ -69,6 +69,8 @@ pub(super) struct ShowHandoff {
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowNote {
     pub(super) kind: WorkEvidenceKind,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) non_holder: bool,
     pub(super) summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) by: Option<String>,
@@ -269,9 +271,10 @@ pub(super) fn show_lines(
             )
         });
         lines.push(format!(
-            "notes: {} recorded; latest {}{}: \"{}\"",
+            "notes: {} recorded; latest {}{}{}: \"{}\"",
             view.evidence_count,
             evidence_kind_word(last.evidence_kind),
+            if last.non_holder { " (non-holder)" } else { "" },
             by.as_ref()
                 .map(|actor| format!(" by {actor}"))
                 .unwrap_or_default(),
@@ -441,6 +444,7 @@ pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowN
         .into_iter()
         .map(|note| ShowNote {
             kind: note.evidence_kind,
+            non_holder: note.non_holder,
             summary: note.summary,
             by: note.actor_id.as_deref().map(|actor| {
                 relative_actor_label(actor, note.actor_context.as_deref(), current_actor)

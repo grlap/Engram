@@ -160,8 +160,8 @@ impl LocalWorkService {
     }
 
     /// Captures one note under one explicit work target and one atomic storage
-    /// operation. Open work also receives an acknowledging checkpoint; a
-    /// completed item receives only evidence after its frozen seal cut.
+    /// operation. A live holder also checkpoints; a non-holder's observation
+    /// never changes execution. Completed evidence stays after the frozen cut.
     #[allow(
         clippy::too_many_lines,
         reason = "one protocol operation preserves native and restored note authority paths"
@@ -247,6 +247,7 @@ impl LocalWorkService {
                 &DevelopmentNoopRedactor,
             )?;
             let capture = WorkNoteCapture {
+                non_holder: false,
                 evidence,
                 checkpoint: None,
             };
@@ -260,24 +261,46 @@ impl LocalWorkService {
             )?;
             return Ok(result);
         }
-        let (run_id, claim_id, claim_fence, actor) =
-            self.work_note_evidence_basis(&store, &basis, &work, now)?;
-        let capture = store.record_work_note(
-            &RecordWorkNoteRequest {
-                work_id: work.work_id,
-                run_id,
-                expected_work_revision: work.revision,
-                holder: self.session_id.clone(),
-                claim_id,
-                claim_fence,
-                summary: summary.to_owned(),
-                refs: refs.to_owned(),
-                actor,
-                idempotency_key: scoped_key,
-                recorded_at: now,
-            },
-            &DevelopmentNoopRedactor,
-        )?;
+        let holds_live_claim = basis.claim.as_ref().is_some_and(|claim| {
+            claim.holder == self.session_id
+                && claim.state == WorkClaimState::Active
+                && claim.expires_at > now
+        });
+        let capture = if work.lifecycle == WorkLifecycle::Open && !holds_live_claim {
+            store.record_work_observation(
+                &crate::domain::RecordWorkObservationRequest {
+                    project_id: self.project_id.clone(),
+                    work_id: work.work_id,
+                    expected_work_revision: work.revision,
+                    session_id: self.session_id.clone(),
+                    summary: summary.to_owned(),
+                    refs: refs.to_owned(),
+                    actor: self.non_holder_note_actor(),
+                    idempotency_key: scoped_key,
+                    recorded_at: now,
+                },
+                &DevelopmentNoopRedactor,
+            )?
+        } else {
+            let (run_id, claim_id, claim_fence, actor) =
+                self.work_note_evidence_basis(&store, &basis, &work, now)?;
+            store.record_work_note(
+                &RecordWorkNoteRequest {
+                    work_id: work.work_id,
+                    run_id,
+                    expected_work_revision: work.revision,
+                    holder: self.session_id.clone(),
+                    claim_id,
+                    claim_fence,
+                    summary: summary.to_owned(),
+                    refs: refs.to_owned(),
+                    actor,
+                    idempotency_key: scoped_key,
+                    recorded_at: now,
+                },
+                &DevelopmentNoopRedactor,
+            )?
+        };
         let result = self.work_note_result(&store, work.work_id, &capture, now)?;
         store.finish_work_protocol_attempt(
             &self.project_id,
@@ -308,6 +331,7 @@ impl LocalWorkService {
             .unwrap_or(&capture.evidence)
             .clone();
         let result = WorkNoteResult {
+            non_holder: capture.non_holder,
             operation: "note".into(),
             receipt: compact_mutation_receipt(
                 &guidance.status.work,
@@ -422,6 +446,45 @@ impl LocalWorkService {
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = update_metadata(&input);
+        if raw_key.is_empty()
+            && let WorkUpdateInput::Claim {
+                ttl_seconds,
+                recovery_reason,
+                ..
+            } = &input
+        {
+            // Agent claims deliberately carry no replay key: repeating one
+            // renews the live claim rather than returning an older expiry.
+            let work = basis.focused_work.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection("claim has no bound focused work".into())
+            })?;
+            if work.lifecycle == WorkLifecycle::Completed {
+                return Err(StoreError::InvalidWork(
+                    COMPLETED_WORK_LATE_FINDING_REFUSAL.into(),
+                ));
+            }
+            let claim = store.claim_work(
+                &ClaimWorkRequest {
+                    work_id: work.work_id,
+                    expected_work_revision: work.revision,
+                    expected_run_id: work.active_run_id,
+                    holder: self.session_id.clone(),
+                    ttl_seconds: ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
+                    recovery_reason: recovery_reason.clone(),
+                    actor: self.actor("work_update", "claim or renew ambient local work"),
+                    idempotency_key: String::new(),
+                    claimed_at: now,
+                },
+                &DevelopmentNoopRedactor,
+            )?;
+            return self.work_update_result(
+                &store,
+                "claim",
+                work.work_id,
+                serde_json::to_value(claim)?,
+                now,
+            );
+        }
         let protocol_operation = format!("work_update:{operation}");
         let raw_key =
             self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent, now)?;

@@ -131,6 +131,7 @@ impl LocalWorkService {
                     let page: StagedWorkChangePage = payload.decode()?;
                     verify_staged_work_change_page(
                         &store,
+                        &self.session_id,
                         &project_feed,
                         delivery_session.project_cursor,
                         through,
@@ -157,6 +158,7 @@ impl LocalWorkService {
                 let changes = verified_bounded_work_changes(
                     &store,
                     &self.project_id,
+                    &self.session_id,
                     focused_root_id,
                     bound_task_id,
                     entries,
