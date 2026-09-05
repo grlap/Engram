@@ -9,6 +9,8 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+mod listing;
+
 const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
     CASE
         WHEN candidate.lifecycle != 'open' THEN 'closed'
@@ -198,40 +200,16 @@ impl SqliteStore {
         })
     }
 
-    /// The counted agent list shares its count, page and displayed holders in
-    /// one read snapshot. Ambient catalog callers never pay for this count.
+    // Test adapter keeps existing count/snapshot assertions on the same reader.
+    #[cfg(test)]
     pub(crate) fn query_work_catalog_listing(
         &self,
         project_id: &crate::domain::ProjectId,
         now: DateTime<Utc>,
         query: &WorkCatalogQuery,
     ) -> Result<(WorkCatalogPage, usize, Vec<WorkClaim>), StoreError> {
-        let transaction = self.connection.unchecked_transaction()?;
-        let (sql, parameters) = work_catalog_sql(project_id, now, query, false)?;
-        #[cfg(test)]
-        super::WORK_CATALOG_COUNT_QUERIES.with(|count| count.set(count.get() + 1));
-        let total: i64 =
-            transaction.query_row(&sql, rusqlite::params_from_iter(parameters.iter()), |row| {
-                row.get(0)
-            })?;
-        let total = usize::try_from(total).map_err(|_| {
-            StoreError::InvalidWorkProjection("catalog count is outside the supported range".into())
-        })?;
-        #[cfg(test)]
-        tests::after_catalog_count();
-        let page = work_catalog_page_on(&transaction, project_id, now, query)?;
-        let mut claims = Vec::new();
-        for item in &page.items {
-            if let Some(run_id) = item.work.active_run_id
-                && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
-                && claim.state == WorkClaimState::Active
-                && claim.expires_at > now
-            {
-                claims.push(claim);
-            }
-        }
-        transaction.commit()?;
-        Ok((page, total, claims))
+        self.query_work_catalog_continuation(project_id, now, query, None)
+            .map(|(page, total, _, claims, _)| (page, total, claims))
     }
 }
 
@@ -279,6 +257,20 @@ fn work_catalog_sql(
         Value::Integer(now.timestamp_millis()),
     ];
     let mut candidate_filters = vec!["candidate.project_id = ?1".to_owned()];
+    if query.child_requirement.is_some() && query.parent_id.is_none() {
+        return Err(StoreError::InvalidWork(
+            "optional/required listing needs --under PARENT".into(),
+        ));
+    }
+    if let Some(parent) = query.parent_id {
+        let parameter = push_catalog_parameter(&mut parameters, Value::Text(parent.0.to_string()));
+        candidate_filters.push(format!("candidate.parent_id = {parameter}"));
+    }
+    if let Some(requirement) = query.child_requirement {
+        let parameter =
+            push_catalog_parameter(&mut parameters, Value::Text(encode_state(requirement)?));
+        candidate_filters.push(format!("candidate.child_requirement = {parameter}"));
+    }
     if !query.lifecycles.is_empty() {
         let placeholders = query
             .lifecycles

@@ -13,99 +13,6 @@ use super::{
     short_ref_for_work_id, short_with_limit,
 };
 
-/// Fits the complete list receipt, including guidance, inside one byte budget.
-pub(super) fn fit_list_receipt(
-    verbose: bool,
-    source_items: &[ReadyWorkSummary],
-    total: usize,
-    claims: &HashMap<WorkId, (SessionId, DateTime<Utc>)>,
-    budget: usize,
-) -> Result<Receipt, super::VerbError> {
-    let first_ref = source_items.first().map(|item| item.work.short_ref.clone());
-    let mut byte_limited = false;
-    let (mut lower, mut upper) = (0, source_items.len());
-    let mut visible = upper;
-    let mut best = None;
-    loop {
-        let items = &source_items[..visible];
-        let compact_items = items
-            .iter()
-            .map(|item| compact_row(item, claims))
-            .collect::<Vec<_>>();
-        let omitted = total.saturating_sub(items.len());
-        let hint = if omitted == 0 {
-            None
-        } else if visible == 0
-            && let Some(work_ref) = &first_ref
-        {
-            Some(format!(
-                "page is byte-bounded; first match is {work_ref}; its row exceeds the page budget; use show for detail"
-            ))
-        } else if byte_limited {
-            Some(
-                "page is byte-bounded; narrow with --search or --label, or show an item".to_owned(),
-            )
-        } else {
-            Some("raise --limit or narrow with --search or --label".to_owned())
-        };
-        let mut lines = vec![format!("showing {} of {total} item(s):", items.len())];
-        lines.extend(
-            compact_items
-                .iter()
-                .map(|item| format!("  {}", compact_row_line(item))),
-        );
-        if let Some(hint) = &hint {
-            lines.push(format!("  ({hint})"));
-        }
-        let next = vec![first_ref.as_ref().map_or_else(
-            || "engram work add \"…\"".into(),
-            |work_ref| format!("engram work show {work_ref}"),
-        )];
-        let mut value = json!({
-            "items": if verbose { serde_json::to_value(items)? } else { serde_json::to_value(&compact_items)? },
-            "total": total,
-            "omitted": omitted,
-            "more": omitted > 0,
-        });
-        if let Some(hint) = hint {
-            value["hint"] = json!(hint);
-        }
-        let receipt = Receipt::assemble(
-            lines,
-            Guidance {
-                reminders: Vec::new(),
-                next,
-            },
-            value,
-            false,
-        );
-        if serde_json::to_vec_pretty(&receipt.value)?.len() <= budget
-            && receipt.text().len() <= budget
-        {
-            lower = visible;
-            best = Some(receipt);
-        } else {
-            if visible == 0 {
-                // Defensive: bounded metadata alone should always fit.
-                return Err(StoreError::InvalidWorkProjection(
-                    "list metadata exceeds the response budget".into(),
-                )
-                .into());
-            }
-            upper = visible - 1;
-            byte_limited = true;
-        }
-        if lower >= upper
-            && let Some(receipt) = best.take()
-        {
-            return Ok(receipt);
-        }
-        // Count only final emitted rows; the exact total and the hint
-        // participate in the bounded prefix search, not after fitting.
-        visible = lower + (upper - lower).div_ceil(2);
-    }
-}
-
 /// Short list row used by the agent words. Host-only `work core focus` remains
 /// the rich-object boundary; absent claim and parent fields are omitted to
 /// keep repeated navigation inexpensive.
@@ -470,6 +377,7 @@ thread_local! {
 pub struct VerbError {
     pub error: StoreError,
     pub work_ref: Option<String>,
+    listing_command: Option<Box<str>>,
 }
 
 impl VerbError {
@@ -477,6 +385,15 @@ impl VerbError {
         Self {
             error,
             work_ref: Some(work_ref.to_owned()),
+            listing_command: None,
+        }
+    }
+
+    pub(super) fn for_listing(error: StoreError, command: &str) -> Self {
+        Self {
+            error,
+            work_ref: None,
+            listing_command: Some(command.into()),
         }
     }
 
@@ -487,6 +404,17 @@ impl VerbError {
         reason = "the fixed refusal-to-guidance table stays contiguous and exhaustively reviewable"
     )]
     pub fn guidance(&self) -> Guidance {
+        if let StoreError::WorkCatalogCursorInvalid { reason } = &self.error {
+            return Guidance {
+                reminders: vec![reason.clone()],
+                next: vec![
+                    self.listing_command
+                        .as_deref()
+                        .unwrap_or("engram work ls")
+                        .to_owned(),
+                ],
+            };
+        }
         let target = self.work_ref.as_deref().unwrap_or("<ref>");
         let message = self.error.to_string();
         let (reminders, next): (Vec<String>, Vec<String>) = match &self.error {
@@ -648,6 +576,7 @@ impl From<StoreError> for VerbError {
         Self {
             error,
             work_ref: None,
+            listing_command: None,
         }
     }
 }

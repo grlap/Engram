@@ -430,6 +430,18 @@ enum WorkCommand {
         /// Exact case-insensitive label.
         #[arg(long)]
         label: Option<String>,
+        /// Only direct children of this parent.
+        #[arg(long)]
+        under: Option<String>,
+        /// Only optional direct children.
+        #[arg(long, requires = "under", conflicts_with = "required")]
+        optional: bool,
+        /// Only required direct children.
+        #[arg(long, requires = "under", conflicts_with = "optional")]
+        required: bool,
+        /// Continuation encoding filters and project/session context, not confidential; stale cursors refuse.
+        #[arg(long, value_name = "CURSOR")]
+        after: Option<String>,
         #[arg(long, default_value_t = 20)]
         limit: u32,
         /// Return the full structured projection instead of compact rows.
@@ -1041,6 +1053,10 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             mine,
             all,
             label,
+            under,
+            optional,
+            required,
+            after,
             limit,
             verbose,
         } => verbs.ls(
@@ -1050,6 +1066,10 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 mine,
                 all,
                 label,
+                under,
+                optional,
+                required,
+                after,
                 limit: Some(limit),
                 verbose,
             },

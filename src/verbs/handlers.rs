@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::domain::normalize_gate_evidence_input;
 
 use super::{
@@ -15,7 +13,7 @@ use super::{
     held_suffix, item_line, json, lifecycle_word, nonempty,
     receipts::{
         append_changes_lines, compact_next_lines, compact_next_receipt, compact_next_value,
-        fit_list_receipt, ready_line,
+        ready_line,
     },
     section_word, short,
     show::{fit_show_receipt, live, show_lines, show_receipt_value},
@@ -45,7 +43,7 @@ pub struct NextInput {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "the four booleans are independent flat CLI/MCP list switches"
+    reason = "flat CLI/MCP list switches are validated before catalog translation"
 )]
 pub struct LsInput {
     pub search: Option<String>,
@@ -55,6 +53,12 @@ pub struct LsInput {
     /// Include completed, cancelled, and superseded items.
     pub all: bool,
     pub label: Option<String>,
+    pub under: Option<String>,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub required: bool,
+    pub after: Option<String>,
     pub limit: Option<u32>,
     /// Return the full host-oriented projection instead of compact rows.
     #[serde(default)]
@@ -477,28 +481,39 @@ impl AgentVerbs {
         budget: usize,
     ) -> Result<Receipt, VerbError> {
         let limit = input.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, 1_000);
-        let (source_items, total, claims) = self.service.work_catalog_page(
-            &crate::domain::WorkCatalogQuery {
-                search: input.search.clone(),
-                lifecycles: if input.all {
-                    Vec::new()
-                } else {
-                    vec![WorkLifecycle::Open]
+        input.validate_listing()?;
+        let command = input.list_command();
+        let page = self
+            .service
+            .work_catalog_page(
+                &crate::domain::WorkCatalogQuery {
+                    search: input.search.clone(),
+                    lifecycles: if input.all {
+                        Vec::new()
+                    } else {
+                        vec![WorkLifecycle::Open]
+                    },
+                    blocked_only: input.blocked,
+                    assigned_to: input.mine.then(|| self.actor_id.clone()),
+                    held_by: input.mine.then(|| self.session_id.clone()),
+                    label: input.label.clone(),
+                    child_requirement: if input.optional {
+                        Some(ChildRequirement::Optional)
+                    } else if input.required {
+                        Some(ChildRequirement::Required)
+                    } else {
+                        None
+                    },
+                    limit,
+                    ..crate::domain::WorkCatalogQuery::default()
                 },
-                blocked_only: input.blocked,
-                assigned_to: input.mine.then(|| self.actor_id.clone()),
-                held_by: input.mine.then(|| self.session_id.clone()),
-                label: input.label.clone(),
-                limit,
-                ..crate::domain::WorkCatalogQuery::default()
-            },
-            now,
-        )?;
-        let claims = claims
-            .into_iter()
-            .map(|claim| (claim.work_id, (claim.holder, claim.expires_at)))
-            .collect::<HashMap<_, _>>();
-        fit_list_receipt(input.verbose, &source_items, total, &claims, budget)
+                input.under.as_deref(),
+                input.after.as_deref(),
+                now,
+            )
+            .map_err(|error| VerbError::for_listing(error, &command))?;
+        super::listing::fit_list_receipt(input, &page, budget)
+            .map_err(|error| VerbError::for_listing(error.error, &command))
     }
 
     /// `show`: one item in agent detail; selects it as ambient focus without

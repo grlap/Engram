@@ -818,6 +818,8 @@ pub enum StoreError {
         reason: String,
         remedy: String,
     },
+    #[error("listing continuation refused: {reason}")]
+    WorkCatalogCursorInvalid { reason: String },
     #[error("work {work:?} is claimed by session {holder} until {expires_at}")]
     WorkClaimHeld {
         work: crate::domain::WorkId,

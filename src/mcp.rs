@@ -94,6 +94,14 @@ struct LsArgs {
     all: Option<bool>,
     /// Exact case-insensitive label.
     label: Option<String>,
+    /// Direct children of this parent.
+    under: Option<String>,
+    /// Only optional direct children; requires under, excludes required.
+    optional: Option<bool>,
+    /// Only required direct children; requires under, excludes optional.
+    required: Option<bool>,
+    /// Continuation encoding filters and project/session context, not confidential; stale cursors refuse.
+    after: Option<String>,
     /// Maximum items to return (default 20).
     limit: Option<u32>,
     /// Return the full structured projection instead of compact rows.
@@ -305,7 +313,7 @@ impl McpServer {
     /// List open work with flat filters.
     #[tool(
         name = "ls",
-        description = "List open work; search, blocked, mine, all, and label narrow it"
+        description = "List open work; search, blocked, mine, all, label, and under with optional/required narrow it; after continues the same listing"
     )]
     fn ls(&self, Parameters(args): Parameters<LsArgs>) -> CallToolResult {
         verb(self.verbs().ls(
@@ -315,6 +323,10 @@ impl McpServer {
                 mine: args.mine.unwrap_or(false),
                 all: args.all.unwrap_or(false),
                 label: args.label,
+                under: args.under,
+                optional: args.optional.unwrap_or(false),
+                required: args.required.unwrap_or(false),
+                after: args.after,
                 limit: args.limit,
                 verbose: args.verbose.unwrap_or(false),
             },
@@ -688,6 +700,10 @@ pub fn store_error_value(error: &StoreError) -> Value {
                 "remedy": "cancel the handoff offer, or let it be accepted or expire before retrying",
             })
         }
+        StoreError::WorkCatalogCursorInvalid { reason } => json!({
+            "reason": reason,
+            "remedy": "repeat the listing without --after, then continue from the new token",
+        }),
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
             "reason": message,
             "remedy": "run next, then show the affected item and follow next",
@@ -828,6 +844,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNotOpen(_) => "work_not_open",
         StoreError::WorkParentNotOpen { .. } => "work_parent_not_open",
         StoreError::WorkDetachRefused { .. } => "work_detach_refused",
+        StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
         StoreError::WorkPeerDecompositionRefused { .. } => "work_peer_decomposition_refused",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",

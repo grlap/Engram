@@ -57,6 +57,7 @@ use crate::{
 #[cfg(test)]
 use crate::WorkReferenceCandidate;
 
+mod catalog;
 mod completion;
 mod focus;
 mod handoff;
@@ -72,6 +73,7 @@ mod views;
 #[cfg(test)]
 mod test_support;
 
+pub(crate) use catalog::WorkListingPage;
 pub use operations::*;
 pub(crate) use projection::*;
 pub use views::*;

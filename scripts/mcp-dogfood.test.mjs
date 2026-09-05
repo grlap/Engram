@@ -203,6 +203,48 @@ async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+test("MCP scoped listing continuation shares the CLI cursor contract", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-listing-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "reader");
+    await client.initialize();
+    const properties = (await client.tools()).find(({ name }) => name === "ls").inputSchema.properties;
+    for (const key of ["after", "under", "optional", "required"]) assert.ok(properties[key]);
+    const parent = receipt(await client.call("add", { title: "Parent" })).work.short_ref;
+    const expected = [];
+    for (let i = 0; i < 4; i++) expected.push(receipt(await client.call("add", { title: `Child ${i}`, under: parent, optional: true })).work.short_ref);
+    const required = receipt(await client.call("add", { title: "Required", under: parent })).work.short_ref;
+    const args = { under: parent, optional: true, limit: 2 };
+    const first = receipt(await client.call("ls", args));
+    assert.equal(first.total, 4);
+    assert.equal(first.shown_before, 0);
+    assert.equal(first.omitted, 2);
+    assert.equal(first.byte_budget, 12288);
+    assert.equal(first.next.length, 1);
+    assert.ok(first.next[0].endsWith(`--after ${first.after}`));
+    const second = receipt(await client.call("ls", { ...args, after: first.after }));
+    assert.equal(second.shown_before, 2);
+    assert.equal(second.omitted, 0);
+    assert.equal(second.more, false);
+    assert.deepEqual([...first.items, ...second.items].map(({ ref }) => ref), expected);
+    const cli = cliJson(engramHome, "reader", "ls", "--under", parent, "--optional", "--limit", "2", "--after", first.after);
+    assert.deepEqual(cli.items, second.items);
+    assert.equal(receipt(await client.call("ls", { under: parent, required: true })).items[0].ref, required);
+    structuredError(await client.call("ls", { optional: true }), "work_invalid");
+    const mismatch = structuredError(await client.call("ls", { ...args, required: true, optional: false, after: first.after }), "work_catalog_cursor_invalid");
+    assert.ok(mismatch.next[0].includes("--required"));
+    await client.call("add", { title: "Advance cut" });
+    const stale = structuredError(await client.call("ls", { ...args, after: first.after }), "work_catalog_cursor_invalid");
+    assert.equal(stale.next.length, 1);
+    assert.doesNotMatch(stale.next[0], /--after/u);
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("resume discovery agrees across claimless MCP and CLI sessions", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-discovery-"));
   let coordinator;

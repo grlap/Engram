@@ -349,7 +349,7 @@ fn phoenix_list_reports_exact_counts_and_fits_the_complete_envelope() {
             assert!(len < 25, "the verbose fixture must exercise byte fitting");
             assert_eq!(
                 listed.value["hint"],
-                "page is byte-bounded; narrow with --search or --label, or show an item"
+                "page is byte-bounded; continue with the same filters and ordering"
             );
         }
         assert!(
@@ -449,14 +449,14 @@ fn phoenix_only_list_counts_and_zero_row_guidance_names_the_first_match() {
     assert_eq!(listed.value["total"], 1);
     assert_eq!(listed.value["omitted"], 1);
     assert!(listed.text().contains(&format!(
-        "first match is {work_ref}; its row exceeds the page budget"
+        "first remaining match is {work_ref}; its row exceeds the page budget"
     )));
     assert!(
         listed.value["hint"]
             .as_str()
             .expect("structured hint")
             .contains(&format!(
-                "first match is {work_ref}; its row exceeds the page budget"
+                "first remaining match is {work_ref}; its row exceeds the page budget"
             ))
     );
     assert_eq!(

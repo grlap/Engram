@@ -50,7 +50,7 @@ already returns its session object.
 
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
-engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
+engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
 engram work show REF [--notes]    # full oldest-first notes only when requested
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
@@ -164,8 +164,30 @@ Rules that matter:
   read transaction. `--mine` is assignment to this actor OR a live claim held
   by this session, counted once before limiting. The default limit is 20
   (explicit limits clamp to 1–1000). The complete text and JSON receipts,
-  including truncation hints, fit 12 KiB; rows removed for bytes also count
-  as omitted. Use `--limit`, narrower filters, or `show REF` to inspect more.
+  including footer and continuation, fit 12 KiB. The footer names the active
+  `limit` and `byte_budget` (12288 bytes). Nonempty truncated pages include an
+  `after` token and one `next` command repeating all filters and the
+  active limit with `--after CURSOR`; MCP `ls` accepts the same `after` value.
+  The cursor names the last row actually emitted, including after byte fitting.
+  `shown_before` counts the prior prefix; `omitted` is the remaining total after
+  that prefix plus this page, and `more` is true exactly when some remain.
+  Ordering stays ascending work id. A changed project feed, expired time basis,
+  reversed clock, malformed cursor, or different filters/project returns
+  `work_catalog_cursor_invalid` with a fresh same-filter command, never a silent
+  restart. Unrelated project notes also advance the feed; focus-only reads do
+  not. Tokens are opaque to the caller, not confidential: they encode readable
+  filters, project and session context. They are not encrypted, authenticated,
+  or execution authority, and have no server-side state. Avoid sharing them
+  when that query context is sensitive. Filter text must be single-line and
+  terminal-safe; commands use ASCII quoting syntax shared by PowerShell and
+  POSIX shells. If continuation metadata prevents even one otherwise fitting
+  row, the query refuses explicitly with `work_catalog_cursor_invalid` and
+  the fresh same-filter command; shorten the filters before retrying.
+  If even one verbose row cannot fit, no cursor skips it: the zero-row receipt
+  names the first remaining match for `show` and reports the remainder honestly.
+  `--under PARENT` (MCP `under`) lists direct children, not grandchildren;
+  `--optional`/`--required` (MCP booleans) select one requirement class and need
+  `under`. Both together are refused. Other filters and `--all` still apply.
   MCP `search { query: TEXT }` is shell `ls --search TEXT --all`; both search
   every lifecycle, while plain `ls --search TEXT` defaults to open work.
 - Shell notes take the target positionally: `engram work note REF "text"`.
@@ -614,7 +636,7 @@ operation enforces the live control-session/run binding described above.
 | Tool | Purpose |
 | --- | --- |
 | `next` | What is ready, what this session holds, and the changes since its previous call |
-| `ls` | Open items with flat `search`, `blocked`, `mine`, `all`, and `label` filters |
+| `ls` | Open items with `search`, `blocked`, `mine`, `all`, `label`, direct-parent `under` and `optional`/`required` filters, plus non-confidential `after` continuation |
 | `show` | One item in safe agent detail; selects it as focus without claiming |
 | `add` | A root from a title, or one child with `under`; `optional` permits a peer proposal beneath a foreign-held parent; `notes` records ordered initial observations atomically; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |

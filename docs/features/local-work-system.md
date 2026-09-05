@@ -313,7 +313,27 @@ ambient `next` and held-item catalogs stay bounded. Assignment and live-session
 holding form a deduplicated union for `--mine`, alongside the other filters
 and counted once before the page limit. Its exact `total`
 is independent of the limit; `omitted` is total minus emitted rows after
-final byte fitting. The truncation hint is part of the bounded receipt.
+final byte fitting on the first page. Later pages also report `shown_before`;
+`omitted` is the exact remainder after that prior prefix and the current rows.
+The footer includes the active limit and byte ceiling. Continuation is a
+`ls --after CURSOR` token bound to the last emitted work id, normalized
+filters, project, and a project-feed read cut. Catalog ordering remains
+ascending work id; it is not a dense feed ordering or an execution cursor.
+The token is opaque to the caller but not confidential: it encodes readable
+filters, project and session context, without encryption. It is navigation,
+not authentication, and creates no server-side state or canonical object.
+Oversized continuation metadata refuses explicitly rather than emitting a
+false zero-row page; the error gives the fresh same-filter command and asks
+the caller to shorten filters. Any project-feed advance, clock reversal, or
+crossing a project claim/handoff expiry or deferral boundary refuses with
+`work_catalog_cursor_invalid` and a fresh same-filter command. This deliberately
+conservative restart includes unrelated project notes and the entire
+millisecond containing a time boundary; the observed time retains
+sub-millisecond precision. Focus-only reads do not invalidate it. Count,
+cursor validation, page and holders share one snapshot.
+`ls --under PARENT` selects direct children only; `--optional` or `--required`
+narrow that scope and require the parent. Both switches together are refused.
+Ambient catalogs remain count-free and keep their existing keyset contract.
 
 Completion is local and final for that run. Report readiness and external
 publication are separate projections; a work item can be completed with no

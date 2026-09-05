@@ -7,24 +7,6 @@ struct AgentNextOptions {
 }
 
 impl LocalWorkService {
-    /// One count/page snapshot for the flat list word, without changing focus
-    /// or draining the session's peer delivery cursor. The verb fits its final
-    /// presentation (including total and hint) after projecting these rows.
-    pub(crate) fn work_catalog_page(
-        &self,
-        query: &WorkCatalogQuery,
-        now: DateTime<Utc>,
-    ) -> Result<(Vec<ReadyWorkSummary>, usize, Vec<WorkClaim>), StoreError> {
-        let store = self.store_at(now)?;
-        let (page, total, claims) =
-            store.query_work_catalog_listing(&self.project_id, now, query)?;
-        Ok((
-            page.items.into_iter().map(ready_work_summary).collect(),
-            total,
-            claims,
-        ))
-    }
-
     /// Returns current focus, ready candidates, and the next bounded project delta.
     ///
     /// # Errors
@@ -326,6 +308,8 @@ impl LocalWorkService {
                             assigned_to: query.assigned_to,
                             held_by: None,
                             label: query.label,
+                            parent_id: None,
+                            child_requirement: None,
                             after,
                             limit,
                         },

@@ -555,6 +555,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
+        StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
         | StoreError::NonCanonicalObject(_)

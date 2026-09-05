@@ -245,6 +245,59 @@ test("Phoenix update --accept replaces criteria and ls reports exact totals", ()
   }
 });
 
+test("scoped listing continuation is bounded and stale cursors refuse through CLI", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-listing-"));
+  try {
+    hostSetup(engramHome);
+    const context = ["--home", engramHome, "work", "--actor-id", "reader", "--session-id", "reader"];
+    const json = (...args) => {
+      const result = run([...context, ...args, "--json"]);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const parent = json("add", "Listing parent").work.short_ref;
+    const expected = [];
+    for (let i = 0; i < 12; i++) expected.push(json("add", `Match ${i} ${'"\\'.repeat(100)}`, "--under", parent, "--optional", "--label", "scope").work.short_ref);
+    const required = json("add", "Required", "--under", parent).work.short_ref;
+    json("add", "Grandchild", "--under", required, "--optional");
+    const filters = ["--under", parent, "--optional", "--label", "scope", "--search", "Match", "--limit", "5", "--verbose"];
+    const first = json("ls", ...filters);
+    assert.equal(first.total, expected.length);
+    assert.equal(first.limit, 5);
+    assert.equal(first.byte_budget, 12 * 1024);
+    const text = run([...context, "ls", ...filters]);
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /--limit 5; byte budget 12288/u);
+    assert.match(text.stdout, /--after c1-/u);
+    assert.ok(Buffer.byteLength(text.stdout) <= 12 * 1024);
+    let page = first;
+    const actual = [];
+    for (;;) {
+      assert.ok(Buffer.byteLength(JSON.stringify(page, null, 2)) <= 12 * 1024);
+      assert.equal(page.shown_before, actual.length);
+      actual.push(...page.items.map(({ work }) => work.short_ref));
+      assert.equal(page.omitted, expected.length - actual.length);
+      if (!page.more) break;
+      assert.ok(page.after && page.items.length);
+      page = json("ls", ...filters, "--after", page.after);
+    }
+    assert.deepEqual(actual, expected);
+    assert.deepEqual(json("ls", "--under", parent, "--required").items.map(({ ref }) => ref), [required]);
+    json("add", "Moves the project cut");
+    const stale = run([...context, "ls", ...filters, "--after", first.after, "--json"]);
+    assert.notEqual(stale.status, 0);
+    const error = JSON.parse(stale.stderr).error;
+    assert.equal(error.code, "work_catalog_cursor_invalid");
+    assert.equal(error.next.length, 1);
+    assert.ok(error.next[0].includes(parent) && error.next[0].includes("--optional"));
+    assert.doesNotMatch(error.next[0], /--after/u);
+    assert.notEqual(run([...context, "ls", "--optional"]).status, 0);
+    assert.notEqual(run([...context, "ls", "--under", parent, "--optional", "--required"]).status, 0);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("add -> claim -> done takes three commands and at most three fields", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-"));
   const actor = "parity-agent";

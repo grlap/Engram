@@ -5,6 +5,7 @@ mod contract_text;
 mod creation;
 mod detach;
 mod discovery;
+mod listing;
 mod remaining_children;
 mod review;
 

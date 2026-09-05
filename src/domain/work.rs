@@ -779,6 +779,9 @@ pub struct WorkCatalogQuery {
     /// Include this session's live claims in a union with assignment when both are set.
     pub held_by: Option<SessionId>,
     pub label: Option<String>,
+    /// Direct children of this parent, not all descendants.
+    pub parent_id: Option<WorkId>,
+    pub child_requirement: Option<ChildRequirement>,
     pub after: Option<WorkId>,
     pub limit: u32,
 }
@@ -788,6 +791,15 @@ pub struct WorkCatalogQuery {
 pub struct WorkCatalogPage {
     pub items: Vec<ReadyWork>,
     pub next_after: Option<WorkId>,
+}
+
+/// Transient listing basis, never persisted or used as execution authority.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WorkCatalogReadCut {
+    pub project_position: i64,
+    pub observed_at: DateTime<Utc>,
+    pub valid_until_ms: Option<i64>,
 }
 
 /// Immutable event shared by work feeds and audit/history views.

@@ -41,10 +41,7 @@ use super::feeds::append_work_event;
 #[cfg(test)]
 use super::planning::{expect_root_contributor, persist_root_execution};
 #[cfg(test)]
-use super::{
-    WORK_CATALOG_COUNT_QUERIES, WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT,
-    WorkEventDraft,
-};
+use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEventDraft};
 
 #[cfg(test)]
 mod tests;
