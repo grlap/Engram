@@ -1,4 +1,7 @@
 use super::*;
+use crate::storage::work::test_support::*;
+use crate::storage::work::*;
+
 use crate::storage::work::query::load_work_claim_optional;
 
 // Seed valid canonical representations with omitted serde defaults, not a

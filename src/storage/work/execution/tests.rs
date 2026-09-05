@@ -8,7 +8,6 @@ use super::*;
 
 mod claims;
 mod gate_evidence;
-mod handoffs;
 mod sessions;
 
 #[test]
