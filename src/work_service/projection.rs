@@ -26,6 +26,8 @@ pub(super) fn selected_work_next_sections(requested: &[WorkNextSection]) -> Vec<
             WorkNextSection::Catalog,
             WorkNextSection::Changes,
             WorkNextSection::Memories,
+            WorkNextSection::Assigned,
+            WorkNextSection::Participated,
         ]
     } else {
         requested.to_vec()
@@ -36,6 +38,8 @@ pub(super) fn selected_work_next_sections(requested: &[WorkNextSection]) -> Vec<
         WorkNextSection::Catalog => 2,
         WorkNextSection::Changes => 3,
         WorkNextSection::Memories => 4,
+        WorkNextSection::Assigned => 5,
+        WorkNextSection::Participated => 6,
     });
     sections.dedup();
     sections
@@ -925,6 +929,9 @@ fn record_byte_omission(response: &mut WorkNextView, section: WorkNextSection) {
 
 pub(super) fn fit_work_next_response(response: &mut WorkNextView) -> Result<(), StoreError> {
     while serde_json::to_vec(response)?.len() > MAX_AGENT_WORK_RESPONSE_BYTES {
+        if response.discovery.shed_one() {
+            continue;
+        }
         if response.memories.take().is_some() {
             // The fixed-size signal is advisory and reannounces until it is
             // delivered. Recording a larger omission row here would increase

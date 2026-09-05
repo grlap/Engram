@@ -115,6 +115,8 @@ impl LocalWorkService {
             process_default_session_initialized: OnceLock::new(),
             #[cfg(test)]
             delivery_stage_hook: None,
+            #[cfg(test)]
+            advisory_read_hook: None,
         }
     }
     pub(super) fn store_at(
@@ -654,8 +656,19 @@ impl LocalWorkService {
             prerequisite_page.omitted_by_state,
         );
         omissions.extend(prerequisite_omissions);
+        let detached_from = store
+            .detached_work_origin(&status.work)?
+            .map(|(source, reason)| {
+                let bounded = compact_text(&reason);
+                super::WorkDetachedFrom {
+                    work_ref: source,
+                    reason_truncated: bounded != reason,
+                    reason: bounded,
+                }
+            });
         let mut view = WorkFocusView {
             session: agent_work_session(&session),
+            detached_from,
             status: ready_work_summary(status),
             completed_by_record,
             outcome,

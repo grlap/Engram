@@ -202,6 +202,52 @@ async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+test("resume discovery agrees across claimless MCP and CLI sessions", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-discovery-"));
+  let coordinator;
+  try {
+    buildAndInit(engramHome);
+    coordinator = new McpClient(engramHome, "coordinator");
+    await coordinator.initialize();
+    const empty = receipt(await coordinator.call("next"));
+    assert.equal(Object.hasOwn(empty, "assigned"), false);
+    assert.equal(Object.hasOwn(empty, "participated"), false);
+    const assigned = [0, 1].map((i) => cliJson(engramHome, "owner", "add", `Assigned ${i}`, "--assignee", "coordinator").work.short_ref);
+    cliJson(engramHome, "owner", "claim", assigned[1]);
+    cliJson(engramHome, "owner", "update", assigned[1], "--blocked", "Awaiting input");
+    const participated = [];
+    for (let i = 0; i < 6; i += 1) {
+      const ref = cliJson(engramHome, "owner", "add", `Reviewed ${i}`).work.short_ref;
+      cliJson(engramHome, "owner", "claim", ref);
+      receipt(await coordinator.call("note", { work_ref: ref, text: `Own finding ${i}\nMore detail` }));
+      participated.push(ref);
+    }
+    cliJson(engramHome, "owner", "note", participated[5], "Owner's later checkpoint");
+    const result = await coordinator.call("next");
+    const value = receipt(result);
+    assert.deepEqual(JSON.parse(result.content[0].text), value);
+    assert.equal(value.held.length, 0);
+    assert.deepEqual(new Set(value.assigned.map((row) => row.ref)), new Set(assigned));
+    assert.ok(value.assigned.some((row) => row.holder === "another session"));
+    assert.deepEqual(value.participated.map((row) => row.ref), participated.toReversed().slice(0, 5));
+    assert.equal(value.participated_omitted, 1);
+    assert.equal(value.participated[0].note, "Own finding 5");
+    assert.ok(value.participated.every((row) => row.holder === "another session"));
+    const cli = cliJson(engramHome, "coordinator", "next");
+    for (const key of ["assigned", "participated", "participated_omitted"]) assert.deepEqual(cli[key], value[key]);
+    const text = cliText(engramHome, "coordinator", "next");
+    const headings = ["held by you (0 shown):", "assigned (2 shown):", "participated (5 shown):", "ready (1 shown):"];
+    const positions = headings.map((heading) => text.indexOf(heading));
+    assert.ok(positions.every((position) => position >= 0), text);
+    assert.deepEqual(positions, positions.toSorted((a, b) => a - b));
+    assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12 * 1024);
+    assert.ok(Buffer.byteLength(text) < 12 * 1024);
+  } finally {
+    if (coordinator) await coordinator.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("detach exposes the same remedy and independent root through MCP", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-detach-"));
   let client;
@@ -210,7 +256,7 @@ test("detach exposes the same remedy and independent root through MCP", async ()
     client = new McpClient(engramHome, "detacher");
     await client.initialize();
     const parent = receipt(await client.call("add", { title: "Parent" })).work.short_ref;
-    const child = receipt(await client.call("add", { title: "Follow-up", under: parent, optional: true })).work.short_ref;
+    const child = receipt(await client.call("add", { title: "Follow-up", under: parent, optional: true, notes: ["Original observation"] })).work.short_ref;
     receipt(await client.call("claim", { work_ref: parent }));
     receipt(await client.call("done", { work_ref: parent, summary: "Parent delivered" }));
     const history = receipt(await client.call("show", { work_ref: parent })).history;
@@ -229,6 +275,11 @@ test("detach exposes the same remedy and independent root through MCP", async ()
     const successor = result.receipt.work_ref;
     assert.notEqual(successor, child);
     assert.equal(result.next[0], `engram work claim ${successor}`);
+    const successorView = receipt(await client.call("show", { work_ref: successor, notes: true }));
+    assert.deepEqual(successorView.detached_from, { ref: child, reason: "Independent follow-up" });
+    assert.ok(successorView.next.includes(`engram work show ${child}`));
+    assert.deepEqual(successorView.notes, []);
+    assert.equal(receipt(await client.call("show", { work_ref: child, notes: true })).notes[0].summary, "Original observation");
     assert.deepEqual(receipt(await client.call("show", { work_ref: parent })).history, history);
     assert.equal(receipt(await client.call("show", { work_ref: child })).status.work.superseded_by, successor);
     structuredError(await client.call("update", { work_ref: child, action: "detach", reason: "Independent follow-up" }), "work_detach_refused");

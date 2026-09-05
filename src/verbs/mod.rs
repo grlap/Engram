@@ -258,6 +258,8 @@ fn section_word(section: WorkNextSection) -> &'static str {
         WorkNextSection::Catalog => "items",
         WorkNextSection::Changes => "changes",
         WorkNextSection::Memories => "memory signals",
+        WorkNextSection::Assigned => "assigned items",
+        WorkNextSection::Participated => "participated items",
     }
 }
 
@@ -298,6 +300,13 @@ fn short_with_limit(text: &str, max_bytes: usize) -> String {
         end -= 1;
     }
     format!("{}…", text[..end].trim_end())
+}
+
+fn terminal_safe_line(text: &str) -> String {
+    terminal_safe_multiline(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn nonempty(value: Option<String>) -> Option<String> {

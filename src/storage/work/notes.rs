@@ -152,7 +152,7 @@ fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(
     })
 }
 
-fn load_note(
+pub(super) fn load_note(
     connection: &Connection,
     work_id: WorkId,
     hash: &ObjectHash,

@@ -1563,13 +1563,17 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
             reader.work_next(
                 50,
                 WorkNextQuery {
-                    sections: vec![WorkNextSection::Ready],
+                    sections: vec![
+                        WorkNextSection::Ready,
+                        WorkNextSection::Assigned,
+                        WorkNextSection::Participated,
+                    ],
                     ..WorkNextQuery::default()
                 },
                 at(1_150 + i64::try_from(sample_index).expect("work_next timestamp")),
             )
         })
-        .expect("measure ready work_next");
+        .expect("measure ready and claimless discovery work_next");
     }
 
     let mut evidence_samples = Vec::with_capacity(SAMPLE_COUNT);

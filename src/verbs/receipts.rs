@@ -179,6 +179,7 @@ pub(super) struct CompactSectionOmission {
 
 #[derive(Clone)]
 pub(super) struct CompactNextReceipt {
+    pub(super) discovery: crate::work_service::WorkDiscoveryView,
     pub(super) focus: Option<CompactWorkRow>,
     pub(super) held: Vec<CompactWorkRow>,
     pub(super) ready: Vec<CompactWorkRow>,
@@ -732,6 +733,7 @@ pub(super) fn compact_next_receipt(
     guidance: &Guidance,
 ) -> Result<CompactNextReceipt, VerbError> {
     let mut compact = CompactNextReceipt {
+        discovery: view.discovery.clone(),
         focus: view
             .focus
             .as_ref()
@@ -785,13 +787,27 @@ pub(super) fn fit_compact_next(
 
 pub(super) fn fit_compact_next_to(
     mut compact: CompactNextReceipt,
-    max_json_bytes: usize,
+    max_bytes: usize,
 ) -> Result<CompactNextReceipt, VerbError> {
     loop {
         let value = compact_next_value(&compact);
         let current_bytes = serde_json::to_vec_pretty(&value)?.len();
-        if current_bytes < max_json_bytes {
+        // Escaped terminal data can be larger than its UTF-8 JSON value. Fit
+        // the actual emitted receipt, including guidance and the build footer.
+        let terminal_bytes = Receipt::assemble(
+            compact_next_lines(&compact),
+            compact.guidance.clone(),
+            value,
+            false,
+        )
+        .with_build_identity()
+        .text()
+        .len();
+        if current_bytes < max_bytes && terminal_bytes < max_bytes {
             return Ok(compact);
+        }
+        if compact.discovery.shed_one() {
+            continue;
         }
         if compact.memories.take().is_some() {
             // Keep this fixed-size advisory omission silent: the signal stays
@@ -891,7 +907,7 @@ pub(super) fn compact_row_at_mut(
 }
 
 pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
-    json!({
+    let mut value = json!({
         // Identity participates in byte fitting, not a post-fit append.
         "build_fingerprint": crate::build_identity::current().build_fingerprint,
         "focus": compact.focus,
@@ -902,7 +918,13 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
         "omissions": compact.omissions,
         "reminders": compact.guidance.reminders,
         "next": compact.guidance.next,
-    })
+    });
+    if let (Value::Object(discovery), Value::Object(receipt)) =
+        (json!(compact.discovery), &mut value)
+    {
+        receipt.extend(discovery);
+    }
+    value
 }
 
 pub(super) fn record_compact_omission(
@@ -930,6 +952,8 @@ pub(super) fn compact_section_name(section: WorkNextSection) -> &'static str {
         WorkNextSection::Catalog => "catalog",
         WorkNextSection::Changes => "changes",
         WorkNextSection::Memories => "memories",
+        WorkNextSection::Assigned => "assigned",
+        WorkNextSection::Participated => "participated",
     }
 }
 
@@ -946,6 +970,7 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
     for held in &compact.held {
         lines.push(format!("  {}", compact_row_line(held)));
     }
+    append_discovery_lines(&mut lines, &compact.discovery);
     lines.push(format!("ready ({} shown):", compact.ready.len()));
     for ready in &compact.ready {
         lines.push(format!("  {}", compact_row_line(ready)));
@@ -982,6 +1007,39 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         ));
     }
     lines
+}
+
+pub(super) fn append_discovery_lines(
+    lines: &mut Vec<String>,
+    discovery: &crate::work_service::WorkDiscoveryView,
+) {
+    for (name, rows, omitted) in [
+        ("assigned", &discovery.assigned, discovery.assigned_omitted),
+        (
+            "participated",
+            &discovery.participated,
+            discovery.participated_omitted,
+        ),
+    ] {
+        if rows.is_empty() && omitted == 0 {
+            continue;
+        }
+        lines.push(format!("{name} ({} shown):", rows.len()));
+        for row in rows {
+            let note = row.note.as_ref().map_or(String::new(), |note| {
+                format!(" — {}", super::terminal_safe_line(note))
+            });
+            lines.push(format!(
+                "  {} \"{}\" ({}){note}",
+                row.work_ref,
+                super::terminal_safe_line(&row.title),
+                row.holder
+            ));
+        }
+        if omitted > 0 {
+            lines.push(format!("  ({omitted} more {name} not shown)"));
+        }
+    }
 }
 
 pub(super) fn compact_omitted(compact: &CompactNextReceipt, section: &str) -> usize {

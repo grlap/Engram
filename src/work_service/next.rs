@@ -55,7 +55,7 @@ impl LocalWorkService {
             acknowledge_token,
             query,
             now,
-            false,
+            None,
         )
     }
 
@@ -64,10 +64,11 @@ impl LocalWorkService {
     pub(crate) fn work_next_for_agent(
         &self,
         limit: u32,
+        list_limit: u32,
         query: WorkNextQuery,
         now: DateTime<Utc>,
     ) -> Result<WorkNextView, StoreError> {
-        self.work_next_internal(limit, None, None, query, now, true)
+        self.work_next_internal(limit, None, None, query, now, Some(list_limit))
     }
 
     #[allow(
@@ -81,7 +82,7 @@ impl LocalWorkService {
         acknowledge_token: Option<&str>,
         query: WorkNextQuery,
         now: DateTime<Utc>,
-        defer_memory_acknowledgement: bool,
+        agent_list_limit: Option<u32>,
     ) -> Result<WorkNextView, StoreError> {
         let mut store = self.store_at(now)?;
         if let Some(through) = acknowledge_through {
@@ -240,76 +241,118 @@ impl LocalWorkService {
             let confirmed = initial_session.project_cursor;
             (initial_session, None, confirmed)
         };
-        let focus = if wants_focus {
-            session
-                .focused_work_id
-                .map(|work_id| self.focus_view(&store, work_id, true, false, now))
-                .transpose()?
-        } else {
-            None
-        };
-        let ready = if wants_ready {
-            let source = store.ready_work(&self.project_id, now, limit)?;
-            let source_count = source.len();
-            let bounded = bounded_ready_prefix(
-                source.into_iter().map(ready_work_summary).collect(),
-                MAX_READY_SECTION_BYTES,
-            )?;
-            if source_count > bounded.len() {
-                omissions.push(WorkSectionOmission {
-                    section: WorkNextSection::Ready,
-                    reason: WorkSectionOmissionReason::ByteBudget,
-                    omitted_count: source_count - bounded.len(),
-                });
-            }
-            Some(bounded)
-        } else {
-            None
-        };
-        let after = query
-            .after
-            .as_deref()
-            .map(|work_ref| store.resolve_work_ref(&self.project_id, work_ref))
-            .transpose()?
-            .map(|work| work.work_id);
-        let catalog = if wants_catalog {
-            let source = store.query_work_catalog(
-                &self.project_id,
-                now,
-                &WorkCatalogQuery {
-                    search: query.search,
-                    lifecycles: query.lifecycles,
-                    availabilities: query.availabilities,
-                    blocked_only: query.blocked_only,
-                    assigned_to: query.assigned_to,
-                    held_by: None,
-                    label: query.label,
-                    after,
-                    limit,
-                },
-            )?;
-            let source_count = source.items.len();
-            let source_next_after = source.next_after;
-            let items = bounded_ready_prefix(
-                source.items.into_iter().map(ready_work_summary).collect(),
-                MAX_CATALOG_SECTION_BYTES,
-            )?;
-            if source_count > items.len() {
-                omissions.push(WorkSectionOmission {
-                    section: WorkNextSection::Catalog,
-                    reason: WorkSectionOmissionReason::ByteBudget,
-                    omitted_count: source_count - items.len(),
-                });
-            }
-            let next_after = if source_count > items.len() {
-                items.last().map(|item| item.work.work_id)
-            } else {
-                source_next_after
-            };
-            Some(WorkCatalogSummaryPage { items, next_after })
-        } else {
-            None
-        };
+        #[cfg(test)]
+        if let Some(hook) = &self.advisory_read_hook {
+            hook.entered.wait();
+            hook.release.wait();
+        }
+        let (focus, ready, catalog, discovery, agent_lists) =
+            store.work_read_snapshot(|store| {
+                let focus = if wants_focus {
+                    // The staged session remains the delivery basis; advisory
+                    // focus must bind the session visible inside this read cut.
+                    store
+                        .work_session_state(&self.project_id, &self.session_id, now)?
+                        .focused_work_id
+                        .map(|work_id| self.focus_view(store, work_id, true, false, now))
+                        .transpose()?
+                } else {
+                    None
+                };
+                let ready = if wants_ready {
+                    let source = store.ready_work(&self.project_id, now, limit)?;
+                    let source_count = source.len();
+                    let bounded = bounded_ready_prefix(
+                        source.into_iter().map(ready_work_summary).collect(),
+                        MAX_READY_SECTION_BYTES,
+                    )?;
+                    if source_count > bounded.len() {
+                        omissions.push(WorkSectionOmission {
+                            section: WorkNextSection::Ready,
+                            reason: WorkSectionOmissionReason::ByteBudget,
+                            omitted_count: source_count - bounded.len(),
+                        });
+                    }
+                    Some(bounded)
+                } else {
+                    None
+                };
+                let after = query
+                    .after
+                    .as_deref()
+                    .map(|work_ref| store.resolve_work_ref(&self.project_id, work_ref))
+                    .transpose()?
+                    .map(|work| work.work_id);
+                let catalog = if wants_catalog {
+                    let source = store.query_work_catalog(
+                        &self.project_id,
+                        now,
+                        &WorkCatalogQuery {
+                            search: query.search,
+                            lifecycles: query.lifecycles,
+                            availabilities: query.availabilities,
+                            blocked_only: query.blocked_only,
+                            assigned_to: query.assigned_to,
+                            held_by: None,
+                            label: query.label,
+                            after,
+                            limit,
+                        },
+                    )?;
+                    let source_count = source.items.len();
+                    let source_next_after = source.next_after;
+                    let items = bounded_ready_prefix(
+                        source.items.into_iter().map(ready_work_summary).collect(),
+                        MAX_CATALOG_SECTION_BYTES,
+                    )?;
+                    if source_count > items.len() {
+                        omissions.push(WorkSectionOmission {
+                            section: WorkNextSection::Catalog,
+                            reason: WorkSectionOmissionReason::ByteBudget,
+                            omitted_count: source_count - items.len(),
+                        });
+                    }
+                    let next_after = if source_count > items.len() {
+                        items.last().map(|item| item.work.work_id)
+                    } else {
+                        source_next_after
+                    };
+                    Some(WorkCatalogSummaryPage { items, next_after })
+                } else {
+                    None
+                };
+                let mut discovery = WorkDiscoveryView::default();
+                for (section, assigned) in [
+                    (WorkNextSection::Assigned, true),
+                    (WorkNextSection::Participated, false),
+                ] {
+                    if sections.contains(&section) {
+                        let page = store.work_discovery(
+                            &self.project_id,
+                            &self.session_id,
+                            &self.actor_id,
+                            assigned,
+                            now,
+                        )?;
+                        let rows = page
+                            .items
+                            .into_iter()
+                            .map(|row| discovery_summary(row, &self.session_id, now))
+                            .collect();
+                        if assigned {
+                            discovery.assigned = rows;
+                            discovery.assigned_omitted = page.omitted;
+                        } else {
+                            discovery.participated = rows;
+                            discovery.participated_omitted = page.omitted;
+                        }
+                    }
+                }
+                let agent_lists = agent_list_limit
+                    .map(|limit| self.agent_next_lists(store, limit, now))
+                    .transpose()?;
+                Ok((focus, ready, catalog, discovery, agent_lists))
+            })?;
         let memories = memory_advertisement
             .as_ref()
             .map(|advertisement| ProjectMemorySignal {
@@ -318,6 +361,8 @@ impl LocalWorkService {
             });
         let mut response = WorkNextView {
             session: agent_work_session(&session),
+            discovery,
+            agent_lists,
             focus,
             ready,
             catalog,
@@ -336,7 +381,7 @@ impl LocalWorkService {
             && let Some(advertisement) = memory_advertisement
             && advertisement.changed
         {
-            if defer_memory_acknowledgement {
+            if agent_list_limit.is_some() {
                 response.memory_advertisement = Some(advertisement);
             } else {
                 acknowledge_project_memory_advertisement_best_effort(
@@ -348,6 +393,69 @@ impl LocalWorkService {
             }
         }
         Ok(response)
+    }
+
+    fn agent_next_lists(
+        &self,
+        store: &SqliteStore,
+        limit: u32,
+        now: DateTime<Utc>,
+    ) -> Result<WorkAgentNextLists, StoreError> {
+        let claims = store.live_work_claims(&self.project_id, now)?;
+        let mine = claims
+            .iter()
+            .filter(|(_, holder, _)| *holder == self.session_id)
+            .map(|(id, _, expiry)| (*id, *expiry))
+            .collect::<std::collections::HashMap<_, _>>();
+        let held = if mine.is_empty() {
+            Vec::new()
+        } else {
+            self.agent_catalog(
+                store,
+                limit,
+                vec![WorkAvailability::Claimed, WorkAvailability::Active],
+                now,
+            )?
+            .into_iter()
+            .filter_map(|item| mine.get(&item.work.work_id).map(|expiry| (item, *expiry)))
+            .collect()
+        };
+        let ready = self.agent_catalog(store, limit, vec![WorkAvailability::Ready], now)?;
+        Ok(WorkAgentNextLists {
+            held,
+            ready,
+            claims,
+        })
+    }
+
+    fn agent_catalog(
+        &self,
+        store: &SqliteStore,
+        limit: u32,
+        availabilities: Vec<WorkAvailability>,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<ReadyWorkSummary>, StoreError> {
+        let wanted = usize::try_from(limit).unwrap_or(usize::MAX).max(1);
+        let mut items = Vec::new();
+        let mut query = WorkCatalogQuery {
+            lifecycles: vec![WorkLifecycle::Open],
+            availabilities,
+            ..WorkCatalogQuery::default()
+        };
+        loop {
+            query.limit = u32::try_from(wanted - items.len()).unwrap_or(u32::MAX);
+            let page = store.query_work_catalog(&self.project_id, now, &query)?;
+            let page_len = page.items.len();
+            items.extend(page.items.into_iter().map(ready_work_summary));
+            match page.next_after {
+                Some(next) if page_len > 0 && items.len() < wanted => {
+                    query.after = Some(next);
+                }
+                _ => break,
+            }
+        }
+        items.truncate(wanted);
+        Ok(items)
     }
 
     /// Acknowledges the exact project-memory advisory candidate retained in an
@@ -365,6 +473,30 @@ impl LocalWorkService {
             &self.session_id,
             advertisement,
         );
+    }
+}
+
+fn discovery_summary(
+    row: crate::storage::WorkDiscoveryRow,
+    session: &SessionId,
+    now: DateTime<Utc>,
+) -> WorkDiscoverySummary {
+    let holder = row
+        .claim
+        .as_ref()
+        .filter(|claim| claim.state == WorkClaimState::Active && claim.expires_at > now)
+        .map_or("unclaimed", |claim| {
+            if claim.holder == *session {
+                "you"
+            } else {
+                "another session"
+            }
+        });
+    WorkDiscoverySummary {
+        work_ref: row.work.short_ref,
+        title: compact_text(&row.work.title),
+        holder: holder.into(),
+        note: row.note.map(|note| compact_text(&note)),
     }
 }
 

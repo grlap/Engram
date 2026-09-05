@@ -1,9 +1,156 @@
 use super::*;
 
 #[test]
+fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt() {
+    use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
+    let controls = "\u{9b}".repeat(96);
+    let row = |index| WorkDiscoverySummary {
+        work_ref: compact_test_row(index).work_ref,
+        title: controls.clone(),
+        holder: "another session".into(),
+        note: Some(controls.clone()),
+    };
+    let compact = CompactNextReceipt {
+        discovery: WorkDiscoveryView {
+            assigned: (0..5).map(row).collect(),
+            participated: (5..10).map(row).collect(),
+            assigned_omitted: 2,
+            participated_omitted: 3,
+        },
+        focus: None,
+        held: Vec::new(),
+        ready: (10..15).map(compact_test_row).collect(),
+        changes: vec!["A delivered change".into()],
+        memories: Some(ProjectMemorySignal {
+            count: 1,
+            changed: true,
+        }),
+        omissions: Vec::new(),
+        guidance: Guidance {
+            reminders: vec!["Keep this reminder".into()],
+            next: vec!["engram work next".into()],
+        },
+    };
+    let render = |compact: &CompactNextReceipt| {
+        Receipt::assemble(
+            compact_next_lines(compact),
+            compact.guidance.clone(),
+            compact_next_value(compact),
+            false,
+        )
+        .with_build_identity()
+    };
+    let before = render(&compact);
+    assert!(serde_json::to_vec_pretty(&before.value).unwrap().len() < MAX_COMPACT_NEXT_JSON_BYTES);
+    assert!(before.text().len() > MAX_AGENT_WORK_RESPONSE_BYTES);
+    // The second budget proves that even the final footer participates in
+    // fitting: the body alone fits, but the complete receipt must shed a row.
+    for budget in [MAX_AGENT_WORK_RESPONSE_BYTES, before.text().len()] {
+        let fitted = if budget == MAX_AGENT_WORK_RESPONSE_BYTES {
+            fit_compact_next(compact.clone())
+        } else {
+            fit_compact_next_to(compact.clone(), budget)
+        }
+        .expect("escaped discovery fits both formats");
+        let complete = render(&fitted);
+        assert!(complete.text().len() < budget);
+        assert!(serde_json::to_vec_pretty(&complete.value).unwrap().len() < budget);
+        assert!(complete.text().contains("\\u{9b}"));
+        assert!(!complete.text().contains('\u{9b}'));
+        assert!(
+            complete
+                .text()
+                .lines()
+                .last()
+                .unwrap()
+                .starts_with("build: ")
+        );
+        assert_eq!(
+            fitted.discovery.assigned.len() + fitted.discovery.assigned_omitted,
+            7
+        );
+        assert_eq!(
+            fitted.discovery.participated.len() + fitted.discovery.participated_omitted,
+            8
+        );
+        assert!(fitted.discovery.participated_omitted > 3);
+        for section in [
+            "ready",
+            "held",
+            "focus",
+            "changes",
+            "memories",
+            "omissions",
+            "reminders",
+            "next",
+        ] {
+            assert_eq!(
+                complete.value[section], before.value[section],
+                "{section} preserved"
+            );
+        }
+        for row in fitted
+            .discovery
+            .assigned
+            .iter()
+            .chain(&fitted.discovery.participated)
+        {
+            assert_eq!(row.title, controls);
+            assert_eq!(row.note.as_ref(), Some(&controls));
+        }
+    }
+}
+
+#[test]
+fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
+    use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
+    let mut receipt = CompactNextReceipt {
+        discovery: WorkDiscoveryView::default(),
+        focus: Some(compact_test_row(0)),
+        held: vec![compact_test_row(1)],
+        ready: vec![compact_test_row(2)],
+        changes: vec!["A delivered change".into()],
+        memories: Some(ProjectMemorySignal {
+            count: 1,
+            changed: true,
+        }),
+        omissions: Vec::new(),
+        guidance: Guidance::default(),
+    };
+    let row = |index| WorkDiscoverySummary {
+        work_ref: compact_test_row(index).work_ref,
+        title: "Discovery title".into(),
+        holder: "another session".into(),
+        note: Some("Own finding".repeat(12)),
+    };
+    receipt.discovery.assigned = (3..5).map(row).collect();
+    receipt.discovery.participated = (5..10).map(row).collect();
+    receipt.discovery.participated_omitted = 1;
+    let mut baseline = receipt.clone();
+    while baseline.discovery.shed_one() {}
+    let limit = serde_json::to_vec_pretty(&compact_next_value(&baseline))
+        .unwrap()
+        .len()
+        + 1;
+    let fitted = fit_compact_next_to(receipt, limit).expect("discovery sheds");
+    assert_eq!(compact_next_value(&fitted), compact_next_value(&baseline));
+    assert_eq!(fitted.discovery.assigned_omitted, 2);
+    assert_eq!(fitted.discovery.participated_omitted, 6);
+    assert!(fitted.discovery.assigned.is_empty());
+    assert!(fitted.discovery.participated.is_empty());
+    assert!(compact_next_value(&fitted).get("participated").is_none());
+    assert!(
+        compact_next_lines(&fitted)
+            .iter()
+            .any(|line| line.contains("6 more participated"))
+    );
+}
+
+#[test]
 fn compact_next_trims_every_advisory_section_instead_of_failing() {
     let row = compact_test_row(0);
     let receipt = CompactNextReceipt {
+        discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: Some(row.clone()),
         held: (1..=20).map(compact_test_row).collect(),
         ready: (21..=40).map(compact_test_row).collect(),
@@ -77,6 +224,7 @@ fn compact_next_sheds_labels_in_navigation_priority_order() {
     last_ready.labels = vec!["label-with-a-quoted-\"value\"".into()];
     let last_ready_title = last_ready.title.clone();
     let receipt = CompactNextReceipt {
+        discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: Some(focus),
         held: vec![held],
         ready: vec![first_ready, last_ready],
@@ -113,6 +261,7 @@ fn compact_label_shed_restores_and_continues_to_a_reducing_row() {
     let mut last_ready = compact_test_row(2);
     last_ready.labels = vec!["x".into()];
     let receipt = CompactNextReceipt {
+        discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: None,
         held: Vec::new(),
         ready: vec![first_ready, last_ready],
@@ -146,6 +295,7 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
     }];
     record_compact_omission(&mut omissions, "changes", 3);
     let receipt = CompactNextReceipt {
+        discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: None,
         held: Vec::new(),
         ready: Vec::new(),
@@ -176,6 +326,7 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
     );
 
     let byte_budget_only = CompactNextReceipt {
+        discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: None,
         held: Vec::new(),
         ready: Vec::new(),

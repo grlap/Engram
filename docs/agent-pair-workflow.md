@@ -266,9 +266,20 @@ checkpoint or contribution, or earn completion-seal credit. When a ruling must
 support completion, Codex explicitly cites it in holder-owned execution evidence
 and the final checkpoint, preserving the original author's attribution.
 
-The remaining resume limitation is that `next` does not expose a general
-review-participation relation. Fable's own coordination item can retain its
-outstanding actions while the decision itself stays on the work it concerns.
+Claimless resume now includes bounded `assigned` and `participated` sections in
+`next`, between held and ready work. Assignment names this actor; participation
+recovers Open work this session noted, observed, gated, or received a handoff
+offer on, excluding work it currently holds. Each section shows at most five
+items in latest dense project-feed order, with a holder word and the first line
+of this session's latest own note when present. Exact omitted counts advertise
+additional candidates. These reads do not claim, select focus, or acknowledge
+delivery; normal change delivery remains separate. See
+[resume discovery](features/local-work-system.md#agent-native-protocol).
+
+Recent participation is discovery, not an obligation. Fable's own claimed
+coordination item retains outstanding decisions, waiting conditions, and next
+actions while the decision itself stays on the work it concerns. A prior note
+or handoff offer does not mean a review is still owed.
 
 A compaction summary is a navigation aid to these records. Review acceptance,
 packet identity, and child dependencies should not exist solely in that summary.

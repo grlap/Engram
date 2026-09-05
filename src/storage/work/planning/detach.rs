@@ -88,6 +88,12 @@ impl SqliteStore {
         let mut reconciled_execution = None;
         if let Some(old_run) = &run {
             let mut execution = load_root_execution(&transaction, old_run.root_execution_id)?;
+            if execution.root_id != item.root_id || execution.project_id != item.project_id {
+                return Err(StoreError::InvalidWorkProjection(format!(
+                    "detach root execution {:?} crosses the work project or root boundary",
+                    execution.root_execution_id
+                )));
+            }
             if execution.state == RootExecutionState::Active
                 && load_work_item(&transaction, item.root_id)?.lifecycle == WorkLifecycle::Open
                 && let Some(claim) = load_work_claim_optional(&transaction, old_run.run_id)?

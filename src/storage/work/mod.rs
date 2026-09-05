@@ -6,6 +6,7 @@
 )]
 
 mod completion;
+mod discovery;
 mod execution;
 mod feeds;
 mod integrity;
@@ -15,6 +16,8 @@ mod planning;
 mod query;
 mod schema;
 mod session;
+
+pub(crate) use discovery::WorkDiscoveryRow;
 
 #[cfg(test)]
 mod test_support;

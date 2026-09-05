@@ -394,13 +394,21 @@ fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging()
         "shared-actor".into(),
         SessionId("reviewer-private-session".into()),
     );
+    let own_view = reviewer_words.next(&NextInput::default(), at(7)).unwrap();
+    // Own findings remain excluded from change delivery; recent participation
+    // is a separate persistent discovery section, not a delivered peer delta.
     assert!(
-        !reviewer_words
-            .next(&NextInput::default(), at(7))
+        !serde_json::to_string(&own_view.value["changes"])
             .unwrap()
-            .text()
             .contains("same actor peer finding")
     );
+    assert_eq!(
+        own_view.value["participated"][0]["note"],
+        "same actor peer finding"
+    );
+    let text = own_view.text();
+    let changes = text.split_once("changes by others").unwrap().1;
+    assert!(!changes.contains("same actor peer finding"));
 }
 
 #[test]

@@ -5,11 +5,11 @@ use crate::domain::normalize_gate_evidence_input;
 use super::{
     Arc, ChildRequirement, DEFAULT_LIMIT, DateTime, Deserialize, Guidance, Holder,
     LocalWorkService, MAX_AGENT_WORK_RESPONSE_BYTES, MAX_COMPACT_CHANGE_ITEMS, MAX_NEXT_PAGES,
-    PathBuf, ProjectId, ReadyWorkSummary, Receipt, Serialize, SessionId, StoreError, Utc,
-    VerbError, VerificationKind, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
+    PathBuf, ProjectId, Receipt, Serialize, SessionId, StoreError, Utc, VerbError,
+    VerificationKind, WORK_UPDATE_CLAIM_ACTION, WORK_UPDATE_CLAIM_RECOVERY_ACTION,
     WorkAttributionDefaults, WorkAvailability, WorkBlockerKind, WorkChildInput, WorkCompleteInput,
-    WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput, WorkId,
-    WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection, WorkNextView, WorkObligationPage,
+    WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput, WorkItemKind,
+    WorkLifecycle, WorkNextQuery, WorkNextSection, WorkNextView, WorkObligationPage,
     WorkObligationState, WorkPrerequisiteState, WorkProposeInput, WorkProposeResult,
     WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, clock, collapse_changes,
     held_suffix, item_line, json, lifecycle_word, nonempty,
@@ -310,23 +310,20 @@ impl AgentVerbs {
                 WorkNextSection::Focus,
                 WorkNextSection::Changes,
                 WorkNextSection::Memories,
+                WorkNextSection::Assigned,
+                WorkNextSection::Participated,
             ],
             context_generation: input.context_generation.clone(),
             ..WorkNextQuery::default()
         };
-        let view = self.service.work_next_for_agent(change_limit, query, now)?;
-        let held = self.held_items(limit, now)?;
-        // The core's ready section is byte-bounded; the catalog pages densely.
-        let ready = self.catalog(
-            &WorkNextQuery {
-                sections: vec![WorkNextSection::Catalog],
-                lifecycles: vec![WorkLifecycle::Open],
-                availabilities: vec![WorkAvailability::Ready],
-                ..WorkNextQuery::default()
-            },
-            limit,
-            now,
-        )?;
+        let mut view = self
+            .service
+            .work_next_for_agent(change_limit, limit, query, now)?;
+        let lists = view.agent_lists.take().ok_or_else(|| {
+            StoreError::InvalidWorkProjection("agent next has no advisory list snapshot".into())
+        })?;
+        let held = lists.held;
+        let ready = lists.ready;
         let mut changes = collapse_changes(view.changes.as_deref().unwrap_or_default());
         let mut not_delivered = changes_not_delivered(&view);
         // Compact output may drain own-session-only pages within its bound.
@@ -375,6 +372,17 @@ impl AgentVerbs {
                 guidance.next.push(command);
             }
         }
+        if let Some(row) = view
+            .discovery
+            .assigned
+            .first()
+            .or_else(|| view.discovery.participated.first())
+        {
+            let command = format!("engram work show {}", row.work_ref);
+            if !guidance.next.contains(&command) {
+                guidance.next.push(command);
+            }
+        }
         if guidance.next.is_empty() {
             guidance.next.push("engram work add \"…\"".into());
         }
@@ -396,6 +404,7 @@ impl AgentVerbs {
                     clock(*expires_at, now)
                 ));
             }
+            super::receipts::append_discovery_lines(&mut lines, &view.discovery);
             lines.push(format!("ready ({}):", ready.len()));
             for item in &ready {
                 lines.push(format!("  {}", ready_line(item)));
@@ -431,7 +440,11 @@ impl AgentVerbs {
             )?;
             (lines, value, guidance)
         } else {
-            let claims = self.live_claim_map(now)?;
+            let claims = lists
+                .claims
+                .into_iter()
+                .map(|(id, holder, expiry)| (id, (holder, expiry)))
+                .collect();
             let compact = compact_next_receipt(&view, &held, &ready, &changes, &claims, &guidance)?;
             let lines = compact_next_lines(&compact);
             let value = compact_next_value(&compact);
@@ -444,98 +457,6 @@ impl AgentVerbs {
             self.service.acknowledge_work_next_memories(&view, now);
         }
         Ok(Receipt::assemble(lines, guidance, value, false).with_build_identity())
-    }
-
-    fn live_claim_map(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<HashMap<WorkId, (SessionId, DateTime<Utc>)>, VerbError> {
-        Ok(self.service.live_work_claims(now)?.into_iter().fold(
-            HashMap::new(),
-            |mut claims, (work_id, holder, expires_at)| {
-                claims.insert(work_id, (holder, expires_at));
-                claims
-            },
-        ))
-    }
-
-    /// Open items this session holds under a live claim, in catalog order.
-    fn held_items(
-        &self,
-        limit: u32,
-        now: DateTime<Utc>,
-    ) -> Result<Vec<(ReadyWorkSummary, DateTime<Utc>)>, VerbError> {
-        // One claim query names what this session holds; the catalog then
-        // supplies the summaries without a focus view per item.
-        let mine = self
-            .service
-            .held_work(now)?
-            .into_iter()
-            .collect::<std::collections::HashMap<_, _>>();
-        if mine.is_empty() {
-            return Ok(Vec::new());
-        }
-        let items = self.catalog(
-            &WorkNextQuery {
-                sections: vec![WorkNextSection::Catalog],
-                lifecycles: vec![WorkLifecycle::Open],
-                availabilities: vec![WorkAvailability::Claimed, WorkAvailability::Active],
-                ..WorkNextQuery::default()
-            },
-            limit,
-            now,
-        )?;
-        Ok(items
-            .into_iter()
-            .filter_map(|item| {
-                mine.get(&item.work.work_id)
-                    .map(|expires_at| (item, *expires_at))
-            })
-            .collect())
-    }
-
-    /// Reads catalog pages until `limit` items or the end; the core bounds
-    /// each page by bytes, so one call rarely returns the whole list.
-    fn catalog(
-        &self,
-        query: &WorkNextQuery,
-        limit: u32,
-        now: DateTime<Utc>,
-    ) -> Result<Vec<ReadyWorkSummary>, VerbError> {
-        let wanted = usize::try_from(limit).unwrap_or(usize::MAX).max(1);
-        let mut items: Vec<ReadyWorkSummary> = Vec::new();
-        let mut after: Option<String> = None;
-        loop {
-            let remaining = u32::try_from(wanted - items.len()).unwrap_or(u32::MAX);
-            let view = self.service.work_next(
-                remaining,
-                WorkNextQuery {
-                    sections: vec![WorkNextSection::Catalog],
-                    search: query.search.clone(),
-                    lifecycles: query.lifecycles.clone(),
-                    availabilities: query.availabilities.clone(),
-                    blocked_only: query.blocked_only,
-                    assigned_to: query.assigned_to.clone(),
-                    label: query.label.clone(),
-                    after: after.clone(),
-                    context_generation: None,
-                },
-                now,
-            )?;
-            let Some(page) = view.catalog else {
-                break;
-            };
-            let page_len = page.items.len();
-            items.extend(page.items);
-            match page.next_after {
-                Some(next) if page_len > 0 && items.len() < wanted => {
-                    after = Some(next.0.to_string());
-                }
-                _ => break,
-            }
-        }
-        items.truncate(wanted);
-        Ok(items)
     }
 
     /// `ls`: open items by default; `search` is `ls` over every lifecycle.
@@ -1623,10 +1544,17 @@ impl AgentVerbs {
             .map(|blocker| short(&blocker.detail))
             .collect::<Vec<_>>();
         let mut reminders = Vec::new();
-        if let Some(lifecycle) = view.status.blocking_parent {
-            reminders.push(format!("parent {}", lifecycle_word(lifecycle)));
+        let parent_reminder = view
+            .status
+            .blocking_parent
+            .map(|lifecycle| format!("parent {}", lifecycle_word(lifecycle)));
+        if let Some(words) = &parent_reminder {
+            reminders.push(words.clone());
         }
         for reason in &view.status.why {
+            if parent_reminder.as_deref() == Some(reason.trim()) {
+                continue;
+            }
             if let Some(words) =
                 reminder_for_reason(reason, holder, &blockers, claim_recovery_required)
                 && !reminders.contains(&words)
@@ -1639,7 +1567,7 @@ impl AgentVerbs {
                 reminders.push(words);
             }
         }
-        let next = next_commands(
+        let mut next = next_commands(
             &view.allowed_next,
             &view.status.work.short_ref,
             word,
@@ -1647,6 +1575,14 @@ impl AgentVerbs {
             view.status.work.lifecycle == WorkLifecycle::Open,
             &view.prerequisites,
         );
+        if word == "show"
+            && let Some(origin) = &view.detached_from
+        {
+            let command = format!("engram work show {}", origin.work_ref);
+            if !next.contains(&command) {
+                next.push(command);
+            }
+        }
         Guidance { reminders, next }
     }
 }
@@ -1703,7 +1639,6 @@ pub(super) fn reminder_for_reason(
         };
     }
     match reason {
-        "parent completed" | "parent cancelled" | "parent superseded" | "parent proposed" => None,
         "the ancestor or root-execution generation does not admit execution" => {
             Some("a parent item does not admit execution yet".into())
         }

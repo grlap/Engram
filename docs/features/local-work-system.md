@@ -478,12 +478,41 @@ The hot agent protocol has six operations:
 
 | Operation | Purpose |
 | --- | --- |
-| `work_next` | Return selected compact focus, ready, catalog, change, and content-free project-memory advisory sections under a 12 KiB ceiling; each call returns the changes since the session's previous call |
+| `work_next` | Return selected compact focus, ready, catalog, assignment/participation discovery, change, and content-free project-memory advisory sections under a 12 KiB ceiling; each call returns the changes since the session's previous call |
 | `work_focus` | Select/inspect one item as the ambient binding and return bounded acceptance, relations, memory index, history count/tail, and allowed-next state; never claim or release implicitly |
 | `work_propose` | Open a root or atomically create a bounded decomposition and prerequisites; each result is active, proposed, duplicate, or refused |
 | `work_update` | Apply a typed union such as claim/release, checkpoint, block/unblock, defer, revise, assign, or dependency change to ambient work |
 | `work_complete` | Evaluate acceptance and complete ambient work under current revision/run/claim fences; an optional capture records evidence and its final checkpoint in the same high-level call |
 | `work_handoff` | Couple an outgoing checkpoint to an offered/accepted claim transfer |
+
+**Resume discovery.** Agent `next` places nonempty `assigned` and `participated`
+sections between held and ready work. `assigned` contains Open work assigned to
+this actor regardless of readiness. `participated` contains Open work this
+session noted, observed, gated, or received a handoff offer on, excluding its
+current live-held work. These are derived from existing canonical note/evidence
+and handoff records; no role, watch subscription, or participation marker is
+stored. A row contains its ref, bounded title, holder word (`you`, `another
+session`, or `unclaimed`), and the first line of this session's latest own note
+when one exists. A gate uses its recorded name and pass/fail result; a handoff
+alone has no note summary. Another session's later note cannot replace that
+summary. Terminal rendering escapes controls and collapses whitespace to one
+line per discovery row; structured values retain their bounded content.
+
+Discovery first selects Open candidates with indexed assignment/claim filters,
+then probes their note, event, and run-feed bindings. Unrelated closed history
+is not scanned for JSON payloads. Latest positions include work events, all note
+families, and run heads (including context with a nested work binding), without
+guessing a work id from arbitrary JSON layouts.
+
+Both sections order by the item's latest dense project-feed position, not its
+asserted timestamp or hash, and show at most five rows. `assigned_omitted` and
+`participated_omitted` report exact nonzero remainders, including rows removed
+for byte fit; empty arrays and zero counts are absent. Discovery rows are shed
+before existing sections at the 12 KiB response ceiling. The reads share the
+same advisory snapshot as focus, held, and ready; they never stage or acknowledge
+delivery, select focus, or claim work. Normal change delivery is unchanged.
+Recent participation is navigation, not an obligation: keep outstanding review
+decisions and waiting conditions on a claimed coordination item.
 
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for
@@ -498,7 +527,8 @@ bound by the stable project plus asserted actor/session context and carries no
 grant token or grant timeout. `work_focus` accepts a short ref or UUID,
 while update, completion, and handoff infer the current revision, run, claim,
 fence, evidence set, and unique matching offer. `work_next` exposes an optional
-section selector over `focus`, `ready`, `catalog`, `changes`, and `memories`;
+section selector over `focus`, `ready`, `catalog`, `changes`, `memories`,
+`assigned`, and `participated`;
 excluding `changes` performs no delivery staging. Ready and catalog candidate selection
 uses bounded, maintained SQLite projections and decodes only the rows selected
 by the requested limit and filters. Those two sections are advisory: lifecycle
@@ -545,8 +575,11 @@ A staged page never blocks anything. Changing focus discards the un-delivered
 page, because its omission decisions were made under the previous focus; the
 next call recomputes the same interval under the new visibility basis and the
 confirmed cursor does not move. The delta interval is the authoritative
-delivery cut. Focus, ready, and catalog sections are advisory refreshed views
-and may observe a newer concurrent commit; lifecycle mutations always
+delivery cut. Focus, held, ready, catalog, and discovery sections share one
+advisory read snapshot after staging and may observe a newer concurrent commit.
+Advisory focus is selected from the session binding inside that snapshot;
+the top-level session and delivery token still describe the separately staged
+change range. Lifecycle mutations always
 revalidate their revision, claim, lease, authority, and canonical projection
 basis under the write lock. The exact projected change page and its staged
 omission count are stored canonically beside the tentative cursor and opaque
@@ -967,6 +1000,15 @@ full canonical ancestry and relations and repeats admission and expected-revisio
 checks. Exact core replay returns the original successor without another creation; an
 ordinary keyless repeat after supersession is refused, not another detach.
 After an uncertain response, inspect the old child to find its successor.
+
+`show SUCCESSOR` returns `detached_from: { ref, reason }` in CLI/MCP JSON,
+prints the source and recorded reason in text, and offers `show ORIGINAL` in
+its next commands. This navigation is derived from creator provenance plus
+the source's canonical supersession event, not from an asserted marker alone.
+An oversized reason is shortened with `reason_truncated: true`; inspect the
+original for its history. Source notes retain their authors there: no note,
+gate, contribution, or completion credit is copied into the successor.
+The origin is omitted when the native source history is not present locally.
 
 **Project memories.** `remember "text" [--key KEY]` stores one attributed,
 retrievable project note — an ordinary Episode in the existing memory

@@ -193,10 +193,9 @@ impl SqliteStore {
         now: DateTime<Utc>,
         query: &WorkCatalogQuery,
     ) -> Result<WorkCatalogPage, StoreError> {
-        let transaction = self.connection.unchecked_transaction()?;
-        let page = work_catalog_page_on(&transaction, project_id, now, query)?;
-        transaction.commit()?;
-        Ok(page)
+        self.work_read_snapshot(|store| {
+            work_catalog_page_on(&store.connection, project_id, now, query)
+        })
     }
 
     /// The counted agent list shares its count, page and displayed holders in

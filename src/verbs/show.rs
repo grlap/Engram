@@ -102,6 +102,8 @@ pub(super) struct ShowHistory {
 /// focus` for hosts that need authority and integrity fields.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) detached_from: Option<crate::work_service::WorkDetachedFrom>,
     pub(super) status: ShowStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) holder: Option<String>,
@@ -199,6 +201,16 @@ pub(super) fn show_lines(
     lines.push(facts.join("  "));
     if let Some(replacement) = work.superseded_by {
         lines.push(format!("successor: {}", short_ref_for_work_id(replacement)));
+    }
+    if let Some(origin) = &view.detached_from {
+        lines.push(format!(
+            "detached from: {} — {}",
+            origin.work_ref,
+            super::terminal_safe_line(&origin.reason)
+        ));
+        if origin.reason_truncated {
+            lines.push("  (detach reason shortened)".into());
+        }
     }
     lines.push(format!("outcome: {}", view.outcome));
     lines.push("acceptance:".into());
@@ -369,6 +381,7 @@ pub(super) fn show_receipt_value(
     });
     let notes = show_notes(view, current_actor);
     ShowReceiptValue {
+        detached_from: view.detached_from.clone(),
         status: ShowStatus {
             work: ShowWorkSummary {
                 short_ref: work.short_ref.clone(),

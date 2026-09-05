@@ -83,6 +83,14 @@ test("detach makes a stranded child independently executable through one CLI upd
     const successor = result.receipt.work_ref;
     assert.notEqual(successor, child);
     assert.equal(result.next[0], `engram work claim ${successor}`);
+    const successorView = json("show", successor, "--notes");
+    assert.deepEqual(successorView.detached_from, { ref: child, reason: "Independent follow-up" });
+    assert.ok(successorView.next.includes(`engram work show ${child}`));
+    assert.deepEqual(successorView.notes, []);
+    const successorText = run([...context, "show", successor]);
+    assert.equal(successorText.status, 0, successorText.stderr);
+    assert.ok(successorText.stdout.includes(`detached from: ${child} — Independent follow-up`), successorText.stdout);
+    assert.ok(successorText.stdout.includes(`engram work show ${child}`), successorText.stdout);
     assert.deepEqual(json("show", parent).history, history);
     assert.equal(json("show", child).status.work.superseded_by, successor);
     assert.equal(json("show", child, "--notes").notes[0].summary, "Source evidence");

@@ -626,7 +626,7 @@ enum CoreWorkCommand {
         /// Opaque `delivery_token` returned with that same prior page.
         #[arg(long)]
         acknowledge_token: Option<String>,
-        /// Comma-separated response sections: focus,ready,catalog,changes,memories.
+        /// Comma-separated response sections: focus,ready,catalog,changes,memories,assigned,participated.
         /// Omit for all sections.
         #[arg(long, value_delimiter = ',')]
         sections: Vec<String>,
@@ -1623,6 +1623,14 @@ mod tests {
     use clap::CommandFactory;
 
     use super::*;
+
+    #[test]
+    fn core_next_help_lists_discovery_sections() {
+        let error = Cli::try_parse_from(["engram", "work", "core", "next", "--help"]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+        let help = error.to_string();
+        assert!(help.contains("assigned,participated"), "{help}");
+    }
 
     #[test]
     fn complete_cli_command_graph_fits_the_configured_parse_stack() {

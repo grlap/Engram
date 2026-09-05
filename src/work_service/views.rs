@@ -11,11 +11,15 @@ use super::{
 
 /// Bounded `work_next` response using an ambient per-session project cursor.
 /// `changes` is one exact dense staged range. The refreshed focus, readiness,
-/// and catalog sections are advisory views assembled afterward and may observe
-/// newer concurrent commits; every mutation revalidates its canonical basis.
+/// catalog, and discovery sections share an advisory read snapshot afterward
+/// and may observe newer commits; every mutation revalidates its canonical basis.
 #[derive(Clone, Debug, Serialize)]
 pub struct WorkNextView {
     pub session: AgentWorkSession,
+    #[serde(flatten)]
+    pub discovery: WorkDiscoveryView,
+    #[serde(skip)]
+    pub(crate) agent_lists: Option<WorkAgentNextLists>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focus: Option<WorkFocusView>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,6 +45,69 @@ pub struct WorkNextView {
     pub(crate) memory_advertisement: Option<ProjectMemoryAdvertisement>,
 }
 
+/// Flat-word lists retained from the same cut as focus and discovery. The outer
+/// renderer owns their tighter byte budget; they are not a second core packet.
+#[derive(Clone, Debug)]
+pub(crate) struct WorkAgentNextLists {
+    pub held: Vec<(ReadyWorkSummary, DateTime<Utc>)>,
+    pub ready: Vec<ReadyWorkSummary>,
+    pub claims: Vec<(WorkId, SessionId, DateTime<Utc>)>,
+}
+
+/// Recent participation is navigation, never a recorded obligation or authority.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct WorkDiscoveryView {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub assigned: Vec<WorkDiscoverySummary>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub participated: Vec<WorkDiscoverySummary>,
+    #[serde(skip_serializing_if = "discovery_count_is_zero")]
+    pub assigned_omitted: usize,
+    #[serde(skip_serializing_if = "discovery_count_is_zero")]
+    pub participated_omitted: usize,
+}
+
+impl WorkDiscoveryView {
+    pub(crate) fn shed_one(&mut self) -> bool {
+        if self.participated.pop().is_some() {
+            self.participated_omitted += 1;
+            return true;
+        }
+        if self.assigned.pop().is_some() {
+            self.assigned_omitted += 1;
+            return true;
+        }
+        false
+    }
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Serde requires a borrowed field predicate"
+)]
+fn discovery_count_is_zero(count: &usize) -> bool {
+    *count == 0
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkDiscoverySummary {
+    #[serde(rename = "ref")]
+    pub work_ref: String,
+    pub title: String,
+    pub holder: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkDetachedFrom {
+    #[serde(rename = "ref")]
+    pub work_ref: String,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reason_truncated: bool,
+}
+
 /// Agent-safe navigation state. The tentative cursor and acknowledgement token
 /// are intentionally hidden; callers may acknowledge only a page they received.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -57,8 +124,8 @@ pub struct AgentWorkSession {
 /// seventh protocol verb.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct WorkNextQuery {
-    /// Sections to return. Empty means the normal focus, ready, catalog,
-    /// changes, and project-memory signal packet. A changes-free query never
+    /// Sections to return. Empty means focus, ready, catalog, changes,
+    /// discovery, and the project-memory signal. A changes-free query never
     /// stages or advances delivery.
     #[serde(default)]
     pub sections: Vec<WorkNextSection>,
@@ -93,6 +160,8 @@ pub enum WorkNextSection {
     Catalog,
     Changes,
     Memories,
+    Assigned,
+    Participated,
 }
 
 impl FromStr for WorkNextSection {
@@ -105,7 +174,11 @@ impl FromStr for WorkNextSection {
             "catalog" => Ok(Self::Catalog),
             "changes" => Ok(Self::Changes),
             "memories" => Ok(Self::Memories),
-            _ => Err("expected focus, ready, catalog, changes, or memories"),
+            "assigned" => Ok(Self::Assigned),
+            "participated" => Ok(Self::Participated),
+            _ => {
+                Err("expected focus, ready, catalog, changes, memories, assigned, or participated")
+            }
         }
     }
 }
@@ -305,6 +378,8 @@ pub struct RestoredHistoryView {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
     pub session: AgentWorkSession,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detached_from: Option<WorkDetachedFrom>,
     pub status: ReadyWorkSummary,
     /// True only while restored completion history, rather than a native
     /// completion seal, is the current completion authority.

@@ -27,6 +27,7 @@ fn project_memory_advisory_is_constant_decode_at_scale() {
     let next = service
         .work_next_for_agent(
             20,
+            20,
             WorkNextQuery {
                 sections: vec![WorkNextSection::Memories],
                 ..WorkNextQuery::default()

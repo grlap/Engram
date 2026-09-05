@@ -105,6 +105,75 @@ fn request(child: &WorkItem) -> DetachWorkRequest {
 }
 
 #[test]
+fn detach_refuses_a_canonically_bound_run_from_another_root() {
+    let (mut store, _, child) = fixture(false);
+    let foreign = store
+        .create_work(
+            &root_request("detach", "foreign", 5004),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("foreign root");
+    let foreign_run = store
+        .get_work_run(foreign.active_run_id.expect("foreign run"))
+        .expect("foreign run");
+    let mut event = canonical_work_events_for_item(&store.connection, child.work_id)
+        .expect("child history")
+        .pop()
+        .expect("child event");
+    let original = crate::CanonicalObject::freeze(&event).expect("original event");
+    event.run.as_mut().expect("child run").root_execution_id = foreign_run.root_execution_id;
+    let forged = crate::CanonicalObject::freeze(&event).expect("forged event");
+    let run = event.run.as_ref().expect("forged run");
+    // Model a self-consistent but cross-root canonical snapshot, not merely
+    // projection drift that load_work_run already refuses before detach's guard.
+    let transaction = store
+        .connection
+        .transaction()
+        .expect("corruption transaction");
+    SqliteStore::insert_object(&transaction, "work_event", &forged).expect("forged object");
+    transaction
+        .execute(
+            "UPDATE work_runs SET root_execution_id = ?2, run_json = ?3 WHERE run_id = ?1",
+            params![
+                run.run_id.0.to_string(),
+                run.root_execution_id.0.to_string(),
+                serde_json::to_vec(run).expect("run JSON")
+            ],
+        )
+        .expect("forged run binding");
+    transaction
+        .execute(
+            "UPDATE work_feed_entries SET object_hash = ?2 WHERE object_hash = ?1",
+            params![original.hash().as_str(), forged.hash().as_str()],
+        )
+        .expect("forged feed binding");
+    transaction
+        .execute(
+            "UPDATE work_items SET latest_event_hash = ?2 WHERE work_id = ?1",
+            params![child.work_id.0.to_string(), forged.hash().as_str()],
+        )
+        .expect("forged item binding");
+    transaction.commit().expect("commit corruption");
+    assert_eq!(
+        *run,
+        store.get_work_run(run.run_id).expect("canonical run loads")
+    );
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .detach_work(&request(&child), &DevelopmentNoopRedactor)
+        .expect_err("cross-root binding");
+    assert!(
+        matches!(error, StoreError::InvalidWorkProjection(ref reason)
+        if reason == &format!("detach root execution {:?} crosses the work project or root boundary", run.root_execution_id)),
+        "{error:?}"
+    );
+    assert_eq!(
+        before,
+        test_database_shape_snapshot(&store.connection).expect("after")
+    );
+}
+
+#[test]
 fn detach_catalog_is_projection_only_but_mutation_checks_canonical_ancestry() {
     let (mut store, root, child) = fixture(false);
     let query = crate::WorkCatalogQuery {
@@ -258,12 +327,26 @@ fn detach_admission_is_leaf_first_and_does_not_take_over_live_claims() {
         before,
         test_database_shape_snapshot(&store.connection).expect("after")
     );
+    assert!(
+        !store
+            .inspect_work(leaf.work_id, live.detached_at)
+            .expect("live claim advisory")
+            .reason_codes
+            .contains(&WorkReadinessReason::DetachAvailable)
+    );
     let refusal = store
         .detach_work(&request(&chain[2]), &DevelopmentNoopRedactor)
         .expect_err("descendants");
     assert!(
         matches!(refusal, StoreError::WorkDetachRefused { ref reason, .. } if reason.contains("open descendants")),
         "{refusal:?}"
+    );
+    assert!(
+        !store
+            .inspect_work(chain[2].work_id, request(&chain[2]).detached_at)
+            .expect("open descendants advisory")
+            .reason_codes
+            .contains(&WorkReadinessReason::DetachAvailable)
     );
     // This failure happens after both successor creation and live-root waiver.
     store.connection.execute_batch("CREATE TEMP TRIGGER refuse_live_detach BEFORE UPDATE ON work_items WHEN NEW.lifecycle = 'superseded' BEGIN SELECT RAISE(ABORT, 'injected live detach failure'); END").expect("trigger");

@@ -95,20 +95,30 @@ host-only `work core focus`; full list projections remain available through
 `next --verbose` and `ls --verbose` (or the equivalent MCP arguments). Compact
 rows retain up to 80 UTF-8 bytes of title, omit redundant lifecycle and blocked
 fields, cap labels, and report `labels_omitted`. When fitting an oversized
-advisory response, `next` sheds labels from the least-important navigation rows
-before dropping rows; `ls` does not shed labels. Compact `next` uses the same
+advisory response, `next` sheds discovery rows before any existing section,
+then sheds labels from the least-important navigation rows before dropping
+rows; `ls` does not shed labels. Compact `next` uses the same
 12 KiB agent-response ceiling as its core view, so the default limit of 20
 remains meaningful. Section removal is recorded in explicit `omissions`
 instead of failing.
 
 Rules that matter:
 
+- Claimless `next` includes nonempty `assigned` and `participated` sections
+  between held and ready work, at most five rows each with exact omitted counts.
+  Rows name the work, title, holder word, and first line of this session's latest
+  own note when present. This is recent-work discovery, not a review obligation
+  or claim; keep owed decisions on a claimed coordination item. See the
+  [resume discovery contract](local-work-system.md#agent-native-protocol).
 - `update CHILD --detach "why"` (MCP `update { work_ref: CHILD, action:
   "detach", reason: "why" }`) atomically creates an independent root and
   supersedes an Open child stranded beneath a terminal ancestor. It copies
   title, outcome, acceptance, kind, labels, and priority with source provenance;
   assignment and history stay on the child. The receipt names the new root
-  and its claim command. No parent reopen or old claim/fence change occurs.
+  and its claim command. `show` on that root exposes `detached_from` with the
+  original ref and recorded reason, plus a `show ORIGINAL` next command;
+  source notes and gates stay on the original with their attribution.
+  No parent reopen or old claim/fence change occurs.
   Sealed/terminal root executions stay unchanged; a still-open root's live
   execution receives cancellation's audited waiver for a missing contributor.
   Open descendants, live ownership, independent blockers, unfinished
@@ -638,9 +648,9 @@ project, actor, current work,
 and cursors, so update/complete/handoff do not repeatedly shuttle ids. Ambient
 state contains no authority token; each mutation rechecks the project, item,
 claim, and fence state. `work_next` returns only the selected
-`focus`, `ready`, `catalog`, `changes`, and/or `memories` sections; omitting
-`sections` selects all five. CLI callers use
-`--sections focus,ready,catalog,changes,memories` and
+`focus`, `ready`, `catalog`, `changes`, `memories`, `assigned`, and/or
+`participated` sections; omitting `sections` selects all seven. Core CLI callers use
+`--sections focus,ready,catalog,changes,memories,assigned,participated` and
 MCP callers pass a string array. Selecting no `changes` section never stages or
 advances project delivery, including when a prior page remains pending.
 Ready and catalog candidates are filtered and limited by maintained SQLite

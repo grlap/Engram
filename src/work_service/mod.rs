@@ -250,6 +250,8 @@ pub struct LocalWorkService {
     process_default_session_initialized: OnceLock<()>,
     #[cfg(test)]
     delivery_stage_hook: Option<DeliveryStageTestHook>,
+    #[cfg(test)]
+    advisory_read_hook: Option<DeliveryStageTestHook>,
 }
 
 impl Clone for LocalWorkService {
@@ -270,6 +272,8 @@ impl Clone for LocalWorkService {
             process_default_session_initialized: OnceLock::new(),
             #[cfg(test)]
             delivery_stage_hook: self.delivery_stage_hook.clone(),
+            #[cfg(test)]
+            advisory_read_hook: self.advisory_read_hook.clone(),
         }
     }
 }

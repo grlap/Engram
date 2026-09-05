@@ -587,15 +587,20 @@ impl SqliteStore {
         query: Option<&str>,
         limit: Option<u32>,
     ) -> Result<Vec<MemorySummary>, StoreError> {
-        let transaction = self.connection.unchecked_transaction()?;
+        let read_guard = self
+            .connection
+            .is_autocommit()
+            .then(|| self.connection.unchecked_transaction())
+            .transpose()?;
+        let transaction = &self.connection;
         let (focused_work_id, _) =
-            Self::focused_work_for_session_on(&transaction, project_id, session_id)?;
+            Self::focused_work_for_session_on(transaction, project_id, session_id)?;
         if focused_work_id != Some(work_id) {
             return Err(StoreError::InvalidWork(
                 "work-memory query must match the session's persisted focus".into(),
             ));
         }
-        let (work_project, work_root_id) = work::verified_work_identity(&transaction, work_id)?;
+        let (work_project, work_root_id) = work::verified_work_identity(transaction, work_id)?;
         if work_project != *project_id {
             return Err(StoreError::InvalidWork(
                 "work-memory query must stay within the bound project".into(),
@@ -665,7 +670,9 @@ impl SqliteStore {
             .into_iter()
             .map(Self::parse_memory_summary)
             .collect::<Result<Vec<_>, _>>()?;
-        transaction.commit()?;
+        if let Some(read_guard) = read_guard {
+            read_guard.commit()?;
+        }
         Ok(memories)
     }
 

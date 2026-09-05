@@ -49,6 +49,7 @@ use project_memory::{
 };
 use task_memory::{claim_expiry, fts_query, normalize_project_memory_query};
 
+pub(crate) use work::WorkDiscoveryRow;
 pub(crate) use work::WorkNotePage;
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 

@@ -4,6 +4,71 @@ use crate::domain::SCHEMA_VERSION;
 use tempfile::tempdir;
 
 #[test]
+fn next_advisory_focus_rebinds_after_staging_without_changing_delivery() {
+    use std::sync::{Arc, Barrier};
+    for initially_focused in [false, true] {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("work.db");
+        let service = |session: &str| {
+            LocalWorkService::new(
+                database.clone(),
+                ProjectId("project".into()),
+                "agent".into(),
+                SessionId(session.into()),
+                None,
+            )
+        };
+        let creator = service("creator");
+        let a = proposed_root(creator.work_propose(root_input("A", "a"), at(0)).unwrap());
+        let b = proposed_root(creator.work_propose(root_input("B", "b"), at(1)).unwrap());
+        let reader = service("reader");
+        if initially_focused {
+            reader.work_focus(&a.short_ref, at(2)).unwrap();
+        }
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let mut concurrent = reader.clone();
+        concurrent.advisory_read_hook = Some(DeliveryStageTestHook {
+            entered: entered.clone(),
+            release: release.clone(),
+        });
+        let call = std::thread::spawn(move || {
+            concurrent.work_next(
+                20,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Focus, WorkNextSection::Changes],
+                    ..WorkNextQuery::default()
+                },
+                at(3),
+            )
+        });
+        entered.wait();
+        reader.work_focus(&b.short_ref, at(4)).unwrap();
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+        release.wait();
+        let view = call
+            .join()
+            .unwrap()
+            .expect("new advisory focus must not use old memory binding");
+        let focus = view.focus.as_ref().unwrap();
+        assert_eq!(focus.status.work.work_id, b.work_id);
+        assert_eq!(focus.session.focused_work_id, Some(b.work_id));
+        // Session/token metadata still describes the separately staged range.
+        assert_eq!(
+            view.session.focused_work_id,
+            initially_focused.then_some(a.work_id)
+        );
+        assert!(view.delivered_through.is_some());
+        assert!(view.delivery_token.is_some());
+        assert_eq!(
+            before,
+            crate::storage::test_database_shape_snapshot(&connection).unwrap()
+        );
+    }
+}
+
+#[test]
 fn advisory_memory_acknowledgement_swallows_every_failure_class() {
     for error in [
         StoreError::Sqlite(rusqlite::Error::SqliteFailure(
@@ -998,12 +1063,12 @@ fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
         ..WorkNextQuery::default()
     };
     let first = service
-        .work_next_for_agent(20, query.clone(), at(1))
+        .work_next_for_agent(20, 20, query.clone(), at(1))
         .expect("first deferred signal");
     assert!(first.memories.as_ref().is_some_and(|signal| signal.changed));
     assert!(first.memory_advertisement.is_some());
     let repeated = service
-        .work_next_for_agent(20, query.clone(), at(2))
+        .work_next_for_agent(20, 20, query.clone(), at(2))
         .expect("unacknowledged signal repeats");
     assert!(
         repeated
@@ -1013,7 +1078,7 @@ fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
     );
     service.acknowledge_work_next_memories(&first, at(2));
     let stable = service
-        .work_next_for_agent(20, query, at(3))
+        .work_next_for_agent(20, 20, query, at(3))
         .expect("acknowledged signal is stable");
     assert!(
         stable
@@ -1058,6 +1123,7 @@ fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
     assert!(matches!(
         reader.work_next_for_agent(
             20,
+            20,
             WorkNextQuery {
                 context_generation: Some("invalid\ncontext".into()),
                 ..WorkNextQuery::default()
@@ -1074,7 +1140,7 @@ fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
     assert_eq!(after_refusal.tentative_project_cursor, None);
 
     let replayed = reader
-        .work_next_for_agent(20, WorkNextQuery::default(), at(2))
+        .work_next_for_agent(20, 20, WorkNextQuery::default(), at(2))
         .expect("corrected call delivers unseen page");
     assert!(replayed.changes.as_ref().is_some_and(|changes| {
         changes.iter().any(|change| {
