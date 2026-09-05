@@ -291,6 +291,59 @@ test("resume discovery agrees across claimless MCP and CLI sessions", async () =
   }
 });
 
+test("parent child summaries agree across CLI and MCP including omitted disposed children", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-child-summary-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const actor = "child-summary-reader";
+    client = new McpClient(engramHome, actor);
+    await client.initialize();
+    const parent = receipt(await client.call("add", { title: "Summary parent" })).work.short_ref;
+    assert.equal("child_obligations" in receipt(await client.call("show", { work_ref: parent })), false);
+    const refs = { required_owed: [], open_optional: [] };
+    for (const optional of [true, false]) {
+      for (let index = 0; index < 6; index += 1) {
+        const ref = receipt(await client.call("add", { title: `${optional ? "Optional" : "Required"} ${index}`, under: parent, optional })).work.short_ref;
+        refs[optional ? "open_optional" : "required_owed"].push(ref);
+      }
+    }
+    receipt(await client.call("update", { work_ref: refs.required_owed.at(-1), action: "cancel", reason: "Explicit omission still owed" }));
+    const context = ["--home", engramHome, "work", "--actor-id", actor, "--session-id", actor];
+    for (const notes of [false, true]) {
+      const shown = await client.call("show", { work_ref: parent, notes });
+      const value = receipt(shown);
+      assertTerseShow(value);
+      assert.deepEqual(JSON.parse(shown.content[0].text), value);
+      for (const [key, expected] of Object.entries(refs)) {
+        const group = value.child_obligations[key];
+        assert.equal(group.count, 6);
+        assert.equal(group.omitted, 1);
+        assert.deepEqual(group.items.map((row) => row.ref), expected.slice(0, 5));
+        assert.equal(group.navigation, `engram work ls --under ${parent} --${key === "required_owed" ? "required --all" : "optional"}`);
+      }
+      const args = ["show", parent, ...(notes ? ["--notes"] : [])];
+      const cli = spawnSync(binary, [...context, ...args, "--json"], { cwd: root, encoding: "utf8" });
+      assert.equal(cli.status, 0, cli.stderr);
+      assert.deepEqual(JSON.parse(cli.stdout).child_obligations, value.child_obligations);
+      assert.ok(Buffer.byteLength(cli.stdout) <= 12 * 1024);
+      const text = spawnSync(binary, [...context, ...args], { cwd: root, encoding: "utf8" });
+      assert.equal(text.status, 0, text.stderr);
+      assert.ok(Buffer.byteLength(text.stdout) <= 12 * 1024);
+      assert.match(text.stdout, /required children still owed \(5 of 6 shown\):/u);
+      assert.match(text.stdout, /open optional follow-ups \(5 of 6 shown\):/u);
+      assert.match(text.stdout, /optional children do not block completion/u);
+      for (const group of Object.values(value.child_obligations)) assert.ok(text.stdout.includes(group.navigation));
+    }
+    const terminal = receipt(await client.call("ls", { under: parent, required: true, all: true }));
+    assert.equal(terminal.total, 6);
+    assert.deepEqual(terminal.items.map((row) => row.ref), refs.required_owed);
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("full contract text round-trips through CLI and MCP show", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-full-contract-"));
   let client;

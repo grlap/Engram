@@ -1,5 +1,6 @@
 use std::fmt::Write as _;
 
+use super::child_obligations::ShowChildObligations;
 use crate::work_service::{WorkNextSection, WorkSectionOmissionReason};
 
 use super::{
@@ -157,6 +158,14 @@ fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
     if view.children.pop().is_some() {
         return true;
     }
+    // Summary refs are expendable whole rows, but their exact totals and
+    // scoped navigation survive even when no ordinary child row remains.
+    if let Some(groups) = &mut view.child_obligations
+        && (groups.open_optional.items.pop().is_some()
+            || groups.required_owed.items.pop().is_some())
+    {
+        return true;
+    }
     // Keep the independently loaded latest note until the other note rows go.
     if let Some(index) = view.evidence_items.iter().rposition(|entry| {
         view.latest_evidence_item
@@ -286,6 +295,8 @@ pub(super) struct ShowReceiptValue {
     pub(super) children: Vec<ShowRelation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) children_omitted: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) child_obligations: Option<ShowChildObligations>,
     pub(super) prerequisites: Vec<ShowRelation>,
     pub(super) handoffs: Vec<ShowHandoff>,
     pub(super) blockers: Vec<ShowBlocker>,
@@ -431,6 +442,9 @@ pub(super) fn show_lines(
             }
             lines.push(format!("children: {children}"));
         }
+    }
+    if let Some(groups) = &view.child_obligations {
+        lines.extend(ShowChildObligations::new(groups, work).lines());
     }
     if !view.prerequisites.is_empty() {
         lines.push(format!(
@@ -595,6 +609,10 @@ pub(super) fn show_receipt_value(
         children: view.children.iter().map(show_relation).collect(),
         children_omitted: (view.child_count > view.children.len())
             .then(|| view.child_count - view.children.len()),
+        child_obligations: view
+            .child_obligations
+            .as_ref()
+            .map(|groups| ShowChildObligations::new(groups, work)),
         prerequisites: view.prerequisites.iter().map(show_relation).collect(),
         handoffs: view
             .handoffs

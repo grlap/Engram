@@ -520,9 +520,19 @@ test("optional child is marked by show and does not gate parent completion", () 
     const parentView = JSON.parse(shown.stdout);
     assert.equal(parentView.children.length, 1);
     assert.equal(parentView.children[0].child_requirement, "optional");
+    assert.deepEqual(parentView.child_obligations.required_owed, {
+      count: 0, items: [], omitted: 0,
+      navigation: `engram work ls --under ${parentWork.short_ref} --required`,
+    });
+    assert.deepEqual(parentView.child_obligations.open_optional, {
+      count: 1, items: [{ ref: childWork.short_ref, title: "Non-blocking follow-up", remedy: `engram work show ${childWork.short_ref}` }], omitted: 0,
+      navigation: `engram work ls --under ${parentWork.short_ref} --optional`,
+    });
     const shownText = run([...hostContext, "show", parentWork.short_ref]);
     assert.equal(shownText.status, 0, shownText.stderr);
     assert.match(shownText.stdout, /children: .* \(open, optional\)/u);
+    assert.match(shownText.stdout, /required children still owed \(0 of 0 shown\):/u);
+    assert.match(shownText.stdout, /open optional follow-ups \(1 of 1 shown\):/u);
 
     const claimed = run([...hostContext, "claim", parentWork.short_ref]);
     assert.equal(claimed.status, 0, claimed.stderr);

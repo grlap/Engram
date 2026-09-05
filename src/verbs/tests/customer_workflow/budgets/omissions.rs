@@ -68,6 +68,7 @@ fn show_pressure_preserves_prerequisites() {
         prerequisite.prerequisite_state = Some(crate::WorkPrerequisiteState::Pending);
     }
     view.child_count = 0;
+    view.child_obligations = None;
     view.status.availability = WorkAvailability::Blocked;
     let original = verbs.render_show(&view, at(101)).unwrap();
     let budget = receipt_size(&original);
@@ -182,21 +183,27 @@ fn full_notes_replace_only_the_compact_note_budget_contribution() {
             without_history(&mut view);
             view.children.clear();
             view.child_count = 0;
+            view.child_obligations = None;
         }
         let original = verbs.render_show(&view, at(12)).unwrap();
         let mut target = view.clone();
         without_history(&mut target);
         target.children.clear();
+        if let Some(groups) = &mut target.child_obligations {
+            groups.required_owed.items.clear();
+            groups.open_optional.items.clear();
+        }
         target
             .evidence_items
             .retain(|note| note.evidence == target.latest_evidence_item.as_ref().unwrap().evidence);
         let history_rows = original.value["history"]["items"].as_array().unwrap().len();
         let child_rows = original.value["children"].as_array().unwrap().len();
         let note_rows = original.value["notes"].as_array().unwrap().len();
+        let summary_rows = child_summary_rows(&original);
         target.omissions.push(WorkSectionOmission {
             section: WorkNextSection::Focus,
             reason: WorkSectionOmissionReason::ByteBudget,
-            omitted_count: history_rows + child_rows + note_rows - 1,
+            omitted_count: history_rows + child_rows + summary_rows + note_rows - 1,
         });
         let budget = receipt_size(&verbs.render_show(&target, at(12)).unwrap()) + 1;
         assert!(budget < receipt_size(&original));
@@ -212,13 +219,16 @@ fn full_notes_replace_only_the_compact_note_budget_contribution() {
         let history_removed =
             history_rows - fitted.value["history"]["items"].as_array().unwrap().len();
         let children_removed = child_rows - fitted.value["children"].as_array().unwrap().len();
+        let summaries_removed = summary_rows - child_summary_rows(&fitted);
+        assert_eq!(summaries_removed, summary_rows);
         assert_eq!(children_removed, child_rows);
         assert_eq!(
             focus_byte_omitted(&fitted),
-            history_removed + children_removed + notes_removed
+            history_removed + children_removed + summaries_removed + notes_removed
         );
         let original_history = fitted.value["history"].clone();
         let original_children_omitted = fitted.value["children_omitted"].clone();
+        let original_child_obligations = fitted.value["child_obligations"].clone();
         let page = service.work_notes(&root, at(13)).unwrap();
         let total = page.total;
         let restored = crate::verbs::receipts::fit_show_notes(
@@ -233,9 +243,13 @@ fn full_notes_replace_only_the_compact_note_budget_contribution() {
         assert_eq!(restored.value["notes_omitted"], 0);
         assert_eq!(
             focus_byte_omitted(&restored),
-            history_removed + children_removed
+            history_removed + children_removed + summaries_removed
         );
         assert_eq!(restored.value["history"], original_history);
+        assert_eq!(
+            restored.value["child_obligations"],
+            original_child_obligations
+        );
         assert_eq!(
             restored.value["children_omitted"],
             original_children_omitted
@@ -250,6 +264,17 @@ fn full_notes_replace_only_the_compact_note_budget_contribution() {
             );
         }
     }
+}
+
+fn child_summary_rows(receipt: &Receipt) -> usize {
+    ["required_owed", "open_optional"]
+        .iter()
+        .map(|key| {
+            receipt.value["child_obligations"][key]["items"]
+                .as_array()
+                .map_or(0, Vec::len)
+        })
+        .sum()
 }
 
 #[test]

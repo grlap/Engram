@@ -1,6 +1,7 @@
 use super::{
-    DateTime, LocalWorkService, MAX_AGENT_WORK_RESPONSE_BYTES, SessionId, StoreError, Utc,
-    WorkFocusView, WorkId, WorkItem,
+    ChildRequirement, DateTime, LocalWorkService, MAX_AGENT_WORK_RESPONSE_BYTES,
+    MAX_CHILD_OBLIGATION_REFS, SessionId, SqliteStore, StoreError, Utc, WorkChildObligations,
+    WorkFocusView, WorkId, WorkItem, WorkLifecycle, WorkRun, work_item_summary,
 };
 
 impl LocalWorkService {
@@ -155,15 +156,54 @@ impl LocalWorkService {
         let mut store = self.store_at(now)?;
         let item = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
-        self.focus_view_for_projection(
-            &store,
-            item.work_id,
-            true,
-            true,
-            super::service::FocusText::Full,
-            now,
-        )
+        // Focus selection is the existing write. All advisory sections that
+        // follow, including complete child counts, observe one read cut.
+        store.work_read_snapshot(|store| {
+            self.focus_view_for_projection(
+                store,
+                item.work_id,
+                true,
+                true,
+                super::service::FocusText::Full,
+                now,
+            )
+        })
     }
+}
+
+pub(super) fn child_obligations(
+    store: &SqliteStore,
+    parent: &WorkItem,
+    run: Option<&WorkRun>,
+    children: &[WorkItem],
+) -> Result<WorkChildObligations, StoreError> {
+    let waived = store.work_child_waivers(parent, run)?;
+    let mut groups = WorkChildObligations::default();
+    for child in children {
+        let page = match child.child_requirement {
+            ChildRequirement::Required
+                if child.lifecycle != WorkLifecycle::Completed
+                    && !waived.contains(&child.work_id) =>
+            {
+                &mut groups.required_owed
+            }
+            ChildRequirement::Optional if child.lifecycle == WorkLifecycle::Open => {
+                &mut groups.open_optional
+            }
+            _ => continue,
+        };
+        page.total += 1;
+        // Proposed is not creatable in V1; revisit the default Open-only ls
+        // scope when that lifecycle gains a creation path.
+        page.includes_disposed |= matches!(
+            child.lifecycle,
+            WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+        );
+        if page.items.len() < MAX_CHILD_OBLIGATION_REFS {
+            page.items.push(work_item_summary(child));
+        }
+    }
+    Ok(groups)
 }
 
 #[cfg(test)]

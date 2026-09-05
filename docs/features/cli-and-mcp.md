@@ -115,6 +115,26 @@ controls and frames every continuation line as criterion data.
 
 Rules that matter:
 
+- `show PARENT`, including `--notes` and MCP, always carries
+  `child_obligations.required_owed` and `child_obligations.open_optional`
+  when the item has any direct children, even when both groups are empty.
+  Each group has an exact `count`, at most five `items` with `ref`, title and
+  remedy, an exact `omitted` count, and scoped `navigation`; byte fitting may
+  omit more whole refs but preserves both counts and commands. These totals
+  use the complete child set in the same read snapshot as the show projection,
+  not its bounded `children` rows. Required owed means unfinished required
+  children or disposed required children without a current revision-bound
+  waiver; completed native or restored children are not owed. Open optional
+  follow-ups never block completion. Traversal uses
+  `ls --under PARENT --required`, adding `--all` if any owed child is disposed
+  (a superset including completed/waived siblings), or
+  `ls --under PARENT --optional` for open optional follow-ups. Disposed owed
+  rows under Open parents name the explicit
+  `update PARENT --waive CHILD --reason "…"` remedy; under terminal parents
+  they offer `show CHILD` and explain that retained child context needs
+  inspection, not an unavailable waiver. Other rows offer `show CHILD`.
+  A leaf has no block. This is advisory current-state accounting, not
+  completion proof or execution authority.
 - Claimless `next` includes nonempty `assigned` and `participated` sections
   between held and ready work, at most five rows each with exact omitted counts.
   Rows name the work, title, holder word, and first line of this session's latest

@@ -90,6 +90,7 @@ const MAX_CATALOG_SECTION_BYTES: usize = 3 * 1024;
 const MAX_OBLIGATION_PAGE_BYTES: usize = 4 * 1024;
 const MAX_FOCUS_HISTORY: u32 = 4;
 pub(crate) const MAX_FOCUS_RELATIONS: usize = 8;
+pub(crate) const MAX_CHILD_OBLIGATION_REFS: usize = 5;
 const MAX_FOCUS_MEMORIES: u32 = 8;
 const MAX_SUMMARY_BYTES: usize = 192;
 const MAX_HISTORY_TITLE_BYTES: usize = 72;
@@ -254,6 +255,8 @@ pub struct LocalWorkService {
     delivery_stage_hook: Option<DeliveryStageTestHook>,
     #[cfg(test)]
     advisory_read_hook: Option<DeliveryStageTestHook>,
+    #[cfg(test)]
+    focus_children_hook: Option<DeliveryStageTestHook>,
 }
 
 impl Clone for LocalWorkService {
@@ -276,6 +279,8 @@ impl Clone for LocalWorkService {
             delivery_stage_hook: self.delivery_stage_hook.clone(),
             #[cfg(test)]
             advisory_read_hook: self.advisory_read_hook.clone(),
+            #[cfg(test)]
+            focus_children_hook: self.focus_children_hook.clone(),
         }
     }
 }

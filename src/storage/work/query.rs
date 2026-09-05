@@ -1827,6 +1827,68 @@ pub(super) fn load_root_execution(
     connection: &Connection,
     root_execution_id: RootExecutionId,
 ) -> Result<RootExecution, StoreError> {
+    let execution = load_root_execution_projection(connection, root_execution_id)?;
+    let event = latest_canonical_work_event_on_feed(
+        connection,
+        "root_work",
+        &execution.root_id.0.to_string(),
+        "$.root_execution",
+    )?;
+    bind_root_execution_event(execution, &event)
+}
+
+/// Advisory inspection of a retained generation, not selection of live authority.
+/// Its latest snapshot must bind the exact execution id and generation; a newer
+/// root generation must neither replace its waivers nor invalidate its history.
+pub(super) fn load_retained_root_execution(
+    connection: &Connection,
+    root_execution_id: RootExecutionId,
+) -> Result<RootExecution, StoreError> {
+    let execution = load_root_execution_projection(connection, root_execution_id)?;
+    let stored = connection
+        .query_row(
+            "SELECT object.object_hash, object.canonical_json
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_hash = entry.object_hash
+             WHERE entry.feed_kind = 'root_work' AND entry.feed_id = ?1
+               AND entry.object_kind = 'work_event'
+               AND object.object_kind = 'work_event'
+               AND json_extract(object.canonical_json, '$.root_execution.root_execution_id') = ?2
+               AND json_extract(object.canonical_json, '$.root_execution.generation') = ?3
+             ORDER BY entry.position DESC LIMIT 1",
+            params![
+                execution.root_id.0.to_string(),
+                root_execution_id.0.to_string(),
+                execution.generation
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection(
+                "retained root execution has no generation-bound canonical event".into(),
+            )
+        })?;
+    bind_root_execution_event(execution, &decode_canonical_work_event(stored)?)
+}
+
+fn bind_root_execution_event(
+    execution: RootExecution,
+    event: &WorkEvent,
+) -> Result<RootExecution, StoreError> {
+    if event.root_execution.as_ref() != Some(&execution) {
+        return Err(StoreError::InvalidWorkProjection(format!(
+            "root execution {:?} differs from its scalar or canonical event binding",
+            execution.root_execution_id
+        )));
+    }
+    Ok(execution)
+}
+
+fn load_root_execution_projection(
+    connection: &Connection,
+    root_execution_id: RootExecutionId,
+) -> Result<RootExecution, StoreError> {
     let row: Option<(Vec<u8>, bool)> = connection
         .query_row(
             "SELECT execution_json,
@@ -1847,16 +1909,7 @@ pub(super) fn load_root_execution(
         ))
     })?;
     let execution: RootExecution = serde_json::from_slice(&bytes)?;
-    let event = latest_canonical_work_event_on_feed(
-        connection,
-        "root_work",
-        &execution.root_id.0.to_string(),
-        "$.root_execution",
-    )?;
-    if !scalar_bound
-        || execution.root_execution_id != root_execution_id
-        || event.root_execution.as_ref() != Some(&execution)
-    {
+    if !scalar_bound || execution.root_execution_id != root_execution_id {
         return Err(StoreError::InvalidWorkProjection(format!(
             "root execution {root_execution_id:?} differs from its scalar or canonical event binding"
         )));

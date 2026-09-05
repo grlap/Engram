@@ -6,6 +6,7 @@ planned, target, and deferred capabilities; those belong in the
 
 | Surface | Installed behavior | Contract |
 | --- | --- | --- |
+| Parent child summary | Safe parent `show` always separates required children still owed from open optional follow-ups with exact totals, bounded refs, exact omissions and scoped continuation-capable listing commands; optional children never block completion. | [Agent detail](features/cli-and-mcp.md#using-engram-as-an-agent) |
 | Listing continuation | Bounded CLI/MCP lists carry exact totals, active limit/byte ceiling, and same-filter continuation from the final emitted row. Stale cursors refuse explicitly; direct-parent optional/required filters enumerate scoped children. | [Agent listing](features/cli-and-mcp.md#using-engram-as-an-agent) |
 | Detached follow-ups | `update CHILD --detach "why"` creates an independent root and supersedes an eligible child under a terminal ancestor atomically, preserving old claims/fences and frozen parent history. A still-open root's live contributor accounting is reconciled as with cancellation. `show`, focused `next`, and blocked listings expose the remedy. | [Detached follow-ups](features/local-work-system.md#gates-prerequisites-supersession-and-project-memories) |
 | Resume discovery | CLI/MCP `next` shows bounded assignment and this session's recent participation, with own-note summaries, holder words, dense ordering, and exact omitted counts; no claim or review obligation is inferred. | [Agent-native protocol](features/local-work-system.md#agent-native-protocol) |

@@ -4,6 +4,84 @@ use crate::domain::{GATE_EVIDENCE_SUMMARY, SCHEMA_VERSION};
 use tempfile::tempdir;
 
 #[test]
+fn show_child_summary_and_focus_share_one_read_cut_after_focus_selection() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("work.db");
+    let project = ProjectId("child-snapshot".into());
+    let writer = crate::verbs::AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("writer".into()),
+        None,
+    );
+    let add = |title: &str, under: Option<String>, now| {
+        writer
+            .add(
+                crate::verbs::AddInput {
+                    title: title.into(),
+                    under,
+                    ..crate::verbs::AddInput::default()
+                },
+                at(now),
+            )
+            .unwrap()
+            .value["work"]["short_ref"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let parent = add("Parent", None, 0);
+    let first = add("First child", Some(parent.clone()), 1);
+    let mut reader = LocalWorkService::new(
+        database.clone(),
+        project,
+        "agent".into(),
+        SessionId("reader".into()),
+        None,
+    );
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    reader.focus_children_hook = Some(DeliveryStageTestHook {
+        entered: entered.clone(),
+        release: release.clone(),
+    });
+    let target = parent.clone();
+    let call = std::thread::spawn(move || reader.work_focus_for_agent(&target, at(2)));
+    entered.wait();
+    let second = add("Later child", Some(parent.clone()), 3);
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+    release.wait();
+    let view = call.join().unwrap().unwrap();
+    assert_eq!(view.child_count, 1);
+    assert_eq!(view.children[0].short_ref, first);
+    let group = view.child_obligations.unwrap().required_owed;
+    assert_eq!(group.total, 1);
+    assert_eq!(group.items[0].short_ref, first);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&connection).unwrap(),
+        before
+    );
+    let later = writer.show(&parent, at(4)).unwrap();
+    assert_eq!(
+        later.value["child_obligations"]["required_owed"]["count"],
+        2
+    );
+    assert_eq!(
+        later.value["child_obligations"]["required_owed"]["items"][1]["ref"],
+        second
+    );
+    assert!(
+        SqliteStore::open(&database)
+            .unwrap()
+            .verify_all()
+            .unwrap()
+            .is_healthy()
+    );
+}
+
+#[test]
 fn child_lifecycle_priority_keeps_every_unfinished_state_first() {
     assert_eq!(child_lifecycle_priority(WorkLifecycle::Open), 0);
     assert_eq!(child_lifecycle_priority(WorkLifecycle::Proposed), 0);

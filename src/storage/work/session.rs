@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Serialize, de::DeserializeOwned};
@@ -10,10 +12,10 @@ use super::feeds::{
 };
 use super::planning::{normalize_text, root_participant_is_accounted, validate_live_claim_on};
 use super::query::{
-    active_root_execution, bounded_prerequisite_projection_rows, completion_recovery_snapshot_on,
-    current_required_child_waivers, feed_parts, load_root_execution, load_work_claim_optional,
-    load_work_item, load_work_items_query, load_work_run, parse_work_id, parse_work_run_id,
-    resolve_work_ref_on,
+    active_root_execution, active_root_execution_optional, bounded_prerequisite_projection_rows,
+    completion_recovery_snapshot_on, current_required_child_waivers, feed_parts,
+    load_retained_root_execution, load_root_execution, load_work_claim_optional, load_work_item,
+    load_work_items_query, load_work_run, parse_work_id, parse_work_run_id, resolve_work_ref_on,
 };
 use super::schema::require_work_schema_version;
 use super::{
@@ -1051,6 +1053,37 @@ impl SqliteStore {
              WHERE parent_id = ?1 ORDER BY created_at_ms, work_id",
             work_id,
         )
+    }
+
+    /// Current advisory waiver membership for the parent's execution, including
+    /// terminal parents whose execution is no longer active. No proof replay.
+    pub(crate) fn work_child_waivers(
+        &self,
+        parent: &WorkItem,
+        run: Option<&WorkRun>,
+    ) -> Result<HashSet<WorkId>, StoreError> {
+        let execution = if let Some(run) = run {
+            if run.work_id != parent.work_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "child summary run does not belong to its parent".into(),
+                ));
+            }
+            Some(load_retained_root_execution(
+                &self.connection,
+                run.root_execution_id,
+            )?)
+        } else {
+            active_root_execution_optional(&self.connection, parent.root_id)?
+        };
+        let Some(execution) = execution else {
+            return Ok(HashSet::new());
+        };
+        if execution.root_id != parent.root_id || execution.project_id != parent.project_id {
+            return Err(StoreError::InvalidWorkProjection(
+                "child summary execution does not belong to its parent root/project".into(),
+            ));
+        }
+        current_required_child_waivers(&self.connection, parent.work_id, &execution)
     }
 
     /// Lists explicit prerequisites in stable id order.

@@ -106,8 +106,13 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
             .expect("new root notes")
             .is_empty()
     );
-    // Only the live child catalog changes; the parent's own state/history/notes do not.
+    // Only the live child catalog and its advisory group change; the parent's
+    // own state/history/notes do not.
     parent_before["children"][0]["lifecycle"] = serde_json::json!("superseded");
+    parent_before["child_obligations"]["open_optional"] = serde_json::json!({
+        "count": 0, "items": [], "omitted": 0,
+        "navigation": format!("engram work ls --under {parent} --optional")
+    });
     assert_eq!(
         parent_before,
         verbs.show(&parent, at(7)).expect("parent").value

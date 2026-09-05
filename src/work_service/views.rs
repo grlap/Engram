@@ -400,6 +400,10 @@ pub struct WorkFocusView {
     /// bounded `children` prefix.
     #[serde(default)]
     pub child_count: usize,
+    /// Safe-show-only advisory from the complete direct-child set. Never a
+    /// core/ambient field or a completion-authority carrier.
+    #[serde(skip)]
+    pub(crate) child_obligations: Option<WorkChildObligations>,
     pub prerequisites: Vec<WorkItemSummary>,
     pub handoffs: Vec<WorkHandoffSummary>,
     pub blockers: Vec<WorkBlockerSummary>,
@@ -574,6 +578,21 @@ fn default_child_requirement() -> ChildRequirement {
 fn child_requirement_is_required(requirement: &ChildRequirement) -> bool {
     *requirement == ChildRequirement::Required
 }
+/// Transient child follow-up guidance; never part of a canonical completion seal.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WorkChildObligations {
+    pub required_owed: WorkChildSummaryPage,
+    pub open_optional: WorkChildSummaryPage,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WorkChildSummaryPage {
+    pub items: Vec<WorkItemSummary>,
+    pub total: usize,
+    /// Derived before limiting; terminal owed children need all-lifecycle ls.
+    pub includes_disposed: bool,
+}
+
 /// Transient child follow-up guidance; never part of a canonical completion seal.
 pub(crate) struct WorkChildFollowupPage {
     pub items: Vec<WorkChildFollowup>,

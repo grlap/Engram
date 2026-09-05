@@ -1,6 +1,7 @@
 use super::*;
 
 mod budgets;
+mod child_summary;
 mod contract_text;
 mod creation;
 mod detach;

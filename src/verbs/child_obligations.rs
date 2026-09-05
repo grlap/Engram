@@ -4,11 +4,11 @@ use super::{
     Guidance, Receipt, Serialize, StoreError, Value, VerbError, json, short_with_limit,
     terminal_safe_line,
 };
-use crate::work_service::WorkChildFollowupPage;
+use crate::work_service::{WorkChildFollowupPage, WorkChildObligations, WorkChildSummaryPage};
 
-pub(super) const MAX_CHILD_OBLIGATION_REFS: usize = 5;
+pub(super) use crate::work_service::MAX_CHILD_OBLIGATION_REFS;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct ChildObligationRow {
     #[serde(rename = "ref")]
     pub(super) work_ref: String,
@@ -20,7 +20,7 @@ pub(super) struct ChildObligationRow {
 
 /// Navigation is a command, not a fixed verb, so scoped listing can replace
 /// today's parent inspection without inventing a different group shape.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct ChildObligationGroup {
     pub(super) count: usize,
     pub(super) items: Vec<ChildObligationRow>,
@@ -29,6 +29,53 @@ pub(super) struct ChildObligationGroup {
 }
 
 impl ChildObligationGroup {
+    fn for_show(
+        page: &WorkChildSummaryPage,
+        parent: &super::WorkItemSummary,
+        requirement: &str,
+    ) -> Self {
+        let parent_ref = &parent.short_ref;
+        let items = page
+            .items
+            .iter()
+            .map(|work| {
+                let disposed = matches!(
+                    work.lifecycle,
+                    super::WorkLifecycle::Cancelled | super::WorkLifecycle::Superseded
+                );
+                let can_waive = disposed && parent.lifecycle == super::WorkLifecycle::Open;
+                ChildObligationRow {
+                    work_ref: work.short_ref.clone(),
+                    title: short_with_limit(&work.title, super::MAX_COMPACT_TITLE_BYTES),
+                    remedy: if can_waive {
+                        format!(
+                            "engram work update {parent_ref} --waive {} --reason \"…\"",
+                            work.short_ref
+                        )
+                    } else {
+                        format!("engram work show {}", work.short_ref)
+                    },
+                    resolve_first: disposed.then(|| {
+                        if can_waive {
+                            "disposed required child still needs an explicit waiver".into()
+                        } else {
+                            "parent is terminal; inspect retained child context".into()
+                        }
+                    }),
+                }
+            })
+            .collect::<Vec<_>>();
+        Self {
+            count: page.total,
+            omitted: page.total.saturating_sub(items.len()),
+            items,
+            navigation: format!(
+                "engram work ls --under {parent_ref} --{requirement}{}",
+                if page.includes_disposed { " --all" } else { "" }
+            ),
+        }
+    }
+
     pub(super) fn lines(&self, label: &str) -> Vec<String> {
         let mut lines = vec![format!(
             "{label} ({} of {} shown):",
@@ -50,6 +97,36 @@ impl ChildObligationGroup {
             lines.push(format!("  ({} more {label} not shown)", self.omitted));
         }
         lines.push(format!("  inspect: {}", self.navigation));
+        lines
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowChildObligations {
+    required_owed: ChildObligationGroup,
+    open_optional: ChildObligationGroup,
+}
+
+impl ShowChildObligations {
+    pub(super) fn new(groups: &WorkChildObligations, parent: &super::WorkItemSummary) -> Self {
+        Self {
+            required_owed: ChildObligationGroup::for_show(
+                &groups.required_owed,
+                parent,
+                "required",
+            ),
+            open_optional: ChildObligationGroup::for_show(
+                &groups.open_optional,
+                parent,
+                "optional",
+            ),
+        }
+    }
+
+    pub(super) fn lines(&self) -> Vec<String> {
+        let mut lines = self.required_owed.lines("required children still owed");
+        lines.extend(self.open_optional.lines("open optional follow-ups"));
+        lines.push("optional children do not block completion".into());
         lines
     }
 }

@@ -335,6 +335,24 @@ cursor validation, page and holders share one snapshot.
 narrow that scope and require the parent. Both switches together are refused.
 Ambient catalogs remain count-free and keep their existing keyset contract.
 
+Parent `show` receipts summarize the complete direct-child set in that read's
+snapshot, before the ordinary child list is limited. The reusable
+`child_obligations` groups distinguish `required_owed` (unfinished required
+children and disposed required children without current revision-bound waivers)
+from `open_optional` follow-ups, which never block completion. Completed native
+or restored children are not owed. Both groups remain present on every item
+with direct children, including zero counts; leaves have no block. Each group
+retains its exact total, up to five refs, exact omitted count and traversal
+command even when final text/JSON byte pressure removes rows. Required traversal
+uses `ls --under PARENT --required`, with `--all` when any owed child is disposed
+so terminal siblings remain reachable; optional traversal uses
+`ls --under PARENT --optional`. Disposed owed refs under an Open parent name
+the explicit required waiver remedy; terminal parents instead direct the
+caller to inspect retained child context with `show CHILD`. Other refs also
+offer `show CHILD`. This does not change completion authority or perform a
+claim or waiver. See the
+[agent receipt contract](cli-and-mcp.md#using-engram-as-an-agent).
+
 Completion is local and final for that run. Report readiness and external
 publication are separate projections; a work item can be completed with no
 report or target, and publication failure never makes completed work active

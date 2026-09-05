@@ -125,6 +125,8 @@ impl LocalWorkService {
             delivery_stage_hook: None,
             #[cfg(test)]
             advisory_read_hook: None,
+            #[cfg(test)]
+            focus_children_hook: None,
         }
     }
     pub(super) fn store_at(
@@ -607,7 +609,24 @@ impl LocalWorkService {
             });
         }
         let restored_history = restored_history_view(store.work_restored_records(work_id)?);
+        #[cfg(test)]
+        if matches!(text, FocusText::Full)
+            && let Some(hook) = &self.focus_children_hook
+        {
+            hook.entered.wait();
+            hook.release.wait();
+        }
         let mut children = store.work_children(work_id)?;
+        let child_obligations = if matches!(text, FocusText::Full) && !children.is_empty() {
+            Some(super::focus::child_obligations(
+                store,
+                &status.work,
+                run.as_ref(),
+                &children,
+            )?)
+        } else {
+            None
+        };
         // Put unfinished children first inside the bounded relation prefix so
         // terminal history cannot hide work that still needs attention.
         // Stable sorting retains the store's stable id order within each
@@ -722,6 +741,7 @@ impl LocalWorkService {
                 .map(|work| work_item_summary(&work))
                 .collect(),
             child_count,
+            child_obligations,
             prerequisites,
             handoffs: handoffs
                 .iter()
