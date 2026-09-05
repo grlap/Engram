@@ -394,6 +394,18 @@ pub struct DisposeWorkRequest {
     pub disposed_at: DateTime<Utc>,
 }
 
+/// Atomically supersedes stranded open work with an independent root.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DetachWorkRequest {
+    pub project_id: ProjectId,
+    pub work_id: WorkId,
+    pub expected_work_revision: i64,
+    pub reason: String,
+    pub actor: ActorContext,
+    pub idempotency_key: String,
+    pub detached_at: DateTime<Utc>,
+}
+
 /// Explicit completion-barrier waiver for a cancelled or superseded required child.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WaiveRequiredChildRequest {

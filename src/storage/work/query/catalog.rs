@@ -1,7 +1,7 @@
 use super::{
     Connection, DateTime, ReadyWork, SqliteStore, StoreError, Utc, Value, WorkAvailability,
-    WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkClaim, WorkClaimState, WorkId,
-    WorkPrerequisiteState, derive_projected_work_availability, encode_state,
+    WorkBlocker, WorkCatalogPage, WorkCatalogQuery, WorkClaim, WorkClaimState, WorkId, WorkItem,
+    WorkLifecycle, WorkPrerequisiteState, derive_projected_work_availability, encode_state,
     load_work_claim_optional, load_work_item_projection, normalize_work_catalog_key, params,
     parse_work_id, projected_prerequisite_state,
 };
@@ -97,6 +97,35 @@ const PROJECTED_WORK_HAS_BLOCKER_SQL: &str = r"
           )
     )
 ";
+
+/// Advisory only, after the caller finds a terminal ancestor and no independent
+/// blockers/prerequisites. Detach rechecks the full canonical basis under its lock.
+pub(super) fn projected_detach_admitted(
+    connection: &Connection,
+    item: &WorkItem,
+    now: DateTime<Utc>,
+) -> Result<bool, StoreError> {
+    if item.lifecycle != WorkLifecycle::Open
+        || item.parent_id.is_none()
+        || item.deferred_until.is_some_and(|until| until > now)
+    {
+        return Ok(false);
+    }
+    connection.query_row(
+        "SELECT NOT EXISTS (
+             WITH RECURSIVE descendants(work_id, lifecycle) AS (
+                 SELECT work_id, lifecycle FROM work_items WHERE parent_id = ?1
+                 UNION SELECT child.work_id, child.lifecycle FROM work_items child
+                 JOIN descendants parent ON child.parent_id = parent.work_id
+             ) SELECT 1 FROM descendants WHERE lifecycle IN ('open', 'proposed')
+         ) AND NOT EXISTS (
+             SELECT 1 FROM work_claims WHERE run_id = ?2 AND state = 'active' AND expires_at_ms > ?3
+         ) AND NOT EXISTS (
+             SELECT 1 FROM work_handoff_offers WHERE run_id = ?2 AND state = 'offered' AND expires_at_ms > ?3
+         )",
+        params![item.work_id.0.to_string(), item.active_run_id.map(|id| id.0.to_string()), now.timestamp_millis()],
+        |row| row.get(0)).map_err(StoreError::from)
+}
 
 impl SqliteStore {
     /// Returns ready work ordered by priority, unblocking value, age, and stable id.
@@ -352,7 +381,7 @@ fn work_catalog_sql(
         classified_filters.push(format!("availability IN ({})", placeholders.join(", ")));
     }
     if query.blocked_only {
-        candidate_filters.push(format!("({PROJECTED_WORK_HAS_BLOCKER_SQL})"));
+        classified_filters.push("(has_blocker OR availability = 'blocked')".into());
     }
     if page && let Some(after) = query.after {
         let parameter = push_catalog_parameter(&mut parameters, Value::Text(after.0.to_string()));
@@ -373,7 +402,8 @@ fn work_catalog_sql(
     let sql = format!(
         "WITH classified AS (
              SELECT candidate.work_id,
-                    ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability
+                    ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability,
+                    ({PROJECTED_WORK_HAS_BLOCKER_SQL}) AS has_blocker
              FROM work_items candidate
              WHERE {}
          )

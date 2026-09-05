@@ -811,6 +811,12 @@ pub enum StoreError {
         "a peer may propose only optional children without prerequisites beneath held work; ask the parent holder to add required children or prerequisites"
     )]
     WorkPeerDecompositionRefused { parent: crate::domain::WorkId },
+    #[error("detach refused: {reason}; {remedy}")]
+    WorkDetachRefused {
+        work_id: crate::domain::WorkId,
+        reason: String,
+        remedy: String,
+    },
     #[error("work {work:?} is claimed by session {holder} until {expires_at}")]
     WorkClaimHeld {
         work: crate::domain::WorkId,

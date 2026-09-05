@@ -219,6 +219,7 @@ pub(super) fn ready_work_summary(status: ReadyWork) -> ReadyWorkSummary {
     ReadyWorkSummary {
         work: work_item_summary(&status.work),
         availability: status.availability,
+        blocking_parent: status.blocking_parent,
         reason_codes: status.reason_codes,
         why: status
             .why

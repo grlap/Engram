@@ -138,6 +138,9 @@ pub enum UpdateAction {
         replacement: String,
         reason: String,
     },
+    Detach {
+        reason: String,
+    },
 }
 
 /// `gate`: one observation on held open work or late evidence on completed focus.
@@ -903,8 +906,16 @@ impl AgentVerbs {
                 }
                 VerbError::at(error, &work_ref)
             })?;
-        let after = self.refreshed(&view, now)?;
-        let line = format!("{line}{}", held_suffix(self.holder(&after, now), now));
+        let after = if result.operation == "detach" {
+            self.target(Some(&result.receipt.work_ref), now)?
+        } else {
+            self.refreshed(&view, now)?
+        };
+        let line = if result.operation == "detach" {
+            format!("{line} as independent root {}", after.status.work.short_ref)
+        } else {
+            format!("{line}{}", held_suffix(self.holder(&after, now), now))
+        };
         let guidance = self.guidance(&after, "update", now);
         Ok(Receipt::assemble(
             vec![line],
@@ -1100,6 +1111,19 @@ impl AgentVerbs {
                         "waived required child {child} for {work_ref} \"{title}\": {}",
                         short(&reason)
                     ),
+                )
+            }
+            UpdateAction::Detach { reason } => {
+                let reason = reason.trim().to_owned();
+                if reason.is_empty() {
+                    return Err(StoreError::InvalidWork("detach needs a reason".into()).into());
+                }
+                (
+                    WorkUpdateInput::Detach {
+                        reason,
+                        idempotency_key: String::new(),
+                    },
+                    format!("detached {work_ref} \"{title}\""),
                 )
             }
             UpdateAction::Supersede {
@@ -1599,6 +1623,9 @@ impl AgentVerbs {
             .map(|blocker| short(&blocker.detail))
             .collect::<Vec<_>>();
         let mut reminders = Vec::new();
+        if let Some(lifecycle) = view.status.blocking_parent {
+            reminders.push(format!("parent {}", lifecycle_word(lifecycle)));
+        }
         for reason in &view.status.why {
             if let Some(words) =
                 reminder_for_reason(reason, holder, &blockers, claim_recovery_required)
@@ -1676,6 +1703,7 @@ pub(super) fn reminder_for_reason(
         };
     }
     match reason {
+        "parent completed" | "parent cancelled" | "parent superseded" | "parent proposed" => None,
         "the ancestor or root-execution generation does not admit execution" => {
             Some("a parent item does not admit execution yet".into())
         }
@@ -1750,6 +1778,10 @@ pub(super) fn obligation_reminders(page: &WorkObligationPage) -> Vec<String> {
 /// How many lifecycle moves a receipt suggests before deferring to `show`.
 const NEXT_LIFECYCLE_LIMIT: usize = 3;
 
+pub(super) fn detach_command(work_ref: &str) -> String {
+    format!("engram work update {work_ref} --detach \"Continue as independent work\"")
+}
+
 /// Fixed table from `allowed_next` tags to literal commands. Only the moves
 /// that change who holds the item or whether it is finished are suggested
 /// (accept, claim, note, done, unblock) — at most [`NEXT_LIFECYCLE_LIMIT`] in
@@ -1772,6 +1804,9 @@ pub(super) fn next_commands(
             out.push(command);
         }
     };
+    if has("work_update:detach") {
+        push(detach_command(work_ref));
+    }
     if has("work_update:remove_prerequisite") {
         for prerequisite in prerequisites
             .iter()

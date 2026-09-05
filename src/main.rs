@@ -1115,6 +1115,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 drop_after,
                 waive,
                 supersede_with,
+                detach,
             } = *args;
             if reason.is_some() && !release && supersede_with.is_none() && waive.is_none() {
                 bail!("--reason is only valid with --release, --waive, or --supersede-with");
@@ -1136,10 +1137,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(drop_after.is_some())
                 + usize::from(waive.is_some())
                 + usize::from(supersede_with.is_some())
+                + usize::from(detach.is_some())
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1150,6 +1152,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 UpdateAction::Unblock
             } else if let Some(reason) = cancel {
                 UpdateAction::Cancel { reason }
+            } else if let Some(reason) = detach {
+                UpdateAction::Detach { reason }
             } else if let Some(prerequisite) = after {
                 UpdateAction::After { prerequisite }
             } else if let Some(prerequisite) = drop_after {
@@ -1587,6 +1591,9 @@ struct WorkUpdateArgs {
     /// Supersede this item with another item; requires --reason.
     #[arg(long, value_name = "REF")]
     supersede_with: Option<String>,
+    /// Supersede a stranded child with an independent root, recording this reason.
+    #[arg(long)]
+    detach: Option<String>,
 }
 
 #[cfg(test)]

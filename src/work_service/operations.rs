@@ -177,6 +177,11 @@ pub enum WorkUpdateInput {
         #[serde(default)]
         idempotency_key: String,
     },
+    Detach {
+        reason: String,
+        #[serde(default)]
+        idempotency_key: String,
+    },
     WaiveRequiredChild {
         child: String,
         reason: String,

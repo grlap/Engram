@@ -65,6 +65,8 @@ fn compact_test_row(index: usize) -> CompactWorkRow {
         labels: vec!["first-label".into(), "second-label".into()],
         labels_omitted: None,
         parent_ref: Some("w-000000000000".into()),
+        blocked_reason: None,
+        remedy: None,
     }
 }
 

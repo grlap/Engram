@@ -103,6 +103,21 @@ instead of failing.
 
 Rules that matter:
 
+- `update CHILD --detach "why"` (MCP `update { work_ref: CHILD, action:
+  "detach", reason: "why" }`) atomically creates an independent root and
+  supersedes an Open child stranded beneath a terminal ancestor. It copies
+  title, outcome, acceptance, kind, labels, and priority with source provenance;
+  assignment and history stay on the child. The receipt names the new root
+  and its claim command. No parent reopen or old claim/fence change occurs.
+  Sealed/terminal root executions stay unchanged; a still-open root's live
+  execution receives cancellation's audited waiver for a missing contributor.
+  Open descendants, live ownership, independent blockers, unfinished
+  prerequisites, and future deferral refuse with `work_detach_refused` and a
+  remedy naming what to resolve first. `show`, focused `next`, and `ls --blocked`
+  display the terminal-parent cause and exact detach command when admitted.
+  Inspect the old child's successor after an uncertain response; a keyless
+  repeat after supersession refuses without creating another root. See
+  [detached follow-ups](local-work-system.md#gates-prerequisites-supersession-and-project-memories).
 - `show REF --notes` (MCP `show { work_ref: REF, notes: true }`) returns
   complete note bodies and references, oldest first, across restored history
   and native execution generations. Inherited notes retain their recorded

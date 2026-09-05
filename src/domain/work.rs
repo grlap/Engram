@@ -196,7 +196,8 @@ pub enum WorkAvailability {
     Closed,
 }
 
-/// Stable machine-facing reasons behind a derived work availability.
+/// Machine-facing availability reasons and supported recovery affordances.
+/// These codes need not correspond one-to-one with human-readable explanations.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkReadinessReason {
@@ -205,6 +206,7 @@ pub enum WorkReadinessReason {
     PrerequisiteIncomplete,
     TypedBlockerActive,
     ParentDisallowsExecution,
+    DetachAvailable,
     PriorClaimRecoverable,
     LiveClaimWithoutCheckpoint,
     LiveClaimWithCheckpoint,
@@ -758,6 +760,8 @@ pub struct CompletionSeal {
 pub struct ReadyWork {
     pub work: WorkItem,
     pub availability: WorkAvailability,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocking_parent: Option<WorkLifecycle>,
     pub reason_codes: Vec<WorkReadinessReason>,
     pub why: Vec<String>,
     pub blocked_by: Vec<WorkId>,

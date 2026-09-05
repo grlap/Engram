@@ -927,6 +927,7 @@ fn derive_projected_work_availability(
     let (blocked_by, has_dead_prerequisite) = prerequisite_readiness(prerequisites);
     let mut why = Vec::new();
     let mut reason_codes = Vec::new();
+    let mut blocking_parent = None;
     let availability = if !matches!(work.lifecycle, WorkLifecycle::Open) {
         reason_codes.push(WorkReadinessReason::LifecycleClosed);
         why.push(format!("lifecycle is {:?}", work.lifecycle));
@@ -935,7 +936,14 @@ fn derive_projected_work_availability(
         || !projected_run_uses_active_root_execution(connection, &work)?
     {
         reason_codes.push(WorkReadinessReason::ParentDisallowsExecution);
-        why.push("the ancestor or root-execution generation does not admit execution".into());
+        blocking_parent = parent_execution_guidance(
+            connection,
+            &work,
+            now,
+            blockers.is_empty() && blocked_by.is_empty(),
+            &mut reason_codes,
+            &mut why,
+        )?;
         WorkAvailability::Blocked
     } else if work.deferred_until.is_some_and(|until| until > now) {
         reason_codes.push(WorkReadinessReason::DeferredUntil);
@@ -965,6 +973,7 @@ fn derive_projected_work_availability(
     Ok(ReadyWork {
         work,
         availability,
+        blocking_parent,
         reason_codes,
         why,
         blocked_by,
@@ -994,6 +1003,7 @@ fn derive_work_availability(
     let (blocked_by, has_dead_prerequisite) = prerequisite_readiness(prerequisites);
     let mut why = Vec::new();
     let mut reason_codes = Vec::new();
+    let mut blocking_parent = None;
     let availability = if !matches!(work.lifecycle, WorkLifecycle::Open) {
         reason_codes.push(WorkReadinessReason::LifecycleClosed);
         why.push(format!("lifecycle is {:?}", work.lifecycle));
@@ -1003,7 +1013,14 @@ fn derive_work_availability(
             || work_run_uses_active_root_execution(connection, &work)?)
     {
         reason_codes.push(WorkReadinessReason::ParentDisallowsExecution);
-        why.push("the ancestor or root-execution generation does not admit execution".into());
+        blocking_parent = parent_execution_guidance(
+            connection,
+            &work,
+            now,
+            blockers.is_empty() && blocked_by.is_empty(),
+            &mut reason_codes,
+            &mut why,
+        )?;
         WorkAvailability::Blocked
     } else if work.deferred_until.is_some_and(|until| until > now) {
         reason_codes.push(WorkReadinessReason::DeferredUntil);
@@ -1033,6 +1050,7 @@ fn derive_work_availability(
     Ok(ReadyWork {
         work,
         availability,
+        blocking_parent,
         reason_codes,
         why,
         blocked_by,
@@ -1095,6 +1113,38 @@ fn projected_ancestors_admit_execution(
     connection: &Connection,
     item: &WorkItem,
 ) -> Result<bool, StoreError> {
+    Ok(projected_blocking_parent_lifecycle(connection, item)?.is_none())
+}
+
+fn parent_execution_guidance(
+    connection: &Connection,
+    item: &WorkItem,
+    now: DateTime<Utc>,
+    independently_unblocked: bool,
+    reasons: &mut Vec<WorkReadinessReason>,
+    why: &mut Vec<String>,
+) -> Result<Option<WorkLifecycle>, StoreError> {
+    if let Some(lifecycle) = projected_blocking_parent_lifecycle(connection, item)? {
+        why.push(format!("parent {}", encode_state(lifecycle)?));
+        if matches!(
+            lifecycle,
+            WorkLifecycle::Completed | WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+        ) && independently_unblocked
+            && catalog::projected_detach_admitted(connection, item, now)?
+        {
+            reasons.push(WorkReadinessReason::DetachAvailable);
+        }
+        Ok(Some(lifecycle))
+    } else {
+        why.push("the ancestor or root-execution generation does not admit execution".into());
+        Ok(None)
+    }
+}
+
+fn projected_blocking_parent_lifecycle(
+    connection: &Connection,
+    item: &WorkItem,
+) -> Result<Option<WorkLifecycle>, StoreError> {
     let mut parent_id = item.parent_id;
     let mut visited = HashSet::new();
     let mut reached_root = item.work_id == item.root_id;
@@ -1121,7 +1171,9 @@ fn projected_ancestors_admit_execution(
             )));
         }
         if lifecycle != "open" {
-            return Ok(false);
+            return serde_json::from_value(serde_json::Value::String(lifecycle))
+                .map(Some)
+                .map_err(StoreError::from);
         }
         reached_root |= parent == item.root_id;
         parent_id = next_parent.map(|value| parse_work_id(&value)).transpose()?;
@@ -1132,7 +1184,7 @@ fn projected_ancestors_admit_execution(
             item.work_id, item.root_id
         )));
     }
-    Ok(true)
+    Ok(None)
 }
 
 fn projected_run_uses_active_root_execution(
@@ -1966,7 +2018,7 @@ pub(in crate::storage) fn load_active_blocker_projections(
         .collect()
 }
 
-fn classified_prerequisite_projections(
+pub(super) fn classified_prerequisite_projections(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<(WorkId, WorkPrerequisiteState)>, StoreError> {

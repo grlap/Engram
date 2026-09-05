@@ -51,6 +51,54 @@ function withoutInjectedWorkAttribution(engramHome) {
   delete environment.ENGRAM_ACTOR_CONTEXT;
   return environment;
 }
+test("detach makes a stranded child independently executable through one CLI update", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-detach-"));
+  try {
+    hostSetup(engramHome);
+    const context = ["--home", engramHome, "work", "--actor-id", "detacher", "--session-id", "detacher"];
+    const json = (...args) => {
+      const result = run([...context, ...args, "--json"]);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const parent = json("add", "Parent").work.short_ref;
+    const child = json("add", "Follow-up", "--under", parent, "--optional", "--note", "Source evidence").work.short_ref;
+    json("claim", parent);
+    json("done", parent, "Parent delivered");
+    const history = json("show", parent).history;
+    const command = `engram work update ${child} --detach "Continue as independent work"`;
+    assert.equal(json("show", child).next[0], command);
+    assert.equal(json("next").next[0], command);
+    const blocked = json("ls", "--blocked");
+    assert.equal(blocked.total, 1);
+    const text = run([...context, "ls", "--blocked"]);
+    assert.equal(text.status, 0, text.stderr);
+    assert.ok(text.stdout.includes("parent completed") && text.stdout.includes(command), text.stdout);
+    for (const action of [["--detach", " "], ["--detach", "why", "--cancel", "why"]]) {
+      const refused = run([...context, "update", child, ...action]);
+      assert.notEqual(refused.status, 0);
+      assert.equal(json("ls", "--all").total, 2);
+    }
+    const result = json("update", child, "--detach", "Independent follow-up");
+    const successor = result.receipt.work_ref;
+    assert.notEqual(successor, child);
+    assert.equal(result.next[0], `engram work claim ${successor}`);
+    assert.deepEqual(json("show", parent).history, history);
+    assert.equal(json("show", child).status.work.superseded_by, successor);
+    assert.equal(json("show", child, "--notes").notes[0].summary, "Source evidence");
+    assert.equal(json("ls", "--blocked").total, 0);
+    const repeated = run([...context, "update", child, "--detach", "Independent follow-up"]);
+    assert.notEqual(repeated.status, 0);
+    assert.equal(json("ls", "--all").total, 3);
+    json("claim", successor);
+    json("done", successor, "Follow-up delivered");
+    const doctor = run(["--home", engramHome, "doctor", "--json"]);
+    assert.equal(doctor.status, 0, doctor.stderr);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("Phoenix atomic initial notes and peer child proposals through CLI", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-creation-"));
   try {

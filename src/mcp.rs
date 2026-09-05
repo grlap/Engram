@@ -153,6 +153,7 @@ enum UpdateActionArg {
     DropAfter,
     Waive,
     Supersede,
+    Detach,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -160,9 +161,9 @@ struct UpdateArgs {
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
     /// `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`,
-    /// `drop_after`, `waive`, or `supersede`.
+    /// `drop_after`, `waive`, `supersede`, or `detach`.
     action: UpdateActionArg,
-    /// Reason for release (optional), cancel, waive, or supersede (required).
+    /// Reason for release (optional), cancel, waive, supersede, or detach (required).
     reason: Option<String>,
     /// Why the item is blocked.
     text: Option<String>,
@@ -375,7 +376,7 @@ impl McpServer {
     /// Apply exactly one planning or claim action.
     #[tool(
         name = "update",
-        description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), waive (child plus reason), or supersede (replacement plus reason)"
+        description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), waive (child plus reason), supersede (replacement plus reason), or detach (stranded child plus reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
         if args.acceptance.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
@@ -420,6 +421,9 @@ impl McpServer {
             },
             UpdateActionArg::Waive => UpdateAction::WaiveRequiredChild {
                 child: args.child.unwrap_or_default(),
+                reason: args.reason.unwrap_or_default(),
+            },
+            UpdateActionArg::Detach => UpdateAction::Detach {
                 reason: args.reason.unwrap_or_default(),
             },
             UpdateActionArg::Supersede => UpdateAction::Supersede {
@@ -714,6 +718,13 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "parent_lifecycle": lifecycle,
             "remedy": crate::storage::parent_not_open_remedy(*lifecycle),
         }),
+        StoreError::WorkDetachRefused {
+            work_id,
+            reason,
+            remedy,
+        } => json!({
+            "work_id": work_id, "reason": reason, "remedy": remedy,
+        }),
         StoreError::WorkPeerDecompositionRefused { parent } => json!({
             "work_id": parent,
             "remedy": "ask the parent holder to add required children or prerequisites; a peer may use add --under REF --optional",
@@ -816,6 +827,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkPrerequisiteAlreadySatisfied(_) => "work_prerequisite_already_satisfied",
         StoreError::WorkNotOpen(_) => "work_not_open",
         StoreError::WorkParentNotOpen { .. } => "work_parent_not_open",
+        StoreError::WorkDetachRefused { .. } => "work_detach_refused",
         StoreError::WorkPeerDecompositionRefused { .. } => "work_peer_decomposition_refused",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",

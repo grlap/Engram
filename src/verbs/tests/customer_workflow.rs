@@ -1,6 +1,7 @@
 use super::*;
 
 mod creation;
+mod detach;
 mod review;
 
 fn fixture() -> (tempfile::TempDir, AgentVerbs, PathBuf, ProjectId) {

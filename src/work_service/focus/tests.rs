@@ -731,6 +731,7 @@ fn oversized_ready_item_degrades_to_one_progress_making_summary() {
     let source = vec![ReadyWorkSummary {
         work: work_item_summary(&work),
         availability: WorkAvailability::Ready,
+        blocking_parent: None,
         reason_codes: Vec::new(),
         why: vec!["x".repeat(1_000); MAX_FOCUS_RELATIONS],
         blocked_by: vec![WorkId::new(); MAX_FOCUS_RELATIONS],

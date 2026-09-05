@@ -939,6 +939,35 @@ is accounted by the existing reason-attributed required-child waiver. Automatic
 successor accounting is not in this cut; tests cover the REF/NEW refusal
 matrix and the front-end translation.
 
+**Detached follow-ups.** `update CHILD --detach "why"` (MCP `update` with
+`action: "detach"` and `reason`) turns stranded work into an independent root
+in one transaction: it copies title, outcome, acceptance, kind, labels, and
+priority into a new Open, unclaimed root, adds creator provenance pointing to
+the source child, and appends a reason-attributed supersession on that child.
+The receipt returns the new root and its claim command. This is supersession,
+not reparenting: assignment, notes, evidence, and historical relations remain
+on the source and can be inspected through the provenance link. The old run
+may become cancelled, but old claims and fence heads, ancestor items, and
+frozen completion history remain unchanged. Sealed or terminal root executions
+are never changed. For a still-open root's live execution, detach uses ordinary
+cancellation's attributed waiver to reconcile an unaccounted lapsed contributor;
+that waiver is appended on the live feed, never written into a sealed execution.
+A runless restored child never bootstraps its old execution just to detach.
+
+Admission requires an Open child below a Completed, Cancelled, or Superseded
+ancestor and no open/proposed descendants, live claim, or live handoff.
+Independent active blockers, incomplete prerequisites, or a future deferral
+refuse detach with `work_detach_refused` and a remedy naming what to resolve
+first. It never bypasses those constraints or reopens the parent. `show`,
+`next` with that child focused, and `ls --blocked` name `parent completed` (or
+the actual terminal lifecycle) and offer the exact detach command only when
+currently admitted.
+Catalog guidance uses current projections; the write transaction verifies the
+full canonical ancestry and relations and repeats admission and expected-revision
+checks. Exact core replay returns the original successor without another creation; an
+ordinary keyless repeat after supersession is refused, not another detach.
+After an uncertain response, inspect the old child to find its successor.
+
 **Project memories.** `remember "text" [--key KEY]` stores one attributed,
 retrievable project note — an ordinary Episode in the existing memory
 model: soft authority, `internal` sensitivity, on-demand delivery, no

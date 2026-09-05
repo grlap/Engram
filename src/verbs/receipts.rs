@@ -127,6 +127,10 @@ pub(super) struct CompactWorkRow {
     pub(super) labels_omitted: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) parent_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) blocked_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) remedy: Option<String>,
 }
 
 pub(super) fn ready_line(item: &ReadyWorkSummary) -> String {
@@ -150,6 +154,12 @@ pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
     }
     if let Some(parent_ref) = &item.parent_ref {
         let _ = write!(line, " ← {parent_ref}");
+    }
+    if let Some(reason) = &item.blocked_reason {
+        let _ = write!(line, " — {reason}");
+    }
+    if let Some(remedy) = &item.remedy {
+        let _ = write!(line, " — {remedy}");
     }
     if let (Some(holder), Some(held_until)) = (&item.holder, &item.held_until) {
         let _ = write!(line, " held by {holder} until {held_until}");
@@ -487,6 +497,7 @@ impl VerbError {
                 vec!["this item is not open".into()],
                 vec![format!("engram work show {target}")],
             ),
+            StoreError::WorkDetachRefused { reason, remedy, .. } => (vec![reason.clone()], vec![remedy.clone()]),
             StoreError::WorkParentNotOpen { lifecycle, .. } => (
                 vec![crate::storage::parent_not_open_remedy(*lifecycle).into()],
                 if *lifecycle == super::WorkLifecycle::Proposed {
@@ -692,6 +703,13 @@ pub(super) fn compact_row(
         labels,
         labels_omitted,
         parent_ref: work.parent_id.map(short_ref_for_work_id),
+        blocked_reason: status
+            .blocking_parent
+            .map(|lifecycle| format!("parent {}", super::lifecycle_word(lifecycle))),
+        remedy: status
+            .reason_codes
+            .contains(&crate::WorkReadinessReason::DetachAvailable)
+            .then(|| super::handlers::detach_command(&work.short_ref)),
     }
 }
 

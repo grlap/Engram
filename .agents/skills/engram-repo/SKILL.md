@@ -151,6 +151,16 @@ it. Host-only `work core` reads remain full.
 
 Rules that matter:
 
+- For unfinished work stranded beneath a completed, cancelled, or superseded
+  ancestor, follow the exact `update CHILD --detach "why"` command offered by
+  `show`, `next`, or `ls --blocked`. This atomically creates an independent
+  root and supersedes the child; it does not reopen the parent or change old
+  claims/fences. Claim the returned root before execution. Open descendants,
+  live ownership, independent blockers, unfinished prerequisites, and future
+  deferral must be resolved first. Assignment and history stay on the source;
+  planning content and source provenance carry forward. After an uncertain
+  response inspect the old child's successor, rather than repeating blindly.
+  See [detached follow-ups](../../../docs/features/local-work-system.md#gates-prerequisites-supersession-and-project-memories).
 - `add --note TEXT` is repeatable (MCP `notes` array). Creation and all initial
   observations commit together; only an exact creation replay recovers the
   original observations. See the retry rule below before repeating a call.

@@ -734,7 +734,7 @@ impl LocalWorkService {
             claim.as_ref(),
             &self.session_id,
         )?;
-        let next = allowed_next(
+        let mut next = allowed_next(
             &status,
             AllowedNextContext {
                 claim: claim.as_ref(),
@@ -747,6 +747,12 @@ impl LocalWorkService {
                 completion_preflight_ready,
             },
         );
+        if status
+            .reason_codes
+            .contains(&crate::WorkReadinessReason::DetachAvailable)
+        {
+            next.push("work_update:detach".into());
+        }
         Ok(WorkGuidance {
             status,
             allowed_next: next,

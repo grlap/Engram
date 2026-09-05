@@ -202,6 +202,45 @@ async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+test("detach exposes the same remedy and independent root through MCP", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-detach-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "detacher");
+    await client.initialize();
+    const parent = receipt(await client.call("add", { title: "Parent" })).work.short_ref;
+    const child = receipt(await client.call("add", { title: "Follow-up", under: parent, optional: true })).work.short_ref;
+    receipt(await client.call("claim", { work_ref: parent }));
+    receipt(await client.call("done", { work_ref: parent, summary: "Parent delivered" }));
+    const history = receipt(await client.call("show", { work_ref: parent })).history;
+    const command = `engram work update ${child} --detach "Continue as independent work"`;
+    assert.equal(receipt(await client.call("show", { work_ref: child })).next[0], command);
+    assert.equal(receipt(await client.call("next", {})).next[0], command);
+    const blocked = await client.call("ls", { blocked: true });
+    const blockedValue = receipt(blocked);
+    assert.equal(blockedValue.total, 1);
+    assert.equal(blockedValue.items[0].blocked_reason, "parent completed");
+    assert.equal(blockedValue.items[0].remedy, command);
+    // MCP text is the JSON fallback, not the CLI's terminal rendering.
+    assert.deepEqual(JSON.parse(blocked.content[0].text), blockedValue);
+    structuredError(await client.call("update", { work_ref: child, action: "detach" }), "work_invalid");
+    const result = receipt(await client.call("update", { work_ref: child, action: "detach", reason: "Independent follow-up" }));
+    const successor = result.receipt.work_ref;
+    assert.notEqual(successor, child);
+    assert.equal(result.next[0], `engram work claim ${successor}`);
+    assert.deepEqual(receipt(await client.call("show", { work_ref: parent })).history, history);
+    assert.equal(receipt(await client.call("show", { work_ref: child })).status.work.superseded_by, successor);
+    structuredError(await client.call("update", { work_ref: child, action: "detach", reason: "Independent follow-up" }), "work_detach_refused");
+    assert.equal(receipt(await client.call("ls", { all: true })).total, 3);
+    receipt(await client.call("claim", { work_ref: successor }));
+    receipt(await client.call("done", { work_ref: successor, summary: "Follow-up delivered" }));
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("running build identity agrees across version, CLI next, doctor and retained MCP next", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-build-identity-"));
   let client;

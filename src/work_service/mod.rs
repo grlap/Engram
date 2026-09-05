@@ -560,6 +560,9 @@ fn update_metadata(input: &WorkUpdateInput) -> (&'static str, &'static str, &str
         WorkUpdateInput::Supersede {
             idempotency_key, ..
         } => ("supersede", "dispose_work", idempotency_key),
+        WorkUpdateInput::Detach {
+            idempotency_key, ..
+        } => ("detach", "detach_work", idempotency_key),
         WorkUpdateInput::WaiveRequiredChild {
             idempotency_key, ..
         } => (

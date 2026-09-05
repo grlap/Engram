@@ -831,6 +831,27 @@ impl LocalWorkService {
                 )?;
                 ("supersede", serde_json::to_value(item)?)
             }
+            WorkUpdateInput::Detach {
+                reason,
+                idempotency_key: _,
+            } => {
+                let root = store.detach_work(
+                    &crate::DetachWorkRequest {
+                        project_id: self.project_id.clone(),
+                        work_id: work.work_id,
+                        expected_work_revision: work.revision,
+                        reason,
+                        actor: self.actor(
+                            "work_update",
+                            "detach stranded work into an independent root",
+                        ),
+                        idempotency_key: scoped_key,
+                        detached_at: now,
+                    },
+                    &DevelopmentNoopRedactor,
+                )?;
+                ("detach", serde_json::to_value(root)?)
+            }
             WorkUpdateInput::WaiveRequiredChild {
                 child,
                 reason,
@@ -875,6 +896,13 @@ impl LocalWorkService {
         receipt: serde_json::Value,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
+        // Detach returns the independent successor, not the now-superseded source.
+        // This also applies when recovering a core commit without a protocol receipt.
+        let work_id = if operation == "detach" {
+            serde_json::from_value::<WorkId>(receipt["work_id"].clone())?
+        } else {
+            work_id
+        };
         let guidance = self.work_guidance(store, work_id, now)?;
         let control_binding = if operation == "claim" {
             guidance

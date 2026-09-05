@@ -45,6 +45,186 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+mod detach;
+
+/// Creates a root within the caller's write transaction after request validation.
+/// The caller owns operation replay and commit, including coupled graph changes.
+fn create_root_on<R: Redactor>(
+    transaction: &Transaction<'_>,
+    request: &CreateWorkRequest,
+    initial_notes: &[String],
+    redactor: &R,
+) -> Result<WorkItem, StoreError> {
+    if let Some(snapshot) = request.source_snapshot_id.as_ref() {
+        let source = load_typed_work_object::<WorkSourceSnapshot>(
+            transaction,
+            snapshot,
+            "work_source_snapshot",
+        )
+        .map_err(|error| {
+            StoreError::InvalidWork(format!(
+                "import source {snapshot} is not a verified work_source_snapshot object: {error}"
+            ))
+        })?;
+        validate_work_source_snapshot(&source, request.created_at)?;
+    }
+
+    let title = normalize_text(&request.title, "title")?;
+    let outcome = normalize_text(&request.outcome, "outcome")?;
+    let work_id = WorkId::new();
+    let run_id = WorkRunId::new();
+    let root_id = work_id;
+    let root_execution = RootExecution {
+        schema_version: SCHEMA_VERSION,
+        root_execution_id: RootExecutionId::new(),
+        project_id: request.project_id.clone(),
+        root_id,
+        generation: 1,
+        state: RootExecutionState::Active,
+        revision: 1,
+        run_ids: vec![run_id],
+        required_child_seals: Vec::new(),
+        required_child_waivers: Vec::new(),
+        expected_contributors: Vec::new(),
+        contributions: Vec::new(),
+        waivers: Vec::new(),
+        created_at: request.created_at,
+        updated_at: request.created_at,
+    };
+    let item = WorkItem {
+        schema_version: SCHEMA_VERSION,
+        project_id: request.project_id.clone(),
+        work_id,
+        short_ref: short_ref(work_id),
+        root_id,
+        parent_id: None,
+        child_requirement: request.child_requirement,
+        title,
+        outcome,
+        acceptance: normalize_strings(&request.acceptance),
+        kind: request.kind,
+        priority: request.priority,
+        labels: normalize_strings(&request.labels),
+        assigned_to: normalize_optional(request.assigned_to.clone()),
+        deferred_until: request.deferred_until,
+        origin: request.origin,
+        source_snapshot_id: request.source_snapshot_id.clone(),
+        lifecycle: WorkLifecycle::Open,
+        revision: 1,
+        active_run_id: Some(run_id),
+        restored: false,
+        superseded_by: None,
+        created_by: request.actor.clone(),
+        created_at: request.created_at,
+        updated_at: request.created_at,
+    };
+    transaction.execute(
+        "INSERT INTO work_items (
+             work_id, project_id, short_ref, root_id, parent_id,
+             child_requirement, lifecycle, priority, assigned_to,
+             deferred_until_ms, revision, active_run_id, source_snapshot_hash,
+             created_at_ms, updated_at_ms, item_json
+         ) VALUES (
+             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+             ?14, ?15, ?16
+         )",
+        params![
+            item.work_id.0.to_string(),
+            item.project_id.0,
+            item.short_ref,
+            item.root_id.0.to_string(),
+            item.parent_id.map(|value| value.0.to_string()),
+            encode_state(item.child_requirement)?,
+            encode_state(item.lifecycle)?,
+            item.priority,
+            item.assigned_to,
+            item.deferred_until.map(|value| value.timestamp_millis()),
+            item.revision,
+            run_id.0.to_string(),
+            item.source_snapshot_id.as_ref().map(ObjectHash::as_str),
+            item.created_at.timestamp_millis(),
+            item.updated_at.timestamp_millis(),
+            serde_json::to_vec(&item)?
+        ],
+    )?;
+    refresh_work_catalog_projection(transaction, &item)?;
+    transaction.execute(
+        "INSERT INTO work_root_executions (
+             root_execution_id, project_id, root_id, generation, state,
+             revision, created_at_ms, updated_at_ms, execution_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            root_execution.root_execution_id.0.to_string(),
+            root_execution.project_id.0,
+            root_execution.root_id.0.to_string(),
+            root_execution.generation,
+            encode_state(root_execution.state)?,
+            root_execution.revision,
+            root_execution.created_at.timestamp_millis(),
+            root_execution.updated_at.timestamp_millis(),
+            serde_json::to_vec(&root_execution)?
+        ],
+    )?;
+    let run = WorkRun {
+        schema_version: SCHEMA_VERSION,
+        run_id,
+        root_execution_id: root_execution.root_execution_id,
+        work_id,
+        generation: 1,
+        executor: None,
+        state: WorkRunState::Open,
+        revision: 1,
+        last_checkpoint: None,
+        completion_seal: None,
+        created_at: request.created_at,
+        updated_at: request.created_at,
+    };
+    transaction.execute(
+        "INSERT INTO work_runs (
+             run_id, root_execution_id, work_id, generation,
+             executor_session_id, state, revision, claim_fence_head,
+             last_checkpoint_hash, completion_seal_hash,
+             created_at_ms, updated_at_ms, run_json
+         ) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 0, NULL, NULL, ?7, ?8, ?9)",
+        params![
+            run.run_id.0.to_string(),
+            run.root_execution_id.0.to_string(),
+            run.work_id.0.to_string(),
+            run.generation,
+            encode_state(run.state)?,
+            run.revision,
+            run.created_at.timestamp_millis(),
+            run.updated_at.timestamp_millis(),
+            serde_json::to_vec(&run)?
+        ],
+    )?;
+    if !combined_graph_is_acyclic(transaction, &item.project_id.0)? {
+        return Err(StoreError::WorkDependencyCycle);
+    }
+    let event = WorkEventDraft {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id,
+        run_id: Some(run_id),
+        revision: item.revision,
+        work: item.clone(),
+        run: Some(run.clone()),
+        root_execution: Some(root_execution.clone()),
+        claim: None,
+        handoff_offer: None,
+        blocker: None,
+        transition: WorkTransition::Created {
+            prerequisites: Vec::new(),
+        },
+        actor: request.actor.clone(),
+        created_at: request.created_at,
+    };
+    append_work_event(transaction, &event)?;
+    append_initial_notes_on(transaction, &item, initial_notes, redactor)?;
+    Ok(item)
+}
+
 impl SqliteStore {
     /// Creates a local root with an initial run and immutable event.
     ///
@@ -95,173 +275,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(item);
         }
-        if let Some(snapshot) = request.source_snapshot_id.as_ref() {
-            let source = load_typed_work_object::<WorkSourceSnapshot>(
-                &transaction,
-                snapshot,
-                "work_source_snapshot",
-            )
-            .map_err(|error| {
-                    StoreError::InvalidWork(format!(
-                        "import source {snapshot} is not a verified work_source_snapshot object: {error}"
-                    ))
-                })?;
-            validate_work_source_snapshot(&source, request.created_at)?;
-        }
-
-        let title = normalize_text(&request.title, "title")?;
-        let outcome = normalize_text(&request.outcome, "outcome")?;
-        let work_id = WorkId::new();
-        let run_id = WorkRunId::new();
-        let root_id = work_id;
-        let root_execution = RootExecution {
-            schema_version: SCHEMA_VERSION,
-            root_execution_id: RootExecutionId::new(),
-            project_id: request.project_id.clone(),
-            root_id,
-            generation: 1,
-            state: RootExecutionState::Active,
-            revision: 1,
-            run_ids: vec![run_id],
-            required_child_seals: Vec::new(),
-            required_child_waivers: Vec::new(),
-            expected_contributors: Vec::new(),
-            contributions: Vec::new(),
-            waivers: Vec::new(),
-            created_at: request.created_at,
-            updated_at: request.created_at,
-        };
-        let item = WorkItem {
-            schema_version: SCHEMA_VERSION,
-            project_id: request.project_id.clone(),
-            work_id,
-            short_ref: short_ref(work_id),
-            root_id,
-            parent_id: None,
-            child_requirement: request.child_requirement,
-            title,
-            outcome,
-            acceptance: normalize_strings(&request.acceptance),
-            kind: request.kind,
-            priority: request.priority,
-            labels: normalize_strings(&request.labels),
-            assigned_to: normalize_optional(request.assigned_to.clone()),
-            deferred_until: request.deferred_until,
-            origin: request.origin,
-            source_snapshot_id: request.source_snapshot_id.clone(),
-            lifecycle: WorkLifecycle::Open,
-            revision: 1,
-            active_run_id: Some(run_id),
-            restored: false,
-            superseded_by: None,
-            created_by: request.actor.clone(),
-            created_at: request.created_at,
-            updated_at: request.created_at,
-        };
-        transaction.execute(
-            "INSERT INTO work_items (
-                 work_id, project_id, short_ref, root_id, parent_id,
-                 child_requirement, lifecycle, priority, assigned_to,
-                 deferred_until_ms, revision, active_run_id, source_snapshot_hash,
-                 created_at_ms, updated_at_ms, item_json
-             ) VALUES (
-                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                 ?14, ?15, ?16
-             )",
-            params![
-                item.work_id.0.to_string(),
-                item.project_id.0,
-                item.short_ref,
-                item.root_id.0.to_string(),
-                item.parent_id.map(|value| value.0.to_string()),
-                encode_state(item.child_requirement)?,
-                encode_state(item.lifecycle)?,
-                item.priority,
-                item.assigned_to,
-                item.deferred_until.map(|value| value.timestamp_millis()),
-                item.revision,
-                run_id.0.to_string(),
-                item.source_snapshot_id.as_ref().map(ObjectHash::as_str),
-                item.created_at.timestamp_millis(),
-                item.updated_at.timestamp_millis(),
-                serde_json::to_vec(&item)?
-            ],
-        )?;
-        refresh_work_catalog_projection(&transaction, &item)?;
-        transaction.execute(
-            "INSERT INTO work_root_executions (
-                 root_execution_id, project_id, root_id, generation, state,
-                 revision, created_at_ms, updated_at_ms, execution_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                root_execution.root_execution_id.0.to_string(),
-                root_execution.project_id.0,
-                root_execution.root_id.0.to_string(),
-                root_execution.generation,
-                encode_state(root_execution.state)?,
-                root_execution.revision,
-                root_execution.created_at.timestamp_millis(),
-                root_execution.updated_at.timestamp_millis(),
-                serde_json::to_vec(&root_execution)?
-            ],
-        )?;
-        let run = WorkRun {
-            schema_version: SCHEMA_VERSION,
-            run_id,
-            root_execution_id: root_execution.root_execution_id,
-            work_id,
-            generation: 1,
-            executor: None,
-            state: WorkRunState::Open,
-            revision: 1,
-            last_checkpoint: None,
-            completion_seal: None,
-            created_at: request.created_at,
-            updated_at: request.created_at,
-        };
-        transaction.execute(
-            "INSERT INTO work_runs (
-                 run_id, root_execution_id, work_id, generation,
-                 executor_session_id, state, revision, claim_fence_head,
-                 last_checkpoint_hash, completion_seal_hash,
-                 created_at_ms, updated_at_ms, run_json
-             ) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 0, NULL, NULL, ?7, ?8, ?9)",
-            params![
-                run.run_id.0.to_string(),
-                run.root_execution_id.0.to_string(),
-                run.work_id.0.to_string(),
-                run.generation,
-                encode_state(run.state)?,
-                run.revision,
-                run.created_at.timestamp_millis(),
-                run.updated_at.timestamp_millis(),
-                serde_json::to_vec(&run)?
-            ],
-        )?;
-        if !combined_graph_is_acyclic(&transaction, &item.project_id.0)? {
-            return Err(StoreError::WorkDependencyCycle);
-        }
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id,
-            run_id: Some(run_id),
-            revision: item.revision,
-            work: item.clone(),
-            run: Some(run.clone()),
-            root_execution: Some(root_execution.clone()),
-            claim: None,
-            handoff_offer: None,
-            blocker: None,
-            transition: WorkTransition::Created {
-                prerequisites: Vec::new(),
-            },
-            actor: request.actor.clone(),
-            created_at: request.created_at,
-        };
-        append_work_event(&transaction, &event)?;
-        append_initial_notes_on(&transaction, &item, &initial_notes, redactor)?;
+        let item = create_root_on(&transaction, request, &initial_notes, redactor)?;
         persist_operation_result(
             &transaction,
             "create_work",
