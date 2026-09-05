@@ -1,5 +1,6 @@
 use super::*;
 
+mod budgets;
 mod creation;
 mod detach;
 mod discovery;

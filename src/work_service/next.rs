@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy)]
+struct AgentNextOptions {
+    list_limit: u32,
+    verbose: bool,
+}
+
 impl LocalWorkService {
     /// One count/page snapshot for the flat list word, without changing focus
     /// or draining the session's peer delivery cursor. The verb fits its final
@@ -65,10 +71,21 @@ impl LocalWorkService {
         &self,
         limit: u32,
         list_limit: u32,
+        verbose: bool,
         query: WorkNextQuery,
         now: DateTime<Utc>,
     ) -> Result<WorkNextView, StoreError> {
-        self.work_next_internal(limit, None, None, query, now, Some(list_limit))
+        self.work_next_internal(
+            limit,
+            None,
+            None,
+            query,
+            now,
+            Some(AgentNextOptions {
+                list_limit,
+                verbose,
+            }),
+        )
     }
 
     #[allow(
@@ -82,8 +99,9 @@ impl LocalWorkService {
         acknowledge_token: Option<&str>,
         query: WorkNextQuery,
         now: DateTime<Utc>,
-        agent_list_limit: Option<u32>,
+        agent_options: Option<AgentNextOptions>,
     ) -> Result<WorkNextView, StoreError> {
+        let fit_core = agent_options.is_none_or(|options| options.verbose);
         let mut store = self.store_at(now)?;
         if let Some(through) = acknowledge_through {
             store.acknowledge_work_session_delivery(
@@ -254,7 +272,13 @@ impl LocalWorkService {
                     store
                         .work_session_state(&self.project_id, &self.session_id, now)?
                         .focused_work_id
-                        .map(|work_id| self.focus_view(store, work_id, true, false, now))
+                        .map(|work_id| {
+                            if fit_core {
+                                self.focus_view(store, work_id, true, false, now)
+                            } else {
+                                self.focus_view_for_projection(store, work_id, true, false, now)
+                            }
+                        })
                         .transpose()?
                 } else {
                     None
@@ -348,8 +372,8 @@ impl LocalWorkService {
                         }
                     }
                 }
-                let agent_lists = agent_list_limit
-                    .map(|limit| self.agent_next_lists(store, limit, now))
+                let agent_lists = agent_options
+                    .map(|options| self.agent_next_lists(store, options.list_limit, now))
                     .transpose()?;
                 Ok((focus, ready, catalog, discovery, agent_lists))
             })?;
@@ -375,13 +399,15 @@ impl LocalWorkService {
             omissions,
             memory_advertisement: None,
         };
-        fit_work_next_response(&mut response)?;
-        ensure_agent_response_budget(&response, "work_next")?;
+        if fit_core {
+            fit_work_next_response(&mut response)?;
+            ensure_agent_response_budget(&response, "work_next")?;
+        }
         if response.memories.is_some()
             && let Some(advertisement) = memory_advertisement
             && advertisement.changed
         {
-            if agent_list_limit.is_some() {
+            if agent_options.is_some() {
                 response.memory_advertisement = Some(advertisement);
             } else {
                 acknowledge_project_memory_advertisement_best_effort(

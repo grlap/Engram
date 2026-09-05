@@ -630,7 +630,9 @@ groups, with open or proposed children ahead of terminal children inside the
 ordinary eight-relation prefix. The exact child count preserves the omitted
 remainder; `unfinished_child_count_limit` and `terminal_child_count_limit`
 state which lifecycle class exceeded that prefix, while byte-budget omissions
-record later response fitting. The agent `show` word projects that view into a
+record later response fitting. The agent `show` word projects the count-bounded
+view before fitting its actual text and JSON; hidden core metadata cannot
+trigger byte omissions in `show` or compact `next`. The result is a
 terse receipt with short refs, planning state, safe relation/blocker summaries,
 typed note summaries, meaningful history, a superseded item's successor short
 ref, and allowed actions. It preserves the exact evidence count and the latest

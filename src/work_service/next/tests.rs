@@ -1063,12 +1063,12 @@ fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
         ..WorkNextQuery::default()
     };
     let first = service
-        .work_next_for_agent(20, 20, query.clone(), at(1))
+        .work_next_for_agent(20, 20, false, query.clone(), at(1))
         .expect("first deferred signal");
     assert!(first.memories.as_ref().is_some_and(|signal| signal.changed));
     assert!(first.memory_advertisement.is_some());
     let repeated = service
-        .work_next_for_agent(20, 20, query.clone(), at(2))
+        .work_next_for_agent(20, 20, false, query.clone(), at(2))
         .expect("unacknowledged signal repeats");
     assert!(
         repeated
@@ -1078,7 +1078,7 @@ fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
     );
     service.acknowledge_work_next_memories(&first, at(2));
     let stable = service
-        .work_next_for_agent(20, 20, query, at(3))
+        .work_next_for_agent(20, 20, false, query, at(3))
         .expect("acknowledged signal is stable");
     assert!(
         stable
@@ -1124,6 +1124,7 @@ fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
         reader.work_next_for_agent(
             20,
             20,
+            false,
             WorkNextQuery {
                 context_generation: Some("invalid\ncontext".into()),
                 ..WorkNextQuery::default()
@@ -1140,7 +1141,7 @@ fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
     assert_eq!(after_refusal.tentative_project_cursor, None);
 
     let replayed = reader
-        .work_next_for_agent(20, 20, WorkNextQuery::default(), at(2))
+        .work_next_for_agent(20, 20, false, WorkNextQuery::default(), at(2))
         .expect("corrected call delivers unseen page");
     assert!(replayed.changes.as_ref().is_some_and(|changes| {
         changes.iter().any(|change| {

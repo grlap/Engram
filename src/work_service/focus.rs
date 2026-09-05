@@ -102,6 +102,19 @@ impl LocalWorkService {
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
         self.focus_view(&store, item.work_id, true, true, now)
     }
+
+    /// The safe agent renderer owns the final byte budget, not this richer
+    /// intermediate view. Field and relation-count limits still apply.
+    pub(crate) fn work_focus_for_agent(
+        &self,
+        work_ref: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkFocusView, StoreError> {
+        let mut store = self.store_at(now)?;
+        let item = store.resolve_work_ref(&self.project_id, work_ref)?;
+        store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
+        self.focus_view_for_projection(&store, item.work_id, true, true, now)
+    }
 }
 
 #[cfg(test)]

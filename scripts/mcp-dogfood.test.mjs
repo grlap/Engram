@@ -101,7 +101,7 @@ class McpClient {
       const timer = setTimeout(() => {
         this.pending.delete(String(id));
         reject(new Error(`MCP request timed out: ${method}; stderr=${this.stderr}`));
-      }, 5000);
+      }, 15000);
       this.pending.set(String(id), {
         resolve: (value) => {
           clearTimeout(timer);
@@ -149,7 +149,8 @@ class McpClient {
       arguments: arguments_,
     });
     const elapsed = performance.now() - started;
-    assert.ok(elapsed < 1000, `${name} took ${elapsed.toFixed(1)}ms; limit is 1000ms`);
+    // Catch the former 14s pathology; precise bounds live in Rust decode/statement-count regressions.
+    assert.ok(elapsed < 10000, `${name} took ${elapsed.toFixed(1)}ms; sanity limit is 10000ms`);
     return result;
   }
 

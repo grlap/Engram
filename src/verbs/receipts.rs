@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{self, Write as _},
 };
 
@@ -210,6 +210,9 @@ pub struct Guidance {
 pub struct Receipt {
     lines: Vec<String>,
     build_footer: Option<String>,
+    // Presentation-only contribution to Focus/ByteBudget. Full-note rendering
+    // replaces this section, but must retain genuine child/history omissions.
+    pub(super) compact_note_byte_omissions: usize,
     pub reminders: Vec<String>,
     pub next: Vec<String>,
     pub value: Value,
@@ -262,6 +265,7 @@ impl Receipt {
         Self {
             lines,
             build_footer: None,
+            compact_note_byte_omissions: 0,
             reminders: guidance.reminders,
             next: guidance.next,
             value,
@@ -315,8 +319,22 @@ pub(super) fn fit_show_notes(
         .get_mut("omissions")
         .and_then(Value::as_array_mut)
     {
-        omissions.retain(|omission| omission["reason"] != "evidence_count_limit");
+        omissions.retain_mut(|omission| {
+            if omission["reason"] == "evidence_count_limit" {
+                return false;
+            }
+            if omission["section"] == "focus"
+                && omission["reason"] == "byte_budget"
+                && let Some(count) = omission["omitted_count"].as_u64()
+            {
+                let remaining = count.saturating_sub(receipt.compact_note_byte_omissions as u64);
+                omission["omitted_count"] = json!(remaining);
+                return remaining > 0;
+            }
+            true
+        });
     }
+    receipt.compact_note_byte_omissions = 0;
     if receipt
         .value
         .get("omissions")
@@ -769,12 +787,20 @@ pub(super) fn compact_next_receipt(
             .guidance
             .reminders
             .truncate(MAX_COMPACT_REMINDER_ITEMS);
-        record_compact_omission(&mut compact.omissions, "reminders", omitted);
+        compact.omissions.push(CompactSectionOmission {
+            section: "reminders".into(),
+            reason: WorkSectionOmissionReason::CountLimit,
+            omitted_count: omitted,
+        });
     }
     if compact.guidance.next.len() > MAX_TEXT_NEXT_COMMANDS {
         let omitted = compact.guidance.next.len() - MAX_TEXT_NEXT_COMMANDS;
         compact.guidance.next.truncate(MAX_TEXT_NEXT_COMMANDS);
-        record_compact_omission(&mut compact.omissions, "next", omitted);
+        compact.omissions.push(CompactSectionOmission {
+            section: "next".into(),
+            reason: WorkSectionOmissionReason::CountLimit,
+            omitted_count: omitted,
+        });
     }
     fit_compact_next(compact)
 }
@@ -995,14 +1021,15 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
             if memories.changed { " (changed)" } else { "" }
         ));
     }
-    for omission in compact
-        .omissions
-        .iter()
-        .filter(|omission| omission.section != "changes" && omission.section != "focus")
-    {
+    let mut omitted_sections = HashSet::new();
+    for omission in compact.omissions.iter().filter(|omission| {
+        omission.section != "changes"
+            && omission.section != "focus"
+            && omitted_sections.insert(omission.section.as_str())
+    }) {
         lines.push(format!(
             "  ({} more {} not shown)",
-            omission.omitted_count,
+            compact_omitted(compact, &omission.section),
             compact_section_word(&omission.section)
         ));
     }

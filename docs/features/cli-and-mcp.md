@@ -102,6 +102,12 @@ rows; `ls` does not shed labels. Compact `next` uses the same
 remains meaningful. Section removal is recorded in explicit `omissions`
 instead of failing.
 
+Compact `next` and safe `show` fit their complete emitted text and JSON,
+including guidance (and the `next` build footer), after projection. Hidden
+core metadata does not consume that budget or cause visible rows to disappear.
+Field and count limits still apply; host-only core and verbose views retain
+their own rich-response fitting.
+
 Rules that matter:
 
 - Claimless `next` includes nonempty `assigned` and `participated` sections

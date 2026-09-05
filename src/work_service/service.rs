@@ -419,11 +419,33 @@ impl LocalWorkService {
         WorkPlanningAuthority::Project
     }
 
+    pub(super) fn focus_view(
+        &self,
+        store: &SqliteStore,
+        work_id: WorkId,
+        with_memories: bool,
+        with_latest_evidence: bool,
+        now: DateTime<Utc>,
+    ) -> Result<WorkFocusView, StoreError> {
+        let mut view = self.focus_view_for_projection(
+            store,
+            work_id,
+            with_memories,
+            with_latest_evidence,
+            now,
+        )?;
+        fit_focus_response(&mut view)?;
+        ensure_agent_response_budget(&view, "work_focus")?;
+        Ok(view)
+    }
+
+    // Count and field bounds apply here; only the emitted representation may
+    // decide whether whole rows need shedding for bytes.
     #[allow(
         clippy::too_many_lines,
         reason = "the bounded focus packet is assembled in one place so every relation and omission limit is visible"
     )]
-    pub(super) fn focus_view(
+    pub(super) fn focus_view_for_projection(
         &self,
         store: &SqliteStore,
         work_id: WorkId,
@@ -666,7 +688,7 @@ impl LocalWorkService {
                     reason: bounded,
                 }
             });
-        let mut view = WorkFocusView {
+        let view = WorkFocusView {
             session: agent_work_session(&session),
             detached_from,
             status: ready_work_summary(status),
@@ -716,8 +738,6 @@ impl LocalWorkService {
             allowed_next,
             omissions,
         };
-        fit_focus_response(&mut view)?;
-        ensure_agent_response_budget(&view, "work_focus")?;
         Ok(view)
     }
 

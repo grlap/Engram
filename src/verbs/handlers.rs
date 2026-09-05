@@ -18,7 +18,7 @@ use super::{
         fit_list_receipt, ready_line,
     },
     section_word, short,
-    show::{live, show_lines, show_receipt_value},
+    show::{fit_show_receipt, live, show_lines, show_receipt_value},
     slug, terminal_safe_actor_label, terminal_safe_multiline, trimmed, validate_priority,
 };
 
@@ -316,9 +316,9 @@ impl AgentVerbs {
             context_generation: input.context_generation.clone(),
             ..WorkNextQuery::default()
         };
-        let mut view = self
-            .service
-            .work_next_for_agent(change_limit, limit, query, now)?;
+        let mut view =
+            self.service
+                .work_next_for_agent(change_limit, limit, input.verbose, query, now)?;
         let lists = view.agent_lists.take().ok_or_else(|| {
             StoreError::InvalidWorkProjection("agent next has no advisory list snapshot".into())
         })?;
@@ -511,16 +511,28 @@ impl AgentVerbs {
     pub fn show(&self, work_ref: &str, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let view = self
             .service
-            .work_focus(work_ref, now)
+            .work_focus_for_agent(work_ref, now)
             .map_err(|error| VerbError::at(error, work_ref))?;
-        let holder = self.holder(&view, now);
-        let lines = show_lines(&view, holder, &self.actor_id, &self.session_id, now);
-        let guidance = self.guidance(&view, "show", now);
+        fit_show_receipt(
+            view,
+            |view| self.render_show(view, now),
+            MAX_AGENT_WORK_RESPONSE_BYTES,
+        )
+    }
+
+    pub(super) fn render_show(
+        &self,
+        view: &WorkFocusView,
+        now: DateTime<Utc>,
+    ) -> Result<Receipt, VerbError> {
+        let holder = self.holder(view, now);
+        let lines = show_lines(view, holder, &self.actor_id, &self.session_id, now);
+        let guidance = self.guidance(view, "show", now);
         Ok(Receipt::assemble(
             lines,
             guidance,
             serde_json::to_value(show_receipt_value(
-                &view,
+                view,
                 holder,
                 &self.actor_id,
                 &self.session_id,

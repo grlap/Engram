@@ -1,5 +1,7 @@
 use std::fmt::Write as _;
 
+use crate::work_service::{WorkNextSection, WorkSectionOmissionReason};
+
 use super::{
     ChildRequirement, DateTime, Holder, ReadyWorkSummary, Serialize, SessionId, Utc,
     WorkAvailability, WorkBlockerKind, WorkChangeProjection, WorkClaim, WorkClaimState,
@@ -8,6 +10,85 @@ use super::{
     blocker_word, child_summary_line, clock, evidence_kind_word, kind_word, lifecycle_word, short,
     short_ref_for_work_id, strip_kind_prefix, terminal_safe_actor_label,
 };
+
+/// Measure the actual safe projection, including guidance, before shedding.
+/// Hidden core metadata must not consume an agent receipt's byte budget.
+pub(super) fn fit_show_receipt(
+    mut view: WorkFocusView,
+    render: impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
+    max_bytes: usize,
+) -> Result<super::Receipt, super::VerbError> {
+    // Normalize the independently loaded latest note exactly as show does,
+    // so byte shedding cannot count a page row already hidden by replacement.
+    view.evidence_items = show_evidence(&view);
+    let original_note_rows = view.evidence_items.len();
+    loop {
+        let mut receipt = render(&view)?;
+        // Match compact next's conservative strict ceiling for both formats.
+        if receipt.text().len() < max_bytes
+            && serde_json::to_vec_pretty(&receipt.value)?.len() < max_bytes
+        {
+            receipt.compact_note_byte_omissions = original_note_rows - view.evidence_items.len();
+            return Ok(receipt);
+        }
+        if !shed_show_once(&mut view) {
+            return Err(super::StoreError::InvalidWorkProjection(
+                "show metadata exceeds the agent response byte budget".into(),
+            )
+            .into());
+        }
+        if let Some(omission) = view.omissions.iter_mut().find(|entry| {
+            entry.section == WorkNextSection::Focus
+                && entry.reason == WorkSectionOmissionReason::ByteBudget
+        }) {
+            omission.omitted_count += 1;
+        } else {
+            view.omissions.push(WorkSectionOmission {
+                section: WorkNextSection::Focus,
+                reason: WorkSectionOmissionReason::ByteBudget,
+                omitted_count: 1,
+            });
+        }
+    }
+}
+
+fn shed_show_once(view: &mut WorkFocusView) -> bool {
+    // Only remove fields actually emitted by show. In particular, memories,
+    // obligations, and child acceptance metadata are not presentation rows.
+    if let Some(index) = view
+        .history
+        .items
+        .iter()
+        .rposition(|entry| matches!(entry.delivery, WorkChangeProjection::Visible(_)))
+    {
+        view.history.items.remove(index);
+        view.history.omitted += 1;
+        return true;
+    }
+    if view.restored_history.items.pop().is_some() {
+        view.restored_history.omitted += 1;
+        return true;
+    }
+    // Blockers and prerequisites are already count/field bounded. Preserve
+    // their blocking context; every successful shed must remove a real row.
+    if view.children.pop().is_some() {
+        return true;
+    }
+    // Keep the independently loaded latest note until the other note rows go.
+    if let Some(index) = view.evidence_items.iter().rposition(|entry| {
+        view.latest_evidence_item
+            .as_ref()
+            .is_none_or(|latest| latest.evidence != entry.evidence)
+    }) {
+        view.evidence_items.remove(index);
+        return true;
+    }
+    if view.latest_evidence_item.take().is_some() {
+        view.evidence_items.clear();
+        return true;
+    }
+    false
+}
 
 /// Agent-detail work fields for `show`. Canonical ids, revision counters,
 /// run bindings, and content hashes remain on the host-only core view.
@@ -442,7 +523,7 @@ pub(super) fn show_receipt_value(
     }
 }
 
-pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowNote> {
+fn show_evidence(view: &WorkFocusView) -> Vec<crate::work_service::WorkEvidenceSummary> {
     let mut notes = view.evidence_items.clone();
     if let Some(latest) = view.latest_evidence_item.as_ref() {
         if let Some(index) = notes
@@ -456,6 +537,10 @@ pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowN
         notes.push(latest.clone());
     }
     notes
+}
+
+pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowNote> {
+    show_evidence(view)
         .into_iter()
         .map(|note| ShowNote {
             kind: note.evidence_kind,
