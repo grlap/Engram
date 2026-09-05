@@ -4,6 +4,10 @@ How work happens in this repository. Agent-facing operational rules live in
 `CLAUDE.md` / `AGENTS.md` (owned by the tooling scaffold); this document is
 the human-readable overview and the documentation conventions.
 
+The [Fable and Codex pair workflow proposal](agent-pair-workflow.md) describes
+coordination, implementation, independent review, and recovery after interruption.
+It is a proposal for the current pilot, not a change to standing instructions.
+
 ## Task tracking
 
 This project tracks its work in Engram — the thirteen agent words, documented in

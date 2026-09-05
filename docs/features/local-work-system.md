@@ -16,6 +16,8 @@ work, claim and hand off it, attach evidence, and complete it without any
 external tracker. This is the local system of record for execution, not a
 cache of Beads, GitHub, Jira, or another backlog.
 
+See the [agent pair workflow proposal](../agent-pair-workflow.md) for a pilot of coordinator, implementer, and independent reviewer responsibilities.
+
 External systems are optional at every boundary:
 
 ```text
