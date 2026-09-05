@@ -83,7 +83,113 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".site-header") && !mobileNav.hidden) closeMenu();
 });
-window.matchMedia("(min-width: 681px)").addEventListener("change", closeMenu);
+window.matchMedia("(min-width: 761px)").addEventListener("change", closeMenu);
+
+const folios = [...document.querySelectorAll("[data-folio]")];
+const folioLinks = [...document.querySelectorAll("[data-folio-link]")];
+const nextFolio = document.querySelector("#next-folio");
+const folioTitles = ["The idea", "The mechanism", "Your notebook"];
+let activeFolio = -1;
+let folioFrame;
+
+function updateFolio() {
+  folioFrame = undefined;
+  const midpoint = window.innerHeight / 2;
+  let index = folios.findIndex((folio) => {
+    const bounds = folio.getBoundingClientRect();
+    return bounds.top <= midpoint && bounds.bottom > midpoint;
+  });
+  if (index === -1) index = 0;
+  if (index === activeFolio) return;
+  activeFolio = index;
+  for (const link of folioLinks) {
+    if (link.hash === `#${folios[index].id}`) {
+      link.setAttribute("aria-current", "location");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  }
+  const nextIndex = (index + 1) % folios.length;
+  nextFolio.href = `#${folios[nextIndex].id}`;
+  nextFolio.setAttribute(
+    "aria-label",
+    nextIndex === 0
+      ? "Return to the first page"
+      : `Next page: ${folioTitles[nextIndex]}`,
+  );
+  document.querySelector("#current-page").textContent =
+    folios[index].dataset.folio;
+  document.querySelector("#page-cue").textContent =
+    nextIndex === 0 ? "Return to the first page" : "Scroll to turn the page";
+  nextFolio.querySelector(".page-arrow").textContent =
+    nextIndex === 0 ? "↑" : "↓";
+}
+
+function scheduleFolioUpdate() {
+  if (folioFrame === undefined) folioFrame = requestAnimationFrame(updateFolio);
+}
+
+// Links, touch scrolling, and keyboard navigation retain their native behavior.
+window.addEventListener("scroll", scheduleFolioUpdate, { passive: true });
+window.addEventListener("resize", scheduleFolioUpdate);
+window.addEventListener("pageshow", scheduleFolioUpdate);
+updateFolio();
+
+const pagedViewport = window.matchMedia(
+  "(min-width: 761px) and (min-height: 621px)",
+);
+let lastWheelAt = 0;
+let wheelDistance = 0;
+let wheelHandled = false;
+let wheelLockedUntil = 0;
+
+window.addEventListener(
+  "wheel",
+  (event) => {
+    // Long pages and horizontal or zoom gestures need their ordinary browser behavior.
+    if (
+      !pagedViewport.matches ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      Math.abs(event.deltaX) >= Math.abs(event.deltaY) ||
+      folios.some((folio) => folio.offsetHeight > window.innerHeight + 1)
+    )
+      return;
+
+    const now = performance.now();
+    if (now - lastWheelAt > 220) {
+      wheelDistance = 0;
+      wheelHandled = false;
+    }
+    lastWheelAt = now;
+    event.preventDefault();
+    if (wheelHandled || now < wheelLockedUntil) return;
+
+    const unit =
+      event.deltaMode === 1
+        ? 16
+        : event.deltaMode === 2
+          ? window.innerHeight
+          : 1;
+    wheelDistance += event.deltaY * unit;
+    if (Math.abs(wheelDistance) < 28) return;
+
+    updateFolio();
+    const index = Math.max(
+      0,
+      Math.min(folios.length - 1, activeFolio + Math.sign(wheelDistance)),
+    );
+    wheelHandled = true;
+    const paused = root.dataset.motion === "paused";
+    wheelLockedUntil = now + (paused ? 100 : 700);
+    folios[index].scrollIntoView({
+      behavior: paused ? "instant" : "smooth",
+      block: "start",
+    });
+  },
+  { passive: false },
+);
 
 const cycle = {
   observe: {
@@ -97,26 +203,26 @@ const cycle = {
   claim: {
     command: "engram work claim <item>",
     output:
-      "Ownership, made explicit.\n\n  Improve the search experience\n  One executor holds the current run.\n  The claim carries a lease and a fence.\n\nBegin with a bounded piece of work.",
+      "Ownership, made explicit.\n\n  Improve the search experience\n  One executor holds the current run.\n  The claim is time-limited and renewable.\n\nBegin with a bounded piece of work.",
     aside: "A clear intention. A steady hand.",
     description:
-      "Claim the item returned by next. Fenced work claims schedule execution; resource leases separately authorize mutation.",
+      "Claim a ready item to take responsibility for its execution. Permission to change files is handled separately.",
   },
   capture: {
     command: 'engram work note "Rank exact matches first"',
     output:
-      "A decision becomes shared context.\n\n  Rank exact matches first\n  Captured in the task working memory.\n  Available to the next participant.\n\nOne note, carried into the work record.",
+      "A decision becomes shared context.\n\n  Rank exact matches first\n  Recorded in the work history.\n  Shared with other participants.\n\nOne note, carried into the work record.",
     aside: "Leave the next mind a useful mark.",
     description:
-      "Capture decisions and findings while you work. A holder note checkpoints progress and becomes shared task context.",
+      "Record a finding or decision. Engram checkpoints your progress and makes the note available to other participants.",
   },
   complete: {
     command: 'engram work done "Search ranking verified"',
     output:
-      "Completion is checked, then sealed.\n\n  Acceptance and evidence validated\n  Required child work accounted for\n  Open obligations must be resolved\n\nAn immutable record of the finished work.",
+      "Completion is checked, then sealed.\n\n  Recorded evidence checked\n  Required child work accounted for\n  Open obligations must be resolved\n\nAn immutable record of the finished work.",
     aside: "The work ends. Its memory remains.",
     description:
-      "Once evidence and obligations are satisfied, close the run with a completion seal. Publication is a separate, planned capability.",
+      "Engram checks recorded evidence before sealing the run. Report publication is planned.",
   },
 };
 
@@ -173,7 +279,7 @@ bindTabs([...document.querySelectorAll("[data-step]")], (tab) => {
   });
 });
 
-const compactViewport = window.matchMedia("(max-width: 680px)");
+const compactViewport = window.matchMedia("(max-width: 760px)");
 function syncCycleOrientation() {
   document
     .querySelector(".cycle-steps")
@@ -189,7 +295,7 @@ const setupCode = document.querySelector("#setup-code");
 const commands = {
   unix: setupCode.textContent,
   windows:
-    '# 01 — Build from source (Rust required)\ngit clone https://github.com/grlap/Engram.git\ncd Engram\ncargo install --path .\n\n# 02 — Open a local advisory notebook (PowerShell)\n$env:ENGRAM_HOME = "$env:USERPROFILE/.engram"\nengram init --required-assurance advisory `\n  --authorized-by "$env:USERNAME" --reason "Local advisory setup"\nengram work next',
+    '# 01 — Build from source (Git + Rust required)\ngit clone https://github.com/grlap/Engram.git\ncd Engram\ncargo install --path .\n\n# 02 — Open a local advisory notebook (PowerShell)\n$env:ENGRAM_HOME = "$env:USERPROFILE/.engram"\nengram init --required-assurance advisory `\n  --authorized-by "$env:USERNAME" --reason "Local advisory setup"\nengram work next',
 };
 const copyButton = document.querySelector("#copy-setup");
 const copyFeedback = document.querySelector("#copy-feedback");

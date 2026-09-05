@@ -1,6 +1,6 @@
 # Project website
 
-The project landing page lives in [website/index.html](../website/index.html).
+The three-chapter project website lives in [website/index.html](../website/index.html).
 It is a static site with no JavaScript dependencies or build step. Its copy
 introduces the memory and work loop described in the [vision](vision.md),
 and keeps [shipped alpha capabilities](shipped.md) separate from the
@@ -27,21 +27,48 @@ Publication is a separate user decision.
 ## Design and interaction
 
 The visual direction is a Leonardo da Vinci inspired inventor's notebook:
-parchment, sepia ink, serif typography, geometric construction lines, and an
-original imaginary memory apparatus. The hero illustration was generated
-with the built-in image generation tool; the exact prompt is saved in
-[memory-machine.prompt.txt](../website/assets/memory-machine.prompt.txt).
-It is a new illustration, not a historical Leonardo work or an anatomical
-reference. Fonts use local system families; the page makes no third-party
-asset requests and contains no analytics.
+three manuscript leaves, parchment, sepia ink, serif typography, and an
+original imaginary memory apparatus. Six detailed manuscript fragments fill
+the margins with fine penwork, crosshatching, construction lines, and tiny
+handwritten annotations embedded in the artwork. Each leaf has its own
+studies: perception and armillary instruments, clockwork and mechanical
+linkages, then writing tools and a seal press.
 
-CSS animates orbital construction lines, a terminal caret, the hero's
-entrance, and scroll reveals. The footer motion control pauses animation
+The illustrations were generated with the built-in image generation tool.
+The margin studies use the existing hero as their visual reference. Exact
+prompts are saved in [memory-machine.prompt.txt](../website/assets/memory-machine.prompt.txt)
+and [manuscript-prompts.txt](../website/assets/manuscript-prompts.txt). These
+are original imaginary illustrations, not historical Leonardo works or
+technical references; the tiny manuscript lettering is decorative notation.
+The margins are stored as WebP images at their original dimensions, with
+later chapters loaded lazily. The studies are positioned relative to the
+central content, keeping the whole composition together on ultrawide
+screens. Their faint inner edges overlap the content area; the artwork
+sits behind the text and controls. A shared ink filter and multiply blending
+unify the hero and margin paper tones. Navigation also has a maximum width
+to follow the centered composition. Meaningful captions use italic serif type. Fonts use local system
+families; the page makes no third-party asset requests and contains no analytics.
+
+The three chapters are **The idea**, **The mechanism**, and **Your notebook**.
+On desktop, each fills at least one viewport and native CSS scroll snapping
+moves between manuscript leaves. A fixed contents bar and Roman-numeral page
+links provide direct navigation; the footer reflects the visible chapter and
+links to the next leaf, or back to the beginning. Ordinary anchors preserve
+deep links and browser history. When all leaves fit a desktop viewport, a
+vertical wheel gesture advances one leaf; its trailing momentum cannot skip
+over another. Zoom and horizontal-wheel gestures remain native, as do touch
+scrolling and keyboard page navigation. On narrow or short screens, or when
+any leaf is taller than the viewport, native scrolling and growing page
+heights keep longer content readable. Marginalia moves into two columns below
+the main content on small screens.
+
+CSS animates orbital construction lines, a terminal caret,
+the page-turn cue, and scroll reveals. The footer motion control pauses animation
 and persists the preference when browser storage is available. The OS
 reduced-motion preference always takes precedence. Content stays visible
 without JavaScript; the initial examples remain readable.
 
-JavaScript adds mobile navigation, keyboard-operated work-cycle and
+JavaScript tracks the visible leaf and adds mobile navigation, keyboard-operated work-cycle and
 operating-system tabs, clipboard copying with a selection fallback, and
 motion controls. The working notebook is explicitly illustrative; it does
 not execute commands or connect to a real Engram store. Setup commands
@@ -51,7 +78,12 @@ integration described in the [host checklist](host-checklist.md).
 ## Validation
 
 Run `node --check website/app.js` and the repository's required quality gates.
-Preview at desktop and mobile widths. Exercise all four work-cycle tabs,
-both operating-system tabs, the copy action, mobile navigation, and the motion
-control with mouse and keyboard. Check reduced motion and reload with
-JavaScript disabled. Check for overflow, failed assets, and console errors.
+Preview at desktop and mobile widths, including short landscape windows and
+ultrawide displays. Check that the studies stay close to the central content
+and that their faded edges keep text and controls readable.
+Check the three leaves, wheel scrolling in both directions, keyboard page
+navigation, chapter links, deep links, browser history, and active page
+indicators. Exercise all four work-cycle tabs, both operating-system tabs,
+the copy action, mobile navigation, and the motion control. Check reduced
+motion and reload with JavaScript disabled. Check for horizontal overflow,
+content obscured by the fixed navigation, failed assets, and console errors.
