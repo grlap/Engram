@@ -1289,7 +1289,19 @@ test("projection repair is explicit and ordinary doctor never mutates", () => {
       encoding: "utf8",
     });
     assert.notEqual(ordinary.status, 0);
-    assert.match(ordinary.stderr, /--repair-projections/u);
+    assert.match(ordinary.stdout, /^remedy: "engram doctor --repair-projections"$/mu);
+    assert.match(ordinary.stdout, /^code: "projection_repair_required"$/mu);
+    assert.deepEqual(readFileSync(database), before);
+    const ordinaryJson = spawnSync(binary, ["--home", engramHome, "doctor", "--json"], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    assert.notEqual(ordinaryJson.status, 0);
+    const refusal = JSON.parse(ordinaryJson.stdout);
+    assert.equal(refusal.healthy, false);
+    assert.equal(refusal.code, "projection_repair_required");
+    assert.equal(refusal.remedy, "engram doctor --repair-projections");
+    assert.deepEqual(refusal.scope, ["indexes", "triggers", "fts"]);
     assert.deepEqual(readFileSync(database), before);
 
     const repaired = spawnSync(

@@ -731,7 +731,14 @@ fn main() -> Result<ExitCode> {
     reason = "top-level CLI dispatch keeps every operator and agent surface exhaustive in one match"
 )]
 async fn run_cli() -> Result<ExitCode> {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) if error.kind() == clap::error::ErrorKind::DisplayVersion => {
+            println!("engram {}", engram::build_identity::version());
+            return Ok(ExitCode::SUCCESS);
+        }
+        Err(error) => error.exit(),
+    };
     let (project_id, database, root) = resolve_project(&cli.project_file, cli.home)?;
     let identity = resolve_host_path_identity(&root, cli.host_path_policy);
     match cli.command {
@@ -1584,6 +1591,28 @@ struct WorkUpdateArgs {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cli_command_construction_uses_only_package_version_metadata() {
+        use clap::{CommandFactory, Parser};
+        assert_eq!(
+            super::Cli::command().get_version(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
+        for flag in ["--version", "-V"] {
+            let error = super::Cli::try_parse_from(["engram", flag]).unwrap_err();
+            assert_eq!(error.kind(), clap::error::ErrorKind::DisplayVersion);
+            assert_eq!(
+                error.to_string().trim(),
+                format!("engram {}", env!("CARGO_PKG_VERSION"))
+            );
+        }
+        // Only run_cli handles DisplayVersion with the extended diagnostic.
+        // Constructing clap metadata for help/ordinary words stays cheap.
+        let help = super::Cli::try_parse_from(["engram", "--help"]).unwrap_err();
+        assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
+        assert!(super::Cli::try_parse_from(["engram", "work", "ls"]).is_ok());
+    }
+
     use clap::CommandFactory;
 
     use super::*;

@@ -212,7 +212,11 @@ Rules that matter:
   `done` again.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Nothing asks you to copy hashes, fences, or
-  idempotency keys; if you see one, it is a bug. Safe project-memory keys are
+  idempotency keys; if you see one, it is a bug. The `next` build token is a
+  diagnostic exception: compare it with `engram --version` after an install
+  to detect a stale MCP child, never copy it into a work command. See
+  [build diagnostics](../../../docs/features/cli-and-mcp.md#build-identity-and-doctor-refusals).
+  Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`.
 - Before repeating an uncertain mutation, follow the
   [session and intent retry rule](../../../docs/features/local-work-system.md#agent-native-protocol),

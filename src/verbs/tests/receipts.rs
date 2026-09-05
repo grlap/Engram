@@ -24,6 +24,21 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
     };
 
     let fitted = fit_compact_next(receipt).expect("compact next fits");
+    let complete = Receipt::assemble(
+        compact_next_lines(&fitted),
+        fitted.guidance.clone(),
+        compact_next_value(&fitted),
+        false,
+    )
+    .with_build_identity();
+    assert!(complete.text().len() < MAX_COMPACT_NEXT_JSON_BYTES);
+    assert_eq!(
+        serde_json::to_string(&complete.value)
+            .unwrap()
+            .matches("build_fingerprint")
+            .count(),
+        1
+    );
     assert!(
         serde_json::to_vec_pretty(&compact_next_value(&fitted))
             .expect("compact JSON")

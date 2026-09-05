@@ -440,7 +440,7 @@ impl AgentVerbs {
         {
             self.service.acknowledge_work_next_memories(&view, now);
         }
-        Ok(Receipt::assemble(lines, guidance, value, false))
+        Ok(Receipt::assemble(lines, guidance, value, false).with_build_identity())
     }
 
     fn live_claim_map(

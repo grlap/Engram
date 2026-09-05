@@ -198,6 +198,7 @@ pub struct Guidance {
 #[derive(Clone, Debug)]
 pub struct Receipt {
     lines: Vec<String>,
+    build_footer: Option<String>,
     pub reminders: Vec<String>,
     pub next: Vec<String>,
     pub value: Value,
@@ -206,6 +207,21 @@ pub struct Receipt {
 }
 
 impl Receipt {
+    pub(super) fn with_build_identity(mut self) -> Self {
+        let identity = crate::build_identity::current();
+        self.value["build_fingerprint"] = json!(identity.build_fingerprint);
+        self.build_footer = Some(format!(
+            "build: {}",
+            crate::build_identity::short_hash(
+                identity
+                    .build_fingerprint
+                    .as_ref()
+                    .map(crate::ObjectHash::as_str)
+            ),
+        ));
+        self
+    }
+
     pub(super) fn with_reminder(mut self, reminder: String) -> Result<Self, super::VerbError> {
         self.reminders.push(reminder);
         self.value["reminders"] = json!(self.reminders);
@@ -234,6 +250,7 @@ impl Receipt {
         value["next"] = json!(guidance.next);
         Self {
             lines,
+            build_footer: None,
             reminders: guidance.reminders,
             next: guidance.next,
             value,
@@ -260,10 +277,16 @@ impl Receipt {
 
     /// Shell rendering: the receipt lines, then `reminders:` and at most four
     /// `next:` commands plus an explicit omission marker. Never contains
-    /// object hashes, fences, or idempotency keys.
+    /// object hashes, fences, or idempotency keys. Only `next` appends the
+    /// compact diagnostic build token after all guidance.
     #[must_use]
     pub fn text(&self) -> String {
-        render_agent_receipt_text(&self.lines, &self.reminders, &self.next)
+        let mut text = render_agent_receipt_text(&self.lines, &self.reminders, &self.next);
+        if let Some(footer) = &self.build_footer {
+            text.push('\n');
+            text.push_str(footer);
+        }
+        text
     }
 }
 
@@ -851,6 +874,8 @@ pub(super) fn compact_row_at_mut(
 
 pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
     json!({
+        // Identity participates in byte fitting, not a post-fit append.
+        "build_fingerprint": crate::build_identity::current().build_fingerprint,
         "focus": compact.focus,
         "held": compact.held,
         "ready": compact.ready,

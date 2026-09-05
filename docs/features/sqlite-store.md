@@ -105,6 +105,13 @@ work safety cursor.
 
 ## Canonical-bytes contract
 
+The runtime [build diagnostics](cli-and-mcp.md#build-identity-and-doctor-refusals)
+hash the same normalized definitions as the admission reference and combine
+that digest with the package version and executable digest. They add no stored
+identity or second admission rule. Doctor open refusals are machine-readable:
+`projection_repair_required`, `different_build_schema`, or `corrupt_store`.
+Reporting a refusal never performs projection DDL; repair remains explicit.
+
 Objects serialize as RFC 8785 (JCS) canonical JSON, UTF-8. An object's id is
 the SHA-256 of its canonical bytes (hash field excluded); the storage key is
 that hash; hashes are verified at read time so `engram doctor` distinguishes

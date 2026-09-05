@@ -8,8 +8,13 @@ mod objects_tasks;
 mod open_schema;
 mod policy_admin;
 mod project_memory;
+mod schema_diagnostics;
 mod task_memory;
 mod work;
+
+pub use schema_diagnostics::{
+    StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
+};
 
 pub(crate) const PENDING_HANDOFF_REFUSAL: &str =
     "a live handoff offer blocks this operation; cancel the offer, or let it be accepted or expire";
@@ -227,7 +232,7 @@ pub(super) enum SchemaDurability {
     Rebuildable,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct SchemaDefinition {
     object_type: String,
     name: String,

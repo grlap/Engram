@@ -11,6 +11,9 @@ use crate::{control_assurance_name, warn_if_action_gated};
 const MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS: usize = 32;
 const MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES: usize = 256;
 
+mod refusals;
+use refusals::{Phase, report_error, with_build};
+
 pub(crate) fn doctor(
     database: &Path,
     identity: Option<HostPathPolicy>,
@@ -20,43 +23,19 @@ pub(crate) fn doctor(
     repair_projections: bool,
 ) -> Result<()> {
     if recover_policy {
-        let report = SqliteStore::diagnose_control_policy_recovery(database)
-            .with_context(|| format!("failed to inspect {} read-only", database.display()))?;
-        if json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "mode": "control_policy_recovery",
-                    "mutation_enabled": false,
-                    "project_id": project_id,
-                    "database": canonical_database_path(database)?,
-                    "control_policy": report,
-                }))?
-            );
-        } else {
-            println!(
-                "Engram control-policy recovery diagnostics only ({} record(s) checked; mutation disabled)",
-                report.checked_control_records
-            );
-            for finding in &report.invalid_control_records {
-                println!("INVALID {}: {}", finding.record, finding.detail);
-            }
-            println!("Guidance: {}", report.guidance);
-        }
-        if !report.is_healthy() {
-            bail!(
-                "control-policy recovery diagnostics found {} invalid binding(s); the store remains fail-closed and unchanged",
-                report.invalid_control_records.len()
-            );
-        }
-        return Ok(());
+        return diagnose_policy_recovery(database, project_id, json);
     }
     if repair_projections {
         return repair_store_projections(database, project_id, json);
     }
-    let store = SqliteStore::open_with_host_path_identity(database, identity)
-        .with_context(|| format!("failed to open {}", database.display()))?;
-    let report = store.verify_all()?;
+    let store = match SqliteStore::open_with_host_path_identity(database, identity) {
+        Ok(store) => store,
+        Err(error) => return report_error(database, project_id, &error, json, Phase::Open),
+    };
+    let report = match store.verify_all() {
+        Ok(report) => report,
+        Err(error) => return report_error(database, project_id, &error, json, Phase::Verification),
+    };
     if json {
         let json_report = build_doctor_json_report(&store, database, project_id, &report)?;
         println!("{}", serde_json::to_string_pretty(&json_report.value)?);
@@ -70,6 +49,8 @@ pub(crate) fn doctor(
         return Ok(());
     }
     if !report.is_healthy() {
+        let json_report = build_doctor_json_report(&store, database, project_id, &report)?;
+        refusals::emit(&json_report.value, false)?;
         bail!(
             "integrity check failed for {} object(s), {} graph snapshot audit(s), {} control record(s), and {} work record(s)",
             report.invalid_objects.len(),
@@ -78,7 +59,18 @@ pub(crate) fn doctor(
             report.invalid_work_records.len()
         );
     }
-    let control = store.control_diagnostics_at(chrono::Utc::now())?;
+    let control = match store.control_diagnostics_at(chrono::Utc::now()) {
+        Ok(control) => control,
+        Err(error) => {
+            return report_error(
+                database,
+                project_id,
+                &error,
+                json,
+                Phase::ControlDiagnostics,
+            );
+        }
+    };
     let stored_path_policy = store.stored_host_path_policy()?;
     println!(
         "Engram store is healthy ({} immutable object(s), {} graph snapshot audit(s), {} control record(s), {} work record(s) checked)",
@@ -118,6 +110,49 @@ pub(crate) fn doctor(
         ),
     }
     emit_control_limitations(&control);
+    Ok(())
+}
+
+fn diagnose_policy_recovery(database: &Path, project_id: &ProjectId, json: bool) -> Result<()> {
+    let report = match SqliteStore::diagnose_control_policy_recovery(database) {
+        Ok(report) => report,
+        Err(error) => {
+            return report_error(
+                database,
+                project_id,
+                &error,
+                json,
+                Phase::ControlPolicyRecovery,
+            );
+        }
+    };
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&with_build(serde_json::json!({
+                "mode": "control_policy_recovery",
+                "mutation_enabled": false,
+                "project_id": project_id,
+                "database": canonical_database_path(database)?,
+                "control_policy": report,
+            })))?
+        );
+    } else {
+        println!(
+            "Engram control-policy recovery diagnostics only ({} record(s) checked; mutation disabled)",
+            report.checked_control_records
+        );
+        for finding in &report.invalid_control_records {
+            println!("INVALID {}: {}", finding.record, finding.detail);
+        }
+        println!("Guidance: {}", report.guidance);
+    }
+    if !report.is_healthy() {
+        bail!(
+            "control-policy recovery diagnostics found {} invalid binding(s); the store remains fail-closed and unchanged",
+            report.invalid_control_records.len()
+        );
+    }
     Ok(())
 }
 
@@ -177,12 +212,16 @@ fn print_graph_snapshot_audits(store: &SqliteStore, project_id: &ProjectId) -> R
 }
 
 fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool) -> Result<()> {
-    let report = SqliteStore::repair_rebuildable_projections(database)
-        .with_context(|| format!("failed to repair {}", database.display()))?;
+    let report = match SqliteStore::repair_rebuildable_projections(database) {
+        Ok(report) => report,
+        Err(error) => {
+            return report_error(database, project_id, &error, json, Phase::ProjectionRepair);
+        }
+    };
     if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
+            serde_json::to_string_pretty(&with_build(serde_json::json!({
                 "mode": "projection_repair",
                 "mutation_enabled": true,
                 "project_id": project_id,
@@ -196,7 +235,7 @@ fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool)
                 "invalid_graph_snapshot_audits": report.invalid_graph_snapshot_audits,
                 "invalid_control_records": report.invalid_control_records,
                 "invalid_work_records": report.invalid_work_records,
-            }))?
+            })))?
         );
     } else {
         println!(
@@ -223,21 +262,34 @@ fn build_doctor_json_report(
     report: &engram::storage::IntegrityReport,
 ) -> Result<DoctorJsonReport> {
     let control = store.control_diagnostics_at(chrono::Utc::now());
+    assemble_doctor_json_report(store, database, project_id, report, control)
+}
+
+fn assemble_doctor_json_report(
+    store: &SqliteStore,
+    database: &Path,
+    project_id: &ProjectId,
+    report: &engram::storage::IntegrityReport,
+    control: std::result::Result<engram::storage::ControlDiagnostics, engram::StoreError>,
+) -> Result<DoctorJsonReport> {
+    // Preserve the typed error before any best-effort integrity rendering.
+    // A transient diagnostic failure does not prove that the store is corrupt.
+    if let Err(error) = &control
+        && report.is_healthy()
+        && engram::storage::store_open_refusal_kind(error)
+            != engram::storage::StoreOpenRefusalKind::CorruptStore
+    {
+        return Ok(DoctorJsonReport {
+            value: refusals::refusal(database, project_id, error, Phase::ControlDiagnostics),
+            control: None,
+            failure: Some(format!("control diagnostics failed: {error}")),
+        });
+    }
     let stored_path_policy = store.stored_host_path_policy()?;
     let canonical_database = canonical_database_path(database)?;
     let (control, control_value, control_error) = match control {
         Ok(control) => {
-            let value = serde_json::json!({
-                "schema_version": control.control_schema_version,
-                "policy": control.active_policy,
-                "epoch": control.policy_epoch.0,
-                "required_assurance": control.required_assurance,
-                "obligation_rules": control.obligation_rule_set,
-                "supported_effects": control.supported_effects,
-                "sessions": control.active_sessions,
-                "issued": control.issued_turns,
-                "begun": control.begun_turns,
-            });
+            let value = control_diagnostics_json(&control);
             (Some(control), value, None)
         }
         Err(error) => (None, serde_json::Value::Null, Some(error.to_string())),
@@ -264,7 +316,7 @@ fn build_doctor_json_report(
     } else {
         serde_json::Value::Null
     };
-    let mut value = serde_json::json!({
+    let mut value = with_build(serde_json::json!({
         "healthy": report.is_healthy(),
         "project_id": project_id,
         "database": canonical_database,
@@ -285,7 +337,7 @@ fn build_doctor_json_report(
         "graph_snapshot_loads": graph_snapshot_loads,
         "host_path_policy": stored_path_policy.map(describe_host_path_policy),
         "control": control_value,
-    });
+    }));
     if let Some(error) = &control_error {
         let serde_json::Value::Object(object) = &mut value else {
             bail!("doctor JSON report is not an object");
@@ -306,11 +358,53 @@ fn build_doctor_json_report(
             report.invalid_work_records.len()
         ))
     };
+    if failure.is_some() {
+        value["healthy"] = serde_json::json!(false);
+        value["code"] = serde_json::json!("corrupt_store");
+        value["phase"] = serde_json::json!(if report.is_healthy() {
+            Phase::ControlDiagnostics
+        } else {
+            Phase::Verification
+        });
+        value["findings"] = corruption_findings(&value);
+    }
     Ok(DoctorJsonReport {
         value,
         control,
         failure,
     })
+}
+
+fn control_diagnostics_json(control: &engram::storage::ControlDiagnostics) -> serde_json::Value {
+    serde_json::json!({
+        "schema_version": control.control_schema_version,
+        "policy": control.active_policy,
+        "epoch": control.policy_epoch.0,
+        "required_assurance": control.required_assurance,
+        "obligation_rules": control.obligation_rule_set,
+        "supported_effects": control.supported_effects,
+        "sessions": control.active_sessions,
+        "issued": control.issued_turns,
+        "begun": control.begun_turns,
+    })
+}
+
+fn corruption_findings(value: &serde_json::Value) -> serde_json::Value {
+    let mut findings = Vec::new();
+    if let Some(families) = value["invalid"].as_object() {
+        for (family, records) in families {
+            if let Some(records) = records.as_array() {
+                findings.extend(records.iter().map(|record| format!("{family}: {record}")));
+            }
+        }
+    }
+    if let Some(error) = value
+        .get("control_error")
+        .and_then(serde_json::Value::as_str)
+    {
+        findings.push(format!("control diagnostics: {error}"));
+    }
+    serde_json::json!(findings)
 }
 
 fn compact_graph_snapshot_audit_json<T: serde::Serialize>(
@@ -403,6 +497,121 @@ mod tests {
     use super::*;
 
     #[test]
+    fn post_open_operational_control_failure_keeps_typed_refusal() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("healthy.db");
+        let store = SqliteStore::open(&database).unwrap();
+        let report = store.verify_all().unwrap();
+        assert!(report.is_healthy());
+        let before = fs::read(&database).unwrap();
+        for (code, kind) in [
+            (rusqlite::ffi::SQLITE_BUSY, "busy"),
+            (rusqlite::ffi::SQLITE_READONLY, "permission"),
+            (rusqlite::ffi::SQLITE_IOERR, "io"),
+        ] {
+            // Inject the control query result at the production report-assembly
+            // boundary: no lock timing, and ordinary open/verification succeeded.
+            let error = engram::StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(code),
+                Some("control query failed\nexact OS detail".into()),
+            ));
+            let reason = error.to_string();
+            let result = assemble_doctor_json_report(
+                &store,
+                &database,
+                &ProjectId("doctor-operation".into()),
+                &report,
+                Err(error),
+            )
+            .unwrap();
+            assert_eq!(result.value["healthy"], false);
+            assert_eq!(result.value["code"], "store_open_refused");
+            assert_eq!(result.value["phase"], "control_diagnostics");
+            assert_eq!(result.value["kind"], kind);
+            assert_eq!(result.value["reason"], reason);
+            assert!(result.value.get("findings").is_none());
+            let remedy = result.value["remedy"].as_str().unwrap();
+            if kind == "busy" {
+                assert!(remedy.starts_with("Retry"));
+            } else {
+                assert!(remedy.contains(&database.display().to_string()));
+                assert!(remedy.contains(&reason));
+            }
+            assert_eq!(
+                result.failure,
+                Some(format!("control diagnostics failed: {reason}"))
+            );
+            assert!(result.control.is_none());
+            assert_eq!(fs::read(&database).unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn unhealthy_integrity_is_not_hidden_by_operational_control_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("corrupt.db");
+        let store = SqliteStore::open(&database).unwrap();
+        let corruptor = rusqlite::Connection::open(&database).unwrap();
+        corruptor
+            .execute_batch("UPDATE control_policy_versions SET policy_json = X'7B7D'")
+            .unwrap();
+        drop(corruptor);
+        let report = store.verify_all().unwrap();
+        assert!(!report.is_healthy());
+        let project = ProjectId("doctor-combined-failure".into());
+        let baseline = build_doctor_json_report(&store, &database, &project, &report).unwrap();
+        let before = fs::read(&database).unwrap();
+        let expected_failure = format!(
+            "integrity check failed for {} object(s), {} graph snapshot audit(s), {} control record(s), and {} work record(s)",
+            report.invalid_objects.len(),
+            report.invalid_graph_snapshot_audits.len(),
+            report.invalid_control_records.len(),
+            report.invalid_work_records.len()
+        );
+        for code in [
+            rusqlite::ffi::SQLITE_BUSY,
+            rusqlite::ffi::SQLITE_READONLY,
+            rusqlite::ffi::SQLITE_IOERR,
+        ] {
+            // Verification has already proved corruption. A later operational
+            // control error must not discard those findings or change the cause
+            // reported by the text path's integrity-failure exit.
+            let error = engram::StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(code),
+                Some("later control read failed".into()),
+            ));
+            let reason = error.to_string();
+            let result =
+                assemble_doctor_json_report(&store, &database, &project, &report, Err(error))
+                    .unwrap();
+            assert_eq!(result.value["healthy"], false);
+            assert_eq!(result.value["code"], "corrupt_store");
+            assert_eq!(result.value["phase"], "verification");
+            assert_eq!(result.value["invalid"], baseline.value["invalid"]);
+            assert_eq!(result.value["checked"], baseline.value["checked"]);
+            assert_eq!(result.value["control_error"], reason);
+            let findings = result.value["findings"].as_array().unwrap();
+            for finding in baseline.value["findings"].as_array().unwrap() {
+                if !finding
+                    .as_str()
+                    .unwrap()
+                    .starts_with("control diagnostics:")
+                {
+                    assert!(findings.contains(finding));
+                }
+            }
+            assert!(
+                findings.contains(&serde_json::json!(format!("control diagnostics: {reason}")))
+            );
+            assert_eq!(result.failure.as_deref(), Some(expected_failure.as_str()));
+            assert!(result.value.get("kind").is_none());
+            assert!(result.value.get("remedy").is_none());
+            assert!(result.control.is_none());
+            assert_eq!(fs::read(&database).unwrap(), before);
+        }
+    }
+
+    #[test]
     fn doctor_snapshot_actor_rendering_is_utf8_safe_and_bounded() {
         let actor = format!("{}é", "x".repeat(300));
         let rendered = bounded_doctor_snapshot_actor(&actor);
@@ -439,6 +648,22 @@ mod tests {
         .expect("best-effort doctor JSON");
 
         assert_eq!(json_report.value["healthy"], false);
+        assert_eq!(json_report.value["code"], "corrupt_store");
+        assert_eq!(json_report.value["phase"], "verification");
+        let findings = json_report.value["findings"].as_array().unwrap();
+        assert!(!findings.is_empty());
+        assert!(findings.iter().all(serde_json::Value::is_string));
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.as_str().unwrap().starts_with("control_records:"))
+        );
+        assert!(findings.iter().any(|finding| {
+            finding
+                .as_str()
+                .unwrap()
+                .starts_with("control diagnostics:")
+        }));
         assert_eq!(json_report.value["control"], serde_json::Value::Null);
         assert!(json_report.value["control_error"].is_string());
         assert!(

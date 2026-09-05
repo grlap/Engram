@@ -484,7 +484,8 @@ impl SqliteStore {
             let issue = Self::current_core_rebuildable_schema_issue(&connection)?
                 .unwrap_or_else(|| "the current schema inventory is incomplete".into());
             return Err(StoreError::InvalidControlProjection(format!(
-                "the store is missing a rebuildable projection: {issue}; run `engram doctor --repair-projections` explicitly"
+                "{}{issue}; run `engram doctor --repair-projections` explicitly",
+                super::schema_diagnostics::CORE_PROJECTION_REFUSAL_PREFIX
             )));
         }
         connection.execute_batch(

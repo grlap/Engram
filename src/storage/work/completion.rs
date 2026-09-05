@@ -21,7 +21,6 @@ use super::integrity::{
     verify_prerequisite_rows, verify_restored_evidence_rows, verify_work_catalog_projections,
     verify_work_feed_integrity, verify_work_protocol_attempts, verify_work_scalar_bindings,
 };
-use super::observation;
 use super::planning::{
     add_root_contribution, apply_work_relation_transition, assert_actor_session, assert_revision,
     encode_state, expect_root_contributor, first_unaccounted_root_contributor, normalize_text,

@@ -202,6 +202,35 @@ async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+test("running build identity agrees across version, CLI next, doctor and retained MCP next", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-build-identity-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const doctor = spawnSync(binary, ["--home", engramHome, "doctor", "--json"], { cwd: root, encoding: "utf8" });
+    assert.equal(doctor.status, 0, doctor.stderr);
+    const identity = JSON.parse(doctor.stdout);
+    assert.match(identity.build_fingerprint, /^[0-9a-f]{64}$/u);
+    const version = spawnSync(binary, ["--version"], { cwd: root, encoding: "utf8" });
+    assert.equal(version.status, 0, version.stderr);
+    assert.equal(version.stdout.trim(), `engram ${identity.build.package_version} build ${identity.build_fingerprint.slice(0, 12)} (exe ${identity.build.executable_sha256.slice(0, 12)}, schema ${identity.build.schema_reference.slice(0, 12)})`);
+    client = new McpClient(engramHome, "build-reader");
+    await client.initialize();
+    for (const verbose of [false, true, false]) {
+      const next = receipt(await client.call("next", { verbose }));
+      assert.equal(next.build_fingerprint, identity.build_fingerprint);
+      assert.equal(JSON.stringify(next).match(/"build_fingerprint"/gu).length, 1);
+      assert.ok(Buffer.byteLength(JSON.stringify(next, null, 2)) <= 12288);
+      const cli = cliJson(engramHome, "build-cli", "next", ...(verbose ? ["--verbose"] : []));
+      assert.equal(cli.build_fingerprint, next.build_fingerprint);
+    }
+    assert.equal("build_fingerprint" in receipt(await client.call("ls", {})), false);
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("Phoenix atomic initial notes and peer child proposals through MCP", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-creation-"));
   let holder;

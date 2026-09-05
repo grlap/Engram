@@ -43,6 +43,8 @@ impl McpServer {
         source_skill: Option<String>,
         actor_context: Option<String>,
     ) -> Self {
+        // Capture before this long-lived server can outlive an executable install.
+        let _ = crate::build_identity::current();
         let work_service = Arc::new(LocalWorkService::new_with_attribution(
             database,
             project_id,

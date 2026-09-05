@@ -4,6 +4,7 @@
 //! agents work against local immutable records, while a frozen report crosses
 //! the external tracker boundary only through a receipted adapter call.
 
+pub mod build_identity;
 pub mod canonical;
 pub mod control;
 pub mod domain;

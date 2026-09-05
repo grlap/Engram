@@ -268,6 +268,69 @@ lifecycle; grants are not exposed as tools with which the agent can authorize
 itself. Everything below is the host's and operator's business: the agent
 words above never require it.
 
+### Build identity and doctor refusals
+
+`engram --version` prints `engram VERSION build FP12 (exe EXE12, schema
+SCHEMA12)`. Agent `next` ends its terminal text with `build: FP12` and carries
+one full `build_fingerprint` in its structured CLI/MCP receipt. Other words
+retain their shapes. Compare this token with a fresh CLI process after an
+install to detect a stale, long-lived MCP child; restart the child to run the
+new executable. The token is diagnostic, not an execution hash to copy into
+commands, authenticated identity, or store-admission authority.
+
+Every `doctor --json` mode includes `build` and `build_fingerprint`. The build
+object contains `package_version`, `executable_sha256` (SHA-256 of the running
+executable's bytes), and `schema_reference` (SHA-256 of the RFC 8785 canonical
+ordered, whitespace-normalized SQLite definitions used by ordinary schema
+admission). The fingerprint hashes the RFC 8785 canonical build object. These
+values are captured once per process: at MCP startup, or when a short-lived
+CLI process emits diagnostics. Help and other words do not compute identity.
+There is no Git metadata, build script, capability catalog, or persisted
+last-writer row.
+Equal inputs produce equal fingerprints; different executable bytes or schema
+definitions distinguish builds even when their package versions agree.
+
+An unreadable executable is explicitly `executable_sha256: null` with
+`executable: "unavailable"`; an unavailable in-memory schema reference likewise
+uses `schema_reference: null` and `schema: "unavailable"`. A canonicalization
+failure leaves `build_fingerprint: null`, rendered as `unavailable`. Diagnostic
+unavailability never refuses an agent word and must not be mistaken for proof
+that two executables match.
+
+An ordinary doctor open refusal emits `healthy: false` on stdout and exits
+nonzero, including with `--json`. Text mirrors the same fields with escaped
+values. `database` uses the same canonical path as a healthy report whenever
+the path is readable, falling back to the supplied spelling otherwise.
+Refusals carry `phase`: `open`, `verification`, `control_diagnostics`,
+`control_policy_recovery`, or `projection_repair`. The phase identifies where
+the error arose even when a diagnostic read failed after a successful open.
+The codes are:
+
+- `projection_repair_required`: exact remedy
+  `engram doctor --repair-projections` and safe scope
+  `["indexes", "triggers", "fts"]`; reporting performs no DDL.
+- `different_build_schema`: `store_schema_reference`, read from the existing
+  file using the same normalization, plus `running` build components. Use the
+  build that created the store or a compatible portable handoff, not projection
+  repair. The schema digest is not a claim to know the original executable;
+  a schema-marker-only mismatch can have equal definition digests. If the
+  refused file cannot be read, the digest is null with
+  `store_schema: "unavailable"`; reporting never creates a missing file.
+- `corrupt_store`: one `findings` array of strings describing the refused or
+  invalid records, including failures found during post-open verification.
+- `store_open_refused`: an operational/configuration failure, not a corruption
+  claim. Its `reason` preserves the underlying error verbatim and `kind` is
+  `busy`, `permission`, `io`, or `path_policy`. The remedy names retry for
+  contention, the path and reported error for access/I/O failures, or both
+  policies and the flag that selects the recorded case policy for a mismatch.
+  An incompatible host alias-rule setting cannot be changed by that flag;
+  its remedy points to a compatible host or a fresh store at a new location.
+  Operational failures retain this category after open; they never become a
+  corruption claim just because a later control diagnostic failed.
+
+These diagnostics do not change ordinary admission or explicit repair. See
+the [SQLite contract](sqlite-store.md#canonical-bytes-contract).
+
 ### Host and operator CLI
 
 ```bash

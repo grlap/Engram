@@ -152,8 +152,7 @@ pub(in crate::storage) fn initialize_schema(
     )?;
     if metadata_exists {
         return Err(StoreError::InvalidWorkProjection(
-            "current local-work schema is missing rebuildable projections; run `engram doctor --repair-projections` explicitly"
-                .into(),
+            super::super::schema_diagnostics::WORK_PROJECTION_REFUSAL.into(),
         ));
     }
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
