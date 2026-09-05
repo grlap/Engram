@@ -4,6 +4,7 @@ mod budgets;
 mod creation;
 mod detach;
 mod discovery;
+mod remaining_children;
 mod review;
 
 fn fixture() -> (tempfile::TempDir, AgentVerbs, PathBuf, ProjectId) {

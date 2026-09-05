@@ -155,16 +155,26 @@ Deduplicate overlapping findings and tracker suggestions.
 ## 7. Record findings in Engram from the parent
 
 Only after consolidation, search Engram for each actionable finding
-(`engram work ls --search "<phrase>" --all`). When the item under review is
-open, add an untracked finding beneath it (`engram work add "<finding>"
---kind bug --label review --priority <0 for Critical … 3 for Low> --under
-<item under review>`), or `note` the evidence on an existing finding. When
-the item under review is completed, record late evidence on it with `note`
-when appropriate, then add an untracked finding as an independent root
-(`engram work add "<finding>" --kind bug --label review --priority <0 for
-Critical … 3 for Low>`), or `note` the existing follow-up. Never make
-completed work the parent or reopen it merely to record a finding.
-Informational notes need no tracker mutation.
+(`engram work ls --search "<phrase>" --all`) and decide whether the implementer
+will fix it in this slice before completion.
+
+- An in-slice fix may be a required child of the open item under review:
+  `engram work add "<finding>" --kind bug --label review --priority
+  <0 for Critical … 3 for Low> --under <item under review>`.
+- A finding the implementer will not fix in this slice is an independent
+  root, even while the reviewed item is open. Use `engram work add
+  "<finding>" --kind bug --label review --priority <0 for Critical … 3 for Low>`
+  without `--under` or `--optional`, then `note` the new root with the reviewed
+  item's reference and title, the review evidence, and why the fix is deferred.
+  Provenance belongs in that note, not in a parent or prerequisite edge.
+- If a matching follow-up exists, note the new evidence and provenance on it
+  instead of duplicating it. Do not turn an existing child into an independent
+  root by editing its history; use the explicit detach workflow separately
+  when admitted.
+
+Never add children to completed work or reopen it merely to record a finding.
+An actionable deferred finding needs its independent work item before closure;
+an informational observation that requests no action needs no tracker mutation.
 
 Consolidation itself records evidence, not source changes or implementation
 completion. In pair work, when this writable parent is also the implementer,

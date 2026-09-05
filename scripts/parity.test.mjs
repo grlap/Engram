@@ -459,7 +459,8 @@ test("optional child is marked by show and does not gate parent completion", () 
       "--json",
     ]);
     assert.equal(child.status, 0, child.stderr);
-    assert.equal(JSON.parse(child.stdout).work.child_requirement, "optional");
+    const childWork = JSON.parse(child.stdout).work;
+    assert.equal(childWork.child_requirement, "optional");
 
     const shown = run([...hostContext, "show", parentWork.short_ref, "--json"]);
     assert.equal(shown.status, 0, shown.stderr);
@@ -480,6 +481,11 @@ test("optional child is marked by show and does not gate parent completion", () 
     ]);
     assert.equal(completed.status, 0, completed.stderr);
     assert.match(completed.stdout, /^done /u);
+    assert.match(completed.stdout, /open optional children \(1 of 1 shown\):/u);
+    assert.ok(completed.stdout.includes(`engram work update ${childWork.short_ref} --detach "Continue as independent work"`));
+    assert.ok(completed.stdout.includes(`engram work show ${parentWork.short_ref}`));
+    assert.equal(completed.stdout.match(/engram work ls --blocked/gu)?.length, 1);
+    assert.ok(Buffer.byteLength(completed.stdout) <= 12 * 1024);
     const completedView = run([...hostContext, "show", parentWork.short_ref, "--json"]);
     assert.equal(completedView.status, 0, completedView.stderr);
     assert.equal(JSON.parse(completedView.stdout).status.work.lifecycle, "completed");

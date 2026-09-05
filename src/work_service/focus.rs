@@ -4,6 +4,47 @@ use super::{
 };
 
 impl LocalWorkService {
+    /// Current direct open optional children, independent of the rich focus
+    /// fitter. All rows and admission diagnostics share one read snapshot.
+    pub(crate) fn remaining_optional_children(
+        &self,
+        parent: WorkId,
+        limit: usize,
+        now: DateTime<Utc>,
+    ) -> Result<super::WorkChildFollowupPage, StoreError> {
+        let store = self.store_at(now)?;
+        store.work_read_snapshot(|store| {
+            store.resolve_work_ref(&self.project_id, &parent.0.to_string())?;
+            let children = store
+                .work_children(parent)?
+                .into_iter()
+                .filter(|child| {
+                    child.lifecycle == super::WorkLifecycle::Open
+                        && child.child_requirement == super::ChildRequirement::Optional
+                })
+                .collect::<Vec<_>>();
+            let total = children.len();
+            let items = children
+                .into_iter()
+                .take(limit)
+                .map(|child| {
+                    let refusal = match store.check_work_detach_admission(child.work_id, now) {
+                        Ok(()) => None,
+                        Err(StoreError::WorkDetachRefused { reason, remedy, .. }) => {
+                            Some((reason, remedy))
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    Ok(super::WorkChildFollowup {
+                        work: super::work_item_summary(&child),
+                        refusal,
+                    })
+                })
+                .collect::<Result<Vec<_>, StoreError>>()?;
+            Ok(super::WorkChildFollowupPage { items, total })
+        })
+    }
+
     pub(crate) fn work_notes(
         &self,
         work_ref: &str,

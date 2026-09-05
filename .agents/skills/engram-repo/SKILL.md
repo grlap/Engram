@@ -219,7 +219,12 @@ Rules that matter:
   erases and permanently retires the safe key.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
-  `done` again.
+  `done` again. Successful completion also names remaining open optional
+  children, with bounded rows and an exact omitted count. These do not block
+  completion. Follow the offered detach command only when admitted; otherwise
+  resolve the named condition first. Use the parent `show` command to inspect
+  continuation and the broader `ls --blocked` view for blocked work. The receipt
+  does not detach, cancel, or claim anything automatically.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Nothing asks you to copy hashes, fences, or
   idempotency keys; if you see one, it is a bug. The `next` build token is a
@@ -259,6 +264,14 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
 `scripts/test-rust.sh`.
 
 Use `/review-changes` for the two-agent read-only review after the gates pass.
+After consolidating review findings, deduplicate them in Engram. Only fixes
+the implementer will deliver in the current slice belong as required children
+of its open item. Findings deferred beyond that slice are independent roots,
+never optional or required children, even if the reviewed item is still open.
+Add a provenance note on each new follow-up naming the reviewed item's reference
+and title, the finding evidence, and the reason for deferral; do not substitute
+a parent or prerequisite edge for provenance. Note matching existing follow-ups
+instead of duplicating them. Informational observations need no work item.
 In pair work, the implementer continues after review consolidation without
 waiting for another prompt: fix in-scope actionable findings, rerun the gates,
 and freeze the corrected input for review. After clean acceptance, record the

@@ -21,6 +21,18 @@ use crate::{ChildRequirement, DetachWorkRequest};
 mod tests;
 
 impl SqliteStore {
+    /// Read-only diagnostic for explicit post-completion follow-up guidance.
+    /// Catalog/next keep their cheaper projected advisory; mutation still
+    /// rechecks this exact admission under its own transaction.
+    pub(crate) fn check_work_detach_admission(
+        &self,
+        work_id: crate::WorkId,
+        now: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        let item = load_work_item(&self.connection, work_id)?;
+        validate_detach_on(&self.connection, &item, now)
+    }
+
     /// Creates an independent successor and supersedes the stranded child atomically.
     /// Ancestors, claims, fence heads, and sealed/terminal executions stay unchanged.
     /// An open root's live execution receives ordinary disposal's contributor waiver

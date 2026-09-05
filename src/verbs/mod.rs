@@ -30,6 +30,7 @@ use crate::{
     },
 };
 
+mod child_obligations;
 mod handlers;
 mod receipts;
 mod show;

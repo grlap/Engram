@@ -259,9 +259,17 @@ test("detach exposes the same remedy and independent root through MCP", async ()
     const parent = receipt(await client.call("add", { title: "Parent" })).work.short_ref;
     const child = receipt(await client.call("add", { title: "Follow-up", under: parent, optional: true, notes: ["Original observation"] })).work.short_ref;
     receipt(await client.call("claim", { work_ref: parent }));
-    receipt(await client.call("done", { work_ref: parent, summary: "Parent delivered" }));
+    const completed = await client.call("done", { work_ref: parent, summary: "Parent delivered" });
+    const completedValue = receipt(completed);
     const history = receipt(await client.call("show", { work_ref: parent })).history;
     const command = `engram work update ${child} --detach "Continue as independent work"`;
+    assert.deepEqual(completedValue.child_obligations.open_optional, {
+      count: 1,
+      items: [{ ref: child, title: "Follow-up", remedy: command }],
+      omitted: 0,
+      navigation: `engram work show ${parent}`,
+    });
+    assert.deepEqual(JSON.parse(completed.content[0].text), completedValue);
     assert.equal(receipt(await client.call("show", { work_ref: child })).next[0], command);
     assert.equal(receipt(await client.call("next", {})).next[0], command);
     const blocked = await client.call("ls", { blocked: true });

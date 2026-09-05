@@ -574,3 +574,14 @@ fn default_child_requirement() -> ChildRequirement {
 fn child_requirement_is_required(requirement: &ChildRequirement) -> bool {
     *requirement == ChildRequirement::Required
 }
+/// Transient child follow-up guidance; never part of a canonical completion seal.
+pub(crate) struct WorkChildFollowupPage {
+    pub items: Vec<WorkChildFollowup>,
+    pub total: usize,
+}
+
+pub(crate) struct WorkChildFollowup {
+    pub work: WorkItemSummary,
+    /// Existing detach refusal reason and its executable navigation/remedy.
+    pub refusal: Option<(String, String)>,
+}

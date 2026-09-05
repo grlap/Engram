@@ -1,0 +1,125 @@
+//! Bounded child-obligation groups shared by receipt renderers.
+
+use super::{
+    Guidance, Receipt, Serialize, StoreError, Value, VerbError, json, short_with_limit,
+    terminal_safe_line,
+};
+use crate::work_service::WorkChildFollowupPage;
+
+pub(super) const MAX_CHILD_OBLIGATION_REFS: usize = 5;
+
+#[derive(Clone, Serialize)]
+pub(super) struct ChildObligationRow {
+    #[serde(rename = "ref")]
+    pub(super) work_ref: String,
+    pub(super) title: String,
+    pub(super) remedy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) resolve_first: Option<String>,
+}
+
+/// Navigation is a command, not a fixed verb, so scoped listing can replace
+/// today's parent inspection without inventing a different group shape.
+#[derive(Clone, Serialize)]
+pub(super) struct ChildObligationGroup {
+    pub(super) count: usize,
+    pub(super) items: Vec<ChildObligationRow>,
+    pub(super) omitted: usize,
+    pub(super) navigation: String,
+}
+
+impl ChildObligationGroup {
+    pub(super) fn lines(&self, label: &str) -> Vec<String> {
+        let mut lines = vec![format!(
+            "{label} ({} of {} shown):",
+            self.items.len(),
+            self.count
+        )];
+        for row in &self.items {
+            lines.push(format!(
+                "  {} \"{}\"",
+                row.work_ref,
+                terminal_safe_line(&row.title)
+            ));
+            if let Some(reason) = &row.resolve_first {
+                lines.push(format!("    resolve first: {}", terminal_safe_line(reason)));
+            }
+            lines.push(format!("    {}", row.remedy));
+        }
+        if self.omitted > 0 {
+            lines.push(format!("  ({} more {label} not shown)", self.omitted));
+        }
+        lines.push(format!("  inspect: {}", self.navigation));
+        lines
+    }
+}
+
+pub(super) fn done_with_child_obligations(
+    lines: Vec<String>,
+    guidance: Guidance,
+    value: Value,
+    children: Result<WorkChildFollowupPage, StoreError>,
+    parent_ref: &str,
+    budget: usize,
+) -> Result<Receipt, VerbError> {
+    let navigation = format!("engram work show {parent_ref}");
+    let page = match children {
+        Ok(page) if page.total == 0 => return Ok(Receipt::assemble(lines, guidance, value, false)),
+        Ok(page) => page,
+        Err(_) => {
+            // Completion already committed. A diagnostic failure must never
+            // relabel success as refusal or claim there are no remaining rows.
+            let mut lines = lines;
+            lines.push(format!(
+                "remaining optional children unavailable; {navigation}"
+            ));
+            let mut value = value;
+            value["child_obligations_unavailable"] = json!(true);
+            return Ok(Receipt::assemble(lines, guidance, value, false));
+        }
+    };
+    let items = page
+        .items
+        .into_iter()
+        .map(|child| {
+            let (resolve_first, remedy) = match child.refusal {
+                Some((reason, remedy)) => (Some(reason), remedy),
+                None => (None, super::handlers::detach_command(&child.work.short_ref)),
+            };
+            ChildObligationRow {
+                work_ref: child.work.short_ref,
+                title: short_with_limit(&child.work.title, super::MAX_COMPACT_TITLE_BYTES),
+                remedy,
+                resolve_first,
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut group = ChildObligationGroup {
+        count: page.total,
+        omitted: page.total - items.len(),
+        items,
+        navigation,
+    };
+    loop {
+        let mut rendered_lines = lines.clone();
+        rendered_lines.extend(group.lines("open optional children"));
+        rendered_lines.push("  broader blocked-work list: engram work ls --blocked".into());
+        rendered_lines.push("  optional children do not block this completion".into());
+        let mut rendered_value = value.clone();
+        rendered_value["child_obligations"] = json!({"open_optional": group});
+        let receipt = Receipt::assemble(rendered_lines, guidance.clone(), rendered_value, false);
+        if receipt.text().len() <= budget
+            && serde_json::to_vec_pretty(&receipt.value)?.len() <= budget
+        {
+            return Ok(receipt);
+        }
+        if group.items.pop().is_some() {
+            group.omitted += 1;
+        } else {
+            // Never drop completion evidence or relabel a committed success
+            // to satisfy a budget smaller than the original receipt plus the
+            // fixed count/navigation metadata. Only advisory rows are shed.
+            return Ok(receipt);
+        }
+    }
+}

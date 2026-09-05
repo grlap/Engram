@@ -1383,12 +1383,23 @@ impl AgentVerbs {
                 )
             }
         };
-        Ok(Receipt::assemble(
-            lines,
-            guidance,
-            serde_json::to_value(&result)?,
-            owed,
-        ))
+        let value = serde_json::to_value(&result)?;
+        if !owed {
+            let children = self.service.remaining_optional_children(
+                view.status.work.work_id,
+                super::child_obligations::MAX_CHILD_OBLIGATION_REFS,
+                now,
+            );
+            return super::child_obligations::done_with_child_obligations(
+                lines,
+                guidance,
+                value,
+                children,
+                &work_ref,
+                MAX_AGENT_WORK_RESPONSE_BYTES,
+            );
+        }
+        Ok(Receipt::assemble(lines, guidance, value, owed))
     }
 
     /// `search`: `ls` over every lifecycle for a text query.

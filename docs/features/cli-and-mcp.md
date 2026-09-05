@@ -209,7 +209,18 @@ Rules that matter:
   the frozen seal; never repeat either elsewhere.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
-  `done` again.
+  `done` again. A successful CLI/MCP receipt also reports direct open optional
+  children in `child_obligations.open_optional`: exact `count`, at most five
+  `items` (`ref`, bounded `title`, `remedy`, and `resolve_first` when needed),
+  exact `omitted`, and a `navigation` command. Final text and JSON byte pressure
+  can reduce the shown rows further. Detach is offered only when its current
+  admission checks pass; otherwise the row names the condition to resolve.
+  Navigation is `show PARENT`; the terminal receipt mentions the broader
+  `ls --blocked` view once, not a child-filtered listing. This is read-only
+  advice after completion, not a new completion obligation or an automatic
+  mutation. With no remaining children the group is absent. If the diagnostic
+  read fails, `child_obligations_unavailable: true` and parent navigation retain
+  the successful outcome without pretending the remaining count is zero.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Nothing asks you to copy hashes, fences, or
   idempotency keys; if you see one, it is a bug. Safe project-memory keys are

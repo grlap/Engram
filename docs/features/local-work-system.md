@@ -347,6 +347,14 @@ released, completed, cancelled, or expired. Unfinished optional children are
 recorded in the seal and remain non-executable audit records under the closed
 root. They must be disposed leaf-first before the completed root can reopen;
 the new root execution never adopts their old runs implicitly.
+Successful agent `done` receipts inspect direct open optional children at one
+post-completion read cut and return a bounded group with an exact total and
+omitted count. Each shown child has an admitted detach command or resolve-first
+guidance for its actual constraint (descendants, ownership, blockers,
+prerequisites, or deferral). The receipt offers parent inspection and the broader
+blocked-work listing; it does not mutate children, old claims, or the seal.
+This current advisory view is separate from the immutable optional-child basis
+recorded in the seal. See the [receipt shape](cli-and-mcp.md#using-engram-as-an-agent).
 Nonempty drain/reconciliation will use the planned `completion_pending`
 protocol; it is refused today rather than silently accepted. Optional report
 assembly consumes the root seal under a
