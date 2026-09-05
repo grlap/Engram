@@ -102,6 +102,8 @@ struct LsArgs {
 struct ShowArgs {
     /// Short work ref or full UUID; becomes the focus for later calls.
     work_ref: String,
+    /// Full notes, oldest first, with an exact `notes_omitted` remainder.
+    notes: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -321,7 +323,10 @@ impl McpServer {
         description = "One item: outcome, acceptance, holder, blockers, reminders; later calls default to it"
     )]
     fn show(&self, Parameters(args): Parameters<ShowArgs>) -> CallToolResult {
-        verb(self.verbs().show(&args.work_ref, Utc::now()))
+        verb(
+            self.verbs()
+                .show_with_notes(&args.work_ref, args.notes.unwrap_or(false), Utc::now()),
+        )
     }
 
     /// Create a root or one required/optional child.
@@ -700,6 +705,10 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "work_id": work,
             "remedy": "run show for the affected item and follow next",
         }),
+        StoreError::WorkParentNotOpen { lifecycle, .. } => json!({
+            "parent_lifecycle": lifecycle,
+            "remedy": crate::storage::parent_not_open_remedy(*lifecycle),
+        }),
         StoreError::WorkPrerequisiteAlreadySatisfied(work) => json!({
             "work_id": work,
             "remedy": "no edge is needed; run show for the prerequisite before choosing another action",
@@ -797,6 +806,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkDependencyCycle => "work_dependency_cycle",
         StoreError::WorkPrerequisiteAlreadySatisfied(_) => "work_prerequisite_already_satisfied",
         StoreError::WorkNotOpen(_) => "work_not_open",
+        StoreError::WorkParentNotOpen { .. } => "work_parent_not_open",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",

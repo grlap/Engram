@@ -589,6 +589,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkDependencyCycle
         | StoreError::WorkPrerequisiteAlreadySatisfied(_)
         | StoreError::WorkNotOpen(_)
+        | StoreError::WorkParentNotOpen { .. }
         | StoreError::WorkClaimHeld { .. }
         | StoreError::WorkCompletionRefused { .. }
         | StoreError::GraphDestinationNotEmpty

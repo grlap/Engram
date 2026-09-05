@@ -206,6 +206,20 @@ pub struct Receipt {
 }
 
 impl Receipt {
+    pub(super) fn with_reminder(mut self, reminder: String) -> Result<Self, super::VerbError> {
+        self.reminders.push(reminder);
+        self.value["reminders"] = json!(self.reminders);
+        if self.text().len() > super::MAX_AGENT_WORK_RESPONSE_BYTES
+            || serde_json::to_vec_pretty(&self.value)?.len() > super::MAX_AGENT_WORK_RESPONSE_BYTES
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "add receipt exceeds the response budget".into(),
+            )
+            .into());
+        }
+        Ok(self)
+    }
+
     pub(super) fn assemble(
         lines: Vec<String>,
         guidance: Guidance,
@@ -251,6 +265,135 @@ impl Receipt {
     pub fn text(&self) -> String {
         render_agent_receipt_text(&self.lines, &self.reminders, &self.next)
     }
+}
+
+/// Full-note mode fits whole notes after projecting away internal identities.
+/// Its count includes inherited history and every native execution generation.
+pub(super) fn fit_show_notes(
+    mut receipt: Receipt,
+    page: crate::storage::WorkNotePage,
+    current_actor: &str,
+    budget: usize,
+) -> Result<Receipt, super::VerbError> {
+    receipt.lines.retain(|line| !line.starts_with("notes:"));
+    if let Some(omissions) = receipt
+        .value
+        .get_mut("omissions")
+        .and_then(Value::as_array_mut)
+    {
+        omissions.retain(|omission| omission["reason"] != "evidence_count_limit");
+    }
+    if receipt
+        .value
+        .get("omissions")
+        .and_then(Value::as_array)
+        .is_some_and(Vec::is_empty)
+        && let Some(fields) = receipt.value.as_object_mut()
+    {
+        fields.remove("omissions");
+    }
+    let base_lines = receipt.lines.clone();
+    let notes = page
+        .items
+        .into_iter()
+        .map(|note| super::show::ShowNote {
+            kind: note.kind,
+            non_holder: note
+                .actor
+                .provenance_chain
+                .iter()
+                .any(crate::domain::is_non_holder_note_marker),
+            summary: note.summary,
+            refs: note.refs,
+            by: Some(super::show::relative_actor_label(
+                &note.actor.actor_id,
+                note.actor.attribution_context(),
+                current_actor,
+            )),
+            created_at: note.recorded_at,
+        })
+        .collect::<Vec<_>>();
+    let (mut lower, mut upper) = (0, notes.len());
+    let mut visible = upper;
+    let mut best = None;
+    loop {
+        #[cfg(test)]
+        SHOW_NOTE_FIT_PROBES.with(|count| count.set(count.get() + 1));
+        render_note_prefix(&mut receipt, &base_lines, &notes[..visible], page.total)?;
+        if receipt.text().len() <= budget
+            && serde_json::to_vec_pretty(&receipt.value)?.len() <= budget
+        {
+            lower = visible;
+            best = Some(receipt.clone());
+        } else if visible == 0 {
+            return Err(StoreError::InvalidWorkProjection(
+                "show metadata exceeds the response budget".into(),
+            )
+            .into());
+        } else {
+            upper = visible - 1;
+        }
+        if lower == upper {
+            if best.is_none() && visible != 0 {
+                visible = 0;
+                continue;
+            }
+            return best.ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "show metadata exceeds the response budget".into(),
+                )
+                .into()
+            });
+        }
+        visible = lower + (upper - lower).div_ceil(2);
+    }
+}
+
+fn render_note_prefix(
+    receipt: &mut Receipt,
+    base_lines: &[String],
+    notes: &[super::show::ShowNote],
+    total: usize,
+) -> Result<(), serde_json::Error> {
+    receipt.value["notes"] = serde_json::to_value(notes)?;
+    receipt.value["notes_omitted"] = json!(total - notes.len());
+    receipt.lines.clear();
+    receipt.lines.extend_from_slice(base_lines);
+    receipt
+        .lines
+        .push(format!("notes: {total} recorded (oldest first)"));
+    for note in notes {
+        receipt.lines.push(format!(
+            "  - {}{} by {} at {}:\n{}",
+            super::evidence_kind_word(note.kind),
+            if note.non_holder { " (non-holder)" } else { "" },
+            super::terminal_safe_multiline(note.by.as_deref().unwrap_or("another actor")),
+            note.created_at,
+            super::terminal_safe_multiline(&note.summary)
+                .lines()
+                .map(|line| format!("    {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+        for reference in &note.refs {
+            receipt.lines.push(format!(
+                "    ref: {}",
+                super::terminal_safe_multiline(reference).replace('\n', "\n         ")
+            ));
+        }
+    }
+    if total > notes.len() {
+        receipt.lines.push(format!(
+            "  ({} notes omitted by the response budget)",
+            total - notes.len()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static SHOW_NOTE_FIT_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// A core failure plus the item it concerned, when known.
@@ -320,6 +463,14 @@ impl VerbError {
             StoreError::WorkNotOpen(_) => (
                 vec!["this item is not open".into()],
                 vec![format!("engram work show {target}")],
+            ),
+            StoreError::WorkParentNotOpen { lifecycle, .. } => (
+                vec![crate::storage::parent_not_open_remedy(*lifecycle).into()],
+                if *lifecycle == super::WorkLifecycle::Proposed {
+                    vec![format!("engram work show {target}")]
+                } else {
+                    vec!["engram work add \"Follow-up title\" --accept \"Delivery criterion\"".into()]
+                },
             ),
             StoreError::WorkPrerequisiteAlreadySatisfied(_) => (
                 vec!["this prerequisite is already satisfied; no edge is needed".into()],

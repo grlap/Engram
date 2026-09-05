@@ -519,16 +519,22 @@ pub(crate) fn validate_gate_evidence_payload(evidence: &WorkEvidence) -> Result<
     let Some(gate) = &evidence.gate else {
         return Ok(());
     };
-    let evidence_ref = match evidence.refs.as_slice() {
-        [] => None,
-        [evidence_ref] => Some(evidence_ref.as_str()),
-        _ => return Err("more than one evidence reference".into()),
-    };
-    validate_stored_gate_evidence_fields(&gate.name, &gate.failed, evidence_ref)?;
-    if gate.schema_version != SCHEMA_VERSION || gate.passed != gate.failed.is_empty() {
-        return Err("inconsistent normalized gate fields".into());
+    gate.validate(&evidence.refs)
+}
+
+impl GateEvidenceRecord {
+    pub(crate) fn validate(&self, refs: &[String]) -> Result<(), String> {
+        let evidence_ref = match refs {
+            [] => None,
+            [evidence_ref] => Some(evidence_ref.as_str()),
+            _ => return Err("more than one evidence reference".into()),
+        };
+        validate_stored_gate_evidence_fields(&self.name, &self.failed, evidence_ref)?;
+        if self.schema_version != SCHEMA_VERSION || self.passed != self.failed.is_empty() {
+            return Err("inconsistent normalized gate fields".into());
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn validate_stored_gate_evidence_fields(

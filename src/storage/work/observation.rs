@@ -193,7 +193,7 @@ pub(in crate::storage) fn observations_on(
     Ok(observations)
 }
 
-fn validate(connection: &Connection, value: &WorkObservation) -> Result<(), StoreError> {
+pub(super) fn validate(connection: &Connection, value: &WorkObservation) -> Result<(), StoreError> {
     let marker_count = value
         .actor
         .provenance_chain

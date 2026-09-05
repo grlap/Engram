@@ -313,6 +313,12 @@ impl SqliteStore {
         }
         let mut parent = load_work_item(&transaction, request.parent_id)?;
         assert_revision(&parent, request.expected_parent_revision)?;
+        if parent.lifecycle != WorkLifecycle::Open {
+            return Err(StoreError::WorkParentNotOpen {
+                parent: parent.work_id,
+                lifecycle: parent.lifecycle,
+            });
+        }
         validate_planning_authority(
             &transaction,
             &parent,
@@ -321,9 +327,6 @@ impl SqliteStore {
             request.created_at,
         )?;
         validate_decomposition_budget(&transaction, &parent, request.children.len())?;
-        if parent.lifecycle != WorkLifecycle::Open {
-            return Err(StoreError::WorkNotOpen(parent.work_id));
-        }
         let restored_execution = if parent.active_run_id.is_none() {
             Some(ensure_restored_execution_state(
                 &transaction,

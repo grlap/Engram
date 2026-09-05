@@ -51,7 +51,7 @@ already returns its session object.
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
-engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
+engram work show REF [--notes]    # full oldest-first notes only when requested
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
@@ -103,6 +103,17 @@ instead of failing.
 
 Rules that matter:
 
+- `show REF --notes` (MCP `show { work_ref: REF, notes: true }`) returns
+  complete note bodies and references, oldest first, across restored history
+  and native execution generations. Inherited notes retain their recorded
+  generation order; subsequent notes use dense root-feed order, not asserted
+  timestamps. Only a whole-note prefix that fits the complete 12 KiB text and
+  JSON receipts is returned. `notes_omitted` is always the exact remainder,
+  including zero; an oversized first note is omitted along with later notes,
+  never truncated or skipped. Default `show` is unchanged. Full content is
+  caller-authored prose and references, not raw authority records. Every line
+  of a reference is framed as data in text; JSON retains exact reference
+  content. With no other omissions, `omissions` stays absent, never null.
 - `update REF --accept "criterion"...` replaces the whole acceptance list in
   one attributed revision. Omission preserves it; empty lists and any blank
   criterion are refused. The core trims, sorts, and deduplicates criteria.
@@ -121,7 +132,16 @@ Rules that matter:
   MCP uses `note { work_ref: REF, text: TEXT }`; the shell has no `note
   --work-ref` flag (that flag belongs to `gate`).
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
-  are what `done` is checked against.
+  are what `done` is checked against. When acceptance is omitted, text and JSON
+  reminders say `acceptance defaulted to <title> is done; set --accept`.
+  That title is bounded and terminal-safe; the final receipt includes the
+  reminder in its response budget.
+  Explicit acceptance suppresses that reminder; blank criteria are refused.
+  `add --under` refuses completed, cancelled, or superseded parents with
+  `work_parent_not_open`: file an independent root follow-up or add under an
+  open ancestor. Proposed parents also refuse new children, with guidance to
+  inspect the not-yet-open parent instead. Existing children and their
+  execution fences are untouched.
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   with the same identity and fence; expiry becomes the later of its existing
   expiry and now plus the requested TTL (one hour by default).

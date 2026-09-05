@@ -534,7 +534,7 @@ pub(super) fn compact_work_evidence(evidence: &WorkEvidence) -> Result<String, S
         return Ok(compact_text(&evidence.summary));
     };
     validate_gate_evidence_payload(evidence).map_err(StoreError::InvalidWorkProjection)?;
-    Ok(compact_gate_evidence(gate))
+    Ok(gate_evidence_summary(gate, true))
 }
 
 pub(super) fn compact_restored_work_evidence(
@@ -543,34 +543,53 @@ pub(super) fn compact_restored_work_evidence(
     let Some(gate) = evidence.gate.as_ref() else {
         return Ok(compact_text(&evidence.summary));
     };
-    if gate.schema_version != crate::domain::SCHEMA_VERSION || gate.passed != gate.failed.is_empty()
-    {
-        return Err(StoreError::InvalidWorkProjection(
-            "restored gate evidence is inconsistent".into(),
-        ));
-    }
-    Ok(compact_gate_evidence(gate))
+    gate.validate(&evidence.refs)
+        .map_err(StoreError::InvalidWorkProjection)?;
+    Ok(gate_evidence_summary(gate, true))
 }
 
-fn compact_gate_evidence(gate: &crate::GateEvidenceRecord) -> String {
+pub(super) fn project_full_notes(
+    page: &mut crate::storage::WorkNotePage,
+) -> Result<(), StoreError> {
+    for note in &mut page.items {
+        if let Some(gate) = &note.gate {
+            gate.validate(&note.refs)
+                .map_err(StoreError::InvalidWorkProjection)?;
+            note.summary = gate_evidence_summary(gate, false);
+        } else if note.kind == WorkEvidenceKind::Environment {
+            note.summary = "host-recorded environment identity".into();
+        }
+    }
+    Ok(())
+}
+
+fn gate_evidence_summary(gate: &crate::GateEvidenceRecord, compact: bool) -> String {
+    let project = |text: &str| {
+        if compact {
+            compact_text(text)
+        } else {
+            text.to_owned()
+        }
+    };
     if gate.passed {
-        return compact_text(&format!("gate {} passed", gate.name));
+        return project(&format!("gate {} passed", gate.name));
     }
     let count = gate.failed.len();
+    let limit = if compact { 2 } else { count };
     let listed = gate
         .failed
         .iter()
-        .take(2)
-        .map(|failure| compact_text(failure))
+        .take(limit)
+        .map(|failure| project(failure))
         .collect::<Vec<_>>()
         .join(", ");
-    let omitted = count.saturating_sub(2);
+    let omitted = count.saturating_sub(limit);
     let suffix = if omitted == 0 {
         String::new()
     } else {
         format!(" (+{omitted} more)")
     };
-    compact_text(&format!(
+    project(&format!(
         "gate {} failed ({count} failures): {listed}{suffix}",
         gate.name
     ))

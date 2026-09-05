@@ -1935,7 +1935,7 @@ pub(super) fn latest_restored_record(
     .transpose()
 }
 
-fn restored_records_for_item(
+pub(super) fn restored_records_for_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<RestoredRecord>, StoreError> {

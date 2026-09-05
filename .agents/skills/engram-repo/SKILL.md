@@ -130,7 +130,7 @@ the caller must omit `--session-id` to receive a fresh process default.
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
-engram work show REF              # one item: outcome, acceptance, holder, blockers, reminders
+engram work show REF [--notes]    # full oldest-first notes only when requested
 engram work add "Title" [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
@@ -151,6 +151,13 @@ it. Host-only `work core` reads remain full.
 
 Rules that matter:
 
+- `show REF --notes` returns full note bodies and references oldest first,
+  including inherited history and all native generations. The complete text
+  and JSON receipts stay within 12 KiB by returning whole notes only;
+  `notes_omitted` is the exact remainder. MCP `show` takes `notes: true`.
+  Every line of a note reference is framed as data in terminal output;
+  structured references retain their exact content.
+  Default `show` keeps its terse note summary.
 - `update REF --accept "criterion"...` replaces the whole acceptance list;
   omitting it preserves the list. Empty or blank criteria are refused, and
   completed work cannot be revised. History names the revised fields.
@@ -161,6 +168,13 @@ Rules that matter:
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. `--under REF` creates a required child;
   add `--optional` when that child must not gate its parent's completion.
+  Omitted acceptance produces the reminder `acceptance defaulted to <title>
+  is done; set --accept`; explicit criteria do not. Blank criteria are refused.
+  The reminder uses a bounded, terminal-safe title and fits the final receipt.
+  Completed, cancelled, and superseded parents refuse new children: file an
+  independent root follow-up or add under an open ancestor. A proposed parent
+  also refuses children, but directs you to inspect it because it is not open.
+  Existing children and their fences remain unchanged.
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   without changing its identity or fence, and never shortens its expiry.
   Open-work `gate` and `done` require the holder. A non-holder may `note`

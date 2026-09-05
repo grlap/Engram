@@ -9,6 +9,7 @@ mod completion;
 mod execution;
 mod feeds;
 mod integrity;
+mod notes;
 mod observation;
 mod planning;
 mod query;
@@ -56,6 +57,7 @@ use crate::{
     memory::Redactor,
 };
 
+pub(crate) use notes::WorkNotePage;
 pub(in crate::storage) use observation::observations_on;
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;

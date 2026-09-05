@@ -72,6 +72,8 @@ pub(super) struct ShowNote {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) non_holder: bool,
     pub(super) summary: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) refs: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) by: Option<String>,
     pub(super) created_at: DateTime<Utc>,
@@ -446,6 +448,7 @@ pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowN
             kind: note.evidence_kind,
             non_holder: note.non_holder,
             summary: note.summary,
+            refs: Vec::new(),
             by: note.actor_id.as_deref().map(|actor| {
                 relative_actor_label(actor, note.actor_context.as_deref(), current_actor)
             }),

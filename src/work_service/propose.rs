@@ -74,11 +74,15 @@ impl LocalWorkService {
             && basis
                 .focused_work
                 .as_ref()
-                .is_some_and(|work| work.lifecycle == WorkLifecycle::Completed)
+                .is_some_and(|work| work.lifecycle != WorkLifecycle::Open)
         {
-            return Err(StoreError::InvalidWork(
-                COMPLETED_WORK_LATE_FINDING_REFUSAL.into(),
-            ));
+            let parent = basis.focused_work.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection("decomposition has no parent".into())
+            })?;
+            return Err(StoreError::WorkParentNotOpen {
+                parent: parent.work_id,
+                lifecycle: parent.lifecycle,
+            });
         }
         let result = match input {
             WorkProposeInput::Root {

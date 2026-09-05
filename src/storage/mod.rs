@@ -14,6 +14,20 @@ mod work;
 pub(crate) const PENDING_HANDOFF_REFUSAL: &str =
     "a live handoff offer blocks this operation; cancel the offer, or let it be accepted or expire";
 
+pub(crate) fn parent_not_open_remedy(lifecycle: crate::domain::WorkLifecycle) -> &'static str {
+    match lifecycle {
+        crate::domain::WorkLifecycle::Proposed => {
+            "the parent is proposed, not open; inspect it before adding children"
+        }
+        crate::domain::WorkLifecycle::Open => "inspect the parent before retrying",
+        crate::domain::WorkLifecycle::Completed
+        | crate::domain::WorkLifecycle::Cancelled
+        | crate::domain::WorkLifecycle::Superseded => {
+            "file an independent root follow-up or add under an open ancestor"
+        }
+    }
+}
+
 #[cfg(test)]
 mod test_support;
 
@@ -30,6 +44,7 @@ use project_memory::{
 };
 use task_memory::{claim_expiry, fts_query, normalize_project_memory_query};
 
+pub(crate) use work::WorkNotePage;
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 
 pub(crate) use work::{
@@ -780,6 +795,13 @@ pub enum StoreError {
     WorkPrerequisiteAlreadySatisfied(crate::domain::WorkId),
     #[error("work {0:?} is not open for this operation")]
     WorkNotOpen(crate::domain::WorkId),
+    #[error(
+        "cannot add beneath {lifecycle:?} work; {}", parent_not_open_remedy(*.lifecycle)
+    )]
+    WorkParentNotOpen {
+        parent: crate::domain::WorkId,
+        lifecycle: crate::domain::WorkLifecycle,
+    },
     #[error("work {work:?} is claimed by session {holder} until {expires_at}")]
     WorkClaimHeld {
         work: crate::domain::WorkId,

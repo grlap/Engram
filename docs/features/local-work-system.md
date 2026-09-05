@@ -359,6 +359,12 @@ revision and idempotency key.
 - The agent word `add --under REF` creates a required child by default;
   `add --under REF --optional` records an optional child, and `show REF` marks
   that distinction without requiring a lower-level decomposition request.
+  Both forms refuse terminal parents with the typed `work_parent_not_open`
+  remedy: file an independent root follow-up or add under an open ancestor.
+  Proposed parents also refuse new children, but their remedy is to inspect
+  the not-yet-open parent, not to file a terminal-parent follow-up.
+  The transaction checks lifecycle before creating any child; existing
+  children, claims, and completion fences are unchanged.
 - A completion binds the accepted work revision, run generation, claim fence,
   latest checkpoint cursor, acceptance results, and evidence hashes. Any
   change to those facts makes an unconsumed completion decision stale.
@@ -565,6 +571,21 @@ memory-version fields. Active core
 blockers include their id, type, and compact detail; when exactly one blocker
 is active the agent word infers it for `unblock`. Authorized memory bodies
 remain available on demand through their version hash on host-only reads.
+An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
+bodies and references in recorded oldest-first order. Inherited generations
+retain their saved order, followed by every native note family in dense
+root-feed order across run generations. The count and note prefix share one
+read transaction. Full text is never cut: whole trailing notes are omitted
+until the complete text and JSON receipts fit 12 KiB. `notes_omitted` is the
+exact total minus the emitted prefix, including zero. This opt-in mode does
+not change the default focus or terse show projection. Each reference line
+is framed as untrusted data in terminal text; JSON retains exact content.
+The optional `omissions` field remains absent or an array, never null.
+
+The `add` receipt also names defaulted acceptance in both text and JSON
+reminders: `acceptance defaulted to <title> is done; set --accept`. Explicit
+acceptance produces no such reminder; blank criteria are refused. The reminder
+uses a bounded, terminal-safe title and is included in the final receipt budget.
 `work_update` and `work_handoff` never rebuild this history: their success
 envelopes contain only the operation, compact receipt, one bounded
 `obligation_page`, generic readiness obligations, and `allowed_next`, so

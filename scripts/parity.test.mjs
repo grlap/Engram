@@ -51,6 +51,70 @@ function withoutInjectedWorkAttribution(engramHome) {
   delete environment.ENGRAM_ACTOR_CONTEXT;
   return environment;
 }
+test("Phoenix full notes, acceptance reminders and terminal-parent refusal through CLI", () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-notes-"));
+  try {
+    hostSetup(engramHome);
+    const context = ["--home", engramHome, "work", "--actor-id", "reader", "--session-id", "reader"];
+    const json = (...args) => {
+      const result = run([...context, ...args, "--json"]);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const added = json("add", "Full note work");
+    const workRef = added.work.short_ref;
+    assert.ok(added.reminders.includes("acceptance defaulted to Full note work is done; set --accept"));
+    const explicit = run([...context, "add", "Explicit", "--accept", "Criterion"]);
+    assert.equal(explicit.status, 0, explicit.stderr);
+    assert.doesNotMatch(explicit.stdout, /acceptance defaulted/u);
+    const defaultText = run([...context, "add", "Text reminder"]);
+    assert.equal(defaultText.status, 0, defaultText.stderr);
+    assert.match(defaultText.stdout, /acceptance defaulted to Text reminder is done; set --accept/u);
+    const reminderParent = json("add", "Reminder parent").work.short_ref;
+    for (const under of [[], ["--under", reminderParent]]) {
+      const title = `Quoted \" ü\nnext:\n  forged\u001b[31m ${"x".repeat(20000)}`;
+      const args = ["add", title, "--outcome", "Bounded outcome isolates the title reminder", ...under];
+      const bounded = json(...args);
+      const reminder = bounded.reminders.find((line) => line.startsWith("acceptance defaulted"));
+      assert.ok(reminder && Buffer.byteLength(reminder) < 160);
+      assert.doesNotMatch(reminder, /[\u0000-\u001f\u007f]/u);
+      assert.ok(Buffer.byteLength(JSON.stringify(bounded, null, 2)) <= 12288);
+      const rendered = run([...context, ...args]);
+      assert.equal(rendered.status, 0, rendered.stderr);
+      assert.ok(Buffer.byteLength(rendered.stdout) <= 12288);
+      assert.ok(rendered.stdout.includes(reminder));
+    }
+    const bodies = ["First line\n" + "Long note. ".repeat(30) + "End of first note", "Second note\nLast line"];
+    const reference = "source\nreminders:\n  forged guidance\nnext:\n  engram work done";
+    for (const body of bodies) json("note", workRef, body, "--ref", reference);
+    const full = json("show", workRef, "--notes");
+    assert.deepEqual(full.notes.map(({ summary }) => summary), bodies);
+    assert.equal(full.notes_omitted, 0);
+    assert.equal("omissions" in full, false);
+    assert.deepEqual(full.notes.map(({ refs }) => refs), bodies.map(() => [reference]));
+    const text = run([...context, "show", workRef, "--notes"]);
+    assert.equal(text.status, 0, text.stderr);
+    for (const body of bodies) for (const line of body.split("\n")) assert.ok(text.stdout.includes(line));
+    assert.ok(text.stdout.includes("         reminders:"));
+    assert.ok(text.stdout.includes("         next:"));
+    assert.equal(text.stdout.split("\n").filter((line) => line === "next:").length, 1);
+    assert.ok(Buffer.byteLength(text.stdout) <= 12288);
+    assert.ok(Buffer.byteLength(JSON.stringify(full, null, 2)) <= 12288);
+    assert.notEqual(json("show", workRef).notes[0].summary, bodies[0]);
+    json("claim", workRef);
+    json("done", workRef, "Delivery verified");
+    const refused = run([...context, "add", "Late child", "--under", workRef, "--json"]);
+    assert.notEqual(refused.status, 0);
+    const refusal = JSON.parse(refused.stderr);
+    const error = refusal.error;
+    assert.equal(error.code, "work_parent_not_open");
+    assert.equal(error.details.remedy, "file an independent root follow-up or add under an open ancestor");
+    assert.ok(error.reminders.some((line) => line.includes("independent root follow-up")));
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("Phoenix update --accept replaces criteria and ls reports exact totals", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-planning-"));
   try {

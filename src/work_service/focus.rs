@@ -1,8 +1,25 @@
 use super::{
-    DateTime, LocalWorkService, SessionId, StoreError, Utc, WorkFocusView, WorkId, WorkItem,
+    DateTime, LocalWorkService, MAX_AGENT_WORK_RESPONSE_BYTES, SessionId, StoreError, Utc,
+    WorkFocusView, WorkId, WorkItem,
 };
 
 impl LocalWorkService {
+    pub(crate) fn work_notes(
+        &self,
+        work_ref: &str,
+        now: DateTime<Utc>,
+    ) -> Result<crate::storage::WorkNotePage, StoreError> {
+        let store = self.store_at(now)?;
+        let item = store.resolve_work_ref(&self.project_id, work_ref)?;
+        let mut page = store.work_notes(
+            &self.project_id,
+            item.work_id,
+            MAX_AGENT_WORK_RESPONSE_BYTES,
+        )?;
+        super::projection::project_full_notes(&mut page)?;
+        Ok(page)
+    }
+
     /// Makes `work_ref` the session's ambient focus without inspecting it, so a
     /// mutation can name its target in the same call.
     ///

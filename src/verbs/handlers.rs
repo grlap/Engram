@@ -604,12 +604,62 @@ impl AgentVerbs {
         ))
     }
 
+    /// Like `show`, optionally returning the full oldest-first note prefix
+    /// within the complete receipt budget. Default show remains unchanged.
+    ///
+    /// # Errors
+    /// Returns [`VerbError`] for unknown work, invalid notes or oversized metadata.
+    pub fn show_with_notes(
+        &self,
+        work_ref: &str,
+        notes: bool,
+        now: DateTime<Utc>,
+    ) -> Result<Receipt, VerbError> {
+        let receipt = self.show(work_ref, now)?;
+        if !notes {
+            return Ok(receipt);
+        }
+        let page = self
+            .service
+            .work_notes(work_ref, now)
+            .map_err(|error| VerbError::at(error, work_ref))?;
+        super::receipts::fit_show_notes(
+            receipt,
+            page,
+            &self.actor_id,
+            MAX_AGENT_WORK_RESPONSE_BYTES,
+        )
+    }
+
     /// `add`: a root, or one required/optional child beneath `under`.
     ///
     /// # Errors
     ///
     /// Returns [`VerbError`] when input is empty or the core refuses admission.
     pub fn add(&self, input: AddInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        if input
+            .acceptance
+            .iter()
+            .any(|criterion| criterion.trim().is_empty())
+        {
+            return Err(
+                StoreError::InvalidWork("acceptance criteria must not be blank".into()).into(),
+            );
+        }
+        let reminder = input.acceptance.is_empty().then(|| {
+            format!(
+                "acceptance defaulted to {} is done; set --accept",
+                short(&terminal_safe_multiline(input.title.trim()))
+            )
+        });
+        let receipt = self.add_inner(input, now)?;
+        match reminder {
+            Some(text) => receipt.with_reminder(text),
+            None => Ok(receipt),
+        }
+    }
+
+    fn add_inner(&self, input: AddInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let title = input.title.trim().to_owned();
         if title.is_empty() {
             return Err(StoreError::InvalidWork("title must not be empty".into()).into());
@@ -712,7 +762,8 @@ impl AgentVerbs {
         let parent_ref = parent.status.work.short_ref.clone();
         let result = self
             .service
-            .work_propose(
+            .work_propose_on(
+                Some(&parent_ref),
                 WorkProposeInput::Decompose {
                     children: vec![child],
                     prerequisites: Vec::new(),

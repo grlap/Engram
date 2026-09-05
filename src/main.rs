@@ -440,6 +440,9 @@ enum WorkCommand {
     Show {
         /// Short work ref or full UUID; later words default to it.
         work_ref: String,
+        /// Full notes, oldest first, with an exact omitted count if byte-bounded.
+        #[arg(long)]
+        notes: bool,
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
@@ -1042,7 +1045,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             },
             now,
         ),
-        WorkCommand::Show { work_ref } => verbs.show(&work_ref, now),
+        WorkCommand::Show { work_ref, notes } => verbs.show_with_notes(&work_ref, notes, now),
         WorkCommand::Add {
             title,
             outcome,

@@ -975,8 +975,8 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
             },
             at(11),
         ),
-        Err(StoreError::InvalidWork(message))
-            if message == COMPLETED_WORK_LATE_FINDING_REFUSAL
+        Err(StoreError::WorkParentNotOpen { parent, lifecycle: WorkLifecycle::Completed })
+            if parent == work.work_id
     ));
 }
 
