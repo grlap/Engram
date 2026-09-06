@@ -739,6 +739,12 @@ UTF-8 `body_bytes`, deliberately beyond 12 KiB when necessary. A window that
 cannot fit a body retains its locator, size, `body_omitted` flag and detail
 command, then continues past that member without silently losing it. Every
 body/reference line is framed as untrusted terminal data; JSON is exact.
+This text-only framing also covers compact next/list rows, show fields,
+child rows and guidance. Single-line prose fields flatten whitespace; multiline
+bodies and acceptance retain indented newlines and fold tabs to spaces. The existing
+terminal policy runs before human byte bounding, and fitting measures the
+escaped receipt. Structured projections retain their existing source bytes
+and omission semantics, including MCP's JSON text content.
 New note writes refuse normalized UTF-8 bodies over 64 KiB with actual size,
 limit and a carry-bulk-as-reference remedy. Existing larger notes remain
 readable; canonical read validation does not impose the new write limit.

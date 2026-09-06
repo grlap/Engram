@@ -1524,7 +1524,10 @@ impl AgentVerbs {
                         ttl_seconds,
                         idempotency_key: String::new(),
                     },
-                    format!("offered {work_ref} \"{title}\" to {to}"),
+                    format!(
+                        "offered {work_ref} \"{title}\" to {}",
+                        super::terminal_safe_line(&to)
+                    ),
                 )
             }
             HandoffAction::Accept => (

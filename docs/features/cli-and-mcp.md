@@ -65,6 +65,15 @@ engram work memories [QUERY] | engram work memories --after KEY | engram work me
 engram work forget KEY
 ```
 
+Human receipt fields use the existing terminal text policy before byte
+bounding, including compact next/list titles, labels, holders, show outcomes
+and blockers, child rows, and guidance. Single-line prose fields flatten whitespace;
+multiline acceptance and note bodies keep indented newlines and fold tabs to spaces.
+Printed commands escape unsafe characters but preserve every safe literal byte, including repeated spaces inside quoted arguments.
+Structured JSON retains its existing source projections, not terminal escapes;
+this includes both MCP structured content and its equivalent JSON text content.
+See [text framing](local-work-system.md#agent-native-protocol).
+
 Add `--json` to any word for its structured receipt. Agent reads are short by
 default in text, JSON, and MCP: `next` and `ls` return only navigation rows
 and one-line changes, while `show REF` returns one safe detail view. Structured

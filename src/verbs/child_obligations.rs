@@ -248,7 +248,7 @@ impl ChildObligationGroup {
             lines.push(format!(
                 "  {} \"{}\"",
                 row.work_ref,
-                terminal_safe_line(&row.title)
+                super::terminal_short(&row.title, super::MAX_COMPACT_TITLE_BYTES)
             ));
             if let Some(reason) = &row.resolve_first {
                 lines.push(format!("    resolve first: {}", terminal_safe_line(reason)));

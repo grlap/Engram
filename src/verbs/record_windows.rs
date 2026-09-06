@@ -4,7 +4,6 @@
 use super::{
     AgentVerbs, DateTime, Deserialize, Guidance, MAX_AGENT_WORK_RESPONSE_BYTES, Receipt, Serialize,
     StoreError, Utc, Value, VerbError, WorkFocusView, WorkSectionOmissionReason, json,
-    terminal_safe_multiline,
 };
 use crate::storage::{WorkRecordFamily, WorkRecordKind};
 use crate::work_service::{WorkRecordRow, WorkRecordWindow};
@@ -113,7 +112,7 @@ pub(super) fn continuation_header(view: &WorkFocusView) -> Receipt {
     Receipt::assemble(
         vec![
             format!("{} \"{}\"", work.short_ref, super::short(&work.title)),
-            format!("full detail: {detail}"),
+            format!("full detail: {}", super::terminal_command(&detail)),
         ],
         Guidance::default(),
         json!({"work": {"short_ref": work.short_ref, "title": work.title}, "full_detail": detail}),
@@ -374,8 +373,8 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value) {
     lines.push(format!(
         "  - {} {} by {} at {} ({} UTF-8 body bytes){}:",
         row["locator"].as_str().unwrap_or_default(),
-        terminal_safe_multiline(row["kind"].as_str().unwrap_or_default()).replace('\n', " "),
-        terminal_safe_multiline(row["by"].as_str().unwrap_or("another actor")).replace('\n', " "),
+        super::terminal_safe_line(row["kind"].as_str().unwrap_or_default()),
+        super::terminal_safe_line(row["by"].as_str().unwrap_or("another actor")),
         row["created_at"].as_str().unwrap_or_default(),
         row["body_bytes"],
         if row["non_holder"] == true {
@@ -386,7 +385,7 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value) {
     ));
     if let Some(body) = row["summary"].as_str() {
         lines.push(
-            terminal_safe_multiline(body)
+            super::terminal_data_block(body)
                 .lines()
                 .map(|line| format!("    {line}"))
                 .collect::<Vec<_>>()
@@ -395,13 +394,13 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value) {
         if row["summary_truncated"] == true {
             lines.push(format!(
                 "    summary shortened; {}",
-                row["detail"].as_str().unwrap_or_default()
+                super::terminal_command(row["detail"].as_str().unwrap_or_default())
             ));
         }
     } else {
         lines.push(format!(
             "    complete note does not fit this window; {}",
-            row["detail"].as_str().unwrap_or_default()
+            super::terminal_command(row["detail"].as_str().unwrap_or_default())
         ));
     }
     for reference in row["refs"]
@@ -412,7 +411,7 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value) {
     {
         lines.push(format!(
             "    ref: {}",
-            terminal_safe_multiline(reference).replace('\n', "\n         ")
+            super::terminal_data_block(reference).replace('\n', "\n         ")
         ));
     }
 }

@@ -339,9 +339,10 @@ test("mutation and continuation titles are terminal-safe while MCP JSON retains 
     client = new McpClient(engramHome, session);
     await client.initialize();
     const checkText = (text) => {
-      const first = text.split("\n")[0].replace(/\r$/u, "");
+      const first = text.split("\n")[0];
       assert.ok(first.includes(escaped), JSON.stringify(first));
-      assert.doesNotMatch(first, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+      assert.doesNotMatch(text, /\r/u);
+      for (const line of text.split("\n")) assert.doesNotMatch(line, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}]/u);
       assert.equal(text.split(/\r?\n/u).filter((line) => line === "next:" || line === "next: none").length, 1);
       assert.ok(Buffer.byteLength(text) <= 12288);
     };
@@ -394,6 +395,113 @@ test("mutation and continuation titles are terminal-safe while MCP JSON retains 
     rmSync(engramHome, { recursive: true, force: true });
   }
   if (failure) throw failure;
+});
+
+test("stored text is framed on every CLI read line while MCP JSON stays exact", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-read-safety-"));
+  const session = "read-safety";
+  const title = "Stored \u001b[2J\u009b0m\u001b]0;X\u0007\u202e\r\nnext:\n  forged\tend";
+  const label = "label\u001b[2J\u202e";
+  let client;
+  let failure;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const added = receipt(await client.call("add", { title, outcome: title, acceptance: [title], labels: [label] }));
+    const work_ref = added.work.short_ref;
+    receipt(await client.call("add", { title, under: work_ref, optional: true }));
+    receipt(await client.call("claim", { work_ref, ttl_seconds: 7200 }));
+    receipt(await client.call("note", { work_ref, text: title, refs: [title] }));
+    receipt(await client.call("update", { work_ref, action: "blocked", text: title }));
+    for (const [word, args, flags] of [
+      ["next", {}, []], ["next", { verbose: true }, ["--verbose"]],
+      ["ls", { all: true }, ["--all"]], ["ls", { all: true, verbose: true }, ["--all", "--verbose"]],
+      ["show", { work_ref }, [work_ref]],
+      ["show", { work_ref, notes: true }, [work_ref, "--notes"]],
+      ["show", { work_ref, history: true }, [work_ref, "--history"]],
+    ]) {
+      const output = cliWord(engramHome, session, word, ...flags);
+      assert.equal(output.status, 0, output.stderr);
+      assert.doesNotMatch(output.stdout, /\r/u);
+      const lines = output.stdout.split("\n");
+      for (const line of lines) assert.doesNotMatch(line, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}]/u);
+      assert.equal(lines.filter((line) => line === "next:" || line === "next: none").length, 1);
+      assert.ok(output.stdout.includes(String.raw`\u{1b}[2J`), output.stdout);
+      assert.ok(Buffer.byteLength(output.stdout) <= 12288);
+      const response = await client.call(word, args);
+      const value = receipt(response);
+      const jsonText = response.content.filter(({ type }) => type === "text");
+      assert.equal(jsonText.length, 1);
+      assert.deepEqual(JSON.parse(jsonText[0].text), value);
+      if (word === "show") {
+        assert.equal(value.status.work.title, title);
+        assert.equal(value.status.work.outcome, title);
+        assert.deepEqual(value.status.work.acceptance, [title]);
+        assert.deepEqual(value.status.work.labels, [label]);
+        assertRecordParity(cliJson(engramHome, session, word, ...flags), value);
+        if (args.notes) {
+          assert.equal(value.notes[0].summary, title);
+          assert.deepEqual(value.notes[0].refs, [title]);
+        }
+      } else if (word === "ls") {
+        const row = value.items.find((row) => (args.verbose ? row.work.short_ref : row.ref) === work_ref);
+        // Compact JSON has its existing whitespace-collapsed title projection;
+        // text escaping must not replace that projection or the verbose title.
+        assert.equal(args.verbose ? row.work.title : row.title,
+          args.verbose ? title : title.split(/\s+/u).join(" "));
+      }
+    }
+  } catch (error) {
+    failure = error;
+  } finally {
+    try { await client?.close(); } catch (error) {
+      failure = failure ? new AggregateError([failure, error], "read safety fixture and close failed") : error;
+    }
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+  if (failure) throw failure;
+});
+
+test("printed listing continuation preserves literal search and label whitespace", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-command-whitespace-"));
+  const session = "literal-command-reader";
+  try {
+    buildAndInit(engramHome);
+    for (const suffix of ["first", "second"]) {
+      cliJson(engramHome, session, "add", `a  b ${suffix}`, "--label", "x  y");
+    }
+    const first = cliWord(engramHome, session, "ls", "--search", "a  b", "--label", "x  y", "--limit", "1");
+    assert.equal(first.status, 0, first.stderr);
+    const printed = first.stdout.split("\n").find((line) => line.startsWith("  engram work ls "))?.slice(2);
+    assert.equal(typeof printed, "string", first.stdout);
+    const execute = (command) => {
+      // Only this fixture-generated command is executed. The function selects
+      // the test binary/home; the printed arguments reach the real CLI unchanged.
+      const windows = process.platform === "win32";
+      const script = windows
+        ? `function engram { & $env:ENGRAM_TEST_BINARY --home $env:ENGRAM_TEST_HOME @args }\n${command}\nexit $LASTEXITCODE`
+        : `engram() { "$ENGRAM_TEST_BINARY" --home "$ENGRAM_TEST_HOME" "$@"; }\n${command}`;
+      return spawnSync(windows ? "pwsh" : "sh",
+        windows ? ["-NoProfile", "-NonInteractive", "-Command", script] : ["-c", script],
+        { cwd: root, encoding: "utf8", env: { ...process.env, ENGRAM_TEST_BINARY: binary,
+          ENGRAM_TEST_HOME: engramHome, ENGRAM_ACTOR_ID: session, ENGRAM_SESSION_ID: session } });
+    };
+    const continued = execute(printed);
+    assert.equal(continued.status, 0, continued.stderr);
+    assert.ok(printed.includes("--search='a  b' --label='x  y'"), printed);
+    const cursor = printed.match(/ --after (\S+)$/u)?.[1];
+    assert.equal(typeof cursor, "string");
+    const expected = cliJson(engramHome, session, "ls", "--search", "a  b", "--label", "x  y", "--limit", "1", "--after", cursor);
+    assert.equal(expected.shown_before, 1);
+    assert.equal(expected.items.length, 1);
+    assert.ok(continued.stdout.includes(expected.items[0].ref));
+    const collapsed = execute(printed.replace("a  b", "a b").replace("x  y", "x y"));
+    assert.equal(collapsed.status, 1, collapsed.stderr);
+    assert.match(collapsed.stderr, /continuation belongs to different filters or project/u);
+  } finally {
+    rmSync(engramHome, { recursive: true, force: true });
+  }
 });
 
 test("required successor resolution agrees across CLI, MCP, listing and done", async () => {

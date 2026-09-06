@@ -344,7 +344,14 @@ pub(super) fn show_lines(
         format!("priority: {}", work.priority),
     ];
     if !work.labels.is_empty() {
-        facts.push(format!("labels: {}", work.labels.join(", ")));
+        facts.push(format!(
+            "labels: {}",
+            work.labels
+                .iter()
+                .map(|label| super::terminal_safe_line(label))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     if let Some(assignee) = &work.assigned_to {
         facts.push(format!("assignee: {}", actor_word(assignee, current_actor)));
@@ -373,10 +380,13 @@ pub(super) fn show_lines(
             ));
         }
     }
-    lines.push(format!("outcome: {}", view.outcome));
+    lines.push(format!(
+        "outcome: {}",
+        super::terminal_safe_line(&view.outcome)
+    ));
     lines.push("acceptance:".into());
     for criterion in &work.acceptance {
-        let safe = super::terminal_safe_multiline(criterion);
+        let safe = super::terminal_data_block(criterion);
         for (index, line) in safe.split('\n').enumerate() {
             let prefix = if index == 0 { "  - " } else { "    " };
             lines.push(format!("{prefix}{line}"));
@@ -394,7 +404,7 @@ pub(super) fn show_lines(
             lines.push(format!(
                 "  - {}: {}",
                 blocker_word(blocker.kind),
-                blocker.detail
+                super::terminal_safe_line(&blocker.detail)
             ));
         }
     }
@@ -469,15 +479,14 @@ pub(super) fn show_lines(
             view.restored_history.total
         ));
         for entry in &view.restored_history.items {
-            let actor = relative_actor_label(
-                &entry.actor.actor_id,
+            let actor = terminal_safe_actor_label(
+                actor_word(&entry.actor.actor_id, current_actor),
                 entry.actor.attribution_context(),
-                current_actor,
             );
             lines.push(format!(
                 "  - generation {} {} by {}: {}",
                 entry.generation_index,
-                entry.kind,
+                super::terminal_safe_line(&entry.kind),
                 actor,
                 short(&entry.summary)
             ));

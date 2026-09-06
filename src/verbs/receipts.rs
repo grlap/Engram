@@ -10,7 +10,7 @@ use super::{
     ProjectMemorySignal, ReadyWorkSummary, Serialize, SessionId, StoreError, Utc, Value, WorkId,
     WorkItemKind, WorkNextSection, WorkNextView, WorkSectionOmissionReason, clock,
     compact_state_word, json, kind_word, lifecycle_word, render_agent_receipt_text, short,
-    short_ref_for_work_id, short_with_limit,
+    short_ref_for_work_id, short_with_limit, terminal_safe_line, terminal_short,
 };
 
 /// Short list row used by the agent words. Host-only `work core focus` remains
@@ -53,10 +53,15 @@ pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
         kind_word(item.kind),
         item.priority,
         item.state,
-        item.title,
+        terminal_short(&item.title, MAX_COMPACT_TITLE_BYTES),
     );
     if !item.labels.is_empty() {
-        let _ = write!(line, " labels:{}", item.labels.join(","));
+        let labels = item
+            .labels
+            .iter()
+            .map(|label| terminal_short(label, MAX_COMPACT_LABEL_BYTES))
+            .collect::<Vec<_>>();
+        let _ = write!(line, " labels:{}", labels.join(","));
     }
     if let Some(omitted) = item.labels_omitted {
         let _ = write!(line, " (+{omitted} labels)");
@@ -65,19 +70,23 @@ pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
         let _ = write!(line, " ← {parent_ref}");
     }
     if let Some(reason) = &item.blocked_reason {
-        let _ = write!(line, " — {reason}");
+        let _ = write!(line, " — {}", terminal_safe_line(reason));
     }
     if let Some(remedy) = &item.remedy {
-        let _ = write!(line, " — {remedy}");
+        let _ = write!(line, " — {}", terminal_safe_line(remedy));
     }
     if let Some(resolution) = &item.child_resolution {
         let _ = write!(line, " — {}", resolution.line());
         if let Some(remedy) = &resolution.remedy {
-            let _ = write!(line, " — {remedy}");
+            let _ = write!(line, " — {}", terminal_safe_line(remedy));
         }
     }
     if let (Some(holder), Some(held_until)) = (&item.holder, &item.held_until) {
-        let _ = write!(line, " held by {holder} until {held_until}");
+        let _ = write!(
+            line,
+            " held by {} until {held_until}",
+            terminal_short(holder, MAX_COMPACT_HOLDER_BYTES)
+        );
     }
     line
 }
@@ -208,7 +217,25 @@ impl Receipt {
     /// compact diagnostic build token after all guidance.
     #[must_use]
     pub fn text(&self) -> String {
-        let mut text = render_agent_receipt_text(&self.lines, &self.reminders, &self.next);
+        // Data blocks are framed at their render sites. Reapply the same
+        // policy here for core-owned terminal blocks; guidance is always one
+        // human line per entry. Keep the structured strings untouched.
+        let lines = self
+            .lines
+            .iter()
+            .map(|line| super::terminal_data_block(line))
+            .collect::<Vec<_>>();
+        let reminders = self
+            .reminders
+            .iter()
+            .map(|line| terminal_safe_line(line))
+            .collect::<Vec<_>>();
+        let next = self
+            .next
+            .iter()
+            .map(|line| super::terminal_command(line))
+            .collect::<Vec<_>>();
+        let mut text = render_agent_receipt_text(&lines, &reminders, &next);
         if let Some(footer) = &self.build_footer {
             text.push('\n');
             text.push_str(footer);
@@ -878,8 +905,8 @@ pub(super) fn append_discovery_lines(
             lines.push(format!(
                 "  {} \"{}\" ({}){note}",
                 row.work_ref,
-                super::terminal_safe_line(&row.title),
-                row.holder
+                terminal_safe_line(&row.title),
+                terminal_safe_line(&row.holder)
             ));
         }
         if omitted > 0 {

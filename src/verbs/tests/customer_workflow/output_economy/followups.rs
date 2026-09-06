@@ -7,11 +7,12 @@ fn assert_safe_title(receipt: &Receipt) {
     let text = receipt.text();
     let first = text.lines().next().unwrap();
     assert!(first.contains(ESCAPED), "{first:?}");
-    assert!(
-        !first
+    assert!(!text.contains('\r'));
+    assert!(text.split('\n').all(|line| {
+        !line
             .chars()
             .any(crate::domain::is_unsafe_rendered_text_char)
-    );
+    }));
     assert_eq!(
         text.lines()
             .filter(|line| matches!(*line, "next:" | "next: none"))

@@ -11,6 +11,7 @@ mod output_economy;
 mod record_windows;
 mod remaining_children;
 mod review;
+mod terminal_safety;
 
 fn fixture() -> (tempfile::TempDir, AgentVerbs, PathBuf, ProjectId) {
     let directory = tempdir().expect("temp");

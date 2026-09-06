@@ -86,7 +86,11 @@ fn item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) 
     let state = match holder {
         Holder::You(expires_at) => format!("held by you until {}", clock(expires_at, now)),
         Holder::Other(session, expires_at) => {
-            format!("held by {} until {}", session.0, clock(expires_at, now))
+            format!(
+                "held by {} until {}",
+                terminal_safe_line(&session.0),
+                clock(expires_at, now)
+            )
         }
         Holder::Nobody => availability_words(status).to_owned(),
     };
@@ -299,7 +303,28 @@ fn clock(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
 fn short(text: &str) -> String {
     // Escape before bounding: a shortened human line must not retain a raw
     // control sequence. Structured title projections keep their source bytes.
-    short_with_limit(&terminal_safe_line(text), MAX_TEXT_LINE_BYTES)
+    terminal_short(text, MAX_TEXT_LINE_BYTES)
+}
+
+/// Text-only bounding. Never substitute this for a structured projection.
+fn terminal_short(text: &str, max_bytes: usize) -> String {
+    short_with_limit(&terminal_safe_line(text), max_bytes)
+}
+
+/// Retain structural newlines for indented data blocks, but no raw tabs.
+/// The shared terminal policy owns character classification and escaping.
+/// Folding tabs cannot enlarge already-fitted core-owned memory blocks.
+fn terminal_data_block(text: &str) -> String {
+    terminal_safe_multiline(text).replace('\t', " ")
+}
+
+/// Command quoting is already owned by its builder. Preserve every safe
+/// literal byte, including whitespace inside quoted arguments; only escape
+/// terminal controls, including the shared multiline policy's LF/tab exceptions.
+fn terminal_command(text: &str) -> String {
+    terminal_safe_multiline(text)
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
 }
 
 fn short_ref_for_work_id(work_id: WorkId) -> String {

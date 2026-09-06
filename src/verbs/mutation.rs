@@ -94,7 +94,7 @@ pub(super) fn receipt(
             work.revision
         );
     }
-    lines.push(format!("full detail: {detail}"));
+    lines.push(format!("full detail: {}", super::terminal_command(&detail)));
     let claim = match holder {
         Holder::You(held_until) => Some(ClaimAuthority {
             holder: "you",
