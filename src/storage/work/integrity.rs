@@ -1780,10 +1780,8 @@ pub(super) fn verify_work_protocol_attempts(
         let label = format!("work_protocol_attempt:{project_id}:{session_id}:{operation}:{key}");
         let request_valid = ObjectHash::from_stored(request_hash).is_some();
         let basis_valid = match (&basis_hash, &basis_json, &result_hash, &result_json) {
-            (Some(stored_hash), Some(bytes), None, None) => {
-                ObjectHash::from_stored(stored_hash.clone())
-                    .is_some_and(|hash| CanonicalObject::verify(&hash, bytes.clone()).is_ok())
-            }
+            (Some(stored_hash), Some(bytes), _, _) => ObjectHash::from_stored(stored_hash.clone())
+                .is_some_and(|hash| CanonicalObject::verify(&hash, bytes.clone()).is_ok()),
             (stored_hash, None, Some(_), Some(_)) => stored_hash
                 .as_ref()
                 .is_none_or(|hash| ObjectHash::from_stored(hash.clone()).is_some()),

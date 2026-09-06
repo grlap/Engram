@@ -335,7 +335,9 @@ fn remaining_child_summary_fits_final_bytes_and_keeps_exact_remainders() {
     );
     let parent = add(&verbs, "Budget parent", None, false, 0);
     for index in 1..=5 {
-        add(&verbs, &"\u{9b}".repeat(40), Some(&parent), true, index);
+        // Distinct child intents: repeating one intent replays its creation.
+        let title = format!("{index} {}", "\u{9b}".repeat(40));
+        add(&verbs, &title, Some(&parent), true, index);
     }
     claim_for_completion(&verbs, &parent, 6);
     let original = finish(&verbs, &parent, 7);

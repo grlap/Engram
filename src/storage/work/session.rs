@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Serialize, de::DeserializeOwned};
 
-use super::super::{BeginWorkProtocolAttempt, SqliteStore, StoreError};
+use super::super::{
+    BeginWorkProtocolAttempt, DECOMPOSE_PROTOCOL_OPERATION, SqliteStore, StoreError,
+};
 use super::completion::feed_head;
 use super::feeds::{
     load_typed_work_object, require_work_protocol_result_object,
@@ -209,7 +211,7 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
         (_, None) if stored.result_hash.is_some() && stored.result_json.is_some() => None,
         _ => {
             return Err(StoreError::InvalidWorkProjection(
-                "pending work-protocol attempt has no verified durable basis".into(),
+                "work-protocol attempt has no verified durable basis".into(),
             ));
         }
     };
@@ -238,6 +240,12 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
             ));
         }
     };
+    if operation == DECOMPOSE_PROTOCOL_OPERATION && stored_basis.is_none() {
+        return Err(StoreError::WorkOperationIdempotencyConflict {
+            operation: operation.to_owned(),
+            key: idempotency_key,
+        });
+    }
     Ok(WorkProtocolAttempt {
         result,
         basis_matches,
@@ -596,7 +604,9 @@ impl SqliteStore {
         Self::insert_object(&transaction, "work_protocol_result", &result_object)?;
         let changed = transaction.execute(
             "UPDATE work_protocol_attempts
-             SET basis_json = NULL, result_hash = ?5, result_json = ?6
+             SET basis_json = CASE WHEN operation = ?7
+                                   THEN basis_json ELSE NULL END,
+                 result_hash = ?5, result_json = ?6
              WHERE project_id = ?1 AND session_id = ?2
                AND operation = ?3 AND idempotency_key = ?4
                AND result_hash IS NULL AND result_json IS NULL",
@@ -606,7 +616,8 @@ impl SqliteStore {
                 operation,
                 idempotency_key,
                 result_object.hash().as_str(),
-                result_object.bytes()
+                result_object.bytes(),
+                DECOMPOSE_PROTOCOL_OPERATION
             ],
         )?;
         if changed == 0 {
@@ -643,7 +654,7 @@ impl SqliteStore {
         Ok(())
     }
 
-    /// Refreshes one pending completion attempt to a newer live basis without
+    /// Refreshes one pending protocol attempt to a newer live basis without
     /// losing its caller-key, request, or target binding. The caller first
     /// verifies that both bases name the same work item.
     pub(crate) fn refresh_pending_work_protocol_attempt_basis<B: Serialize>(

@@ -592,6 +592,79 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
   if (failure) throw failure;
 });
 
+test("decomposition retry survives parent reread and process restart without duplicate notes", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-decomposition-retry-"));
+  const session = "decomposition-reader";
+  let client;
+  let failure;
+  try {
+    buildAndInit(engramHome);
+    // Separate CLI processes exercise both the printed session binding and
+    // the child word's automatic rebind from child focus back to its parent.
+    const parent = cliJson(engramHome, session, "add", "CLI parent").work.short_ref;
+    const first = cliJson(engramHome, session, "add", "CLI child", "--under", parent, "--note", "Initial CLI note");
+    const after = cliJson(engramHome, session, "show", parent);
+    const replay = cliJson(engramHome, session, "add", "CLI child", "--under", parent, "--note", "Initial CLI note");
+    assert.deepEqual(replay, first);
+    assert.deepEqual(cliJson(engramHome, session, "show", parent), after);
+    assert.deepEqual(cliJson(engramHome, session, "show", first.work.short_ref, "--notes").notes.map(({ summary }) => summary), ["Initial CLI note"]);
+    assert.equal(cliJson(engramHome, session, "ls", "--under", parent).total, 1);
+
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const mcpParent = receipt(await client.call("add", { title: "MCP parent" })).work.short_ref;
+    const input = { title: "MCP child", under: mcpParent, notes: ["Initial MCP note"] };
+    const created = receipt(await client.call("add", input));
+    const parentAfter = receipt(await client.call("show", { work_ref: mcpParent }));
+    await client.close();
+    client = undefined;
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    assert.deepEqual(receipt(await client.call("add", input)), created);
+    assert.deepEqual(receipt(await client.call("show", { work_ref: mcpParent })), parentAfter);
+    assert.deepEqual(receipt(await client.call("show", { work_ref: created.work.short_ref, notes: true })).notes.map(({ summary }) => summary), ["Initial MCP note"]);
+    assert.equal(receipt(await client.call("ls", { under: mcpParent })).total, 1);
+    const changed = receipt(await client.call("add", { ...input, title: "Different MCP intent" }));
+    assert.notEqual(changed.work.short_ref, created.work.short_ref);
+    assert.equal(receipt(await client.call("ls", { under: mcpParent })).total, 2);
+    receipt(await client.call("update", { work_ref: mcpParent, action: "revise", title: "Changed MCP parent" }));
+    const refusal = await client.call("add", input);
+    const error = structuredError(refusal, "work_decomposition_retry_conflict");
+    assert.equal(error.details.parent_ref, mcpParent);
+    assert.match(error.message, /parent planning state changed/u);
+    assert.deepEqual(error.next, [`engram work show ${mcpParent}`]);
+    assert.match(error.details.remedy, /different child intent/u);
+    for (const content of refusal.content.filter(({ type }) => type === "text")) {
+      assert.deepEqual(JSON.parse(content.text), refusal.structuredContent);
+      assert.doesNotMatch(content.text, HASH);
+      assert.doesNotMatch(content.text, /idempotency|auto:/u);
+    }
+    cliJson(engramHome, session, "update", parent, "--title", "Changed CLI parent");
+    for (const json of [false, true]) {
+      const refused = cliWord(engramHome, session, "add", "CLI child", "--under", parent, "--note", "Initial CLI note", ...(json ? ["--json"] : []));
+      assert.equal(refused.status, 1, refused.stderr);
+      const output = refused.stdout + refused.stderr;
+      assert.doesNotMatch(output, HASH);
+      assert.doesNotMatch(output, /idempotency|auto:/u);
+      assert.ok(output.includes(`engram work show ${parent}`));
+      assert.match(output, /parent planning state changed/u);
+      if (json) {
+        assert.equal(refused.stdout, "");
+        assert.equal(JSON.parse(refused.stderr).error.code, error.code);
+      }
+    }
+  } catch (error) {
+    failure = error;
+  } finally {
+    if (client) {
+      try { await client.close(); }
+      catch (error) { failure = failure ? new AggregateError([failure, error], "decomposition retry and cleanup failed") : error; }
+    }
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+  if (failure) throw failure;
+});
+
 test("MCP scoped listing continuation shares the CLI cursor contract", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-listing-"));
   let client;

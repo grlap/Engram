@@ -2,6 +2,8 @@ use super::super::test_support::*;
 use super::super::*;
 use tempfile::tempdir;
 
+mod replay;
+
 #[test]
 fn phoenix_initial_notes_recover_after_creation_commits_before_protocol_result() {
     let directory = tempdir().expect("temp");

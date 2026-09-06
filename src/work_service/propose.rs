@@ -1,5 +1,7 @@
 use super::*;
 
+mod replay;
+
 impl LocalWorkService {
     /// Creates a root or atomically decomposes ambient focused work.
     ///
@@ -43,26 +45,59 @@ impl LocalWorkService {
         )?;
         let intent = self.protocol_intent(&input);
         let (protocol_operation, core_operation, raw_key) = propose_metadata(&input);
+        let auto_decomposition = protocol_operation == crate::storage::DECOMPOSE_PROTOCOL_OPERATION
+            && raw_key.trim().is_empty();
         let raw_key =
             self.effective_idempotency_key(raw_key, protocol_operation, &basis, &intent, now)?;
-        let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
-            project_id: &self.project_id,
-            session_id: &self.session_id,
-            operation: protocol_operation,
-            idempotency_key: &raw_key,
-            intent: &intent,
-            basis: &basis,
-            now,
-        })?;
+        let attempt = store
+            .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                project_id: &self.project_id,
+                session_id: &self.session_id,
+                operation: protocol_operation,
+                idempotency_key: &raw_key,
+                intent: &intent,
+                basis: &basis,
+                now,
+            })
+            .map_err(|error| {
+                if auto_decomposition
+                    && matches!(error, StoreError::WorkOperationIdempotencyConflict { .. })
+                {
+                    replay::retry_conflict(
+                        &basis,
+                        "the original attempt has no replayable retained basis",
+                    )
+                } else {
+                    error
+                }
+            })?;
+        let scoped_key = self.core_operation_key(protocol_operation, &raw_key, core_operation)?;
+        let core_result = if auto_decomposition || attempt.result.is_none() {
+            store.work_operation_result_value(core_operation, &scoped_key)?
+        } else {
+            None
+        };
+        if auto_decomposition {
+            let stored = attempt.basis.as_ref().ok_or_else(|| {
+                StoreError::InvalidWorkProjection(
+                    "decomposition attempt has no retained basis".into(),
+                )
+            })?;
+            replay::guard_decomposition_retry(stored, &basis, core_result.as_ref())?;
+            if !attempt.basis_matches && attempt.result.is_none() && core_result.is_none() {
+                // The basis hash and bytes are the pending attempt's CAS
+                // revision. Decomposition still checks the live parent
+                // revision and authority inside its mutation transaction.
+                self.refresh_decomposition_retry_basis(&mut store, &raw_key, stored, &basis)?;
+            }
+        }
         if let Some(result) = attempt.result {
             let replay: WorkProposeResult = serde_json::from_value(result)?;
             ensure_agent_response_budget(&replay, "work_propose")?;
             return Ok(replay);
         }
-        let basis_matches =
-            retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
-        let scoped_key = self.core_operation_key(protocol_operation, &raw_key, core_operation)?;
-        let core_result = store.work_operation_result_value(core_operation, &scoped_key)?;
+        let basis_matches = auto_decomposition
+            || retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
         ensure_protocol_basis(
             basis_matches,
             protocol_operation,

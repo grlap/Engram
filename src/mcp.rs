@@ -755,6 +755,11 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "idempotency_key": key,
             "remedy": "retry the original payload exactly or use a new key for a different intent",
         }),
+        StoreError::WorkDecompositionRetryConflict { parent_ref, reason } => json!({
+            "parent_ref": parent_ref,
+            "reason": reason,
+            "remedy": crate::storage::DECOMPOSITION_RETRY_REMEDY,
+        }),
         StoreError::WorkDependencyCycle => json!({
             "remedy": "remove or change the prerequisite edge that introduces the cycle",
         }),
@@ -871,6 +876,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::WorkRevisionConflict { .. } => "work_revision_conflict",
         StoreError::WorkOperationIdempotencyConflict { .. } => "work_idempotency_conflict",
+        StoreError::WorkDecompositionRetryConflict { .. } => "work_decomposition_retry_conflict",
         StoreError::WorkDependencyCycle => "work_dependency_cycle",
         StoreError::WorkPrerequisiteAlreadySatisfied(_) => "work_prerequisite_already_satisfied",
         StoreError::WorkNotOpen(_) => "work_not_open",

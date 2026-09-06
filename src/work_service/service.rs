@@ -254,6 +254,9 @@ impl LocalWorkService {
             return Ok(caller_key.to_owned());
         }
         let intent = CanonicalObject::freeze(intent)?;
+        if protocol_operation == crate::storage::DECOMPOSE_PROTOCOL_OPERATION {
+            return self.decomposition_idempotency_key(basis, intent.hash());
+        }
         let basis_object = CanonicalObject::freeze(&basis.retry_stable())?;
         let object = CanonicalObject::freeze(&WorkDerivedKey {
             project_id: &self.project_id,

@@ -652,12 +652,22 @@ overrides automatic key derivation. Otherwise the server normally derives one
 from the session, operation, focused work, the current work/claim/handoff
 basis, and canonical intent. An identical keyless call replays its receipt
 while that basis is unchanged and becomes a new attempt once it changes.
-Ordinary decomposition advances the parent's revision itself, so a keyless
-child-add retry after that advance is a new creation today, not a replay of
-the child or its initial notes. This also applies when a restored parent's
-first decomposition creates its native run. Inspect `ls`/`show` before
-repeating an uncertain child add; replay across these basis changes is
-deferred. Keyless claim is an explicit
+Keyless decomposition instead binds the session, project, parent identity and
+canonical child intent without mutable basis fields in its key. Before replay
+or pending-attempt refresh, it compares the stored and current bases using the
+existing claim-renewal normalization (claim revision and expiry), additionally
+excluding only parent revision, parent updated time and the claim's accepted
+work revision. Every other work, claim, holder, run, state and fence field must
+match; an unrelated change returns `work_decomposition_retry_conflict`, naming
+the parent and its changed state, rather than deriving a new key.
+A restored parent's absent native run may become present only when this exact
+scoped decomposition's committed core result proves it bootstrapped that run.
+An identical retry therefore recovers the original children and initial notes;
+changed intent creates new children. A pending attempt that lost a parent
+revision race refreshes its basis under the existing basis-hash-and-bytes CAS,
+then rechecks expected parent revision and planning authority in the mutation
+transaction. Caller-explicit keys keep their existing replay semantics.
+Keyless claim is an explicit
 exception: each call renews the same live claim, or claims again after expiry
 under the ordinary readiness and recovery checks. A fresh completion call against work that is already sealed
 returns its seal, so the common retries are never refusals. An interrupted
@@ -666,9 +676,14 @@ later generation's seal. Every mutation may also name its
 target by `work_ref`; the target is resolved and bound inside the mutation, so
 a concurrent focus change by the same session cannot redirect it, and it
 becomes the ambient focus as a side effect. Durable attempts bind both caller
-intent and the exact focused work/claim/handoff basis. A lost-response retry
-may replay a committed result, but an interrupted attempt must revalidate live
-authority and cannot follow a changed ambient focus into another work item.
+intent and the exact focused work/claim/handoff basis. Completed decomposition
+attempts retain their basis from this build on; an attempt without one is valid
+but does not replay. Other completed operations discard the basis bytes. A
+lost-response retry may replay a committed result, but an interrupted attempt
+must revalidate live authority and cannot follow a changed ambient focus into
+another work item.
+A committed decomposition with an unfinished protocol attempt still refuses
+after an unrelated basis change and keeps its pending row unchanged.
 Late `gate` on completed-by-record restored work is the append-only exception:
 each call records another observation without a retry receipt. Inspect `show`
 after an uncertain response before repeating it; native gate and restored note

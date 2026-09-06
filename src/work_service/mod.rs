@@ -529,7 +529,11 @@ fn propose_metadata(input: &WorkProposeInput) -> (&'static str, &'static str, &s
         } => ("work_propose:root", "create_work", idempotency_key),
         WorkProposeInput::Decompose {
             idempotency_key, ..
-        } => ("work_propose:decompose", "decompose_work", idempotency_key),
+        } => (
+            crate::storage::DECOMPOSE_PROTOCOL_OPERATION,
+            "decompose_work",
+            idempotency_key,
+        ),
     }
 }
 
@@ -1788,7 +1792,7 @@ fn allowed_next(status: &ReadyWork, context: AllowedNextContext<'_>) -> Vec<Stri
             "work_update:unblock".into(),
             "work_update:add_prerequisite".into(),
             "work_update:remove_prerequisite".into(),
-            "work_propose:decompose".into(),
+            crate::storage::DECOMPOSE_PROTOCOL_OPERATION.into(),
             "work_update:cancel".into(),
             "work_update:supersede".into(),
         ]);

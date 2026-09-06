@@ -618,7 +618,7 @@ pub(super) fn validate_work_protocol_result_binding(
                 })?;
             bound_items.push(load_work_item(connection, parse_work_id(work_id)?)?);
         }
-        "work_propose:decompose" => {
+        crate::storage::DECOMPOSE_PROTOCOL_OPERATION => {
             let parent_id = result
                 .pointer("/parent/work_id")
                 .and_then(serde_json::Value::as_str)

@@ -333,6 +333,10 @@ impl VerbError {
         }
         let message = self.error.to_string();
         let (reminders, next): (Vec<String>, Vec<String>) = match &self.error {
+            StoreError::WorkDecompositionRetryConflict { parent_ref, .. } => (
+                vec![crate::storage::DECOMPOSITION_RETRY_REMEDY.into()],
+                vec![format!("engram work show {parent_ref}")],
+            ),
             StoreError::WorkClaimHeld { expires_at, .. } => (
                 vec![format!(
                     "held by another session until {}",

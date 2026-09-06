@@ -590,6 +590,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::InvalidWorkProjection(_)
         | StoreError::WorkRevisionConflict { .. }
         | StoreError::WorkOperationIdempotencyConflict { .. }
+        | StoreError::WorkDecompositionRetryConflict { .. }
         | StoreError::WorkDependencyCycle
         | StoreError::WorkPrerequisiteAlreadySatisfied(_)
         | StoreError::WorkNotOpen(_)

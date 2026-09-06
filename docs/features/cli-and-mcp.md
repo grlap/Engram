@@ -829,6 +829,14 @@ completion cut; it creates no checkpoint, does not reopen or reseal the run,
 and cannot enter the existing `CompletionSeal`. Repeated commands follow the
 [session and intent retry rule](local-work-system.md#agent-native-protocol);
 not every keyless repeat is a replay.
+An identical child `add --under` in the same session replays the original
+creation after decomposition's own parent revision advance, including its
+proven restored-run bootstrap. Changed child intent creates new work; other
+parent or authority changes refuse instead of silently creating another child.
+The `work_decomposition_retry_conflict` refusal names the parent and its changed
+state without exposing a server key. Inspect the parent and its existing
+children, reuse an already-created child when present, and add new work only
+for a genuinely different child intent.
 
 ### Work protocol contract
 

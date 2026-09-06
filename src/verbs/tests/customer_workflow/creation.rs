@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn decomposition_retry_agent_add_rebinds_parent_and_replays_initial_notes() {
+    let (_directory, verbs, database, project) = fixture();
+    let parent = add(&verbs, "Replay parent", None, false, 0);
+    let input = AddInput {
+        title: "Replay child".into(),
+        under: Some(parent.clone()),
+        notes: vec!["Initial observation".into()],
+        ..AddInput::default()
+    };
+    let first = verbs.add(input.clone(), at(1)).unwrap();
+    let after = verbs.show(&parent, at(2)).unwrap();
+    let restarted = AgentVerbs::new(
+        database.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let replay = restarted.add(input, at(3)).unwrap();
+    assert_eq!(first.value, replay.value);
+    assert_eq!(after.value, restarted.show(&parent, at(4)).unwrap().value);
+    let store = SqliteStore::open(&database).unwrap();
+    let child = store
+        .resolve_work_ref(&project, first.value["work"]["short_ref"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(store.work_observation_tail(child.work_id, 10).unwrap().0, 1);
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
 fn phoenix_handoff_acceptor_receives_peer_proposal() {
     let (_directory, owner, database, project) = fixture();
     let acceptor = AgentVerbs::new(

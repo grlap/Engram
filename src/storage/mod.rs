@@ -14,6 +14,10 @@ mod work;
 
 pub(crate) use project_memory::validate_context_generation;
 
+pub(crate) const DECOMPOSE_PROTOCOL_OPERATION: &str = "work_propose:decompose";
+
+pub(crate) const DECOMPOSITION_RETRY_REMEDY: &str = "inspect the parent and its existing children; reuse the already-created child when present; add new work only for a genuinely different child intent";
+
 pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };
@@ -802,6 +806,11 @@ pub enum StoreError {
     },
     #[error("work operation {operation} key {key:?} was reused for a different intent")]
     WorkOperationIdempotencyConflict { operation: String, key: String },
+    #[error("decomposition retry refused for {parent_ref}: {reason}")]
+    WorkDecompositionRetryConflict {
+        parent_ref: String,
+        reason: &'static str,
+    },
     #[error("work completion dependency graph would contain a cycle")]
     WorkDependencyCycle,
     #[error("work prerequisite {0:?} is already completed; no edge is needed")]
