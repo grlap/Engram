@@ -730,6 +730,29 @@ impl LocalWorkService {
         } else {
             None
         };
+        let parent = if matches!(text, FocusText::Full) {
+            status
+                .work
+                .parent_id
+                .map(|parent_id| {
+                    let parent = store.get_work_item(parent_id)?;
+                    if parent.project_id != status.work.project_id
+                        || parent.root_id != status.work.root_id
+                    {
+                        return Err(StoreError::InvalidWorkProjection(
+                            "focused work parent crosses its project or root boundary".into(),
+                        ));
+                    }
+                    Ok(super::WorkParentSummary {
+                        short_ref: parent.short_ref,
+                        title: compact_text(&parent.title),
+                        lifecycle: parent.lifecycle,
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
         let mut status = ready_work_summary(status);
         status.work.required_child_successor = successor;
         if let Some(acceptance) = full_acceptance {
@@ -739,6 +762,7 @@ impl LocalWorkService {
             session: agent_work_session(&session),
             detached_from,
             status,
+            parent,
             completed_by_record,
             outcome,
             run: run.as_ref().map(work_run_summary),

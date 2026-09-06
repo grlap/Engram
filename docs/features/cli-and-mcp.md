@@ -194,6 +194,14 @@ Rules that matter:
   Inspect the old child's successor after an uncertain response; a keyless
   repeat after supersession refuses without creating another root. See
   [detached follow-ups](local-work-system.md#gates-prerequisites-supersession-and-project-memories).
+- `show CHILD` names its direct parent with `parent_ref`, `parent_title`, and
+  `parent_lifecycle`; `status.work.child_requirement` is always `required` or
+  `optional` for a child. Text includes `parent: REF "title" (lifecycle),
+  required|optional` and `next` offers `engram work show PARENT`. This relationship
+  survives acceptance/note trimming. Roots print `parent: root` and omit
+  parent fields and child requirement. The safe focus read loads one bounded
+  parent row in its existing snapshot; its private carrier does not change the
+  ambient/core wire. CLI JSON and MCP agree.
 - `show REF --notes` (MCP `show { work_ref: REF, notes: true }`) returns
   the newest note/observation window, excluding structured gate evidence,
   rendered oldest to newest within that window. `--notes --gates` (MCP

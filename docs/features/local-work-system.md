@@ -667,6 +667,10 @@ changed intent creates new children. A pending attempt that lost a parent
 revision race refreshes its basis under the existing basis-hash-and-bytes CAS,
 then rechecks expected parent revision and planning authority in the mutation
 transaction. Caller-explicit keys keep their existing replay semantics.
+If that CAS loses to a concurrent refresh or finisher after the strict basis
+comparison passed, the same `work_decomposition_retry_conflict` names the parent.
+Inspect the parent and its existing children; reuse the already-created child
+when present, and add new work only for a genuinely different child intent.
 Keyless claim is an explicit
 exception: each call renews the same live claim, or claims again after expiry
 under the ordinary readiness and recovery checks. A fresh completion call against work that is already sealed

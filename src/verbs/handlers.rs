@@ -541,9 +541,21 @@ impl AgentVerbs {
         view: &WorkFocusView,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        if view.status.work.parent_id.is_some() && view.parent.is_none() {
+            return Err(StoreError::InvalidWorkProjection(
+                "safe show is missing direct parent context for a child".into(),
+            )
+            .into());
+        }
         let holder = self.holder(view, now);
         let lines = show_lines(view, holder, &self.actor_id, &self.session_id, now);
         let mut guidance = self.guidance(view, "show", now);
+        if let Some(parent) = &view.parent {
+            // Keep actionable recovery first; parent navigation precedes optional history.
+            guidance
+                .next
+                .push(format!("engram work show {}", parent.short_ref));
+        }
         if view.history.total + view.restored_history.total > 0 {
             guidance.next.push(format!(
                 "engram work show {} --history",

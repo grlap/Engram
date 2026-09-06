@@ -592,6 +592,43 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
   if (failure) throw failure;
 });
 
+test("show parent context agrees across CLI and MCP for required optional and root", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-show-parent-"));
+  const session = "parent-reader";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const parent = cliJson(engramHome, session, "add", "Parent").work.short_ref;
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    for (const optional of [false, true]) {
+      const child = receipt(await client.call("add", { title: `Child ${optional}`, under: parent, optional })).work.short_ref;
+      const shown = receipt(await client.call("show", { work_ref: child }));
+      const shell = cliJson(engramHome, session, "show", child);
+      assert.deepEqual(shell, shown);
+      assert.equal(shown.parent_ref, parent);
+      assert.equal(shown.parent_title, "Parent");
+      assert.equal(shown.parent_lifecycle, "open");
+      const requirement = optional ? "optional" : "required";
+      assert.equal(shown.status.work.child_requirement, requirement);
+      assert.ok(shown.next.includes(`engram work show ${parent}`));
+      const text = cliWord(engramHome, session, "show", child);
+      assert.equal(text.status, 0, text.stderr);
+      assert.ok(text.stdout.includes(`parent: ${parent} "Parent" (open), ${requirement}`));
+      assert.ok(text.stdout.includes(`  engram work show ${parent}`));
+    }
+    const root = receipt(await client.call("show", { work_ref: parent }));
+    assert.deepEqual(cliJson(engramHome, session, "show", parent), root);
+    assert.equal(root.parent_ref, undefined);
+    assert.equal(root.status.work.child_requirement, undefined);
+    assert.equal(root.parent_lifecycle, undefined);
+    assert.ok(cliWord(engramHome, session, "show", parent).stdout.includes("parent: root"));
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("decomposition retry survives parent reread and process restart without duplicate notes", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-decomposition-retry-"));
   const session = "decomposition-reader";

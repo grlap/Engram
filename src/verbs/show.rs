@@ -251,6 +251,12 @@ pub(super) struct ShowDetachedFrom {
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parent_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parent_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) parent_lifecycle: Option<WorkLifecycle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) detached_from: Option<ShowDetachedFrom>,
     pub(super) status: ShowStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -339,6 +345,21 @@ pub(super) fn show_lines(
         view.completed_by_record,
         now,
     )];
+    lines.push(view.parent.as_ref().map_or_else(
+        || "parent: root".into(),
+        |parent| {
+            format!(
+                "parent: {} \"{}\" ({}), {}",
+                parent.short_ref,
+                short(&parent.title),
+                lifecycle_word(parent.lifecycle),
+                match work.child_requirement {
+                    ChildRequirement::Required => "required",
+                    ChildRequirement::Optional => "optional",
+                }
+            )
+        },
+    ));
     let mut facts = vec![
         format!("kind: {}", kind_word(work.kind)),
         format!("priority: {}", work.priority),
@@ -558,6 +579,9 @@ pub(super) fn show_receipt_value(
     });
     let notes = show_notes(view, current_actor);
     ShowReceiptValue {
+        parent_ref: view.parent.as_ref().map(|parent| parent.short_ref.clone()),
+        parent_title: view.parent.as_ref().map(|parent| parent.title.clone()),
+        parent_lifecycle: view.parent.as_ref().map(|parent| parent.lifecycle),
         detached_from: view.detached_from.as_ref().map(|origin| ShowDetachedFrom {
             work_ref: origin.work_ref.clone(),
             reason: (!origin.reason_truncated).then(|| origin.reason.clone()),
@@ -582,7 +606,7 @@ pub(super) fn show_receipt_value(
                 restored: work.restored,
                 superseded_by: work.superseded_by.map(short_ref_for_work_id),
                 child_resolution: super::child_obligations::ShowChildSuccessor::for_work(work),
-                child_requirement: optional_child_requirement(work.child_requirement),
+                child_requirement: work.parent_id.map(|_| work.child_requirement),
             },
             availability: view.status.availability,
         },

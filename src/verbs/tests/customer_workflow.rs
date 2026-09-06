@@ -8,6 +8,7 @@ mod detach;
 mod discovery;
 mod listing;
 mod output_economy;
+mod parent_context;
 mod record_windows;
 mod remaining_children;
 mod review;

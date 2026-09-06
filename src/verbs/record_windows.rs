@@ -246,6 +246,19 @@ fn append_window(
     if let Some(after) = &after {
         receipt.next.insert(0, format!("{command} --after {after}"));
     }
+    // Full first pages keep a visible parent slot after window navigation and
+    // primary recovery. Compact continuation headers carry no parent context.
+    if let Some(parent_ref) = receipt.value.get("parent_ref").and_then(Value::as_str) {
+        let parent_command = format!("engram work show {parent_ref}");
+        if let Some(index) = receipt.next.iter().position(|next| next == &parent_command)
+            && index >= super::MAX_TEXT_NEXT_COMMANDS
+        {
+            let parent_command = receipt.next.remove(index);
+            receipt
+                .next
+                .insert(super::MAX_TEXT_NEXT_COMMANDS - 1, parent_command);
+        }
+    }
     let older = page.total - page.newer - visible;
     let omitted = page.total - visible;
     let mut window = json!({ "selection": "newest_first", "order": "oldest_first", "newer": page.newer,

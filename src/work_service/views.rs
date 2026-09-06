@@ -394,6 +394,14 @@ pub struct RestoredHistoryView {
     pub omitted: usize,
 }
 
+/// Bounded direct-parent navigation for the safe full-focus renderer.
+#[derive(Clone, Debug)]
+pub(crate) struct WorkParentSummary {
+    pub short_ref: String,
+    pub title: String,
+    pub lifecycle: WorkLifecycle,
+}
+
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
@@ -401,6 +409,9 @@ pub struct WorkFocusView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detached_from: Option<WorkDetachedFrom>,
     pub status: ReadyWorkSummary,
+    /// Safe full-focus navigation only; never changes the ambient/core wire.
+    #[serde(skip)]
+    pub(crate) parent: Option<WorkParentSummary>,
     /// True only while restored completion history, rather than a native
     /// completion seal, is the current completion authority.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
