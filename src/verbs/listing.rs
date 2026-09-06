@@ -4,6 +4,46 @@ use super::receipts::{compact_row, compact_row_line};
 use super::{DEFAULT_LIMIT, Guidance, LsInput, Receipt, StoreError, VerbError, json};
 use crate::work_service::WorkListingPage;
 
+/// Verbose agent rows retain the core fields while adding a typed, safe overlay.
+/// Destructuring the complete source row keeps this mapping explicit at compile time.
+#[derive(serde::Serialize)]
+struct VerboseRow<'a> {
+    work: super::child_obligations::WithChildSuccessor<&'a super::WorkItemSummary>,
+    availability: super::WorkAvailability,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    blocking_parent: Option<super::WorkLifecycle>,
+    reason_codes: &'a [crate::WorkReadinessReason],
+    why: &'a [String],
+    blocked_by: &'a [crate::WorkId],
+    blocker_count: usize,
+}
+
+impl<'a> From<&'a super::ReadyWorkSummary> for VerboseRow<'a> {
+    fn from(row: &'a super::ReadyWorkSummary) -> Self {
+        let super::ReadyWorkSummary {
+            work,
+            availability,
+            blocking_parent,
+            reason_codes,
+            why,
+            blocked_by,
+            blocker_count,
+        } = row;
+        Self {
+            work: super::child_obligations::WithChildSuccessor {
+                value: work,
+                child_resolution: super::child_obligations::ShowChildSuccessor::for_work(work),
+            },
+            availability: *availability,
+            blocking_parent: *blocking_parent,
+            reason_codes,
+            why,
+            blocked_by,
+            blocker_count: *blocker_count,
+        }
+    }
+}
+
 impl LsInput {
     pub(super) fn validate_listing(&self) -> Result<(), VerbError> {
         if (self.optional || self.required) && self.under.is_none()
@@ -144,19 +184,10 @@ pub(super) fn fit_list_receipt(
             )
         })];
         let mut value = json!({
-            "items": if input.verbose { serde_json::to_value(items)? } else { serde_json::to_value(compact)? },
+            "items": if input.verbose { serde_json::to_value(items.iter().map(VerboseRow::from).collect::<Vec<_>>())? } else { serde_json::to_value(compact)? },
             "total": page.total, "omitted": omitted, "more": omitted > 0,
             "shown_before": page.preceding, "limit": limit, "byte_budget": budget,
         });
-        if input.verbose {
-            for (index, item) in items.iter().enumerate() {
-                if let Some(resolution) =
-                    super::child_obligations::ShowChildSuccessor::for_work(&item.work)
-                {
-                    value["items"][index]["work"]["child_resolution"] = json!(resolution);
-                }
-            }
-        }
         if let Some(after) = after {
             value["after"] = json!(after);
         }

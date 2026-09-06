@@ -23,8 +23,25 @@ pub(super) struct ShowChildSuccessor {
 impl ShowChildSuccessor {
     pub(super) fn for_work(work: &super::WorkItemSummary) -> Option<Self> {
         let state = work.required_child_successor.as_ref()?;
+        Some(Self::from_state(state, &work.short_ref, work.parent_id))
+    }
+
+    pub(super) fn for_refusal(refusal: &crate::work_service::WorkCompleteRefusal) -> Option<Self> {
+        let state = refusal.required_child_successor.as_ref()?;
+        Some(Self::from_state(
+            state,
+            &refusal.recovery.item.short_ref,
+            Some(refusal.work_id),
+        ))
+    }
+
+    fn from_state(
+        state: &crate::storage::RequiredChildSuccessor,
+        work_ref: &str,
+        parent_id: Option<crate::WorkId>,
+    ) -> Self {
         let resolved = state.resolution.is_some();
-        Some(Self {
+        Self {
             work_ref: super::short_ref_for_work_id(state.successor),
             lifecycle: state.lifecycle,
             disposition: if state.waived {
@@ -37,16 +54,16 @@ impl ShowChildSuccessor {
             reason: state.reason,
             remedy: (!resolved && state.can_waive)
                 .then(|| {
-                    work.parent_id.map(|parent| {
+                    parent_id.map(|parent| {
                         format!(
                             "engram work update {} --waive {} --reason \"…\"",
                             super::short_ref_for_work_id(parent),
-                            work.short_ref,
+                            work_ref,
                         )
                     })
                 })
                 .flatten(),
-        })
+        }
     }
 
     pub(super) fn line(&self) -> String {
@@ -65,6 +82,64 @@ impl ShowChildSuccessor {
             )
         }
     }
+}
+
+/// Adds safe agent-only context to an existing row without altering its core type.
+#[derive(Serialize)]
+pub(super) struct WithChildSuccessor<T> {
+    #[serde(flatten)]
+    pub(super) value: T,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) child_resolution: Option<ShowChildSuccessor>,
+}
+
+#[derive(Serialize)]
+struct DoneRecovery<'a> {
+    cause: &'a crate::WorkCompletionRecoveryCause,
+    item: WithChildSuccessor<&'a crate::WorkReferenceCandidate>,
+    command: &'a str,
+}
+
+#[derive(Serialize)]
+struct DoneRefusal<'a> {
+    code: &'a str,
+    work_id: crate::WorkId,
+    obligation_page: &'a crate::work_service::WorkObligationPage,
+    remedy: &'a str,
+    recovery: DoneRecovery<'a>,
+}
+
+pub(super) fn done_refusal_value(
+    refusal: &crate::work_service::WorkCompleteRefusal,
+    child_resolution: Option<ShowChildSuccessor>,
+) -> Result<Value, VerbError> {
+    let crate::work_service::WorkCompleteRefusal {
+        code,
+        work_id,
+        obligation_page,
+        remedy,
+        recovery,
+        required_child_successor: _,
+    } = refusal;
+    let crate::WorkCompletionRecovery {
+        cause,
+        item,
+        command,
+    } = recovery;
+    Ok(serde_json::to_value(DoneRefusal {
+        code,
+        work_id: *work_id,
+        obligation_page,
+        remedy,
+        recovery: DoneRecovery {
+            cause,
+            item: WithChildSuccessor {
+                value: item,
+                child_resolution,
+            },
+            command,
+        },
+    })?)
 }
 
 #[derive(Clone, Debug, Serialize)]

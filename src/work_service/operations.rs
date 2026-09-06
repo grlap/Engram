@@ -334,4 +334,7 @@ pub struct WorkCompleteRefusal {
     pub obligation_page: WorkObligationPage,
     pub remedy: String,
     pub recovery: WorkCompletionRecovery,
+    /// Transient agent rendering context, not an ambient/core wire field.
+    #[serde(skip)]
+    pub(crate) required_child_successor: Option<Box<crate::storage::RequiredChildSuccessor>>,
 }

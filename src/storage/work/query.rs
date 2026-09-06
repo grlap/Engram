@@ -861,9 +861,24 @@ pub(super) fn completion_recovery_snapshot_on(
     run_id: WorkRunId,
     cause: WorkCompletionRecoveryCause,
 ) -> Result<CompletionRecoverySnapshot, StoreError> {
+    let required_child_successor = match &cause {
+        WorkCompletionRecoveryCause::RequiredChildUnsealed { child } => {
+            let child = load_work_item(connection, *child)?;
+            let run = load_work_run(connection, run_id)?;
+            super::child_resolution::required_child_successor_on(
+                connection,
+                &child,
+                Some(run.root_execution_id),
+            )?
+        }
+        WorkCompletionRecoveryCause::OpenObligation { .. }
+        | WorkCompletionRecoveryCause::MissingContribution { .. }
+        | WorkCompletionRecoveryCause::MissingAcceptance { .. } => None,
+    };
     Ok(CompletionRecoverySnapshot {
         recovery: completion_recovery_on(connection, work, cause)?,
         obligations: load_work_obligation_records_on(connection, run_id, None)?,
+        required_child_successor: required_child_successor.map(Box::new),
     })
 }
 

@@ -664,6 +664,7 @@ fn completion_recovery_result(
     work_id: WorkId,
     recovery: WorkCompletionRecovery,
     obligation_page: WorkObligationPage,
+    required_child_successor: Option<Box<crate::storage::RequiredChildSuccessor>>,
 ) -> WorkCompleteResult {
     let code = match &recovery.cause {
         WorkCompletionRecoveryCause::OpenObligation { .. } => "open_work_obligations",
@@ -691,6 +692,7 @@ fn completion_recovery_result(
         obligation_page,
         remedy,
         recovery,
+        required_child_successor,
     })
 }
 

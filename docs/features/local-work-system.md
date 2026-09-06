@@ -1063,6 +1063,13 @@ remedy when the parent is open. Optional, unrelated, different-generation,
 restored-record-only, and non-completed successors give no credit; chains are
 not followed. The successor seal still receives ordinary recursive validation
 at completion and by doctor; the advisory read does not replay root history.
+Several required children may explicitly consolidate into the same qualifying
+successor: its seal is cited once, with a distinct resolution for each original
+child. A restored parent without a native run uses the active root execution
+for this advisory check; once a parent has a run, its own generation stays the
+basis, including after root reopen. An owed `done` receipt repeats the same
+successor reason and lifecycle in its reminder and
+`recovery.item.child_resolution`; the ambient/core refusal shape is unchanged.
 
 **Detached follow-ups.** `update CHILD --detach "why"` (MCP `update` with
 `action: "detach"` and `reason`) turns stranded work into an independent root

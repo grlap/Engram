@@ -193,8 +193,12 @@ impl LocalWorkService {
             Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) => {
                 let snapshot = store.work_completion_recovery(&work, &claim, now, &cause)?;
                 let obligation_page = work_completion_recovery_page(&snapshot)?;
-                let result =
-                    completion_recovery_result(work.work_id, snapshot.recovery, obligation_page);
+                let result = completion_recovery_result(
+                    work.work_id,
+                    snapshot.recovery,
+                    obligation_page,
+                    snapshot.required_child_successor,
+                );
                 return Ok(result);
             }
             Err(error) => return Err(error),
@@ -238,8 +242,12 @@ impl LocalWorkService {
             CompleteWorkStorageResult::Completed(seal) => completion_result(&store, &seal)?,
             CompleteWorkStorageResult::Recovery(snapshot) => {
                 let obligation_page = work_completion_recovery_page(&snapshot)?;
-                let result =
-                    completion_recovery_result(work.work_id, snapshot.recovery, obligation_page);
+                let result = completion_recovery_result(
+                    work.work_id,
+                    snapshot.recovery,
+                    obligation_page,
+                    snapshot.required_child_successor,
+                );
                 return Ok(result);
             }
         };

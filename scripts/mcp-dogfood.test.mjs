@@ -232,10 +232,13 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
         assert.ok(Buffer.byteLength(text.stdout) <= 12288);
         assert.doesNotMatch(JSON.stringify(value), HASH);
       }
-      phase = `listing resolved=${resolved}`;
-      const listing = receipt(await client.call("ls", { under: parent, required: true, all: true }));
-      assert.deepEqual(cliJson(engramHome, "successor-reader", "ls", "--under", parent, "--required", "--all"), listing);
-      assert.equal(listing.items.find((row) => row.ref === child).child_resolution.disposition, resolved ? "resolved_by_successor" : "owed");
+      for (const verbose of [false, true]) {
+        phase = `listing resolved=${resolved} verbose=${verbose}`;
+        const listing = receipt(await client.call("ls", { under: parent, required: true, all: true, verbose }));
+        assert.deepEqual(cliJson(engramHome, "successor-reader", "ls", "--under", parent, "--required", "--all", ...(verbose ? ["--verbose"] : [])), listing);
+        const item = listing.items.map((row) => verbose ? row.work : row).find((row) => (verbose ? row.short_ref : row.ref) === child);
+        assert.equal(item.child_resolution.disposition, resolved ? "resolved_by_successor" : "owed");
+      }
       const focus = receipt(await client.call("show", { work_ref: parent }));
       assert.equal(focus.child_obligations.required_owed.count, resolved ? 0 : 2);
       assert.equal(focus.children.find((row) => row.short_ref === child).child_resolution.disposition, resolved ? "resolved_by_successor" : "owed");
@@ -250,6 +253,18 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
     assert.equal(owed.recovery.item.state, "superseded");
     assert.deepEqual(owed.next, [`engram work update ${parent} --waive ${child} --reason "account for disposed required child"`]);
     assert.equal(owed.seal, undefined);
+    const shownResolution = receipt(await client.call("show", { work_ref: child })).status.work.child_resolution;
+    assert.deepEqual(owed.recovery.item.child_resolution, shownResolution);
+    const successorLine = `successor ${successor} (${shownResolution.lifecycle}): ${shownResolution.reason}`;
+    assert.ok(owed.reminders.some((line) => line.includes(successorLine)));
+    for (const json of [false, true]) {
+      phase = `CLI parent refusal json=${json}`;
+      const refused = cliWord(engramHome, "successor-reader", "done", parent, "Still owed", ...(json ? ["--json"] : []));
+      assert.equal(refused.status, 2, refused.stderr);
+      assert.ok(Buffer.byteLength(refused.stdout) <= 12288);
+      if (json) assert.deepEqual(JSON.parse(refused.stdout), owed);
+      else assert.ok(refused.stdout.includes(successorLine));
+    }
     phase = "successor completion";
     receipt(await client.call("claim", { work_ref: successor }));
     assert.match(receipt(await client.call("done", { work_ref: successor, summary: "Replacement delivered" })).seal, HASH);

@@ -413,4 +413,6 @@ pub(crate) enum CompleteWorkStorageResult {
 pub(crate) struct CompletionRecoverySnapshot {
     pub(crate) recovery: WorkCompletionRecovery,
     pub(crate) obligations: Vec<WorkObligationRecord>,
+    /// Advisory successor context from the same refusal read cut; never persisted.
+    pub(crate) required_child_successor: Option<Box<RequiredChildSuccessor>>,
 }

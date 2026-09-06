@@ -1,5 +1,7 @@
 use super::*;
 
+mod followups;
+
 fn supersede(verbs: &AgentVerbs, child: &str, successor: &str, now: i64) {
     verbs
         .update(

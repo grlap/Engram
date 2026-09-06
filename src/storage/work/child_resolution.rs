@@ -7,8 +7,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::feeds::load_typed_work_object;
 use super::query::{
-    latest_canonical_work_event_for_item_optional, load_work_item, load_work_run, parse_work_id,
-    parse_work_run_id,
+    active_root_execution_optional, latest_canonical_work_event_for_item_optional, load_work_item,
+    load_work_run, parse_work_id, parse_work_run_id,
 };
 use crate::{
     ChildRequirement, ObjectHash, RequiredChildResolution, RootExecutionId, WorkEvent, WorkId,
@@ -39,11 +39,14 @@ impl SqliteStore {
             return Ok(None);
         };
         let run = self.latest_work_run(parent)?;
-        let mut successor = required_child_successor_on(
-            &self.connection,
-            child,
-            run.as_ref().map(|run| run.root_execution_id),
-        )?;
+        // Retained parents stay bound to their own generation after root reopen.
+        // A restored parent can have no run while its children already execute.
+        let execution = match &run {
+            Some(run) => Some(run.root_execution_id),
+            None => active_root_execution_optional(&self.connection, child.root_id)?
+                .map(|execution| execution.root_execution_id),
+        };
+        let mut successor = required_child_successor_on(&self.connection, child, execution)?;
         if let Some(state) = &mut successor
             && self
                 .work_child_waivers(&load_work_item(&self.connection, parent)?, run.as_ref())?

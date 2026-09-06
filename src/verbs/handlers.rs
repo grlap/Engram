@@ -1347,6 +1347,12 @@ impl AgentVerbs {
             )
             .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(&view, now)?;
+        let child_resolution = match &result {
+            WorkCompleteResult::Refused(refusal) => {
+                super::child_obligations::ShowChildSuccessor::for_refusal(refusal)
+            }
+            WorkCompleteResult::Completed(_) => None,
+        };
         let (lines, guidance, owed) = match &result {
             WorkCompleteResult::Completed(_) => {
                 let mut guidance = self.guidance(&after, "done", now);
@@ -1379,9 +1385,12 @@ impl AgentVerbs {
             }
             WorkCompleteResult::Refused(refusal) => {
                 let mut guidance = self.guidance(&after, "done", now);
-                guidance
-                    .reminders
-                    .push(completion_recovery_reminder(&refusal.recovery));
+                let mut reminder = completion_recovery_reminder(&refusal.recovery);
+                if let Some(resolution) = &child_resolution {
+                    reminder.push_str("; ");
+                    reminder.push_str(&resolution.line());
+                }
+                guidance.reminders.push(reminder);
                 guidance.next = vec![refusal.recovery.command.clone()];
                 for reminder in obligation_reminders(&refusal.obligation_page) {
                     if !guidance.reminders.contains(&reminder) {
@@ -1397,7 +1406,12 @@ impl AgentVerbs {
                 )
             }
         };
-        let value = serde_json::to_value(&result)?;
+        let value = match &result {
+            WorkCompleteResult::Refused(refusal) => {
+                super::child_obligations::done_refusal_value(refusal, child_resolution)?
+            }
+            WorkCompleteResult::Completed(_) => serde_json::to_value(&result)?,
+        };
         if !owed {
             let children = self.service.remaining_optional_children(
                 view.status.work.work_id,
