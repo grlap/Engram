@@ -24,6 +24,11 @@ Relative asset paths also support deployment in a subdirectory. No service,
 database, API keys, or Engram installation is needed to run the website.
 Publication is a separate user decision.
 
+The website is licensed under Apache-2.0, like the rest of Engram. Keep
+[website/LICENSE.txt](../website/LICENSE.txt) in the published directory; it is an
+identical copy of the repository's [LICENSE](../LICENSE), linked from the
+third chapter. Copyright 2026 Engram contributors.
+
 ## Design and interaction
 
 The visual direction is a Leonardo da Vinci inspired inventor's notebook:
@@ -48,6 +53,14 @@ sits behind the text and controls. A shared ink filter and multiply blending
 unify the hero and margin paper tones. Navigation also has a maximum width
 to follow the centered composition. Meaningful captions use italic serif type. Fonts use local system
 families; the page makes no third-party asset requests and contains no analytics.
+
+Typography uses a shared, responsive scale: main copy is 17–20 px at the
+default browser font size, controls and supporting prose are 16–18 px, code
+is 14–16 px, and small labels are 12–14 px. The scale uses rem units so
+browser text preferences carry through. Shorter screens allow the chapters
+to grow while keeping the text readable. On small phones the source link
+lives in the navigation menu, and the motion control keeps its accessible
+text label alongside a visible icon.
 
 The three chapters are **The idea**, **The mechanism**, and **Your notebook**.
 On desktop, each fills at least one viewport and native CSS scroll snapping

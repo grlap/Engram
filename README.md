@@ -260,3 +260,15 @@ the exact shipped tool set.
 | [Behavioral control plane](docs/features/behavioral-control-plane.md) | Turn/action gates, coordination protocol, host contract |
 | [Development](docs/development.md) | Dev & review workflow, quality gates, conventions |
 | [Roadmap](docs/roadmap.md) | V1 cut, V1.x, and what is deliberately deferred |
+
+## License
+
+Copyright 2026 Engram contributors.
+
+Unless otherwise noted, Engram's code, documentation, and website are licensed
+under the [Apache License, Version 2.0](LICENSE).
+
+Third-party components retain their own licenses. See
+[third-party notices](THIRD-PARTY-NOTICES.txt) for the dependency licenses,
+attributions, and bundled Unicode and SQLite information. Include the applicable
+notices when distributing Engram with those components.

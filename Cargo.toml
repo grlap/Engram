@@ -3,6 +3,7 @@ name = "engram"
 version = "0.1.0"
 edition = "2024"
 description = "Concurrent local execution memory and task-report handoff for coding agents"
+license = "Apache-2.0"
 publish = false
 repository = "https://github.com/grlap/Engram"
 
