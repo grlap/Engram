@@ -207,7 +207,7 @@ fn staged_work_delivery_cas_binds_the_current_task() {
 
 #[test]
 fn focus_change_and_pending_delivery_serialize_across_connections() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let mut writer = SqliteStore::open(&database).expect("writer");
     let first = writer
@@ -347,7 +347,7 @@ fn doctor_rejects_tampered_pending_protocol_basis() {
 
 #[test]
 fn pending_protocol_basis_refresh_accepts_an_identical_two_connection_cas() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("basis-refresh.sqlite3");
     let project = crate::domain::ProjectId("basis-refresh-project".into());
     let session = SessionId("basis-refresh-session".into());
@@ -391,7 +391,7 @@ fn pending_protocol_basis_refresh_accepts_an_identical_two_connection_cas() {
 
 #[test]
 fn pending_protocol_basis_refresh_conflict_preserves_the_durable_target() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("basis-refresh-conflict.sqlite3");
     let project = crate::domain::ProjectId("basis-refresh-conflict-project".into());
     let session = SessionId("basis-refresh-conflict-session".into());

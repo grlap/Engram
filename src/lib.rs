@@ -19,6 +19,9 @@ pub mod tracker;
 pub mod verbs;
 pub mod work_service;
 
+#[cfg(test)]
+mod test_support;
+
 pub use canonical::{CanonicalObject, ObjectHash};
 pub use control::{
     ObligationSatisfactionInput, VerificationEvidenceMatchInput, builtin_obligation_rule_set,

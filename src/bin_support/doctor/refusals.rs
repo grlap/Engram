@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn refusal_preserves_canonical_database_identity() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("diagnostic.db");
         drop(engram::SqliteStore::open(&database).unwrap());
         let alias = directory.path().join("alias");
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn path_policy_alias_mismatch_requires_a_compatible_host() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("policy.db");
         for requested_case in [false, true] {
             let recorded = engram::HostPathPolicy::host_default();
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn unavailable_store_schema_is_explicit_and_does_not_create_a_file() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("different.db");
         drop(engram::SqliteStore::open(&database).unwrap());
         let connection = rusqlite::Connection::open(&database).unwrap();
@@ -306,7 +306,7 @@ mod tests {
                 "corrupt_store",
             ),
         ] {
-            let directory = tempfile::tempdir().unwrap();
+            let directory = crate::test_support::temp_home().unwrap();
             let path = directory.path().join("refusal.db");
             drop(engram::SqliteStore::open(&path).unwrap());
             let connection = rusqlite::Connection::open(&path).unwrap();

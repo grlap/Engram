@@ -746,7 +746,7 @@ fn typed_projection_fractional_timestamp_encodings_agree_with_operational_reader
 
 #[test]
 fn native_only_repair_preserves_canonical_defaults_and_detects_projection_drift() {
-    let directory = tempfile::tempdir().expect("temporary native store");
+    let directory = crate::test_support::temp_home().expect("temporary native store");
     let database = directory.path().join("engram.db");
     let mut store = SqliteStore::open(&database).expect("native store");
     let completed = native_history(&mut store);
@@ -835,7 +835,7 @@ fn native_only_repair_preserves_canonical_defaults_and_detects_projection_drift(
 
 #[test]
 fn repair_refusal_names_invalid_labels_and_rolls_back_rebuildable_changes() {
-    let directory = tempfile::tempdir().expect("temporary store");
+    let directory = crate::test_support::temp_home().expect("temporary store");
     let database = directory.path().join("engram.db");
     let mut store = SqliteStore::open(&database).expect("store");
     let item = store

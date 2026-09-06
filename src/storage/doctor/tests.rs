@@ -81,7 +81,7 @@ fn integrity_scanner_covers_enforced_control_records() {
 
 #[test]
 fn diagnostics_only_policy_recovery_names_every_invalid_binding_without_mutation() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("corrupt-policy.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open(&database).expect("initialize policy fixture");
@@ -154,7 +154,7 @@ fn diagnostics_only_policy_recovery_names_every_invalid_binding_without_mutation
 
 #[test]
 fn diagnostics_only_policy_recovery_reports_missing_and_malformed_columns_without_mutation() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     for (name, policy_epoch_definition, policy_epoch_projection, expected_detail) in [
         (
             "missing-column",

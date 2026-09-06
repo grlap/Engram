@@ -1,10 +1,9 @@
 use super::super::test_support::*;
 use super::super::*;
-use tempfile::tempdir;
 
 #[test]
 fn core_committed_handoff_recovery_uses_the_durable_focus_basis() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("committed-handoff-focus".into());
     let session = SessionId("committed-handoff-session".into());
@@ -106,7 +105,7 @@ fn core_committed_handoff_recovery_uses_the_durable_focus_basis() {
 
 #[test]
 fn outgoing_handoff_expires_no_later_than_its_source_claim() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("lapsed-cancel".into());
     let service = LocalWorkService::new(

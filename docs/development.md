@@ -70,6 +70,50 @@ bounded test concurrency and then the ignored claim-mutation scale test with
 one thread. The shell entry point also raises the Unix file-descriptor soft
 limit when the host permits it; that step is not applicable on Windows.
 
+### Test temporary files
+
+Rust and Node fixtures use the operating system's Temp directory with an
+`engram` child. A launcher chooses the run root once; Rust accepts that
+validated root without independently resolving Temp again (the runtimes can
+use different environment-variable precedence or platform fallbacks).
+Every run owns a unique `run-<pid>-<random>` subtree beneath it. Rust
+tests use the shared `test_support::temp_home` guard; Node gates use
+`scripts/test-temp.mjs`. Each owns and removes only the unique fixture it
+created. Rust launchers pass their owned `ENGRAM_TEST_RUN_ROOT` to child test
+processes; direct Cargo tests choose a process-unique run root and remove it
+when the last fixture closes. Close database handles and child processes
+first. Struct fields drop
+in declaration order, so a fixture directory must follow its store fields.
+The guard retries transient removal failures for a bounded 185 ms backoff
+budget and reports the path and OS error if cleanup still fails. This does
+not close another owner's SQLite handle or excuse a broken lifetime.
+The open-handle and field-order regressions prove the sharing-violation cause
+on Windows only; POSIX permits removal while a SQLite handle is still open.
+
+Both Rust launchers audit their owned run subtree before and after each test
+phase, including failed commands. Each Node fixture gate performs the same
+audit. It prints counts and requires that run's subtree to be empty, then
+removes the empty run directory. A failure lists exact remaining names but
+does not sweep them. Sibling runs and unrelated user Temp entries are never
+counted or removed: concurrent creation/deletion cannot mask this run's
+residue or fail another run's audit. There is no age-based sweep. Fingerprint
+test repositories use this same fixture ownership, including cleanup when
+repository initialization fails.
+
+Build artifacts are separate: leave `CARGO_TARGET_DIR` unset to use the
+worktree's `target`, or select another non-Temp build directory. Never put a
+dogfood build target under user Temp. Use the repository's stable toolchain;
+an inherited `RUSTUP_TOOLCHAIN` can override `rust-toolchain.toml`.
+
+Existing legacy Temp leftovers are not cleaned by any gate. After stopping
+tests and inspecting a specific old fixture directory, a user may remove
+that exact directory with the following one-line PowerShell command (replace
+the placeholder with the inspected basename; do not target Temp itself):
+
+```powershell
+Remove-Item -LiteralPath "$env:TEMP\<inspected-fixture-directory>" -Recurse -Force
+```
+
 After updating to a build that adds a rebuildable projection, an existing
 development store can refuse until `engram doctor --repair-projections` is run
 once. The Cut A gate lookup adds the rebuildable

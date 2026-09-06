@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn graph_snapshot_writer_refuses_duplicate_member_destinations() {
-        let directory = tempfile::tempdir().expect("tempdir");
+        let directory = crate::test_support::temp_home().expect("tempdir");
         let database = directory.path().join("projects/digest/engram.db");
         let output = directory.path().join("snapshots/graph.json");
         fs::create_dir_all(output.parent().expect("snapshot parent")).expect("directory");
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn graph_snapshot_writer_never_replaces_store_or_destination_bytes() {
-        let directory = tempfile::tempdir().expect("tempdir");
+        let directory = crate::test_support::temp_home().expect("tempdir");
         let home = directory.path().join("engram-home");
         let project_dir = home.join("projects").join("project-digest");
         fs::create_dir_all(&project_dir).expect("project directory");

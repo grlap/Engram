@@ -124,7 +124,7 @@ fn centralized_schema_versions_match_fresh_store_projections_and_policy_objects(
 
 #[test]
 fn different_build_marker_refuses_without_mutation() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("different-build.db");
     drop(SqliteStore::open(&database).expect("initialize current store"));
     let fixture = Connection::open(&database).expect("open fixture");
@@ -167,7 +167,7 @@ fn different_build_marker_refuses_without_mutation() {
 }
 #[test]
 fn store_persists_and_enforces_one_host_path_identity_policy() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("path-policy.sqlite3");
     let policy = HostPathPolicy {
         case_fold_paths: false,
@@ -237,7 +237,7 @@ fn store_persists_and_enforces_one_host_path_identity_policy() {
 
 #[test]
 fn backup_copies_a_live_store_and_verifies_the_copy() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("live.sqlite3");
     let mut store = SqliteStore::open(&database).expect("live store");
     let project = ProjectId("backup-project".into());
@@ -334,7 +334,7 @@ fn unresolved_path_identity_refuses_path_leases_but_not_logical_ones() {
     ));
     // A persisted policy is still binding for a later resolved opener,
     // while an unresolved opener may read the same store.
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("identity.sqlite3");
     let folded = HostPathPolicy {
         case_fold_paths: true,
@@ -445,7 +445,7 @@ fn case_aliases_conflict_only_under_a_folding_policy() {
 
 #[test]
 fn verify_backup_touches_nothing_and_backups_never_replace() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let missing = directory.path().join("absent.sqlite3");
     assert!(matches!(
         SqliteStore::verify_backup(&missing),
@@ -476,7 +476,7 @@ fn verify_backup_touches_nothing_and_backups_never_replace() {
 #[test]
 fn unresolved_opener_cannot_begin_a_path_bearing_grant() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("unresolved-begin.sqlite3");
     let mut store = SqliteStore::open(&database).expect("resolved opener");
     let effects = [EffectClass::Observe, EffectClass::MutateLocal];
@@ -558,7 +558,7 @@ fn unresolved_opener_cannot_begin_a_path_bearing_grant() {
 
 #[test]
 fn current_store_reopens_through_a_read_only_connection() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     drop(SqliteStore::open(&database).expect("initialize current store"));
     let connection =
@@ -570,7 +570,7 @@ fn current_store_reopens_through_a_read_only_connection() {
 
 #[test]
 fn explicit_projection_repair_rebuilds_missing_core_index_and_fts() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     drop(SqliteStore::open(&database).expect("initialize current store"));
     let fixture = Connection::open(&database).expect("open projection fixture");
@@ -665,7 +665,7 @@ fn explicit_projection_repair_rebuilds_missing_core_index_and_fts() {
 
 #[test]
 fn missing_core_durable_table_is_named_and_never_recreated() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     drop(SqliteStore::open(&database).expect("initialize current store"));
     let fixture = Connection::open(&database).expect("open durable corruption fixture");
@@ -699,7 +699,7 @@ fn complete_schema_family_loss_is_refused_without_mutation() {
         (SchemaOwner::Core, "object_fts"),
         (SchemaOwner::Work, "work_catalog_fts"),
     ] {
-        let directory = tempfile::tempdir().expect("temporary store directory");
+        let directory = crate::test_support::temp_home().expect("temporary store directory");
         let database = directory.path().join("engram.db");
         drop(SqliteStore::open(&database).expect("initialize current store"));
         let fixture = Connection::open(&database).expect("open family-loss fixture");
@@ -728,7 +728,7 @@ fn complete_schema_family_loss_is_refused_without_mutation() {
 
 #[test]
 fn same_name_wrong_core_table_definition_is_refused_without_mutation() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     drop(SqliteStore::open(&database).expect("initialize current store"));
     let fixture = Connection::open(&database).expect("open durable definition fixture");
@@ -772,7 +772,7 @@ fn same_name_wrong_core_table_definition_is_refused_without_mutation() {
 
 #[test]
 fn explicit_projection_repair_rebuilds_existing_object_fts_content() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     let mut store = SqliteStore::open(&database).expect("initialize current store");
     let task_id = TaskId::new();
@@ -853,7 +853,7 @@ fn explicit_projection_repair_rebuilds_existing_object_fts_content() {
 
 #[test]
 fn warm_open_skips_the_writer_lock_but_a_needed_binding_escalates() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     drop(SqliteStore::open(&database).expect("initialize current store"));
 

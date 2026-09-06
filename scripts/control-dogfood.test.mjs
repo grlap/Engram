@@ -4,15 +4,16 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  mkdtempSync,
   readFileSync,
   realpathSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { fixtureHome, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { join, resolve } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
+
+const tempBefore = tempSnapshot();
+after(() => assertTempClean(tempBefore));
 
 const root = resolve(import.meta.dirname, "..");
 const target = resolve(root, process.env.CARGO_TARGET_DIR || "target");
@@ -325,15 +326,15 @@ function cliWorkAcknowledge(engramHome, actorId, page) {
   assert.equal(acknowledged.status, 0, acknowledged.stderr);
 }
 
-test("host control survives restart and gates turn dispatch", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-control-dogfood-"));
-  const actionGatedHome = mkdtempSync(
-    join(tmpdir(), "engram-control-action-gated-"),
-  );
+test("host control survives restart and gates turn dispatch", async (t) => {
+  const engramHome = fixtureHome("engram-control-dogfood-", t);
+  const actionGatedHome = fixtureHome("engram-control-action-gated-", t);
   let client;
   let peer;
   let advisory;
   let sqliteWriter;
+  let successor;
+  let failure;
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
       cwd: root,
@@ -815,7 +816,7 @@ test("host control survives restart and gates turn dispatch", async () => {
     assert.equal(binding.status.phase, "sync_required");
     assert.ok(binding.routing_token);
 
-    const successor = new ControlClient(engramHome, "host-a");
+    successor = new ControlClient(engramHome, "host-a");
     const successorStatus = ok(
       await successor.request({
         operation: "session_status",
@@ -831,6 +832,7 @@ test("host control survives restart and gates turn dispatch", async () => {
     assert.equal(superseded.error.code, "control_connection_superseded");
     await client.close();
     client = successor;
+    successor = undefined;
 
     const firstDecision = ok(
       await client.request({
@@ -1180,20 +1182,24 @@ test("host control survives restart and gates turn dispatch", async () => {
     assert.equal(unhealthyDiagnostics.healthy, false);
     assert.match(unhealthyDoctorJson.stderr, /CONTROL LIMITATION:/);
     assert.match(unhealthyDoctorJson.stderr, /development no-op redactor/);
+  } catch (error) {
+    failure = error;
   } finally {
-    await sqliteWriter?.close();
-    await advisory?.close();
-    await peer?.close();
-    await client?.close();
-    rmSync(engramHome, { recursive: true, force: true });
-    rmSync(actionGatedHome, { recursive: true, force: true });
+    try {
+      await closeFixtureClients(sqliteWriter, advisory, peer, client, successor);
+    } catch (error) {
+      failure = failure
+        ? new AggregateError([failure, error], "Control fixture and shutdown failed", { cause: failure })
+        : error;
+    } finally {
+      removeFixtureHomes(engramHome, actionGatedHome);
+    }
   }
+  if (failure) throw failure;
 });
 
-test("doctor recovery reports a corrupt policy through a read-only surface", () => {
-  const engramHome = mkdtempSync(
-    join(tmpdir(), "engram-control-policy-recovery-"),
-  );
+test("doctor recovery reports a corrupt policy through a read-only surface", (t) => {
+  const engramHome = fixtureHome("engram-control-policy-recovery-", t);
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
       cwd: root,
@@ -1255,12 +1261,12 @@ test("doctor recovery reports a corrupt policy through a read-only surface", () 
     assert.match(recovery.stderr, /store remains fail-closed and unchanged/);
     assert.deepEqual(readFileSync(database), before);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("projection repair is explicit and ordinary doctor never mutates", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-projection-repair-"));
+test("projection repair is explicit and ordinary doctor never mutates", (t) => {
+  const engramHome = fixtureHome("engram-projection-repair-", t);
   try {
     const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
       cwd: root,
@@ -1320,12 +1326,12 @@ test("projection repair is explicit and ordinary doctor never mutates", () => {
     });
     assert.equal(healthy.status, 0, healthy.stderr);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("work-bound control records observations and rebinds after a stale fence", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-control-work-bound-"));
+test("work-bound control records observations and rebinds after a stale fence", async (t) => {
+  const engramHome = fixtureHome("engram-control-work-bound-", t);
   const actor = "bound-runner";
   let client;
   try {
@@ -2665,7 +2671,10 @@ test("work-bound control records observations and rebinds after a stale fence", 
     });
     assert.equal(doctor.status, 0, doctor.stderr);
   } finally {
-    await client?.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      await client?.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });

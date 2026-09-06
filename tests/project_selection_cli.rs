@@ -1,3 +1,6 @@
+#[path = "../src/test_support.rs"]
+mod test_support;
+
 use std::{
     fs,
     path::Path,
@@ -54,7 +57,7 @@ fn assert_text_details(text: &str, value: &Value) {
 
 #[test]
 fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     fs::write(
         directory.path().join(".engram-project"),
         "do-not-select-ancestor",
@@ -106,7 +109,7 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
 
 #[test]
 fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let home = directory.path().join("uncreated-store");
     let project_file = directory.path().join(".engram-project");
     for (bytes, kind) in [
@@ -167,7 +170,7 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
 
 #[test]
 fn explicit_project_file_recovers_without_rebinding_to_the_callers_cwd() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let project_dir = directory.path().join("intended project");
     let cwd = directory.path().join("different cwd");
     fs::create_dir(&project_dir).unwrap();

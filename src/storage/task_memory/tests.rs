@@ -588,7 +588,7 @@ fn private_task_scratch_never_enters_the_peer_feed() {
     reason = "one scenario must preserve the exact pre/post-restart cursor and hashes"
 )]
 fn context_delta_show_and_private_scope_survive_restart() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("engram.db");
     let project = ProjectId("project-a".into());
     let session_a = SessionId("eval-a".into());

@@ -11,16 +11,30 @@ use crate::{
 };
 
 struct Fixture {
-    directory: tempfile::TempDir,
     store: SqliteStore,
     root: WorkItem,
     claim: WorkClaim,
     sealed_child: CompletionSeal,
+    // Struct fields drop in declaration order: close the store before cleanup.
+    directory: crate::test_support::TempHome,
+}
+
+#[test]
+fn readiness_fixture_closes_store_before_removing_directory() {
+    let fixture = Fixture::new();
+    let path = fixture.directory.path().to_owned();
+    drop(fixture);
+    let leaked = path.exists();
+    // A failing negative-control run must not leave its newly owned fixture.
+    if leaked {
+        std::fs::remove_dir_all(&path).expect("remove this test's closed fixture");
+    }
+    assert!(!leaked, "fixture directory must outlive its SQLite store");
 }
 
 impl Fixture {
     fn new() -> Self {
-        let directory = tempfile::tempdir().expect("fixture directory");
+        let directory = crate::test_support::temp_home().expect("fixture directory");
         let mut store = SqliteStore::open(directory.path().join("work.db")).expect("fixture store");
         let root = store
             .create_work(
@@ -132,11 +146,11 @@ impl Fixture {
             &seed_evidence,
         );
         Self {
-            directory,
             store,
             root,
             claim,
             sealed_child,
+            directory,
         }
     }
 

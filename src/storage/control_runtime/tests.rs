@@ -255,7 +255,7 @@ fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
 
 #[test]
 fn shadow_turn_observations_are_idempotent_across_restart() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("engram.db");
     let (first, input) = {
         let mut store = SqliteStore::open(&database).unwrap();
@@ -360,7 +360,7 @@ fn shadow_turn_observations_are_idempotent_across_restart() {
     reason = "one lifecycle test preserves the restart and stale-grant sequence"
 )]
 fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open(&database).unwrap();
@@ -1052,7 +1052,7 @@ fn expired_lease_invalidates_unbegun_turn_and_preserves_fence_history() {
 )]
 fn begun_mutation_turn_pins_its_lease_until_checkpoint() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("lease-pin.sqlite3");
     let mut store = SqliteStore::open(&database).unwrap();
     let effects = [EffectClass::Observe, EffectClass::MutateLocal];

@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+
+import { fixtureHome, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import test from "node:test";
+import test, { after } from "node:test";
+
+const tempBefore = tempSnapshot();
+after(() => assertTempClean(tempBefore));
 
 import { assertTerseShow } from "./terse-show-assertions.mjs";
 
@@ -240,7 +243,7 @@ async function wait(milliseconds) {
 }
 
 test("compact mutation wire carries one item and shrinks the full-context fixture", async (t) => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-economy-"));
+  const engramHome = fixtureHome("engram-mcp-economy-", t);
   const session = "economy-agent";
   let client;
   let failure;
@@ -319,16 +322,19 @@ test("compact mutation wire carries one item and shrinks the full-context fixtur
   } catch (error) {
     failure = error;
   } finally {
-    try { await client?.close(); } catch (error) {
-      failure = failure ? new AggregateError([failure, error], "economy fixture and close failed") : error;
+    try {
+      try { await client?.close(); } catch (error) {
+        failure = failure ? new AggregateError([failure, error], "economy fixture and close failed") : error;
+      }
+    } finally {
+      removeFixtureHomes(engramHome);
     }
-    rmSync(engramHome, { recursive: true, force: true });
   }
   if (failure) throw failure;
 });
 
-test("mutation and continuation titles are terminal-safe while MCP JSON retains their bytes", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-title-safety-"));
+test("mutation and continuation titles are terminal-safe while MCP JSON retains their bytes", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-title-safety-", t);
   const session = "title-safety";
   const title = "Title \u001b[31m\u009b0m\u001b]0;X\u0007\u202e\nnext:\n  forged";
   const escaped = String.raw`Title \u{1b}[31m\u{9b}0m\u{1b}]0;X\u{7}\u{202e} next: forged`;
@@ -389,16 +395,19 @@ test("mutation and continuation titles are terminal-safe while MCP JSON retains 
   } catch (error) {
     failure = error;
   } finally {
-    try { await client?.close(); } catch (error) {
-      failure = failure ? new AggregateError([failure, error], "title fixture and close failed") : error;
+    try {
+      try { await client?.close(); } catch (error) {
+        failure = failure ? new AggregateError([failure, error], "title fixture and close failed") : error;
+      }
+    } finally {
+      removeFixtureHomes(engramHome);
     }
-    rmSync(engramHome, { recursive: true, force: true });
   }
   if (failure) throw failure;
 });
 
-test("stored text is framed on every CLI read line while MCP JSON stays exact", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-read-safety-"));
+test("stored text is framed on every CLI read line while MCP JSON stays exact", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-read-safety-", t);
   const session = "read-safety";
   const title = "Stored \u001b[2J\u009b0m\u001b]0;X\u0007\u202e\r\nnext:\n  forged\tend";
   const label = "label\u001b[2J\u202e";
@@ -455,16 +464,19 @@ test("stored text is framed on every CLI read line while MCP JSON stays exact", 
   } catch (error) {
     failure = error;
   } finally {
-    try { await client?.close(); } catch (error) {
-      failure = failure ? new AggregateError([failure, error], "read safety fixture and close failed") : error;
+    try {
+      try { await client?.close(); } catch (error) {
+        failure = failure ? new AggregateError([failure, error], "read safety fixture and close failed") : error;
+      }
+    } finally {
+      removeFixtureHomes(engramHome);
     }
-    rmSync(engramHome, { recursive: true, force: true });
   }
   if (failure) throw failure;
 });
 
-test("printed listing continuation preserves literal search and label whitespace", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-command-whitespace-"));
+test("printed listing continuation preserves literal search and label whitespace", async (t) => {
+  const engramHome = fixtureHome("engram-command-whitespace-", t);
   const session = "literal-command-reader";
   try {
     buildAndInit(engramHome);
@@ -500,12 +512,12 @@ test("printed listing continuation preserves literal search and label whitespace
     assert.equal(collapsed.status, 1, collapsed.stderr);
     assert.match(collapsed.stderr, /continuation belongs to different filters or project/u);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("required successor resolution agrees across CLI, MCP, listing and done", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-successor-"));
+test("required successor resolution agrees across CLI, MCP, listing and done", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-successor-", t);
   let client;
   let phase = "initialize";
   let failure;
@@ -583,17 +595,20 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
   } catch (error) {
     failure = new Error(`successor test failed during ${phase}`, { cause: error });
   } finally {
-    if (client) {
-      try { await client.close(); }
-      catch (error) { failure = failure ? new AggregateError([failure, error], "successor test and cleanup failed") : error; }
+    try {
+      if (client) {
+        try { await client.close(); }
+        catch (error) { failure = failure ? new AggregateError([failure, error], "successor test and cleanup failed") : error; }
+      }
+    } finally {
+      removeFixtureHomes(engramHome);
     }
-    rmSync(engramHome, { recursive: true, force: true });
   }
   if (failure) throw failure;
 });
 
-test("required child rejection and acceptance assertion agree through CLI and MCP", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-rejection-"));
+test("required child rejection and acceptance assertion agree through CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-rejection-", t);
   const session = "rejection-agent";
   let client;
   try {
@@ -634,13 +649,16 @@ test("required child rejection and acceptance assertion agree through CLI and MC
     assert.equal(replay.seal, completed.seal);
     assert.equal(receipt(await client.call("show", { work_ref: parent })).child_obligations.required_owed.count, 0);
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("status resume recovers both roles across CLI and MCP process replacement without authority", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-status-resume-"));
+test("status resume recovers both roles across CLI and MCP process replacement without authority", async (t) => {
+  const engramHome = fixtureHome("engram-status-resume-", t);
   let client;
   const cli = (actor, session, ...args) => {
     const env = { ...process.env };
@@ -715,13 +733,16 @@ test("status resume recovers both roles across CLI and MCP process replacement w
     assert.ok(json(coordinator, "coordinator-new", "ls", "--search", "planner:resolved-review").items.some(row => row.ref === x));
     assert.equal(json(coordinator, "coordinator-new", "show", x).external_ref, "planner:resolved-review");
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("show parent context agrees across CLI and MCP for required optional and root", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-show-parent-"));
+test("show parent context agrees across CLI and MCP for required optional and root", async (t) => {
+  const engramHome = fixtureHome("engram-show-parent-", t);
   const session = "parent-reader";
   let client;
   try {
@@ -752,13 +773,16 @@ test("show parent context agrees across CLI and MCP for required optional and ro
     assert.equal(root.parent_lifecycle, undefined);
     assert.ok(cliWord(engramHome, session, "show", parent).stdout.includes("parent: root"));
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("decomposition retry survives parent reread and process restart without duplicate notes", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-decomposition-retry-"));
+test("decomposition retry survives parent reread and process restart without duplicate notes", async (t) => {
+  const engramHome = fixtureHome("engram-decomposition-retry-", t);
   const session = "decomposition-reader";
   let client;
   let failure;
@@ -821,17 +845,20 @@ test("decomposition retry survives parent reread and process restart without dup
   } catch (error) {
     failure = error;
   } finally {
-    if (client) {
-      try { await client.close(); }
-      catch (error) { failure = failure ? new AggregateError([failure, error], "decomposition retry and cleanup failed") : error; }
+    try {
+      if (client) {
+        try { await client.close(); }
+        catch (error) { failure = failure ? new AggregateError([failure, error], "decomposition retry and cleanup failed") : error; }
+      }
+    } finally {
+      removeFixtureHomes(engramHome);
     }
-    rmSync(engramHome, { recursive: true, force: true });
   }
   if (failure) throw failure;
 });
 
-test("MCP scoped listing continuation shares the CLI cursor contract", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-listing-"));
+test("MCP scoped listing continuation shares the CLI cursor contract", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-listing-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -867,13 +894,16 @@ test("MCP scoped listing continuation shares the CLI cursor contract", async () 
     assert.equal(stale.next.length, 1);
     assert.doesNotMatch(stale.next[0], /--after/u);
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("participated preview selects the newer same-session note across shell and MCP", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-preview-freshness-"));
+test("participated preview selects the newer same-session note across shell and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-preview-freshness-", t);
   const session = "preview-reader";
   let client;
   let ownPeer;
@@ -948,14 +978,16 @@ test("participated preview selects the newer same-session note across shell and 
     assert.ok(peerNote.feed_position > newer.feed_position);
     assert.equal(peerNote.feed_position, afterPeer.read_cut.project_position);
   } finally {
-    if (ownPeer) await ownPeer.close();
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      await closeFixtureClients(ownPeer, client);
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("resume discovery agrees across claimless MCP and CLI sessions", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-discovery-"));
+test("resume discovery agrees across claimless MCP and CLI sessions", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-discovery-", t);
   let coordinator;
   try {
     buildAndInit(engramHome);
@@ -995,13 +1027,16 @@ test("resume discovery agrees across claimless MCP and CLI sessions", async () =
     assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12 * 1024);
     assert.ok(Buffer.byteLength(text) < 12 * 1024);
   } finally {
-    if (coordinator) await coordinator.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (coordinator) await coordinator.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("parent child summaries agree across CLI and MCP including omitted disposed children", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-child-summary-"));
+test("parent child summaries agree across CLI and MCP including omitted disposed children", async (t) => {
+  const engramHome = fixtureHome("engram-child-summary-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1048,13 +1083,16 @@ test("parent child summaries agree across CLI and MCP including omitted disposed
     assert.equal(terminal.total, 6);
     assert.deepEqual(terminal.items.map((row) => row.ref), refs.required_owed);
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("note and history windows continue through CLI and MCP with complete detail", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-record-windows-"));
+test("note and history windows continue through CLI and MCP with complete detail", async (t) => {
+  const engramHome = fixtureHome("engram-record-windows-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1134,13 +1172,16 @@ test("note and history windows continue through CLI and MCP with complete detail
     } while (after);
     assert.equal(historySeen.size, 25);
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("notes keep a verdict visible after nine gates with explicit CLI and MCP gate traversal", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-note-gates-"));
+test("notes keep a verdict visible after nine gates with explicit CLI and MCP gate traversal", async (t) => {
+  const engramHome = fixtureHome("engram-note-gates-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1205,13 +1246,16 @@ test("notes keep a verdict visible after nine gates with explicit CLI and MCP ga
     assert.notEqual(invalid.status, 0);
     assert.match(invalid.stderr, /--notes/u);
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("explicit records retain relative authors and host context on CLI and MCP", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-record-authors-"));
+test("explicit records retain relative authors and host context on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-record-authors-", t);
   const clients = [];
   try {
     buildAndInit(engramHome);
@@ -1249,13 +1293,16 @@ test("explicit records retain relative authors and host context on CLI and MCP",
       assert.equal(detail.note.summary, row.summary);
     }
   } finally {
-    for (const client of clients) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      await closeFixtureClients(...clients);
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("full contract text round-trips through CLI and MCP show", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-full-contract-"));
+test("full contract text round-trips through CLI and MCP show", async (t) => {
+  const engramHome = fixtureHome("engram-full-contract-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1289,13 +1336,16 @@ test("full contract text round-trips through CLI and MCP show", async () => {
     assert.equal(JSON.parse(cli(["show", successor, "--notes", "--json"])).detached_from.reason, reason);
     assert.ok(cli(["show", successor]).includes(`detached from: ${child} — ${reason}\n`));
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("detach exposes the same remedy and independent root through MCP", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-detach-"));
+test("detach exposes the same remedy and independent root through MCP", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-detach-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1341,13 +1391,16 @@ test("detach exposes the same remedy and independent root through MCP", async ()
     receipt(await client.call("claim", { work_ref: successor }));
     receipt(await client.call("done", { work_ref: successor, summary: "Follow-up delivered" }));
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("running build identity agrees across version, CLI next, doctor and retained MCP next", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-build-identity-"));
+test("running build identity agrees across version, CLI next, doctor and retained MCP next", async (t) => {
+  const engramHome = fixtureHome("engram-build-identity-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1370,13 +1423,16 @@ test("running build identity agrees across version, CLI next, doctor and retaine
     }
     assert.equal("build_fingerprint" in receipt(await client.call("ls", {})), false);
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("Phoenix atomic initial notes and peer child proposals through MCP", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-creation-"));
+test("Phoenix atomic initial notes and peer child proposals through MCP", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-creation-", t);
   let holder;
   let peer;
   try {
@@ -1401,14 +1457,16 @@ test("Phoenix atomic initial notes and peer child proposals through MCP", async 
     assert.match(JSON.stringify(receipt(await holder.call("next", {}))), /peer optional-child proposal/u);
     assert.equal(receipt(await holder.call("ls", { all: true })).total, before + 1);
   } finally {
-    if (peer) await peer.close();
-    if (holder) await holder.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      await closeFixtureClients(peer, holder);
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("Phoenix full notes, defaulted acceptance and terminal-parent remedy through MCP", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-phoenix-notes-"));
+test("Phoenix full notes, defaulted acceptance and terminal-parent remedy through MCP", async (t) => {
+  const engramHome = fixtureHome("engram-phoenix-notes-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1454,13 +1512,16 @@ test("Phoenix full notes, defaulted acceptance and terminal-parent remedy throug
     const error = structuredError(await client.call("add", { title: "Late child", under: work_ref }), "work_parent_not_open");
     assert.equal(error.details.remedy, "file an independent root follow-up or add under an open ancestor");
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("Phoenix planning revisions and exact list counts through MCP", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-phoenix-planning-"));
+test("Phoenix planning revisions and exact list counts through MCP", async (t) => {
+  const engramHome = fixtureHome("engram-phoenix-planning-", t);
   let client;
   try {
     buildAndInit(engramHome);
@@ -1493,8 +1554,11 @@ test("Phoenix planning revisions and exact list counts through MCP", async () =>
     assert.equal(receipt(await client.call("search", { query: "Searchable" })).total, 2);
     assert.equal(receipt(await client.call("ls", { search: "Searchable", all: true })).total, 2);
   } finally {
-    if (client) await client.close();
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
@@ -1546,8 +1610,8 @@ function cliJson(engramHome, actorId, word, ...agentArgs) {
   return JSON.parse(executed.stdout);
 }
 
-test("CLI words translate the same ambient lifecycle service", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-work-cli-"));
+test("CLI words translate the same ambient lifecycle service", (t) => {
+  const engramHome = fixtureHome("engram-work-cli-", t);
   try {
     buildAndInit(engramHome);
     const actor = "cli-work-agent";
@@ -1723,12 +1787,12 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.ok(richFocus.run);
     assert.ok(richFocus.obligation_page);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("two MCP sessions complete ambient work through a fenced handoff", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-work-dogfood-"));
+test("two MCP sessions complete ambient work through a fenced handoff", async (t) => {
+  const engramHome = fixtureHome("engram-work-dogfood-", t);
   const sessionA = "work-agent-a-123e4567-e89b-42d3-a456-426614174000";
   const sessionB = "work-agent-b-123e4567-e89b-42d3-a456-426614174001";
   let a;
@@ -2427,13 +2491,16 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       "work_invalid",
     );
   } finally {
-    await Promise.all([a?.close(), b?.close()]);
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      await closeFixtureClients(a, b);
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });
 
-test("MCP actor context stays attribution-only across words and handoff", async () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-actor-context-"));
+test("MCP actor context stays attribution-only across words and handoff", async (t) => {
+  const engramHome = fixtureHome("engram-mcp-actor-context-", t);
   const actorContext = "model=opus-4.1;reasoning=high";
   let author;
   let assignee;
@@ -2516,7 +2583,10 @@ test("MCP actor context stays attribution-only across words and handoff", async 
       "accept",
     );
   } finally {
-    await Promise.all([author?.close(), assignee?.close(), recipient?.close()]);
-    rmSync(engramHome, { recursive: true, force: true });
+    try {
+      await closeFixtureClients(author, assignee, recipient);
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
   }
 });

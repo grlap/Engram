@@ -1,11 +1,10 @@
 use super::super::test_support::*;
 use super::super::*;
 use crate::domain::SCHEMA_VERSION;
-use tempfile::tempdir;
 
 #[test]
 fn preview_correction_invalid_generation_precedes_store_and_delivery_effects() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let service = LocalWorkService::new(
         database.clone(),
@@ -72,7 +71,7 @@ fn preview_correction_invalid_generation_precedes_store_and_delivery_effects() {
 
 #[test]
 fn preview_correction_generation_boundary_without_memories_preserves_delivery() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let service = LocalWorkService::new(
         database.clone(),
@@ -128,7 +127,7 @@ fn preview_correction_generation_boundary_without_memories_preserves_delivery() 
 fn next_advisory_focus_rebinds_after_staging_without_changing_delivery() {
     use std::sync::{Arc, Barrier};
     for initially_focused in [false, true] {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("work.db");
         let service = |session: &str| {
             LocalWorkService::new(
@@ -230,7 +229,7 @@ fn advisory_memory_acknowledgement_swallows_every_failure_class() {
 
 #[test]
 fn interrupted_attempt_cannot_follow_changed_focus() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let focus_project = ProjectId("focus-attempt".into());
     let focus_service = LocalWorkService::new(
@@ -300,7 +299,7 @@ fn interrupted_attempt_cannot_follow_changed_focus() {
     reason = "one scenario shows discard-on-focus-change, implicit delivery, and dense continuation in order"
 )]
 fn staged_page_never_blocks_focus_and_is_delivered_by_the_next_call() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("implicit-delivery".into());
     let session = SessionId("implicit-delivery-session".into());
@@ -418,7 +417,7 @@ fn staged_page_never_blocks_focus_and_is_delivered_by_the_next_call() {
     reason = "the two-thread regression keeps both competing pages and the durable winner visible"
 )]
 fn concurrent_same_session_delivery_returns_only_the_winning_exact_page() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("concurrent-delivery-cas".into());
     let session = SessionId("shared-session".into());
@@ -527,7 +526,7 @@ fn concurrent_same_session_delivery_returns_only_the_winning_exact_page() {
     reason = "the deterministic focus race keeps the losing projection and durable reprojected page in one scenario"
 )]
 fn focus_winning_before_delivery_stage_forces_reprojection() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("focus-delivery-cas".into());
     let session = SessionId("focus-race-session".into());
@@ -696,7 +695,7 @@ fn focus_winning_before_delivery_stage_forces_reprojection() {
     reason = "the regression proves contradiction capture, delivery acknowledgement, and restart integrity as one scenario"
 )]
 fn work_scoped_contradiction_drains_through_work_next_and_doctor() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("contradiction-delivery".into());
     let session = SessionId("contradiction-session".into());
@@ -932,7 +931,7 @@ fn work_scoped_contradiction_drains_through_work_next_and_doctor() {
     reason = "the confidentiality regression covers visible, restricted, and cross-root memory feed pairs"
 )]
 fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("feed-boundary-project".into());
     let focused = LocalWorkService::new(
@@ -1187,7 +1186,7 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
 
 #[test]
 fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("deferred-memory-advertisement".into());
     let service = LocalWorkService::new(
@@ -1233,7 +1232,7 @@ fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
 
 #[test]
 fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("memory-advisory-delivery-order".into());
     let session = SessionId("memory-advisory-delivery-session".into());
@@ -1303,7 +1302,7 @@ fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
     reason = "one scale regression creates, selects, replays, and densely drains the complete bounded protocol scenario"
 )]
 fn work_next_is_byte_bounded_dense_and_section_selective_at_project_scale() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("bounded-work-project".into());
     let writer = LocalWorkService::new(

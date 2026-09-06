@@ -10,7 +10,7 @@ fn phoenix_note_marker_collisions_preserve_authority_and_restored_classification
         ("ordinary-actor", NON_HOLDER_NOTE_REFERENCE),
         (NON_HOLDER_NOTE_SOURCE, NON_HOLDER_NOTE_REFERENCE),
     ] {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("source.db");
         let owner = service(&database, "owner");
         let root = proposed_root(
@@ -125,7 +125,7 @@ fn assert_restored_note_kind(
 
 #[test]
 fn phoenix_observations_do_not_displace_selected_execution_evidence() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let owner = Arc::new(service(&database, "owner"));
     let reviewer = service(&database, "reviewer");
@@ -198,7 +198,7 @@ fn phoenix_observations_do_not_displace_selected_execution_evidence() {
 
 #[test]
 fn phoenix_lapsed_holder_note_receipt_explicitly_has_no_run_credit() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let owner = Arc::new(service(&database, "owner"));
     let root = proposed_root(
@@ -235,7 +235,7 @@ fn phoenix_lapsed_holder_note_receipt_explicitly_has_no_run_credit() {
 #[test]
 fn phoenix_observation_integrity_rejects_coordinated_parent_feed_reordering() {
     for defect in ["sequence", "basis"] {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("work.db");
         let owner = service(&database, "owner");
         let reviewer = service(&database, "reviewer");

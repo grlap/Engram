@@ -1,6 +1,5 @@
 use super::super::test_support::*;
 use super::super::*;
-use tempfile::tempdir;
 
 #[test]
 fn process_default_work_session_reuse_expires_before_protocol_mutation() {
@@ -44,7 +43,7 @@ fn process_default_work_session_reuse_expires_before_protocol_mutation() {
             if detail == "process-default work session cannot be reused; run without --session-id to receive a fresh process default"
     ));
 
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let retained_session = process_default_session_at(11, at(0));
     let service = LocalWorkService::new_with_attribution(
@@ -107,7 +106,7 @@ fn process_default_work_session_reuse_expires_before_protocol_mutation() {
 
 #[test]
 fn graph_save_retains_process_default_attribution_without_registering_ambient_session_state() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("snapshot-attribution-only-project".into());
     let session = process_default_session_at(17, at(0));
@@ -187,7 +186,7 @@ fn core_operation_keys_separate_protocol_variants_and_suboperations() {
 
 #[test]
 fn local_work_service_rejects_blank_asserted_identity() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     for (actor_id, session_id) in [("   ", "session"), ("agent", "\t")] {
         let service = LocalWorkService::new(
             directory
@@ -208,7 +207,7 @@ fn local_work_service_rejects_blank_asserted_identity() {
 
 #[test]
 fn local_work_service_normalizes_actor_context_without_refusing_words() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     for (index, (actor_context, expected)) in [
         (
             format!("  model=codex\n{}  ", "🙂".repeat(100)),
@@ -261,7 +260,7 @@ fn terminal_actor_labels_escape_asserted_identity_and_context() {
 
 #[test]
 fn shell_attribution_defaults_are_explicit_in_actor_provenance() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("defaulted-attribution-project".into());
     let process_session = process_default_session_at(11, at(0));
@@ -368,7 +367,7 @@ fn shell_attribution_defaults_are_explicit_in_actor_provenance() {
 
 #[test]
 fn actor_context_does_not_change_work_protocol_identity() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("context-independent-intent".into());
     let service = |context: &str| {
@@ -410,7 +409,7 @@ fn actor_context_does_not_change_work_protocol_identity() {
     reason = "one end-to-end scenario demonstrates that no lifecycle identifiers are shuttled between protocol calls"
 )]
 fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("protocol-project".into());
     let a = LocalWorkService::new(

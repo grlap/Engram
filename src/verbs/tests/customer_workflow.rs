@@ -16,8 +16,13 @@ mod review;
 mod status_resume;
 mod terminal_safety;
 
-fn fixture() -> (tempfile::TempDir, AgentVerbs, PathBuf, ProjectId) {
-    let directory = tempdir().expect("temp");
+fn fixture() -> (
+    crate::test_support::TempHome,
+    AgentVerbs,
+    PathBuf,
+    ProjectId,
+) {
+    let directory = crate::test_support::temp_home().expect("temp");
     let path = directory.path().join("work.db");
     let project = ProjectId("customer-workflow".into());
     let verbs = AgentVerbs::new(
@@ -28,6 +33,18 @@ fn fixture() -> (tempfile::TempDir, AgentVerbs, PathBuf, ProjectId) {
         None,
     );
     (directory, verbs, path, project)
+}
+
+#[test]
+fn customer_fixture_bindings_close_cached_store_before_directory() {
+    let path;
+    {
+        // Local bindings drop in reverse order, unlike struct/tuple fields.
+        let (directory, verbs, _, _) = fixture();
+        add(&verbs, "Fixture lifetime", None, false, 0);
+        path = directory.path().to_owned();
+    }
+    assert!(!path.exists());
 }
 
 fn add(verbs: &AgentVerbs, title: &str, under: Option<&str>, optional: bool, now: i64) -> String {

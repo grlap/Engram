@@ -13,7 +13,7 @@ mod status;
 
 #[test]
 fn work_bound_control_checkpoint_records_execution_observation_once() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let mut store = SqliteStore::open(&database).expect("store");
     let frozen_rule_set = store

@@ -53,10 +53,10 @@ echo "Rust test gate: fd soft limit=$effective_soft_limit, test threads=$test_th
 
 RUST_TEST_THREADS=$test_threads
 export RUST_TEST_THREADS
-cargo test "$@"
+node scripts/test-temp.mjs -- cargo test "$@"
 
 if [ "$#" -eq 0 ]; then
     echo "Rust scale gate: claim-validated mutation decode budgets"
-    cargo test claim_validated_mutations_are_bounded_at_project_scale -- \
+    node scripts/test-temp.mjs -- cargo test claim_validated_mutations_are_bounded_at_project_scale -- \
         --ignored --nocapture
 fi

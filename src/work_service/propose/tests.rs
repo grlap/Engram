@@ -1,12 +1,11 @@
 use super::super::test_support::*;
 use super::super::*;
-use tempfile::tempdir;
 
 mod replay;
 
 #[test]
 fn phoenix_initial_notes_recover_after_creation_commits_before_protocol_result() {
-    let directory = tempdir().expect("temp");
+    let directory = crate::test_support::temp_home().expect("temp");
     let database = directory.path().join("work.db");
     let project = ProjectId("creation-replay".into());
     let service = LocalWorkService::new(
@@ -104,7 +103,7 @@ fn phoenix_initial_notes_recover_after_creation_commits_before_protocol_result()
 
 #[test]
 fn maximum_default_fanout_decomposition_receipt_is_bounded_and_replays_exactly() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("maximum-fanout".into());
     let service = LocalWorkService::new(

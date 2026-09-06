@@ -1057,7 +1057,7 @@ mod tests {
 
     #[test]
     fn retained_work_service_survives_failure_for_agent_tools() {
-        let directory = tempfile::tempdir().expect("temporary MCP home");
+        let directory = crate::test_support::temp_home().expect("temporary MCP home");
         let server = McpServer::new_with_actor_context(
             directory.path().join("engram.sqlite3"),
             ProjectId("mcp-retained-service".into()),

@@ -45,7 +45,7 @@ fn execution_inventory(database: &std::path::Path) -> Vec<(String, String, Strin
 #[test]
 fn phoenix_non_holder_notes_preserve_execution_and_replay_on_every_open_shape() {
     for shape in ["unclaimed", "peer-held", "blocked", "expired"] {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("work.db");
         let owner = service(&database, "holder");
         let reviewer = service(&database, "reviewer");
@@ -126,7 +126,7 @@ fn phoenix_non_holder_notes_preserve_execution_and_replay_on_every_open_shape() 
 
 #[test]
 fn phoenix_note_under_completed_parent_survives_snapshot_and_rebuild() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("source.db");
     let owner = service(&database, "holder");
     let reviewer = service(&database, "reviewer");
@@ -256,7 +256,7 @@ fn assert_observation_repair(
 
 #[test]
 fn phoenix_non_holder_note_recovers_core_commit_without_appending_again() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let owner = service(&database, "holder");
     let reviewer = service(&database, "reviewer");
@@ -314,7 +314,7 @@ fn phoenix_non_holder_note_recovers_core_commit_without_appending_again() {
 fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging() {
     use crate::verbs::{AgentVerbs, NextInput};
     use std::sync::Arc;
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let owner = Arc::new(service(&database, "holder"));
     let reviewer = service(&database, "reviewer-private-session");
@@ -414,7 +414,7 @@ fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging()
 
 #[test]
 fn phoenix_non_holder_note_latest_uses_dense_order_not_asserted_time() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let owner = service(&database, "holder");
     let reviewer = service(&database, "reviewer");
@@ -455,7 +455,7 @@ fn phoenix_non_holder_note_latest_uses_dense_order_not_asserted_time() {
 #[test]
 fn phoenix_non_holder_append_checks_project_lifecycle_holder_and_provenance_atomically() {
     use crate::domain::RecordWorkObservationRequest;
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let owner = service(&database, "holder");
     let reviewer = service(&database, "reviewer");
@@ -529,7 +529,7 @@ fn phoenix_non_holder_append_checks_project_lifecycle_holder_and_provenance_atom
 #[test]
 fn phoenix_gate_without_focus_names_explicit_target_and_never_guesses_completed_work() {
     use crate::verbs::{AgentVerbs, GateInput};
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let owner = service(&database, "holder");
     let root = proposed_root(

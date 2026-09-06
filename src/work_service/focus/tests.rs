@@ -1,11 +1,10 @@
 use super::super::test_support::*;
 use super::super::*;
 use crate::domain::{GATE_EVIDENCE_SUMMARY, SCHEMA_VERSION};
-use tempfile::tempdir;
 
 #[test]
 fn show_child_summary_and_focus_share_one_read_cut_after_focus_selection() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let project = ProjectId("child-snapshot".into());
     let writer = crate::verbs::AgentVerbs::new(
@@ -169,7 +168,7 @@ fn gate_evidence_projection_uses_bounded_words() {
 
 #[test]
 fn failing_gate_evidence_does_not_create_a_completion_barrier() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let service = LocalWorkService::new(
         database.clone(),
@@ -553,7 +552,7 @@ fn prerequisite_summary_preserves_states_and_public_omission_reasons() {
 
 #[test]
 fn execution_observation_has_a_compact_agent_work_projection() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("execution-observation-projection".into());
     let service = LocalWorkService::new(
@@ -833,7 +832,7 @@ fn oversized_ready_item_degrades_to_one_progress_making_summary() {
 
 #[test]
 fn focus_exposes_blocker_ids_and_single_blocker_unblock_is_ambient() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("ambient-blockers".into());
     let service = LocalWorkService::new(
@@ -916,7 +915,7 @@ fn focus_exposes_blocker_ids_and_single_blocker_unblock_is_ambient() {
 
 #[test]
 fn select_work_sets_focus_for_the_next_mutation() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("select-work".into());
     let service = LocalWorkService::new(
@@ -958,7 +957,7 @@ fn select_work_sets_focus_for_the_next_mutation() {
 
 #[test]
 fn allowed_next_distinguishes_ordinary_claim_from_attributed_recovery() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("claim-recovery-guidance".into());
     let first = LocalWorkService::new(
@@ -1027,7 +1026,7 @@ fn allowed_next_distinguishes_ordinary_claim_from_attributed_recovery() {
 
 #[test]
 fn allowed_next_advertises_plain_claim_without_recovery_for_a_ready_lapsed_holder() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("retake-readiness-guidance".into());
     let service = LocalWorkService::new(
@@ -1126,7 +1125,7 @@ fn allowed_next_advertises_plain_claim_without_recovery_for_a_ready_lapsed_holde
     reason = "the end-to-end regression keeps parent, child-scope, waiver, and refresh assertions in one lifecycle"
 )]
 fn required_child_waiver_guidance_is_exact_and_carries_an_actionable_child() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("waiver-guidance".into());
     let service = LocalWorkService::new(
@@ -1233,7 +1232,7 @@ fn required_child_waiver_guidance_is_exact_and_carries_an_actionable_child() {
 
 #[test]
 fn focus_bounds_repeated_direct_decomposition_at_the_root_open_work_limit() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let service = LocalWorkService::new(
         database,

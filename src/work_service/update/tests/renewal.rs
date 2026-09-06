@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn phoenix_claim_renewal_refuses_pending_handoff_and_completed_work() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let service = LocalWorkService::new(
         database.clone(),
@@ -80,7 +80,7 @@ fn phoenix_claim_renewal_refuses_pending_handoff_and_completed_work() {
 
 #[test]
 fn phoenix_keyless_claim_renews_but_explicit_key_replays_without_shortening() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let project = ProjectId("claim-renewal".into());
     let service = LocalWorkService::new(

@@ -6,7 +6,7 @@ use super::*;
     reason = "one deterministic focus-race scenario covers the exact-target agent words"
 )]
 fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("agent-verb-explicit-targets".into());
     let session = SessionId("shared-agent-session".into());
@@ -257,7 +257,7 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
     reason = "one end-to-end test keeps admission, raw JSON, framed text, and Unicode terminal-safety assertions on the same stored body"
 )]
 fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("project-memory-verb-envelope".into());
     let verbs = AgentVerbs::new(
@@ -436,7 +436,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
 
 #[test]
 fn project_memory_listing_sheds_escape_heavy_rows_without_skipping_a_blank_query_page() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let verbs = AgentVerbs::new(
         directory.path().join("engram.sqlite3"),
         ProjectId("project-memory-list-budget".into()),
@@ -608,7 +608,7 @@ fn readiness_reasons_become_words() {
 
 #[test]
 fn catalog_claim_guidance_routes_through_exact_show() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("catalog-claim-guidance".into());
     let first_session = SessionId("first-holder".into());
@@ -1040,7 +1040,7 @@ fn ambiguous_reference_guidance_names_candidates_and_uses_full_ids() {
 
 #[test]
 fn invalid_waiver_child_reference_is_attributed_to_the_child() {
-    let directory = tempdir().expect("temporary store");
+    let directory = crate::test_support::temp_home().expect("temporary store");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("waiver-child-attribution".into());
     let service = LocalWorkService::new(

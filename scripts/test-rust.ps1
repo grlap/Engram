@@ -27,14 +27,14 @@ try {
     $env:RUST_TEST_THREADS = $testThreads
     Write-Output "Rust test gate: fd soft limit=n/a (Windows), test threads=$testThreads"
 
-    & cargo test @cargoArgs
+    & node scripts/test-temp.mjs -- cargo test @cargoArgs
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
 
     if ($cargoArgs.Count -eq 0) {
         Write-Output "Rust scale gate: claim-validated mutation decode budgets"
-        & cargo test claim_validated_mutations_are_bounded_at_project_scale -- --ignored --nocapture
+        & node scripts/test-temp.mjs -- cargo test claim_validated_mutations_are_bounded_at_project_scale -- --ignored --nocapture
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }

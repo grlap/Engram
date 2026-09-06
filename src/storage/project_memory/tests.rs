@@ -1,6 +1,5 @@
 use chrono::{TimeZone, Utc};
 use std::sync::{Arc, Barrier};
-use tempfile::tempdir;
 
 use super::*;
 use crate::storage::{
@@ -1495,7 +1494,7 @@ fn project_memory_state_drift_refuses_and_rebuilds_from_canonical_history() {
 
 #[test]
 fn project_memory_related_reads_share_one_snapshot_across_connections() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let mut reader = SqliteStore::open(&database).expect("reader");
     let mut writer = SqliteStore::open(&database).expect("writer");
@@ -1552,7 +1551,7 @@ fn project_memory_related_reads_share_one_snapshot_across_connections() {
 
 #[test]
 fn concurrent_project_memory_create_has_one_typed_winner() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     SqliteStore::open(&database).expect("initialize store");
     let barrier = Arc::new(Barrier::new(3));

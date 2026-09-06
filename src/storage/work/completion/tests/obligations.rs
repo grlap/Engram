@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let mut store = SqliteStore::open(&database).expect("store");
     let work = store
@@ -517,7 +517,7 @@ fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
 
 #[test]
 fn ambient_completion_recomputes_a_typed_open_obligation_result() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("project-protocol-obligations".into());
     let session = SessionId("runner".into());
@@ -824,7 +824,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
 
 #[test]
 fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let mut store = SqliteStore::open(&database).expect("store");
     let work = store
@@ -1218,7 +1218,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
 
 #[test]
 fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let mut store = SqliteStore::open(&database).expect("store");
     let work = store

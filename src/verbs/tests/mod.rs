@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use chrono::{Duration, TimeZone};
-use tempfile::tempdir;
 
 use super::{
     handlers::{

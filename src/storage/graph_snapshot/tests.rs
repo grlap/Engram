@@ -1,5 +1,4 @@
 use chrono::{Duration, TimeZone};
-use tempfile::tempdir;
 
 mod input_validation;
 
@@ -252,7 +251,7 @@ fn rebind_snapshot_body(document: &mut WorkGraphSnapshotDocument) {
     reason = "one scenario proves snapshot determinism, identity, audit order, and feed isolation"
 )]
 fn consecutive_idle_saves_keep_body_cut_digest_and_order() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot/project with spaces".into());
     let root = create_root(&mut store, &project, "Snapshot root", "snapshot-root");
@@ -370,7 +369,7 @@ fn consecutive_idle_saves_keep_body_cut_digest_and_order() {
 
 #[test]
 fn unkeyed_project_scope_memory_does_not_enter_the_keyed_snapshot_section() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-unkeyed-project-memory".into());
     create_root(&mut store, &project, "Snapshot root", "snapshot-root");
@@ -414,7 +413,7 @@ fn unkeyed_project_scope_memory_does_not_enter_the_keyed_snapshot_section() {
 
 #[test]
 fn save_refuses_work_projection_that_disagrees_with_canonical_feed_history() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-work-integrity".into());
     let root = create_root(&mut store, &project, "Snapshot root", "snapshot-root");
@@ -462,7 +461,7 @@ fn save_refuses_work_projection_that_disagrees_with_canonical_feed_history() {
 
 #[test]
 fn save_refuses_project_memory_state_position_drift() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-memory-state-integrity".into());
     store
@@ -509,7 +508,7 @@ fn save_refuses_project_memory_state_position_drift() {
 
 #[test]
 fn save_refuses_project_memory_head_projection_drift() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-memory-head-integrity".into());
     store
@@ -681,7 +680,7 @@ fn save_refuses_a_document_that_the_loader_would_reject_before_audit() {
 fn load_uses_body_semantics_and_exact_typed_source_bytes() {
     type SourceMutation = (&'static str, fn(&mut serde_json::Value));
 
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let project = ProjectId("snapshot-source-validation".into());
     let mut source =
         SqliteStore::open(directory.path().join("source-validation.db")).expect("source store");
@@ -760,7 +759,7 @@ fn load_uses_body_semantics_and_exact_typed_source_bytes() {
 
 #[test]
 fn redactor_refusal_returns_before_the_save_audit() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-redaction".into());
     create_root(
@@ -794,7 +793,7 @@ fn redactor_refusal_returns_before_the_save_audit() {
 
 #[test]
 fn widened_save_records_reason_even_when_current_project_memories_are_internal() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-sensitive-memory".into());
     create_root(&mut store, &project, "Snapshot root", "snapshot-root");
@@ -921,7 +920,7 @@ fn restricted_memory_is_typed_redaction_while_secret_reference_is_retained() {
 
 #[test]
 fn saved_snapshot_redacts_restricted_memory_and_carries_secret_reference_verbatim() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-sensitive-memory-save".into());
     insert_classified_project_memory(
@@ -999,7 +998,7 @@ fn saved_snapshot_redacts_restricted_memory_and_carries_secret_reference_verbati
 
 #[test]
 fn restored_redacted_memory_stays_typed_when_a_later_save_is_widened() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let project = ProjectId("snapshot-restored-redaction".into());
     let mut source = SqliteStore::open(directory.path().join("source.db")).expect("source store");
     insert_classified_project_memory(
@@ -1254,7 +1253,7 @@ fn load_redactor_refusal_leaves_every_destination_section_and_audit_absent() {
 
 #[test]
 fn widening_reason_is_required_to_be_meaningful_before_audit() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-widening-reason".into());
     create_root(&mut store, &project, "Snapshot root", "snapshot-root");
@@ -1280,7 +1279,7 @@ fn widening_reason_is_required_to_be_meaningful_before_audit() {
 
 #[test]
 fn snapshot_audit_attribution_is_bounded_and_safe_for_diagnostics() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut store = SqliteStore::open(directory.path().join("engram.db")).expect("store");
     let project = ProjectId("snapshot-audit-attribution".into());
     create_root(&mut store, &project, "Snapshot root", "snapshot-root");
@@ -1330,7 +1329,7 @@ fn snapshot_audit_attribution_is_bounded_and_safe_for_diagnostics() {
     reason = "one round trip proves open planning relations, notes, memories, inert history, and resumed execution"
 )]
 fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let mut source = SqliteStore::open(directory.path().join("source.db")).expect("source store");
     let project = ProjectId("snapshot-round-trip".into());
     let root = create_root(&mut source, &project, "Snapshot root", "snapshot-root");
@@ -1728,7 +1727,7 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
     reason = "one blocked graph fixture exercises all three runless planning mutations and integrity"
 )]
 fn runless_restored_work_supports_blocked_planning_and_disposal() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let project = ProjectId("snapshot-runless-planning".into());
     let mut source =
         SqliteStore::open(directory.path().join("runless-source.db")).expect("source store");
@@ -1953,7 +1952,7 @@ fn runless_restored_work_supports_blocked_planning_and_disposal() {
     reason = "one round trip creates terminal fanout above the live open-descendant envelope"
 )]
 fn terminal_direct_children_above_the_open_envelope_round_trip() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let project = ProjectId("snapshot-terminal-fanout".into());
     let mut source =
         SqliteStore::open(directory.path().join("terminal-source.db")).expect("source store");

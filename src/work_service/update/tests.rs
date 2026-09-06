@@ -1,7 +1,6 @@
 use super::super::test_support::*;
 use super::super::*;
 use crate::domain::GATE_EVIDENCE_SUMMARY;
-use tempfile::tempdir;
 
 mod observations;
 mod renewal;
@@ -20,7 +19,7 @@ fn work_update_does_not_admit_obligation_waivers() {
 
 #[test]
 fn core_committed_update_recovery_uses_the_durable_focus_basis() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("committed-update-focus".into());
     let session = SessionId("committed-update-session".into());
@@ -117,7 +116,7 @@ fn core_committed_update_recovery_uses_the_durable_focus_basis() {
 
 #[test]
 fn omitted_idempotency_key_replays_identical_calls_and_separates_different_ones() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("derived-keys".into());
     let service = LocalWorkService::new(
@@ -210,7 +209,7 @@ fn omitted_idempotency_key_replays_identical_calls_and_separates_different_ones(
 
 #[test]
 fn completed_explicit_update_replays_after_expiry_without_retaking() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completed-update-after-expiry".into());
     let service = LocalWorkService::new(
@@ -291,7 +290,7 @@ fn completed_explicit_update_replays_after_expiry_without_retaking() {
     reason = "concurrency, exact replay, and a large unrelated evidence history form one gate-transition regression"
 )]
 fn concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("concurrent-gate".into());
     let session = SessionId("gate-session".into());
@@ -413,7 +412,7 @@ fn concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded() {
 
 #[test]
 fn explicit_update_target_wins_after_same_session_focus_change() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("explicit-update-target".into());
     let service = LocalWorkService::new(
@@ -475,7 +474,7 @@ fn explicit_update_target_wins_after_same_session_focus_change() {
     reason = "the regression keeps pending-attempt setup, atomic capture, and recovery assertions together"
 )]
 fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("pending-note-attempt".into());
     let service = LocalWorkService::new(
@@ -593,7 +592,7 @@ fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
 
 #[test]
 fn pending_gate_attempt_recovers_without_appending_again() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("pending-gate-attempt".into());
     let service = LocalWorkService::new(
@@ -684,7 +683,7 @@ fn pending_gate_attempt_recovers_without_appending_again() {
     reason = "one lifecycle regression proves the completed seal, late evidence, peer feed, and holder-word boundary together"
 )]
 fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_cut() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("post-completion-evidence".into());
     let owner = LocalWorkService::new(
@@ -991,7 +990,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
     reason = "one scenario covers handoff and same-session reclaim gate replay authority"
 )]
 fn identical_gate_after_handoff_or_reclaim_is_a_new_claim_observation() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("handoff-gate-observation".into());
     let first = LocalWorkService::new(
@@ -1139,7 +1138,7 @@ fn identical_gate_after_handoff_or_reclaim_is_a_new_claim_observation() {
 
 #[test]
 fn explicit_gate_target_wins_after_same_session_focus_change() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("explicit-gate-target".into());
     let service = LocalWorkService::new(
@@ -1199,7 +1198,7 @@ fn explicit_gate_target_wins_after_same_session_focus_change() {
     reason = "one boundary test covers normalization, typed projection, and direct-storage refusal"
 )]
 fn gate_storage_owns_normalization_and_bounds() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("gate-storage-boundary".into());
     let service = LocalWorkService::new(
@@ -1337,7 +1336,7 @@ fn gate_heavy_evidence_membership_has_constant_decode_cost() {
     const CANONICAL_DECODE_BUDGET: usize = 64;
 
     fn measure(gate_transition_count: usize) -> [usize; 3] {
-        let directory = tempdir().expect("temp directory");
+        let directory = crate::test_support::temp_home().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let service = LocalWorkService::new(
             database,
@@ -1465,7 +1464,7 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
     const SAMPLE_COUNT: usize = 20;
     const GATE_TRANSITION_COUNT: usize = 128;
 
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("claim-mutation-scale".into());
     let writer = LocalWorkService::new(

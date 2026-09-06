@@ -1,7 +1,7 @@
 use super::*;
 
 fn assert_corrupt_without_writes(project: &ProjectId, bytes: &[u8], message: &str) {
-    let directory = tempdir().expect("refusal directory");
+    let directory = crate::test_support::temp_home().expect("refusal directory");
     let mut destination =
         SqliteStore::open(directory.path().join("destination.db")).expect("destination");
     let before = [
@@ -48,7 +48,7 @@ fn assert_corrupt_without_writes(project: &ProjectId, bytes: &[u8], message: &st
 
 #[test]
 fn duplicate_json_members_refuse_before_canonical_hashing() {
-    let directory = tempdir().expect("source directory");
+    let directory = crate::test_support::temp_home().expect("source directory");
     let project = ProjectId("snapshot-duplicate-members".into());
     let mut source = SqliteStore::open(directory.path().join("source.db")).expect("source");
     create_imported_root(&mut source, &project);
@@ -93,7 +93,7 @@ fn duplicate_json_members_refuse_before_canonical_hashing() {
     reason = "both terminal states and native/inherited layers share the same proof and round-trip contract"
 )]
 fn terminal_snapshot_layers_bind_their_latest_disposal_event() {
-    let directory = tempdir().expect("source directory");
+    let directory = crate::test_support::temp_home().expect("source directory");
     let project = ProjectId("snapshot-terminal-proof".into());
     let mut source = SqliteStore::open(directory.path().join("source.db")).expect("source");
     let cancelled = create_root(&mut source, &project, "Cancelled", "cancelled");
@@ -289,7 +289,7 @@ fn terminal_snapshot_layers_bind_their_latest_disposal_event() {
 
 #[test]
 fn nonterminal_snapshot_layers_refuse_a_latest_disposal_event() {
-    let directory = tempdir().expect("source directory");
+    let directory = crate::test_support::temp_home().expect("source directory");
     let project = ProjectId("snapshot-nonterminal-proof".into());
     let mut source = SqliteStore::open(directory.path().join("source.db")).expect("source");
     create_root(&mut source, &project, "Open work", "open");
@@ -387,7 +387,7 @@ fn nonterminal_snapshot_layers_refuse_a_latest_disposal_event() {
     reason = "two save/load generations establish independent scalar and historical-proof regressions"
 )]
 fn load_validates_exact_and_internal_shape_of_every_restored_generation() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let project = ProjectId("snapshot-restored-generation-validation".into());
     let mut source =
         SqliteStore::open(directory.path().join("generation-source.db")).expect("source store");
@@ -535,7 +535,7 @@ fn load_validates_exact_and_internal_shape_of_every_restored_generation() {
     reason = "one refusal matrix proves corrupt inputs never leave partial destination state"
 )]
 fn load_refuses_incompatible_and_corrupt_documents_without_partial_state() {
-    let directory = tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let project = ProjectId("snapshot-load-refusals".into());
     let mut source =
         SqliteStore::open(directory.path().join("source-refusals.db")).expect("source store");

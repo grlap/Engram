@@ -27,6 +27,9 @@ use rmcp::{ServiceExt, transport::stdio};
 
 mod bin_support;
 
+#[cfg(test)]
+mod test_support;
+
 use bin_support::{
     attribution::resolve_shell_work_attribution,
     doctor::doctor,

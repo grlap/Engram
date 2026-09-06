@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn post_open_operational_control_failure_keeps_typed_refusal() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("healthy.db");
         let store = SqliteStore::open(&database).unwrap();
         let report = store.verify_all().unwrap();
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn unhealthy_integrity_is_not_hidden_by_operational_control_failure() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("corrupt.db");
         let store = SqliteStore::open(&database).unwrap();
         let corruptor = rusqlite::Connection::open(&database).unwrap();
@@ -622,7 +622,7 @@ mod tests {
 
     #[test]
     fn unhealthy_doctor_json_survives_a_corrupt_policy_projection() {
-        let directory = tempfile::tempdir().expect("temporary doctor store");
+        let directory = crate::test_support::temp_home().expect("temporary doctor store");
         let database = directory.path().join("engram.db");
         let store = SqliteStore::open(&database).expect("healthy store");
         let corruptor = rusqlite::Connection::open(&database).expect("corruption connection");

@@ -18,7 +18,7 @@ use crate::{
 
 #[test]
 fn cold_schema_failure_after_ddl_rolls_back_every_control_table() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("interrupted-cold-schema.db");
     FAIL_COLD_SCHEMA_AFTER_DDL.set(true);
     assert!(matches!(
@@ -41,7 +41,7 @@ fn cold_schema_failure_after_ddl_rolls_back_every_control_table() {
     reason = "one restart fixture proves both policy setter receipts across conflicts, no-ops, later heads, and integrity scanning"
 )]
 fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("policy-operation-replay.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
@@ -215,7 +215,7 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
 
 #[test]
 fn failed_policy_receipt_insert_rolls_back_the_policy_activation() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("policy-operation-rollback.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open(&database).expect("initialize store");
@@ -314,7 +314,7 @@ fn failed_policy_receipt_insert_rolls_back_the_policy_activation() {
     reason = "one restart fixture keeps bootstrap attribution, CAS, corruption, and reopen behavior on the same immutable chain"
 )]
 fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
@@ -427,7 +427,7 @@ fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
 
 #[test]
 fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("obligation-rules.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open(&database).expect("initialize store");
@@ -524,7 +524,7 @@ fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
 
 #[test]
 fn established_store_missing_policy_state_refuses_without_bootstrap() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
 
     let missing_row_database = directory.path().join("missing-policy-row.db");
     let missing_row =
@@ -625,7 +625,7 @@ fn current_policy_with_null_selector_returns_a_typed_projection_error() {
 
 #[test]
 fn partial_control_table_family_prevents_policy_rebootstrap() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("ordinary-data.db");
     let mut store = SqliteStore::open(&database).expect("initialize established store");
     let ordinary = store
@@ -689,7 +689,7 @@ fn partial_control_table_family_prevents_policy_rebootstrap() {
 
 #[test]
 fn active_policy_must_be_the_unique_maximal_history_head() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
@@ -819,7 +819,7 @@ fn control_diagnostics_counts_issued_grants_at_the_injected_instant() {
     reason = "the corruption fixture must rebind both policy versions and the successor authority"
 )]
 fn set_required_assurance_history_cannot_change_effects_or_ttl() {
-    let directory = tempfile::tempdir().expect("temporary store directory");
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
@@ -1458,7 +1458,7 @@ fn lease_epoch_refusal_is_sticky_and_adopts_for_a_fresh_key() {
     reason = "one persisted lifecycle test pins bind caps, replayable lease refusal, and turn admission together"
 )]
 fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store =

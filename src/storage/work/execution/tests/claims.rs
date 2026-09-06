@@ -112,7 +112,7 @@ fn claim_expiry_overflow_is_a_typed_refusal() {
 
 #[test]
 fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
-    let directory = tempfile::tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let database = directory.path().join("work.db");
     let mut first = SqliteStore::open(&database).expect("first connection");
     let root = first
@@ -556,7 +556,7 @@ fn same_holder_plain_retake_refuses_blocked_and_deferred_work() {
 
 #[test]
 fn same_holder_plain_retake_replays_across_connections() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let mut first = SqliteStore::open(&database).expect("first connection");
     let root = first

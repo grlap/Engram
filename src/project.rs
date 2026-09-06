@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn probe_reports_the_real_filesystem_and_cleans_up() {
-        let directory = tempfile::tempdir().expect("temp directory");
+        let directory = crate::test_support::temp_home().expect("temp directory");
         let policy = probe_host_path_policy(directory.path()).expect("probe a writable root");
         // A plain temporary directory follows the platform's usual semantics;
         // the probe reads the filesystem rather than assuming them.
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn probe_refuses_a_missing_root() {
-        let directory = tempfile::tempdir().expect("temp directory");
+        let directory = crate::test_support::temp_home().expect("temp directory");
         let missing = directory.path().join("absent");
         assert!(matches!(
             probe_host_path_policy(&missing),

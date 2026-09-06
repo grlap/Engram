@@ -1,3 +1,6 @@
+#[path = "../src/test_support.rs"]
+mod test_support;
+
 use std::{
     fs,
     path::Path,
@@ -36,7 +39,7 @@ fn diagnosis(home: &Path) -> Value {
 
 #[test]
 fn version_next_and_doctor_share_runtime_identity_across_processes() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let home = directory.path();
     success(home, &["init"]);
     let doctor = diagnosis(home);
@@ -146,7 +149,7 @@ fn doctor_cli_refusals_are_json_and_leave_the_store_unchanged() {
             "corrupt_store",
         ),
     ] {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let home = directory.path();
         success(home, &["init"]);
         let healthy = diagnosis(home);
@@ -199,7 +202,7 @@ fn doctor_cli_refusals_are_json_and_leave_the_store_unchanged() {
 
 #[test]
 fn healthy_store_path_policy_refusal_is_actionable_and_not_corruption() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let home = directory.path();
     success(home, &["--host-path-policy", "case_sensitive", "init"]);
     let baseline: Value = serde_json::from_slice(

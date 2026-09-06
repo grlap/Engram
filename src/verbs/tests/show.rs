@@ -6,7 +6,7 @@ use super::*;
     reason = "one end-to-end fixture proves child prioritization and both show representations"
 )]
 fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("show-open-children-first".into());
     let session = SessionId("show-open-children-session".into());
@@ -141,7 +141,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
 
 #[test]
 fn show_claim_guidance_uses_the_allowed_operation_as_its_source() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("show-claim-guidance".into());
     let first_session = SessionId("first-holder".into());
@@ -241,7 +241,7 @@ fn show_claim_guidance_uses_the_allowed_operation_as_its_source() {
 
 #[test]
 fn holder_note_never_shortens_an_explicit_long_claim() {
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("long-claim-renewal".into());
     let session = SessionId("long-claim-renewal-session".into());
@@ -304,7 +304,7 @@ fn holder_note_never_shortens_an_explicit_long_claim() {
 fn show_reports_the_true_note_total_and_latest_feed_entry() {
     const GATE_TRANSITIONS: usize = 128;
 
-    let directory = tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("show-bounded-evidence".into());
     let session = SessionId("show-bounded-evidence-session".into());

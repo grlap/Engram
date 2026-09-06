@@ -479,7 +479,7 @@ fn superseding_required_work_with_a_completed_optional_child_still_requires_a_wa
 
 #[test]
 fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
-    let directory = tempfile::tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let database = directory.path().join("work.db");
     let (root_id, old_run, reopened_run) = {
         let mut store = SqliteStore::open(&database).expect("store");

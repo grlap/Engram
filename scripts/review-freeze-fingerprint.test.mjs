@@ -2,15 +2,19 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
-  mkdtempSync,
+  existsSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { fixtureHome, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
+
+const tempBefore = tempSnapshot();
+after(() => assertTempClean(tempBefore));
 import { fileURLToPath } from "node:url";
 
 import { captureFingerprint, runCli } from "./review-freeze-fingerprint.mjs";
@@ -19,25 +23,62 @@ function run(program, args, cwd) {
   return execFileSync(program, args, { cwd, encoding: "utf8" });
 }
 
-function repository() {
-  const root = mkdtempSync(join(tmpdir(), "engram-review-freeze-"));
+function repository(root) {
   run("git", ["init", "--quiet"], root);
   run("git", ["config", "user.name", "Engram Test"], root);
   run("git", ["config", "user.email", "engram-test@example.invalid"], root);
   writeFileSync(join(root, "tracked.txt"), "baseline\n");
   run("git", ["add", "tracked.txt"], root);
   run("git", ["commit", "--quiet", "-m", "baseline"], root);
-  return root;
 }
 
 function withRepository(callback) {
-  const root = repository();
+  const root = fixtureHome("engram-review-freeze-");
   try {
+    repository(root);
     callback(root);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureHomes(root);
   }
 }
+
+test("fixture ownership cleans failures and Temp audit detects replacement and leftover entries", (t) => {
+  const root = fixtureHome("engram-temp-audit-", t);
+  const parallel = fixtureHome("engram-parallel-audit-", t);
+  try {
+    // Another run's directory cannot fail this run's empty-root check.
+    const empty = tempSnapshot(root);
+    assertTempClean(empty, root);
+    const prior = join(root, ".tmp-prior");
+    mkdirSync(prior);
+    const before = tempSnapshot(root);
+    rmSync(prior, { recursive: true });
+    mkdirSync(join(root, ".tmp-new"));
+    assert.throws(() => assertTempClean(before, root), /new entries=.*tmp-new/u);
+    rmSync(join(root, ".tmp-new"), { recursive: true });
+    mkdirSync(join(root, "leftover"));
+    assert.throws(() => assertTempClean(before, root), /remaining=.*leftover/u);
+  } finally {
+    removeFixtureHomes(root, parallel);
+  }
+  assert.equal(existsSync(root), false);
+  const failed = fixtureHome("engram-setup-failure-", t);
+  assert.throws(() => {
+    try { throw new Error("setup failed"); }
+    finally { removeFixtureHomes(failed); }
+  }, /setup failed/u);
+  assert.equal(existsSync(failed), false);
+});
+
+test("fixture shutdown attempts every client and retains shutdown failures", async () => {
+  const closed = [];
+  await assert.rejects(closeFixtureClients(
+    { close() { closed.push("first"); throw new Error("close failed"); } },
+    undefined,
+    { async close() { closed.push("second"); } },
+  ), /Fixture process shutdown failed/u);
+  assert.deepEqual(closed, ["first", "second"]);
+});
 
 test("fingerprint is stable for unchanged review input", () => {
   withRepository((root) => {

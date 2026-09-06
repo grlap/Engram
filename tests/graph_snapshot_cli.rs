@@ -1,7 +1,9 @@
+#[path = "../src/test_support.rs"]
+mod test_support;
+
 use std::{fs, path::PathBuf, process::Command};
 
 use serde_json::Value;
-use tempfile::tempdir;
 
 fn engram(home: &std::path::Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_engram"));
@@ -19,7 +21,7 @@ fn output_text(bytes: &[u8]) -> String {
     reason = "one CLI scenario keeps save, retry, audit, and refusal state causally connected"
 )]
 fn graph_save_cli_uses_digest_paths_and_never_replaces() {
-    let directory = tempdir().expect("temporary Engram home");
+    let directory = crate::test_support::temp_home().expect("temporary Engram home");
     let home = directory.path();
 
     let initialized = engram(home).arg("init").output().expect("run init");
@@ -147,7 +149,8 @@ fn graph_save_cli_uses_digest_paths_and_never_replaces() {
     );
     assert_eq!(diagnosis["graph_snapshot_disclosure_attempts"]["total"], 4);
 
-    let destination_directory = tempdir().expect("temporary destination home");
+    let destination_directory =
+        crate::test_support::temp_home().expect("temporary destination home");
     let destination_home = destination_directory.path();
     let initialized = engram(destination_home)
         .arg("init")

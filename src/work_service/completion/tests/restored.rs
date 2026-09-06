@@ -6,7 +6,7 @@ use super::*;
     reason = "one end-to-end round trip pins multiline work, completion history, and memory bytes"
 )]
 fn multiline_work_and_memory_save_and_reload_verbatim() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let project = ProjectId("multiline-snapshot".into());
     let source = LocalWorkService::new(
         directory.path().join("source.db"),
@@ -121,7 +121,7 @@ fn multiline_work_and_memory_save_and_reload_verbatim() {
     reason = "one scenario proves a restored child completion satisfies the native parent seal"
 )]
 fn restored_completed_child_is_bound_into_a_new_parent_seal() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let source_database = directory.path().join("source.sqlite3");
     let destination_database = directory.path().join("destination.sqlite3");
     let project = ProjectId("restored-child-completion".into());
@@ -274,7 +274,7 @@ fn restored_completed_child_is_bound_into_a_new_parent_seal() {
     reason = "the complete restore/reopen/reseal lifecycle proves late evidence uses fresh authority"
 )]
 fn restored_completed_item_reopens_into_a_fresh_native_run() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let source_database = directory.path().join("source-reopen.sqlite3");
     let destination_database = directory.path().join("destination-reopen.sqlite3");
     let project = ProjectId("restored-reopen".into());
@@ -568,7 +568,7 @@ fn restored_native_completed_child(
 
 #[test]
 fn restored_origin_required_child_reopen_removes_the_native_parent_barrier_credit() {
-    let directory = tempdir().expect("directory");
+    let directory = crate::test_support::temp_home().expect("directory");
     let (service, parent, child) = restored_native_completed_child(directory.path(), false);
     service
         .work_focus(&child.short_ref, at(13))
@@ -614,7 +614,7 @@ fn restored_origin_required_child_reopen_removes_the_native_parent_barrier_credi
 
 #[test]
 fn restored_native_completion_missing_seal_projection_refuses_evidence_and_parent_seal() {
-    let directory = tempdir().expect("directory");
+    let directory = crate::test_support::temp_home().expect("directory");
     let (service, parent, child) = restored_native_completed_child(directory.path(), true);
     let connection = rusqlite::Connection::open(directory.path().join("destination.sqlite3"))
         .expect("connection");
@@ -679,7 +679,7 @@ fn restored_native_completion_missing_seal_projection_refuses_evidence_and_paren
     reason = "one scenario proves late note and gate transitions over restored completion authority"
 )]
 fn restored_completion_accepts_late_notes_and_gate_transitions() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let source_database = directory.path().join("source-late-findings.sqlite3");
     let destination_database = directory.path().join("destination-late-findings.sqlite3");
     let project = ProjectId("restored-late-findings".into());

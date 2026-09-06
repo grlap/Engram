@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_authority() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("process-default-retention-project".into());
     let cleanup_second = crate::storage::PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS + 100;
@@ -329,7 +329,7 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
 
 #[test]
 fn prerelease_agent_grant_schema_is_refused_as_a_different_build() {
-    let directory = tempfile::tempdir().expect("temporary schema fixture");
+    let directory = crate::test_support::temp_home().expect("temporary schema fixture");
     let database = directory.path().join("engram.sqlite3");
     drop(SqliteStore::open(&database).expect("create current store"));
     let connection = Connection::open(&database).expect("open schema fixture");

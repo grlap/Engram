@@ -533,7 +533,7 @@ fn recovery_turns_drain_a_bounded_backlog_before_ordinary_work_resumes() {
     reason = "the restart scenario keeps frozen delivery, cursor, fencing, and checkpoint assertions together"
 )]
 fn begun_partial_recovery_is_exactly_redeliverable_after_host_restart() {
-    let directory = tempfile::tempdir().expect("tempdir");
+    let directory = crate::test_support::temp_home().expect("tempdir");
     let database = directory.path().join("engram.db");
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open(&database).expect("store");
@@ -647,7 +647,7 @@ fn begun_partial_recovery_is_exactly_redeliverable_after_host_restart() {
 
 #[test]
 fn live_task_claims_are_atomic_across_connections() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("engram.db");
     let mut first_store = SqliteStore::open(&database).unwrap();
     let mut peer_store = SqliteStore::open(&database).unwrap();

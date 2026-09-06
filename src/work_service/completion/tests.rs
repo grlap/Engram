@@ -3,7 +3,6 @@ use super::super::*;
 use crate::WorkGraphSnapshotRecordPayload;
 use crate::verbs::{AgentVerbs, DoneInput, UpdateAction, UpdateInput};
 use chrono::Duration;
-use tempfile::tempdir;
 
 mod restored;
 
@@ -13,7 +12,7 @@ mod restored;
     reason = "one scenario shows the omitted, explicit-empty, and synthesized defaults side by side"
 )]
 fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("safe-defaults".into());
     let service = LocalWorkService::new(
@@ -167,7 +166,7 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
 
 #[test]
 fn explicit_empty_acceptance_still_fails_and_note_needs_omitted_acceptance() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("strict-acceptance".into());
     let service = LocalWorkService::new(
@@ -243,7 +242,7 @@ fn explicit_empty_acceptance_still_fails_and_note_needs_omitted_acceptance() {
 
 #[test]
 fn completion_on_a_lapsed_claim_refuses_without_retaking() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completion-lapsed-claim".into());
     let service = LocalWorkService::new(
@@ -320,7 +319,7 @@ fn completion_on_a_lapsed_claim_refuses_without_retaking() {
 #[test]
 fn lapsed_completion_refuses_before_capture_for_explicit_and_derived_keys() {
     for (case, caller_key) in [("explicit", "lapsed-explicit"), ("derived", "")] {
-        let directory = tempdir().expect("temp directory");
+        let directory = crate::test_support::temp_home().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId(format!("completion-lapsed-{case}"));
         let service = LocalWorkService::new(
@@ -397,7 +396,7 @@ fn completion_recovery_command_uses_full_id_when_target_is_beyond_ambiguity_page
 
 #[test]
 fn missing_contribution_recovery_names_the_participant_and_root() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completion-missing-contribution".into());
     let service = LocalWorkService::new(
@@ -495,7 +494,7 @@ fn missing_contribution_recovery_names_the_participant_and_root() {
     reason = "one retry chain covers live, cancelled, waived, sealed, and unrelated child states"
 )]
 fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completion-unsealed-child".into());
     let service = LocalWorkService::new(
@@ -718,7 +717,7 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
 
 #[test]
 fn explicit_completion_target_is_checked_before_replay() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let service = LocalWorkService::new(
         directory.path().join("engram.sqlite3"),
         ProjectId("completion-replay-target".into()),
@@ -766,7 +765,7 @@ fn explicit_completion_target_is_checked_before_replay() {
     reason = "one scenario proves target binding and same-holder claim-epoch recovery"
 )]
 fn refused_explicit_completion_stays_target_bound_and_rotates_with_holder_claim_epoch() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completion-refusal-target-binding".into());
     let session = SessionId("completion-refusal-session".into());
@@ -893,7 +892,7 @@ fn refused_explicit_completion_stays_target_bound_and_rotates_with_holder_claim_
 
 #[test]
 fn refused_explicit_completion_cannot_refresh_across_work_revision() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let service = LocalWorkService::new(
         directory.path().join("engram.sqlite3"),
         ProjectId("completion-refusal-revision-binding".into()),
@@ -997,7 +996,7 @@ fn refused_explicit_completion_cannot_refresh_across_work_revision() {
     reason = "the table-driven failure-atomicity regression verifies every caller-controlled acceptance shape against all durable completion substeps"
 )]
 fn capture_completion_rejects_bad_acceptance_without_substeps() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completion-prevalidation".into());
     let service = LocalWorkService::new(
@@ -1163,7 +1162,7 @@ fn capture_completion_replays_after_evidence_or_checkpoint_commit() {
         ("checkpoint", true, 300, at(3)),
         ("short-claim-renewed", false, 2, at(4)),
     ] {
-        let directory = tempdir().expect("temp directory");
+        let directory = crate::test_support::temp_home().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId(format!("completion-replay-{scenario}"));
         let session = SessionId("completion-session".into());
@@ -1336,7 +1335,7 @@ fn capture_completion_replays_after_evidence_or_checkpoint_commit() {
 )]
 fn interrupted_completion_replays_the_original_work_and_run() {
     for scenario in ["focus-change", "reopen", "recomplete"] {
-        let directory = tempdir().expect("temp directory");
+        let directory = crate::test_support::temp_home().expect("temp directory");
         let database = directory.path().join("engram.sqlite3");
         let project = ProjectId(format!("interrupted-completion-{scenario}"));
         let session = SessionId("interrupted-completion-session".into());
@@ -1481,7 +1480,7 @@ fn interrupted_completion_replays_the_original_work_and_run() {
 
 #[test]
 fn pending_completion_resumes_after_holder_evidence_and_seals_the_current_set() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completion-retry-current-evidence".into());
     let session = SessionId("completion-current-evidence-session".into());
@@ -1582,7 +1581,7 @@ fn pending_completion_resumes_after_holder_evidence_and_seals_the_current_set() 
 
 #[test]
 fn stored_completion_refusal_is_a_corrupt_projection() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("stored-completion-refusal".into());
     let session = SessionId("stored-completion-refusal-session".into());
@@ -1643,7 +1642,7 @@ fn stored_completion_refusal_is_a_corrupt_projection() {
 
 #[test]
 fn pending_completion_conflicts_after_foreign_claim_fence_change() {
-    let directory = tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("engram.sqlite3");
     let project = ProjectId("completion-retry-foreign-fence".into());
     let session = SessionId("completion-original-session".into());

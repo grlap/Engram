@@ -202,7 +202,12 @@ fn show_omits_an_oversized_detach_reason_whole_and_preserves_origin_navigation()
 fn unnoted_contract(
     text: &str,
     detached: bool,
-) -> (tempfile::TempDir, AgentVerbs, LocalWorkService, String) {
+) -> (
+    crate::test_support::TempHome,
+    AgentVerbs,
+    LocalWorkService,
+    String,
+) {
     let (directory, verbs, path, project) = fixture();
     let service = LocalWorkService::new(
         path,
@@ -232,6 +237,18 @@ fn unnoted_contract(
         contract(&verbs, vec![text.into()])
     };
     (directory, verbs, service, work)
+}
+
+#[test]
+fn contract_fixture_bindings_close_both_services_before_directory() {
+    let path;
+    {
+        let (directory, verbs, service, work) = unnoted_contract("Fixture lifetime", false);
+        verbs.show(&work, at(10)).unwrap();
+        service.work_focus_for_agent(&work, at(11)).unwrap();
+        path = directory.path().to_owned();
+    }
+    assert!(!path.exists());
 }
 
 #[test]

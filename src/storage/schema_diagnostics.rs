@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn schema_identity_uses_admission_definitions_without_mutating_store() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let path = directory.path().join("schema.db");
         drop(super::super::SqliteStore::open(&path).unwrap());
         let bytes = std::fs::read(&path).unwrap();

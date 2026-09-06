@@ -6,11 +6,14 @@
 // JSON, and never seeing a hash, fence, or idempotency key in text output.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+
+import { fixtureHome, removeFixtureHomes, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import test from "node:test";
+import test, { after } from "node:test";
+
+const tempBefore = tempSnapshot();
+after(() => assertTempClean(tempBefore));
 
 import { assertTerseShow, UUID } from "./terse-show-assertions.mjs";
 
@@ -56,8 +59,8 @@ function withoutInjectedWorkAttribution(engramHome) {
   delete environment.ENGRAM_ACTOR_CONTEXT;
   return environment;
 }
-test("detach makes a stranded child independently executable through one CLI update", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-detach-"));
+test("detach makes a stranded child independently executable through one CLI update", (t) => {
+  const engramHome = fixtureHome("engram-parity-detach-", t);
   try {
     hostSetup(engramHome);
     const context = ["--home", engramHome, "work", "--actor-id", "detacher", "--session-id", "detacher"];
@@ -108,12 +111,12 @@ test("detach makes a stranded child independently executable through one CLI upd
     const doctor = run(["--home", engramHome, "doctor", "--json"]);
     assert.equal(doctor.status, 0, doctor.stderr);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("Phoenix atomic initial notes and peer child proposals through CLI", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-creation-"));
+test("Phoenix atomic initial notes and peer child proposals through CLI", (t) => {
+  const engramHome = fixtureHome("engram-parity-creation-", t);
   try {
     hostSetup(engramHome);
     const call = (session, ...args) => run(["--home", engramHome, "work", "--actor-id", "shared", "--session-id", session, ...args, "--json"]);
@@ -141,12 +144,12 @@ test("Phoenix atomic initial notes and peer child proposals through CLI", () => 
     assert.match(JSON.stringify(json("holder", "next")), /peer optional-child proposal/u);
     assert.equal(json("holder", "ls", "--all").total, before + 1);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("Phoenix full notes, title-independent acceptance reminders and terminal-parent refusal through CLI", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-notes-"));
+test("Phoenix full notes, title-independent acceptance reminders and terminal-parent refusal through CLI", (t) => {
+  const engramHome = fixtureHome("engram-parity-notes-", t);
   try {
     hostSetup(engramHome);
     const context = ["--home", engramHome, "work", "--actor-id", "reader", "--session-id", "reader"];
@@ -209,12 +212,12 @@ test("Phoenix full notes, title-independent acceptance reminders and terminal-pa
     assert.equal(error.details.remedy, "file an independent root follow-up or add under an open ancestor");
     assert.ok(error.reminders.some((line) => line.includes("independent root follow-up")));
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("Phoenix update --accept replaces criteria and ls reports exact totals", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-planning-"));
+test("Phoenix update --accept replaces criteria and ls reports exact totals", (t) => {
+  const engramHome = fixtureHome("engram-parity-planning-", t);
   try {
     hostSetup(engramHome);
     const context = ["--home", engramHome, "work", "--actor-id", "planner", "--session-id", "planner"];
@@ -250,12 +253,12 @@ test("Phoenix update --accept replaces criteria and ls reports exact totals", ()
     assert.equal(json("ls", "--search", "Planning", "--all").total, 2);
     assert.equal(json("ls", "--search", "absent").total, 0);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("scoped listing continuation is bounded and stale cursors refuse through CLI", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-listing-"));
+test("scoped listing continuation is bounded and stale cursors refuse through CLI", (t) => {
+  const engramHome = fixtureHome("engram-parity-listing-", t);
   try {
     hostSetup(engramHome);
     const context = ["--home", engramHome, "work", "--actor-id", "reader", "--session-id", "reader"];
@@ -303,12 +306,12 @@ test("scoped listing continuation is bounded and stale cursors refuse through CL
     assert.notEqual(run([...context, "ls", "--optional"]).status, 0);
     assert.notEqual(run([...context, "ls", "--under", parent, "--optional", "--required"]).status, 0);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("add -> claim -> done takes three commands and at most three fields", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-"));
+test("add -> claim -> done takes three commands and at most three fields", (t) => {
+  const engramHome = fixtureHome("engram-parity-", t);
   const actor = "parity-agent";
   try {
     hostSetup(engramHome);
@@ -499,12 +502,12 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
     assert.equal(completedAgain.status, 0, completedAgain.stderr);
     assert.equal(JSON.parse(completedAgain.stdout).status.work.lifecycle, "completed");
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("optional child is marked by show and does not gate parent completion", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-optional-child-"));
+test("optional child is marked by show and does not gate parent completion", (t) => {
+  const engramHome = fixtureHome("engram-parity-optional-child-", t);
   const actor = "optional-child-agent";
   try {
     hostSetup(engramHome);
@@ -575,12 +578,12 @@ test("optional child is marked by show and does not gate parent completion", () 
     assert.notEqual(invalidRoot.status, 0);
     assert.match(invalidRoot.stderr, /--under/u);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("disposed required child names its lifecycle and runnable waiver", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-child-waiver-"));
+test("disposed required child names its lifecycle and runnable waiver", (t) => {
+  const engramHome = fixtureHome("engram-parity-child-waiver-", t);
   const actor = "child-waiver-agent";
   try {
     hostSetup(engramHome);
@@ -662,12 +665,12 @@ test("disposed required child names its lifecycle and runnable waiver", () => {
     assert.equal(completed.status, 0, completed.stderr);
     assert.match(completed.stdout, /^done /u);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("shell words default missing local attribution without losing explicit targeting", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-defaults-"));
+test("shell words default missing local attribution without losing explicit targeting", (t) => {
+  const engramHome = fixtureHome("engram-parity-defaults-", t);
   try {
     hostSetup(engramHome);
     const seeded = run([
@@ -849,12 +852,12 @@ test("shell words default missing local attribution without losing explicit targ
       seededWork.short_ref,
     );
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("project memory words create list read and permanently retire a safe key", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-memory-"));
+test("project memory words create list read and permanently retire a safe key", (t) => {
+  const engramHome = fixtureHome("engram-parity-memory-", t);
   const actor = "memory-parity-agent";
   try {
     hostSetup(engramHome);
@@ -917,12 +920,12 @@ test("project memory words create list read and permanently retire a safe key", 
     assert.notEqual(retired.status, 0);
     assert.equal(JSON.parse(retired.stderr).error.code, "memory_retired");
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("CLI actor context is attribution while actor and session remain principals", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-actor-context-"));
+test("CLI actor context is attribution while actor and session remain principals", (t) => {
+  const engramHome = fixtureHome("engram-parity-actor-context-", t);
   const actor = "greg/codex";
   const assignee = "planning-owner";
   const session = "actor-context-source";
@@ -1023,12 +1026,12 @@ test("CLI actor context is attribution while actor and session remain principals
     assert.equal(accepted.status, 0, accepted.stderr);
     assert.equal(JSON.parse(accepted.stdout).operation, "accept");
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("list words stay compact while verbose and update metadata remain explicit", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-compact-"));
+test("list words stay compact while verbose and update metadata remain explicit", (t) => {
+  const engramHome = fixtureHome("engram-parity-compact-", t);
   const actor = "compact-agent";
   try {
     hostSetup(engramHome);
@@ -1207,12 +1210,12 @@ test("list words stay compact while verbose and update metadata remain explicit"
     assert.equal(verboseNext.status, 0, verboseNext.stderr);
     assert.ok(JSON.parse(verboseNext.stdout).session);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("done says what is owed and exits 2 when the item cannot seal yet", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-owed-"));
+test("done says what is owed and exits 2 when the item cannot seal yet", (t) => {
+  const engramHome = fixtureHome("engram-parity-owed-", t);
   const actor = "parity-agent";
   try {
     hostSetup(engramHome);
@@ -1267,12 +1270,12 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
     const again = run([...hostContext, "done"]);
     assert.equal(again.status, 0, again.stderr);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("cut A gate, prerequisite, and supersession words reach the typed core", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-cut-a-"));
+test("cut A gate, prerequisite, and supersession words reach the typed core", (t) => {
+  const engramHome = fixtureHome("engram-parity-cut-a-", t);
   const actor = "cut-a-agent";
   try {
     hostSetup(engramHome);
@@ -1501,12 +1504,12 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
     assert.equal(textGate.status, 0, textGate.stderr);
     assert.match(textGate.stdout, /recorded gate cargo-fmt passed/u);
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });
 
-test("blank asserted work identities are refused at the shared service boundary", () => {
-  const engramHome = mkdtempSync(join(tmpdir(), "engram-blank-identity-"));
+test("blank asserted work identities are refused at the shared service boundary", (t) => {
+  const engramHome = fixtureHome("engram-blank-identity-", t);
   try {
     hostSetup(engramHome);
     for (const [actor, session] of [
@@ -1527,6 +1530,6 @@ test("blank asserted work identities are refused at the shared service boundary"
       assert.match(refused.stderr, /non-empty asserted actor and session/u);
     }
   } finally {
-    rmSync(engramHome, { recursive: true, force: true });
+    removeFixtureHomes(engramHome);
   }
 });

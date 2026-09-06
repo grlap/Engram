@@ -154,7 +154,7 @@ fn phoenix_catalog_cursor_plan_seeks_without_sorting_with_availability_filters()
 
 #[test]
 fn phoenix_catalog_count_page_and_holders_share_one_snapshot() {
-    let directory = tempfile::tempdir().expect("temp");
+    let directory = crate::test_support::temp_home().expect("temp");
     let database = directory.path().join("catalog.sqlite3");
     let mut store = SqliteStore::open(&database).expect("store");
     let item = store

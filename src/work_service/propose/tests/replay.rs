@@ -102,7 +102,7 @@ fn pending_request(
 #[test]
 fn decomposition_retry_replays_after_own_revision_and_claim_renewal() {
     for held in [false, true] {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("work.db");
         let writer = service(&database);
         let parent = proposed_root(
@@ -150,7 +150,7 @@ fn decomposition_retry_replays_after_own_revision_and_claim_renewal() {
 
 #[test]
 fn decomposition_retry_refreshes_the_existing_pending_attempt_after_revision_race() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let writer = service(&database);
     writer
@@ -187,7 +187,7 @@ fn decomposition_retry_refreshes_the_existing_pending_attempt_after_revision_rac
 #[test]
 fn decomposition_retry_binds_its_own_restored_parent_bootstrap() {
     for finish_protocol in [false, true] {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let source_path = directory.path().join("source.db");
         let creator = service(&source_path);
         let parent = proposed_root(

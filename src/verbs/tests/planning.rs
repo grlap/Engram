@@ -22,7 +22,7 @@ fn revise(acceptance: Option<Vec<String>>, title: Option<&str>) -> UpdateAction 
 )]
 fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() {
     for restored in [false, true] {
-        let directory = tempdir().expect("temp");
+        let directory = crate::test_support::temp_home().expect("temp");
         let project = ProjectId("revision-snapshots".into());
         let source_path = directory.path().join("source.db");
         let source = AgentVerbs::new(
@@ -188,7 +188,7 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
     reason = "one lifecycle scenario binds replacement, omission, refusal, canonical history, and the terminal seal"
 )]
 fn phoenix_acceptance_replacement_is_presence_aware_audited_and_terminal_safe() {
-    let directory = tempdir().expect("temp");
+    let directory = crate::test_support::temp_home().expect("temp");
     let database = directory.path().join("work.sqlite3");
     let verbs = AgentVerbs::new(
         database.clone(),
@@ -304,7 +304,7 @@ fn phoenix_acceptance_replacement_is_presence_aware_audited_and_terminal_safe() 
 
 #[test]
 fn phoenix_list_reports_exact_counts_and_fits_the_complete_envelope() {
-    let directory = tempdir().expect("temp");
+    let directory = crate::test_support::temp_home().expect("temp");
     let verbs = AgentVerbs::new(
         directory.path().join("work.sqlite3"),
         ProjectId("list-counts".into()),
@@ -390,7 +390,7 @@ fn phoenix_list_reports_exact_counts_and_fits_the_complete_envelope() {
 #[test]
 fn phoenix_only_list_counts_and_zero_row_guidance_names_the_first_match() {
     use crate::storage::{reset_work_catalog_count_queries, work_catalog_count_queries};
-    let directory = tempdir().expect("temp");
+    let directory = crate::test_support::temp_home().expect("temp");
     let verbs = AgentVerbs::new(
         directory.path().join("work.sqlite3"),
         ProjectId("list-only-count".into()),

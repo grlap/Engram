@@ -82,7 +82,7 @@ fn doctor_binds_work_projections_to_canonical_events_and_scalar_columns() {
 #[test]
 fn current_schema_missing_state_tables_is_refused_before_repair_ddl() {
     for table in ["work_claims", "work_feed_entries"] {
-        let directory = tempfile::tempdir().expect("temp directory");
+        let directory = crate::test_support::temp_home().expect("temp directory");
         let database = directory.path().join(format!("missing-{table}.sqlite3"));
         let mut store = SqliteStore::open(&database).expect("initialize current schema");
         let root = store
@@ -162,7 +162,7 @@ fn current_schema_missing_state_tables_is_refused_before_repair_ddl() {
 
 #[test]
 fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("missing-indexes.sqlite3");
     let mut store = SqliteStore::open(&database).expect("initialize current schema");
     let root = store
@@ -262,7 +262,7 @@ fn explicit_projection_repair_rebuilds_missing_work_indexes_and_fts() {
 
 #[test]
 fn projection_repair_rolls_back_when_durable_work_state_is_corrupt() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("corrupt-work-repair.sqlite3");
     let mut store = SqliteStore::open(&database).expect("initialize current schema");
     let root = store
@@ -302,7 +302,7 @@ fn projection_repair_rolls_back_when_durable_work_state_is_corrupt() {
 
 #[test]
 fn same_name_wrong_work_table_definition_is_refused_without_mutation() {
-    let directory = tempfile::tempdir().expect("temp directory");
+    let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("wrong-work-table.sqlite3");
     drop(SqliteStore::open(&database).expect("initialize current schema"));
     let fixture = Connection::open(&database).expect("open work definition fixture");

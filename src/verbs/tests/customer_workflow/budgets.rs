@@ -2,7 +2,14 @@ use super::*;
 
 mod omissions;
 
-fn rich_focus(participating: i64) -> (tempfile::TempDir, AgentVerbs, LocalWorkService, String) {
+fn rich_focus(
+    participating: i64,
+) -> (
+    crate::test_support::TempHome,
+    AgentVerbs,
+    LocalWorkService,
+    String,
+) {
     let (directory, verbs, path, project) = fixture();
     let service = LocalWorkService::new(
         path,
@@ -44,6 +51,18 @@ fn coordination_note(index: i64) -> String {
     format!(
         "Requested design {index}: preserve the original execution authority and expose the follow-up as independent work with source context.\nWaiting condition: the coordinator must confirm the replacement is installed.\nNext action: inspect the review result and continue the focused task."
     )
+}
+
+#[test]
+fn rich_focus_fixture_bindings_close_both_services_before_directory() {
+    let path;
+    {
+        let (directory, verbs, service, root) = rich_focus(0);
+        verbs.show(&root, at(100)).unwrap();
+        service.work_focus_for_agent(&root, at(101)).unwrap();
+        path = directory.path().to_owned();
+    }
+    assert!(!path.exists());
 }
 
 #[test]

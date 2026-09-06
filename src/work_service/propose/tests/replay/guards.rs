@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn decomposition_correction_concurrent_finish_refusal_is_agent_safe() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let writer = service(&database);
     let parent = proposed_root(
@@ -103,7 +103,7 @@ fn decomposition_correction_concurrent_finish_refusal_is_agent_safe() {
 
 #[test]
 fn decomposition_retry_guard_preserves_non_revision_work_and_authority_fields() {
-    let directory = tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let writer = service(&directory.path().join("work.db"));
     writer
         .work_propose(root_input("Parent", "root"), at(0))
@@ -250,7 +250,7 @@ fn decomposition_retry_guard_preserves_non_revision_work_and_authority_fields() 
 #[test]
 fn decomposition_retry_conflicts_on_changed_parent_instead_of_creating_a_new_key() {
     for stage in 0..=2 {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("work.db");
         let writer = service(&database);
         writer
@@ -309,7 +309,7 @@ fn decomposition_retry_conflicts_on_changed_parent_instead_of_creating_a_new_key
 #[test]
 fn decomposition_correction_absent_completed_basis_is_healthy_but_cannot_replay() {
     for caller_key in ["", "explicit-decomposition"] {
-        let directory = tempdir().unwrap();
+        let directory = crate::test_support::temp_home().unwrap();
         let database = directory.path().join("work.db");
         let writer = service(&database);
         writer

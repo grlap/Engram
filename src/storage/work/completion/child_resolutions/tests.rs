@@ -4,7 +4,7 @@ use crate::verbs::{AddInput, AgentVerbs, ClaimInput, DoneInput, UpdateAction, Up
 
 #[test]
 fn successor_seal_accounting_verifies_each_immutable_binding_and_disjointness() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_support::temp_home().unwrap();
     let path = directory.path().join("work.db");
     let project = crate::ProjectId("successor-proof".into());
     let verbs = AgentVerbs::new(

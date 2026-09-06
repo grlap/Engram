@@ -131,7 +131,7 @@ fn completion_recovery_rejects_a_shell_unsafe_participant_id() {
 
 #[test]
 fn completion_checkpoint_holds_the_writer_slot_across_cut_selection_and_append() {
-    let directory = tempfile::tempdir().expect("temporary directory");
+    let directory = crate::test_support::temp_home().expect("temporary directory");
     let database = directory.path().join("engram.sqlite3");
     let mut store = SqliteStore::open(&database).expect("store");
     let work = store
