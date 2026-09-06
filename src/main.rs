@@ -452,9 +452,12 @@ enum WorkCommand {
     Show {
         /// Short work ref or full UUID; later words default to it.
         work_ref: String,
-        /// Newest note window, rendered chronologically with exact omissions.
+        /// Newest notes/observations, excluding gates, with exact omissions.
         #[arg(long, conflicts_with_all = ["history", "note"])]
         notes: bool,
+        /// Include gate evidence in the notes window; requires --notes.
+        #[arg(long, requires = "notes")]
+        gates: bool,
         /// Newest history window, rendered chronologically.
         #[arg(long, conflicts_with = "note")]
         history: bool,
@@ -1087,6 +1090,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         WorkCommand::Show {
             work_ref,
             notes,
+            gates,
             history,
             after,
             note,
@@ -1094,6 +1098,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             &work_ref,
             &engram::verbs::ShowInput {
                 notes,
+                gates,
                 history,
                 after,
                 note,

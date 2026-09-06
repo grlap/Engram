@@ -53,7 +53,8 @@ pub(crate) use work::WorkDiscoveryRow;
 pub(crate) use work::WorkNoteRecord;
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
 pub(crate) use work::{
-    WorkRecordAddress, WorkRecordContent, WorkRecordIndex, WorkRecordKind, WorkRecordOrder,
+    WorkRecordAddress, WorkRecordContent, WorkRecordFamily, WorkRecordIndex, WorkRecordKind,
+    WorkRecordOrder,
 };
 
 pub(crate) use work::{

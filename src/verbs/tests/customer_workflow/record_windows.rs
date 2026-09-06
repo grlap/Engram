@@ -3,6 +3,7 @@ use crate::verbs::ShowInput;
 use std::fmt::Write as _;
 
 mod corrections;
+mod gate_families;
 
 fn window(
     verbs: &AgentVerbs,
@@ -16,6 +17,7 @@ fn window(
             work,
             &ShowInput {
                 notes: !history,
+                gates: false,
                 history,
                 after,
                 note: None,
@@ -278,6 +280,7 @@ fn record_windows_refuse_wrong_kind_item_anchor_read_cut_and_note_locator() {
                 target,
                 &ShowInput {
                     notes: !history,
+                    gates: false,
                     history,
                     after: Some(cursor),
                     note: None,

@@ -18,16 +18,32 @@ use crate::{
 #[serde(rename_all = "snake_case")]
 pub(crate) enum WorkRecordKind {
     Notes,
+    NotesWithGates,
     History,
 }
 
 impl WorkRecordKind {
     pub(crate) fn word(self) -> &'static str {
         match self {
-            Self::Notes => "notes",
+            Self::Notes | Self::NotesWithGates => "notes",
             Self::History => "history",
         }
     }
+
+    pub(crate) fn is_notes(self) -> bool {
+        matches!(self, Self::Notes | Self::NotesWithGates)
+    }
+}
+
+/// Presentation families are disjoint; a structured gate is never inferred
+/// from prose. Counts cover the complete index before window filtering.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum WorkRecordFamily {
+    Notes,
+    Observations,
+    Gates,
+    History,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -73,6 +89,7 @@ pub(crate) struct WorkRecordIndex {
     pub address: WorkRecordAddress,
     pub order: WorkRecordOrder,
     pub locator: String,
+    pub record_family: WorkRecordFamily,
     family: String,
     object_kind: String,
     // Shared verified immutable bytes decoded by this snapshot's index read.
@@ -94,6 +111,8 @@ pub(crate) enum WorkRecordContent {
 impl SqliteStore {
     /// The caller owns one read snapshot encompassing metadata and body reads.
     /// Indexing does not decode native note bodies; only selected bodies load.
+    /// Both notes modes index all families; the service filters after counting
+    /// so explicit detail and item-wide family totals never lose gate members.
     pub(crate) fn work_record_index(
         &self,
         project: &ProjectId,
@@ -137,7 +156,28 @@ impl SqliteStore {
                 members.sort_by_key(|(time, _)| *time);
             }
             for (position, (_, member)) in members.into_iter().enumerate() {
+                let record_family = match member {
+                    RestoredMember::Note(index) => {
+                        let note = &record.history.notes[index - 1];
+                        if note.gate.is_some() {
+                            WorkRecordFamily::Gates
+                        } else if note
+                            .actor
+                            .provenance_chain
+                            .iter()
+                            .any(crate::domain::is_non_holder_note_marker)
+                        {
+                            WorkRecordFamily::Observations
+                        } else {
+                            WorkRecordFamily::Notes
+                        }
+                    }
+                    RestoredMember::Event(_) | RestoredMember::Completion => {
+                        WorkRecordFamily::History
+                    }
+                };
                 indexed.push(WorkRecordIndex {
+                    record_family,
                     address: WorkRecordAddress {
                         hash: hash.clone(),
                         member: Some(member),
@@ -156,13 +196,16 @@ impl SqliteStore {
             }
         }
         let sql = match kind {
-            WorkRecordKind::Notes => format!(
-                "SELECT notes.hash, notes.family, entry.position, entry.object_kind
-                 FROM ({NOTE_OBJECTS}) notes LEFT JOIN work_feed_entries entry
+            WorkRecordKind::Notes | WorkRecordKind::NotesWithGates => format!(
+                "SELECT notes.hash, notes.family, entry.position, entry.object_kind,
+                    CASE WHEN json_type(object.canonical_json, '$.gate') = 'object' THEN 'gates'
+                         WHEN notes.family = 'observation' THEN 'observations' ELSE 'notes' END
+                 FROM ({NOTE_OBJECTS}) notes LEFT JOIN objects object ON object.object_hash = notes.hash
+                 LEFT JOIN work_feed_entries entry
                    ON entry.object_hash = notes.hash AND entry.feed_kind = 'project' AND entry.feed_id = ?2
                  ORDER BY entry.position"),
             WorkRecordKind::History =>
-                "SELECT entry.object_hash, 'event', entry.position, entry.object_kind
+                "SELECT entry.object_hash, 'event', entry.position, entry.object_kind, 'history'
                  FROM work_feed_entries entry WHERE entry.work_id = ?1 AND entry.feed_kind = 'project'
                    AND entry.feed_id = ?2 AND entry.object_kind = 'work_event' ORDER BY entry.position".into(),
         };
@@ -171,6 +214,13 @@ impl SqliteStore {
         while let Some(row) = rows.next()? {
             let position: Option<i64> = row.get(2)?;
             indexed.push(WorkRecordIndex {
+                record_family: match row.get::<_, String>(4)?.as_str() {
+                    "gates" => WorkRecordFamily::Gates,
+                    "observations" => WorkRecordFamily::Observations,
+                    "notes" => WorkRecordFamily::Notes,
+                    "history" => WorkRecordFamily::History,
+                    _ => return Err(invalid("unknown record family")),
+                },
                 address: WorkRecordAddress {
                     hash: parse_hash(row.get(0)?)?,
                     member: None,

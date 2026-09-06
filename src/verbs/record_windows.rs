@@ -6,13 +6,16 @@ use super::{
     StoreError, Utc, Value, VerbError, WorkFocusView, WorkSectionOmissionReason, json,
     terminal_safe_multiline,
 };
-use crate::storage::WorkRecordKind;
+use crate::storage::{WorkRecordFamily, WorkRecordKind};
 use crate::work_service::{WorkRecordRow, WorkRecordWindow};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ShowInput {
     #[serde(default)]
     pub notes: bool,
+    /// Include structured gate evidence in an explicit notes window.
+    #[serde(default)]
+    pub gates: bool,
     #[serde(default)]
     pub history: bool,
     pub after: Option<String>,
@@ -31,12 +34,13 @@ impl AgentVerbs {
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
         if (input.notes && input.history)
+            || (input.gates && !input.notes)
             || (input.note.is_some() && (input.notes || input.history || input.after.is_some()))
             || (input.after.is_some() && !input.notes && !input.history)
         {
             return Err(VerbError::at(
                 StoreError::InvalidWork(
-                    "choose --notes or --history with optional --after, or --note LOCATOR alone"
+                    "choose --notes [--gates] or --history with optional --after, or --note LOCATOR alone"
                         .into(),
                 ),
                 work_ref,
@@ -66,7 +70,9 @@ impl AgentVerbs {
         if !input.notes && !input.history {
             return self.show(work_ref, now);
         }
-        let kind = if input.notes {
+        let kind = if input.gates {
+            WorkRecordKind::NotesWithGates
+        } else if input.notes {
             WorkRecordKind::Notes
         } else {
             WorkRecordKind::History
@@ -74,9 +80,9 @@ impl AgentVerbs {
         // Quote an unresolved caller ref for refusal guidance; success uses the
         // canonical short ref from the same snapshot as the window.
         let command = format!(
-            "engram work show {} --{}",
+            "engram work show {} {}",
             safe_reference_argument(work_ref),
-            kind.word()
+            window_flags(kind)
         );
         let (view, page) = self
             .service
@@ -104,6 +110,14 @@ pub(super) fn safe_reference_argument(work_ref: &str) -> String {
     }
 }
 
+fn window_flags(kind: WorkRecordKind) -> &'static str {
+    match kind {
+        WorkRecordKind::Notes => "--notes",
+        WorkRecordKind::NotesWithGates => "--notes --gates",
+        WorkRecordKind::History => "--history",
+    }
+}
+
 pub(super) fn fit_window(
     mut view: WorkFocusView,
     page: &WorkRecordWindow,
@@ -112,7 +126,7 @@ pub(super) fn fit_window(
     budget: usize,
 ) -> Result<Receipt, VerbError> {
     let work_ref = view.status.work.short_ref.clone();
-    if page.kind == WorkRecordKind::Notes {
+    if page.kind.is_notes() {
         view.evidence_items.clear();
         view.latest_evidence_item = None;
         view.omissions
@@ -137,7 +151,7 @@ pub(super) fn fit_window(
             Ok(receipt) => (receipt, false),
             Err(error)
                 if first > 0
-                    && page.kind == WorkRecordKind::Notes
+                    && page.kind.is_notes()
                     && matches!(error.error, StoreError::InvalidWorkProjection(_)) =>
             {
                 (
@@ -183,10 +197,10 @@ fn append_window(
     {
         receipt.lines.truncate(start);
     }
-    if page.kind == WorkRecordKind::Notes {
+    if page.kind.is_notes() {
         receipt.lines.retain(|line| !line.starts_with("notes:"));
     }
-    let command = format!("engram work show {work_ref} --{word}");
+    let command = format!("engram work show {work_ref} {}", window_flags(page.kind));
     receipt
         .next
         .retain(|next| next != &command && !next.starts_with(&format!("{command} --after ")));
@@ -196,7 +210,7 @@ fn append_window(
     }
     let older = page.total - page.newer - visible;
     let omitted = page.total - visible;
-    let window = json!({ "selection": "newest_first", "order": "oldest_first", "newer": page.newer,
+    let mut window = json!({ "selection": "newest_first", "order": "oldest_first", "newer": page.newer,
         "older": older, "shown": visible, "total": page.total, "after": after });
     let rows = page.rows[..visible]
         .iter()
@@ -204,7 +218,40 @@ fn append_window(
         .rev()
         .map(|(index, row)| row_value(row, placeholder && index == 0, work_ref, actor))
         .collect::<Vec<_>>();
-    if page.kind == WorkRecordKind::Notes {
+    if page.kind.is_notes() {
+        let families = [
+            WorkRecordFamily::Notes,
+            WorkRecordFamily::Observations,
+            WorkRecordFamily::Gates,
+        ]
+        .map(|family| {
+            let total = page.families.get(&family).copied().unwrap_or(0);
+            let shown = page.rows[..visible]
+                .iter()
+                .filter(|row| row.family == family)
+                .count();
+            (
+                family,
+                json!({ "total": total, "shown": shown, "omitted": total - shown }),
+            )
+        })
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>();
+        window["families"] = json!(families);
+        window["includes_gates"] = json!(page.kind == WorkRecordKind::NotesWithGates);
+        if page.kind == WorkRecordKind::Notes
+            && page
+                .families
+                .get(&WorkRecordFamily::Gates)
+                .copied()
+                .unwrap_or(0)
+                > 0
+        {
+            let gates = format!("engram work show {work_ref} --notes --gates");
+            if !receipt.next.contains(&gates) {
+                receipt.next.push(gates);
+            }
+        }
         receipt.value["notes"] = json!(rows);
         receipt.value["notes_omitted"] = json!(omitted);
         receipt.value["notes_window"] = window;
@@ -217,6 +264,17 @@ fn append_window(
     }
     receipt.value["next"] = json!(receipt.next);
     receipt.lines.push(format!("{word}: window {visible} of {}; {omitted} omitted ({older} older, {} newer); oldest to newest within window", page.total, page.newer));
+    if page.kind.is_notes() {
+        let families = &receipt.value["notes_window"]["families"];
+        receipt.lines.push(format!(
+            "  families: {} notes, {} observations; gate evidence: {} ({} shown, {} omitted)",
+            families["notes"]["total"],
+            families["observations"]["total"],
+            families["gates"]["total"],
+            families["gates"]["shown"],
+            families["gates"]["omitted"]
+        ));
+    }
     for row in &rows {
         append_row_lines(&mut receipt.lines, row);
     }
@@ -225,7 +283,7 @@ fn append_window(
 
 fn row_value(row: &WorkRecordRow, placeholder: bool, work_ref: &str, actor: &str) -> Value {
     let omitted = row.body_omitted || placeholder;
-    let mut value = json!({ "locator": row.locator, "kind": row.kind, "body_bytes": row.body_bytes,
+    let mut value = json!({ "locator": row.locator, "kind": row.kind, "family": row.family, "body_bytes": row.body_bytes,
         "by": super::show::relative_actor_label(&row.actor.actor_id, row.actor.attribution_context(), actor),
         "created_at": row.recorded_at,
         "non_holder": row.actor.provenance_chain.iter().any(crate::domain::is_non_holder_note_marker) });

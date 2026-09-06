@@ -702,7 +702,15 @@ is active the agent word infers it for `unblock`. Authorized memory bodies
 remain available on demand through their version hash on host-only reads.
 An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
 bodies and references in a newest-selected window, rendered oldest to newest
-within the window. Inherited generations retain member order, followed by
+within the window. Structured gate evidence is excluded by default so later
+gate runs cannot displace the latest decision. `--notes --gates` / MCP
+`notes: true, gates: true` includes gates using the same index and fitter.
+The default page states the gate-evidence count once and offers that explicit
+read. `notes_window.families` retains item-wide notes/observations/gates totals
+with exact shown and omitted counts for each family; window totals describe
+only the selected stream. `includes_gates` records the cursor-bound mode and
+all continuation/refusal commands preserve it. Canonical detail locators are
+independent of the filter. Inherited generations retain member order, followed by
 every native note family in dense project-feed order across run generations.
 The focus projection, count, members and continuation basis share one read
 transaction after the existing focus selection. `notes[].summary` is a full

@@ -165,12 +165,23 @@ Rules that matter:
   repeat after supersession refuses without creating another root. See
   [detached follow-ups](local-work-system.md#gates-prerequisites-supersession-and-project-memories).
 - `show REF --notes` (MCP `show { work_ref: REF, notes: true }`) returns
-  the newest note window, rendered oldest to newest within that window.
+  the newest note/observation window, excluding structured gate evidence,
+  rendered oldest to newest within that window. `--notes --gates` (MCP
+  `notes: true, gates: true`) adds gate rows through the same window reader.
+  The default page states the item's gate-evidence count once and offers that
+  explicit command when gates exist. Gate-like prose is still an ordinary note.
   Inherited generations precede native dense project-feed positions, not
   asserted timestamps. `notes[].summary` is the complete body, never a
   shortened preview. Text and JSON windows, including guidance and cursor,
   fit 12 KiB. `notes_omitted` is the exact total minus shown;
   `notes_window` states `shown`, `total`, `newer`, `older`, and `after`.
+  These counts describe the selected stream. `notes_window.families` gives
+  item-wide `notes`, `observations`, and `gates` totals, each with exact `shown`
+  and `omitted` counts; excluded gates count as omitted in their family, not
+  as omitted notes in the default stream. Each row names its `family`.
+  `includes_gates` records the mode. This choice is bound into the existing
+  cursor and preserved in continuation and fresh-window guidance. Switching
+  it requires starting a fresh window. Gate detail locators work in either mode.
   Follow the single `show REF --notes --after CURSOR` command for older notes.
   `--history` (MCP `history: true`) uses the same window fields under
   `history.window`, with records in `history.items` and exact `omitted`.
@@ -185,7 +196,8 @@ Rules that matter:
   size and adds `summary_truncated: true` plus a `detail` command when
   shortened. The detail read returns the complete note, not that summary.
   Ordinary show advertises this history reader. Notes and history are mutually
-  exclusive; `after` requires one of them. A cursor binds item, project, kind,
+  exclusive; `after` requires one of them, and `gates` requires `notes`.
+  A cursor binds item, project, kind,
   immutable boundary/member, order and read cut. Mismatches, changed project
   feeds, reversed clocks and crossed time boundaries refuse with
   `work_show_cursor_invalid` and a fresh same-kind command. The cut uses the

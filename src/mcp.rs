@@ -112,8 +112,10 @@ struct LsArgs {
 struct ShowArgs {
     /// Short work ref or full UUID; becomes the focus for later calls.
     work_ref: String,
-    /// Newest note window, rendered chronologically with exact omissions.
+    /// Newest notes/observations, excluding gates, with exact omissions.
     notes: Option<bool>,
+    /// Include gate evidence in the notes window; requires notes:true.
+    gates: Option<bool>,
     /// Newest history window, using the same bounded continuation contract.
     history: Option<bool>,
     /// Item/kind-bound continuation; readable query context, not confidential.
@@ -350,6 +352,7 @@ impl McpServer {
             &args.work_ref,
             &crate::verbs::ShowInput {
                 notes: args.notes.unwrap_or(false),
+                gates: args.gates.unwrap_or(false),
                 history: args.history.unwrap_or(false),
                 after: args.after,
                 note: args.note,

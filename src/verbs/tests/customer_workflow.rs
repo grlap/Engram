@@ -516,7 +516,17 @@ fn phoenix_full_notes_keep_all_gate_failure_labels_and_references() {
             at(2),
         )
         .expect("gate");
-    let full = verbs.show_with_notes(&work, true, at(3)).expect("notes");
+    let full = verbs
+        .show_records(
+            &work,
+            &crate::verbs::ShowInput {
+                notes: true,
+                gates: true,
+                ..crate::verbs::ShowInput::default()
+            },
+            at(3),
+        )
+        .expect("gate notes");
     assert_eq!(full.value["notes_omitted"], 0);
     assert_eq!(full.value["notes"].as_array().expect("notes").len(), 1);
     for failure in failures {

@@ -421,6 +421,90 @@ test("note and history windows continue through CLI and MCP with complete detail
   }
 });
 
+test("notes keep a verdict visible after nine gates with explicit CLI and MCP gate traversal", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-note-gates-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "gate-reader");
+    await client.initialize();
+    const work_ref = receipt(await client.call("add", { title: "Verdict then gates" })).work.short_ref;
+    receipt(await client.call("note", { work_ref, text: "Initial observation" }));
+    receipt(await client.call("claim", { work_ref }));
+    receipt(await client.call("note", { work_ref, text: "Final verdict: approved" }));
+    for (let index = 0; index < 9; index++) {
+      receipt(await client.call("gate", { work_ref, name: `check ${index}`, failed: Array.from({ length: 16 }, (_, failure) => `failure ${failure}: ${"x".repeat(180)}`), evidence_ref: `test:gate-${index}` }));
+    }
+    const context = ["--home", engramHome, "work", "--actor-id", "gate-reader", "--session-id", "gate-reader"];
+    const check = async (gates, after) => {
+      const value = receipt(await client.call("show", { work_ref, notes: true, gates, after }));
+      const flags = ["show", work_ref, "--notes", ...(gates ? ["--gates"] : []), ...(after ? ["--after", after] : [])];
+      const shell = spawnSync(binary, [...context, ...flags, "--json"], { cwd: root, encoding: "utf8" });
+      const text = spawnSync(binary, [...context, ...flags], { cwd: root, encoding: "utf8" });
+      assert.equal(shell.status, 0, shell.stderr);
+      assert.equal(text.status, 0, text.stderr);
+      const shellValue = JSON.parse(shell.stdout);
+      if (value.notes_window.after) {
+        // Independent reads mint their own observation timestamp. Every other
+        // cursor binding and every receipt field must agree exactly.
+        const decode = (token) => JSON.parse(Buffer.from(token.slice(3), "hex").toString("utf8"));
+        assert.match(shellValue.notes_window.after, /^s1-[0-9a-f]+$/u);
+        const expectedCursor = decode(value.notes_window.after);
+        const actualCursor = decode(shellValue.notes_window.after);
+        assert.ok(Date.parse(actualCursor.cut.observed_at) >= Date.parse(expectedCursor.cut.observed_at));
+        actualCursor.cut.observed_at = expectedCursor.cut.observed_at;
+        assert.deepEqual(actualCursor, expectedCursor);
+        shellValue.next = shellValue.next.map((command) => command.replace(shellValue.notes_window.after, value.notes_window.after));
+        shellValue.notes_window.after = value.notes_window.after;
+      }
+      assert.deepEqual(shellValue, value);
+      assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
+      assert.ok(Buffer.byteLength(text.stdout) <= 12288);
+      assert.equal(text.stdout.match(/gate evidence:/gu).length, 1);
+      for (const [family, total] of Object.entries({ notes: 1, observations: 1, gates: 9 })) {
+        const shown = value.notes.filter((row) => row.family === family).length;
+        assert.deepEqual(value.notes_window.families[family], { total, shown, omitted: total - shown });
+      }
+      return value;
+    };
+    const first = await check(false);
+    assert.deepEqual(first.notes.map(({ summary }) => summary), ["Initial observation", "Final verdict: approved"]);
+    assert.equal(first.notes_window.total, 2);
+    assert.equal(first.notes_omitted, 0);
+    assert.ok(first.next.includes(`engram work show ${work_ref} --notes --gates`));
+    const seen = new Set();
+    let after;
+    do {
+      const page = await check(true, after);
+      assert.equal(page.notes_window.total, 11);
+      assert.equal(page.notes_window.newer, seen.size);
+      assert.equal(page.notes_omitted, 11 - page.notes.length);
+      for (const row of page.notes) {
+        assert.equal(seen.has(row.locator), false);
+        seen.add(row.locator);
+        const detail = receipt(await client.call("show", { work_ref, note: row.locator }));
+        assert.equal(detail.note.family, row.family);
+        assert.equal(detail.note.summary, row.summary);
+      }
+      after = page.notes_window.after;
+      if (after) {
+        assert.ok(page.next.includes(`engram work show ${work_ref} --notes --gates --after ${after}`));
+        const error = structuredError(await client.call("show", { work_ref, notes: true, after }), "work_show_cursor_invalid");
+        assert.deepEqual(error.next, [`engram work show '${work_ref}' --notes`]);
+      }
+      assert.ok(seen.size <= 11);
+    } while (after);
+    assert.equal(seen.size, 11);
+    structuredError(await client.call("show", { work_ref, gates: true }), "work_invalid");
+    const invalid = spawnSync(binary, [...context, "show", work_ref, "--gates"], { cwd: root, encoding: "utf8" });
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, /--notes/u);
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("explicit records retain relative authors and host context on CLI and MCP", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-record-authors-"));
   const clients = [];

@@ -4,8 +4,10 @@
 use super::*;
 use crate::domain::WorkCatalogReadCut;
 use crate::storage::{
-    WorkRecordAddress, WorkRecordContent, WorkRecordIndex, WorkRecordKind, WorkRecordOrder,
+    WorkRecordAddress, WorkRecordContent, WorkRecordFamily, WorkRecordIndex, WorkRecordKind,
+    WorkRecordOrder,
 };
+use std::collections::BTreeMap;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -26,12 +28,16 @@ pub(crate) struct WorkRecordWindow {
     pub rows: Vec<WorkRecordRow>,
     pub total: usize,
     pub newer: usize,
+    /// Complete item-family totals, including gates excluded by default.
+    /// Only rows are fitted; these snapshot totals never change during fitting.
+    pub families: BTreeMap<WorkRecordFamily, usize>,
     project: ProjectId,
     work: WorkId,
     cut: WorkCatalogReadCut,
 }
 
 pub(crate) struct WorkRecordRow {
+    pub family: WorkRecordFamily,
     pub locator: String,
     pub kind: String,
     pub summary: String,
@@ -103,7 +109,14 @@ impl LocalWorkService {
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
         store.work_read_snapshot(|store| {
             let cut = store.work_read_cut(&self.project_id, now)?;
-            let index = store.work_record_index(&self.project_id, item.work_id, kind)?;
+            let mut index = store.work_record_index(&self.project_id, item.work_id, kind)?;
+            let mut families = BTreeMap::new();
+            for entry in &index {
+                *families.entry(entry.record_family).or_insert(0) += 1;
+            }
+            if kind == WorkRecordKind::Notes {
+                index.retain(|entry| entry.record_family != WorkRecordFamily::Gates);
+            }
             let end = if let Some(cursor) = &cursor {
                 if cut.project_position != cursor.cut.project_position
                     || now < cursor.cut.observed_at
@@ -151,6 +164,7 @@ impl LocalWorkService {
             Ok((
                 view,
                 WorkRecordWindow {
+                    families,
                     kind,
                     rows,
                     total: index.len(),
@@ -188,8 +202,11 @@ impl LocalWorkService {
         let item = store.resolve_work_ref(&self.project_id, work_ref)?;
         store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
         store.work_read_snapshot(|store| {
-            let index =
-                store.work_record_index(&self.project_id, item.work_id, WorkRecordKind::Notes)?;
+            let index = store.work_record_index(
+                &self.project_id,
+                item.work_id,
+                WorkRecordKind::NotesWithGates,
+            )?;
             let prefix = prefix.to_ascii_lowercase();
             let matches = index
                 .iter()
@@ -219,7 +236,7 @@ impl LocalWorkService {
                     &self.project_id,
                     item.work_id,
                     matches[0],
-                    WorkRecordKind::Notes,
+                    WorkRecordKind::NotesWithGates,
                 )?,
             ))
         })
@@ -276,6 +293,7 @@ fn project_record(
             } => (kind, compact_text(&summary), Vec::new(), actor, recorded_at),
         };
     Ok(WorkRecordRow {
+        family: entry.record_family,
         locator: entry.locator.clone(),
         body_bytes: note_body_bytes.unwrap_or(summary.len()),
         summary,
