@@ -223,17 +223,23 @@ fn evidence_kind_word(kind: WorkEvidenceKind) -> &'static str {
 }
 
 fn child_summary_line(child: &WorkItemSummary) -> String {
+    use std::fmt::Write as _;
+
     let requirement = if child.child_requirement == ChildRequirement::Optional {
         ", optional"
     } else {
         ""
     };
-    format!(
+    let mut line = format!(
         "{} \"{}\" ({}{requirement})",
         child.short_ref,
         short(&child.title),
         lifecycle_word(child.lifecycle)
-    )
+    );
+    if let Some(resolution) = child_obligations::ShowChildSuccessor::for_work(child) {
+        let _ = write!(line, " — {}", resolution.line());
+    }
+    line
 }
 
 fn kind_word(kind: WorkItemKind) -> &'static str {

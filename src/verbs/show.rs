@@ -165,6 +165,8 @@ pub(super) struct ShowWorkSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) superseded_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) child_resolution: Option<super::child_obligations::ShowChildSuccessor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) child_requirement: Option<ChildRequirement>,
 }
 
@@ -181,6 +183,8 @@ pub(super) struct ShowRelation {
     pub(super) short_ref: String,
     pub(super) title: String,
     pub(super) lifecycle: WorkLifecycle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) child_resolution: Option<super::child_obligations::ShowChildSuccessor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) child_requirement: Option<ChildRequirement>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -311,6 +315,7 @@ pub(super) fn show_relation(item: &WorkItemSummary) -> ShowRelation {
         short_ref: item.short_ref.clone(),
         title: item.title.clone(),
         lifecycle: item.lifecycle,
+        child_resolution: super::child_obligations::ShowChildSuccessor::for_work(item),
         child_requirement: optional_child_requirement(item.child_requirement),
         prerequisite_state: item.prerequisite_state,
     }
@@ -347,6 +352,12 @@ pub(super) fn show_lines(
     lines.push(facts.join("  "));
     if let Some(replacement) = work.superseded_by {
         lines.push(format!("successor: {}", short_ref_for_work_id(replacement)));
+    }
+    if let Some(resolution) = super::child_obligations::ShowChildSuccessor::for_work(work) {
+        lines.push(resolution.line());
+        if let Some(remedy) = resolution.remedy {
+            lines.push(format!("  {remedy}"));
+        }
     }
     if let Some(origin) = &view.detached_from {
         if origin.reason_truncated {
@@ -561,6 +572,7 @@ pub(super) fn show_receipt_value(
                 lifecycle: work.lifecycle,
                 restored: work.restored,
                 superseded_by: work.superseded_by.map(short_ref_for_work_id),
+                child_resolution: super::child_obligations::ShowChildSuccessor::for_work(work),
                 child_requirement: optional_child_requirement(work.child_requirement),
             },
             availability: view.status.availability,

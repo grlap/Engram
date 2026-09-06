@@ -164,10 +164,14 @@ pub(super) fn child_obligations(
     let waived = store.work_child_waivers(parent, run)?;
     let mut groups = WorkChildObligations::default();
     for child in children {
+        let successor = store.required_child_successor(child)?;
         let page = match child.child_requirement {
             ChildRequirement::Required
                 if child.lifecycle != WorkLifecycle::Completed
-                    && !waived.contains(&child.work_id) =>
+                    && !waived.contains(&child.work_id)
+                    && successor
+                        .as_ref()
+                        .is_none_or(|state| state.resolution.is_none()) =>
             {
                 &mut groups.required_owed
             }
@@ -184,7 +188,9 @@ pub(super) fn child_obligations(
             WorkLifecycle::Cancelled | WorkLifecycle::Superseded
         );
         if page.items.len() < MAX_CHILD_OBLIGATION_REFS {
-            page.items.push(work_item_summary(child));
+            let mut summary = work_item_summary(child);
+            summary.required_child_successor = successor;
+            page.items.push(summary);
         }
     }
     Ok(groups)

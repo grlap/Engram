@@ -722,7 +722,13 @@ impl LocalWorkService {
                     reason: bounded,
                 }
             });
+        let successor = if matches!(text, FocusText::Full) {
+            store.required_child_successor(&status.work)?
+        } else {
+            None
+        };
         let mut status = ready_work_summary(status);
+        status.work.required_child_successor = successor;
         if let Some(acceptance) = full_acceptance {
             status.work.acceptance = acceptance;
         }
@@ -738,8 +744,14 @@ impl LocalWorkService {
             children: children
                 .into_iter()
                 .take(visible_child_count)
-                .map(|work| work_item_summary(&work))
-                .collect(),
+                .map(|work| {
+                    let mut summary = work_item_summary(&work);
+                    if matches!(text, FocusText::Full) {
+                        summary.required_child_successor = store.required_child_successor(&work)?;
+                    }
+                    Ok(summary)
+                })
+                .collect::<Result<_, StoreError>>()?,
             child_count,
             child_obligations,
             prerequisites,

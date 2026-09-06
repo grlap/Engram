@@ -1,6 +1,7 @@
 use super::*;
 
 mod historical;
+mod successor;
 
 fn assert_group(
     receipt: &Receipt,
@@ -18,10 +19,18 @@ fn assert_group(
     for (row, reference) in rows.iter().zip(expected) {
         assert_eq!(row["ref"], *reference);
         let command = if row.get("resolve_first").is_some() {
-            assert_eq!(
-                row["resolve_first"],
-                "disposed required child still needs an explicit waiver"
-            );
+            if row.get("child_resolution").is_none() {
+                assert_eq!(
+                    row["resolve_first"],
+                    "disposed required child still needs an explicit waiver"
+                );
+            } else {
+                assert_eq!(row["child_resolution"]["disposition"], "owed");
+                assert_eq!(
+                    row["child_resolution"]["reason"],
+                    "successor is not completed; explicit waiver still required"
+                );
+            }
             format!("engram work update {parent} --waive {reference} --reason \"…\"")
         } else {
             format!("engram work show {reference}")
@@ -205,7 +214,7 @@ fn show_child_summary_distinguishes_disposed_owed_waived_and_completed_children(
             UpdateInput {
                 work_ref: Some(replaced.clone()),
                 action: UpdateAction::Supersede {
-                    replacement,
+                    replacement: replacement.clone(),
                     reason: "New plan".into(),
                 },
             },
@@ -215,6 +224,12 @@ fn show_child_summary_distinguishes_disposed_owed_waived_and_completed_children(
     let optional = add(&verbs, "Disposed optional", Some(&parent), true, 10);
     cancel(&verbs, &optional, 11);
     let receipt = verbs.show(&parent, at(12)).unwrap();
+    assert_eq!(
+        receipt.value["child_obligations"]["required_owed"]["items"][1]["resolve_first"],
+        format!(
+            "successor {replacement} (open): successor is not completed; explicit waiver still required"
+        )
+    );
     assert_group(
         &receipt,
         "required_owed",

@@ -162,6 +162,7 @@ pub(super) fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
         revision: work.revision,
         active_run_id: work.active_run_id,
         superseded_by: work.superseded_by,
+        required_child_successor: None,
         prerequisite_state: None,
         updated_at: work.updated_at,
     }

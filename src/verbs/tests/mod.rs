@@ -55,6 +55,7 @@ fn hash(fill: char) -> ObjectHash {
 fn compact_test_row(index: usize) -> CompactWorkRow {
     let title = format!("Readable compact title {index} {}", "x".repeat(100));
     CompactWorkRow {
+        child_resolution: None,
         work_ref: format!("w-{index:012x}"),
         title: short_with_limit(&title, MAX_COMPACT_TITLE_BYTES),
         state: "blocked".into(),

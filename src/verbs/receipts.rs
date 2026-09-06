@@ -38,6 +38,8 @@ pub(super) struct CompactWorkRow {
     pub(super) blocked_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) remedy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) child_resolution: Option<super::child_obligations::ShowChildSuccessor>,
 }
 
 pub(super) fn ready_line(item: &ReadyWorkSummary) -> String {
@@ -67,6 +69,12 @@ pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
     }
     if let Some(remedy) = &item.remedy {
         let _ = write!(line, " — {remedy}");
+    }
+    if let Some(resolution) = &item.child_resolution {
+        let _ = write!(line, " — {}", resolution.line());
+        if let Some(remedy) = &resolution.remedy {
+            let _ = write!(line, " — {remedy}");
+        }
     }
     if let (Some(holder), Some(held_until)) = (&item.holder, &item.held_until) {
         let _ = write!(line, " held by {holder} until {held_until}");
@@ -531,6 +539,7 @@ pub(super) fn compact_row(
         kind: work.kind,
         labels,
         labels_omitted,
+        child_resolution: super::child_obligations::ShowChildSuccessor::for_work(work),
         parent_ref: work.parent_id.map(short_ref_for_work_id),
         blocked_reason: status
             .blocking_parent

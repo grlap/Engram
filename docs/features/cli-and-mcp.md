@@ -887,8 +887,9 @@ checkpoint while its acknowledged run-feed cut remains current. If the feed
 advances, the retry writes a new checkpoint under a cut-derived substep key.
 Cut selection and that checkpoint append share one SQLite write transaction.
 
-For a cancelled or superseded required child without a seal or waiver, the
-refusal names that lifecycle and returns the runnable agent command
+For a cancelled or superseded required child without a seal, qualifying
+[sibling successor resolution](local-work-system.md#gates-prerequisites-supersession-and-project-memories),
+or waiver, the refusal names that lifecycle and returns the runnable agent command
 `engram work update PARENT --waive CHILD --reason "why"`. The matching MCP
 update uses `action: "waive"`, `child`, and `reason`; both translate into the
 existing typed `work_update:waive_required_child` operation. The project-bound

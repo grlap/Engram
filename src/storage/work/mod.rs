@@ -5,6 +5,8 @@
     reason = "work lifecycle transactions stay contiguous so their atomic invariants remain auditable"
 )]
 
+mod child_resolution;
+pub(crate) use child_resolution::RequiredChildSuccessor;
 mod completion;
 mod discovery;
 mod execution;

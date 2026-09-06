@@ -79,7 +79,16 @@ impl LocalWorkService {
                 cursor.as_ref().map(|cursor| &cursor.cut),
             )?;
             Ok(WorkListingPage {
-                items: page.items.into_iter().map(ready_work_summary).collect(),
+                items: page
+                    .items
+                    .into_iter()
+                    .map(|item| {
+                        let successor = store.required_child_successor(&item.work)?;
+                        let mut summary = ready_work_summary(item);
+                        summary.work.required_child_successor = successor;
+                        Ok(summary)
+                    })
+                    .collect::<Result<_, StoreError>>()?,
                 total,
                 preceding,
                 claims,

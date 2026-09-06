@@ -60,6 +60,7 @@ use crate::{
     memory::Redactor,
 };
 
+mod child_resolutions;
 mod lifecycle;
 mod projections;
 
@@ -223,6 +224,16 @@ impl SqliteStore {
             required_restored_child_completions(&transaction, item.work_id)?;
         let required_child_waivers =
             validated_required_child_waivers(&transaction, item.work_id, &root_execution)?;
+        let required_child_resolutions =
+            super::child_resolution::required_successor_resolutions_on(
+                &transaction,
+                item.work_id,
+                run.root_execution_id,
+                &required_child_waivers
+                    .iter()
+                    .map(|waiver| waiver.work_id)
+                    .collect(),
+            )?;
         let unfinished_optional_children =
             unfinished_optional_children(&transaction, item.work_id)?;
         let required_child_count = transaction.query_row(
@@ -236,7 +247,8 @@ impl SqliteStore {
             != Some(
                 required_child_seals.len()
                     + restored_child_completions.len()
-                    + required_child_waivers.len(),
+                    + required_child_waivers.len()
+                    + required_child_resolutions.len(),
             )
         {
             let sealed_children = required_child_seals
@@ -279,6 +291,9 @@ impl SqliteStore {
                     !sealed_children.contains(child)
                         && !restored_children.contains(child)
                         && !waived_children.contains(child)
+                        && !required_child_resolutions
+                            .iter()
+                            .any(|resolution| resolution.work_id() == *child)
                 })
                 .ok_or_else(|| {
                     StoreError::InvalidWorkProjection(
@@ -409,6 +424,7 @@ impl SqliteStore {
             environment,
             required_child_seals,
             required_child_waivers,
+            required_child_resolutions,
             restored: child_seal_is_restored || !restored_child_completions.is_empty(),
             restored_child_completions,
             unfinished_optional_children,
@@ -1947,6 +1963,7 @@ pub(super) fn validate_completion_seal_children_on(
         }
         transitively_restored = true;
     }
+    child_resolutions::validate_resolutions_on(connection, seal, &mut seen_children)?;
     if seal.restored != transitively_restored {
         return Err(StoreError::InvalidWorkProjection(format!(
             "completion seal for run {} has an invalid restored marker",

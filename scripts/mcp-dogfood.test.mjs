@@ -155,6 +155,7 @@ class McpClient {
   }
 
   async close() {
+    const started = performance.now();
     if (!this.child.stdin.destroyed) this.child.stdin.end();
     let timer;
     try {
@@ -162,8 +163,9 @@ class McpClient {
         this.closed,
         new Promise((_, reject) => {
           timer = setTimeout(() => {
+            const diagnostic = `exitCode=${this.child.exitCode} signalCode=${this.child.signalCode} elapsed=${(performance.now() - started).toFixed(1)}ms`;
             this.child.kill();
-            reject(new Error(`MCP server did not close: ${this.stderr}`));
+            reject(new Error(`MCP server did not close (${diagnostic}): ${this.stderr}`));
           }, 5000);
         }),
       ]);
@@ -202,6 +204,71 @@ function structuredError(result, code) {
 async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
+
+test("required successor resolution agrees across CLI, MCP, listing and done", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-successor-"));
+  let client;
+  let phase = "initialize";
+  let failure;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "successor-reader");
+    await client.initialize();
+    const parent = receipt(await client.call("add", { title: "Parent" })).work.short_ref;
+    const child = receipt(await client.call("add", { title: "Original required", under: parent })).work.short_ref;
+    const successor = receipt(await client.call("add", { title: "Required successor", under: parent })).work.short_ref;
+    receipt(await client.call("update", { work_ref: child, action: "supersede", replacement: successor, reason: "This sibling owns delivery" }));
+    const check = async (resolved) => {
+      for (const notes of [false, true]) {
+        phase = `show resolved=${resolved} notes=${notes}`;
+        const value = receipt(await client.call("show", { work_ref: child, notes }));
+        assert.equal(value.status.work.child_resolution.ref, successor);
+        assert.equal(value.status.work.child_resolution.disposition, resolved ? "resolved_by_successor" : "owed");
+        const flags = ["show", child, ...(notes ? ["--notes"] : [])];
+        assert.deepEqual(cliJson(engramHome, "successor-reader", ...flags), value);
+        const text = spawnSync(binary, ["--home", engramHome, "work", "--actor-id", "successor-reader", "--session-id", "successor-reader", ...flags], { cwd: root, encoding: "utf8" });
+        assert.equal(text.status, 0, text.stderr);
+        assert.ok(text.stdout.includes(resolved ? `resolved by successor ${successor} (completed)` : `successor ${successor} (open)`));
+        assert.ok(Buffer.byteLength(text.stdout) <= 12288);
+        assert.doesNotMatch(JSON.stringify(value), HASH);
+      }
+      phase = `listing resolved=${resolved}`;
+      const listing = receipt(await client.call("ls", { under: parent, required: true, all: true }));
+      assert.deepEqual(cliJson(engramHome, "successor-reader", "ls", "--under", parent, "--required", "--all"), listing);
+      assert.equal(listing.items.find((row) => row.ref === child).child_resolution.disposition, resolved ? "resolved_by_successor" : "owed");
+      const focus = receipt(await client.call("show", { work_ref: parent }));
+      assert.equal(focus.child_obligations.required_owed.count, resolved ? 0 : 2);
+      assert.equal(focus.children.find((row) => row.short_ref === child).child_resolution.disposition, resolved ? "resolved_by_successor" : "owed");
+    };
+    await check(false);
+    phase = "parent refusal";
+    receipt(await client.call("claim", { work_ref: parent }));
+    const owed = receipt(await client.call("done", { work_ref: parent, summary: "Not ready yet" }));
+    assert.equal(owed.code, "required_child_unsealed");
+    assert.equal(owed.recovery.cause.kind, "required_child_unsealed");
+    assert.equal(owed.recovery.item.ref, child);
+    assert.equal(owed.recovery.item.state, "superseded");
+    assert.deepEqual(owed.next, [`engram work update ${parent} --waive ${child} --reason "account for disposed required child"`]);
+    assert.equal(owed.seal, undefined);
+    phase = "successor completion";
+    receipt(await client.call("claim", { work_ref: successor }));
+    assert.match(receipt(await client.call("done", { work_ref: successor, summary: "Replacement delivered" })).seal, HASH);
+    assert.equal(receipt(await client.call("show", { work_ref: successor })).status.work.lifecycle, "completed");
+    await check(true);
+    phase = "parent completion";
+    assert.match(receipt(await client.call("done", { work_ref: parent, summary: "Delivered without waiver" })).seal, HASH);
+    assert.equal(receipt(await client.call("show", { work_ref: parent })).status.work.lifecycle, "completed");
+  } catch (error) {
+    failure = new Error(`successor test failed during ${phase}`, { cause: error });
+  } finally {
+    if (client) {
+      try { await client.close(); }
+      catch (error) { failure = failure ? new AggregateError([failure, error], "successor test and cleanup failed") : error; }
+    }
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+  if (failure) throw failure;
+});
 
 test("MCP scoped listing continuation shares the CLI cursor contract", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-listing-"));

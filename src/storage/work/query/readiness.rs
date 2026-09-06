@@ -53,9 +53,15 @@ pub(super) fn required_children_ready(
     parent_id: WorkId,
     execution: &RootExecution,
 ) -> Result<bool, StoreError> {
-    let mut waived = current_required_child_waivers(connection, parent_id, execution)?
-        .into_iter()
-        .collect::<Vec<_>>();
+    let waived = current_required_child_waivers(connection, parent_id, execution)?;
+    let resolved = super::super::child_resolution::required_successor_resolutions_on(
+        connection,
+        parent_id,
+        execution.root_execution_id,
+        &waived,
+    )?;
+    let mut waived = waived.into_iter().collect::<Vec<_>>();
+    waived.extend(resolved.iter().map(crate::RequiredChildResolution::work_id));
     waived.sort_unstable_by_key(|work_id| work_id.0);
     let waived_json = serde_json::to_string(&waived)?;
     let seals_json = serde_json::to_string(&execution.required_child_seals)?;

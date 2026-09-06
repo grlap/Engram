@@ -546,6 +546,15 @@ impl SqliteStore {
                 continue;
             }
             let child = load_work_item(&self.connection, child_id)?;
+            if super::child_resolution::required_child_successor_on(
+                &self.connection,
+                &child,
+                Some(root_execution.root_execution_id),
+            )?
+            .is_some_and(|state| state.resolution.is_some())
+            {
+                continue;
+            }
             eligible.push(child);
             if eligible.len() == limit {
                 break;

@@ -148,6 +148,15 @@ pub(super) fn fit_list_receipt(
             "total": page.total, "omitted": omitted, "more": omitted > 0,
             "shown_before": page.preceding, "limit": limit, "byte_budget": budget,
         });
+        if input.verbose {
+            for (index, item) in items.iter().enumerate() {
+                if let Some(resolution) =
+                    super::child_obligations::ShowChildSuccessor::for_work(&item.work)
+                {
+                    value["items"][index]["work"]["child_resolution"] = json!(resolution);
+                }
+            }
+        }
         if let Some(after) = after {
             value["after"] = json!(after);
         }

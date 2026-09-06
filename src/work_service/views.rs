@@ -311,6 +311,9 @@ pub struct WorkItemSummary {
     pub revision: i64,
     pub active_run_id: Option<WorkRunId>,
     pub superseded_by: Option<WorkId>,
+    /// Safe explicit inspection only; never part of ambient/core serialization.
+    #[serde(skip)]
+    pub(crate) required_child_successor: Option<crate::storage::RequiredChildSuccessor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prerequisite_state: Option<WorkPrerequisiteState>,
     pub updated_at: DateTime<Utc>,

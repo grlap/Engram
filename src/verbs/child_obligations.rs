@@ -8,6 +8,65 @@ use crate::work_service::{WorkChildFollowupPage, WorkChildObligations, WorkChild
 
 pub(super) use crate::work_service::MAX_CHILD_OBLIGATION_REFS;
 
+/// Safe view of derived successor accounting. Proof hashes stay in the seal.
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowChildSuccessor {
+    #[serde(rename = "ref")]
+    pub(super) work_ref: String,
+    pub(super) lifecycle: super::WorkLifecycle,
+    pub(super) disposition: &'static str,
+    pub(super) reason: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) remedy: Option<String>,
+}
+
+impl ShowChildSuccessor {
+    pub(super) fn for_work(work: &super::WorkItemSummary) -> Option<Self> {
+        let state = work.required_child_successor.as_ref()?;
+        let resolved = state.resolution.is_some();
+        Some(Self {
+            work_ref: super::short_ref_for_work_id(state.successor),
+            lifecycle: state.lifecycle,
+            disposition: if state.waived {
+                "waived"
+            } else if resolved {
+                "resolved_by_successor"
+            } else {
+                "owed"
+            },
+            reason: state.reason,
+            remedy: (!resolved && state.can_waive)
+                .then(|| {
+                    work.parent_id.map(|parent| {
+                        format!(
+                            "engram work update {} --waive {} --reason \"…\"",
+                            super::short_ref_for_work_id(parent),
+                            work.short_ref,
+                        )
+                    })
+                })
+                .flatten(),
+        })
+    }
+
+    pub(super) fn line(&self) -> String {
+        if self.disposition == "resolved_by_successor" {
+            format!(
+                "resolved by successor {} ({})",
+                self.work_ref,
+                super::lifecycle_word(self.lifecycle)
+            )
+        } else {
+            format!(
+                "successor {} ({}): {}",
+                self.work_ref,
+                super::lifecycle_word(self.lifecycle),
+                self.reason
+            )
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ChildObligationRow {
     #[serde(rename = "ref")]
@@ -16,6 +75,8 @@ pub(super) struct ChildObligationRow {
     pub(super) remedy: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) resolve_first: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) child_resolution: Option<ShowChildSuccessor>,
 }
 
 /// Navigation is a command, not a fixed verb, so scoped listing can replace
@@ -44,6 +105,7 @@ impl ChildObligationGroup {
                     super::WorkLifecycle::Cancelled | super::WorkLifecycle::Superseded
                 );
                 let can_waive = disposed && parent.lifecycle == super::WorkLifecycle::Open;
+                let child_resolution = ShowChildSuccessor::for_work(work);
                 ChildObligationRow {
                     work_ref: work.short_ref.clone(),
                     title: short_with_limit(&work.title, super::MAX_COMPACT_TITLE_BYTES),
@@ -57,11 +119,15 @@ impl ChildObligationGroup {
                     },
                     resolve_first: disposed.then(|| {
                         if can_waive {
-                            "disposed required child still needs an explicit waiver".into()
+                            child_resolution.as_ref().map_or_else(
+                                || "disposed required child still needs an explicit waiver".into(),
+                                ShowChildSuccessor::line,
+                            )
                         } else {
                             "parent is terminal; inspect retained child context".into()
                         }
                     }),
+                    child_resolution,
                 }
             })
             .collect::<Vec<_>>();
@@ -170,6 +236,7 @@ pub(super) fn done_with_child_obligations(
                 title: short_with_limit(&child.work.title, super::MAX_COMPACT_TITLE_BYTES),
                 remedy,
                 resolve_first,
+                child_resolution: None,
             }
         })
         .collect::<Vec<_>>();

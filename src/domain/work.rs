@@ -610,6 +610,30 @@ pub struct RequiredChildWaiver {
     pub reason: String,
 }
 
+/// Immutable derived accounting for a superseded requirement, not a waiver.
+/// The immediate required sibling supplies its own same-generation seal; the
+/// original child's exact supersession event remains the attribution basis.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "disposition", rename_all = "snake_case")]
+pub enum RequiredChildResolution {
+    ResolvedBySuccessor {
+        work_id: WorkId,
+        work_revision: i64,
+        supersession: ObjectHash,
+        successor: WorkId,
+        successor_seal: ObjectHash,
+    },
+}
+
+impl RequiredChildResolution {
+    #[must_use]
+    pub const fn work_id(&self) -> WorkId {
+        match self {
+            Self::ResolvedBySuccessor { work_id, .. } => *work_id,
+        }
+    }
+}
+
 /// Immutable requirement opened by one exact run-bound execution fact.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkObligation {
@@ -742,6 +766,10 @@ pub struct CompletionSeal {
     /// from live child execution in this store.
     #[serde(default)]
     pub restored_child_completions: Vec<ObjectHash>,
+    /// Sparse derived facts: absence means no successor credit was admitted.
+    /// Reads never add these to an already frozen seal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub required_child_resolutions: Vec<RequiredChildResolution>,
     /// Materialized transitive marker used to refuse report assembly without
     /// recursively walking child seals.
     #[serde(default)]

@@ -338,7 +338,8 @@ Ambient catalogs remain count-free and keep their existing keyset contract.
 Parent `show` receipts summarize the complete direct-child set in that read's
 snapshot, before the ordinary child list is limited. The reusable
 `child_obligations` groups distinguish `required_owed` (unfinished required
-children and disposed required children without current revision-bound waivers)
+children and disposed required children without current revision-bound waivers
+or qualifying successor resolution)
 from `open_optional` follow-ups, which never block completion. Completed native
 or restored children are not owed. Both groups remain present on every item
 with direct children, including zero counts; leaves have no block. Each group
@@ -1045,12 +1046,23 @@ allowed. Exposing the word also adds one core admission check: the implicit
 in the union-cycle validation, so direct and transitive replacement deadlocks
 are refused. The shared update action group allows `--reason` with release,
 required-child waiver, or supersession, and the action-enumeration error names
-the associated flags. Superseding a required child never satisfies its parent
-by itself: the parent's `done`
-still reports the unsealed required child, and the deliberate replacement
-is accounted by the existing reason-attributed required-child waiver. Automatic
-successor accounting is not in this cut; tests cover the REF/NEW refusal
-matrix and the front-end translation.
+the associated flags.
+
+A superseded required child is resolved only by its immediate Completed,
+Required sibling under the same parent and root-execution generation, with a
+native completion seal. The shared resolution rule drives `done`, readiness,
+and safe inspection. Parent seals record sparse `required_child_resolutions`
+entries tagged `resolved_by_successor`, binding the original child id/revision,
+canonical attributed supersession event, and successor id/seal hash. This is
+derived accounting, never a synthesized waiver; existing seals remain frozen
+and gain no retroactive entries. `show CHILD`, parent child rows, and
+`ls --under PARENT --required --all` say “resolved by successor”; resolved
+children leave `required_owed`. Every other shape remains owed with the
+successor ref/lifecycle, one-line reason, and the existing explicit waiver
+remedy when the parent is open. Optional, unrelated, different-generation,
+restored-record-only, and non-completed successors give no credit; chains are
+not followed. The successor seal still receives ordinary recursive validation
+at completion and by doctor; the advisory read does not replay root history.
 
 **Detached follow-ups.** `update CHILD --detach "why"` (MCP `update` with
 `action: "detach"` and `reason`) turns stranded work into an independent root
