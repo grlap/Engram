@@ -134,6 +134,9 @@ pub(super) fn compact_text_to(value: &str, max_bytes: usize) -> String {
 
 pub(super) fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
     WorkItemSummary {
+        current_status: None,
+        status_observation: None,
+        external_ref: work.external_ref.clone(),
         work_id: work.work_id,
         short_ref: work.short_ref.clone(),
         root_id: work.root_id,
@@ -928,6 +931,12 @@ fn record_byte_omission(response: &mut WorkNextView, section: WorkNextSection) {
 
 pub(super) fn fit_work_next_response(response: &mut WorkNextView) -> Result<(), StoreError> {
     while serde_json::to_vec(response)?.len() > MAX_AGENT_WORK_RESPONSE_BYTES {
+        if response.discovery.shorten_status_previews() {
+            continue;
+        }
+        if response.agent_lists.is_some() && shed_work_next_focus(response) {
+            continue;
+        }
         if response.discovery.shed_one() {
             continue;
         }
@@ -955,10 +964,7 @@ pub(super) fn fit_work_next_response(response: &mut WorkNextView) -> Result<(), 
             record_byte_omission(response, WorkNextSection::Ready);
             continue;
         }
-        if let Some(focus) = response.focus.as_mut()
-            && trim_focus_once(focus)
-        {
-            record_byte_omission(response, WorkNextSection::Focus);
+        if shed_work_next_focus(response) {
             continue;
         }
         break;
@@ -984,6 +990,17 @@ pub(super) fn fit_focus_response(response: &mut WorkFocusView) -> Result<(), Sto
         }
     }
     Ok(())
+}
+
+/// The outer verbose renderer measures its complete text/pretty-JSON receipt;
+/// shed recoverable focus context before its primary held/assigned duties.
+pub(crate) fn shed_work_next_focus(response: &mut WorkNextView) -> bool {
+    if response.focus.as_mut().is_some_and(trim_focus_once) {
+        record_byte_omission(response, WorkNextSection::Focus);
+        true
+    } else {
+        false
+    }
 }
 
 fn trim_focus_once(focus: &mut WorkFocusView) -> bool {

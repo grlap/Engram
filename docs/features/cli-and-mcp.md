@@ -14,6 +14,38 @@ agent sees thirteen words; every host and operator control lives under
 
 ## Using Engram as an agent
 
+Record changed duties, waits, decisions, and the next permitted action with
+`note REF --status TEXT` (MCP `note` with `status: true`), not only in a
+conversation summary. A coordinator with no code work keeps an assigned or
+held coordination item; `next` is the resume read across fresh processes and
+replacement sessions, never a transfer of execution authority. Storage marks
+status at capture as owner-qualified only for the live holder session or the
+assigned actor when unclaimed; other status notes remain peer observations.
+Ownership uses exact actor-principal bytes; discovery's normalized search
+matching does not make differently spelled actors the same owner.
+`current_status` selects the newest owner-qualified note by the currently
+accountable actor, using project-feed order, unaffected by ordinary notes or
+gates; former-owner notes remain history. It appears at top level on `show`
+and per held/assigned `next` row as `{body_or_first_line, complete, recorded_at,
+locator, by}`; `by` is `you` or `another session`. Text follows the parent line
+on `show` and is indented beneath `next` rows. Bodies start with a 768-byte
+UTF-8 cap; larger bodies show a bounded first nonblank line. Final text/JSON
+fitting may shorten either preview further before shedding resume rows,
+setting `complete: false` with explicit omission and a note-detail command.
+Missing current-owner status is explicit on `show` and
+adds no `next` status line; peer status observations appear separately. Older
+statuses remain in `show --notes`. `add --external REF` and
+`update REF --external REF` (MCP `external`) record audited opaque linkage as
+`external_ref` (nonblank, at most 1024 encoded JSON bytes), shown by
+`next`/`ls`/`show` and searched by `ls --search`;
+capture source criteria in acceptance and source context in notes, because a
+reference alone is neither immutable intake nor external synchronization.
+Snapshots retain linkage and status provenance, not live claims.
+Opaque references retain their normalized bytes, including control characters,
+through native writes and snapshots; terminal rendering frames those bytes.
+An assignee's late status on completed work may update this advisory display;
+it remains outside the frozen completion seal and grants no execution credit.
+
 Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME` and normally injects
 `ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; it may also set the optional

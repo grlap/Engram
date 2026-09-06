@@ -26,6 +26,7 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
     service
         .work_propose(
             WorkProposeInput::Root {
+                external_ref: None,
                 notes: Vec::new(),
                 title: "Safe defaults".into(),
                 outcome: "omitted fields do the safe thing".into(),
@@ -521,6 +522,7 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
                 ]
                 .into_iter()
                 .map(|(key, requirement)| WorkChildInput {
+                    external_ref: None,
                     notes: Vec::new(),
                     key: key.into(),
                     title: key.replace('-', " "),
@@ -787,6 +789,7 @@ fn refused_explicit_completion_stays_target_bound_and_rotates_with_holder_claim_
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    external_ref: None,
                     notes: Vec::new(),
                     key: "required-child".into(),
                     title: "Required child".into(),
@@ -910,6 +913,7 @@ fn refused_explicit_completion_cannot_refresh_across_work_revision() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    external_ref: None,
                     notes: Vec::new(),
                     key: "required-child".into(),
                     title: "Required child".into(),
@@ -1006,6 +1010,7 @@ fn capture_completion_rejects_bad_acceptance_without_substeps() {
     let root = match service
         .work_propose(
             WorkProposeInput::Root {
+                external_ref: None,
                 notes: Vec::new(),
                 title: "Prevalidate completion".into(),
                 outcome: "Invalid acceptance never writes capture substeps".into(),

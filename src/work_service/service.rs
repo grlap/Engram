@@ -754,6 +754,10 @@ impl LocalWorkService {
             None
         };
         let mut status = ready_work_summary(status);
+        if matches!(text, FocusText::Full) {
+            (status.work.current_status, status.work.status_observation) =
+                self.status_for_item(store, status.work.work_id, now)?;
+        }
         status.work.required_child_successor = successor;
         if let Some(acceptance) = full_acceptance {
             status.work.acceptance = acceptance;

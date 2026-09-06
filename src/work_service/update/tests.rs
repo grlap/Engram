@@ -510,6 +510,7 @@ fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
             .protocol_basis(&store, true, false, Some(work.work_id), at(2))
             .expect("note basis");
         let note = WorkNoteIntent {
+            status: false,
             summary,
             refs: &refs,
         };
@@ -535,6 +536,7 @@ fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
         store
             .record_work_note(
                 &RecordWorkNoteRequest {
+                    status: false,
                     work_id: work.work_id,
                     run_id: claim.run_id,
                     expected_work_revision: work.revision,
@@ -759,6 +761,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
     assert!(matches!(
         store.record_work_note(
             &RecordWorkNoteRequest {
+                status: false,
                 work_id: work.work_id,
                 run_id: completed.run_id,
                 expected_work_revision: completed_work.revision,
@@ -959,6 +962,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
         peer.work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    external_ref: None,
                     notes: Vec::new(),
                     key: "late-child".into(),
                     title: "completed work cannot gain a child".into(),

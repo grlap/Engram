@@ -19,6 +19,8 @@ mod query;
 mod record_windows;
 mod schema;
 mod session;
+mod status;
+pub(crate) use status::SelectedStatusNote;
 
 pub(crate) use discovery::WorkDiscoveryRow;
 

@@ -678,6 +678,7 @@ fn snapshot_item(
     restored_records: &[(ObjectHash, Value, RestoredRecord)],
 ) -> Result<WorkGraphSnapshotItem, StoreError> {
     Ok(WorkGraphSnapshotItem {
+        external_ref: item.external_ref.clone(),
         work_id: item.work_id,
         short_ref: item.short_ref.clone(),
         root_id: item.root_id,

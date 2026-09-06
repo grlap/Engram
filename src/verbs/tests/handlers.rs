@@ -89,6 +89,7 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
     );
 
     let note = NoteInput {
+        status: false,
         work_ref: Some(target.short_ref.clone()),
         text: "one atomic note capture".into(),
         refs: vec!["test:exact-note".into()],
@@ -799,6 +800,9 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
 )]
 fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
     let summary = |index: u128, lifecycle| crate::work_service::WorkItemSummary {
+        current_status: None,
+        status_observation: None,
+        external_ref: None,
         required_child_successor: None,
         work_id: WorkId(uuid::Uuid::from_u128(index)),
         short_ref: format!("w-{index:012x}"),

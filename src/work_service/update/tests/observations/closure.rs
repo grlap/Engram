@@ -31,6 +31,7 @@ fn phoenix_note_marker_collisions_preserve_authority_and_restored_classification
             SessionId(session.into()),
         );
         let note = |text: &str| NoteInput {
+            status: false,
             work_ref: Some(root.short_ref.clone()),
             text: text.into(),
             refs: Vec::new(),
@@ -212,6 +213,7 @@ fn phoenix_lapsed_holder_note_receipt_explicitly_has_no_run_credit() {
     let noted = words
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(root.short_ref),
                 text: "finding after expiry".into(),
                 refs: Vec::new(),

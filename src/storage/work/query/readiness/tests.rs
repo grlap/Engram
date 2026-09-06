@@ -282,6 +282,7 @@ fn advisory_child_guidance_stays_bounded_as_root_history_grows() {
         verbs
             .note(
                 &NoteInput {
+                    status: false,
                     work_ref: Some(fixture.root.short_ref.clone()),
                     text: format!("progress {index}"),
                     refs: vec![],

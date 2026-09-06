@@ -121,6 +121,7 @@ impl LocalWorkService {
         }
         let result = match input {
             WorkProposeInput::Root {
+                external_ref,
                 notes,
                 title,
                 outcome,
@@ -157,6 +158,7 @@ impl LocalWorkService {
                 }
                 let work = store.create_work(
                     &CreateWorkRequest {
+                        external_ref,
                         notes,
                         project_id: self.project_id.clone(),
                         parent_id: None,
@@ -205,6 +207,7 @@ impl LocalWorkService {
                     let children = children
                         .into_iter()
                         .map(|child| ChildWorkDraft {
+                            external_ref: child.external_ref,
                             notes: child.notes,
                             local_key: child.key,
                             child_requirement: child

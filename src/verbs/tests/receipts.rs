@@ -12,6 +12,9 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
     use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
     let controls = "\u{9b}".repeat(96);
     let row = |index| WorkDiscoverySummary {
+        current_status: None,
+        status_observation: None,
+        external_ref: None,
         work_ref: compact_test_row(index).work_ref,
         title: controls.clone(),
         holder: "another session".into(),
@@ -130,6 +133,9 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
         guidance: Guidance::default(),
     };
     let row = |index| WorkDiscoverySummary {
+        current_status: None,
+        status_observation: None,
+        external_ref: None,
         work_ref: compact_test_row(index).work_ref,
         title: "Discovery title".into(),
         holder: "another session".into(),

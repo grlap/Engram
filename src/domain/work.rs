@@ -213,9 +213,34 @@ pub enum WorkReadinessReason {
     ReadyUnclaimed,
 }
 
+/// Keep an opaque reference complete in bounded agent JSON, including escapes.
+pub(crate) fn normalize_external_reference(value: Option<&str>) -> Result<Option<String>, String> {
+    value
+        .map(|value| {
+            let value = value.trim();
+            if value.is_empty()
+                || value.len() > 1024
+                || serde_json::to_string(value)
+                    .map_err(|error| error.to_string())?
+                    .len()
+                    > 1024
+            {
+                return Err(
+                    "external reference must be nonblank and at most 1024 encoded JSON bytes"
+                        .into(),
+                );
+            }
+            Ok(value.to_owned())
+        })
+        .transpose()
+}
+
 /// Current durable projection of one local planning identity.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkItem {
+    /// Opaque planning linkage, not an imported source snapshot or authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_ref: Option<String>,
     pub schema_version: u16,
     pub project_id: ProjectId,
     pub work_id: WorkId,

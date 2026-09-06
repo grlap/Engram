@@ -105,11 +105,17 @@ fn prepare_work_observation_on(
             "non-holder notes require open work in this project".into(),
         ));
     }
-    if let Some(run_id) = item.active_run_id
-        && let Some(claim) = load_work_claim_optional(transaction, run_id)?
-        && claim.holder == request.session_id
-        && claim.state == WorkClaimState::Active
-        && claim.expires_at > request.recorded_at
+    let live_claim = item
+        .active_run_id
+        .map(|run_id| load_work_claim_optional(transaction, run_id))
+        .transpose()?
+        .flatten()
+        .filter(|claim| {
+            claim.state == WorkClaimState::Active && claim.expires_at > request.recorded_at
+        });
+    if live_claim
+        .as_ref()
+        .is_some_and(|claim| claim.holder == request.session_id)
     {
         return Err(StoreError::WorkClaimMismatch { work: item.work_id });
     }
@@ -146,7 +152,12 @@ fn prepare_work_observation_on(
             .ok_or_else(|| invalid("observation sequence overflow"))?,
         summary: normalize_note_text(&request.summary, "note summary")?,
         refs: normalize_strings(&request.refs),
-        actor: request.actor.clone(),
+        actor: crate::domain::captured_note_actor(
+            &request.actor,
+            request.status,
+            live_claim.is_none()
+                && item.assigned_to.as_deref() == Some(request.actor.actor_id.as_str()),
+        ),
         created_at: request.recorded_at,
     };
     validate(transaction, &observation)?;
@@ -197,6 +208,7 @@ pub(super) fn append_initial_notes_on<R: Redactor>(
     for summary in notes {
         normalize_note_text(summary, "note summary")?;
         let request = RecordWorkObservationRequest {
+            status: false,
             project_id: item.project_id.clone(),
             work_id: item.work_id,
             expected_work_revision: item.revision,

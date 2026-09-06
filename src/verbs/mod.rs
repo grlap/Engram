@@ -94,7 +94,67 @@ fn item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) 
         }
         Holder::Nobody => availability_words(status).to_owned(),
     };
-    format!("{} \"{}\" — {state}", work.short_ref, short(&work.title))
+    let external = work
+        .external_ref
+        .as_ref()
+        .map_or(String::new(), |reference| {
+            format!(" external:{}", terminal_short(reference, 192))
+        });
+    let mut line = format!(
+        "{} \"{}\"{external} — {state}",
+        work.short_ref,
+        short(&work.title)
+    );
+    append_status_text(
+        &mut line,
+        &work.short_ref,
+        work.current_status.as_ref(),
+        work.status_observation.as_ref(),
+        "    ",
+    );
+    line
+}
+
+fn status_text_lines(
+    work_ref: &str,
+    status: &crate::work_service::WorkCurrentStatus,
+    label: &str,
+    indent: &str,
+) -> Vec<String> {
+    let body = terminal_data_block(&status.body_or_first_line);
+    let mut body = body.split('\n');
+    let mut lines = vec![format!(
+        "{indent}{label}: [{}; {}] {}",
+        status.recorded_at.to_rfc3339(),
+        terminal_safe_line(&status.by),
+        body.next().unwrap_or("")
+    )];
+    lines.extend(body.map(|line| format!("{indent}  | {line}")));
+    if !status.complete {
+        lines.push(format!(
+            "{indent}  (status body omitted; read {})",
+            terminal_command(&format!(
+                "engram work show {work_ref} --note {}",
+                status.locator
+            ))
+        ));
+    }
+    lines
+}
+
+fn append_status_text(
+    line: &mut String,
+    work_ref: &str,
+    status: Option<&crate::work_service::WorkCurrentStatus>,
+    peer: Option<&crate::work_service::WorkCurrentStatus>,
+    indent: &str,
+) {
+    for (label, note) in [("status", status), ("peer status observation", peer)] {
+        if let Some(note) = note {
+            line.push('\n');
+            line.push_str(&status_text_lines(work_ref, note, label, indent).join("\n"));
+        }
+    }
 }
 
 /// One line per change by another session. Your own actions are already in

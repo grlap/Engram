@@ -69,6 +69,10 @@ mod projection;
 mod propose;
 mod record_windows;
 mod service;
+mod status;
+pub(crate) use projection::shed_work_next_focus;
+pub use status::WorkCurrentStatus;
+pub(crate) use status::shorten_status_previews;
 mod update;
 mod views;
 
@@ -350,6 +354,8 @@ struct WorkProtocolIntent<'a, T> {
 
 #[derive(Serialize)]
 struct WorkNoteIntent<'a> {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    status: bool,
     summary: &'a str,
     refs: &'a [String],
 }
@@ -1456,6 +1462,7 @@ fn project_work_event(
             ("kind", "kind"),
             ("priority", "priority"),
             ("labels", "labels"),
+            ("external_ref", "external reference"),
             ("assigned_to", "assignment"),
             ("deferred_until", "deferral"),
         ]

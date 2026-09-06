@@ -1623,6 +1623,16 @@ pub(super) fn restored_records_for_item(
     connection: &Connection,
     work_id: WorkId,
 ) -> Result<Vec<RestoredRecord>, StoreError> {
+    Ok(restored_records_with_hash_for_item(connection, work_id)?
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect())
+}
+
+pub(super) fn restored_records_with_hash_for_item(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Vec<(ObjectHash, RestoredRecord)>, StoreError> {
     let rows = connection
         .prepare(
             "SELECT generation_index, record_hash FROM work_restored_records
@@ -1649,7 +1659,7 @@ pub(super) fn restored_records_for_item(
                     "restored history for {work_id:?} differs from its projection binding"
                 )));
             }
-            Ok(record)
+            Ok((hash, record))
         })
         .collect()
 }

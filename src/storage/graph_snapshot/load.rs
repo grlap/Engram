@@ -333,6 +333,11 @@ fn validate_items_and_relations(document: &WorkGraphSnapshotDocument) -> Result<
 }
 
 fn validate_snapshot_item_shape(item: &crate::WorkGraphSnapshotItem) -> Result<(), StoreError> {
+    let external = crate::domain::normalize_external_reference(item.external_ref.as_deref())
+        .map_err(|message| corrupt(&message))?;
+    if external != item.external_ref {
+        return Err(corrupt("external reference is not normalized"));
+    }
     validate_text(&item.short_ref, "work ref")?;
     let simple = item.work_id.0.simple().to_string();
     let expected_ref = format!("w-{}", simple.get(20..).unwrap_or(&simple));
@@ -994,6 +999,7 @@ fn insert_prepared_load_on(
     }
     for snapshot in &prepared.document.body.items {
         let item = WorkItem {
+            external_ref: snapshot.external_ref.clone(),
             schema_version: crate::schema::SCHEMA_VERSION,
             project_id: project_id.clone(),
             work_id: snapshot.work_id,

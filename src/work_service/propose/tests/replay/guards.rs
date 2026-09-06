@@ -119,9 +119,10 @@ fn decomposition_retry_guard_preserves_non_revision_work_and_authority_fields() 
         )
         .unwrap();
     let store = writer.store_at(at(2)).unwrap();
-    let basis = writer
+    let mut basis = writer
         .protocol_basis(&store, true, false, None, at(2))
         .unwrap();
+    basis.focused_work.as_mut().unwrap().external_ref = Some("planner:original".into());
     let stored = serde_json::to_value(&basis).unwrap();
     let mut allowed = basis.clone();
     let work = allowed.focused_work.as_mut().unwrap();
@@ -191,6 +192,11 @@ fn decomposition_retry_guard_preserves_non_revision_work_and_authority_fields() 
         ),
         ("focused_work", "priority", serde_json::json!(4)),
         ("focused_work", "labels", serde_json::json!(["other"])),
+        (
+            "focused_work",
+            "external_ref",
+            serde_json::json!("planner:other"),
+        ),
         ("focused_work", "assigned_to", serde_json::json!("other")),
         ("focused_work", "lifecycle", serde_json::json!("cancelled")),
         ("focused_work", "active_run_id", serde_json::json!(run)),

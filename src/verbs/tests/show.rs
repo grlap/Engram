@@ -32,6 +32,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
             WorkProposeInput::Decompose {
                 children: (0..16)
                     .map(|index| WorkChildInput {
+                        external_ref: None,
                         notes: Vec::new(),
                         key: format!("child-{index}"),
                         title: if index == 15 {
@@ -186,6 +187,7 @@ fn show_claim_guidance_uses_the_allowed_operation_as_its_source() {
     first_verbs
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(released.short_ref.clone()),
                 text: "account the first holder before release".into(),
                 refs: Vec::new(),
@@ -280,6 +282,7 @@ fn holder_note_never_shortens_an_explicit_long_claim() {
     verbs
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work.short_ref.clone()),
                 text: "keep the longer lease while recording progress".into(),
                 refs: Vec::new(),

@@ -132,6 +132,7 @@ fn terminal_stored_text_reads_keep_json_and_frame_every_human_line() {
     verbs
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work.clone()),
                 text: HOSTILE.into(),
                 refs: vec![HOSTILE.into()],

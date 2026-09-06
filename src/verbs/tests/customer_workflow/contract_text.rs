@@ -348,6 +348,7 @@ fn show_notes_fits_contract_and_populated_note_envelopes_together() {
         verbs
             .note(
                 &NoteInput {
+                    status: false,
                     work_ref: Some(work.clone()),
                     // A second row must cost more than the cursor removed by
                     // a complete page, or both notes could fit more cheaply.

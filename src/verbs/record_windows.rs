@@ -365,6 +365,9 @@ fn row_value(row: &WorkRecordRow, placeholder: bool, work_ref: &str, actor: &str
         "created_at": row.recorded_at,
         "non_holder": row.actor.provenance_chain.iter().any(crate::domain::is_non_holder_note_marker) });
     if row.family != WorkRecordFamily::History {
+        if let Some(role) = crate::domain::status_note_role(&row.actor) {
+            value["status_owner"] = json!(role == crate::domain::StatusNoteRole::Owner);
+        }
         if row.actor.actor_id == actor {
             value["actor_session_id"] = json!(row.actor.session_id);
         }
@@ -398,7 +401,9 @@ fn append_row_lines(lines: &mut Vec<String>, row: &Value) {
         super::terminal_safe_line(row["by"].as_str().unwrap_or("another actor")),
         row["created_at"].as_str().unwrap_or_default(),
         row["body_bytes"],
-        if row["non_holder"] == true {
+        if row["status_owner"] == false {
+            " (peer status observation, no commitment)"
+        } else if row["non_holder"] == true {
             " (non-holder)"
         } else {
             ""

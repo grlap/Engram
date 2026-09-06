@@ -125,6 +125,7 @@ fn phoenix_full_note_references_cannot_escape_their_terminal_data_block() {
     verbs
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work.clone()),
                 text: "Peer data".into(),
                 refs: vec![reference.into()],
@@ -276,6 +277,7 @@ fn child_request(parent: &crate::WorkItem) -> crate::DecomposeWorkRequest {
         parent_id: parent.work_id,
         expected_parent_revision: parent.revision,
         children: vec![crate::ChildWorkDraft {
+            external_ref: None,
             notes: Vec::new(),
             local_key: "new-child".into(),
             child_requirement: ChildRequirement::Required,
@@ -368,6 +370,7 @@ fn phoenix_tiny_note_backlog_has_bounded_decodes_and_logarithmic_fitting() {
         store
             .record_work_observation(
                 &crate::domain::RecordWorkObservationRequest {
+                    status: false,
                     project_id: project.clone(),
                     work_id: item.work_id,
                     expected_work_revision: item.revision,

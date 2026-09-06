@@ -508,6 +508,22 @@ canonical-decode budget.
 
 ## Agent-native protocol
 
+Use `note REF --status TEXT` whenever duties, waits, decisions, or the next
+permitted action change, and resume with `next`; a no-code coordinator keeps
+one assigned or held coordination item. Storage permanently qualifies each
+status as owner or peer at capture, and current status is the newest
+owner-qualified note authored by the current live holder's actor, or the
+assignee when unclaimed. Ordinary notes and gates do not replace it; a former
+owner's waits remain history, and peer observations are displayed separately.
+Fresh processes and replacement sessions recover this context without claims
+or mutation authority. The bounded `current_status` projection gives complete
+text or an explicit first-line omission and immutable note-detail command.
+Opaque `external_ref` linkage is an audited optional item field, searchable
+through the existing catalog projection and retained by graph snapshots; no
+schema change or source snapshot is implied. Capture imported criteria and
+context explicitly rather than relying on either a reference or conversation
+summary. See the [word contract](cli-and-mcp.md#using-engram-as-an-agent).
+
 Models are primary protocol users, so the surface optimizes for few calls,
 bounded responses, stable reason codes, and no redundant identifier shuttling.
 The host supplies the bound project, session, actor, optional bounded execution

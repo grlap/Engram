@@ -65,6 +65,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
         .service
         .work_propose(
             WorkProposeInput::Root {
+                external_ref: None,
                 notes: Vec::new(),
                 title: title.into(),
                 outcome,
@@ -147,6 +148,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
     let noted = verbs
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work_ref.clone()),
                 text: body.clone(),
                 refs: vec!["test:fixed".into()],
@@ -353,6 +355,7 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
                 UpdateInput {
                     work_ref: Some(work.into()),
                     action: UpdateAction::Revise {
+                        external: None,
                         title: None,
                         outcome: None,
                         acceptance: None,

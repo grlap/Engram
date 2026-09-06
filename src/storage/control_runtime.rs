@@ -310,6 +310,7 @@ impl SqliteStore {
         now: DateTime<Utc>,
     ) -> Result<ControlSessionBinding, StoreError> {
         let external_ref = external_ref.trim();
+        crate::domain::validate_status_capture_actor(actor).map_err(StoreError::InvalidWork)?;
         let title = title.trim();
         let idempotency_key = idempotency_key.trim();
         let effects_are_unique = mediated_effects
@@ -1841,6 +1842,8 @@ impl SqliteStore {
         let session = Self::load_control_session_on(&transaction, session_id)?
             .ok_or_else(|| StoreError::ControlSessionNotBound(session_id.0.clone()))?;
         Self::verify_control_session(&session, project_id, routing_token)?;
+        crate::domain::validate_status_capture_actor(&session.actor)
+            .map_err(StoreError::InvalidWork)?;
         if let Some(replay) = Self::replay_control_operation(
             &transaction,
             session_id,

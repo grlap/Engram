@@ -88,6 +88,12 @@ fn fit_acceptance_prefix(
 }
 
 fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
+    if crate::work_service::shorten_status_previews(
+        &mut view.status.work.current_status,
+        &mut view.status.work.status_observation,
+    ) {
+        return true;
+    }
     // Omit the whole recoverable reason before sacrificing useful context or
     // the item's own contract. Its origin and navigation remain visible.
     if let Some(origin) = view.detached_from.as_mut()
@@ -251,6 +257,12 @@ pub(super) struct ShowDetachedFrom {
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) current_status: Option<crate::work_service::WorkCurrentStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) status_observation: Option<crate::work_service::WorkCurrentStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) external_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) parent_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) parent_title: Option<String>,
@@ -360,10 +372,31 @@ pub(super) fn show_lines(
             )
         },
     ));
+    if let Some(status) = &work.current_status {
+        lines.extend(super::status_text_lines(
+            &work.short_ref,
+            status,
+            "status",
+            "",
+        ));
+    } else {
+        lines.push("status: none recorded by the current owner".into());
+    }
+    if let Some(peer) = &work.status_observation {
+        lines.extend(super::status_text_lines(
+            &work.short_ref,
+            peer,
+            "peer status observation",
+            "",
+        ));
+    }
     let mut facts = vec![
         format!("kind: {}", kind_word(work.kind)),
         format!("priority: {}", work.priority),
     ];
+    if let Some(external) = &work.external_ref {
+        facts.push(format!("external: {}", super::terminal_safe_line(external)));
+    }
     if !work.labels.is_empty() {
         facts.push(format!(
             "labels: {}",
@@ -579,6 +612,9 @@ pub(super) fn show_receipt_value(
     });
     let notes = show_notes(view, current_actor);
     ShowReceiptValue {
+        current_status: work.current_status.clone(),
+        status_observation: work.status_observation.clone(),
+        external_ref: work.external_ref.clone(),
         parent_ref: view.parent.as_ref().map(|parent| parent.short_ref.clone()),
         parent_title: view.parent.as_ref().map(|parent| parent.title.clone()),
         parent_lifecycle: view.parent.as_ref().map(|parent| parent.lifecycle),

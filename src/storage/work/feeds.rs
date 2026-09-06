@@ -741,6 +741,7 @@ pub(super) fn inspect_work_request<R: Redactor, T: Serialize>(
     request: &T,
     actor: &ActorContext,
 ) -> Result<(), StoreError> {
+    crate::domain::validate_status_capture_actor(actor).map_err(StoreError::InvalidWork)?;
     actor
         .validate_attribution_context()
         .map_err(|detail| StoreError::InvalidWork(format!("invalid actor context: {detail}")))?;

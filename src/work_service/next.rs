@@ -360,9 +360,18 @@ impl LocalWorkService {
                             .items
                             .into_iter()
                             .map(|row| {
-                                discovery_summary(row, &self.session_id, &self.actor_id, now)
+                                let statuses = if assigned {
+                                    self.status_for_item(store, row.work.work_id, now)?
+                                } else {
+                                    (None, None)
+                                };
+                                let mut summary =
+                                    discovery_summary(row, &self.session_id, &self.actor_id, now);
+                                summary.current_status = statuses.0;
+                                summary.status_observation = statuses.1;
+                                Ok(summary)
                             })
-                            .collect();
+                            .collect::<Result<Vec<_>, StoreError>>()?;
                         if assigned {
                             discovery.assigned = rows;
                             discovery.assigned_omitted = page.omitted;
@@ -436,19 +445,30 @@ impl LocalWorkService {
             .filter(|(_, holder, _)| *holder == self.session_id)
             .map(|(id, _, expiry)| (*id, *expiry))
             .collect::<std::collections::HashMap<_, _>>();
-        let held = if mine.is_empty() {
+        let mut held: Vec<_> = if mine.is_empty() {
             Vec::new()
         } else {
-            self.agent_catalog(
-                store,
-                limit,
-                vec![WorkAvailability::Claimed, WorkAvailability::Active],
-                now,
-            )?
-            .into_iter()
-            .filter_map(|item| mine.get(&item.work.work_id).map(|expiry| (item, *expiry)))
-            .collect()
+            store
+                .query_work_catalog(
+                    &self.project_id,
+                    now,
+                    &WorkCatalogQuery {
+                        held_by: Some(self.session_id.clone()),
+                        lifecycles: vec![WorkLifecycle::Open],
+                        limit: u32::try_from(mine.len()).unwrap_or(u32::MAX),
+                        ..WorkCatalogQuery::default()
+                    },
+                )?
+                .items
+                .into_iter()
+                .map(ready_work_summary)
+                .filter_map(|item| mine.get(&item.work.work_id).map(|expiry| (item, *expiry)))
+                .collect()
         };
+        for (item, _) in &mut held {
+            (item.work.current_status, item.work.status_observation) =
+                self.status_for_item(store, item.work.work_id, now)?;
+        }
         let ready = self.agent_catalog(store, limit, vec![WorkAvailability::Ready], now)?;
         Ok(WorkAgentNextLists {
             held,
@@ -523,6 +543,9 @@ fn discovery_summary(
             }
         });
     WorkDiscoverySummary {
+        current_status: None,
+        status_observation: None,
+        external_ref: row.work.external_ref,
         work_ref: row.work.short_ref,
         title: compact_text(&row.work.title),
         holder: holder.into(),

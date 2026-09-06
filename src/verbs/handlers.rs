@@ -9,8 +9,8 @@ use super::{
     WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput, WorkItemKind,
     WorkLifecycle, WorkNextQuery, WorkNextSection, WorkNextView, WorkObligationPage,
     WorkObligationState, WorkPrerequisiteState, WorkProposeInput, WorkProposeResult,
-    WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, clock, collapse_changes,
-    held_suffix, item_line, json, lifecycle_word, nonempty,
+    WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, collapse_changes, held_suffix,
+    item_line, json, lifecycle_word, nonempty,
     receipts::{
         append_changes_lines, compact_next_lines, compact_next_receipt, compact_next_value,
         ready_line,
@@ -68,6 +68,8 @@ pub struct LsInput {
 /// `add`: a root, or one required/optional child under `under`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AddInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external: Option<String>,
     #[serde(default)]
     pub notes: Vec<String>,
     pub title: String,
@@ -112,6 +114,8 @@ pub enum UpdateAction {
     Unblock,
     /// Any combination of planning fields, applied as one revision.
     Revise {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        external: Option<String>,
         title: Option<String>,
         outcome: Option<String>,
         /// Replace the whole acceptance list; omission leaves it unchanged.
@@ -196,6 +200,8 @@ pub struct ForgetInput {
 /// `note`: one finding on held open work or late evidence on completed work.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NoteInput {
+    #[serde(default)]
+    pub status: bool,
     pub work_ref: Option<String>,
     pub text: String,
     pub refs: Vec<String>,
@@ -326,7 +332,7 @@ impl AgentVerbs {
         let lists = view.agent_lists.take().ok_or_else(|| {
             StoreError::InvalidWorkProjection("agent next has no advisory list snapshot".into())
         })?;
-        let held = lists.held;
+        let mut held = lists.held;
         let ready = lists.ready;
         let mut changes = collapse_changes(view.changes.as_deref().unwrap_or_default());
         let mut not_delivered = changes_not_delivered(&view);
@@ -391,58 +397,84 @@ impl AgentVerbs {
             guidance.next.push("engram work add \"…\"".into());
         }
         let (lines, value, guidance) = if input.verbose {
-            let mut lines = Vec::new();
-            match &view.focus {
-                Some(focus) => lines.push(format!(
-                    "focus: {}",
-                    item_line(&focus.status, self.holder(focus, now), now)
-                )),
-                None => lines.push("focus: none".into()),
+            loop {
+                let mut lines = Vec::new();
+                match &view.focus {
+                    Some(focus) => lines.push(format!(
+                        "focus: {}",
+                        item_line(&focus.status, self.holder(focus, now), now)
+                    )),
+                    None => lines.push("focus: none".into()),
+                }
+                lines.push(format!("held by you ({}):", held.len()));
+                for (item, expires_at) in &held {
+                    lines.push(format!(
+                        "  {}",
+                        item_line(item, Holder::You(*expires_at), now)
+                    ));
+                }
+                super::receipts::append_discovery_lines(&mut lines, &view.discovery);
+                lines.push(format!("ready ({}):", ready.len()));
+                for item in &ready {
+                    lines.push(format!("  {}", ready_line(item)));
+                }
+                append_changes_lines(&mut lines, &changes, not_delivered);
+                if let Some(memories) = &view.memories {
+                    lines.push(format!(
+                        "memories: {} retained{}",
+                        memories.count,
+                        if memories.changed { " (changed)" } else { "" }
+                    ));
+                }
+                for omission in view
+                    .omissions
+                    .iter()
+                    .filter(|omission| omission.section != WorkNextSection::Changes)
+                {
+                    lines.push(format!(
+                        "  ({} more {} not shown)",
+                        omission.omitted_count,
+                        section_word(omission.section)
+                    ));
+                }
+                let mut value = serde_json::to_value(&view)?;
+                value["ready"] = serde_json::to_value(&ready)?;
+                value["changes_by_others"] = json!(changes);
+                value["held"] = serde_json::to_value(
+                    held.iter()
+                        .map(|(item, expires_at)| {
+                            let mut row = json!({ "work": item.work, "expires_at": expires_at });
+                            if let Some(status) = &item.work.current_status {
+                                row["current_status"] = json!(status);
+                            }
+                            if let Some(peer) = &item.work.status_observation {
+                                row["status_observation"] = json!(peer);
+                            }
+                            row
+                        })
+                        .collect::<Vec<_>>(),
+                )?;
+                let receipt =
+                    Receipt::assemble(lines.clone(), guidance.clone(), value.clone(), false)
+                        .with_build_identity(&view.read_cut, view.context_generation.as_deref());
+                if receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES
+                    && serde_json::to_vec_pretty(&receipt.value)?.len()
+                        < MAX_AGENT_WORK_RESPONSE_BYTES
+                {
+                    break (lines, value, guidance.clone());
+                }
+                if !(view.discovery.shorten_status_previews()
+                    || held.iter_mut().rev().any(|(item, _)| {
+                        crate::work_service::shorten_status_previews(
+                            &mut item.work.current_status,
+                            &mut item.work.status_observation,
+                        )
+                    })
+                    || crate::work_service::shed_work_next_focus(&mut view))
+                {
+                    break (lines, value, guidance.clone());
+                }
             }
-            lines.push(format!("held by you ({}):", held.len()));
-            for (item, expires_at) in &held {
-                lines.push(format!(
-                    "  {} \"{}\" until {}",
-                    item.work.short_ref,
-                    short(&item.work.title),
-                    clock(*expires_at, now)
-                ));
-            }
-            super::receipts::append_discovery_lines(&mut lines, &view.discovery);
-            lines.push(format!("ready ({}):", ready.len()));
-            for item in &ready {
-                lines.push(format!("  {}", ready_line(item)));
-            }
-            append_changes_lines(&mut lines, &changes, not_delivered);
-            if let Some(memories) = &view.memories {
-                lines.push(format!(
-                    "memories: {} retained{}",
-                    memories.count,
-                    if memories.changed { " (changed)" } else { "" }
-                ));
-            }
-            for omission in view
-                .omissions
-                .iter()
-                .filter(|omission| omission.section != WorkNextSection::Changes)
-            {
-                lines.push(format!(
-                    "  ({} more {} not shown)",
-                    omission.omitted_count,
-                    section_word(omission.section)
-                ));
-            }
-            let mut value = serde_json::to_value(&view)?;
-            value["ready"] = serde_json::to_value(&ready)?;
-            value["changes_by_others"] = json!(changes);
-            value["held"] = serde_json::to_value(
-                held.iter()
-                    .map(
-                        |(item, expires_at)| json!({ "work": item.work, "expires_at": expires_at }),
-                    )
-                    .collect::<Vec<_>>(),
-            )?;
-            (lines, value, guidance)
         } else {
             let claims = lists
                 .claims
@@ -670,6 +702,7 @@ impl AgentVerbs {
             return self.add_child(
                 under,
                 WorkChildInput {
+                    external_ref: input.external,
                     notes: input.notes,
                     key: slug(&title),
                     title,
@@ -688,6 +721,7 @@ impl AgentVerbs {
         let result = self.service.work_propose(
             WorkProposeInput::Root {
                 notes: input.notes,
+                external_ref: input.external,
                 title,
                 outcome,
                 acceptance,
@@ -946,6 +980,7 @@ impl AgentVerbs {
             ),
             UpdateAction::Revise {
                 title: new_title,
+                external,
                 outcome,
                 acceptance,
                 assignee,
@@ -958,6 +993,7 @@ impl AgentVerbs {
                 let add_labels = trimmed(&labels);
                 let remove_labels = trimmed(&unlabels);
                 let patch = WorkRevisionPatch {
+                    external_ref: external,
                     title: nonempty(new_title),
                     outcome: nonempty(outcome),
                     acceptance,
@@ -972,6 +1008,9 @@ impl AgentVerbs {
                     clear_deferral: false,
                 };
                 let mut fields = Vec::new();
+                if patch.external_ref.is_some() {
+                    fields.push("external reference");
+                }
                 if patch.title.is_some() {
                     fields.push("title");
                 }
@@ -1328,10 +1367,14 @@ impl AgentVerbs {
         let view = self.target(input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let target = view.status.work.work_id.0.to_string();
-        let result = self
-            .service
-            .work_note_on(Some(&target), &text, &trimmed(&input.refs), now)
-            .map_err(|error| VerbError::at(error, &work_ref))?;
+        let refs = trimmed(&input.refs);
+        let result = if input.status {
+            self.service
+                .work_note_with_status_on(Some(&target), &text, &refs, true, now)
+        } else {
+            self.service.work_note_on(Some(&target), &text, &refs, now)
+        }
+        .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "note", now);
         let value = super::mutation::NoteResult::from(&result);

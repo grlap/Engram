@@ -41,6 +41,7 @@ fn phoenix_initial_notes_recover_after_creation_commits_before_protocol_result()
         store
             .create_work(
                 &CreateWorkRequest {
+                    external_ref: None,
                     notes: vec!["First".into(), "Second".into()],
                     project_id: project.clone(),
                     parent_id: None,
@@ -119,6 +120,7 @@ fn maximum_default_fanout_decomposition_receipt_is_bounded_and_replays_exactly()
     let input = WorkProposeInput::Decompose {
         children: (0..16)
             .map(|index| WorkChildInput {
+                external_ref: None,
                 notes: Vec::new(),
                 key: format!("child-{index:02}"),
                 title: format!("Child {index:02} {}", "x".repeat(256)),

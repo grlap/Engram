@@ -521,6 +521,7 @@ fn completed_evidence_phase_validator_rejects_corrupt_frozen_basis_bindings() {
     let capture = store
         .record_work_note(
             &RecordWorkNoteRequest {
+                status: false,
                 work_id: root.work_id,
                 run_id: claim.run_id,
                 expected_work_revision: completed.revision,

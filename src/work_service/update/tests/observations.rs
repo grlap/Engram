@@ -139,6 +139,7 @@ fn phoenix_note_under_completed_parent_survives_snapshot_and_rebuild() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    external_ref: None,
                     notes: Vec::new(),
                     key: "optional".into(),
                     title: "Review later".into(),
@@ -465,6 +466,7 @@ fn phoenix_non_holder_append_checks_project_lifecycle_holder_and_provenance_atom
     );
     let mut store = SqliteStore::open(&database).unwrap();
     let request = || RecordWorkObservationRequest {
+        status: false,
         project_id: owner.project_id.clone(),
         work_id: root.work_id,
         expected_work_revision: root.revision,

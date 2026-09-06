@@ -18,6 +18,12 @@ use super::{
 /// keep repeated navigation inexpensive.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct CompactWorkRow {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) current_status: Option<crate::work_service::WorkCurrentStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) status_observation: Option<crate::work_service::WorkCurrentStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) external_ref: Option<String>,
     #[serde(rename = "ref")]
     pub(super) work_ref: String,
     pub(super) title: String,
@@ -55,6 +61,9 @@ pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
         item.state,
         terminal_short(&item.title, MAX_COMPACT_TITLE_BYTES),
     );
+    if let Some(external) = &item.external_ref {
+        let _ = write!(line, " external:{}", terminal_short(external, 192));
+    }
     if !item.labels.is_empty() {
         let labels = item
             .labels
@@ -88,6 +97,13 @@ pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
             terminal_short(holder, MAX_COMPACT_HOLDER_BYTES)
         );
     }
+    super::append_status_text(
+        &mut line,
+        &item.work_ref,
+        item.current_status.as_ref(),
+        item.status_observation.as_ref(),
+        "    ",
+    );
     line
 }
 
@@ -577,6 +593,9 @@ pub(super) fn compact_row(
             });
     let (labels, labels_omitted) = compact_labels(&work.labels);
     CompactWorkRow {
+        current_status: work.current_status.clone(),
+        status_observation: work.status_observation.clone(),
+        external_ref: work.external_ref.clone(),
         work_ref: work.short_ref.clone(),
         title: short_with_limit(&work.title, MAX_COMPACT_TITLE_BYTES),
         state: compact_state_word(work.lifecycle, status.availability).into(),
@@ -699,6 +718,16 @@ pub(super) fn fit_compact_next_to(
         .len();
         if current_bytes < max_bytes && terminal_bytes < max_bytes {
             return Ok(compact);
+        }
+        if compact.discovery.shorten_status_previews()
+            || compact.held.iter_mut().rev().any(|row| {
+                crate::work_service::shorten_status_previews(
+                    &mut row.current_status,
+                    &mut row.status_observation,
+                )
+            })
+        {
+            continue;
         }
         if compact.discovery.shed_one() {
             continue;
@@ -925,6 +954,12 @@ pub(super) fn append_discovery_lines(
         }
         lines.push(format!("{name} ({} shown):", rows.len()));
         for row in rows {
+            let external = row
+                .external_ref
+                .as_ref()
+                .map_or(String::new(), |reference| {
+                    format!(" external:{}", terminal_short(reference, 192))
+                });
             let note = row.note.as_ref().map_or(String::new(), |note| {
                 let session = row
                     .note_session_id
@@ -935,11 +970,27 @@ pub(super) fn append_discovery_lines(
                 format!("{session} — {}", super::terminal_safe_line(note))
             });
             lines.push(format!(
-                "  {} \"{}\" ({}){note}",
+                "  {} \"{}\" ({}){external}{note}",
                 row.work_ref,
                 terminal_safe_line(&row.title),
                 terminal_safe_line(&row.holder)
             ));
+            if let Some(status) = &row.current_status {
+                lines.extend(super::status_text_lines(
+                    &row.work_ref,
+                    status,
+                    "status",
+                    "    ",
+                ));
+            }
+            if let Some(peer) = &row.status_observation {
+                lines.extend(super::status_text_lines(
+                    &row.work_ref,
+                    peer,
+                    "peer status observation",
+                    "    ",
+                ));
+            }
         }
         if omitted > 0 {
             lines.push(format!("  ({omitted} more {name} not shown)"));

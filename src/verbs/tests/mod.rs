@@ -35,6 +35,7 @@ fn at(second: i64) -> DateTime<Utc> {
 
 fn root_input(title: &str, key: &str) -> WorkProposeInput {
     WorkProposeInput::Root {
+        external_ref: None,
         notes: Vec::new(),
         title: title.into(),
         outcome: format!("{title} outcome"),
@@ -55,6 +56,9 @@ fn hash(fill: char) -> ObjectHash {
 fn compact_test_row(index: usize) -> CompactWorkRow {
     let title = format!("Readable compact title {index} {}", "x".repeat(100));
     CompactWorkRow {
+        current_status: None,
+        status_observation: None,
+        external_ref: None,
         child_resolution: None,
         work_ref: format!("w-{index:012x}"),
         title: short_with_limit(&title, MAX_COMPACT_TITLE_BYTES),

@@ -198,6 +198,7 @@ fn done_names_resolve_first_conditions_instead_of_an_unavailable_detach() {
             UpdateInput {
                 work_ref: Some(deferred.clone()),
                 action: UpdateAction::Revise {
+                    external: None,
                     title: None,
                     outcome: None,
                     acceptance: None,

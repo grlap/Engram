@@ -101,6 +101,7 @@ fn record_windows_traverse_every_native_and_inherited_member_without_mutating_th
                 UpdateInput {
                     work_ref: Some(work.clone()),
                     action: UpdateAction::Revise {
+                        external: None,
                         title: Some(format!("History revision {index}")),
                         outcome: None,
                         acceptance: None,
@@ -385,6 +386,7 @@ fn record_windows_note_write_limit_counts_utf8_and_rolls_back_initial_batches() 
         let error = verbs
             .note(
                 &NoteInput {
+                    status: false,
                     work_ref: Some(work.clone()),
                     text: oversized.clone(),
                     refs: vec![],
@@ -490,6 +492,7 @@ fn record_windows_read_legacy_large_members_and_reject_new_large_restored_notes(
     let error = restored
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work.clone()),
                 text: body,
                 refs: vec![],

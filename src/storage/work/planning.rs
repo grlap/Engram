@@ -105,6 +105,8 @@ fn create_root_on<R: Redactor>(
         kind: request.kind,
         priority: request.priority,
         labels: normalize_strings(&request.labels),
+        external_ref: crate::domain::normalize_external_reference(request.external_ref.as_deref())
+            .map_err(StoreError::InvalidWork)?,
         assigned_to: normalize_optional(request.assigned_to.clone()),
         deferred_until: request.deferred_until,
         origin: request.origin,
@@ -446,6 +448,10 @@ impl SqliteStore {
             let mut labels = parent.labels.clone();
             labels.extend(draft.labels.clone());
             let item = WorkItem {
+                external_ref: crate::domain::normalize_external_reference(
+                    draft.external_ref.as_deref(),
+                )
+                .map_err(StoreError::InvalidWork)?,
                 schema_version: SCHEMA_VERSION,
                 project_id: parent.project_id.clone(),
                 work_id,
@@ -693,7 +699,8 @@ impl SqliteStore {
                 "priority must be an integer from 0 through 4".into(),
             ));
         }
-        let changed = request.patch.title.is_some()
+        let changed = request.patch.external_ref.is_some()
+            || request.patch.title.is_some()
             || request.patch.outcome.is_some()
             || request.patch.acceptance.is_some()
             || request.patch.kind.is_some()
@@ -736,6 +743,10 @@ impl SqliteStore {
         }
         if let Some(title) = request.patch.title.as_deref() {
             item.title = normalize_text(title, "title")?;
+        }
+        if let Some(external) = request.patch.external_ref.as_deref() {
+            item.external_ref = crate::domain::normalize_external_reference(Some(external))
+                .map_err(StoreError::InvalidWork)?;
         }
         if let Some(outcome) = request.patch.outcome.as_deref() {
             item.outcome = normalize_text(outcome, "outcome")?;
@@ -1677,6 +1688,7 @@ pub(super) fn work_catalog_search_text(
         item.outcome.clone(),
     ];
     parts.extend(item.labels.iter().cloned());
+    parts.extend(item.external_ref.iter().cloned());
     let mut statement = connection.prepare(
         "SELECT blocker_json FROM work_blockers
          WHERE work_id = ?1 AND state = 'active' ORDER BY blocker_id",

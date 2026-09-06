@@ -1,6 +1,7 @@
 //! Agent-facing view and summary types projected from canonical local-work
 //! state.
 
+use super::WorkCurrentStatus;
 use super::{
     ActorContext, ChildRequirement, ControlWorkBinding, DateTime, Deserialize, FromStr, JsonSchema,
     ObjectHash, ProjectId, ProjectMemoryAdvertisement, Sensitivity, Serialize, SessionId, Utc,
@@ -81,6 +82,12 @@ pub struct WorkDiscoveryView {
 }
 
 impl WorkDiscoveryView {
+    pub(crate) fn shorten_status_previews(&mut self) -> bool {
+        self.assigned.iter_mut().rev().any(|row| {
+            super::shorten_status_previews(&mut row.current_status, &mut row.status_observation)
+        })
+    }
+
     pub(crate) fn shed_one(&mut self) -> bool {
         if self.participated.pop().is_some() {
             self.participated_omitted += 1;
@@ -104,6 +111,12 @@ fn discovery_count_is_zero(count: &usize) -> bool {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct WorkDiscoverySummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_status: Option<WorkCurrentStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_observation: Option<WorkCurrentStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_ref: Option<String>,
     #[serde(rename = "ref")]
     pub work_ref: String,
     pub title: String,
@@ -302,6 +315,12 @@ pub enum WorkSectionOmissionReason {
 /// Bounded work identity and planning fields used on the agent wire.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkItemSummary {
+    #[serde(skip)]
+    pub(crate) current_status: Option<WorkCurrentStatus>,
+    #[serde(skip)]
+    pub(crate) status_observation: Option<WorkCurrentStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_ref: Option<String>,
     pub work_id: WorkId,
     pub short_ref: String,
     pub root_id: WorkId,

@@ -265,7 +265,7 @@ fn append_restored_work_evidence_on(
         ));
     }
     let (summary, refs, gate) = match input {
-        RestoredWorkEvidenceInput::Note { summary, refs } => (
+        RestoredWorkEvidenceInput::Note { summary, refs, .. } => (
             super::planning::normalize_note_text(summary, "note summary")?,
             normalize_strings(refs),
             None,
@@ -311,7 +311,11 @@ fn append_restored_work_evidence_on(
         summary,
         refs,
         gate,
-        actor: actor.clone(),
+        actor: crate::domain::captured_note_actor(
+            actor,
+            matches!(input, RestoredWorkEvidenceInput::Note { status: true, .. }),
+            item.assigned_to.as_deref() == Some(actor.actor_id.as_str()),
+        ),
         created_at: recorded_at,
     };
     let object = CanonicalObject::freeze(&evidence)?;
@@ -1065,7 +1069,11 @@ impl SqliteStore {
                 summary,
                 refs: normalize_strings(&request.refs),
                 gate: None,
-                actor: request.actor.clone(),
+                actor: crate::domain::captured_note_actor(
+                    &request.actor,
+                    request.status,
+                    item.assigned_to.as_deref() == Some(request.actor.actor_id.as_str()),
+                ),
                 created_at: request.recorded_at,
             };
             let evidence_hash = persist_post_completion_work_evidence_on(
@@ -1117,7 +1125,7 @@ impl SqliteStore {
             summary: summary.clone(),
             refs: normalize_strings(&request.refs),
             gate: None,
-            actor: request.actor.clone(),
+            actor: crate::domain::captured_note_actor(&request.actor, request.status, true),
             created_at: request.recorded_at,
         };
         let evidence_hash =

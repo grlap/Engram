@@ -592,6 +592,87 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
   if (failure) throw failure;
 });
 
+test("status resume recovers both roles across CLI and MCP process replacement without authority", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-status-resume-"));
+  let client;
+  const cli = (actor, session, ...args) => {
+    const env = { ...process.env };
+    delete env.ENGRAM_ACTOR_CONTEXT;
+    return spawnSync(binary, ["--home", engramHome, "work", "--actor-id", actor,
+      "--session-id", session, ...args], { cwd: root, encoding: "utf8", env });
+  };
+  const json = (actor, session, ...args) => {
+    const result = cli(actor, session, ...args, "--json");
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+  try {
+    buildAndInit(engramHome);
+    const coordinator = "status-coordinator";
+    const implementer = "status-implementer";
+    const x = json(coordinator, "coordinator-old", "add", "Coordination duty", "--assignee", coordinator, "--external", "planner:coordination").work.short_ref;
+    const y = json(implementer, "implementer-old", "add", "Implementation duty", "--assignee", implementer, "--external", "planner:implementation").work.short_ref;
+    json(implementer, "implementer-old", "claim", y);
+    json(coordinator, "coordinator-old", "note", x, "--status", "Wait for packet review; landing is not permitted");
+    client = new McpClient(engramHome, "implementer-old", undefined, implementer);
+    await client.initialize();
+    receipt(await client.call("note", { work_ref: y, status: true, text: "Freeze ready; await coordinator go" }));
+    receipt(await client.call("gate", { work_ref: y, name: "status-fixture" }));
+    receipt(await client.call("note", { work_ref: y, text: "Ordinary evidence does not resolve the wait" }));
+    await client.close();
+    client = undefined;
+    for (const replacement of [false, true]) {
+      for (const [actor, original, reference, external, body] of [
+        [coordinator, "coordinator-old", x, "planner:coordination", "Wait for packet review; landing is not permitted"],
+        [implementer, "implementer-old", y, "planner:implementation", "Freeze ready; await coordinator go"],
+      ]) {
+        const session = replacement ? `${original}-replacement` : original;
+        // Both calls launch fresh processes; replacement additionally changes
+        // the session binding while retaining the asserted actor principal.
+        const shell = json(actor, session, "next");
+        const shellRow = shell.assigned.find(row => row.ref === reference);
+        assert.equal(shellRow.external_ref, external);
+        assert.equal(shellRow.current_status.body_or_first_line, body);
+        client = new McpClient(engramHome, session, undefined, actor);
+        await client.initialize();
+        const resumed = receipt(await client.call("next"));
+        const row = resumed.assigned.find(row => row.ref === reference);
+        assert.deepEqual(row.current_status, shellRow.current_status);
+        assert.equal(row.current_status.by, replacement ? "another session" : "you");
+        assert.ok(Number.isFinite(Date.parse(row.current_status.recorded_at)));
+        const text = cli(actor, session, "next");
+        assert.equal(text.status, 0, text.stderr);
+        assert.ok(text.stdout.includes(body));
+        assert.ok(text.stdout.includes(external));
+        const shown = receipt(await client.call("show", { work_ref: reference }));
+        assert.deepEqual(shown.current_status, row.current_status);
+        assert.deepEqual(json(actor, session, "show", reference), shown);
+        if (replacement || actor === coordinator) {
+          const refused = await client.call("update", { work_ref: y, action: "revise", title: "Unpermitted change" });
+          assert.equal(refused.isError, true, JSON.stringify(refused));
+          assert.equal(receipt(await client.call("show", { work_ref: y })).status.work.title, "Implementation duty");
+          assert.ok(!resumed.held.some(held => held.ref === y));
+        }
+        await client.close();
+        client = undefined;
+      }
+    }
+    client = new McpClient(engramHome, "coordinator-new", undefined, coordinator);
+    await client.initialize();
+    receipt(await client.call("note", { work_ref: x, status: true, text: "Review accepted; send go" }));
+    receipt(await client.call("update", { work_ref: x, action: "revise", external: "planner:resolved-review" }));
+    const resolved = receipt(await client.call("next"));
+    assert.equal(resolved.assigned.find(row => row.ref === x).current_status.body_or_first_line, "Review accepted; send go");
+    const notes = receipt(await client.call("show", { work_ref: x, notes: true })).notes;
+    assert.equal(notes.filter(row => row.kind === "status").length, 2);
+    assert.ok(json(coordinator, "coordinator-new", "ls", "--search", "planner:resolved-review").items.some(row => row.ref === x));
+    assert.equal(json(coordinator, "coordinator-new", "show", x).external_ref, "planner:resolved-review");
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("show parent context agrees across CLI and MCP for required optional and root", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-show-parent-"));
   const session = "parent-reader";

@@ -471,6 +471,9 @@ enum WorkCommand {
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
+        /// Opaque link to external planning; does not import or synchronize it.
+        #[arg(long, value_name = "REF")]
+        external: Option<String>,
         /// Initial attributed note; repeatable and atomic with creation.
         #[arg(long = "note", value_name = "TEXT")]
         notes: Vec<String>,
@@ -552,6 +555,9 @@ enum WorkCommand {
     Forget { key: String },
     /// Record a note on open work (an observation without a claim), or a late finding on completed work.
     Note {
+        /// Capture your current duty/wait; peers remain observations.
+        #[arg(long)]
+        status: bool,
         /// An optional item ref, then the note text.
         #[arg(required = true, num_args = 1..=2, value_name = "[REF] TEXT")]
         args: Vec<String>,
@@ -1122,6 +1128,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             now,
         ),
         WorkCommand::Add {
+            external,
             notes,
             title,
             outcome,
@@ -1134,6 +1141,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             kind,
         } => verbs.add(
             AddInput {
+                external,
                 notes,
                 title,
                 outcome,
@@ -1161,6 +1169,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         ),
         WorkCommand::Update(args) => {
             let WorkUpdateArgs {
+                external,
                 work_ref,
                 release,
                 reason,
@@ -1185,7 +1194,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             if reason.is_some() && !release && supersede_with.is_none() && waive.is_none() {
                 bail!("--reason is only valid with --release, --waive, or --supersede-with");
             }
-            let revise = assignee.is_some()
+            let revise = external.is_some()
+                || assignee.is_some()
                 || priority.is_some()
                 || defer.is_some()
                 || title.is_some()
@@ -1243,6 +1253,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                     .transpose()
                     .map_err(|message| anyhow::anyhow!("invalid --defer: {message}"))?;
                 UpdateAction::Revise {
+                    external,
                     title,
                     outcome,
                     acceptance,
@@ -1275,7 +1286,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             verbs.memories(&MemoriesInput { query, after, full }, now)
         }
         WorkCommand::Forget { key } => verbs.forget(ForgetInput { key }, now),
-        WorkCommand::Note { mut args, refs } => {
+        WorkCommand::Note {
+            mut args,
+            refs,
+            status,
+        } => {
             let (work_ref, text) = if args.len() >= 2 {
                 let text = args.remove(1);
                 (Some(args.remove(0)), text)
@@ -1288,6 +1303,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             };
             verbs.note(
                 &NoteInput {
+                    status,
                     work_ref,
                     text,
                     refs,
@@ -1598,6 +1614,9 @@ async fn serve_mcp(server: McpServer) -> Result<()> {
 /// Flat flags for one planning/lifecycle update, boxed in the command enum.
 #[derive(clap::Args, Debug)]
 struct WorkUpdateArgs {
+    /// Replace the item's opaque external planning reference.
+    #[arg(long, value_name = "REF")]
+    external: Option<String>,
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
     /// Release your claim.
@@ -1970,7 +1989,7 @@ mod tests {
         ])
         .unwrap();
         assert!(matches!(parsed.command, Command::Work { operation, .. }
-            if matches!(&*operation, WorkCommand::Note { args, refs }
+            if matches!(&*operation, WorkCommand::Note { args, refs, .. }
                 if args == &["w-000000000001", "review finding"] && refs == &["review:detail"])));
         let help = Cli::try_parse_from(["engram", "work", "note", "--help"]).unwrap_err();
         assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);

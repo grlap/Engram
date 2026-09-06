@@ -269,10 +269,14 @@ fn project_record(
             WorkRecordContent::Note(mut note) => {
                 super::projection::project_full_note(&mut note)?;
                 note_body_bytes = Some(note.summary.len());
-                let label = serde_json::to_value(note.kind)?
-                    .as_str()
-                    .unwrap_or("note")
-                    .to_owned();
+                let label = if crate::domain::status_note_role(&note.actor).is_some() {
+                    "status".into()
+                } else {
+                    serde_json::to_value(note.kind)?
+                        .as_str()
+                        .unwrap_or("note")
+                        .to_owned()
+                };
                 let summary = if kind == WorkRecordKind::History {
                     let summary = compact_text(&note.summary);
                     summary_truncated = summary != note.summary;

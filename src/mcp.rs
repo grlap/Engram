@@ -126,6 +126,8 @@ struct ShowArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct AddArgs {
+    /// Opaque external planning linkage, not an imported snapshot.
+    external: Option<String>,
     /// Ordered initial notes, committed atomically with creation.
     notes: Option<Vec<String>>,
     /// Only required field.
@@ -174,6 +176,8 @@ enum UpdateActionArg {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct UpdateArgs {
+    /// Replace external planning linkage; requires action revise.
+    external: Option<String>,
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
     /// `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`,
@@ -250,6 +254,8 @@ struct ForgetArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct NoteArgs {
+    /// Record current coordination status; storage determines owner/peer qualification.
+    status: Option<bool>,
     /// Item to note on; defaults to the focus.
     work_ref: Option<String>,
     /// What you found or decided.
@@ -369,6 +375,7 @@ impl McpServer {
     fn add(&self, Parameters(args): Parameters<AddArgs>) -> CallToolResult {
         verb(self.verbs().add(
             AddInput {
+                external: args.external,
                 notes: args.notes.unwrap_or_default(),
                 title: args.title,
                 outcome: args.outcome,
@@ -406,6 +413,9 @@ impl McpServer {
         description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), waive (child plus reason), supersede (replacement plus reason), or detach (stranded child plus reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
+        if args.external.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
+            return invalid_argument("external", "external reference requires action revise");
+        }
         if args.acceptance.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
             return invalid_argument(
                 "acceptance",
@@ -426,6 +436,7 @@ impl McpServer {
                     Err(message) => return invalid_argument("defer", &message),
                 };
                 UpdateAction::Revise {
+                    external: args.external,
                     title: args.title,
                     outcome: args.outcome,
                     acceptance: args.acceptance,
@@ -535,6 +546,7 @@ impl McpServer {
     fn note(&self, Parameters(args): Parameters<NoteArgs>) -> CallToolResult {
         verb(self.verbs().note(
             &NoteInput {
+                status: args.status.unwrap_or(false),
                 work_ref: args.work_ref,
                 text: args.text,
                 refs: args.refs.unwrap_or_default(),

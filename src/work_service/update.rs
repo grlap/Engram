@@ -159,13 +159,6 @@ impl LocalWorkService {
         Ok(result)
     }
 
-    /// Captures one note under one explicit work target and one atomic storage
-    /// operation. A live holder also checkpoints; a non-holder's observation
-    /// never changes execution. Completed evidence stays after the frozen cut.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one protocol operation preserves native and restored note authority paths"
-    )]
     pub(crate) fn work_note_on(
         &self,
         work_ref: Option<&str>,
@@ -173,10 +166,32 @@ impl LocalWorkService {
         refs: &[String],
         now: DateTime<Utc>,
     ) -> Result<WorkNoteResult, StoreError> {
+        self.work_note_with_status_on(work_ref, summary, refs, false, now)
+    }
+
+    /// Captures one note under one explicit work target and one atomic storage
+    /// operation. A live holder also checkpoints; a non-holder's observation
+    /// never changes execution. Completed evidence stays after the frozen cut.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one protocol operation preserves native and restored note authority paths"
+    )]
+    pub(crate) fn work_note_with_status_on(
+        &self,
+        work_ref: Option<&str>,
+        summary: &str,
+        refs: &[String],
+        status: bool,
+        now: DateTime<Utc>,
+    ) -> Result<WorkNoteResult, StoreError> {
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
-        let note = WorkNoteIntent { summary, refs };
+        let note = WorkNoteIntent {
+            status,
+            summary,
+            refs,
+        };
         let intent = self.protocol_intent(&note);
         let protocol_operation = "work_update:note";
         let raw_key =
@@ -234,6 +249,7 @@ impl LocalWorkService {
                     expected_work_revision: work.revision,
                     holder: self.session_id.clone(),
                     input: RestoredWorkEvidenceInput::Note {
+                        status,
                         summary: summary.to_owned(),
                         refs: refs.to_owned(),
                     },
@@ -269,6 +285,7 @@ impl LocalWorkService {
         let capture = if work.lifecycle == WorkLifecycle::Open && !holds_live_claim {
             store.record_work_observation(
                 &crate::domain::RecordWorkObservationRequest {
+                    status,
                     project_id: self.project_id.clone(),
                     work_id: work.work_id,
                     expected_work_revision: work.revision,
@@ -286,6 +303,7 @@ impl LocalWorkService {
                 self.work_note_evidence_basis(&store, &basis, &work, now)?;
             store.record_work_note(
                 &RecordWorkNoteRequest {
+                    status,
                     work_id: work.work_id,
                     run_id,
                     expected_work_revision: work.revision,

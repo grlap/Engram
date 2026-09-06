@@ -83,6 +83,7 @@ impl SqliteStore {
             kind: item.kind,
             priority: item.priority,
             labels: item.labels.clone(),
+            external_ref: item.external_ref.clone(),
             assigned_to: None,
             deferred_until: None,
             origin: WorkOrigin::Local,

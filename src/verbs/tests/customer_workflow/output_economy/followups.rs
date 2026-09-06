@@ -93,6 +93,7 @@ fn mutation_and_continuation_first_lines_escape_titles_without_changing_json() {
     let noted = verbs
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work.clone()),
                 text: "Progress".into(),
                 refs: Vec::new(),
@@ -149,6 +150,7 @@ fn non_holder_note_uses_the_same_relative_holder_in_text_and_json() {
     let receipt = observer
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work),
                 text: "Observation".into(),
                 refs: Vec::new(),

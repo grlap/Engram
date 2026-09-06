@@ -45,6 +45,7 @@ fn create_root(
     store
         .create_work(
             &CreateWorkRequest {
+                external_ref: None,
                 notes: Vec::new(),
                 project_id: project.clone(),
                 parent_id: None,
@@ -100,6 +101,7 @@ fn create_imported_root(
     let item = store
         .create_work(
             &CreateWorkRequest {
+                external_ref: None,
                 notes: Vec::new(),
                 project_id: project.clone(),
                 parent_id: None,
@@ -562,6 +564,7 @@ fn initial_note_order_survives_snapshot_recreation() {
     let item = source
         .create_work(
             &CreateWorkRequest {
+                external_ref: None,
                 notes: notes.clone(),
                 project_id: project.clone(),
                 parent_id: None,
@@ -1879,6 +1882,7 @@ fn runless_restored_work_supports_blocked_planning_and_disposal() {
         parent_id: decompose.work_id,
         expected_parent_revision: 1,
         children: vec![ChildWorkDraft {
+            external_ref: None,
             notes: Vec::new(),
             local_key: "native-child".into(),
             child_requirement: ChildRequirement::Required,
@@ -1970,6 +1974,7 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         let parent = source.get_work_item(root.work_id).expect("current parent");
         let children = (0..16)
             .map(|index| ChildWorkDraft {
+                external_ref: None,
                 notes: Vec::new(),
                 local_key: format!("child-{batch:02}-{index:02}"),
                 child_requirement: ChildRequirement::Optional,

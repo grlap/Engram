@@ -16,6 +16,8 @@ use super::{
 /// Request to create a root or child work item.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreateWorkRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_ref: Option<String>,
     /// Ordered initial observations, committed atomically with creation.
     pub notes: Vec<String>,
     pub project_id: ProjectId,
@@ -39,6 +41,8 @@ pub struct CreateWorkRequest {
 /// One direct child proposed during an atomic decomposition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildWorkDraft {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_ref: Option<String>,
     /// Ordered initial observations, committed atomically with decomposition.
     pub notes: Vec<String>,
     pub local_key: String,
@@ -92,6 +96,8 @@ pub struct WorkDecomposition {
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkRevisionPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_ref: Option<String>,
     pub title: Option<String>,
     pub outcome: Option<String>,
     pub acceptance: Option<Vec<String>>,
@@ -275,6 +281,8 @@ pub struct RecordWorkEvidenceRequest {
 /// acknowledges it. Storage commits both immutable objects atomically.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct RecordWorkNoteRequest {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub status: bool,
     pub work_id: WorkId,
     pub run_id: WorkRunId,
     pub expected_work_revision: i64,
@@ -309,6 +317,8 @@ pub(crate) struct RecordGateEvidenceRequest {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum RestoredWorkEvidenceInput {
     Note {
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        status: bool,
         summary: String,
         refs: Vec<String>,
     },

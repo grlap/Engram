@@ -37,6 +37,80 @@ pub(crate) fn normalize_initial_work_notes(notes: &[String]) -> Result<Vec<Strin
 pub(crate) const NON_HOLDER_NOTE_SOURCE: &str = "work_observation:non_holder";
 pub(crate) const NON_HOLDER_NOTE_REFERENCE: &str = "non_holder";
 
+/// Immutable status-note qualification, derived by the capture transaction.
+/// It describes accountability, never claim or completion authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StatusNoteRole {
+    Owner,
+    Peer,
+}
+
+pub(crate) const STATUS_NOTE_SOURCE: &str = "work_note:status";
+
+pub(crate) fn validate_status_capture_actor(actor: &ActorContext) -> Result<(), String> {
+    if actor
+        .provenance_chain
+        .iter()
+        .any(|link| link.source == STATUS_NOTE_SOURCE)
+    {
+        return Err(
+            "status qualification is recorded by storage, not supplied by the caller".into(),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn status_note_role(actor: &ActorContext) -> Option<StatusNoteRole> {
+    let mut links = actor
+        .provenance_chain
+        .iter()
+        .filter(|link| link.source == STATUS_NOTE_SOURCE);
+    let link = links.next()?;
+    if links.next().is_some() || link.relation != ProvenanceRelation::DerivedFrom {
+        return None;
+    }
+    match link.reference.as_deref() {
+        Some("owner") => Some(StatusNoteRole::Owner),
+        Some("peer") => Some(StatusNoteRole::Peer),
+        _ => None,
+    }
+}
+
+/// Never trust a caller-supplied qualification; storage installs its decision.
+pub(crate) fn status_note_actor(
+    mut actor: ActorContext,
+    role: Option<StatusNoteRole>,
+) -> ActorContext {
+    actor
+        .provenance_chain
+        .retain(|link| link.source != STATUS_NOTE_SOURCE);
+    if let Some(role) = role {
+        actor.provenance_chain.push(ProvenanceLink {
+            relation: ProvenanceRelation::DerivedFrom,
+            source: STATUS_NOTE_SOURCE.into(),
+            reference: Some(
+                match role {
+                    StatusNoteRole::Owner => "owner",
+                    StatusNoteRole::Peer => "peer",
+                }
+                .into(),
+            ),
+        });
+    }
+    actor
+}
+
+pub(crate) fn captured_note_actor(actor: &ActorContext, status: bool, owner: bool) -> ActorContext {
+    status_note_actor(
+        actor.clone(),
+        status.then_some(if owner {
+            StatusNoteRole::Owner
+        } else {
+            StatusNoteRole::Peer
+        }),
+    )
+}
+
 pub(crate) fn is_non_holder_note_marker(link: &ProvenanceLink) -> bool {
     link.relation == ProvenanceRelation::DerivedFrom
         && link.source == NON_HOLDER_NOTE_SOURCE
@@ -99,6 +173,8 @@ pub struct WorkObservation {
 
 #[derive(Serialize)]
 pub(crate) struct RecordWorkObservationRequest {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub status: bool,
     pub project_id: ProjectId,
     pub work_id: WorkId,
     pub expected_work_revision: i64,

@@ -117,6 +117,20 @@ policy outside the core. Extend ports using neutral request/response records.
 
 ## Using Engram as an agent
 
+Record changed duties, waits, decisions, and the next permitted action with
+`engram work note REF --status TEXT` (MCP `status: true`), not only in a
+conversation summary. A coordinator without code work keeps one assigned or
+held coordination item; `next` is the resume read. Current status is the
+newest status qualified by storage at capture for the currently accountable
+actor (live holder, otherwise assignee); peer status notes remain observations,
+and ordinary notes/gates do not replace the commitment. `show --notes` retains
+old statuses; oversized current status explicitly points to full note detail.
+A replacement session recovers duties, never the old session's live claim.
+Use `add --external REF` or `update REF --external REF` for audited external
+planning linkage and `ls --search REF` to find it; record source criteria in
+acceptance and context in notes, since the reference alone is not immutable
+intake and local completion does not close external work.
+
 Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME` and normally injects
 `ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT`

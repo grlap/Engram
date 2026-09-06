@@ -9,6 +9,7 @@ use super::*;
 mod claims;
 mod gate_evidence;
 mod sessions;
+mod status;
 
 #[test]
 fn work_bound_control_checkpoint_records_execution_observation_once() {

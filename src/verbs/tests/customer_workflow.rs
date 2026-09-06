@@ -12,6 +12,7 @@ mod parent_context;
 mod record_windows;
 mod remaining_children;
 mod review;
+mod status_resume;
 mod terminal_safety;
 
 fn fixture() -> (tempfile::TempDir, AgentVerbs, PathBuf, ProjectId) {
@@ -50,6 +51,7 @@ fn note(verbs: &AgentVerbs, work: &str, text: &str, now: i64) {
     verbs
         .note(
             &NoteInput {
+                status: false,
                 work_ref: Some(work.into()),
                 text: text.into(),
                 refs: vec!["test:full-note".into()],
@@ -281,6 +283,7 @@ fn phoenix_add_under_terminal_parent_returns_typed_root_followup_remedy_without_
                 parent_id: parent_before.work_id,
                 expected_parent_revision: parent_before.revision,
                 children: vec![crate::ChildWorkDraft {
+                    external_ref: None,
                     notes: Vec::new(),
                     local_key: "refused".into(),
                     child_requirement: if optional {

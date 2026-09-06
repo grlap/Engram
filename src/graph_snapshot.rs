@@ -69,6 +69,8 @@ pub struct WorkGraphSnapshotSummary {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkGraphSnapshotItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_ref: Option<String>,
     pub work_id: WorkId,
     #[serde(rename = "ref")]
     pub short_ref: String,
@@ -97,6 +99,7 @@ pub(crate) fn restored_item_basis_matches(
     item: &WorkItem,
 ) -> bool {
     &item.project_id == project_id
+        && item.external_ref == snapshot.external_ref
         && item.work_id == snapshot.work_id
         && item.short_ref == snapshot.short_ref
         && item.root_id == snapshot.root_id
