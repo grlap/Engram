@@ -85,6 +85,14 @@ pub(crate) struct WorkRecordOrder {
     position: i64,
 }
 
+impl WorkRecordOrder {
+    /// Only native rows have a position in this host's project feed. Inherited
+    /// member order must never masquerade as a project-feed position.
+    pub(crate) fn project_position(&self) -> Option<i64> {
+        (self.layer == 1).then_some(self.position)
+    }
+}
+
 pub(crate) struct WorkRecordIndex {
     pub address: WorkRecordAddress,
     pub order: WorkRecordOrder,

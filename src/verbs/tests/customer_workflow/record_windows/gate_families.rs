@@ -247,6 +247,13 @@ fn note_windows_keep_verdict_after_nine_gates_and_page_gate_evidence_explicitly(
                 .unwrap();
             assert_eq!(detail.value["note"]["family"], row["family"]);
             assert_eq!(detail.value["note"]["locator"], row["locator"]);
+            assert_eq!(row["actor_session_id"], "agent");
+            assert!(row["feed_position"].as_i64().unwrap() > 0);
+            assert_eq!(detail.value["note"]["feed_position"], row["feed_position"]);
+            assert_eq!(
+                detail.value["note"]["actor_session_id"],
+                row["actor_session_id"]
+            );
             seen.push(locator);
         }
         after = receipt.value["notes_window"]["after"]
@@ -347,6 +354,13 @@ fn note_window_gate_families_survive_restore_and_late_restored_gates() {
     let explicit = read(&restored, &work, true, None, 110);
     assert_families(&explicit, 2, 1, 4);
     assert_eq!(explicit.value["notes_window"]["total"], 7);
+    for row in explicit.value["notes"].as_array().unwrap() {
+        let inherited = row["locator"].as_str().unwrap().contains(':');
+        assert_eq!(row.get("feed_position").is_none(), inherited);
+        assert!(row["actor_session_id"].is_string());
+    }
+    assert!(!explicit.text().contains("feed_position"));
+    assert!(!explicit.text().contains("actor_session_id"));
     assert!(
         explicit.value["notes"]
             .as_array()

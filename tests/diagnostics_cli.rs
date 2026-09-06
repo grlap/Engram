@@ -75,15 +75,23 @@ fn version_next_and_doctor_share_runtime_identity_across_processes() {
             args.push("--verbose");
         }
         let text = String::from_utf8(success(home, &args).stdout).unwrap();
-        assert_eq!(
-            text.trim().lines().last(),
-            Some(format!("build: {}", &fingerprint.as_str()[..12]).as_str())
-        );
+        let footer = text.trim().lines().last().unwrap();
+        let instant = footer
+            .strip_prefix(&format!(
+                "build: {}; read cut: project 0 observed_at ",
+                &fingerprint.as_str()[..12]
+            ))
+            .unwrap();
+        chrono::DateTime::parse_from_rfc3339(instant).unwrap();
         assert_eq!(text.matches("build:").count(), 1);
         args.push("--json");
         let output = success(home, &args);
         let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(receipt["build_fingerprint"], json!(fingerprint));
+        assert_eq!(receipt["read_cut"]["project_position"], 0);
+        chrono::DateTime::parse_from_rfc3339(receipt["read_cut"]["observed_at"].as_str().unwrap())
+            .unwrap();
+        assert!(receipt.get("context_generation").is_none());
         assert_eq!(
             String::from_utf8(output.stdout)
                 .unwrap()

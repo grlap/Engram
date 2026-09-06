@@ -542,8 +542,12 @@ stored. A row contains its ref, bounded title, holder word (`you`, `another
 session`, or `unclaimed`), and the first line of this session's latest own note
 when one exists. A gate uses its recorded name and pass/fail result; a handoff
 alone has no note summary. Another session's later note cannot replace that
-summary. Terminal rendering escapes controls and collapses whitespace to one
-line per discovery row; structured values retain their bounded content.
+summary. A preview with a note also names `note_session_id`, the recorded
+session verified by this own-note read, only if its actor equals the reader's
+actor; text names the same session. Other actors' session fields are omitted.
+This is asserted context, not authenticated identity. Terminal rendering escapes
+controls and collapses whitespace to one line per discovery row; structured
+values retain their bounded content.
 
 Discovery first selects Open candidates with indexed assignment/claim filters,
 then probes their note, event, and run-feed bindings. Unrelated closed history
@@ -558,6 +562,13 @@ for byte fit; empty arrays and zero counts are absent. Discovery rows are shed
 before existing sections at the 12 KiB response ceiling. The reads share the
 same advisory snapshot as focus, held, and ready; they never stage or acknowledge
 delivery, select focus, or claim work. Normal change delivery is unchanged.
+`next` reflects that advisory snapshot as `read_cut {project_position,
+observed_at}` beside the build fingerprint, plus `context_generation` when
+supplied, on one terminal diagnostic line and once in JSON. It is not the
+staged delivery cut or the separately read memory-signal basis. The instant
+is the call's supplied read time, not ordering authority. An older retained
+host block retains its earlier cut and generation; compare with a new read
+before inferring a selection error. See [build and read diagnostics](cli-and-mcp.md#build-identity-and-doctor-refusals).
 Recent participation is navigation, not an obligation: keep outstanding review
 decisions and waiting conditions on a claimed coordination item.
 
@@ -715,8 +726,14 @@ independent of the filter. Inherited generations retain member order, followed b
 every native note family in dense project-feed order across run generations.
 The focus projection, count, members and continuation basis share one read
 transaction after the existing focus selection. `notes[].summary` is a full
-body. The complete text and JSON window stays within 12 KiB, with exact
-`notes_omitted` and `notes_window` (`shown`, `total`, `newer`, `older`, `after`).
+body. Explicit note rows in window/detail JSON also expose the recorded
+`actor_session_id` for the reader's own actor (null when absent on the record;
+omitted for another actor) and native project `feed_position` for every actor.
+Inherited rows omit `feed_position`: their member order is not a position in
+this host's project feed. These diagnostic detail fields do not change note
+text or confer execution authority. The complete text and JSON window stays
+within 12 KiB, with exact `notes_omitted` and `notes_window` (`shown`, `total`,
+`newer`, `older`, `after`).
 `show REF --notes --after CURSOR` reaches the next older window; `--history`
 uses the same window metadata in `history.window`. Unlike ordinary show's
 native-change history and separate restored history, this mode combines

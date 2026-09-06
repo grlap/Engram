@@ -15,6 +15,10 @@ use super::{
 /// and may observe newer commits; every mutation revalidates its canonical basis.
 #[derive(Clone, Debug, Serialize)]
 pub struct WorkNextView {
+    pub build_fingerprint: Option<ObjectHash>,
+    pub read_cut: WorkNextReadCut,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_generation: Option<String>,
     pub session: AgentWorkSession,
     #[serde(flatten)]
     pub discovery: WorkDiscoveryView,
@@ -43,6 +47,15 @@ pub struct WorkNextView {
     /// confirms that the signal survived its tighter byte budget.
     #[serde(skip)]
     pub(crate) memory_advertisement: Option<ProjectMemoryAdvertisement>,
+}
+
+/// Diagnostic basis of the advisory snapshot, not the staged delivery range,
+/// an acknowledgement, or execution authority. `observed_at` is the caller's
+/// read instant; the project position orders the reflected committed state.
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkNextReadCut {
+    pub project_position: i64,
+    pub observed_at: DateTime<Utc>,
 }
 
 /// Flat-word lists retained from the same cut as focus and discovery. The outer
@@ -97,6 +110,10 @@ pub struct WorkDiscoverySummary {
     pub holder: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Asserted recorded session selected by the own-note discovery read,
+    /// disclosed only when its canonical actor equals the reader's actor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note_session_id: Option<SessionId>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

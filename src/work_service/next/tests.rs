@@ -4,6 +4,127 @@ use crate::domain::SCHEMA_VERSION;
 use tempfile::tempdir;
 
 #[test]
+fn preview_correction_invalid_generation_precedes_store_and_delivery_effects() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("work.db");
+    let service = LocalWorkService::new(
+        database.clone(),
+        ProjectId("project".into()),
+        "agent".into(),
+        SessionId("reader".into()),
+        None,
+    );
+    let invalid = ["x".repeat(257), "é".repeat(129), "bad\ngeneration".into()];
+    let query = |generation: &str| WorkNextQuery {
+        sections: vec![WorkNextSection::Focus],
+        context_generation: Some(generation.into()),
+        ..WorkNextQuery::default()
+    };
+    let assert_refusal = |result: Result<WorkNextView, StoreError>| {
+        assert!(
+            matches!(result, Err(StoreError::InvalidProjectMemory(message))
+            if message == "context_generation must be at most 256 bytes without control characters")
+        );
+    };
+    for generation in &invalid {
+        assert_refusal(service.work_next(20, query(generation), at(0)));
+        assert!(
+            !database.exists(),
+            "invalid input must not open/create a store"
+        );
+    }
+    service
+        .work_propose(root_input("Pending delivery", "pending"), at(1))
+        .unwrap();
+    let staged = service
+        .work_next(
+            20,
+            WorkNextQuery {
+                sections: vec![WorkNextSection::Changes],
+                ..WorkNextQuery::default()
+            },
+            at(2),
+        )
+        .unwrap();
+    let through = staged.delivered_through.expect("pending range");
+    let token = staged
+        .delivery_token
+        .as_deref()
+        .expect("acknowledgement token");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+    for generation in &invalid {
+        for explicit_ack in [false, true] {
+            assert_refusal(service.work_next_with_delivery_token(
+                20,
+                explicit_ack.then_some(through),
+                explicit_ack.then_some(token),
+                query(generation),
+                at(3),
+            ));
+            assert_eq!(
+                before,
+                crate::storage::test_database_shape_snapshot(&connection).unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+fn preview_correction_generation_boundary_without_memories_preserves_delivery() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("work.db");
+    let service = LocalWorkService::new(
+        database.clone(),
+        ProjectId("project".into()),
+        "agent".into(),
+        SessionId("reader".into()),
+        None,
+    );
+    service
+        .work_propose(root_input("Pending delivery", "pending"), at(0))
+        .unwrap();
+    let staged = service
+        .work_next(
+            20,
+            WorkNextQuery {
+                sections: vec![WorkNextSection::Changes],
+                ..WorkNextQuery::default()
+            },
+            at(1),
+        )
+        .unwrap();
+    assert!(staged.delivery_token.is_some());
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+    for generation in [
+        None,
+        Some(String::new()),
+        Some("x".repeat(256)),
+        Some("é".repeat(128)),
+    ] {
+        let view = service
+            .work_next(
+                20,
+                WorkNextQuery {
+                    sections: vec![WorkNextSection::Focus],
+                    context_generation: generation.clone(),
+                    ..WorkNextQuery::default()
+                },
+                at(2),
+            )
+            .unwrap();
+        assert_eq!(view.context_generation, generation);
+        assert_eq!(view.delivered_through, None);
+        assert_eq!(view.delivery_token, None);
+        assert_eq!(
+            before,
+            crate::storage::test_database_shape_snapshot(&connection).unwrap()
+        );
+    }
+}
+
+#[test]
 fn next_advisory_focus_rebinds_after_staging_without_changing_delivery() {
     use std::sync::{Arc, Barrier};
     for initially_focused in [false, true] {
@@ -44,6 +165,14 @@ fn next_advisory_focus_rebinds_after_staging_without_changing_delivery() {
         });
         entered.wait();
         reader.work_focus(&b.short_ref, at(4)).unwrap();
+        // Commit after delivery staging but before the advisory snapshot.
+        creator
+            .work_propose(root_input("Later commit", "later"), at(4))
+            .unwrap();
+        let reflected_head = SqliteStore::open(&database)
+            .unwrap()
+            .work_feed_head(&FeedId::Project(ProjectId("project".into())))
+            .unwrap();
         let connection = rusqlite::Connection::open(&database).unwrap();
         let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
         release.wait();
@@ -60,6 +189,19 @@ fn next_advisory_focus_rebinds_after_staging_without_changing_delivery() {
             initially_focused.then_some(a.work_id)
         );
         assert!(view.delivered_through.is_some());
+        assert_eq!(view.read_cut.project_position, reflected_head);
+        assert!(view.read_cut.project_position > view.delivered_through.unwrap());
+        assert_eq!(view.read_cut.observed_at, at(3));
+        assert_eq!(
+            view.build_fingerprint,
+            crate::build_identity::current().build_fingerprint
+        );
+        assert!(
+            serde_json::to_value(&view)
+                .unwrap()
+                .get("context_generation")
+                .is_none()
+        );
         assert!(view.delivery_token.is_some());
         assert_eq!(
             before,

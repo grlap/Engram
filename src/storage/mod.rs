@@ -12,6 +12,8 @@ mod schema_diagnostics;
 mod task_memory;
 mod work;
 
+pub(crate) use project_memory::validate_context_generation;
+
 pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };

@@ -1,5 +1,12 @@
 use super::*;
 
+fn test_next_cut() -> crate::work_service::WorkNextReadCut {
+    crate::work_service::WorkNextReadCut {
+        project_position: 0,
+        observed_at: at(0),
+    }
+}
+
 #[test]
 fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt() {
     use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
@@ -9,8 +16,11 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
         title: controls.clone(),
         holder: "another session".into(),
         note: Some(controls.clone()),
+        note_session_id: Some(SessionId("reader".into())),
     };
     let compact = CompactNextReceipt {
+        read_cut: test_next_cut(),
+        context_generation: Some("termal-test".into()),
         discovery: WorkDiscoveryView {
             assigned: (0..5).map(row).collect(),
             participated: (5..10).map(row).collect(),
@@ -38,7 +48,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
             compact_next_value(compact),
             false,
         )
-        .with_build_identity()
+        .with_build_identity(&compact.read_cut, compact.context_generation.as_deref())
     };
     let before = render(&compact);
     assert!(serde_json::to_vec_pretty(&before.value).unwrap().len() < MAX_COMPACT_NEXT_JSON_BYTES);
@@ -105,6 +115,8 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
 fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
     use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
     let mut receipt = CompactNextReceipt {
+        read_cut: test_next_cut(),
+        context_generation: Some("termal-test".into()),
         discovery: WorkDiscoveryView::default(),
         focus: Some(compact_test_row(0)),
         held: vec![compact_test_row(1)],
@@ -122,6 +134,7 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
         title: "Discovery title".into(),
         holder: "another session".into(),
         note: Some("Own finding".repeat(12)),
+        note_session_id: Some(SessionId("reader".into())),
     };
     receipt.discovery.assigned = (3..5).map(row).collect();
     receipt.discovery.participated = (5..10).map(row).collect();
@@ -150,6 +163,8 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
 fn compact_next_trims_every_advisory_section_instead_of_failing() {
     let row = compact_test_row(0);
     let receipt = CompactNextReceipt {
+        read_cut: test_next_cut(),
+        context_generation: Some("termal-test".into()),
         discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: Some(row.clone()),
         held: (1..=20).map(compact_test_row).collect(),
@@ -177,7 +192,7 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
         compact_next_value(&fitted),
         false,
     )
-    .with_build_identity();
+    .with_build_identity(&fitted.read_cut, fitted.context_generation.as_deref());
     assert!(complete.text().len() < MAX_COMPACT_NEXT_JSON_BYTES);
     assert_eq!(
         serde_json::to_string(&complete.value)
@@ -224,6 +239,8 @@ fn compact_next_sheds_labels_in_navigation_priority_order() {
     last_ready.labels = vec!["label-with-a-quoted-\"value\"".into()];
     let last_ready_title = last_ready.title.clone();
     let receipt = CompactNextReceipt {
+        read_cut: test_next_cut(),
+        context_generation: Some("termal-test".into()),
         discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: Some(focus),
         held: vec![held],
@@ -261,6 +278,8 @@ fn compact_label_shed_restores_and_continues_to_a_reducing_row() {
     let mut last_ready = compact_test_row(2);
     last_ready.labels = vec!["x".into()];
     let receipt = CompactNextReceipt {
+        read_cut: test_next_cut(),
+        context_generation: Some("termal-test".into()),
         discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: None,
         held: Vec::new(),
@@ -295,6 +314,8 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
     }];
     record_compact_omission(&mut omissions, "changes", 3);
     let receipt = CompactNextReceipt {
+        read_cut: test_next_cut(),
+        context_generation: Some("termal-test".into()),
         discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: None,
         held: Vec::new(),
@@ -326,6 +347,8 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
     );
 
     let byte_budget_only = CompactNextReceipt {
+        read_cut: test_next_cut(),
+        context_generation: Some("termal-test".into()),
         discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: None,
         held: Vec::new(),

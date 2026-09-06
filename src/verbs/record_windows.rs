@@ -351,6 +351,14 @@ fn row_value(row: &WorkRecordRow, placeholder: bool, work_ref: &str, actor: &str
         "by": super::show::relative_actor_label(&row.actor.actor_id, row.actor.attribution_context(), actor),
         "created_at": row.recorded_at,
         "non_holder": row.actor.provenance_chain.iter().any(crate::domain::is_non_holder_note_marker) });
+    if row.family != WorkRecordFamily::History {
+        if row.actor.actor_id == actor {
+            value["actor_session_id"] = json!(row.actor.session_id);
+        }
+        if let Some(position) = row.project_position() {
+            value["feed_position"] = json!(position);
+        }
+    }
     if omitted {
         value["body_omitted"] = json!(true);
     } else {

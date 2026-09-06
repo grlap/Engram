@@ -166,8 +166,11 @@ Rules that matter:
 - Claimless `next` includes nonempty `assigned` and `participated` sections
   between held and ready work, at most five rows each with exact omitted counts.
   Rows name the work, title, holder word, and first line of this session's latest
-  own note when present. This is recent-work discovery, not a review obligation
-  or claim; keep owed decisions on a claimed coordination item. See the
+  own note when present, with `note_session_id` identifying the recorded session
+  that preview reflects (also named in text), only for the reader's own actor.
+  Another actor's session field is omitted. This is asserted attribution,
+  not authenticated identity. This is recent-work discovery, not a review
+  obligation or claim; keep owed decisions on a claimed coordination item. See the
   [resume discovery contract](local-work-system.md#agent-native-protocol).
 - `update CHILD --detach "why"` (MCP `update { work_ref: CHILD, action:
   "detach", reason: "why" }`) atomically creates an independent root and
@@ -234,6 +237,12 @@ Rules that matter:
   that combined stream; ordinary show's total counts only native changes.
   Window rows carry `locator`, `kind`, `summary`, `by`, `created_at`, and
   `body_bytes`, rather than ordinary show's compact change-row shape.
+  Note-family rows in explicit window/detail JSON additionally carry the
+  recorded `actor_session_id` only for the reader's own actor (null if absent
+  on that record; omitted for another actor), and native project
+  `feed_position`. Inherited members omit the position rather than substituting
+  their member ordinal. These are diagnostic attribution/order fields, not
+  authority, and do not change rendered note text or ordinary terse show.
   Consumers distinguish these shapes by the presence of `history.window`.
   An inherited note summarized in history retains its exact original body
   size and adds `summary_truncated: true` plus a `detail` command when
@@ -458,9 +467,20 @@ words above never require it.
 ### Build identity and doctor refusals
 
 `engram --version` prints `engram VERSION build FP12 (exe EXE12, schema
-SCHEMA12)`. Agent `next` ends its terminal text with `build: FP12` and carries
-one full `build_fingerprint` in its structured CLI/MCP receipt. Other words
-retain their shapes. Compare this token with a fresh CLI process after an
+SCHEMA12)`. Agent `next` ends its terminal text with one diagnostic line:
+`build: FP12; read cut: project POSITION observed_at INSTANT`, followed by
+`context_generation GENERATION` when supplied. Its structured CLI/MCP receipt
+and core `work_next` carry one `build_fingerprint`, `read_cut` containing
+`project_position` and `observed_at`, and optional `context_generation`.
+The cut is the shared advisory snapshot for focus, lists and discovery, not the
+separately staged change-delivery cursor or the project-memory signal's basis.
+`observed_at` is the call's supplied read instant; the feed position orders
+committed state, not the timestamp. Retaining an older block retains its cut;
+compare with a new read to see which committed state the block could reflect.
+This does not promise automatic mid-turn refresh. TermAl, the live consumer,
+fetches CLI `next --context-generation termal-N` text at dispatch and tolerates
+these additive diagnostic fields; its generation is asserted host context.
+Compare the build token with a fresh CLI process after an
 install to detect a stale, long-lived MCP child; restart the child to run the
 new executable. The token is diagnostic, not an execution hash to copy into
 commands, authenticated identity, or store-admission authority.
@@ -471,9 +491,9 @@ executable's bytes), and `schema_reference` (SHA-256 of the RFC 8785 canonical
 ordered, whitespace-normalized SQLite definitions used by ordinary schema
 admission). The fingerprint hashes the RFC 8785 canonical build object. These
 values are captured once per process: at MCP startup, or when a short-lived
-CLI process emits diagnostics. Help and other words do not compute identity.
-There is no Git metadata, build script, capability catalog, or persisted
-last-writer row.
+CLI process emits diagnostics. Help and words other than `next` do not compute
+identity. There is no Git metadata, build script, capability catalog, or
+persisted last-writer row.
 Equal inputs produce equal fingerprints; different executable bytes or schema
 definitions distinguish builds even when their package versions agree.
 

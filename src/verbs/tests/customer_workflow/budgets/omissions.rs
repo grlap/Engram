@@ -123,7 +123,7 @@ fn compact_omission_reasons_share_one_terminal_total() {
         compact_next_value(&compact),
         false,
     )
-    .with_build_identity();
+    .with_build_identity(&compact.read_cut, compact.context_generation.as_deref());
     let fitted = fit_compact_next_to(compact, receipt_size(&original)).unwrap();
     let count =
         compact_omitted_for_reason(&fitted, "reminders", WorkSectionOmissionReason::CountLimit);
@@ -151,7 +151,7 @@ fn compact_omission_reasons_share_one_terminal_total() {
         compact_next_value(&fitted),
         false,
     )
-    .with_build_identity();
+    .with_build_identity(&fitted.read_cut, fitted.context_generation.as_deref());
     assert!(receipt_size(&complete) < receipt_size(&original));
 }
 

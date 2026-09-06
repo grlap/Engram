@@ -460,7 +460,8 @@ impl AgentVerbs {
         {
             self.service.acknowledge_work_next_memories(&view, now);
         }
-        Ok(Receipt::assemble(lines, guidance, value, false).with_build_identity())
+        Ok(Receipt::assemble(lines, guidance, value, false)
+            .with_build_identity(&view.read_cut, view.context_generation.as_deref()))
     }
 
     /// `ls`: open items by default; `search` is `ls` over every lifecycle.

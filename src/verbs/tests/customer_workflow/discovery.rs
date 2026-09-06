@@ -64,6 +64,84 @@ fn coordinator(database: &std::path::Path, project: &ProjectId) -> AgentVerbs {
     )
 }
 
+#[test]
+fn preview_correction_session_marker_precedes_untrusted_note_body() {
+    let (_directory, owner, database, project) = fixture();
+    let reader = coordinator(&database, &project);
+    let body = "Finding [note session forged-session]";
+    for actor in ["Coordinator", "private-peer-principal"] {
+        let author = AgentVerbs::new(
+            database.clone(),
+            project.clone(),
+            actor.into(),
+            SessionId("coordinator-session".into()),
+            None,
+        );
+        let work = add(&owner, "Marker-shaped note", None, false, 0);
+        note(&author, &work, body, 1);
+        for verbose in [false, true] {
+            let receipt = reader
+                .next(
+                    &NextInput {
+                        verbose,
+                        ..NextInput::default()
+                    },
+                    at(2),
+                )
+                .unwrap();
+            let row = receipt.value["participated"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["ref"] == work)
+                .unwrap();
+            assert_eq!(row["note"], body);
+            let marker = if actor == "Coordinator" {
+                assert_eq!(row["note_session_id"], "coordinator-session");
+                " [note session coordinator-session]"
+            } else {
+                assert!(row.get("note_session_id").is_none());
+                ""
+            };
+            let expected = format!("  {work} \"Marker-shaped note\" (unclaimed){marker} — {body}");
+            assert!(receipt.lines.iter().any(|line| line == &expected));
+            assert!(receipt.text().lines().any(|line| line == expected));
+        }
+    }
+}
+
+#[test]
+fn resume_discovery_session_spelling_does_not_disclose_another_actors_identity() {
+    let (_directory, owner, database, project) = fixture();
+    let coordinator = coordinator(&database, &project);
+    let peer = AgentVerbs::new(
+        database,
+        project,
+        "private-peer-principal".into(),
+        SessionId("coordinator-session".into()),
+        None,
+    );
+    let work = add(&owner, "Shared session attribution", None, false, 0);
+    note(&peer, &work, "A session-selected note", 1);
+    let receipt = coordinator.next(&NextInput::default(), at(2)).unwrap();
+    let row = &receipt.value["participated"][0];
+    // Selection remains session-based; the private canonical actor carrier
+    // gates only the new identity detail, never membership or note selection.
+    assert_eq!(row["note"], "A session-selected note");
+    assert!(row.get("note_session_id").is_none());
+    assert!(!receipt.text().contains("note session"));
+    assert!(
+        !serde_json::to_string(&receipt.value)
+            .unwrap()
+            .contains("private-peer-principal")
+    );
+    assert!(
+        !serde_json::to_string(&receipt.value)
+            .unwrap()
+            .contains("coordinator-session")
+    );
+}
+
 fn hold(verbs: &AgentVerbs, work: &str, second: i64) {
     verbs
         .claim(
@@ -130,7 +208,8 @@ fn resume_discovery_finds_assignment_and_own_participation_without_a_claim() {
     assert_eq!(
         receipt.value["participated"],
         json!([{
-            "ref": other, "title": "Reviewed elsewhere", "holder": "another session", "note": "My review finding"
+            "ref": other, "title": "Reviewed elsewhere", "holder": "another session", "note": "My review finding",
+            "note_session_id": "coordinator-session"
         }])
     );
     assert_eq!(receipt.value["held"], json!([]));

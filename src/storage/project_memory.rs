@@ -15,6 +15,19 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+pub(crate) fn validate_context_generation(
+    context_generation: Option<&str>,
+) -> Result<(), StoreError> {
+    if context_generation.is_some_and(|value| {
+        value.len() > MAX_CONTEXT_GENERATION_BYTES || value.chars().any(char::is_control)
+    }) {
+        return Err(StoreError::InvalidProjectMemory(format!(
+            "context_generation must be at most {MAX_CONTEXT_GENERATION_BYTES} bytes without control characters"
+        )));
+    }
+    Ok(())
+}
+
 impl SqliteStore {
     /// Creates one attributed project episode or replays the identical create.
     ///
@@ -342,13 +355,7 @@ impl SqliteStore {
         session_id: &SessionId,
         context_generation: Option<&str>,
     ) -> Result<ProjectMemoryAdvertisement, StoreError> {
-        if context_generation.is_some_and(|value| {
-            value.len() > MAX_CONTEXT_GENERATION_BYTES || value.chars().any(char::is_control)
-        }) {
-            return Err(StoreError::InvalidProjectMemory(format!(
-                "context_generation must be at most {MAX_CONTEXT_GENERATION_BYTES} bytes without control characters"
-            )));
-        }
+        validate_context_generation(context_generation)?;
         let transaction = self.connection.unchecked_transaction()?;
         let (count, change_position) = project_memory_state_on(&transaction, project_id)?;
         let context_generation_digest =

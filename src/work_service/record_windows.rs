@@ -51,6 +51,12 @@ pub(crate) struct WorkRecordRow {
     order: WorkRecordOrder,
 }
 
+impl WorkRecordRow {
+    pub(crate) fn project_position(&self) -> Option<i64> {
+        self.order.project_position()
+    }
+}
+
 impl WorkRecordWindow {
     /// The read cut already validated and used by this window, not a delivery
     /// acknowledgement or authority token. Verbs may reflect it in the header.

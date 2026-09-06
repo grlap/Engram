@@ -19,6 +19,8 @@ pub(crate) struct WorkDiscoveryRow {
     pub work: WorkItem,
     pub claim: Option<WorkClaim>,
     pub note: Option<String>,
+    /// Private canonical attribution for presentation policy, never serialized.
+    pub note_actor_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -189,7 +191,15 @@ impl SqliteStore {
                     })
                     .transpose()?
                     .flatten();
-                page.items.push(WorkDiscoveryRow { work, claim, note });
+                let (note, note_actor_id) = note
+                    .map(|(summary, actor)| (Some(summary), Some(actor)))
+                    .unwrap_or_default();
+                page.items.push(WorkDiscoveryRow {
+                    work,
+                    claim,
+                    note,
+                    note_actor_id,
+                });
             }
             page.omitted = total.saturating_sub(page.items.len());
             #[cfg(test)]
@@ -285,7 +295,7 @@ fn own_summary(
     raw: &str,
     family: &str,
     kind: &str,
-) -> Result<Option<String>, StoreError> {
+) -> Result<Option<(String, String)>, StoreError> {
     let hash = stored_hash(raw.into())?;
     if family == "handoff" {
         let event: WorkEvent = load_typed_work_object(connection, &hash, kind)?;
@@ -314,7 +324,10 @@ fn own_summary(
             if gate.passed { "passed" } else { "failed" }
         )
     });
-    Ok(Some(summary.lines().next().unwrap_or_default().to_owned()))
+    Ok(Some((
+        summary.lines().next().unwrap_or_default().to_owned(),
+        note.actor.actor_id,
+    )))
 }
 
 fn stored_hash(raw: String) -> Result<ObjectHash, StoreError> {

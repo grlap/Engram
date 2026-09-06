@@ -103,6 +103,8 @@ pub(super) struct CompactSectionOmission {
 
 #[derive(Clone)]
 pub(super) struct CompactNextReceipt {
+    pub(super) read_cut: crate::work_service::WorkNextReadCut,
+    pub(super) context_generation: Option<String>,
     pub(super) discovery: crate::work_service::WorkDiscoveryView,
     pub(super) focus: Option<CompactWorkRow>,
     pub(super) held: Vec<CompactWorkRow>,
@@ -142,17 +144,31 @@ pub struct Receipt {
 }
 
 impl Receipt {
-    pub(super) fn with_build_identity(mut self) -> Self {
+    pub(super) fn with_build_identity(
+        mut self,
+        read_cut: &crate::work_service::WorkNextReadCut,
+        context_generation: Option<&str>,
+    ) -> Self {
         let identity = crate::build_identity::current();
         self.value["build_fingerprint"] = json!(identity.build_fingerprint);
+        self.value["read_cut"] = json!(read_cut);
+        if let Some(generation) = context_generation {
+            self.value["context_generation"] = json!(generation);
+        }
         self.build_footer = Some(format!(
-            "build: {}",
+            "build: {}; read cut: project {} observed_at {}{}",
             crate::build_identity::short_hash(
                 identity
                     .build_fingerprint
                     .as_ref()
                     .map(crate::ObjectHash::as_str)
             ),
+            read_cut.project_position,
+            read_cut.observed_at.to_rfc3339(),
+            context_generation.map_or(String::new(), |generation| format!(
+                "; context_generation {}",
+                terminal_safe_line(generation)
+            )),
         ));
         self
     }
@@ -597,6 +613,8 @@ pub(super) fn compact_next_receipt(
     guidance: &Guidance,
 ) -> Result<CompactNextReceipt, VerbError> {
     let mut compact = CompactNextReceipt {
+        read_cut: view.read_cut.clone(),
+        context_generation: view.context_generation.clone(),
         discovery: view.discovery.clone(),
         focus: view
             .focus
@@ -672,7 +690,7 @@ pub(super) fn fit_compact_next_to(
             value,
             false,
         )
-        .with_build_identity()
+        .with_build_identity(&compact.read_cut, compact.context_generation.as_deref())
         .text()
         .len();
         if current_bytes < max_bytes && terminal_bytes < max_bytes {
@@ -782,6 +800,7 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
     let mut value = json!({
         // Identity participates in byte fitting, not a post-fit append.
         "build_fingerprint": crate::build_identity::current().build_fingerprint,
+        "read_cut": compact.read_cut,
         "focus": compact.focus,
         "held": compact.held,
         "ready": compact.ready,
@@ -791,6 +810,9 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
         "reminders": compact.guidance.reminders,
         "next": compact.guidance.next,
     });
+    if let Some(generation) = &compact.context_generation {
+        value["context_generation"] = json!(generation);
+    }
     if let (Value::Object(discovery), Value::Object(receipt)) =
         (json!(compact.discovery), &mut value)
     {
@@ -900,7 +922,13 @@ pub(super) fn append_discovery_lines(
         lines.push(format!("{name} ({} shown):", rows.len()));
         for row in rows {
             let note = row.note.as_ref().map_or(String::new(), |note| {
-                format!(" — {}", super::terminal_safe_line(note))
+                let session = row
+                    .note_session_id
+                    .as_ref()
+                    .map_or(String::new(), |session| {
+                        format!(" [note session {}]", terminal_safe_line(&session.0))
+                    });
+                format!("{session} — {}", super::terminal_safe_line(note))
             });
             lines.push(format!(
                 "  {} \"{}\" ({}){note}",

@@ -139,6 +139,11 @@ fn record_windows_keep_relative_actor_labels_in_all_modes() {
         );
     }
     for (index, row) in notes.value["notes"].as_array().unwrap().iter().enumerate() {
+        if index == 0 {
+            assert_eq!(row["actor_session_id"], authors[0]);
+        } else {
+            assert!(row.get("actor_session_id").is_none());
+        }
         let detail = readers[0]
             .show_records(
                 &work,
@@ -150,6 +155,10 @@ fn record_windows_keep_relative_actor_labels_in_all_modes() {
             )
             .unwrap();
         assert_eq!(detail.value["note"]["by"], row["by"]);
+        assert_eq!(
+            detail.value["note"].get("actor_session_id"),
+            row.get("actor_session_id")
+        );
         assert_eq!(
             detail.value["note"]["summary"],
             format!("Authored note {index}")

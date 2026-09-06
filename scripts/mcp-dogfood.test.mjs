@@ -634,6 +634,88 @@ test("MCP scoped listing continuation shares the CLI cursor contract", async () 
   }
 });
 
+test("participated preview selects the newer same-session note across shell and MCP", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-preview-freshness-"));
+  const session = "preview-reader";
+  let client;
+  let ownPeer;
+  try {
+    buildAndInit(engramHome);
+    const work = cliJson(engramHome, "owner", "add", "Preview freshness").work.short_ref;
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    cliJson(engramHome, session, "note", work, "Earlier shell observation");
+    const stale = cliJson(engramHome, session, "next", "--context-generation", "termal-before");
+    const olderCut = structuredClone(stale.read_cut);
+    receipt(await client.call("note", { work_ref: work, text: "Newer MCP observation" }));
+    const next = cliJson(engramHome, session, "next", "--context-generation", "termal-after");
+    const preview = next.participated.find((row) => row.ref === work);
+    assert.equal(preview.note, "Newer MCP observation");
+    assert.equal(preview.note_session_id, session);
+    assert.equal(next.context_generation, "termal-after");
+    assert.ok(next.read_cut.project_position > olderCut.project_position);
+    assert.ok(Date.parse(next.read_cut.observed_at) >= Date.parse(olderCut.observed_at));
+    assert.equal(stale.participated.find((row) => row.ref === work).note, "Earlier shell observation");
+    assert.equal(stale.context_generation, "termal-before");
+    const text = cliText(engramHome, session, "next", "--context-generation", "termal-after");
+    assert.ok(text.includes(`[note session ${session}] — Newer MCP observation`));
+    const footer = text.split("\n").filter((line) => line.startsWith("build: "));
+    assert.equal(footer.length, 1);
+    assert.ok(footer[0].includes(`read cut: project ${next.read_cut.project_position} observed_at `));
+    assert.ok(footer[0].endsWith("context_generation termal-after"));
+    assert.equal(JSON.stringify(next).match(/"read_cut":/gu).length, 1);
+    assert.equal(JSON.stringify(next).match(/"build_fingerprint":/gu).length, 1);
+    const mcpNext = receipt(await client.call("next", { context_generation: "termal-after" }));
+    assert.equal(mcpNext.read_cut.project_position, next.read_cut.project_position);
+    assert.equal(mcpNext.build_fingerprint, next.build_fingerprint);
+    assert.equal(mcpNext.context_generation, "termal-after");
+    assert.deepEqual(mcpNext.participated, next.participated);
+    const notes = cliJson(engramHome, session, "show", work, "--notes");
+    assertRecordParity(receipt(await client.call("show", { work_ref: work, notes: true })), notes);
+    const [earlier, newer] = notes.notes;
+    assert.equal(earlier.summary, "Earlier shell observation");
+    assert.equal(newer.summary, "Newer MCP observation");
+    assert.equal(earlier.actor_session_id, session);
+    assert.equal(newer.actor_session_id, session);
+    assert.ok(earlier.feed_position < newer.feed_position);
+    assert.equal(earlier.feed_position, olderCut.project_position);
+    assert.equal(newer.feed_position, next.read_cut.project_position);
+    const core = cliJson(engramHome, session, "core", "next", "--sections", "participated");
+    assert.equal(core.read_cut.project_position, next.read_cut.project_position);
+    assert.equal(core.build_fingerprint, next.build_fingerprint);
+    assert.equal(Object.hasOwn(core, "context_generation"), false);
+    const verbose = cliJson(engramHome, session, "next", "--verbose", "--context-generation", "termal-after");
+    assert.equal(verbose.read_cut.project_position, next.read_cut.project_position);
+    assert.equal(verbose.context_generation, "termal-after");
+    assert.equal(JSON.stringify(verbose).match(/"read_cut":/gu).length, 1);
+    assert.equal(JSON.stringify(verbose).match(/"build_fingerprint":/gu).length, 1);
+    ownPeer = new McpClient(engramHome, "other-own-session", undefined, session);
+    await ownPeer.initialize();
+    receipt(await ownPeer.call("note", { work_ref: work, text: "Own actor on another session" }));
+    const ownPeerNote = cliJson(engramHome, session, "show", work, "--notes").notes.at(-1);
+    assert.equal(ownPeerNote.actor_session_id, "other-own-session");
+    assert.ok(ownPeerNote.feed_position > newer.feed_position);
+    const ownPeerNext = receipt(await ownPeer.call("next"));
+    assert.equal(ownPeerNext.participated.find((row) => row.ref === work).note_session_id, "other-own-session");
+    cliJson(engramHome, "peer-session", "note", work, "Still newer peer observation");
+    const afterPeer = cliJson(engramHome, session, "next");
+    assert.equal(afterPeer.participated.find((row) => row.ref === work).note, "Newer MCP observation");
+    assert.equal(afterPeer.participated.find((row) => row.ref === work).note_session_id, session);
+    const peer = cliJson(engramHome, "peer-session", "next");
+    assert.equal(peer.participated.find((row) => row.ref === work).note_session_id, "peer-session");
+    assert.equal(peer.participated.find((row) => row.ref === work).note, "Still newer peer observation");
+    const peerNote = cliJson(engramHome, session, "show", work, "--notes").notes.at(-1);
+    assert.equal(Object.hasOwn(peerNote, "actor_session_id"), false);
+    assert.equal(cliJson(engramHome, "peer-session", "show", work, "--notes").notes.at(-1).actor_session_id, "peer-session");
+    assert.ok(peerNote.feed_position > newer.feed_position);
+    assert.equal(peerNote.feed_position, afterPeer.read_cut.project_position);
+  } finally {
+    if (ownPeer) await ownPeer.close();
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("resume discovery agrees across claimless MCP and CLI sessions", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-discovery-"));
   let coordinator;

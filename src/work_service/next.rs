@@ -83,6 +83,7 @@ impl LocalWorkService {
         now: DateTime<Utc>,
         agent_options: Option<AgentNextOptions>,
     ) -> Result<WorkNextView, StoreError> {
+        crate::storage::validate_context_generation(query.context_generation.as_deref())?;
         let fit_core = agent_options.is_none_or(|options| options.verbose);
         let mut store = self.store_at(now)?;
         if let Some(through) = acknowledge_through {
@@ -246,8 +247,14 @@ impl LocalWorkService {
             hook.entered.wait();
             hook.release.wait();
         }
-        let (focus, ready, catalog, discovery, agent_lists) =
+        let (read_cut, focus, ready, catalog, discovery, agent_lists) =
             store.work_read_snapshot(|store| {
+                // This first read pins the same snapshot as the advisory
+                // sections below, independently of the earlier staged page.
+                let read_cut = WorkNextReadCut {
+                    project_position: store.work_feed_head(&project_feed)?,
+                    observed_at: now,
+                };
                 let focus = if wants_focus {
                     // The staged session remains the delivery basis; advisory
                     // focus must bind the session visible inside this read cut.
@@ -352,7 +359,9 @@ impl LocalWorkService {
                         let rows = page
                             .items
                             .into_iter()
-                            .map(|row| discovery_summary(row, &self.session_id, now))
+                            .map(|row| {
+                                discovery_summary(row, &self.session_id, &self.actor_id, now)
+                            })
                             .collect();
                         if assigned {
                             discovery.assigned = rows;
@@ -366,7 +375,7 @@ impl LocalWorkService {
                 let agent_lists = agent_options
                     .map(|options| self.agent_next_lists(store, options.list_limit, now))
                     .transpose()?;
-                Ok((focus, ready, catalog, discovery, agent_lists))
+                Ok((read_cut, focus, ready, catalog, discovery, agent_lists))
             })?;
         let memories = memory_advertisement
             .as_ref()
@@ -375,6 +384,9 @@ impl LocalWorkService {
                 changed: advertisement.changed,
             });
         let mut response = WorkNextView {
+            build_fingerprint: crate::build_identity::current().build_fingerprint.clone(),
+            read_cut,
+            context_generation: query.context_generation,
             session: agent_work_session(&session),
             discovery,
             agent_lists,
@@ -496,6 +508,7 @@ impl LocalWorkService {
 fn discovery_summary(
     row: crate::storage::WorkDiscoveryRow,
     session: &SessionId,
+    actor: &str,
     now: DateTime<Utc>,
 ) -> WorkDiscoverySummary {
     let holder = row
@@ -513,6 +526,9 @@ fn discovery_summary(
         work_ref: row.work.short_ref,
         title: compact_text(&row.work.title),
         holder: holder.into(),
+        // Storage verifies the selected note's session. Raw session detail is
+        // own-actor-only; a shared session spelling does not identify an actor.
+        note_session_id: (row.note_actor_id.as_deref() == Some(actor)).then(|| session.clone()),
         note: row.note.map(|note| compact_text(&note)),
     }
 }
