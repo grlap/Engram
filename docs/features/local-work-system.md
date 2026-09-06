@@ -744,10 +744,25 @@ limit and a carry-bulk-as-reference remedy. Existing larger notes remain
 readable; canonical read validation does not impose the new write limit.
 See the [CLI/MCP contract](cli-and-mcp.md#using-engram-as-an-agent).
 
-The `add` receipt also names defaulted acceptance in both text and JSON
-reminders: `acceptance defaulted to <title> is done; set --accept`. Explicit
+The five mutation words `add`, `claim`, `gate`, `note`, and `done` use one
+verbs-owned compact receipt: operation facts, one ref/title/lifecycle/revision
+summary, relative live holder/expiry, actionable obligation counts, source
+omissions, refusal remedies, reminders and navigation. Done retains its
+child-obligation follow-ups. A single ASCII-quoted `full_detail` command
+replaces repeated focus/status/history/parent context and points to the
+explicit item or note/gate read. Core results and host protocol are unchanged.
+See the [receipt fields](cli-and-mcp.md#using-engram-as-an-agent).
+
+Note/history windows print their active byte budget and reflected read cut.
+Continuation pages carry only a ref/title header, window/family/omission
+counts, records and navigation, plus `full_detail`; outcome, acceptance,
+completion and child context remain on the first page and explicit item read.
+The existing ceiling, cursor admission and canonical detail rules still apply.
+
+The `add` receipt names defaulted acceptance in both text and JSON reminders:
+`acceptance defaulted to the title being done; set --accept`. Explicit
 acceptance produces no such reminder; blank criteria are refused. The reminder
-uses a bounded, terminal-safe title and is included in the final receipt budget.
+does not duplicate the item title and is included in the final receipt budget.
 `work_update` and `work_handoff` never rebuild this history: their success
 envelopes contain only the operation, compact receipt, one bounded
 `obligation_page`, generic readiness obligations, and `allowed_next`, so

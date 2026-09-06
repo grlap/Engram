@@ -2010,10 +2010,10 @@ test("work-bound control records observations and rebinds after a stale fence", 
       { cwd: root, encoding: "utf8" },
     );
     assert.equal(owed.status, 2, `${owed.stdout}\n${owed.stderr}`);
-    assert.match(
-      owed.stdout,
-      /^not done w-[0-9a-f]{12} "Exercise work-bound control": something is still owed\n/u,
-    );
+    assert.deepEqual(owed.stdout.split("\n").slice(0, 2), [
+      `not done ${proposed.work.short_ref} "Exercise work-bound control": something is still owed [open; revision ${proposed.work.revision}]`,
+      `full detail: engram work show '${proposed.work.short_ref}'`,
+    ]);
     assert.match(
       owed.stdout,
       /- tests have not run since your last source change — run them; the host records the result/u,

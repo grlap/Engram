@@ -91,12 +91,34 @@ impl AgentVerbs {
         fit_window(
             view,
             &page,
-            |view| self.render_show(view, now),
+            |view| {
+                if input.after.is_some() {
+                    Ok(continuation_header(view))
+                } else {
+                    self.render_show(view, now)
+                }
+            },
             &self.actor_id,
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
         .map_err(|error| VerbError::for_listing(error.error, &command))
     }
+}
+
+/// A continuation is a record read, not another full item inspection. Its
+/// context is the same bound item and cut; the explicit read restores detail.
+pub(super) fn continuation_header(view: &WorkFocusView) -> Receipt {
+    let work = &view.status.work;
+    let detail = super::mutation::full_detail(&work.short_ref, "");
+    Receipt::assemble(
+        vec![
+            format!("{} \"{}\"", work.short_ref, super::short(&work.title)),
+            format!("full detail: {detail}"),
+        ],
+        Guidance::default(),
+        json!({"work": {"short_ref": work.short_ref, "title": work.title}, "full_detail": detail}),
+        false,
+    )
 }
 
 pub(super) fn safe_reference_argument(work_ref: &str) -> String {
@@ -141,7 +163,15 @@ pub(super) fn fit_window(
     }
     let first = usize::from(!page.rows.is_empty());
     let with_first = |view: &WorkFocusView, placeholder| {
-        append_window(render(view)?, page, first, placeholder, &work_ref, actor)
+        append_window(
+            render(view)?,
+            page,
+            first,
+            placeholder,
+            &work_ref,
+            actor,
+            budget,
+        )
     };
     // The first remaining row must be represented, never skipped. Try its
     // complete body first; if even essential metadata cannot coexist with it,
@@ -165,7 +195,15 @@ pub(super) fn fit_window(
     let (mut lower, mut upper) = (first, page.rows.len());
     while lower < upper {
         let visible = lower + (upper - lower).div_ceil(2);
-        let candidate = append_window(base.clone(), page, visible, placeholder, &work_ref, actor)?;
+        let candidate = append_window(
+            base.clone(),
+            page,
+            visible,
+            placeholder,
+            &work_ref,
+            actor,
+            budget,
+        )?;
         if candidate.text().len() < budget
             && serde_json::to_vec_pretty(&candidate.value)?.len() < budget
         {
@@ -185,6 +223,7 @@ fn append_window(
     placeholder: bool,
     work_ref: &str,
     actor: &str,
+    budget: usize,
 ) -> Result<Receipt, VerbError> {
     let word = page.kind.word();
     #[cfg(test)]
@@ -211,33 +250,36 @@ fn append_window(
     let older = page.total - page.newer - visible;
     let omitted = page.total - visible;
     let mut window = json!({ "selection": "newest_first", "order": "oldest_first", "newer": page.newer,
-        "older": older, "shown": visible, "total": page.total, "after": after });
+        "older": older, "shown": visible, "total": page.total, "after": after,
+        "byte_budget": budget, "read_cut": page.read_cut() });
     let rows = page.rows[..visible]
         .iter()
         .enumerate()
         .rev()
         .map(|(index, row)| row_value(row, placeholder && index == 0, work_ref, actor))
         .collect::<Vec<_>>();
+    let families = [
+        WorkRecordFamily::Notes,
+        WorkRecordFamily::Observations,
+        WorkRecordFamily::Gates,
+        WorkRecordFamily::History,
+    ]
+    .into_iter()
+    .filter(|family| !page.kind.is_notes() || *family != WorkRecordFamily::History)
+    .map(|family| {
+        let total = page.families.get(&family).copied().unwrap_or(0);
+        let shown = page.rows[..visible]
+            .iter()
+            .filter(|row| row.family == family)
+            .count();
+        (
+            family,
+            json!({ "total": total, "shown": shown, "omitted": total - shown }),
+        )
+    })
+    .collect::<std::collections::BTreeMap<_, _>>();
+    window["families"] = json!(families);
     if page.kind.is_notes() {
-        let families = [
-            WorkRecordFamily::Notes,
-            WorkRecordFamily::Observations,
-            WorkRecordFamily::Gates,
-        ]
-        .map(|family| {
-            let total = page.families.get(&family).copied().unwrap_or(0);
-            let shown = page.rows[..visible]
-                .iter()
-                .filter(|row| row.family == family)
-                .count();
-            (
-                family,
-                json!({ "total": total, "shown": shown, "omitted": total - shown }),
-            )
-        })
-        .into_iter()
-        .collect::<std::collections::BTreeMap<_, _>>();
-        window["families"] = json!(families);
         window["includes_gates"] = json!(page.kind == WorkRecordKind::NotesWithGates);
         if page.kind == WorkRecordKind::Notes
             && page
@@ -264,6 +306,14 @@ fn append_window(
     }
     receipt.value["next"] = json!(receipt.next);
     receipt.lines.push(format!("{word}: window {visible} of {}; {omitted} omitted ({older} older, {} newer); oldest to newest within window", page.total, page.newer));
+    receipt.lines.push(format!(
+        "  byte budget: {budget}; read cut: project position {}, observed at {}, valid until ms {}",
+        page.read_cut().project_position,
+        page.read_cut().observed_at.to_rfc3339(),
+        page.read_cut()
+            .valid_until_ms
+            .map_or_else(|| "none".into(), |until| until.to_string())
+    ));
     if page.kind.is_notes() {
         let families = &receipt.value["notes_window"]["families"];
         receipt.lines.push(format!(
@@ -274,6 +324,21 @@ fn append_window(
             families["gates"]["shown"],
             families["gates"]["omitted"]
         ));
+    } else {
+        for (family, counts) in families {
+            receipt.lines.push(format!(
+                "  family {}: {} ({} shown, {} omitted)",
+                match family {
+                    WorkRecordFamily::Notes => "notes",
+                    WorkRecordFamily::Observations => "observations",
+                    WorkRecordFamily::Gates => "gates",
+                    WorkRecordFamily::History => "history",
+                },
+                counts["total"],
+                counts["shown"],
+                counts["omitted"]
+            ));
+        }
     }
     for row in &rows {
         append_row_lines(&mut receipt.lines, row);

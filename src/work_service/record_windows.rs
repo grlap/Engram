@@ -52,6 +52,12 @@ pub(crate) struct WorkRecordRow {
 }
 
 impl WorkRecordWindow {
+    /// The read cut already validated and used by this window, not a delivery
+    /// acknowledgement or authority token. Verbs may reflect it in the header.
+    pub(crate) fn read_cut(&self) -> &WorkCatalogReadCut {
+        &self.cut
+    }
+
     pub(crate) fn continuation(&self, visible: usize) -> Result<Option<String>, StoreError> {
         if visible == 0 || self.newer + visible == self.total {
             return Ok(None);

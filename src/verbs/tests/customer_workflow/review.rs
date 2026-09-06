@@ -98,7 +98,10 @@ fn phoenix_acceptance_reminder_bounds_long_root_and_child_titles_and_frames_cont
                 .iter()
                 .find(|text| text.starts_with("acceptance defaulted"))
                 .expect("default reminder");
-            assert!(reminder.ends_with("is done; set --accept"));
+            assert_eq!(
+                reminder,
+                "acceptance defaulted to the title being done; set --accept"
+            );
             assert!(reminder.len() < 160);
             assert!(!reminder.chars().any(char::is_control));
             assert_bounded(&receipt);

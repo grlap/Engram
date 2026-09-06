@@ -271,7 +271,7 @@ fn holder_note_never_shortens_an_explicit_long_claim() {
             at(1),
         )
         .expect("long claim");
-    let claimed_expires_at = claimed.value["receipt"]["result"]["expires_at"]
+    let claimed_expires_at = claimed.value["claim"]["held_until"]
         .as_str()
         .expect("claim expiry")
         .parse::<DateTime<Utc>>()

@@ -95,7 +95,10 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
     };
     let first_note = verbs.note(&note, at(3)).expect("note exact target");
     let replayed_note = verbs.note(&note, at(4)).expect("replay exact note");
-    assert_eq!(first_note.value["receipt"], replayed_note.value["receipt"]);
+    assert_eq!(
+        first_note.value["checkpoint"],
+        replayed_note.value["checkpoint"]
+    );
     assert_eq!(
         first_note.value["evidence"],
         replayed_note.value["evidence"]
@@ -107,7 +110,7 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
         .expect("target evidence");
     assert_eq!(evidence.len(), 1);
     let checkpoint_hash = ObjectHash::from_stored(
-        first_note.value["receipt"]["result"]
+        first_note.value["checkpoint"]
             .as_str()
             .expect("checkpoint hash")
             .to_owned(),
@@ -526,7 +529,7 @@ fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
                 .into(),
         };
         assert_eq!(
-            completion_recovery_reminder(&recovery),
+            completion_recovery_reminder(&recovery, true),
             format!(
                 "required child w-000000000001 \"Disposed child\" is {word} without a completion seal or waiver"
             )

@@ -96,16 +96,22 @@ pub(super) struct WithChildSuccessor<T> {
 #[derive(Serialize)]
 struct DoneRecovery<'a> {
     cause: &'a crate::WorkCompletionRecoveryCause,
-    item: WithChildSuccessor<&'a crate::WorkReferenceCandidate>,
+    item: WithChildSuccessor<RecoveryItem<'a>>,
     command: &'a str,
+}
+
+#[derive(Serialize)]
+struct RecoveryItem<'a> {
+    #[serde(rename = "ref")]
+    short_ref: &'a str,
+    #[serde(rename = "state")]
+    lifecycle: super::WorkLifecycle,
 }
 
 #[derive(Serialize)]
 struct DoneRefusal<'a> {
     code: &'a str,
-    work_id: crate::WorkId,
-    obligation_page: &'a crate::work_service::WorkObligationPage,
-    remedy: &'a str,
+    remedy: std::borrow::Cow<'a, str>,
     recovery: DoneRecovery<'a>,
 }
 
@@ -116,7 +122,7 @@ pub(super) fn done_refusal_value(
     let crate::work_service::WorkCompleteRefusal {
         code,
         work_id,
-        obligation_page,
+        obligation_page: _,
         remedy,
         recovery,
         required_child_successor: _,
@@ -126,15 +132,31 @@ pub(super) fn done_refusal_value(
         item,
         command,
     } = recovery;
+    // The current item is already named by the common envelope. Preserve the
+    // actionable remedy without repeating its title in a prose projection.
+    let remedy = if *work_id == item.work_id
+        && !matches!(
+            cause,
+            crate::WorkCompletionRecoveryCause::OpenObligation { .. }
+        ) {
+        std::borrow::Cow::Owned(format!(
+            "resolve {} for {}, then retry completion",
+            code.replace('_', " "),
+            item.short_ref
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(remedy.as_str())
+    };
     Ok(serde_json::to_value(DoneRefusal {
         code,
-        work_id: *work_id,
-        obligation_page,
         remedy,
         recovery: DoneRecovery {
             cause,
             item: WithChildSuccessor {
-                value: item,
+                value: RecoveryItem {
+                    short_ref: &item.short_ref,
+                    lifecycle: item.lifecycle,
+                },
                 child_resolution,
             },
             command,

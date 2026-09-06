@@ -7,6 +7,7 @@ mod creation;
 mod detach;
 mod discovery;
 mod listing;
+mod output_economy;
 mod record_windows;
 mod remaining_children;
 mod review;
@@ -78,9 +79,15 @@ fn phoenix_add_reminds_only_for_defaulted_acceptance_on_roots_and_children() {
                     at(1),
                 )
                 .expect("add");
-            let expected = format!("acceptance defaulted to {title} is done; set --accept");
-            assert_eq!(receipt.reminders.contains(&expected), !explicit);
-            assert_eq!(receipt.text().contains(&expected), !explicit);
+            let expected = "acceptance defaulted to the title being done; set --accept";
+            assert_eq!(
+                receipt
+                    .reminders
+                    .iter()
+                    .any(|reminder| reminder == expected),
+                !explicit
+            );
+            assert_eq!(receipt.text().contains(expected), !explicit);
             assert_eq!(
                 receipt.value["reminders"]
                     .as_array()

@@ -180,7 +180,9 @@ Rules that matter:
   complete body. Follow the printed `--after` command for older windows; it
   preserves `--gates` when selected. Exact counts distinguish older and newer
   omitted rows. Start a fresh window to change gate mode. `--history` uses the
-  same continuation shape.
+  same continuation shape. Pages state the active byte budget and reflected
+  read cut. A continuation keeps only ref/title, records, exact counts and
+  navigation; follow `full_detail` for outcome, acceptance and item context.
   A too-large body stays as an explicit locator/size/detail placeholder and
   does not prevent traversal. Use `show REF --note LOCATOR` for complete detail
   beyond 12 KiB, independently of the gate filter. Native locators are unique
@@ -202,9 +204,9 @@ Rules that matter:
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. `--under REF` creates a required child;
   add `--optional` when that child must not gate its parent's completion.
-  Omitted acceptance produces the reminder `acceptance defaulted to <title>
-  is done; set --accept`; explicit criteria do not. Blank criteria are refused.
-  The reminder uses a bounded, terminal-safe title and fits the final receipt.
+  Omitted acceptance produces the reminder `acceptance defaulted to the title
+  being done; set --accept`; explicit criteria do not. Blank criteria are refused.
+  The reminder keeps the signal without repeating the title and fits the receipt.
   Completed, cancelled, and superseded parents refuse new children: file an
   independent root follow-up or add under an open ancestor. A proposed parent
   also refuses children, but directs you to inspect it because it is not open.
@@ -239,6 +241,11 @@ Rules that matter:
   resolve the named condition first. Use the parent `show` command to inspect
   continuation and the broader `ls --blocked` view for blocked work. The receipt
   does not detach, cancel, or claim anything automatically.
+- `add`, `claim`, `gate`, `note`, and `done` return one compact item summary,
+  operation facts, live holder/expiry, owed counts and actionable signals.
+  They do not repeat full focus/history/parent projections. Follow the single
+  `full_detail` command for the full item or durable note/gate evidence;
+  completion still includes optional-child follow-ups and detach commands.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
   (commands you can run now). Mutation words never ask for hashes, fences, or
   idempotency keys. Explicit note-detail locators are read-only exceptions.

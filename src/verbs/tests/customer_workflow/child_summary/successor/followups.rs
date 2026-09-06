@@ -283,6 +283,7 @@ fn done_refusal_keeps_the_show_successor_reason_and_core_shape() {
         );
         assert_eq!(refused.value["code"], "required_child_unsealed");
         assert_eq!(refused.value["recovery"]["item"]["ref"], child);
+        assert_eq!(refused.value["recovery"]["item"]["state"], "superseded");
         assert_eq!(
             refused.next,
             vec![format!(

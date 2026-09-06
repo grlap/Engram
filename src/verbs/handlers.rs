@@ -600,12 +600,10 @@ impl AgentVerbs {
                 StoreError::InvalidWork("acceptance criteria must not be blank".into()).into(),
             );
         }
-        let reminder = input.acceptance.is_empty().then(|| {
-            format!(
-                "acceptance defaulted to {} is done; set --accept",
-                short(&terminal_safe_multiline(input.title.trim()))
-            )
-        });
+        let reminder = input
+            .acceptance
+            .is_empty()
+            .then(|| "acceptance defaulted to the title being done; set --accept".to_owned());
         let has_initial_notes = !input.notes.is_empty();
         let mut receipt = self.add_inner(input, now)?;
         if has_initial_notes {
@@ -701,12 +699,15 @@ impl AgentVerbs {
             work.short_ref,
             short(&work.title)
         )];
-        Ok(Receipt::assemble(
+        super::mutation::receipt(
+            focus,
+            "add",
+            json!({"kind": "root"}),
             lines,
             guidance,
-            serde_json::to_value(&result)?,
+            self.holder(focus, now),
             false,
-        ))
+        )
     }
 
     /// One required or optional child through `work_propose:decompose`; it becomes
@@ -752,9 +753,9 @@ impl AgentVerbs {
             .work_focus(&child_ref, now)
             .map_err(|error| VerbError::at(error, &child_ref))?;
         let guidance = self.guidance(&focus, "add", now);
-        let mut value = serde_json::to_value(&result)?;
-        value["work"] = serde_json::to_value(&focus.status.work)?;
-        value["focus"] = serde_json::to_value(&focus)?;
+        let value = json!({"kind": "child", "parent_ref": parent_ref,
+            "child_requirement": focus.status.work.child_requirement,
+            "details_omitted": summary.details_omitted});
         let requirement = if focus.status.work.child_requirement == ChildRequirement::Optional {
             " optional"
         } else {
@@ -765,7 +766,15 @@ impl AgentVerbs {
             short(&focus.status.work.title),
             short(&parent.status.work.title)
         )];
-        Ok(Receipt::assemble(lines, guidance, value, false))
+        super::mutation::receipt(
+            &focus,
+            "add",
+            value,
+            lines,
+            guidance,
+            self.holder(&focus, now),
+            false,
+        )
     }
 
     /// `claim`: hold the item; later words default to it.
@@ -778,7 +787,7 @@ impl AgentVerbs {
         let view = self.target(Some(&input.work_ref), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let target = view.status.work.work_id.0.to_string();
-        let result = self
+        let _result = self
             .service
             .work_update_on(
                 Some(&target),
@@ -800,12 +809,15 @@ impl AgentVerbs {
             held_suffix(self.holder(&after, now), now)
         )];
         let guidance = self.guidance(&after, "claim", now);
-        Ok(Receipt::assemble(
+        super::mutation::receipt(
+            &after,
+            "claim",
+            json!({}),
             lines,
             guidance,
-            serde_json::to_value(&result)?,
+            self.holder(&after, now),
             false,
-        ))
+        )
     }
 
     /// `update`: revise planning/lifecycle state or waive one disposed required child.
@@ -1129,7 +1141,7 @@ impl AgentVerbs {
         })?;
         let work_ref = view.status.work.short_ref.clone();
         let passed = normalized.failed.is_empty();
-        let result = self
+        let _result = self
             .service
             .work_gate_on(
                 Some(&view.status.work.work_id.0.to_string()),
@@ -1141,14 +1153,12 @@ impl AgentVerbs {
             .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "gate", now);
-        let mut value = serde_json::to_value(&result)?;
-        value["operation"] = json!("gate");
-        value["gate"] = json!({
+        let value = json!({"gate": {
             "name": &normalized.name,
             "passed": passed,
             "failed_count": normalized.failed.len(),
             "referenced": normalized.evidence_ref.is_some(),
-        });
+        }});
         let state = if passed {
             "passed".to_owned()
         } else {
@@ -1160,7 +1170,15 @@ impl AgentVerbs {
             short(&after.status.work.title),
             held_suffix(self.holder(&after, now), now)
         )];
-        Ok(Receipt::assemble(lines, guidance, value, false))
+        super::mutation::receipt(
+            &after,
+            "gate",
+            value,
+            lines,
+            guidance,
+            self.holder(&after, now),
+            false,
+        )
     }
 
     /// `remember`: create one attributed project episode.
@@ -1303,7 +1321,7 @@ impl AgentVerbs {
             .map_err(|error| VerbError::at(error, &work_ref))?;
         let after = self.refreshed(&view, now)?;
         let guidance = self.guidance(&after, "note", now);
-        let value = serde_json::to_value(&result)?;
+        let value = super::mutation::NoteResult::from(&result);
         let observation = if result.non_holder {
             " (observation, no run credit)"
         } else {
@@ -1315,7 +1333,15 @@ impl AgentVerbs {
             short(&text),
             held_suffix(self.holder(&after, now), now)
         )];
-        Ok(Receipt::assemble(lines, guidance, value, false))
+        super::mutation::receipt(
+            &after,
+            "note",
+            value,
+            lines,
+            guidance,
+            self.holder(&after, now),
+            false,
+        )
     }
 
     /// `done`: complete the held item; a typed refusal says what is owed.
@@ -1385,7 +1411,10 @@ impl AgentVerbs {
             }
             WorkCompleteResult::Refused(refusal) => {
                 let mut guidance = self.guidance(&after, "done", now);
-                let mut reminder = completion_recovery_reminder(&refusal.recovery);
+                let mut reminder = completion_recovery_reminder(
+                    &refusal.recovery,
+                    refusal.recovery.item.work_id != after.status.work.work_id,
+                );
                 if let Some(resolution) = &child_resolution {
                     reminder.push_str("; ");
                     reminder.push_str(&resolution.line());
@@ -1410,8 +1439,19 @@ impl AgentVerbs {
             WorkCompleteResult::Refused(refusal) => {
                 super::child_obligations::done_refusal_value(refusal, child_resolution)?
             }
-            WorkCompleteResult::Completed(_) => serde_json::to_value(&result)?,
+            WorkCompleteResult::Completed(receipt) => {
+                json!({"seal": receipt.seal, "completed_at": receipt.completed_at})
+            }
         };
+        let receipt = super::mutation::receipt(
+            &after,
+            "done",
+            value,
+            lines,
+            guidance,
+            self.holder(&after, now),
+            owed,
+        )?;
         if !owed {
             let children = self.service.remaining_optional_children(
                 view.status.work.work_id,
@@ -1419,15 +1459,18 @@ impl AgentVerbs {
                 now,
             );
             return super::child_obligations::done_with_child_obligations(
-                lines,
-                guidance,
-                value,
+                receipt.lines,
+                Guidance {
+                    reminders: receipt.reminders,
+                    next: receipt.next,
+                },
+                receipt.value,
                 children,
                 &work_ref,
                 MAX_AGENT_WORK_RESPONSE_BYTES,
             );
         }
-        Ok(Receipt::assemble(lines, guidance, value, owed))
+        Ok(receipt)
     }
 
     /// `search`: `ls` over every lifecycle for a text query.
@@ -1638,37 +1681,36 @@ impl AgentVerbs {
     }
 }
 
-pub(super) fn completion_recovery_reminder(recovery: &crate::WorkCompletionRecovery) -> String {
+pub(super) fn completion_recovery_reminder(
+    recovery: &crate::WorkCompletionRecovery,
+    include_title: bool,
+) -> String {
     let item = &recovery.item;
+    let label = if include_title {
+        format!("{} \"{}\"", item.short_ref, short(&item.title))
+    } else {
+        item.short_ref.clone()
+    };
     match &recovery.cause {
         crate::WorkCompletionRecoveryCause::OpenObligation {
             obligation_id,
             required_check,
             ..
         } => format!(
-            "{} \"{}\" still owes {required_check:?} for obligation {}",
-            item.short_ref,
-            short(&item.title),
+            "{label} still owes {required_check:?} for obligation {}",
             obligation_id.0
         ),
         crate::WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => format!(
-            "required child {} \"{}\" is {} without a completion seal or waiver",
-            item.short_ref,
-            short(&item.title),
+            "required child {label} is {} without a completion seal or waiver",
             lifecycle_word(item.lifecycle)
         ),
         crate::WorkCompletionRecoveryCause::MissingContribution { participant } => format!(
-            "{} \"{}\" is missing the contribution or waiver for participant {}",
-            item.short_ref,
-            short(&item.title),
+            "{label} is missing the contribution or waiver for participant {}",
             participant.0
         ),
-        crate::WorkCompletionRecoveryCause::MissingAcceptance { criterion } => format!(
-            "{} \"{}\" is missing acceptance for \"{}\"",
-            item.short_ref,
-            short(&item.title),
-            short(criterion)
-        ),
+        crate::WorkCompletionRecoveryCause::MissingAcceptance { criterion } => {
+            format!("{label} is missing acceptance for \"{}\"", short(criterion))
+        }
     }
 }
 

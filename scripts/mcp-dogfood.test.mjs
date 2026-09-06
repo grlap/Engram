@@ -31,6 +31,11 @@ const AGENT_TOOLS = [
 ];
 const HASH = /\b[0-9a-f]{64}\b/u;
 
+function shortRef(workId) {
+  assert.match(workId, /^[0-9a-f-]{36}$/u);
+  return `w-${workId.replaceAll("-", "").slice(20)}`;
+}
+
 class McpClient {
   constructor(engramHome, sessionId, actorContext, actorId = sessionId) {
     this.nextId = 1;
@@ -195,6 +200,35 @@ function receipt(result) {
   return value;
 }
 
+function assertRecordParity(actual, expected) {
+  const copy = structuredClone(actual);
+  const actualWindow = copy.notes_window ?? copy.history?.window;
+  const expectedWindow = expected.notes_window ?? expected.history?.window;
+  if (expectedWindow) {
+    assert.ok(actualWindow);
+    // Independent reads reflect their own observation instant. Everything
+    // else (including membership, cut position/expiry and output) stays exact.
+    assert.ok(Number.isFinite(Date.parse(expectedWindow.read_cut.observed_at)));
+    assert.ok(Date.parse(actualWindow.read_cut.observed_at) >= Date.parse(expectedWindow.read_cut.observed_at));
+    if (expectedWindow.after) {
+      const decode = (token) => {
+        assert.match(token, /^s1-[0-9a-f]+$/u);
+        return JSON.parse(Buffer.from(token.slice(3), "hex").toString("utf8"));
+      };
+      const actualCursor = decode(actualWindow.after);
+      const expectedCursor = decode(expectedWindow.after);
+      assert.deepEqual(actualCursor.cut, actualWindow.read_cut);
+      assert.deepEqual(expectedCursor.cut, expectedWindow.read_cut);
+      actualCursor.cut.observed_at = expectedCursor.cut.observed_at;
+      assert.deepEqual(actualCursor, expectedCursor);
+      copy.next = copy.next.map((command) => command.replace(actualWindow.after, expectedWindow.after));
+      actualWindow.after = expectedWindow.after;
+    }
+    actualWindow.read_cut.observed_at = expectedWindow.read_cut.observed_at;
+  }
+  assert.deepEqual(copy, expected);
+}
+
 function structuredError(result, code) {
   assert.equal(result.isError, true, JSON.stringify(result));
   assert.equal(result.structuredContent.error.code, code);
@@ -204,6 +238,90 @@ function structuredError(result, code) {
 async function wait(milliseconds) {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
+
+test("compact mutation wire carries one item and shrinks the full-context fixture", async (t) => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-economy-"));
+  const session = "economy-agent";
+  let client;
+  let failure;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const title = "Fixed unique receipt title";
+    const outcome = "Durable full outcome. ".repeat(40).trim();
+    const acceptance = ["Durable full acceptance. ".repeat(20).trim()];
+    const added = await client.call("add", { title, outcome, acceptance });
+    const work_ref = receipt(added).work.short_ref;
+    let compactTotal = 0;
+    let fullTotal = 0;
+    const measure = (operation, response) => {
+      const value = receipt(response);
+      assert.equal(value.operation, operation);
+      assert.deepEqual(Object.keys(value.work).sort(), ["lifecycle", "revision", "short_ref", "title"]);
+      assert.equal(value.work.short_ref, work_ref);
+      assert.equal(value.work.title, title);
+      const encoded = JSON.stringify(value);
+      assert.equal(encoded.split(title).length - 1, 1);
+      assert.equal(encoded.match(/"title":/gu)?.length, 1);
+      for (const field of ["focus", "status", "history", "parent", "receipt", "control_binding", "allowed_next"]) {
+        assert.equal(value[field], undefined, field);
+      }
+      assert.equal(encoded.match(/"full_detail":/gu)?.length, 1);
+      assert.match(value.full_detail, /^engram work show 'w-[0-9a-f]{12}'/u);
+      assert.ok(!value.next.includes(value.full_detail));
+      const text = response.content.filter(({ type }) => type === "text");
+      assert.equal(text.length, 1);
+      assert.deepEqual(JSON.parse(text[0].text), value);
+      const focus = cliWord(engramHome, session, "core", "focus", work_ref);
+      assert.equal(focus.status, 0, focus.stderr);
+      const core = JSON.parse(focus.stdout);
+      assert.equal(core.status.work.short_ref, work_ref);
+      assert.equal(core.status.work.revision, value.work.revision);
+      assert.equal(core.status.work.lifecycle, value.work.lifecycle);
+      // Runtime comparison to the unchanged rich projection of this exact
+      // item/state, not a stored old renderer or pinned historical byte count.
+      const full = { ...value, work: core.status.work, focus: core };
+      const fullWire = { ...response, structuredContent: full, content: [{ type: "text", text: JSON.stringify(full) }] };
+      const compactBytes = Buffer.byteLength(JSON.stringify(response));
+      const fullBytes = Buffer.byteLength(JSON.stringify(fullWire));
+      assert.ok(compactBytes < fullBytes, `${operation}: ${compactBytes} < ${fullBytes}`);
+      assert.ok(Buffer.byteLength(text[0].text) < 12288);
+      compactTotal += compactBytes;
+      fullTotal += fullBytes;
+      t.diagnostic(`${operation}: full-context wire=${fullBytes}, compact wire=${compactBytes}, structured=${Buffer.byteLength(encoded)}, MCP text=${Buffer.byteLength(text[0].text)}`);
+      return value;
+    };
+    measure("add", added);
+    const claimed = measure("claim", await client.call("claim", { work_ref, ttl_seconds: 7200 }));
+    assert.equal(claimed.claim.holder, "you");
+    assert.ok(Date.parse(claimed.claim.held_until));
+    assert.doesNotMatch(JSON.stringify(claimed), /fence|control_binding/u);
+    const gated = measure("gate", await client.call("gate", { work_ref, name: "fixed-gate", failed: ["fixed::case"], evidence_ref: "test:fixed" }));
+    assert.deepEqual(gated.gate, { name: "fixed-gate", passed: false, failed_count: 1, referenced: true });
+    const body = "Durable full note body. ".repeat(30).trim();
+    measure("note", await client.call("note", { work_ref, text: body }));
+    const notes = receipt(await client.call("show", { work_ref, notes: true }));
+    assert.ok(notes.notes.some(({ summary }) => summary === body));
+    const gates = receipt(await client.call("show", { work_ref, notes: true, gates: true }));
+    assert.ok(gates.notes.some(({ summary }) => summary.includes("fixed::case")));
+    assert.deepEqual(cliJson(engramHome, session, "show", work_ref).status, receipt(await client.call("show", { work_ref })).status);
+    const done = measure("done", await client.call("done", { work_ref, summary: "Fixed delivery" }));
+    assert.equal(done.work.lifecycle, "completed");
+    assert.match(done.seal, HASH);
+    assert.equal(done.claim, undefined);
+    assert.ok(compactTotal < fullTotal);
+    t.diagnostic(`five-operation aggregate: full-context wire=${fullTotal}, compact wire=${compactTotal}`);
+  } catch (error) {
+    failure = error;
+  } finally {
+    try { await client?.close(); } catch (error) {
+      failure = failure ? new AggregateError([failure, error], "economy fixture and close failed") : error;
+    }
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+  if (failure) throw failure;
+});
 
 test("required successor resolution agrees across CLI, MCP, listing and done", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-successor-"));
@@ -225,7 +343,7 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
         assert.equal(value.status.work.child_resolution.ref, successor);
         assert.equal(value.status.work.child_resolution.disposition, resolved ? "resolved_by_successor" : "owed");
         const flags = ["show", child, ...(notes ? ["--notes"] : [])];
-        assert.deepEqual(cliJson(engramHome, "successor-reader", ...flags), value);
+        assertRecordParity(cliJson(engramHome, "successor-reader", ...flags), value);
         const text = spawnSync(binary, ["--home", engramHome, "work", "--actor-id", "successor-reader", "--session-id", "successor-reader", ...flags], { cwd: root, encoding: "utf8" });
         assert.equal(text.status, 0, text.stderr);
         assert.ok(text.stdout.includes(resolved ? `resolved by successor ${successor} (completed)` : `successor ${successor} (open)`));
@@ -262,7 +380,15 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
       const refused = cliWord(engramHome, "successor-reader", "done", parent, "Still owed", ...(json ? ["--json"] : []));
       assert.equal(refused.status, 2, refused.stderr);
       assert.ok(Buffer.byteLength(refused.stdout) <= 12288);
-      if (json) assert.deepEqual(JSON.parse(refused.stdout), owed);
+      if (json) {
+        const cliRefusal = JSON.parse(refused.stdout);
+        // Repeating completion capture renews the held claim. Check its
+        // current authority, then compare every non-time receipt field exactly.
+        assert.ok(Date.parse(cliRefusal.claim.held_until) >= Date.parse(owed.claim.held_until));
+        assert.equal(cliRefusal.claim.held_until, cliJson(engramHome, "successor-reader", "show", parent).held_until);
+        cliRefusal.claim.held_until = owed.claim.held_until;
+        assert.deepEqual(cliRefusal, owed);
+      }
       else assert.ok(refused.stdout.includes(successorLine));
     }
     phase = "successor completion";
@@ -448,10 +574,19 @@ test("note and history windows continue through CLI and MCP with complete detail
     do {
       const result = await client.call("show", { work_ref, notes: true, after });
       const page = receipt(result);
+      assert.equal(page.notes_window.byte_budget, 12288);
+      if (after) {
+        assert.deepEqual(page.work, { short_ref: work_ref, title: "Window traversal" });
+        assert.equal(page.status, undefined);
+        assert.equal(page.completion, undefined);
+        assert.equal(page.child_obligations, undefined);
+        assert.equal(page.full_detail, `engram work show '${work_ref}'`);
+        assert.equal(JSON.stringify(page).match(/"title":/gu)?.length, 1);
+      }
       const shell = cli("show", work_ref, "--notes", ...(after ? ["--after", after] : []), "--json");
       assert.equal(shell.status, 0, shell.stderr);
       assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
-      assert.deepEqual(JSON.parse(shell.stdout).notes, page.notes);
+      assertRecordParity(JSON.parse(shell.stdout), page);
       assert.ok(Buffer.byteLength(JSON.stringify(page, null, 2)) < 12288);
       assert.equal(page.notes_window.newer, seen.length);
       assert.equal(page.notes_omitted, bodies.length - page.notes.length);
@@ -526,20 +661,7 @@ test("notes keep a verdict visible after nine gates with explicit CLI and MCP ga
       assert.equal(shell.status, 0, shell.stderr);
       assert.equal(text.status, 0, text.stderr);
       const shellValue = JSON.parse(shell.stdout);
-      if (value.notes_window.after) {
-        // Independent reads mint their own observation timestamp. Every other
-        // cursor binding and every receipt field must agree exactly.
-        const decode = (token) => JSON.parse(Buffer.from(token.slice(3), "hex").toString("utf8"));
-        assert.match(shellValue.notes_window.after, /^s1-[0-9a-f]+$/u);
-        const expectedCursor = decode(value.notes_window.after);
-        const actualCursor = decode(shellValue.notes_window.after);
-        assert.ok(Date.parse(actualCursor.cut.observed_at) >= Date.parse(expectedCursor.cut.observed_at));
-        actualCursor.cut.observed_at = expectedCursor.cut.observed_at;
-        assert.deepEqual(actualCursor, expectedCursor);
-        shellValue.next = shellValue.next.map((command) => command.replace(shellValue.notes_window.after, value.notes_window.after));
-        shellValue.notes_window.after = value.notes_window.after;
-      }
-      assert.deepEqual(shellValue, value);
+      assertRecordParity(shellValue, value);
       assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
       assert.ok(Buffer.byteLength(text.stdout) <= 12288);
       assert.equal(text.stdout.match(/gate evidence:/gu).length, 1);
@@ -610,7 +732,7 @@ test("explicit records retain relative authors and host context on CLI and MCP",
       const text = spawnSync(binary, [...context, "show", work_ref, ...flags], { cwd: root, encoding: "utf8" });
       assert.equal(shell.status, 0, shell.stderr);
       assert.equal(text.status, 0, text.stderr);
-      assert.deepEqual(JSON.parse(shell.stdout), value);
+      assertRecordParity(JSON.parse(shell.stdout), value);
       for (const output of [JSON.stringify(result), shell.stdout, text.stdout]) assert.doesNotMatch(output, /private-(self|peer)-principal/u);
       return value;
     };
@@ -794,7 +916,7 @@ test("Phoenix full notes, defaulted acceptance and terminal-parent remedy throug
     const showTool = (await client.tools()).find(({ name }) => name === "show");
     assert.ok(showTool.inputSchema.properties.notes);
     const added = receipt(await client.call("add", { title: "Full MCP notes" }));
-    assert.ok(added.reminders.includes("acceptance defaulted to Full MCP notes is done; set --accept"));
+    assert.ok(added.reminders.includes("acceptance defaulted to the title being done; set --accept"));
     const explicit = receipt(await client.call("add", { title: "Explicit MCP", acceptance: ["Criterion"] }));
     assert.ok(explicit.reminders.every((line) => !line.includes("acceptance defaulted")));
     const reminderParent = receipt(await client.call("add", { title: "Reminder parent" })).work.short_ref;
@@ -944,7 +1066,7 @@ test("CLI words translate the same ambient lifecycle service", () => {
     );
     const workRef = added.match(/\bw-[0-9a-f]{12}\b/u)?.[0];
     assert.ok(workRef, added);
-    assert.match(added, /^added w-[0-9a-f]{12} "Dogfood work CLI"\n/u);
+    assert.match(added, /^added w-[0-9a-f]{12} "Dogfood work CLI" \[open; revision \d+\]\n/u);
     assert.match(added, /reminders:\n\s+- unclaimed: claim it before execution/u);
     assert.match(added, new RegExp(`next:\\n(?:.*\\n)*\\s+engram work claim ${workRef}`, "u"));
 
@@ -1035,11 +1157,12 @@ test("CLI words translate the same ambient lifecycle service", () => {
       "test:cli-work-dogfood",
     );
     assert.equal(notedJson.operation, "note");
-    assert.match(notedJson.evidence.result, HASH);
-    assert.ok(Array.isArray(notedJson.allowed_next));
+    assert.match(notedJson.evidence, HASH);
+    assert.ok(Array.isArray(notedJson.next));
+    assert.equal(notedJson.full_detail, `engram work show '${workRef}' --notes`);
 
     const done = cliText(engramHome, actor, "done");
-    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI"\nreminders: none\nnext:\n/u);
+    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nfull detail: engram work show 'w-[0-9a-f]{12}'\nreminders: none\nnext:\n/u);
     assert.match(done, /\s+engram work next/u);
     const doneJson = cliJson(engramHome, actor, "done");
     assert.match(doneJson.seal, HASH);
@@ -1296,8 +1419,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     );
     assert.equal(supersedeReceipt.operation, "supersede");
     assert.equal(
-      supersedeReceipt.receipt.result.superseded_by,
-      mcpReplacement.work_id,
+      shortRef(supersedeReceipt.receipt.result.superseded_by),
+      mcpReplacement.short_ref,
     );
     const supersededShow = receipt(
       await a.call("show", { work_ref: mcpDependent.short_ref }),
@@ -1334,7 +1457,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(createdHistory.by, "you");
 
     const next = receipt(await a.call("next", { limit: 20, verbose: true }));
-    assert.equal(next.session.focused_work_id, added.work.work_id);
+    assert.equal(shortRef(next.session.focused_work_id), added.work.short_ref);
     assert.ok(next.delivered_through > 0);
     assert.match(next.delivery_token, /^[0-9a-f-]{36}$/u);
     assert.equal(next.session.confirmed_project_cursor, 0);
@@ -1367,10 +1490,11 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     // An identical keyless call replays instead of duplicating.
     const keyless = receipt(await a.call("add", { title: "Keyless root" }));
     assert.equal(keyless.kind, "root");
-    assert.equal(keyless.work.outcome, "Keyless root");
-    assert.deepEqual(keyless.work.acceptance, ["Keyless root is done"]);
+    const keylessDetail = receipt(await a.call("show", { work_ref: keyless.work.short_ref }));
+    assert.equal(keylessDetail.status.work.outcome, "Keyless root");
+    assert.deepEqual(keylessDetail.status.work.acceptance, ["Keyless root is done"]);
     const keylessReplay = receipt(await a.call("add", { title: "Keyless root" }));
-    assert.equal(keylessReplay.work.work_id, keyless.work.work_id);
+    assert.equal(keylessReplay.work.short_ref, keyless.work.short_ref);
     const keylessCatalog = receipt(await a.call("ls", { search: "keyless root" }));
     assert.equal(keylessCatalog.items.length, 1);
     assert.equal(keylessCatalog.items[0].ref, keyless.work.short_ref);
@@ -1382,8 +1506,13 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const claimed = receipt(
       await a.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
     );
-    assert.equal(claimed.receipt.work_id, added.work.work_id);
-    assert.ok(claimed.receipt.control_binding, JSON.stringify(claimed));
+    assert.equal(claimed.work.short_ref, added.work.short_ref);
+    assert.equal(claimed.claim.holder, "you");
+    assert.equal(typeof claimed.claim.held_until, "string");
+    assert.equal(claimed.control_binding, undefined);
+    const liveCore = cliWord(engramHome, sessionA, "core", "focus", workRef);
+    assert.equal(liveCore.status, 0, liveCore.stderr);
+    assert.ok(JSON.parse(liveCore.stdout).control_binding);
     assert.ok(
       claimed.reminders.includes("you hold this item but have not noted progress yet"),
       JSON.stringify(claimed.reminders),
@@ -1421,10 +1550,11 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       await a.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
     );
     assert.equal(replayedClaim.operation, "claim");
-    assert.equal(replayedClaim.receipt.work_id, added.work.work_id);
+    assert.equal(replayedClaim.work.short_ref, added.work.short_ref);
     assert.equal("focus" in replayedClaim, false);
-    assert.ok(Array.isArray(replayedClaim.obligations));
-    assert.ok(Array.isArray(replayedClaim.allowed_next));
+    assert.equal(typeof replayedClaim.obligations.open, "number");
+    assert.equal(typeof replayedClaim.obligations.omitted, "number");
+    assert.ok(Array.isArray(replayedClaim.next));
     const metadataRevised = receipt(
       await a.call("update", {
         action: "revise",
@@ -1472,7 +1602,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
     );
     assert.equal(noted.operation, "note");
-    assert.match(noted.evidence.result, HASH);
+    assert.match(noted.evidence, HASH);
     assert.equal(
       noted.reminders.includes("you hold this item but have not noted progress yet"),
       false,
@@ -1505,7 +1635,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const observation = receipt(await a.call("note", observationInput));
     assert.equal(observation.operation, "note");
     assert.equal(observation.non_holder, true);
-    assert.equal(observation.receipt.result, observation.evidence.result);
+    assert.equal(observation.checkpoint, undefined);
+    assert.match(observation.evidence, HASH);
     assert.deepEqual(receipt(await a.call("note", observationInput)), observation);
     const observationShown = receipt(await b.call("show", { work_ref: workRef }));
     assert.equal(observationShown.held_until, acceptedFocus.held_until);
@@ -1520,7 +1651,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     const seal = receipt(
       await b.call("done", { summary: "validated by the receiving MCP session" }),
     );
-    assert.equal(seal.work_id, added.work.work_id);
+    assert.equal(seal.work.short_ref, added.work.short_ref);
     assert.match(seal.seal, HASH);
     assert.deepEqual(seal.reminders, []);
     assert.ok(seal.next.includes("engram work next"));
@@ -1543,7 +1674,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       text: "completing session records a late finding",
     }));
     assert.equal(sameSessionLate.operation, "note");
-    assert.equal(sameSessionLate.receipt.result, sameSessionLate.evidence.result);
+    assert.equal(sameSessionLate.checkpoint, undefined);
+    assert.match(sameSessionLate.evidence, HASH);
     assert.equal(sameSessionLate.non_holder, undefined);
     assert.equal(receipt(await b.call("done", { summary: "validated by the receiving MCP session" })).seal, seal.seal);
     const lateNote = receipt(
@@ -1554,7 +1686,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
     );
     assert.equal(lateNote.operation, "note");
-    assert.equal(lateNote.receipt.result, lateNote.evidence.result);
+    assert.equal(lateNote.checkpoint, undefined);
+    assert.match(lateNote.evidence, HASH);
     assert.equal(lateNote.non_holder, undefined);
     const lateGate = receipt(
       await a.call("gate", {
@@ -1617,8 +1750,8 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
     );
     assert.equal(
-      verboseCompletedCatalog.items[0].work.work_id,
-      added.work.work_id,
+      verboseCompletedCatalog.items[0].work.short_ref,
+      added.work.short_ref,
     );
     const searched = receipt(await b.call("search", { query: "dogfood local work" }));
     assert.equal(searched.items.length, 1);
@@ -1637,7 +1770,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
     );
     assert.equal(cancelled.receipt.result.lifecycle, "cancelled");
-    assert.equal(cancelled.receipt.work_id, disposable.work_id);
+    assert.equal(shortRef(cancelled.receipt.work_id), disposable.short_ref);
     assert.ok(cancelled.reminders.includes("this item was cancelled"));
 
     const compact = receipt(
@@ -1653,7 +1786,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
         summary: "validated compact completion through the MCP lifecycle",
       }),
     );
-    assert.equal(compactSeal.work_id, compact.work_id);
+    assert.equal(compactSeal.work.short_ref, compact.short_ref);
     const compactSealReplay = receipt(
       await b.call("done", {
         summary: "validated compact completion through the MCP lifecycle",
@@ -1670,7 +1803,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       await a.call("add", { title: "Child step", under: keyless.work.short_ref }),
     );
     assert.equal(singleChild.work.title, "Child step");
-    assert.equal(singleChild.work.parent_id, keyless.work.work_id);
+    assert.equal(singleChild.parent_ref, keyless.work.short_ref);
     assert.ok(Array.isArray(singleChild.reminders));
     assert.ok(Array.isArray(singleChild.next));
     const parentShow = receipt(await a.call("show", { work_ref: keyless.work.short_ref }));
@@ -1688,7 +1821,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
         optional: true,
       }),
     );
-    assert.equal(optionalChild.work.child_requirement, "optional");
+    assert.equal(optionalChild.child_requirement, "optional");
     const optionalParentShow = receipt(
       await a.call("show", { work_ref: optionalParent.short_ref }),
     );
@@ -1755,7 +1888,7 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
       }),
     );
     assert.equal(waiver.operation, "waive_required_child");
-    assert.equal(waiver.receipt.work_id, waiverParent.work_id);
+    assert.equal(shortRef(waiver.receipt.work_id), waiverParent.short_ref);
     assert.equal(typeof waiver.receipt.result.work_revision, "number");
     const waiverParentSeal = receipt(
       await a.call("done", {

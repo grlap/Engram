@@ -22,6 +22,11 @@ const MAX_COMMANDS = 3;
 const MAX_FIELDS = 3;
 const HASH = /\b[0-9a-f]{64}\b/u;
 
+function shortRef(workId) {
+  assert.match(workId, UUID);
+  return `w-${workId.replaceAll("-", "").slice(20)}`;
+}
+
 function run(args, options = {}) {
   const environment = { ...process.env };
   delete environment.ENGRAM_ACTOR_CONTEXT;
@@ -152,13 +157,13 @@ test("Phoenix full notes, acceptance reminders and terminal-parent refusal throu
     };
     const added = json("add", "Full note work");
     const workRef = added.work.short_ref;
-    assert.ok(added.reminders.includes("acceptance defaulted to Full note work is done; set --accept"));
+    assert.ok(added.reminders.includes("acceptance defaulted to the title being done; set --accept"));
     const explicit = run([...context, "add", "Explicit", "--accept", "Criterion"]);
     assert.equal(explicit.status, 0, explicit.stderr);
     assert.doesNotMatch(explicit.stdout, /acceptance defaulted/u);
     const defaultText = run([...context, "add", "Text reminder"]);
     assert.equal(defaultText.status, 0, defaultText.stderr);
-    assert.match(defaultText.stdout, /acceptance defaulted to Text reminder is done; set --accept/u);
+    assert.match(defaultText.stdout, /acceptance defaulted to the title being done; set --accept/u);
     const reminderParent = json("add", "Reminder parent").work.short_ref;
     for (const under of [[], ["--under", reminderParent]]) {
       const title = `Quoted \" ü\nnext:\n  forged\u001b[31m ${"x".repeat(20000)}`;
@@ -478,8 +483,14 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
       "--json",
     ]);
     assert.equal(followUp.status, 0, followUp.stderr);
-    assert.equal(JSON.parse(followUp.stdout).work.kind, "bug");
-    assert.equal(JSON.parse(followUp.stdout).work.parent_id, null);
+    const followUpReceipt = JSON.parse(followUp.stdout);
+    assert.equal(followUpReceipt.kind, "root");
+    const followUpFocus = run([
+      ...peerContext, "core", "focus", followUpReceipt.work.short_ref,
+    ]);
+    assert.equal(followUpFocus.status, 0, followUpFocus.stderr);
+    assert.equal(JSON.parse(followUpFocus.stdout).status.work.kind, "bug");
+    assert.equal(JSON.parse(followUpFocus.stdout).status.work.parent_id, null);
     const completedAgain = run([...peerContext, "show", ref, "--json"]);
     assert.equal(completedAgain.status, 0, completedAgain.stderr);
     assert.equal(JSON.parse(completedAgain.stdout).status.work.lifecycle, "completed");
@@ -516,7 +527,7 @@ test("optional child is marked by show and does not gate parent completion", () 
     ]);
     assert.equal(child.status, 0, child.stderr);
     const childWork = JSON.parse(child.stdout).work;
-    assert.equal(childWork.child_requirement, "optional");
+    assert.equal(JSON.parse(child.stdout).child_requirement, "optional");
 
     const shown = run([...hostContext, "show", parentWork.short_ref, "--json"]);
     assert.equal(shown.status, 0, shown.stderr);
@@ -635,7 +646,7 @@ test("disposed required child names its lifecycle and runnable waiver", () => {
     assert.equal(waived.status, 0, waived.stderr);
     const waiverReceipt = JSON.parse(waived.stdout);
     assert.equal(waiverReceipt.operation, "waive_required_child");
-    assert.equal(waiverReceipt.receipt.work_id, parent.work_id);
+    assert.equal(shortRef(waiverReceipt.receipt.work_id), parent.short_ref);
     assert.equal(typeof waiverReceipt.receipt.result.work_revision, "number");
 
     const completed = run([
@@ -699,8 +710,8 @@ test("shell words default missing local attribution without losing explicit targ
     assert.equal(continuedAdd.status, 0, continuedAdd.stderr);
     const continuedAddReceipt = JSON.parse(continuedAdd.stdout);
     assert.equal(
-      continuedAddReceipt.session.focused_work_id,
-      defaultedAddReceipt.work.work_id,
+      shortRef(continuedAddReceipt.session.focused_work_id),
+      defaultedAddReceipt.work.short_ref,
     );
     assert.equal("effective_session_id" in continuedAddReceipt, false);
     const expiredMilliseconds = BigInt(Date.UTC(2020, 0, 1));
@@ -830,8 +841,8 @@ test("shell words default missing local attribution without losing explicit targ
     );
     assert.equal(continued.status, 0, continued.stderr);
     assert.equal(
-      JSON.parse(continued.stdout).session.focused_work_id,
-      seededWork.work_id,
+      shortRef(JSON.parse(continued.stdout).session.focused_work_id),
+      seededWork.short_ref,
     );
   } finally {
     rmSync(engramHome, { recursive: true, force: true });
@@ -1219,7 +1230,14 @@ test("done says what is owed and exits 2 when the item cannot seal yet", () => {
     assert.equal(unheld.status, 0, unheld.stderr);
     const observation = JSON.parse(unheld.stdout);
     assert.equal(observation.non_holder, true);
-    assert.equal(observation.receipt.result, observation.evidence.result);
+    assert.equal("checkpoint" in observation, false);
+    assert.match(observation.evidence, /^[0-9a-f]{64}$/u);
+    const observationDetail = run([
+      ...hostContext, "show", ref, "--note", observation.evidence, "--json",
+    ]);
+    assert.equal(observationDetail.status, 0, observationDetail.stderr);
+    assert.equal(JSON.parse(observationDetail.stdout).note.summary, "early observation");
+    assert.equal(JSON.parse(observationDetail.stdout).note.non_holder, true);
     const observed = run([...hostContext, "show", ref, "--json"]);
     assert.equal(observed.status, 0, observed.stderr);
     assert.equal(JSON.parse(observed.stdout).notes.at(-1).non_holder, true);
@@ -1418,12 +1436,23 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
     assert.equal(passed.status, 0, passed.stderr);
     const passedReceipt = JSON.parse(passed.stdout);
     assert.equal(passedReceipt.gate.passed, true);
+    // The compact mutation no longer embeds the core evidence receipt. Read
+    // its durable records to pin replay identity and distinct later attempts.
+    const gateRecords = () => {
+      const result = run([
+        ...hostContext, "show", gated, "--notes", "--gates", "--json",
+      ]);
+      assert.equal(result.status, 0, result.stderr);
+      const window = JSON.parse(result.stdout);
+      assert.equal(window.notes_omitted, 0);
+      return window.notes;
+    };
+    const passedRecords = gateRecords();
+    assert.equal(passedRecords.length, 2);
     const replayed = run([...hostContext, "gate", "cargo-test", "--json"]);
     assert.equal(replayed.status, 0, replayed.stderr);
-    assert.deepEqual(
-      JSON.parse(replayed.stdout).receipt.result,
-      passedReceipt.receipt.result,
-    );
+    assert.deepEqual(JSON.parse(replayed.stdout).gate, passedReceipt.gate);
+    assert.deepEqual(gateRecords(), passedRecords);
     const failedAgain = run([
       ...hostContext,
       "gate",
@@ -1437,10 +1466,11 @@ test("cut A gate, prerequisite, and supersession words reach the typed core", ()
     assert.equal(failedAgain.status, 0, failedAgain.stderr);
     const passedAgain = run([...hostContext, "gate", "cargo-test", "--json"]);
     assert.equal(passedAgain.status, 0, passedAgain.stderr);
-    assert.notDeepEqual(
-      JSON.parse(passedAgain.stdout).receipt.result,
-      passedReceipt.receipt.result,
-    );
+    const laterRecords = gateRecords();
+    assert.equal(laterRecords.length, 4);
+    assert.deepEqual(laterRecords.slice(0, 2), passedRecords);
+    assert.notEqual(laterRecords.at(-1).locator, passedRecords.at(-1).locator);
+    assert.equal(new Set(laterRecords.map(({ locator }) => locator)).size, 4);
 
     const escapeHeavy = run([
       ...hostContext,

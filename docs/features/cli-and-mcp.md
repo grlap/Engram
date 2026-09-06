@@ -114,9 +114,27 @@ the exact `status.work.acceptance_omitted` count; retained criteria never gain
 an ellipsis. JSON retains their stored bytes. Terminal output escapes unsafe
 controls and frames every continuation line as criterion data.
 
+`add`, `claim`, `gate`, `note`, and `done` share a compact mutation envelope.
+`operation` and its result facts accompany exactly one `work` summary
+(`short_ref`, title, lifecycle, revision). Live `claim` context contains only
+relative `holder` and `held_until`, never a fence or control binding.
+`obligations.open` counts open entries on the source obligation page;
+`obligations.omitted` retains its exact undisplayed count, not an assertion
+that omitted entries are resolved. Actionable reminders, source omissions,
+refusal `code`/`remedy`/`recovery`, and done's child-follow-up groups remain.
+Creation names root/child kind and any parent/requirement; gate reports name,
+pass/fail, failure count and reference presence; note retains its evidence
+locator and a distinct checkpoint when present; done retains seal and time.
+Repeated focus, status, planning, history and parent projections are absent.
+One ASCII-quoted `full_detail` command restores item detail (`--notes` for
+add/note, `--notes --gates` for gate). Text prints it once as `full detail:`.
+`build_fingerprint` remains once where already supplied (currently `next`);
+successful process-defaulted shell mutations still add `effective_session_id`.
+The rich six-operation core and host-private protocol do not change.
+
 Rules that matter:
 
-- `show PARENT`, including `--notes` and MCP, always carries
+- `show PARENT`, including first `--notes` pages and MCP, carries
   `child_obligations.required_owed` and `child_obligations.open_optional`
   when the item has any direct children, even when both groups are empty.
   Each group has an exact `count`, at most five `items` with `ref`, title and
@@ -184,11 +202,20 @@ Rules that matter:
   it requires starting a fresh window. Gate detail locators work in either mode.
   Follow the printed continuation command for older notes; it retains
   `--gates` when that mode was requested.
+  Every notes/history page reflects `byte_budget` and `read_cut`
+  (`project_position`, `observed_at`, `valid_until_ms`) in its window metadata
+  and prints the active byte ceiling and cut. These describe this read, not
+  delivery acknowledgement or execution authority. A `--after` page carries
+  only a compact `work` header (ref/title), counts, records, navigation and
+  one `full_detail` item-read command; it does not repeat outcome, acceptance,
+  completion or child-context projections. The first page keeps ordinary
+  item context. Both forms fit the same 12 KiB text/JSON ceiling.
   `--history` (MCP `history: true`) uses the same window fields under
   `history.window`, with records in `history.items` and exact `omitted`.
   Its row `family` is `history` for events/completion, or `notes`,
   `observations`, or `gates` for inherited note members; no `notes_window`
-  is emitted for this mode.
+  is emitted for this mode. `history.window.families` counts those four
+  families over the combined stream, with total/shown/omitted for each.
   This explicit mode replaces ordinary show's native-change `history` and
   separate `restored_history` with one stream: inherited notes, events and
   completion members, then native work events. Its `history.total` counts
@@ -266,9 +293,9 @@ Rules that matter:
   --work-ref` flag (that flag belongs to `gate`).
 - `add` needs only a title. Outcome and acceptance criteria are welcome; they
   are what `done` is checked against. When acceptance is omitted, text and JSON
-  reminders say `acceptance defaulted to <title> is done; set --accept`.
-  That title is bounded and terminal-safe; the final receipt includes the
-  reminder in its response budget.
+  reminders say `acceptance defaulted to the title being done; set --accept`.
+  This keeps the signal without repeating the item title; the final receipt
+  includes the reminder in its response budget.
   Explicit acceptance suppresses that reminder; blank criteria are refused.
   Repeatable `--note TEXT` (MCP `notes: [TEXT, ...]`) records ordered initial
   non-holder observations atomically with creation, at most 16 across the
