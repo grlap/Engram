@@ -51,7 +51,7 @@ already returns its session object.
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
-engram work show REF [--notes | --history] [--after CURSOR]
+engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
@@ -182,9 +182,13 @@ Rules that matter:
   `includes_gates` records the mode. This choice is bound into the existing
   cursor and preserved in continuation and fresh-window guidance. Switching
   it requires starting a fresh window. Gate detail locators work in either mode.
-  Follow the single `show REF --notes --after CURSOR` command for older notes.
+  Follow the printed continuation command for older notes; it retains
+  `--gates` when that mode was requested.
   `--history` (MCP `history: true`) uses the same window fields under
   `history.window`, with records in `history.items` and exact `omitted`.
+  Its row `family` is `history` for events/completion, or `notes`,
+  `observations`, or `gates` for inherited note members; no `notes_window`
+  is emitted for this mode.
   This explicit mode replaces ordinary show's native-change `history` and
   separate `restored_history` with one stream: inherited notes, events and
   completion members, then native work events. Its `history.total` counts
@@ -574,7 +578,19 @@ connection.
 
 `--project-file` defaults to the tracked `.engram-project`. Its stable project
 identity resolves to the same opaque SQLite path for every worktree and
-session on the host. `doctor` verifies every canonical object plus
+session on the host. Relative project-file paths resolve from the caller's
+current directory; Engram does not search ancestors or select another project.
+If that file is missing, unreadable, invalid UTF-8, or empty, every CLI work
+word refuses before store opening or session setup. Text and `--json` emit
+`project_resolution_failed` on stderr with exit status 1 and no stdout.
+The error details name the reason, attempted `project_file`,
+`searched_directory`, `cwd` (null if unavailable), selection rule and remedy.
+The `next` command uses `--project-file 'PROJECT_DIRECTORY/.engram-project'`
+with `work next`; replace the placeholder with the intended absolute project
+directory, or change to that directory before retrying. No project is created
+implicitly. Paths and OS error text are safely framed in terminal output.
+
+`doctor` verifies every canonical object plus
 hash-bound control record, reports the active immutable policy hash, epoch,
 required assurance, selected obligation-rule-set hash, built-in effect
 envelope, and live

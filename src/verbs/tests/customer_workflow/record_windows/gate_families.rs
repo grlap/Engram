@@ -1,4 +1,136 @@
 use super::*;
+use crate::storage::{WorkRecordFamily, WorkRecordKind};
+
+fn assert_family_index_does_not_parse_body(
+    store: &SqliteStore,
+    path: &std::path::Path,
+    project: &ProjectId,
+    work: &str,
+    hash: &crate::ObjectHash,
+    family: WorkRecordFamily,
+) {
+    let id = store.resolve_work_ref(project, work).unwrap().work_id;
+    let connection = rusqlite::Connection::open(path).unwrap();
+    let before = crate::storage::test_database_shape_snapshot(&connection);
+    let original: Vec<u8> = connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            [hash.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    // Invalid JSON is a deterministic probe: parsing this body's gate field
+    // during indexing must fail. Selected content must still reject corruption.
+    connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            rusqlite::params![b"{".as_slice(), hash.as_str()],
+        )
+        .unwrap();
+    let index = store.work_record_index(project, id, WorkRecordKind::NotesWithGates);
+    let content_refused = index.as_ref().is_ok_and(|index| {
+        let row = index
+            .iter()
+            .find(|entry| entry.address.hash == *hash)
+            .unwrap();
+        store.work_record_content(project, id, row).is_err()
+    });
+    connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            rusqlite::params![original, hash.as_str()],
+        )
+        .unwrap();
+    let index = index.expect("non-gate-capable and restored bodies are not parsed by the index");
+    assert_eq!(
+        index
+            .iter()
+            .find(|entry| entry.address.hash == *hash)
+            .unwrap()
+            .record_family,
+        family
+    );
+    assert!(
+        content_refused,
+        "content reads must still verify canonical bytes"
+    );
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&connection),
+        before
+    );
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn note_window_family_index_avoids_observation_and_restored_body_probes() {
+    let (directory, verbs, path, project) = fixture();
+    let work = add(&verbs, "Projection-only families", None, false, 0);
+    note(&verbs, &work, &"Large observation ".repeat(2000), 1);
+    let store = SqliteStore::open(&path).unwrap();
+    let id = store.resolve_work_ref(&project, &work).unwrap().work_id;
+    let index = store
+        .work_record_index(&project, id, WorkRecordKind::Notes)
+        .unwrap();
+    assert_eq!(index.len(), 1);
+    assert_family_index_does_not_parse_body(
+        &store,
+        &path,
+        &project,
+        &work,
+        &index[0].address.hash,
+        WorkRecordFamily::Observations,
+    );
+    verbs
+        .claim(
+            ClaimInput {
+                work_ref: work.clone(),
+                ttl_seconds: None,
+                recover: None,
+            },
+            at(2),
+        )
+        .unwrap();
+    assert!(
+        !verbs
+            .done(
+                DoneInput {
+                    work_ref: Some(work.clone()),
+                    summary: Some("Completed source".into()),
+                    note: None
+                },
+                at(3)
+            )
+            .unwrap()
+            .owed
+    );
+    let (restored, store, path) = super::super::review::load(
+        directory.path(),
+        &super::super::review::snapshot(&path, &project, &work),
+    );
+    note(&restored, &work, "Late restored note", 102);
+    gates(&restored, &work, 1, 103);
+    let index = store
+        .work_record_index(&project, id, WorkRecordKind::NotesWithGates)
+        .unwrap();
+    let native = index
+        .iter()
+        .filter(|entry| entry.address.member.is_none())
+        .collect::<Vec<_>>();
+    assert_eq!(native.len(), 2);
+    for (row, family) in native
+        .into_iter()
+        .zip([WorkRecordFamily::Notes, WorkRecordFamily::Gates])
+    {
+        assert_family_index_does_not_parse_body(
+            &store,
+            &path,
+            &project,
+            &work,
+            &row.address.hash,
+            family,
+        );
+    }
+}
 
 fn gates(verbs: &AgentVerbs, work: &str, count: i64, start: i64) {
     for index in 0..count {

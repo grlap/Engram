@@ -37,7 +37,8 @@ use bin_support::{
 #[derive(Debug, Parser)]
 #[command(name = "engram", version, about)]
 struct Cli {
-    /// Stable project-id file shared by every worktree.
+    /// Stable project-id file shared by every worktree; relative paths resolve
+    /// from the current directory, without searching ancestors.
     #[arg(long, default_value = ".engram-project")]
     project_file: PathBuf,
     /// Host-local Engram data directory (or set `ENGRAM_HOME`).
@@ -763,7 +764,22 @@ async fn run_cli() -> Result<ExitCode> {
         }
         Err(error) => error.exit(),
     };
-    let (project_id, database, root) = resolve_project(&cli.project_file, cli.home)?;
+    let (project_id, database, root) = match resolve_project(&cli.project_file, cli.home) {
+        Ok(project) => project,
+        Err(error) => {
+            if let Command::Work {
+                json, operation, ..
+            } = &cli.command
+                && !matches!(operation.as_ref(), WorkCommand::Core { .. })
+                && let Some(refusal) =
+                    error.downcast_ref::<bin_support::project::ProjectFileRefusal>()
+            {
+                refusal.emit(*json)?;
+                return Ok(ExitCode::FAILURE);
+            }
+            return Err(error);
+        }
+    };
     let identity = resolve_host_path_identity(&root, cli.host_path_policy);
     match cli.command {
         Command::Init {
@@ -1555,15 +1571,10 @@ fn resolve_project(
     project_file: &Path,
     home: Option<PathBuf>,
 ) -> Result<(ProjectId, PathBuf, PathBuf)> {
-    let project_id = fs::read_to_string(project_file)
-        .with_context(|| format!("failed to read {}", project_file.display()))?;
-    let project_id = project_id.trim();
-    if project_id.is_empty() {
-        bail!("project id in {} is empty", project_file.display());
-    }
+    let project_id = bin_support::project::read_project_id(project_file)?;
     let home = home.or_else(|| env::var_os("ENGRAM_HOME").map(PathBuf::from));
     let home = home.context("pass --home or set ENGRAM_HOME")?;
-    let project_id = ProjectId(project_id.to_owned());
+    let project_id = ProjectId(project_id);
     let database = project_database_path(&home, &project_id);
     let root = project_file
         .parent()

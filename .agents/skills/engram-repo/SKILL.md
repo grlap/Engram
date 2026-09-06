@@ -130,7 +130,7 @@ the caller must omit `--session-id` to receive a fresh process default.
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
-engram work show REF [--notes | --history] [--after CURSOR]
+engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
@@ -172,14 +172,20 @@ Rules that matter:
   children or prerequisite changes need the holder. There is no separate
   approval or activation word.
 
-- `show REF --notes` selects newest notes and renders them chronologically
-  within a 12 KiB window. `notes[].summary` is the complete body. Follow the
-  printed `--after` command for older windows; exact counts distinguish older
-  and newer omitted rows. `--history` uses the same continuation shape.
+- `show REF --notes` selects newest notes/observations, excluding structured
+  gate evidence by default, and renders them chronologically within a 12 KiB
+  window. Add `--gates` (MCP `gates: true`, with `notes: true`) to include gates.
+  `notes_window.families` reports item-wide totals counted before filtering,
+  plus shown and omitted counts for this window. `notes[].summary` is the
+  complete body. Follow the printed `--after` command for older windows; it
+  preserves `--gates` when selected. Exact counts distinguish older and newer
+  omitted rows. Start a fresh window to change gate mode. `--history` uses the
+  same continuation shape.
   A too-large body stays as an explicit locator/size/detail placeholder and
   does not prevent traversal. Use `show REF --note LOCATOR` for complete detail
-  beyond 12 KiB. Native locators are unique hash prefixes of at least eight
-  hex digits; inherited locators are `RECORD_HASH:INDEX`, where INDEX is an
+  beyond 12 KiB, independently of the gate filter. Native locators are unique
+  hash prefixes of at least eight hex digits; inherited locators are
+  `RECORD_HASH:INDEX`, where INDEX is an
   immutable one-based member position, never a display ordinal. These are
   read-only exceptions to hidden canonical identity. MCP uses `notes`,
   `history`, `after`, and `note` with the same meaning. New note bodies have a

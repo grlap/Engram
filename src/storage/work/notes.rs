@@ -22,11 +22,13 @@ pub(crate) struct WorkNoteRecord {
 }
 
 pub(super) const NOTE_OBJECTS: &str = "
-    SELECT evidence_hash AS hash, 'run' AS family FROM work_run_evidence WHERE work_id = ?1
+    SELECT evidence_hash AS hash, 'run' AS family, NULL AS restored_gate
+    FROM work_run_evidence WHERE work_id = ?1
     UNION ALL
-    SELECT evidence_hash, 'restored' FROM work_restored_evidence WHERE work_id = ?1
+    SELECT evidence_hash, 'restored', gate_name IS NOT NULL
+    FROM work_restored_evidence WHERE work_id = ?1
     UNION ALL
-    SELECT observation_hash, 'observation' FROM work_observations WHERE work_id = ?1
+    SELECT observation_hash, 'observation', NULL FROM work_observations WHERE work_id = ?1
 ";
 
 fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(), StoreError> {

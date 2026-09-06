@@ -110,7 +110,11 @@ pub(crate) enum WorkRecordContent {
 
 impl SqliteStore {
     /// The caller owns one read snapshot encompassing metadata and body reads.
-    /// Indexing does not decode native note bodies; only selected bodies load.
+    /// Native family classification probes stored JSON only for work evidence,
+    /// the sole native kind that can carry a gate. Other kinds and restored
+    /// evidence use projection metadata without loading their object bodies.
+    /// These navigation probes are not canonical verification: selected content
+    /// is verified by `work_record_content`, and doctor checks the full store.
     /// Both notes modes index all families; the service filters after counting
     /// so explicit detail and item-wide family totals never lose gate members.
     pub(crate) fn work_record_index(
@@ -198,11 +202,18 @@ impl SqliteStore {
         let sql = match kind {
             WorkRecordKind::Notes | WorkRecordKind::NotesWithGates => format!(
                 "SELECT notes.hash, notes.family, entry.position, entry.object_kind,
-                    CASE WHEN json_type(object.canonical_json, '$.gate') = 'object' THEN 'gates'
-                         WHEN notes.family = 'observation' THEN 'observations' ELSE 'notes' END
-                 FROM ({NOTE_OBJECTS}) notes LEFT JOIN objects object ON object.object_hash = notes.hash
+                    CASE WHEN notes.family = 'observation' THEN 'observations'
+                         WHEN notes.family = 'restored' THEN
+                             CASE WHEN notes.restored_gate THEN 'gates' ELSE 'notes' END
+                         WHEN entry.object_kind = 'work_evidence' THEN
+                             CASE WHEN json_type(object.canonical_json, '$.gate') = 'object'
+                                  THEN 'gates' ELSE 'notes' END
+                         ELSE 'notes' END
+                 FROM ({NOTE_OBJECTS}) notes
                  LEFT JOIN work_feed_entries entry
                    ON entry.object_hash = notes.hash AND entry.feed_kind = 'project' AND entry.feed_id = ?2
+                 LEFT JOIN objects object ON notes.family = 'run'
+                   AND entry.object_kind = 'work_evidence' AND object.object_hash = notes.hash
                  ORDER BY entry.position"),
             WorkRecordKind::History =>
                 "SELECT entry.object_hash, 'event', entry.position, entry.object_kind, 'history'
