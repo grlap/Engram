@@ -162,6 +162,7 @@ struct WorkClaimArgs {
 #[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum UpdateActionArg {
+    Reject,
     Release,
     Blocked,
     Unblock,
@@ -181,9 +182,9 @@ struct UpdateArgs {
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
     /// `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`,
-    /// `drop_after`, `waive`, `supersede`, or `detach`.
+    /// `drop_after`, `waive`, `reject`, `supersede`, or `detach`.
     action: UpdateActionArg,
-    /// Reason for release (optional), cancel, waive, supersede, or detach (required).
+    /// Reason for release (optional), cancel, waive, reject, supersede, or detach (required).
     reason: Option<String>,
     /// Why the item is blocked.
     text: Option<String>,
@@ -410,7 +411,7 @@ impl McpServer {
     /// Apply exactly one planning or claim action.
     #[tool(
         name = "update",
-        description = "One action: release, blocked, unblock, revise, cancel, after/drop_after (prerequisite), waive (child plus reason), supersede (replacement plus reason), or detach (stranded child plus reason)"
+        description = "One action: release, blocked, unblock, revise, cancel, reject (required child plus reason; atomically cancels and waives), after/drop_after (prerequisite), waive (child plus reason), supersede (replacement plus reason), or detach (stranded child plus reason)"
     )]
     fn update(&self, Parameters(args): Parameters<UpdateArgs>) -> CallToolResult {
         if args.external.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
@@ -449,6 +450,9 @@ impl McpServer {
                 }
             }
             UpdateActionArg::Cancel => UpdateAction::Cancel {
+                reason: args.reason.unwrap_or_default(),
+            },
+            UpdateActionArg::Reject => UpdateAction::Reject {
                 reason: args.reason.unwrap_or_default(),
             },
             UpdateActionArg::After => UpdateAction::After {
@@ -790,6 +794,14 @@ pub fn store_error_value(error: &StoreError) -> Value {
         } => json!({
             "work_id": work_id, "reason": reason, "remedy": remedy,
         }),
+        StoreError::WorkRejectRefused {
+            child_ref,
+            parent_ref,
+            reason,
+            remedy,
+        } => json!({
+            "child_ref": child_ref, "parent_ref": parent_ref, "reason": reason, "remedy": remedy,
+        }),
         StoreError::WorkPeerDecompositionRefused { parent } => json!({
             "work_id": parent,
             "remedy": "ask the parent holder to add required children or prerequisites; a peer may use add --under REF --optional",
@@ -894,6 +906,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkNotOpen(_) => "work_not_open",
         StoreError::WorkParentNotOpen { .. } => "work_parent_not_open",
         StoreError::WorkDetachRefused { .. } => "work_detach_refused",
+        StoreError::WorkRejectRefused { .. } => "work_reject_refused",
         StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
         StoreError::WorkShowCursorInvalid { .. } => "work_show_cursor_invalid",
         StoreError::WorkNoteReferenceInvalid { .. } => "work_note_reference_invalid",

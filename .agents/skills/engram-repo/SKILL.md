@@ -126,6 +126,12 @@ actor (live holder, otherwise assignee); peer status notes remain observations,
 and ordinary notes/gates do not replace the commitment. `show --notes` retains
 old statuses; oversized current status explicitly points to full note detail.
 A replacement session recovers duties, never the old session's live claim.
+For a wait that must survive claim expiry or session replacement, assign its
+item with `add --assignee ACTOR` or `update REF --assignee ACTOR`. A held-only,
+unassigned status is current only while that claim is live; expired or released
+holder status remains history and is never promoted for an unassigned item.
+Assignment grants no execution authority and needs no periodic renewal. A
+holder's planning edit, including assignment, renews its existing live claim.
 Use `add --external REF` or `update REF --external REF` for audited external
 planning linkage and `ls --search REF` to find it; record source criteria in
 acceptance and context in notes, since the reference alone is not immutable
@@ -148,7 +154,7 @@ engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
@@ -247,6 +253,15 @@ Rules that matter:
 - `remember` is for attributed project notes and observations, never rules or
   secrets. `memories` is the source of truth; `forget` tombstones rather than
   erases and permanently retires the safe key.
+- Reject an evidence-disproved finding with an evidence note, then
+  `update CHILD --reject "why"` for an Open required child of an Open,
+  waivable parent. It atomically composes cancellation and the parent's waiver
+  with the same reason and existing authority checks. For other shapes follow
+  the typed conditional remedy: `update CHILD --cancel "why"`, then
+  `update PARENT --waive CHILD --reason "why"` only if required and admitted.
+  `done` is reserved for satisfied current acceptance; its successful receipt
+  visibly asserts the seal-bound criterion count and that completion changed
+  no criterion. Do not replace rejection with false completion.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
   `done` again. Successful completion also names remaining open optional
@@ -301,8 +316,11 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
 
 Use `/review-changes` for the two-agent read-only review after the gates pass.
 After consolidating review findings, deduplicate them in Engram. Only fixes
-the implementer will deliver in the current slice belong as required children
-of its open item. Findings deferred beyond that slice are independent roots,
+whose delivery gates landing belong as required children of its open item.
+An optional child is only for work intentionally finished within the parent's
+execution window whose delivery does not gate landing; nonblocking is not a
+blanket instruction to make findings optional children.
+Findings deferred beyond that slice are independent roots,
 never optional or required children, even if the reviewed item is still open.
 Add a provenance note on each new follow-up naming the reviewed item's reference
 and title, the finding evidence, and the reason for deferral; do not substitute

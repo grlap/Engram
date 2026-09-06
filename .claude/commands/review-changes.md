@@ -158,9 +158,12 @@ Only after consolidation, search Engram for each actionable finding
 (`engram work ls --search "<phrase>" --all`) and decide whether the implementer
 will fix it in this slice before completion.
 
-- An in-slice fix may be a required child of the open item under review:
+- A fix is a required child of the open item only when landing depends on it:
   `engram work add "<finding>" --kind bug --label review --priority
   <0 for Critical … 3 for Low> --under <item under review>`.
+- An optional child is only for work intentionally completed inside the
+  parent's execution window without gating landing. Do not classify every
+  nonblocking finding as an optional child.
 - A finding the implementer will not fix in this slice is an independent
   root, even while the reviewed item is open. Use `engram work add
   "<finding>" --kind bug --label review --priority <0 for Critical … 3 for Low>`
@@ -173,6 +176,12 @@ will fix it in this slice before completion.
   when admitted.
 
 Never add children to completed work or reopen it merely to record a finding.
+When evidence rejects a filed finding, note that evidence and cancel with a
+reason; if it is required, also record the parent's waiver with that reason.
+Use `update CHILD --reject "why"` when admitted to compose those two effects
+atomically; otherwise follow the conditional cancel/parent-waive remedy.
+`done` is reserved for satisfied current acceptance, with the successful
+receipt's visible criterion-count assertion and no-criterion-change disclosure.
 An actionable deferred finding needs its independent work item before closure;
 an informational observation that requests no action needs no tracker mutation.
 

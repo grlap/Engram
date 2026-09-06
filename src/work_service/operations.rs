@@ -175,6 +175,11 @@ pub enum WorkUpdateInput {
         #[serde(default)]
         idempotency_key: String,
     },
+    Reject {
+        reason: String,
+        #[serde(default)]
+        idempotency_key: String,
+    },
     Supersede {
         replacement: String,
         reason: String,
@@ -327,6 +332,8 @@ pub struct WorkCompletedReceipt {
     pub work_id: WorkId,
     pub run_id: crate::WorkRunId,
     pub completed_at: DateTime<Utc>,
+    /// Criteria asserted at this receipt's immutable seal, including on replay.
+    pub acceptance_criteria_asserted: usize,
     pub obligation_page: WorkObligationPage,
 }
 

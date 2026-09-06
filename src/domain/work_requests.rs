@@ -404,6 +404,26 @@ pub struct DisposeWorkRequest {
     pub disposed_at: DateTime<Utc>,
 }
 
+/// Audited composition of cancellation and the direct parent's required-child waiver.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RejectRequiredChildRequest {
+    pub work_id: WorkId,
+    pub expected_work_revision: i64,
+    pub expected_parent_revision: Option<i64>,
+    pub reason: String,
+    pub actor: ActorContext,
+    pub idempotency_key: String,
+    pub rejected_at: DateTime<Utc>,
+}
+
+/// Replay-stable result of the two existing transitions committed together.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RejectRequiredChildReceipt {
+    pub child: WorkItem,
+    pub parent_ref: String,
+    pub waiver: super::RequiredChildWaiver,
+}
+
 /// Atomically supersedes stranded open work with an independent root.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DetachWorkRequest {

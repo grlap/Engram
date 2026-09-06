@@ -1,6 +1,7 @@
 use super::*;
 
 mod corrections;
+mod expiry;
 
 #[test]
 fn status_resume_external_reference_is_audited_and_searchable() {

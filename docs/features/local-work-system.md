@@ -510,7 +510,13 @@ canonical-decode budget.
 
 Use `note REF --status TEXT` whenever duties, waits, decisions, or the next
 permitted action change, and resume with `next`; a no-code coordinator keeps
-one assigned or held coordination item. Storage permanently qualifies each
+one assigned or held coordination item. For waits that must survive claim
+expiry or session replacement, use `add --assignee ACTOR` or
+`update REF --assignee ACTOR`: a held-only unassigned status is current only
+while its claim is live. Expiry or release leaves it in history without
+promoting it; assignment preserves the actor's duty without execution authority
+or periodic renewal. A holder's planning edit, including assignment, renews
+its existing live claim. Storage permanently qualifies each
 status as owner or peer at capture, and current status is the newest
 owner-qualified note authored by the current live holder's actor, or the
 assignee when unclaimed. Ordinary notes and gates do not replace it; a former
@@ -1326,6 +1332,22 @@ that same operation. A completion refusal names the child's current
 `cancelled` or `superseded` lifecycle and returns the CLI word as its one
 runnable command. The mutation rechecks the exact parent and child state
 before recording the attributed waiver.
+
+`update CHILD --reject "why"` (MCP `action: "reject"` with `reason`) composes
+that waiver with ordinary cancellation in one transaction. Admission requires
+an Open required child, an Open parent, and no existing waiver. Both existing
+revision and authority checks remain: cancellation respects the live child's
+holder, while parent waiver uses project-bound attribution rather than parent
+claim ownership. The two immutable events carry the same reason; neither
+commits if either transition fails. Exact scoped replay returns both effects.
+Unsupported shapes return `work_reject_refused` with conditional cancel and
+parent-waive guidance, never partial success. Record evidence rejecting a
+finding in a note, then reject it; do not complete unsatisfied acceptance.
+
+Successful `done` reports the count of acceptance criteria asserted satisfied
+and that completion changed no criterion. The count comes from the returned
+immutable seal, including on replay, not a later item revision. This disclosure
+does not add keyword gates or change completion enforcement.
 
 Until action outcomes and resource leases are linked to `WorkRun`, V1 accepts
 only a **zero-linked-state** completion-drain attestation. An

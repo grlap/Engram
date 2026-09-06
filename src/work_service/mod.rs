@@ -582,6 +582,9 @@ fn update_metadata(input: &WorkUpdateInput) -> (&'static str, &'static str, &str
         WorkUpdateInput::Cancel {
             idempotency_key, ..
         } => ("cancel", "dispose_work", idempotency_key),
+        WorkUpdateInput::Reject {
+            idempotency_key, ..
+        } => ("reject", "reject_required_child", idempotency_key),
         WorkUpdateInput::Supersede {
             idempotency_key, ..
         } => ("supersede", "dispose_work", idempotency_key),
@@ -621,6 +624,7 @@ fn completion_result(
         work_id: seal.work_id,
         run_id: seal.run_id,
         completed_at: seal.completed_at,
+        acceptance_criteria_asserted: seal.acceptance.len(),
         obligation_page: sealed_work_obligation_page(store, seal)?,
     }))
 }
@@ -1631,6 +1635,16 @@ fn agent_update_receipt(
     operation: &str,
     receipt: serde_json::Value,
 ) -> Result<serde_json::Value, StoreError> {
+    if operation == "reject" {
+        let rejected: crate::RejectRequiredChildReceipt = serde_json::from_value(receipt)?;
+        return Ok(serde_json::json!({
+            "work_id": rejected.child.work_id,
+            "revision": rejected.child.revision,
+            "lifecycle": rejected.child.lifecycle,
+            "parent_ref": rejected.parent_ref,
+            "required_child_waived": true,
+        }));
+    }
     if operation != "waive_required_child" {
         return Ok(receipt);
     }

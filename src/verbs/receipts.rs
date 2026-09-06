@@ -397,6 +397,9 @@ impl VerbError {
                 vec![format!("engram work show {target}")],
             ),
             StoreError::WorkDetachRefused { reason, remedy, .. } => (vec![reason.clone()], vec![remedy.clone()]),
+            StoreError::WorkRejectRefused { child_ref, reason, .. } => (
+                vec![(*reason).to_string()], vec![format!("engram work show {child_ref}")],
+            ),
             StoreError::WorkParentNotOpen { lifecycle, .. } => (
                 vec![crate::storage::parent_not_open_remedy(*lifecycle).into()],
                 if *lifecycle == super::WorkLifecycle::Proposed {

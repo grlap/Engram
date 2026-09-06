@@ -376,6 +376,8 @@ pub(super) fn compact_mutation_receipt(
                 "generation",
                 "lifecycle",
                 "offer_id",
+                "parent_ref",
+                "required_child_waived",
                 "revision",
                 "run_id",
                 "state",

@@ -596,6 +596,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkNotOpen(_)
         | StoreError::WorkParentNotOpen { .. }
         | StoreError::WorkDetachRefused { .. }
+        | StoreError::WorkRejectRefused { .. }
         | StoreError::WorkPeerDecompositionRefused { .. }
         | StoreError::WorkClaimHeld { .. }
         | StoreError::WorkCompletionRefused { .. }

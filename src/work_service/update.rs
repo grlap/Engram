@@ -792,6 +792,29 @@ impl LocalWorkService {
                 )?;
                 ("remove_prerequisite", serde_json::to_value(item)?)
             }
+            WorkUpdateInput::Reject {
+                reason,
+                idempotency_key: _,
+            } => {
+                let expected_parent_revision = work
+                    .parent_id
+                    .map(|id| store.get_work_item(id).map(|parent| parent.revision))
+                    .transpose()?;
+                let receipt = store.reject_required_child(
+                    &crate::RejectRequiredChildRequest {
+                        work_id: work.work_id,
+                        expected_work_revision: work.revision,
+                        expected_parent_revision,
+                        reason,
+                        actor: self
+                            .actor("work_update", "reject required child and waive its barrier"),
+                        idempotency_key: scoped_key,
+                        rejected_at: now,
+                    },
+                    &DevelopmentNoopRedactor,
+                )?;
+                ("reject", serde_json::to_value(receipt)?)
+            }
             WorkUpdateInput::Reopen {
                 reason,
                 idempotency_key: _,

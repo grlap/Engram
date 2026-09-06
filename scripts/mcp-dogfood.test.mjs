@@ -592,6 +592,53 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
   if (failure) throw failure;
 });
 
+test("required child rejection and acceptance assertion agree through CLI and MCP", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-rejection-"));
+  const session = "rejection-agent";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const parent = cliJson(engramHome, session, "add", "Accepted delivery", "--accept", "first delivered", "--accept", "second delivered").work.short_ref;
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    for (const surface of ["cli", "mcp"]) {
+      const child = receipt(await client.call("add", { title: `Rejected ${surface}`, under: parent })).work.short_ref;
+      receipt(await client.call("note", { work_ref: child, text: "Evidence refutes the finding" }));
+      const rejected = surface === "cli"
+        ? cliJson(engramHome, session, "update", child, "--reject", "Evidence disproves finding")
+        : receipt(await client.call("update", { work_ref: child, action: "reject", reason: "Evidence disproves finding" }));
+      assert.equal(rejected.operation, "reject");
+      assert.equal(rejected.receipt.result.lifecycle, "cancelled");
+      assert.equal(rejected.receipt.result.parent_ref, parent);
+      assert.equal(rejected.receipt.result.required_child_waived, true);
+      const shown = receipt(await client.call("show", { work_ref: child }));
+      assert.equal(shown.status.work.lifecycle, "cancelled");
+      assert.deepEqual(shown, cliJson(engramHome, session, "show", child));
+    }
+    const optional = cliJson(engramHome, session, "add", "Optional rejection refused", "--under", parent, "--optional").work.short_ref;
+    const refused = await client.call("update", { work_ref: optional, action: "reject", reason: "not a required barrier" });
+    assert.equal(refused.isError, true);
+    const error = structuredError(refused, "work_reject_refused");
+    assert.equal(error.details.child_ref, optional);
+    assert.equal(error.details.parent_ref, parent);
+    assert.ok(error.details.remedy.includes(`update ${optional} --cancel`));
+    assert.ok(error.details.remedy.includes(`update ${parent} --waive ${optional}`));
+    assert.equal(receipt(await client.call("show", { work_ref: optional })).status.work.lifecycle, "open");
+    cliJson(engramHome, session, "claim", parent);
+    const completed = receipt(await client.call("done", { work_ref: parent, summary: "Both delivered; findings rejected on evidence" }));
+    assert.equal(completed.acceptance_criteria_asserted, 2);
+    assert.equal(completed.acceptance_criteria_changed, false);
+    const replay = cliJson(engramHome, session, "done", parent, "Both delivered; findings rejected on evidence");
+    assert.equal(replay.acceptance_criteria_asserted, 2);
+    assert.equal(replay.acceptance_criteria_changed, false);
+    assert.equal(replay.seal, completed.seal);
+    assert.equal(receipt(await client.call("show", { work_ref: parent })).child_obligations.required_owed.count, 0);
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("status resume recovers both roles across CLI and MCP process replacement without authority", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-status-resume-"));
   let client;
@@ -1616,10 +1663,12 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.equal(notedJson.full_detail, `engram work show '${workRef}' --notes`);
 
     const done = cliText(engramHome, actor, "done");
-    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nfull detail: engram work show 'w-[0-9a-f]{12}'\nreminders: none\nnext:\n/u);
+    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nasserted 1 acceptance criterion satisfied; completion changed no criterion\nfull detail: engram work show 'w-[0-9a-f]{12}'\nreminders: none\nnext:\n/u);
     assert.match(done, /\s+engram work next/u);
     const doneJson = cliJson(engramHome, actor, "done");
     assert.match(doneJson.seal, HASH);
+    assert.equal(doneJson.acceptance_criteria_asserted, 1);
+    assert.equal(doneJson.acceptance_criteria_changed, false);
     const focused = cliJson(engramHome, actor, "show", workRef);
     assert.equal(focused.status.work.lifecycle, "completed");
     assert.equal(focused.notes.length, 1);

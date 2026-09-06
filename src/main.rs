@@ -1186,6 +1186,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 unlabels,
                 cancel,
                 after,
+                reject,
                 drop_after,
                 waive,
                 supersede_with,
@@ -1208,6 +1209,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(blocked.is_some())
                 + usize::from(unblock)
                 + usize::from(cancel.is_some())
+                + usize::from(reject.is_some())
                 + usize::from(after.is_some())
                 + usize::from(drop_after.is_some())
                 + usize::from(waive.is_some())
@@ -1216,7 +1218,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1227,6 +1229,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 UpdateAction::Unblock
             } else if let Some(reason) = cancel {
                 UpdateAction::Cancel { reason }
+            } else if let Some(reason) = reject {
+                UpdateAction::Reject { reason }
             } else if let Some(reason) = detach {
                 UpdateAction::Detach { reason }
             } else if let Some(prerequisite) = after {
@@ -1658,6 +1662,9 @@ struct WorkUpdateArgs {
     /// Cancel the item and say why.
     #[arg(long, value_name = "REASON")]
     cancel: Option<String>,
+    /// Cancel a required child and atomically waive its open parent's barrier.
+    #[arg(long, value_name = "REASON")]
+    reject: Option<String>,
     /// Make this item wait for another open item.
     #[arg(long, value_name = "REF")]
     after: Option<String>,

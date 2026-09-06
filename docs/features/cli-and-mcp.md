@@ -23,6 +23,13 @@ status at capture as owner-qualified only for the live holder session or the
 assigned actor when unclaimed; other status notes remain peer observations.
 Ownership uses exact actor-principal bytes; discovery's normalized search
 matching does not make differently spelled actors the same owner.
+For a wait that must survive claim expiry or session replacement, assign the
+item to the accountable actor with `add --assignee ACTOR` or
+`update REF --assignee ACTOR`. A held-only, unassigned status is current only
+while that claim is live; after expiry or release it remains history, never
+promoted into a commitment for an unassigned item. Assignment grants no
+execution authority and needs no periodic claim renewal. A holder's planning
+edit, including assignment, does renew its existing live claim.
 `current_status` selects the newest owner-qualified note by the currently
 accountable actor, using project-feed order, unaffected by ordinary notes or
 gates; former-owner notes remain history. It appears at top level on `show`
@@ -87,7 +94,7 @@ engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
@@ -379,6 +386,22 @@ Rules that matter:
   open ancestor. Proposed parents also refuse new children, with guidance to
   inspect the not-yet-open parent instead. Existing children and their
   execution fences are untouched.
+- `update CHILD --reject "why"` (MCP `action: "reject", reason: "why"`)
+  cancels an open required child and records its open parent's required-child
+  waiver atomically, with the same attributed reason on both existing events.
+  Existing cancellation ownership and project-bound waiver checks still apply;
+  no claim, completion credit, or acceptance change is implied. The receipt
+  names both effects. Optional children and other unwaivable shapes return
+  `work_reject_refused`, naming the child/parent and the conditional two-word
+  path: cancel the child when admitted, then waive it from the parent only if
+  required and waivable. No partial cancellation commits on refusal.
+  Record the evidence that rejects a finding in a note first; `done` is for
+  satisfied acceptance, not a synonym for rejecting a finding.
+- Successful `done` asserts satisfaction of the sealed revision's acceptance
+  criteria. Text and JSON disclose `acceptance_criteria_asserted` (the count)
+  and `acceptance_criteria_changed: false`; completion changes no criterion.
+  Replay reports the same seal-bound count, not criteria from a later revision.
+  This is a visible assertion of the existing contract, not prose enforcement.
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   with the same identity and fence; expiry becomes the later of its existing
   expiry and now plus the requested TTL (one hour by default).
@@ -823,7 +846,7 @@ operation enforces the live control-session/run binding described above.
 | `show` | One item in safe agent detail; selects it as focus without claiming |
 | `add` | A root from a title, or one child with `under`; `optional` permits a peer proposal beneath a foreign-held parent; `notes` records ordered initial observations atomically; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
-| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`, `drop_after`, `waive`, or `supersede` |
+| `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `reject`, `after`, `drop_after`, `waive`, `detach`, or `supersede` |
 | `gate` | Record one bounded pass/fail observation; completed work accepts it as a late finding without a claim or reopen |
 | `note` | Record evidence and checkpoint open work; completed work records only late evidence, both keyless |
 | `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |

@@ -132,6 +132,9 @@ pub enum UpdateAction {
     Cancel {
         reason: String,
     },
+    Reject {
+        reason: String,
+    },
     After {
         prerequisite: String,
     },
@@ -919,6 +922,15 @@ impl AgentVerbs {
         };
         let line = if result.operation == "detach" {
             format!("{line} as independent root {}", after.status.work.short_ref)
+        } else if result.operation == "reject" {
+            let parent = result.receipt.result["parent_ref"]
+                .as_str()
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection(
+                        "rejection receipt is missing its parent reference".into(),
+                    )
+                })?;
+            format!("{line}; cancelled child and recorded required-child waiver on {parent}")
         } else {
             format!("{line}{}", held_suffix(self.holder(&after, now), now))
         };
@@ -955,6 +967,21 @@ impl AgentVerbs {
                 },
                 format!("released {work_ref} \"{title}\""),
             ),
+            UpdateAction::Reject { reason } => {
+                let reason = reason.trim().to_owned();
+                if reason.is_empty() {
+                    return Err(
+                        StoreError::InvalidWork("say why the child is rejected".into()).into(),
+                    );
+                }
+                (
+                    WorkUpdateInput::Reject {
+                        reason: reason.clone(),
+                        idempotency_key: String::new(),
+                    },
+                    format!("rejected {work_ref} \"{title}\": {}", short(&reason)),
+                )
+            }
             UpdateAction::Blocked { detail } => {
                 let detail = detail.trim().to_owned();
                 if detail.is_empty() {
@@ -1436,7 +1463,7 @@ impl AgentVerbs {
             WorkCompleteResult::Completed(_) => None,
         };
         let (lines, guidance, owed) = match &result {
-            WorkCompleteResult::Completed(_) => {
+            WorkCompleteResult::Completed(completed) => {
                 let mut guidance = self.guidance(&after, "done", now);
                 guidance.reminders.clear();
                 // Finishing a child points back at the parent that is still
@@ -1460,7 +1487,18 @@ impl AgentVerbs {
                     );
                 }
                 (
-                    vec![format!("done {work_ref} \"{title}\"")],
+                    vec![
+                        format!("done {work_ref} \"{title}\""),
+                        format!(
+                            "asserted {} acceptance {} satisfied; completion changed no criterion",
+                            completed.acceptance_criteria_asserted,
+                            if completed.acceptance_criteria_asserted == 1 {
+                                "criterion"
+                            } else {
+                                "criteria"
+                            }
+                        ),
+                    ],
                     guidance,
                     false,
                 )
@@ -1496,7 +1534,12 @@ impl AgentVerbs {
                 super::child_obligations::done_refusal_value(refusal, child_resolution)?
             }
             WorkCompleteResult::Completed(receipt) => {
-                json!({"seal": receipt.seal, "completed_at": receipt.completed_at})
+                json!({
+                    "seal": receipt.seal,
+                    "completed_at": receipt.completed_at,
+                    "acceptance_criteria_asserted": receipt.acceptance_criteria_asserted,
+                    "acceptance_criteria_changed": false,
+                })
             }
         };
         let receipt = super::mutation::receipt(
