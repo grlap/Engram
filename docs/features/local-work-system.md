@@ -701,15 +701,39 @@ blockers include their id, type, and compact detail; when exactly one blocker
 is active the agent word infers it for `unblock`. Authorized memory bodies
 remain available on demand through their version hash on host-only reads.
 An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
-bodies and references in recorded oldest-first order. Inherited generations
-retain their saved order, followed by every native note family in dense
-project-feed order across run generations. The count and note prefix share one
-read transaction. Full text is never cut: whole trailing notes are omitted
-until the complete text and JSON receipts fit 12 KiB. `notes_omitted` is the
-exact total minus the emitted prefix, including zero. This opt-in mode does
-not change the default focus or terse show projection. Each reference line
-is framed as untrusted data in terminal text; JSON retains exact content.
-The optional `omissions` field remains absent or an array, never null.
+bodies and references in a newest-selected window, rendered oldest to newest
+within the window. Inherited generations retain member order, followed by
+every native note family in dense project-feed order across run generations.
+The focus projection, count, members and continuation basis share one read
+transaction after the existing focus selection. `notes[].summary` is a full
+body. The complete text and JSON window stays within 12 KiB, with exact
+`notes_omitted` and `notes_window` (`shown`, `total`, `newer`, `older`, `after`).
+`show REF --notes --after CURSOR` reaches the next older window; `--history`
+uses the same window metadata in `history.window`. Unlike ordinary show's
+native-change history and separate restored history, this mode combines
+inherited notes/events/completion with native work events; `history.total`
+counts that combined stream. Its rows carry locators and byte sizes, and
+the presence of `history.window` distinguishes them from compact change
+rows. Shortened inherited-note summaries retain the original `body_bytes`
+and expose `summary_truncated` with a complete-note `detail` command.
+The stateless cursor binds item,
+project, kind, member locator, order and the shared listing read cut. Changed
+feeds, reversed clocks and time-boundary expiry refuse with fresh navigation.
+The encoded context is readable, not confidential or authoritative.
+
+Explicit note locators are the narrow exception to the default safe view's
+identity omission. Native notes use a unique canonical hash prefix (at least
+eight hex digits); inherited notes use `RECORD_HASH:INDEX`, with a one-based
+immutable member index rather than a display ordinal. No new hashes are made.
+`show REF --note LOCATOR` / MCP `note: LOCATOR` returns complete detail and
+UTF-8 `body_bytes`, deliberately beyond 12 KiB when necessary. A window that
+cannot fit a body retains its locator, size, `body_omitted` flag and detail
+command, then continues past that member without silently losing it. Every
+body/reference line is framed as untrusted terminal data; JSON is exact.
+New note writes refuse normalized UTF-8 bodies over 64 KiB with actual size,
+limit and a carry-bulk-as-reference remedy. Existing larger notes remain
+readable; canonical read validation does not impose the new write limit.
+See the [CLI/MCP contract](cli-and-mcp.md#using-engram-as-an-agent).
 
 The `add` receipt also names defaulted acceptance in both text and JSON
 reminders: `acceptance defaulted to <title> is done; set --accept`. Explicit

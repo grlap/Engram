@@ -11,7 +11,7 @@ use super::feeds::{
     request_object,
 };
 use super::planning::{
-    assert_actor_session, assert_revision, normalize_strings, normalize_text,
+    assert_actor_session, assert_revision, normalize_note_text, normalize_strings, normalize_text,
     persist_operation_result,
 };
 use super::query::{latest_restored_record, load_work_claim_optional, load_work_item};
@@ -144,7 +144,7 @@ fn prepare_work_observation_on(
         sequence: head
             .checked_add(1)
             .ok_or_else(|| invalid("observation sequence overflow"))?,
-        summary: normalize_text(&request.summary, "note summary")?,
+        summary: normalize_note_text(&request.summary, "note summary")?,
         refs: normalize_strings(&request.refs),
         actor: request.actor.clone(),
         created_at: request.recorded_at,
@@ -195,6 +195,7 @@ pub(super) fn append_initial_notes_on<R: Redactor>(
     // this batch. Validate that basis once, then validate each note's shape.
     let mut previous: Option<WorkObservation> = None;
     for summary in notes {
+        normalize_note_text(summary, "note summary")?;
         let request = RecordWorkObservationRequest {
             project_id: item.project_id.clone(),
             work_id: item.work_id,

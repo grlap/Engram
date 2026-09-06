@@ -112,8 +112,14 @@ struct LsArgs {
 struct ShowArgs {
     /// Short work ref or full UUID; becomes the focus for later calls.
     work_ref: String,
-    /// Full notes, oldest first, with an exact `notes_omitted` remainder.
+    /// Newest note window, rendered chronologically with exact omissions.
     notes: Option<bool>,
+    /// Newest history window, using the same bounded continuation contract.
+    history: Option<bool>,
+    /// Item/kind-bound continuation; readable query context, not confidential.
+    after: Option<String>,
+    /// Complete note body beyond the window ceiling: HASH or `RECORD_HASH:INDEX`.
+    note: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -340,10 +346,16 @@ impl McpServer {
         description = "One item: outcome, acceptance, holder, blockers, reminders; later calls default to it"
     )]
     fn show(&self, Parameters(args): Parameters<ShowArgs>) -> CallToolResult {
-        verb(
-            self.verbs()
-                .show_with_notes(&args.work_ref, args.notes.unwrap_or(false), Utc::now()),
-        )
+        verb(self.verbs().show_records(
+            &args.work_ref,
+            &crate::verbs::ShowInput {
+                notes: args.notes.unwrap_or(false),
+                history: args.history.unwrap_or(false),
+                after: args.after,
+                note: args.note,
+            },
+            Utc::now(),
+        ))
     }
 
     /// Create a root or one required/optional child.
@@ -704,6 +716,23 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "reason": reason,
             "remedy": "repeat the listing without --after, then continue from the new token",
         }),
+        StoreError::WorkShowCursorInvalid { reason } => json!({
+            "reason": reason,
+            "remedy": "repeat show without --after, then continue from the new token",
+        }),
+        StoreError::WorkNoteReferenceInvalid {
+            reason,
+            candidates,
+            more,
+        } => json!({
+            "reason": reason, "candidates": candidates, "more": more,
+            "remedy": "use the complete locator printed beside the note",
+        }),
+        StoreError::WorkNoteTooLarge { bytes, limit } => json!({
+            "bytes": bytes, "limit": limit,
+            "reason": "note body exceeds the UTF-8 byte limit",
+            "remedy": "carry bulk content as a reference",
+        }),
         StoreError::InvalidWork(message) | StoreError::InvalidWorkProjection(message) => json!({
             "reason": message,
             "remedy": "run next, then show the affected item and follow next",
@@ -845,6 +874,9 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkParentNotOpen { .. } => "work_parent_not_open",
         StoreError::WorkDetachRefused { .. } => "work_detach_refused",
         StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
+        StoreError::WorkShowCursorInvalid { .. } => "work_show_cursor_invalid",
+        StoreError::WorkNoteReferenceInvalid { .. } => "work_note_reference_invalid",
+        StoreError::WorkNoteTooLarge { .. } => "work_note_too_large",
         StoreError::WorkPeerDecompositionRefused { .. } => "work_peer_decomposition_refused",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",
         StoreError::WorkClaimMismatch { .. } => "work_claim_mismatch",

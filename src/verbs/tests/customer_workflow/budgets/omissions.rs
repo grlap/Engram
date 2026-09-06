@@ -176,92 +176,74 @@ fn full_notes_replace_only_the_compact_note_budget_contribution() {
     }
     add(&verbs, "First optional child", Some(&root), true, 9);
     add(&verbs, "Second optional child", Some(&root), true, 10);
-    let source = service.work_focus_for_agent(&root, at(11)).unwrap();
     for keep_history in [false, true] {
-        let mut view = source.clone();
+        let (mut source, mut page) = service
+            .work_record_window(&root, crate::storage::WorkRecordKind::Notes, None, at(11))
+            .unwrap();
         if !keep_history {
-            without_history(&mut view);
-            view.children.clear();
-            view.child_count = 0;
-            view.child_obligations = None;
+            without_history(&mut source);
+            source.children.clear();
+            source.child_count = 0;
+            source.child_obligations = None;
         }
-        let original = verbs.render_show(&view, at(12)).unwrap();
-        let mut target = view.clone();
+        let original = verbs.render_show(&source, at(12)).unwrap();
+        let history_rows = original.value["history"]["items"].as_array().unwrap().len();
+        let child_rows = original.value["children"].as_array().unwrap().len();
+        let summary_rows = child_summary_rows(&original);
+        let note_rows = original.value["notes"].as_array().unwrap().len();
+        assert_eq!(note_rows, 8);
+        let mut target = source.clone();
         without_history(&mut target);
         target.children.clear();
         if let Some(groups) = &mut target.child_obligations {
             groups.required_owed.items.clear();
             groups.open_optional.items.clear();
         }
-        target
-            .evidence_items
-            .retain(|note| note.evidence == target.latest_evidence_item.as_ref().unwrap().evidence);
-        let history_rows = original.value["history"]["items"].as_array().unwrap().len();
-        let child_rows = original.value["children"].as_array().unwrap().len();
-        let note_rows = original.value["notes"].as_array().unwrap().len();
-        let summary_rows = child_summary_rows(&original);
-        target.omissions.push(WorkSectionOmission {
-            section: WorkNextSection::Focus,
-            reason: WorkSectionOmissionReason::ByteBudget,
-            omitted_count: history_rows + child_rows + summary_rows + note_rows - 1,
-        });
-        let budget = receipt_size(&verbs.render_show(&target, at(12)).unwrap()) + 1;
-        assert!(budget < receipt_size(&original));
-        let fitted = crate::verbs::show::fit_show_receipt(
-            view,
+        let genuine_omissions = history_rows + child_rows + summary_rows;
+        if genuine_omissions > 0 {
+            target.omissions.push(WorkSectionOmission {
+                section: WorkNextSection::Focus,
+                reason: WorkSectionOmissionReason::ByteBudget,
+                omitted_count: genuine_omissions,
+            });
+        }
+        let remaining = page.rows.split_off(1);
+        let expected = crate::verbs::record_windows::fit_window(
+            target,
+            &page,
             |view| verbs.render_show(view, at(12)),
-            budget,
-        )
-        .unwrap();
-        assert!(receipt_size(&fitted) < budget);
-        let notes_removed = note_rows - fitted.value["notes"].as_array().unwrap().len();
-        assert!(notes_removed > 0);
-        let history_removed =
-            history_rows - fitted.value["history"]["items"].as_array().unwrap().len();
-        let children_removed = child_rows - fitted.value["children"].as_array().unwrap().len();
-        let summaries_removed = summary_rows - child_summary_rows(&fitted);
-        assert_eq!(summaries_removed, summary_rows);
-        assert_eq!(children_removed, child_rows);
-        assert_eq!(
-            focus_byte_omitted(&fitted),
-            history_removed + children_removed + summaries_removed + notes_removed
-        );
-        let original_history = fitted.value["history"].clone();
-        let original_children_omitted = fitted.value["children_omitted"].clone();
-        let original_child_obligations = fitted.value["child_obligations"].clone();
-        let page = service.work_notes(&root, at(13)).unwrap();
-        let total = page.total;
-        let restored = crate::verbs::receipts::fit_show_notes(
-            fitted,
-            page,
             "agent",
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
         .unwrap();
-        assert!(receipt_size(&restored) <= MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert_eq!(restored.value["notes"].as_array().unwrap().len(), total);
-        assert_eq!(restored.value["notes_omitted"], 0);
+        let budget = receipt_size(&expected) + 1;
+        page.rows.extend(remaining);
+        let fitted = crate::verbs::record_windows::fit_window(
+            source,
+            &page,
+            |view| verbs.render_show(view, at(12)),
+            "agent",
+            budget,
+        )
+        .unwrap();
+        assert!(receipt_size(&fitted) < budget);
+        assert_eq!(fitted.value["notes"], expected.value["notes"]);
+        assert_eq!(fitted.value["notes"].as_array().unwrap().len(), 1);
+        assert_eq!(fitted.value["notes_omitted"], 7);
+        assert_eq!(fitted.value["notes_window"]["total"], 8);
+        // Removed compact rows are replaced, not attributed to byte shedding.
+        assert_eq!(focus_byte_omitted(&fitted), genuine_omissions);
+        assert_eq!(fitted.value["history"], expected.value["history"]);
         assert_eq!(
-            focus_byte_omitted(&restored),
-            history_removed + children_removed + summaries_removed
+            fitted.value["children_omitted"],
+            expected.value["children_omitted"]
         );
-        assert_eq!(restored.value["history"], original_history);
         assert_eq!(
-            restored.value["child_obligations"],
-            original_child_obligations
-        );
-        assert_eq!(
-            restored.value["children_omitted"],
-            original_children_omitted
+            fitted.value["child_obligations"],
+            expected.value["child_obligations"]
         );
         if !keep_history {
-            assert!(
-                !restored.value["omissions"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .any(|entry| entry["reason"] == "byte_budget")
-            );
+            assert!(fitted.value.get("omissions").is_none());
         }
     }
 }

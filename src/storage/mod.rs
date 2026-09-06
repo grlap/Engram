@@ -50,8 +50,11 @@ use project_memory::{
 use task_memory::{claim_expiry, fts_query, normalize_project_memory_query};
 
 pub(crate) use work::WorkDiscoveryRow;
-pub(crate) use work::WorkNotePage;
+pub(crate) use work::WorkNoteRecord;
 pub(crate) use work::{WorkEvidenceProjectionSummary, WorkObligationRecord};
+pub(crate) use work::{
+    WorkRecordAddress, WorkRecordContent, WorkRecordIndex, WorkRecordKind, WorkRecordOrder,
+};
 
 pub(crate) use work::{
     CompleteWorkStorageResult, CompletionRecoverySnapshot, StageWorkSessionDelivery,
@@ -820,6 +823,18 @@ pub enum StoreError {
     },
     #[error("listing continuation refused: {reason}")]
     WorkCatalogCursorInvalid { reason: String },
+    #[error("show continuation refused: {reason}")]
+    WorkShowCursorInvalid { reason: String },
+    #[error("note reference refused: {reason}")]
+    WorkNoteReferenceInvalid {
+        reason: String,
+        candidates: Vec<String>,
+        more: usize,
+    },
+    #[error(
+        "note body is {bytes} UTF-8 bytes; limit is {limit}; carry bulk content as a reference"
+    )]
+    WorkNoteTooLarge { bytes: usize, limit: usize },
     #[error("work {work:?} is claimed by session {holder} until {expires_at}")]
     WorkClaimHeld {
         work: crate::domain::WorkId,

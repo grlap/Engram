@@ -553,17 +553,15 @@ pub(super) fn compact_restored_work_evidence(
     Ok(gate_evidence_summary(gate, true))
 }
 
-pub(super) fn project_full_notes(
-    page: &mut crate::storage::WorkNotePage,
+pub(super) fn project_full_note(
+    note: &mut crate::storage::WorkNoteRecord,
 ) -> Result<(), StoreError> {
-    for note in &mut page.items {
-        if let Some(gate) = &note.gate {
-            gate.validate(&note.refs)
-                .map_err(StoreError::InvalidWorkProjection)?;
-            note.summary = gate_evidence_summary(gate, false);
-        } else if note.kind == WorkEvidenceKind::Environment {
-            note.summary = "host-recorded environment identity".into();
-        }
+    if let Some(gate) = &note.gate {
+        gate.validate(&note.refs)
+            .map_err(StoreError::InvalidWorkProjection)?;
+        note.summary = gate_evidence_summary(gate, false);
+    } else if note.kind == WorkEvidenceKind::Environment {
+        note.summary = "host-recorded environment identity".into();
     }
     Ok(())
 }

@@ -1,8 +1,6 @@
 use super::*;
 use crate::domain::WorkCatalogReadCut;
 
-const MAX_CURSOR_BYTES: usize = 8192;
-
 /// Self-describing navigation: encoded filters/identity are not confidential.
 /// No authorization, signature, or server-side state.
 #[derive(Clone, Deserialize, Serialize)]
@@ -33,18 +31,11 @@ impl WorkListingPage {
             cut: self.cut.clone(),
             after,
         };
-        let bytes = serde_json::to_vec(&cursor)?;
-        let mut token = String::from("c1-");
-        for byte in bytes {
-            write!(token, "{byte:02x}")
-                .map_err(|_| invalid("cannot encode listing continuation"))?;
-        }
-        if token.len() > MAX_CURSOR_BYTES {
-            return Err(invalid(
+        super::continuation::encode("c1-", &cursor).ok_or_else(|| {
+            invalid(
                 "listing continuation metadata is too large; shorten search, label or parent scope",
-            ));
-        }
-        Ok(token)
+            )
+        })
     }
 }
 
@@ -101,31 +92,8 @@ impl LocalWorkService {
 }
 
 fn decode_cursor(token: &str) -> Result<ListingCursor, StoreError> {
-    let malformed = || invalid("invalid listing cursor; use the fresh listing command");
-    if token.len() > MAX_CURSOR_BYTES {
-        return Err(malformed());
-    }
-    let encoded = token.strip_prefix("c1-").ok_or_else(malformed)?;
-    if encoded.len() % 2 != 0 || !encoded.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(malformed());
-    }
-    let bytes = encoded
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| {
-            let digit = |byte: u8| {
-                if byte.is_ascii_digit() {
-                    byte - b'0'
-                } else {
-                    byte.to_ascii_lowercase() - b'a' + 10
-                }
-            };
-            digit(pair[0]) * 16 + digit(pair[1])
-        })
-        .collect::<Vec<_>>();
-    serde_json::from_slice(&bytes).map_err(|_| malformed())
+    super::continuation::decode("c1-", token)
+        .ok_or_else(|| invalid("invalid listing cursor; use the fresh listing command"))
 }
 
 fn invalid(reason: &str) -> StoreError {

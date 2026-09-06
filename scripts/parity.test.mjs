@@ -432,7 +432,10 @@ test("add -> claim -> done takes three commands and at most three fields", () =>
     assert.equal(lateShow.status, 0, lateShow.stderr);
     const lateView = JSON.parse(lateShow.stdout);
     assert.equal(lateView.status.work.lifecycle, "completed");
-    assert.deepEqual(lateView.next, [`engram work note ${ref} "…"`]);
+    assert.deepEqual(lateView.next, [
+      `engram work note ${ref} "…"`,
+      `engram work show ${ref} --history`,
+    ]);
     assert.ok(
       lateView.notes.some(
         ({ summary }) => summary === "peer found a late documentation mismatch",

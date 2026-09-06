@@ -597,17 +597,27 @@ fn initial_note_order_survives_snapshot_recreation() {
         hash_order, observations,
         "fixture must distinguish hash order from submission order"
     );
-    let source_notes = source
-        .work_notes(&project, item.work_id, usize::MAX)
-        .expect("native notes");
-    assert_eq!(
-        source_notes
-            .items
-            .iter()
-            .map(|note| &note.summary)
-            .collect::<Vec<_>>(),
-        notes.iter().collect::<Vec<_>>()
-    );
+    let read_notes = |store: &SqliteStore| {
+        store
+            .work_read_snapshot(|store| {
+                store
+                    .work_record_index(
+                        &project,
+                        item.work_id,
+                        crate::storage::WorkRecordKind::Notes,
+                    )?
+                    .iter()
+                    .map(|entry| {
+                        match store.work_record_content(&project, item.work_id, entry)? {
+                            crate::storage::WorkRecordContent::Note(note) => Ok(note.summary),
+                            _ => panic!("note index returned another family"),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, StoreError>>()
+            })
+            .expect("canonical record notes")
+    };
+    assert_eq!(read_notes(&source), notes);
     let saved = source
         .save_work_graph_snapshot(
             &project,
@@ -629,17 +639,7 @@ fn initial_note_order_survives_snapshot_recreation() {
             &DevelopmentNoopRedactor,
         )
         .expect("load");
-    let loaded = destination
-        .work_notes(&project, item.work_id, usize::MAX)
-        .expect("inherited notes");
-    assert_eq!(
-        loaded
-            .items
-            .iter()
-            .map(|note| &note.summary)
-            .collect::<Vec<_>>(),
-        notes.iter().collect::<Vec<_>>()
-    );
+    assert_eq!(read_notes(&destination), notes);
     assert!(destination.verify_all().expect("verify").is_healthy());
 }
 

@@ -15,67 +15,29 @@ use super::{
 /// Measure the actual safe projection, including guidance, before shedding.
 /// Hidden core metadata must not consume an agent receipt's byte budget.
 pub(super) fn fit_show_receipt(
-    view: WorkFocusView,
-    render: impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
-    max_bytes: usize,
-) -> Result<super::Receipt, super::VerbError> {
-    fit_show_projection(view, &render, None, max_bytes)
-}
-
-/// Fit contract text against the exact mandatory full-note envelope before
-/// selecting the complete-note prefix. Compact notes are not emitted here.
-pub(super) fn fit_show_receipt_with_notes(
     mut view: WorkFocusView,
     render: impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
-    page: crate::storage::WorkNotePage,
-    current_actor: &str,
-    max_bytes: usize,
-) -> Result<super::Receipt, super::VerbError> {
-    view.evidence_items.clear();
-    view.latest_evidence_item = None;
-    view.omissions
-        .retain(|entry| entry.reason != WorkSectionOmissionReason::EvidenceCountLimit);
-    let receipt = fit_show_projection(view, &render, Some(page.total), max_bytes)?;
-    super::receipts::fit_show_notes(receipt, page, current_actor, max_bytes)
-}
-
-fn fit_show_projection(
-    mut view: WorkFocusView,
-    render: &impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
-    note_total: Option<usize>,
     max_bytes: usize,
 ) -> Result<super::Receipt, super::VerbError> {
     // Normalize the independently loaded latest note exactly as show does,
     // so byte shedding cannot count a page row already hidden by replacement.
     view.evidence_items = show_evidence(&view);
-    let original_note_rows = view.evidence_items.len();
     loop {
-        let mut receipt = render(&view)?;
-        if show_fits(&receipt, note_total, max_bytes)? {
-            receipt.compact_note_byte_omissions = original_note_rows - view.evidence_items.len();
+        let receipt = render(&view)?;
+        if show_fits(&receipt, max_bytes)? {
             return Ok(receipt);
         }
         if !shed_show_context_once(&mut view) {
-            let mut receipt = fit_acceptance_prefix(&mut view, render, note_total, max_bytes)?;
-            receipt.compact_note_byte_omissions = original_note_rows - view.evidence_items.len();
-            return Ok(receipt);
+            return fit_acceptance_prefix(&mut view, &render, max_bytes);
         }
         record_show_omission(&mut view, 1);
     }
 }
 
-fn show_fits(
-    receipt: &super::Receipt,
-    note_total: Option<usize>,
-    max_bytes: usize,
-) -> Result<bool, super::VerbError> {
-    let envelope = note_total
-        .map(|total| super::receipts::show_note_envelope(receipt, total))
-        .transpose()?;
-    let measured = envelope.as_ref().unwrap_or(receipt);
+fn show_fits(receipt: &super::Receipt, max_bytes: usize) -> Result<bool, super::VerbError> {
     // Match compact next's conservative strict ceiling for both formats.
-    Ok(measured.text().len() < max_bytes
-        && serde_json::to_vec_pretty(&measured.value)?.len() < max_bytes)
+    Ok(receipt.text().len() < max_bytes
+        && serde_json::to_vec_pretty(&receipt.value)?.len() < max_bytes)
 }
 
 fn record_show_omission(view: &mut WorkFocusView, count: usize) {
@@ -96,7 +58,6 @@ fn record_show_omission(view: &mut WorkFocusView, count: usize) {
 fn fit_acceptance_prefix(
     view: &mut WorkFocusView,
     render: &impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
-    note_total: Option<usize>,
     max_bytes: usize,
 ) -> Result<super::Receipt, super::VerbError> {
     // The full list already failed. Search only whole proper prefixes, with
@@ -111,7 +72,7 @@ fn fit_acceptance_prefix(
         view.omissions.clone_from(&omissions);
         record_show_omission(view, criteria.len() - visible);
         let receipt = render(view)?;
-        if show_fits(&receipt, note_total, max_bytes)? {
+        if show_fits(&receipt, max_bytes)? {
             best = Some(receipt);
             lower = visible + 1;
         } else {

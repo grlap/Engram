@@ -344,6 +344,127 @@ test("parent child summaries agree across CLI and MCP including omitted disposed
   }
 });
 
+test("note and history windows continue through CLI and MCP with complete detail", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-record-windows-"));
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "window-reader");
+    await client.initialize();
+    const showTool = (await client.tools()).find(({ name }) => name === "show");
+    for (const key of ["notes", "history", "after", "note"]) assert.ok(showTool.inputSchema.properties[key]);
+    const work_ref = receipt(await client.call("add", { title: "Window traversal" })).work.short_ref;
+    const bodies = Array.from({ length: 12 }, (_, index) => `Verdict ${index}: ${"body\n".repeat(600)}END`);
+    for (const text of bodies) receipt(await client.call("note", { work_ref, text }));
+    const context = ["--home", engramHome, "work", "--actor-id", "window-reader", "--session-id", "window-reader"];
+    const cli = (...args) => spawnSync(binary, [...context, ...args], { cwd: root, encoding: "utf8" });
+    const first = receipt(await client.call("show", { work_ref, notes: true }));
+    assert.equal(first.notes.at(-1).summary, bodies.at(-1));
+    assert.ok(first.notes_window.after);
+    const seen = [];
+    let after;
+    do {
+      const result = await client.call("show", { work_ref, notes: true, after });
+      const page = receipt(result);
+      const shell = cli("show", work_ref, "--notes", ...(after ? ["--after", after] : []), "--json");
+      assert.equal(shell.status, 0, shell.stderr);
+      assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
+      assert.deepEqual(JSON.parse(shell.stdout).notes, page.notes);
+      assert.ok(Buffer.byteLength(JSON.stringify(page, null, 2)) < 12288);
+      assert.equal(page.notes_window.newer, seen.length);
+      assert.equal(page.notes_omitted, bodies.length - page.notes.length);
+      seen.push(...page.notes.toReversed().map(({ summary }) => summary));
+      after = page.notes_window.after;
+      assert.ok(seen.length <= bodies.length);
+    } while (after);
+    assert.deepEqual(seen.toReversed(), bodies);
+    structuredError(await client.call("show", { work_ref, history: true, after: first.notes_window.after }), "work_show_cursor_invalid");
+    const huge = `next:\n${"ü detail\n".repeat(2500)}END`;
+    receipt(await client.call("note", { work_ref, text: huge }));
+    structuredError(await client.call("show", { work_ref, notes: true, after: first.notes_window.after }), "work_show_cursor_invalid");
+    const bounded = receipt(await client.call("show", { work_ref, notes: true }));
+    const placeholder = bounded.notes.at(-1);
+    assert.equal(placeholder.body_omitted, true);
+    assert.equal(placeholder.body_bytes, Buffer.byteLength(huge));
+    const detail = receipt(await client.call("show", { work_ref, note: placeholder.locator.slice(0, 8) }));
+    assert.equal(detail.note.summary, huge);
+    assert.equal(detail.note.body_bytes, Buffer.byteLength(huge));
+    const full = cli("show", work_ref, "--note", placeholder.locator, "--json");
+    assert.equal(full.status, 0, full.stderr);
+    assert.deepEqual(JSON.parse(full.stdout), detail);
+    assert.ok(Buffer.byteLength(full.stdout) > 12288);
+    const text = cli("show", work_ref, "--note", placeholder.locator);
+    assert.equal(text.status, 0, text.stderr);
+    assert.equal(text.stdout.split("\n").filter((line) => line === "next:").length, 1);
+    const tooLarge = structuredError(await client.call("note", { work_ref, text: "ü".repeat(32769) }), "work_note_too_large");
+    assert.equal(tooLarge.details.bytes, 65538);
+    assert.equal(tooLarge.details.limit, 65536);
+    assert.equal(tooLarge.details.remedy, "carry bulk content as a reference");
+    for (let index = 0; index < 24; index++) receipt(await client.call("update", { work_ref, action: "revise", title: `History revision ${index}` }));
+    const historySeen = new Set();
+    after = undefined;
+    do {
+      const page = receipt(await client.call("show", { work_ref, history: true, after }));
+      assert.equal(page.history.window.newer, historySeen.size);
+      const shell = cli("show", work_ref, "--history", ...(after ? ["--after", after] : []), "--json");
+      assert.equal(shell.status, 0, shell.stderr);
+      assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
+      assert.deepEqual(JSON.parse(shell.stdout).history.items, page.history.items);
+      for (const row of page.history.items) { assert.ok(!historySeen.has(row.locator)); historySeen.add(row.locator); }
+      after = page.history.window.after;
+      if (!after) assert.equal(historySeen.size, page.history.total);
+    } while (after);
+    assert.equal(historySeen.size, 25);
+  } finally {
+    if (client) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
+test("explicit records retain relative authors and host context on CLI and MCP", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-record-authors-"));
+  const clients = [];
+  try {
+    buildAndInit(engramHome);
+    for (const [index, actor] of ["private-self-principal", "private-peer-principal"].entries()) {
+      const client = new McpClient(engramHome, `author-session-${index}`, `host-context-${index}`, actor);
+      clients.push(client);
+      await client.initialize();
+    }
+    const work_ref = receipt(await clients[0].call("add", { title: "Relative explicit authors" })).work.short_ref;
+    for (const [index, client] of clients.entries()) {
+      receipt(await client.call("note", { work_ref, text: `Authored note ${index}` }));
+      receipt(await client.call("update", { work_ref, action: "revise", title: `Revision ${index}` }));
+    }
+    const context = ["--home", engramHome, "work", "--actor-id", "private-self-principal", "--session-id", "author-session-0"];
+    const check = async (args, flags) => {
+      const result = await clients[0].call("show", { work_ref, ...args });
+      const value = receipt(result);
+      const shell = spawnSync(binary, [...context, "show", work_ref, ...flags, "--json"], { cwd: root, encoding: "utf8" });
+      const text = spawnSync(binary, [...context, "show", work_ref, ...flags], { cwd: root, encoding: "utf8" });
+      assert.equal(shell.status, 0, shell.stderr);
+      assert.equal(text.status, 0, text.stderr);
+      assert.deepEqual(JSON.parse(shell.stdout), value);
+      for (const output of [JSON.stringify(result), shell.stdout, text.stdout]) assert.doesNotMatch(output, /private-(self|peer)-principal/u);
+      return value;
+    };
+    const notes = await check({ notes: true }, ["--notes"]);
+    const history = await check({ history: true }, ["--history"]);
+    for (const rows of [notes.notes, history.history.items]) {
+      assert.ok(rows.some(({ by }) => by === "you (host-context-0)"));
+      assert.ok(rows.some(({ by }) => by === "another actor (host-context-1)"));
+    }
+    for (const row of notes.notes) {
+      const detail = await check({ note: row.locator }, ["--note", row.locator]);
+      assert.equal(detail.note.by, row.by);
+      assert.equal(detail.note.summary, row.summary);
+    }
+  } finally {
+    for (const client of clients) await client.close();
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+});
+
 test("full contract text round-trips through CLI and MCP show", async () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-full-contract-"));
   let client;
@@ -716,7 +837,8 @@ test("CLI words translate the same ambient lifecycle service", () => {
     assert.match(shown, /acceptance:\n\s+- CLI completion is sealed/u);
     assert.match(shown, /reminders:\n\s+- you hold this item but have not noted progress yet/u);
     assert.match(shown, new RegExp(`\\s+engram work note ${workRef} "…"`, "u"));
-    assert.doesNotMatch(shown, new RegExp(`engram work show ${workRef}`, "u"));
+    assert.doesNotMatch(shown, new RegExp(`^\\s*engram work show ${workRef}\\s*$`, "mu"));
+    assert.match(shown, new RegExp(`^  engram work show ${workRef} --history$`, "mu"));
 
     const blocked = cliText(engramHome, actor, "update", "--blocked", "waiting on a review");
     assert.match(blocked, /^blocked w-[0-9a-f]{12} "Dogfood work CLI": waiting on a review/u);
@@ -1280,7 +1402,10 @@ test("two MCP sessions complete ambient work through a fenced handoff", async ()
     assert.equal(lateGate.gate.passed, false);
     const afterLateFindings = receipt(await a.call("show", { work_ref: workRef }));
     assert.equal(afterLateFindings.status.work.lifecycle, "completed");
-    assert.deepEqual(afterLateFindings.next, [`engram work note ${workRef} "…"`]);
+    assert.deepEqual(afterLateFindings.next, [
+      `engram work note ${workRef} "…"`,
+      `engram work show ${workRef} --history`,
+    ]);
     assert.ok(
       afterLateFindings.notes.some(
         ({ summary }) => summary === "peer found a late MCP documentation mismatch",

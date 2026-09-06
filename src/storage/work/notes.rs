@@ -1,15 +1,14 @@
-//! Full note reads: inherited generation order followed by dense project-feed order.
+//! Canonical native note loading shared by explicit record windows and detail.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 
-use super::super::{SqliteStore, StoreError};
+use super::super::StoreError;
 use super::execution::work_evidence_kind_on;
 use super::feeds::load_typed_work_object;
-use super::query::{load_work_item, restored_records_for_item};
 use crate::domain::{
-    ActorContext, EnvironmentEvidence, GateEvidenceRecord, ProjectId, SCHEMA_VERSION,
-    VerificationEvidence, WorkEvidence, WorkEvidenceKind, WorkId, WorkObservation,
+    ActorContext, EnvironmentEvidence, GateEvidenceRecord, VerificationEvidence, WorkEvidence,
+    WorkEvidenceKind, WorkId, WorkObservation,
 };
 use crate::{ObjectHash, RestoredWorkEvidence};
 
@@ -22,128 +21,13 @@ pub(crate) struct WorkNoteRecord {
     pub recorded_at: DateTime<Utc>,
 }
 
-pub(crate) struct WorkNotePage {
-    pub items: Vec<WorkNoteRecord>,
-    pub total: usize,
-}
-
-const NOTE_OBJECTS: &str = "
+pub(super) const NOTE_OBJECTS: &str = "
     SELECT evidence_hash AS hash, 'run' AS family FROM work_run_evidence WHERE work_id = ?1
     UNION ALL
     SELECT evidence_hash, 'restored' FROM work_restored_evidence WHERE work_id = ?1
     UNION ALL
     SELECT observation_hash, 'observation' FROM work_observations WHERE work_id = ?1
 ";
-
-// A serialized note necessarily carries kind, summary, attribution, timestamp
-// and member punctuation beyond its content. This conservative lower bound
-// caps retrieval without excluding a prefix that could fit the final envelope.
-const MIN_NOTE_ENVELOPE_BYTES: usize = 64;
-
-impl SqliteStore {
-    /// Counts all generations and reads only a complete-note prefix that can
-    /// fit within the caller's eventual response. Count and prefix share a cut.
-    pub(crate) fn work_notes(
-        &self,
-        project: &ProjectId,
-        work_id: WorkId,
-        body_budget: usize,
-    ) -> Result<WorkNotePage, StoreError> {
-        let transaction = self.connection.unchecked_transaction()?;
-        let item = load_work_item(&transaction, work_id)?;
-        if &item.project_id != project {
-            return Err(invalid("notes cannot cross projects"));
-        }
-        let inherited = restored_records_for_item(&transaction, work_id)?;
-        let native_total: i64 = transaction.query_row(
-            &format!("SELECT COUNT(*) FROM ({NOTE_OBJECTS})"),
-            [work_id.0.to_string()],
-            |row| row.get(0),
-        )?;
-        let total = usize::try_from(native_total).map_err(|_| invalid("note count overflow"))?
-            + inherited
-                .iter()
-                .map(|record| record.history.notes.len())
-                .sum::<usize>();
-        let mut page = WorkNotePage {
-            items: Vec::new(),
-            total,
-        };
-        let mut remaining = body_budget;
-        for record in inherited {
-            for note in record.history.notes {
-                let gate = note.gate.map(|gate| GateEvidenceRecord {
-                    schema_version: SCHEMA_VERSION,
-                    name: gate.name,
-                    passed: gate.passed,
-                    failed: gate.failed,
-                    previous: None,
-                });
-                validate_gate(gate.as_ref(), &note.refs)?;
-                if !push_note(
-                    &mut page,
-                    &mut remaining,
-                    WorkNoteRecord {
-                        kind: note.evidence_kind,
-                        summary: note.summary,
-                        gate,
-                        refs: note.refs,
-                        actor: note.actor,
-                        recorded_at: note.recorded_at,
-                    },
-                ) {
-                    return Ok(page);
-                }
-            }
-        }
-        let mut statement = transaction.prepare(&format!(
-            "SELECT notes.hash, notes.family, entry.position, entry.object_kind
-             FROM ({NOTE_OBJECTS}) notes
-             LEFT JOIN work_feed_entries entry ON entry.object_hash = notes.hash
-                 AND entry.feed_kind = 'project' AND entry.feed_id = ?2
-             ORDER BY entry.position"
-        ))?;
-        let mut rows = statement.query(params![work_id.0.to_string(), project.0])?;
-        while let Some(row) = rows.next()? {
-            let position: Option<i64> = row.get(2)?;
-            if position.is_none() {
-                return Err(invalid("note is missing its project-feed position"));
-            }
-            let raw: String = row.get(0)?;
-            let hash =
-                ObjectHash::from_stored(raw.clone()).ok_or(StoreError::InvalidStoredHash(raw))?;
-            let family: String = row.get(1)?;
-            let kind: String = row.get(3)?;
-            let note = load_note(&transaction, work_id, &hash, &family, &kind)?;
-            if !push_note(&mut page, &mut remaining, note) {
-                break;
-            }
-        }
-        // Dropping this read-only transaction after its statements releases the cut.
-        Ok(page)
-    }
-}
-
-fn push_note(page: &mut WorkNotePage, remaining: &mut usize, note: WorkNoteRecord) -> bool {
-    // Every returned note needs at least these bytes in either front door;
-    // receipt shaping accounts for JSON escaping, attribution and the envelope.
-    let content = note.gate.as_ref().map_or(note.summary.len(), |gate| {
-        gate.failed.iter().fold(gate.name.len(), |bytes, label| {
-            bytes.saturating_add(label.len())
-        })
-    });
-    let bytes = note
-        .refs
-        .iter()
-        .fold(content, |bytes, value| bytes.saturating_add(value.len()))
-        .saturating_add(MIN_NOTE_ENVELOPE_BYTES);
-    if bytes > *remaining {
-        return false;
-    }
-    *remaining -= bytes;
-    page.items.push(note);
-    true
-}
 
 fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(), StoreError> {
     gate.map_or(Ok(()), |gate| {

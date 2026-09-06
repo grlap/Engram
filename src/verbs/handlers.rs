@@ -24,8 +24,8 @@ use super::{
 /// from a word's arguments.
 #[derive(Clone, Debug)]
 pub struct AgentVerbs {
-    service: Arc<LocalWorkService>,
-    actor_id: String,
+    pub(super) service: Arc<LocalWorkService>,
+    pub(super) actor_id: String,
     session_id: SessionId,
 }
 
@@ -542,7 +542,13 @@ impl AgentVerbs {
     ) -> Result<Receipt, VerbError> {
         let holder = self.holder(view, now);
         let lines = show_lines(view, holder, &self.actor_id, &self.session_id, now);
-        let guidance = self.guidance(view, "show", now);
+        let mut guidance = self.guidance(view, "show", now);
+        if view.history.total + view.restored_history.total > 0 {
+            guidance.next.push(format!(
+                "engram work show {} --history",
+                view.status.work.short_ref
+            ));
+        }
         Ok(Receipt::assemble(
             lines,
             guidance,
@@ -557,8 +563,7 @@ impl AgentVerbs {
         ))
     }
 
-    /// Like `show`, optionally returning the full oldest-first note prefix
-    /// within the complete receipt budget. Default show remains unchanged.
+    /// Like `show`, optionally returning the newest complete-note window.
     ///
     /// # Errors
     /// Returns [`VerbError`] for unknown work, invalid notes or oversized metadata.
@@ -568,23 +573,13 @@ impl AgentVerbs {
         notes: bool,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
-        if !notes {
-            return self.show(work_ref, now);
-        }
-        let view = self
-            .service
-            .work_focus_for_agent(work_ref, now)
-            .map_err(|error| VerbError::at(error, work_ref))?;
-        let page = self
-            .service
-            .work_notes(work_ref, now)
-            .map_err(|error| VerbError::at(error, work_ref))?;
-        super::show::fit_show_receipt_with_notes(
-            view,
-            |view| self.render_show(view, now),
-            page,
-            &self.actor_id,
-            MAX_AGENT_WORK_RESPONSE_BYTES,
+        self.show_records(
+            work_ref,
+            &super::ShowInput {
+                notes,
+                ..super::ShowInput::default()
+            },
+            now,
         )
     }
 

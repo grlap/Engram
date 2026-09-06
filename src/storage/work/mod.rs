@@ -14,6 +14,7 @@ mod notes;
 mod observation;
 mod planning;
 mod query;
+mod record_windows;
 mod schema;
 mod session;
 
@@ -60,8 +61,9 @@ use crate::{
     memory::Redactor,
 };
 
-pub(crate) use notes::WorkNotePage;
+pub(crate) use notes::WorkNoteRecord;
 pub(in crate::storage) use observation::observations_on;
+pub(crate) use record_windows::*;
 
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;

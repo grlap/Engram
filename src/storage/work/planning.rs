@@ -1390,6 +1390,19 @@ pub(super) fn normalize_text(value: &str, label: &str) -> Result<String, StoreEr
     Ok(trimmed.to_owned())
 }
 
+/// Write-boundary limit only. Retained canonical notes remain readable at any size.
+pub(super) fn normalize_note_text(value: &str, label: &str) -> Result<String, StoreError> {
+    const LIMIT: usize = 64 * 1024;
+    let text = normalize_text(value, label)?;
+    if text.len() > LIMIT {
+        return Err(StoreError::WorkNoteTooLarge {
+            bytes: text.len(),
+            limit: LIMIT,
+        });
+    }
+    Ok(text)
+}
+
 fn normalize_optional(value: Option<String>) -> Option<String> {
     value.and_then(|value| {
         let trimmed = value.trim();

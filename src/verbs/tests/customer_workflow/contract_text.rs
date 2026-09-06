@@ -349,7 +349,9 @@ fn show_notes_fits_contract_and_populated_note_envelopes_together() {
             .note(
                 &NoteInput {
                     work_ref: Some(work.clone()),
-                    text: format!("Full note {index}: {}", "n".repeat(100)),
+                    // A second row must cost more than the cursor removed by
+                    // a complete page, or both notes could fit more cheaply.
+                    text: format!("Full note {index}: {}", "n".repeat(2000)),
                     refs: vec![],
                 },
                 at(index),
@@ -375,22 +377,27 @@ fn show_notes_fits_contract_and_populated_note_envelopes_together() {
         reason: WorkSectionOmissionReason::ByteBudget,
         omitted_count: 1,
     });
-    let mut target_page = service.work_notes(&work, at(3)).unwrap();
+    let (_, mut target_page) = service
+        .work_record_window(&work, crate::storage::WorkRecordKind::Notes, None, at(3))
+        .unwrap();
     assert_eq!(target_page.total, 2);
-    target_page.items.truncate(1);
-    let target = crate::verbs::receipts::fit_show_notes(
-        verbs.render_show(&target, at(3)).unwrap(),
-        target_page,
+    target_page.rows.truncate(1);
+    let target = crate::verbs::record_windows::fit_window(
+        target,
+        &target_page,
+        |view| verbs.render_show(view, at(3)),
         "agent",
         MAX_AGENT_WORK_RESPONSE_BYTES,
     )
     .unwrap();
     let budget = receipt_bytes(&target) + 1;
-    let page = service.work_notes(&work, at(3)).unwrap();
-    let shown = crate::verbs::show::fit_show_receipt_with_notes(
+    let (_, page) = service
+        .work_record_window(&work, crate::storage::WorkRecordKind::Notes, None, at(3))
+        .unwrap();
+    let shown = crate::verbs::record_windows::fit_window(
         source,
+        &page,
         |view| verbs.render_show(view, at(3)),
-        page,
         "agent",
         budget,
     )
@@ -412,10 +419,6 @@ fn show_notes_fits_contract_and_populated_note_envelopes_together() {
             .count(),
         1
     );
-    assert!(
-        shown
-            .text()
-            .contains("(1 notes omitted by the response budget)")
-    );
+    assert!(shown.text().contains("1 omitted (1 older, 0 newer)"));
     assert_eq!(shown.value["omissions"][0]["omitted_count"], 1);
 }

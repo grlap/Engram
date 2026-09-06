@@ -266,7 +266,7 @@ fn append_restored_work_evidence_on(
     }
     let (summary, refs, gate) = match input {
         RestoredWorkEvidenceInput::Note { summary, refs } => (
-            normalize_text(summary, "note summary")?,
+            super::planning::normalize_note_text(summary, "note summary")?,
             normalize_strings(refs),
             None,
         ),
@@ -965,7 +965,7 @@ impl SqliteStore {
     ) -> Result<ObjectHash, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let summary = normalize_text(&request.summary, "evidence summary")?;
+        let summary = super::planning::normalize_note_text(&request.summary, "evidence summary")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(hash) = replay_operation::<ObjectHash>(
@@ -1033,7 +1033,7 @@ impl SqliteStore {
     ) -> Result<WorkNoteCapture, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let summary = normalize_text(&request.summary, "note summary")?;
+        let summary = super::planning::normalize_note_text(&request.summary, "note summary")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         if let Some(capture) = replay_operation::<WorkNoteCapture>(

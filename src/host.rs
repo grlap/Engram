@@ -556,6 +556,9 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
         StoreError::WorkReferenceAmbiguous { .. } => "work_reference_ambiguous",
         StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
+        StoreError::WorkShowCursorInvalid { .. } => "work_show_cursor_invalid",
+        StoreError::WorkNoteReferenceInvalid { .. } => "work_note_reference_invalid",
+        StoreError::WorkNoteTooLarge { .. } => "work_note_too_large",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
         | StoreError::NonCanonicalObject(_)

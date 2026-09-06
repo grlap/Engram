@@ -7,6 +7,7 @@ mod creation;
 mod detach;
 mod discovery;
 mod listing;
+mod record_windows;
 mod remaining_children;
 mod review;
 
@@ -156,7 +157,7 @@ fn phoenix_full_notes_keep_entire_bodies_refs_and_recorded_order_without_changin
 }
 
 #[test]
-fn phoenix_full_notes_fit_whole_prefix_and_report_exact_remainder_including_zero() {
+fn phoenix_full_notes_prioritize_newest_verdict_and_report_exact_remainder_including_zero() {
     let (_directory, verbs, _, _) = fixture();
     let work = add(&verbs, "Budget notes", None, false, 0);
     let empty = verbs.show_with_notes(&work, true, at(1)).expect("empty");
@@ -179,12 +180,14 @@ fn phoenix_full_notes_fit_whole_prefix_and_report_exact_remainder_including_zero
     let notes = full.value["notes"].as_array().expect("notes");
     assert!(!notes.is_empty() && notes.len() < bodies.len());
     assert_eq!(full.value["notes_omitted"], bodies.len() - notes.len());
-    for (entry, body) in notes.iter().zip(&bodies) {
+    assert_eq!(notes.last().unwrap()["summary"], *bodies.last().unwrap());
+    assert!(full.value["notes_window"]["after"].is_string());
+    for (entry, body) in notes.iter().zip(&bodies[bodies.len() - notes.len()..]) {
         assert_eq!(entry["summary"], *body);
     }
     assert!(
         full.text()
-            .contains(&format!("{} notes omitted", bodies.len() - notes.len()))
+            .contains(&format!("{} omitted", bodies.len() - notes.len()))
     );
     assert!(full.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
     assert!(
@@ -450,7 +453,7 @@ fn phoenix_full_notes_include_inherited_late_restored_and_reopened_native_genera
 }
 
 #[test]
-fn phoenix_full_notes_omit_an_oversized_first_note_without_skipping_to_later_notes() {
+fn phoenix_full_notes_surface_newer_verdict_before_an_oversized_older_note() {
     let (_directory, verbs, _, _) = fixture();
     let work = add(&verbs, "Oversized first note", None, false, 0);
     note(&verbs, &work, &"\\\"".repeat(5_000), 1);
@@ -458,9 +461,25 @@ fn phoenix_full_notes_omit_an_oversized_first_note_without_skipping_to_later_not
     let full = verbs
         .show_with_notes(&work, true, at(3))
         .expect("whole-note prefix");
-    assert_eq!(full.value["notes"], json!([]));
-    assert_eq!(full.value["notes_omitted"], 2);
-    assert!(full.text().contains("2 notes omitted"));
+    assert_eq!(full.value["notes"].as_array().unwrap().len(), 1);
+    assert_eq!(full.value["notes"][0]["summary"], "Later small note");
+    assert_eq!(full.value["notes_omitted"], 1);
+    let continued = verbs
+        .show_records(
+            &work,
+            &crate::verbs::ShowInput {
+                notes: true,
+                after: full.value["notes_window"]["after"]
+                    .as_str()
+                    .map(str::to_owned),
+                ..crate::verbs::ShowInput::default()
+            },
+            at(3),
+        )
+        .unwrap();
+    assert_eq!(continued.value["notes"].as_array().unwrap().len(), 1);
+    assert_eq!(continued.value["notes"][0]["body_omitted"], true);
+    assert!(continued.value["notes_window"]["after"].is_null());
     assert!(
         serde_json::to_vec_pretty(&full.value).expect("JSON").len()
             <= MAX_AGENT_WORK_RESPONSE_BYTES

@@ -6,6 +6,15 @@ use super::{
 use crate::domain::{FeedId, ProjectId, WorkCatalogReadCut};
 
 impl SqliteStore {
+    /// Shared transient cut for explicit listing and record-window readers.
+    /// Call inside the same snapshot as the corresponding projection.
+    pub(crate) fn work_read_cut(
+        &self,
+        project: &ProjectId,
+        now: DateTime<Utc>,
+    ) -> Result<WorkCatalogReadCut, StoreError> {
+        catalog_cut(self, project, now)
+    }
     /// Canonicalize filter identity with exactly the catalog's matching rules.
     pub(crate) fn normalize_catalog_filters(query: &mut WorkCatalogQuery) {
         for field in [&mut query.search, &mut query.label, &mut query.assigned_to] {

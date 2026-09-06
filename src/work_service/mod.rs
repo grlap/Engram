@@ -59,6 +59,7 @@ use crate::WorkReferenceCandidate;
 
 mod catalog;
 mod completion;
+mod continuation;
 mod focus;
 mod handoff;
 mod memories;
@@ -66,6 +67,7 @@ mod next;
 mod operations;
 mod projection;
 mod propose;
+mod record_windows;
 mod service;
 mod update;
 mod views;
@@ -76,9 +78,11 @@ mod test_support;
 pub(crate) use catalog::WorkListingPage;
 pub use operations::*;
 pub(crate) use projection::*;
+pub(crate) use record_windows::{WorkRecordRow, WorkRecordWindow};
 pub use views::*;
 
-/// Hard ceiling for every successful agent-facing work response.
+/// Ceiling for bounded agent work responses. Explicit single-note detail is
+/// the complete-body exception; note/history windows remain bounded.
 pub const MAX_AGENT_WORK_RESPONSE_BYTES: usize = 12 * 1024;
 
 const MAX_PROJECT_MEMORY_FULL_BYTES: usize = 12 * 1024;

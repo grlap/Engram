@@ -130,7 +130,8 @@ the caller must omit `--session-id` to receive a fresh process default.
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
-engram work show REF [--notes]    # full oldest-first notes only when requested
+engram work show REF [--notes | --history] [--after CURSOR]
+engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
@@ -171,13 +172,20 @@ Rules that matter:
   children or prerequisite changes need the holder. There is no separate
   approval or activation word.
 
-- `show REF --notes` returns full note bodies and references oldest first,
-  including inherited history and all native generations. The complete text
-  and JSON receipts stay within 12 KiB by returning whole notes only;
-  `notes_omitted` is the exact remainder. MCP `show` takes `notes: true`.
-  Every line of a note reference is framed as data in terminal output;
-  structured references retain their exact content.
-  Default `show` keeps its terse note summary.
+- `show REF --notes` selects newest notes and renders them chronologically
+  within a 12 KiB window. `notes[].summary` is the complete body. Follow the
+  printed `--after` command for older windows; exact counts distinguish older
+  and newer omitted rows. `--history` uses the same continuation shape.
+  A too-large body stays as an explicit locator/size/detail placeholder and
+  does not prevent traversal. Use `show REF --note LOCATOR` for complete detail
+  beyond 12 KiB. Native locators are unique hash prefixes of at least eight
+  hex digits; inherited locators are `RECORD_HASH:INDEX`, where INDEX is an
+  immutable one-based member position, never a display ordinal. These are
+  read-only exceptions to hidden canonical identity. MCP uses `notes`,
+  `history`, `after`, and `note` with the same meaning. New note bodies have a
+  64 KiB UTF-8 write limit; carry bulk content as a reference. Existing larger
+  bodies remain readable. See the
+  [window/detail contract](../../../docs/features/cli-and-mcp.md#using-engram-as-an-agent).
 - `update REF --accept "criterion"...` replaces the whole acceptance list;
   omitting it preserves the list. Empty or blank criteria are refused, and
   completed work cannot be revised. History names the revised fields.
@@ -226,8 +234,9 @@ Rules that matter:
   continuation and the broader `ls --blocked` view for blocked work. The receipt
   does not detach, cancel, or claim anything automatically.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
-  (commands you can run now). Nothing asks you to copy hashes, fences, or
-  idempotency keys; if you see one, it is a bug. The `next` build token is a
+  (commands you can run now). Mutation words never ask for hashes, fences, or
+  idempotency keys. Explicit note-detail locators are read-only exceptions.
+  The `next` build token is a
   diagnostic exception: compare it with `engram --version` after an install
   to detect a stale MCP child, never copy it into a work command. See
   [build diagnostics](../../../docs/features/cli-and-mcp.md#build-identity-and-doctor-refusals).

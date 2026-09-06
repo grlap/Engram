@@ -63,7 +63,7 @@ impl LsInput {
     }
 }
 
-fn shell_quote(value: &str) -> String {
+pub(super) fn shell_quote(value: &str) -> String {
     let mut quoted = String::from("'");
     for ch in value.chars() {
         // PowerShell recognizes these typographic delimiters as well. A

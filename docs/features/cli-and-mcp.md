@@ -51,7 +51,8 @@ already returns its session object.
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
-engram work show REF [--notes]    # full oldest-first notes only when requested
+engram work show REF [--notes | --history] [--after CURSOR]
+engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
@@ -164,16 +165,50 @@ Rules that matter:
   repeat after supersession refuses without creating another root. See
   [detached follow-ups](local-work-system.md#gates-prerequisites-supersession-and-project-memories).
 - `show REF --notes` (MCP `show { work_ref: REF, notes: true }`) returns
-  complete note bodies and references, oldest first, across restored history
-  and native execution generations. Inherited notes retain their recorded
-  generation order; subsequent notes use dense root-feed order, not asserted
-  timestamps. Only a whole-note prefix that fits the complete 12 KiB text and
-  JSON receipts is returned. `notes_omitted` is always the exact remainder,
-  including zero; an oversized first note is omitted along with later notes,
-  never truncated or skipped. Default `show` is unchanged. Full content is
-  caller-authored prose and references, not raw authority records. Every line
-  of a reference is framed as data in text; JSON retains exact reference
-  content. With no other omissions, `omissions` stays absent, never null.
+  the newest note window, rendered oldest to newest within that window.
+  Inherited generations precede native dense project-feed positions, not
+  asserted timestamps. `notes[].summary` is the complete body, never a
+  shortened preview. Text and JSON windows, including guidance and cursor,
+  fit 12 KiB. `notes_omitted` is the exact total minus shown;
+  `notes_window` states `shown`, `total`, `newer`, `older`, and `after`.
+  Follow the single `show REF --notes --after CURSOR` command for older notes.
+  `--history` (MCP `history: true`) uses the same window fields under
+  `history.window`, with records in `history.items` and exact `omitted`.
+  This explicit mode replaces ordinary show's native-change `history` and
+  separate `restored_history` with one stream: inherited notes, events and
+  completion members, then native work events. Its `history.total` counts
+  that combined stream; ordinary show's total counts only native changes.
+  Window rows carry `locator`, `kind`, `summary`, `by`, `created_at`, and
+  `body_bytes`, rather than ordinary show's compact change-row shape.
+  Consumers distinguish these shapes by the presence of `history.window`.
+  An inherited note summarized in history retains its exact original body
+  size and adds `summary_truncated: true` plus a `detail` command when
+  shortened. The detail read returns the complete note, not that summary.
+  Ordinary show advertises this history reader. Notes and history are mutually
+  exclusive; `after` requires one of them. A cursor binds item, project, kind,
+  immutable boundary/member, order and read cut. Mismatches, changed project
+  feeds, reversed clocks and crossed time boundaries refuse with
+  `work_show_cursor_invalid` and a fresh same-kind command. The cut uses the
+  listing reader's conservative boundary-millisecond policy. Tokens encode
+  readable context, are not confidential, and grant no authority.
+- Every full-note row prints a copyable `locator`. Native notes accept a unique
+  canonical hash prefix of at least eight hex digits; inherited notes use
+  `RECORD_HASH:INDEX`, where INDEX is the one-based immutable member position,
+  not a display ordinal. `show REF --note LOCATOR` (MCP `note: LOCATOR`)
+  returns the complete body and references, with `body_bytes` in UTF-8, and
+  deliberately may exceed 12 KiB. Ambiguous or wrong-item references refuse
+  with `work_note_reference_invalid` and candidate locators when available.
+  A body too large for a window is represented by `body_omitted: true`, its
+  byte size and a `detail` command instead of `summary`/`refs`; its member
+  still advances continuation, so it cannot hide older notes. Bodies and
+  reference lines are framed as data in text; JSON preserves exact content.
+  These existing canonical locators are read-navigation exceptions, not
+  execution tokens. No per-note identity is invented for inherited members.
+- Newly written note bodies are limited to 64 KiB of normalized UTF-8 text.
+  `work_note_too_large` reports actual bytes, limit and the remedy to carry
+  bulk content as a reference. Initial-note batches remain atomic. Existing
+  larger bodies remain readable through `--note`; read validation adds no
+  retroactive limit. Default terse notes retain their existing summary shape.
 - `update REF --accept "criterion"...` replaces the whole acceptance list in
   one attributed revision. Omission preserves it; empty lists and any blank
   criterion are refused. The core trims, sorts, and deduplicates criteria.
@@ -276,8 +311,9 @@ Rules that matter:
   outcome without pretending the remaining count is zero. The diagnostic
   class never contains the underlying error body, path, hash, or actor text.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
-  (commands you can run now). Nothing asks you to copy hashes, fences, or
-  idempotency keys; if you see one, it is a bug. Safe project-memory keys are
+  (commands you can run now). Mutation words never ask for hashes, fences, or
+  idempotency keys. Explicit note locators are read-only exceptions, as above.
+  Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`. JSON retains the
   complete command list; the text renderer shows at most four and prints
   `(+N more)` when it omits any.

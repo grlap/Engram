@@ -452,9 +452,18 @@ enum WorkCommand {
     Show {
         /// Short work ref or full UUID; later words default to it.
         work_ref: String,
-        /// Full notes, oldest first, with an exact omitted count if byte-bounded.
-        #[arg(long)]
+        /// Newest note window, rendered chronologically with exact omissions.
+        #[arg(long, conflicts_with_all = ["history", "note"])]
         notes: bool,
+        /// Newest history window, rendered chronologically.
+        #[arg(long, conflicts_with = "note")]
+        history: bool,
+        /// Item-bound continuation from the same note/history window.
+        #[arg(long, conflicts_with = "note")]
+        after: Option<String>,
+        /// Complete note body: HASH prefix (8+ hex), or `RECORD_HASH:INDEX`.
+        #[arg(long)]
+        note: Option<String>,
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
@@ -1075,7 +1084,22 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             },
             now,
         ),
-        WorkCommand::Show { work_ref, notes } => verbs.show_with_notes(&work_ref, notes, now),
+        WorkCommand::Show {
+            work_ref,
+            notes,
+            history,
+            after,
+            note,
+        } => verbs.show_records(
+            &work_ref,
+            &engram::verbs::ShowInput {
+                notes,
+                history,
+                after,
+                note,
+            },
+            now,
+        ),
         WorkCommand::Add {
             notes,
             title,

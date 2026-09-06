@@ -10,7 +10,7 @@ fn assert_bounded(receipt: &Receipt) {
     );
 }
 
-fn snapshot(
+pub(super) fn snapshot(
     path: &std::path::Path,
     project: &ProjectId,
     work: &str,
@@ -33,7 +33,7 @@ fn snapshot(
         .document
 }
 
-fn load(
+pub(super) fn load(
     directory: &std::path::Path,
     document: &crate::WorkGraphSnapshotDocument,
 ) -> (AgentVerbs, SqliteStore, PathBuf) {
@@ -142,28 +142,34 @@ fn phoenix_full_note_omissions_remain_absent_or_array() {
     let work = add(&verbs, "Omission shape", None, false, 0);
     let empty = verbs.show_with_notes(&work, true, at(1)).expect("empty");
     assert!(empty.value.get("omissions").is_none());
-    let store = SqliteStore::open(&path).expect("store");
-    let id = store
-        .resolve_work_ref(&project, &work)
-        .expect("work")
-        .work_id;
+    let service = LocalWorkService::new(
+        path,
+        project,
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
     for retain_other in [false, true] {
-        let mut base = verbs.show(&work, at(1)).expect("base");
+        let (mut view, page) = service
+            .work_record_window(&work, crate::storage::WorkRecordKind::Notes, None, at(1))
+            .unwrap();
         let other = json!({"section":"focus", "reason":"byte_budget", "omitted_count":2});
-        base.value["omissions"] =
-            json!([{"section":"focus", "reason":"evidence_count_limit", "omitted_count":1}]);
+        view.omissions.push(WorkSectionOmission {
+            section: WorkNextSection::Focus,
+            reason: WorkSectionOmissionReason::EvidenceCountLimit,
+            omitted_count: 1,
+        });
         if retain_other {
-            base.value["omissions"]
-                .as_array_mut()
-                .expect("array")
-                .push(other.clone());
+            view.omissions.push(WorkSectionOmission {
+                section: WorkNextSection::Focus,
+                reason: WorkSectionOmissionReason::ByteBudget,
+                omitted_count: 2,
+            });
         }
-        let page = store
-            .work_notes(&project, id, MAX_AGENT_WORK_RESPONSE_BYTES)
-            .expect("notes");
-        let full = crate::verbs::receipts::fit_show_notes(
-            base,
-            page,
+        let full = crate::verbs::record_windows::fit_window(
+            view,
+            &page,
+            |view| verbs.render_show(view, at(1)),
             "agent",
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
@@ -201,14 +207,14 @@ fn phoenix_full_child_notes_use_the_root_feed_and_refuse_cross_project_reads() {
     let connection = rusqlite::Connection::open(path).expect("inspect");
     let before = object_count(&connection);
     assert!(
-        matches!(store.work_notes(&ProjectId("different-project".into()), item.work_id, MAX_AGENT_WORK_RESPONSE_BYTES),
-        Err(StoreError::InvalidWorkProjection(message)) if message == "notes cannot cross projects")
+        matches!(store.work_record_index(&ProjectId("different-project".into()), item.work_id, crate::storage::WorkRecordKind::Notes),
+        Err(StoreError::InvalidWorkProjection(message)) if message == "record window cannot cross projects")
     );
     assert_eq!(object_count(&connection), before);
 }
 
 #[test]
-fn phoenix_inherited_notes_alone_exhaust_the_budget_before_native_notes() {
+fn phoenix_newest_native_verdict_precedes_inherited_continuation() {
     let (directory, verbs, path, project) = fixture();
     let work = add(&verbs, "Inherited prefix", None, false, 0);
     let bodies = (0..20)
@@ -226,18 +232,31 @@ fn phoenix_inherited_notes_alone_exhaust_the_budget_before_native_notes() {
     let item = store
         .resolve_work_ref(&project, &work)
         .expect("restored item");
-    let page = store
-        .work_notes(&project, item.work_id, MAX_AGENT_WORK_RESPONSE_BYTES)
-        .expect("inherited prefix");
-    assert!(page.items.len() < bodies.len());
-    assert_eq!(page.total, bodies.len());
+    let index = store
+        .work_record_index(
+            &project,
+            item.work_id,
+            crate::storage::WorkRecordKind::Notes,
+        )
+        .expect("inherited index");
+    assert_eq!(index.len(), bodies.len());
+    let inherited = restored.show_with_notes(&work, true, at(101)).unwrap();
+    assert!(inherited.value["notes"].as_array().unwrap().len() < bodies.len());
+    assert_eq!(inherited.value["notes_window"]["total"], bodies.len());
     note(&restored, &work, "A later native observation", 102);
     let full = restored
         .show_with_notes(&work, true, at(103))
         .expect("full prefix");
     let notes = full.value["notes"].as_array().expect("notes");
     assert!(!notes.is_empty() && notes.len() < bodies.len());
-    for (note, body) in notes.iter().zip(&bodies) {
+    assert_eq!(
+        notes.last().unwrap()["summary"],
+        "A later native observation"
+    );
+    for (note, body) in notes[..notes.len() - 1]
+        .iter()
+        .zip(&bodies[bodies.len() - (notes.len() - 1)..])
+    {
         assert_eq!(note["summary"], *body);
     }
     assert_eq!(full.value["notes_omitted"], bodies.len() + 1 - notes.len());
@@ -356,17 +375,30 @@ fn phoenix_tiny_note_backlog_has_bounded_decodes_and_logarithmic_fitting() {
             .expect("append distinct invocation");
     }
     crate::canonical::reset_canonical_decode_count();
-    let page = store
-        .work_notes(&project, item.work_id, MAX_AGENT_WORK_RESPONSE_BYTES)
+    let service = LocalWorkService::new(
+        path.clone(),
+        project.clone(),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let (_, page) = service
+        .work_record_window(
+            &work,
+            crate::storage::WorkRecordKind::Notes,
+            None,
+            at(2_000),
+        )
         .expect("bounded candidates");
     assert_eq!(page.total, 1_024);
-    assert!(page.items.len() <= 192);
+    assert!(page.rows.len() <= 64);
     assert!(crate::canonical::canonical_decode_count() < 600);
     crate::verbs::receipts::SHOW_NOTE_FIT_PROBES.with(|count| count.set(0));
     let full = verbs
         .show_with_notes(&work, true, at(2_000))
         .expect("bounded full notes");
-    assert!(crate::verbs::receipts::SHOW_NOTE_FIT_PROBES.with(std::cell::Cell::get) <= 10);
+    let probes = crate::verbs::receipts::SHOW_NOTE_FIT_PROBES.with(std::cell::Cell::get);
+    assert!((1..=10).contains(&probes));
     let notes = full.value["notes"].as_array().expect("notes");
     assert!(!notes.is_empty() && notes.len() < 192);
     assert_eq!(full.value["notes_omitted"], 1_024 - notes.len());
@@ -374,7 +406,9 @@ fn phoenix_tiny_note_backlog_has_bounded_decodes_and_logarithmic_fitting() {
         assert_eq!(note["summary"], "x");
         assert_eq!(
             note["created_at"],
-            json!(at(i64::try_from(index).expect("index") + 1))
+            json!(at(1_024 - i64::try_from(notes.len()).unwrap()
+                + i64::try_from(index).unwrap()
+                + 1))
         );
     }
     assert_bounded(&full);
@@ -405,13 +439,6 @@ fn phoenix_full_notes_independently_refuse_inconsistent_restored_gates() {
             103 + index,
         );
     }
-    let reader = crate::LocalWorkService::new(
-        path.clone(),
-        project,
-        "agent".into(),
-        SessionId("agent".into()),
-        None,
-    );
     let connection = rusqlite::Connection::open(path).expect("inspect");
     let raw: String = connection
         .query_row(
@@ -439,13 +466,24 @@ fn phoenix_full_notes_independently_refuse_inconsistent_restored_gates() {
         connection
             .execute_batch("RELEASE bad_gate")
             .expect("publish fixture corruption");
-        // Terse focus validates all restored evidence before fitting its tail.
-        // Exercise the full-note reader directly so this cannot pass solely
-        // because show_with_notes first invokes the terse path.
-        let error = reader
-            .work_notes(&work, at(120))
+        // Exercise the shipped member reader directly, independently of focus
+        // validation and newest-window selection (the damaged gate is older).
+        let item = store.resolve_work_ref(&project, &work).unwrap();
+        let index = store
+            .work_record_index(
+                &project,
+                item.work_id,
+                crate::storage::WorkRecordKind::Notes,
+            )
+            .unwrap();
+        let entry = index
+            .iter()
+            .find(|entry| entry.address.hash == *object.hash())
+            .unwrap();
+        let error = store
+            .work_record_content(&project, item.work_id, entry)
             .err()
-            .expect("full reader validates old gate fields independently");
+            .expect("full member reader validates old gate fields independently");
         assert!(matches!(error, StoreError::InvalidWorkProjection(message)
             if message == "inconsistent normalized gate fields"));
         assert!(restored.show(&work, at(120)).is_err());

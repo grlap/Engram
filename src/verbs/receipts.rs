@@ -115,11 +115,8 @@ pub struct Guidance {
 /// whether something is still owed.
 #[derive(Clone, Debug)]
 pub struct Receipt {
-    lines: Vec<String>,
+    pub(super) lines: Vec<String>,
     build_footer: Option<String>,
-    // Presentation-only contribution to Focus/ByteBudget. Full-note rendering
-    // replaces this section, but must retain genuine child/history omissions.
-    pub(super) compact_note_byte_omissions: usize,
     pub reminders: Vec<String>,
     pub next: Vec<String>,
     pub value: Value,
@@ -172,7 +169,6 @@ impl Receipt {
         Self {
             lines,
             build_footer: None,
-            compact_note_byte_omissions: 0,
             reminders: guidance.reminders,
             next: guidance.next,
             value,
@@ -199,7 +195,8 @@ impl Receipt {
 
     /// Shell rendering: the receipt lines, then `reminders:` and at most four
     /// `next:` commands plus an explicit omission marker. Never contains
-    /// object hashes, fences, or idempotency keys. Only `next` appends the
+    /// fences or idempotency keys. Explicit note detail prints read-only
+    /// canonical locators. Only `next` appends the
     /// compact diagnostic build token after all guidance.
     #[must_use]
     pub fn text(&self) -> String {
@@ -210,161 +207,6 @@ impl Receipt {
         }
         text
     }
-}
-
-fn prepare_show_notes(mut receipt: Receipt) -> Receipt {
-    receipt.lines.retain(|line| !line.starts_with("notes:"));
-    if let Some(omissions) = receipt
-        .value
-        .get_mut("omissions")
-        .and_then(Value::as_array_mut)
-    {
-        omissions.retain_mut(|omission| {
-            if omission["reason"] == "evidence_count_limit" {
-                return false;
-            }
-            if omission["section"] == "focus"
-                && omission["reason"] == "byte_budget"
-                && let Some(count) = omission["omitted_count"].as_u64()
-            {
-                let remaining = count.saturating_sub(receipt.compact_note_byte_omissions as u64);
-                omission["omitted_count"] = json!(remaining);
-                return remaining > 0;
-            }
-            true
-        });
-    }
-    receipt.compact_note_byte_omissions = 0;
-    if receipt
-        .value
-        .get("omissions")
-        .and_then(Value::as_array)
-        .is_some_and(Vec::is_empty)
-        && let Some(fields) = receipt.value.as_object_mut()
-    {
-        fields.remove("omissions");
-    }
-    receipt
-}
-
-/// The mandatory full-note shape, measured even when no note row can fit.
-/// Share cleanup and rendering with the final note-prefix fitter.
-pub(super) fn show_note_envelope(
-    receipt: &Receipt,
-    total: usize,
-) -> Result<Receipt, super::VerbError> {
-    let mut receipt = prepare_show_notes(receipt.clone());
-    let base_lines = receipt.lines.clone();
-    render_note_prefix(&mut receipt, &base_lines, &[], total)?;
-    Ok(receipt)
-}
-
-/// Full-note mode fits whole notes after projecting away internal identities.
-/// Its count includes inherited history and every native execution generation.
-pub(super) fn fit_show_notes(
-    receipt: Receipt,
-    page: crate::storage::WorkNotePage,
-    current_actor: &str,
-    budget: usize,
-) -> Result<Receipt, super::VerbError> {
-    let mut receipt = prepare_show_notes(receipt);
-    let base_lines = receipt.lines.clone();
-    let notes = page
-        .items
-        .into_iter()
-        .map(|note| super::show::ShowNote {
-            kind: note.kind,
-            non_holder: note
-                .actor
-                .provenance_chain
-                .iter()
-                .any(crate::domain::is_non_holder_note_marker),
-            summary: note.summary,
-            refs: note.refs,
-            by: Some(super::show::relative_actor_label(
-                &note.actor.actor_id,
-                note.actor.attribution_context(),
-                current_actor,
-            )),
-            created_at: note.recorded_at,
-        })
-        .collect::<Vec<_>>();
-    let (mut lower, mut upper) = (0, notes.len());
-    let mut visible = upper;
-    let mut best = None;
-    loop {
-        #[cfg(test)]
-        SHOW_NOTE_FIT_PROBES.with(|count| count.set(count.get() + 1));
-        render_note_prefix(&mut receipt, &base_lines, &notes[..visible], page.total)?;
-        if receipt.text().len() <= budget
-            && serde_json::to_vec_pretty(&receipt.value)?.len() <= budget
-        {
-            lower = visible;
-            best = Some(receipt.clone());
-        } else if visible == 0 {
-            return Err(StoreError::InvalidWorkProjection(
-                "show metadata exceeds the response budget".into(),
-            )
-            .into());
-        } else {
-            upper = visible - 1;
-        }
-        if lower == upper {
-            if best.is_none() && visible != 0 {
-                visible = 0;
-                continue;
-            }
-            return best.ok_or_else(|| {
-                StoreError::InvalidWorkProjection(
-                    "show metadata exceeds the response budget".into(),
-                )
-                .into()
-            });
-        }
-        visible = lower + (upper - lower).div_ceil(2);
-    }
-}
-
-fn render_note_prefix(
-    receipt: &mut Receipt,
-    base_lines: &[String],
-    notes: &[super::show::ShowNote],
-    total: usize,
-) -> Result<(), serde_json::Error> {
-    receipt.value["notes"] = serde_json::to_value(notes)?;
-    receipt.value["notes_omitted"] = json!(total - notes.len());
-    receipt.lines.clear();
-    receipt.lines.extend_from_slice(base_lines);
-    receipt
-        .lines
-        .push(format!("notes: {total} recorded (oldest first)"));
-    for note in notes {
-        receipt.lines.push(format!(
-            "  - {}{} by {} at {}:\n{}",
-            super::evidence_kind_word(note.kind),
-            if note.non_holder { " (non-holder)" } else { "" },
-            super::terminal_safe_multiline(note.by.as_deref().unwrap_or("another actor")),
-            note.created_at,
-            super::terminal_safe_multiline(&note.summary)
-                .lines()
-                .map(|line| format!("    {line}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        ));
-        for reference in &note.refs {
-            receipt.lines.push(format!(
-                "    ref: {}",
-                super::terminal_safe_multiline(reference).replace('\n', "\n         ")
-            ));
-        }
-    }
-    if total > notes.len() {
-        receipt.lines.push(format!(
-            "  ({} notes omitted by the response budget)",
-            total - notes.len()
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -404,7 +246,9 @@ impl VerbError {
         reason = "the fixed refusal-to-guidance table stays contiguous and exhaustively reviewable"
     )]
     pub fn guidance(&self) -> Guidance {
-        if let StoreError::WorkCatalogCursorInvalid { reason } = &self.error {
+        if let StoreError::WorkCatalogCursorInvalid { reason }
+        | StoreError::WorkShowCursorInvalid { reason } = &self.error
+        {
             return Guidance {
                 reminders: vec![reason.clone()],
                 next: vec![
@@ -416,6 +260,26 @@ impl VerbError {
             };
         }
         let target = self.work_ref.as_deref().unwrap_or("<ref>");
+        if let StoreError::WorkNoteReferenceInvalid {
+            reason,
+            candidates,
+            more,
+        } = &self.error
+        {
+            let target = super::record_windows::safe_reference_argument(target);
+            let mut reminders = vec![reason.clone()];
+            if *more > 0 {
+                reminders.push(format!(
+                    "{more} additional candidate locators omitted; inspect the note windows"
+                ));
+            }
+            let mut next = candidates
+                .iter()
+                .map(|locator| format!("engram work show {target} --note {locator}"))
+                .collect::<Vec<_>>();
+            next.push(format!("engram work show {target} --notes"));
+            return Guidance { reminders, next };
+        }
         let message = self.error.to_string();
         let (reminders, next): (Vec<String>, Vec<String>) = match &self.error {
             StoreError::WorkClaimHeld { expires_at, .. } => (

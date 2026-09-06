@@ -109,7 +109,8 @@ fn assert_ordinary_claim_guidance(receipt: &Receipt, work_ref: &str) {
         receipt.next,
         vec![
             format!("engram work claim {work_ref}"),
-            format!("engram work note {work_ref} \"…\"")
+            format!("engram work note {work_ref} \"…\""),
+            format!("engram work show {work_ref} --history")
         ]
     );
     let actions = receipt.value["allowed_next"]
@@ -134,7 +135,8 @@ fn assert_recovery_claim_guidance(receipt: &Receipt, work_ref: &str) {
         receipt.next,
         vec![
             format!("engram work claim {work_ref} --recover \"…\""),
-            format!("engram work note {work_ref} \"…\"")
+            format!("engram work note {work_ref} \"…\""),
+            format!("engram work show {work_ref} --history")
         ]
     );
     let actions = receipt.value["allowed_next"]

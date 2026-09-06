@@ -2,10 +2,11 @@
 //!
 //! Every word here is a thin translation of flat CLI flags or MCP arguments
 //! into existing [`LocalWorkService`] calls. The agent never supplies JSON,
-//! hashes, fences, or idempotency keys: keys are server-derived, focus is
+//! mutation hashes, fences, or idempotency keys: keys are server-derived, focus is
 //! ambient, and every receipt carries `reminders` (what is owed, in words)
 //! and `next` (commands the agent can run now) derived by fixed tables from
 //! the core's readiness strings, obligation page, and `allowed_next` tags.
+//! Explicit note-detail locators are the read-only canonical-identity exception.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -34,6 +35,7 @@ mod child_obligations;
 mod handlers;
 mod listing;
 mod receipts;
+mod record_windows;
 mod show;
 
 #[cfg(test)]
@@ -45,6 +47,7 @@ pub use handlers::{
     UpdateInput,
 };
 pub use receipts::{Guidance, Receipt, VerbError};
+pub use record_windows::ShowInput;
 
 const DEFAULT_LIMIT: u32 = 20;
 const MAX_TEXT_LINE_BYTES: usize = 96;

@@ -1,7 +1,7 @@
 use super::{
-    ChildRequirement, DateTime, LocalWorkService, MAX_AGENT_WORK_RESPONSE_BYTES,
-    MAX_CHILD_OBLIGATION_REFS, SessionId, SqliteStore, StoreError, Utc, WorkChildObligations,
-    WorkFocusView, WorkId, WorkItem, WorkLifecycle, WorkRun, work_item_summary,
+    ChildRequirement, DateTime, LocalWorkService, MAX_CHILD_OBLIGATION_REFS, SessionId,
+    SqliteStore, StoreError, Utc, WorkChildObligations, WorkFocusView, WorkId, WorkItem,
+    WorkLifecycle, WorkRun, work_item_summary,
 };
 
 impl LocalWorkService {
@@ -44,22 +44,6 @@ impl LocalWorkService {
                 .collect::<Result<Vec<_>, StoreError>>()?;
             Ok(super::WorkChildFollowupPage { items, total })
         })
-    }
-
-    pub(crate) fn work_notes(
-        &self,
-        work_ref: &str,
-        now: DateTime<Utc>,
-    ) -> Result<crate::storage::WorkNotePage, StoreError> {
-        let store = self.store_at(now)?;
-        let item = store.resolve_work_ref(&self.project_id, work_ref)?;
-        let mut page = store.work_notes(
-            &self.project_id,
-            item.work_id,
-            MAX_AGENT_WORK_RESPONSE_BYTES,
-        )?;
-        super::projection::project_full_notes(&mut page)?;
-        Ok(page)
     }
 
     /// Makes `work_ref` the session's ambient focus without inspecting it, so a
