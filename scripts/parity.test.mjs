@@ -145,7 +145,7 @@ test("Phoenix atomic initial notes and peer child proposals through CLI", () => 
   }
 });
 
-test("Phoenix full notes, acceptance reminders and terminal-parent refusal through CLI", () => {
+test("Phoenix full notes, title-independent acceptance reminders and terminal-parent refusal through CLI", () => {
   const engramHome = mkdtempSync(join(tmpdir(), "engram-parity-notes-"));
   try {
     hostSetup(engramHome);
@@ -172,6 +172,10 @@ test("Phoenix full notes, acceptance reminders and terminal-parent refusal throu
       const reminder = bounded.reminders.find((line) => line.startsWith("acceptance defaulted"));
       assert.ok(reminder && Buffer.byteLength(reminder) < 160);
       assert.doesNotMatch(reminder, /[\u0000-\u001f\u007f]/u);
+      assert.equal(reminder, "acceptance defaulted to the title being done; set --accept");
+      // Reminder independence, not terminal title safety: JSON retains the
+      // exact bounded title from the independently read core projection.
+      assert.equal(bounded.work.title, json("core", "focus", bounded.work.short_ref).status.work.title);
       assert.ok(Buffer.byteLength(JSON.stringify(bounded, null, 2)) <= 12288);
       const rendered = run([...context, ...args]);
       assert.equal(rendered.status, 0, rendered.stderr);

@@ -757,6 +757,8 @@ Note/history windows print their active byte budget and reflected read cut.
 Continuation pages carry only a ref/title header, window/family/omission
 counts, records and navigation, plus `full_detail`; outcome, acceptance,
 completion and child context remain on the first page and explicit item read.
+An exhausted continuation may emit an empty `next`; the single `full_detail`
+command still navigates back to the item without repetition in that list.
 The existing ceiling, cursor admission and canonical detail rules still apply.
 
 The `add` receipt names defaulted acceptance in both text and JSON reminders:

@@ -139,11 +139,10 @@ pub(super) fn done_refusal_value(
             cause,
             crate::WorkCompletionRecoveryCause::OpenObligation { .. }
         ) {
-        std::borrow::Cow::Owned(format!(
-            "resolve {} for {}, then retry completion",
-            code.replace('_', " "),
-            item.short_ref
-        ))
+        // Remove at most one exact ref/title citation. All other supplied
+        // core wording survives, including an unfamiliar future template.
+        let citation = format!("{} {:?}", item.short_ref, item.title);
+        std::borrow::Cow::Owned(remedy.replacen(&citation, &item.short_ref, 1))
     } else {
         std::borrow::Cow::Borrowed(remedy.as_str())
     };

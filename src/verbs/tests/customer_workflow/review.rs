@@ -75,7 +75,7 @@ pub(super) fn load(
 }
 
 #[test]
-fn phoenix_acceptance_reminder_bounds_long_root_and_child_titles_and_frames_controls() {
+fn phoenix_acceptance_reminder_is_title_independent_for_roots_and_children() {
     let (_directory, verbs, _, _) = fixture();
     let parent = add(&verbs, "Reminder parent", None, false, 0);
     for under in [None, Some(parent)] {
@@ -104,6 +104,11 @@ fn phoenix_acceptance_reminder_bounds_long_root_and_child_titles_and_frames_cont
             );
             assert!(reminder.len() < 160);
             assert!(!reminder.chars().any(char::is_control));
+            // This fixture checks the fixed reminder, not terminal title safety.
+            // The JSON title remains exactly the independently read core projection.
+            let work_ref = receipt.value["work"]["short_ref"].as_str().unwrap();
+            let core = verbs.service.inspect_work(work_ref, at(1)).unwrap();
+            assert_eq!(receipt.value["work"]["title"], core.status.work.title);
             assert_bounded(&receipt);
             assert_bounded(
                 &receipt.with_effective_session_id(&SessionId("local-process-v1-fixture".into())),

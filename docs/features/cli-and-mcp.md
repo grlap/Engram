@@ -210,6 +210,9 @@ Rules that matter:
   one `full_detail` item-read command; it does not repeat outcome, acceptance,
   completion or child-context projections. The first page keeps ordinary
   item context. Both forms fit the same 12 KiB text/JSON ceiling.
+  An exhausted continuation may have `next: []` (`next: none` in text);
+  its single `full_detail` command remains the way back to item context and
+  is deliberately not duplicated in `next`.
   `--history` (MCP `history: true`) uses the same window fields under
   `history.window`, with records in `history.items` and exact `omitted`.
   Its row `family` is `history` for events/completion, or `notes`,

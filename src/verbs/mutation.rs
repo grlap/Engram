@@ -60,6 +60,8 @@ pub(super) fn full_detail(work_ref: &str, suffix: &str) -> String {
     )
 }
 
+/// `result` must serialize as an object/map: its operation-specific fields
+/// are flattened into the common envelope rather than nested as a value.
 pub(super) fn receipt(
     view: &WorkFocusView,
     operation: &str,

@@ -2,6 +2,8 @@ use super::*;
 use crate::storage::WorkRecordKind;
 use crate::verbs::record_windows::{continuation_header, fit_window};
 
+mod followups;
+
 fn bytes(value: &Value) -> usize {
     serde_json::to_vec_pretty(value).unwrap().len()
 }

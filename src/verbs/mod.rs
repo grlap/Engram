@@ -278,8 +278,11 @@ fn section_word(section: WorkNextSection) -> &'static str {
 fn held_suffix(holder: Holder<'_>, now: DateTime<Utc>) -> String {
     match holder {
         Holder::You(expires_at) => format!(" (held by you until {})", clock(expires_at, now)),
-        Holder::Other(session, expires_at) => {
-            format!(" (held by {} until {})", session.0, clock(expires_at, now))
+        Holder::Other(_, expires_at) => {
+            format!(
+                " (held by another session until {})",
+                clock(expires_at, now)
+            )
         }
         Holder::Nobody => String::new(),
     }
@@ -294,7 +297,9 @@ fn clock(at: DateTime<Utc>, now: DateTime<Utc>) -> String {
 }
 
 fn short(text: &str) -> String {
-    short_with_limit(text, MAX_TEXT_LINE_BYTES)
+    // Escape before bounding: a shortened human line must not retain a raw
+    // control sequence. Structured title projections keep their source bytes.
+    short_with_limit(&terminal_safe_line(text), MAX_TEXT_LINE_BYTES)
 }
 
 fn short_ref_for_work_id(work_id: WorkId) -> String {

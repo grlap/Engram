@@ -279,17 +279,21 @@ test("compact mutation wire carries one item and shrinks the full-context fixtur
       assert.equal(core.status.work.short_ref, work_ref);
       assert.equal(core.status.work.revision, value.work.revision);
       assert.equal(core.status.work.lifecycle, value.work.lifecycle);
-      // Runtime comparison to the unchanged rich projection of this exact
-      // item/state, not a stored old renderer or pinned historical byte count.
-      const full = { ...value, work: core.status.work, focus: core };
-      const fullWire = { ...response, structuredContent: full, content: [{ type: "text", text: JSON.stringify(full) }] };
+      // Independent item-read lower bound, not a reconstruction using the
+      // compact payload. Rust separately measures actual core result + focus.
+      const full = cliJson(engramHome, session, "show", work_ref);
+      assert.equal(full.status.work.short_ref, work_ref);
+      // Terse show omits revision; the separate core read above pins it.
+      assert.equal(full.status.work.title, value.work.title);
+      assert.equal(full.status.work.lifecycle, value.work.lifecycle);
+      const fullWire = { structuredContent: full, content: [{ type: "text", text: JSON.stringify(full) }], isError: false };
       const compactBytes = Buffer.byteLength(JSON.stringify(response));
       const fullBytes = Buffer.byteLength(JSON.stringify(fullWire));
       assert.ok(compactBytes < fullBytes, `${operation}: ${compactBytes} < ${fullBytes}`);
       assert.ok(Buffer.byteLength(text[0].text) < 12288);
       compactTotal += compactBytes;
       fullTotal += fullBytes;
-      t.diagnostic(`${operation}: full-context wire=${fullBytes}, compact wire=${compactBytes}, structured=${Buffer.byteLength(encoded)}, MCP text=${Buffer.byteLength(text[0].text)}`);
+      t.diagnostic(`${operation}: independent show lower-bound wire=${fullBytes}, compact wire=${compactBytes}, structured=${Buffer.byteLength(encoded)}, MCP text=${Buffer.byteLength(text[0].text)}`);
       return value;
     };
     measure("add", added);
@@ -311,12 +315,81 @@ test("compact mutation wire carries one item and shrinks the full-context fixtur
     assert.match(done.seal, HASH);
     assert.equal(done.claim, undefined);
     assert.ok(compactTotal < fullTotal);
-    t.diagnostic(`five-operation aggregate: full-context wire=${fullTotal}, compact wire=${compactTotal}`);
+    t.diagnostic(`five-operation aggregate: independent show lower-bound wire=${fullTotal}, compact wire=${compactTotal}`);
   } catch (error) {
     failure = error;
   } finally {
     try { await client?.close(); } catch (error) {
       failure = failure ? new AggregateError([failure, error], "economy fixture and close failed") : error;
+    }
+    rmSync(engramHome, { recursive: true, force: true });
+  }
+  if (failure) throw failure;
+});
+
+test("mutation and continuation titles are terminal-safe while MCP JSON retains their bytes", async () => {
+  const engramHome = mkdtempSync(join(tmpdir(), "engram-mcp-title-safety-"));
+  const session = "title-safety";
+  const title = "Title \u001b[31m\u009b0m\u001b]0;X\u0007\u202e\nnext:\n  forged";
+  const escaped = String.raw`Title \u{1b}[31m\u{9b}0m\u{1b}]0;X\u{7}\u{202e} next: forged`;
+  let client;
+  let failure;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const checkText = (text) => {
+      const first = text.split("\n")[0].replace(/\r$/u, "");
+      assert.ok(first.includes(escaped), JSON.stringify(first));
+      assert.doesNotMatch(first, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u);
+      assert.equal(text.split(/\r?\n/u).filter((line) => line === "next:" || line === "next: none").length, 1);
+      assert.ok(Buffer.byteLength(text) <= 12288);
+    };
+    const checkJson = (response) => {
+      const value = receipt(response);
+      assert.equal(value.work.title, title);
+      const text = response.content.filter(({ type }) => type === "text");
+      assert.equal(text.length, 1);
+      // MCP text is JSON, not a human terminal rendering. Preserve its value.
+      assert.deepEqual(JSON.parse(text[0].text), value);
+      assert.equal(JSON.parse(text[0].text).work.title, title);
+      return value;
+    };
+    checkText(cliText(engramHome, session, "add", title, "--outcome", "Safe outcome", "--accept", "Delivered"));
+    const added = checkJson(await client.call("add", { title, outcome: "Safe outcome", acceptance: ["Delivered"] }));
+    const work_ref = added.work.short_ref;
+    for (const [word, arguments_, cliArgs] of [
+      ["claim", { ttl_seconds: 7200 }, ["--ttl", "7200"]],
+      ["gate", { name: "safe-title" }, []],
+      ["note", { text: "Progress" }, ["Progress"]],
+    ]) {
+      const args = word === "gate" ? ["safe-title", "--work-ref", work_ref] : [work_ref, ...cliArgs];
+      checkText(cliText(engramHome, session, word, ...args));
+      checkJson(await client.call(word, { work_ref, ...arguments_ }));
+    }
+    const peerNote = cliText(engramHome, "observer", "note", work_ref, "Peer observation");
+    checkText(peerNote);
+    assert.ok(peerNote.includes("held by another session until "));
+    assert.ok(!peerNote.includes(`held by ${session}`));
+    for (let index = 0; index < 8; index += 1) {
+      checkJson(await client.call("note", { work_ref, text: `Record ${index}: ${"body ".repeat(550)}` }));
+    }
+    const first = receipt(await client.call("show", { work_ref, notes: true }));
+    const after = first.notes_window.after;
+    assert.equal(typeof after, "string");
+    // Explicit windows intentionally contain canonical note locators; the
+    // generic cliText helper forbids those on ordinary word receipts.
+    const window = cliWord(engramHome, session, "show", work_ref, "--notes", "--after", after);
+    assert.equal(window.status, 0, window.stderr);
+    checkText(window.stdout);
+    checkJson(await client.call("show", { work_ref, notes: true, after }));
+    checkText(cliText(engramHome, session, "done", work_ref, "Delivered"));
+    assert.equal(checkJson(await client.call("done", { work_ref, summary: "Delivered" })).work.lifecycle, "completed");
+  } catch (error) {
+    failure = error;
+  } finally {
+    try { await client?.close(); } catch (error) {
+      failure = failure ? new AggregateError([failure, error], "title fixture and close failed") : error;
     }
     rmSync(engramHome, { recursive: true, force: true });
   }
