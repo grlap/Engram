@@ -355,6 +355,7 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
                 UpdateInput {
                     work_ref: Some(work.into()),
                     action: UpdateAction::Revise {
+                        clear_external: false,
                         external: None,
                         title: None,
                         outcome: None,

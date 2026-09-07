@@ -109,6 +109,8 @@ impl LocalWorkService {
                 && note.actor.session_id.as_ref() == Some(&self.session_id)
             {
                 "you"
+            } else if note.actor.actor_id == self.actor_id {
+                "you (another session)"
             } else {
                 "another session"
             }

@@ -4,21 +4,21 @@ use super::{
     MAX_FOCUS_HISTORY, MAX_FOCUS_MEMORIES, MAX_FOCUS_RELATIONS, Mutex, MutexGuard, OnceLock,
     POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE, POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE,
     PROCESS_DEFAULT_WORK_SESSION_NAMESPACE, PathBuf, ProjectId, ProvenanceLink, ProvenanceRelation,
-    RestoredHistoryEntry, RestoredHistoryView, Serialize, SessionId, SqliteStore, StoreError, Utc,
-    WorkActorDefaultSource, WorkAttributionDefaults, WorkBlockerSummary, WorkChange,
-    WorkChangeProjection, WorkClaim, WorkClaimState, WorkCoreOperationKey, WorkDerivedKey,
-    WorkFocusView, WorkGraphSnapshotDestinationKind, WorkGraphSnapshotExport,
-    WorkGraphSnapshotLoadResult, WorkGuidance, WorkHistoryView, WorkId, WorkItem, WorkNextSection,
-    WorkObligationState, WorkPlanningAuthority, WorkProtocolBasis, WorkProtocolIntent,
-    WorkSectionOmission, WorkSectionOmissionReason, agent_work_session, allowed_next,
-    bounded_prerequisite_summaries, child_lifecycle_is_unfinished, child_lifecycle_priority,
-    compact_text, count_omission, ensure_agent_response_budget, fit_focus_response,
-    normalize_actor_context, owned_control_work_binding, prioritized_focus_evidence,
-    project_work_event, ready_work_summary, required_child_waiver_candidate,
-    restored_work_evidence_summary, validate_process_default_work_session, work_evidence_kind_word,
-    work_evidence_summary, work_handoff_summary, work_item_summary, work_lifecycle_word,
-    work_memory_index, work_obligation_page_from_records, work_observation_summary,
-    work_run_summary,
+    REJECT_PROTOCOL_OPERATION, RestoredHistoryEntry, RestoredHistoryView, Serialize, SessionId,
+    SqliteStore, StoreError, Utc, WorkActorDefaultSource, WorkAttributionDefaults,
+    WorkBlockerSummary, WorkChange, WorkChangeProjection, WorkClaim, WorkClaimState,
+    WorkCoreOperationKey, WorkDerivedKey, WorkFocusView, WorkGraphSnapshotDestinationKind,
+    WorkGraphSnapshotExport, WorkGraphSnapshotLoadResult, WorkGuidance, WorkHistoryView, WorkId,
+    WorkItem, WorkNextSection, WorkObligationState, WorkPlanningAuthority, WorkProtocolBasis,
+    WorkProtocolIntent, WorkSectionOmission, WorkSectionOmissionReason, agent_work_session,
+    allowed_next, bounded_prerequisite_summaries, child_lifecycle_is_unfinished,
+    child_lifecycle_priority, compact_text, count_omission, ensure_agent_response_budget,
+    fit_focus_response, normalize_actor_context, owned_control_work_binding,
+    prioritized_focus_evidence, project_work_event, ready_work_summary,
+    required_child_waiver_candidate, restored_work_evidence_summary,
+    validate_process_default_work_session, work_evidence_kind_word, work_evidence_summary,
+    work_handoff_summary, work_item_summary, work_lifecycle_word, work_memory_index,
+    work_obligation_page_from_records, work_observation_summary, work_run_summary,
 };
 
 /// Only safe agent detail requests full contract text. Core/list projections
@@ -256,6 +256,9 @@ impl LocalWorkService {
         let intent = CanonicalObject::freeze(intent)?;
         if protocol_operation == crate::storage::DECOMPOSE_PROTOCOL_OPERATION {
             return self.decomposition_idempotency_key(basis, intent.hash());
+        }
+        if protocol_operation == REJECT_PROTOCOL_OPERATION {
+            return self.rejection_idempotency_key(basis, intent.hash());
         }
         let basis_object = CanonicalObject::freeze(&basis.retry_stable())?;
         let object = CanonicalObject::freeze(&WorkDerivedKey {

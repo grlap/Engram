@@ -116,6 +116,8 @@ pub enum UpdateAction {
     Revise {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         external: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        clear_external: bool,
         title: Option<String>,
         outcome: Option<String>,
         /// Replace the whole acceptance list; omission leaves it unchanged.
@@ -1008,6 +1010,7 @@ impl AgentVerbs {
             UpdateAction::Revise {
                 title: new_title,
                 external,
+                clear_external,
                 outcome,
                 acceptance,
                 assignee,
@@ -1021,6 +1024,7 @@ impl AgentVerbs {
                 let remove_labels = trimmed(&unlabels);
                 let patch = WorkRevisionPatch {
                     external_ref: external,
+                    clear_external,
                     title: nonempty(new_title),
                     outcome: nonempty(outcome),
                     acceptance,
@@ -1035,7 +1039,7 @@ impl AgentVerbs {
                     clear_deferral: false,
                 };
                 let mut fields = Vec::new();
-                if patch.external_ref.is_some() {
+                if patch.external_ref.is_some() || patch.clear_external {
                     fields.push("external reference");
                 }
                 if patch.title.is_some() {

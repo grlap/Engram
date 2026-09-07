@@ -1173,6 +1173,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         WorkCommand::Update(args) => {
             let WorkUpdateArgs {
                 external,
+                clear_external,
                 work_ref,
                 release,
                 reason,
@@ -1199,6 +1200,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 bail!("--reason is only valid with --release, --waive, or --supersede-with");
             }
             let revise = external.is_some()
+                || clear_external
                 || assignee.is_some()
                 || priority.is_some()
                 || defer.is_some()
@@ -1221,7 +1223,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1261,6 +1263,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                     .map_err(|message| anyhow::anyhow!("invalid --defer: {message}"))?;
                 UpdateAction::Revise {
                     external,
+                    clear_external,
                     title,
                     outcome,
                     acceptance,
@@ -1624,6 +1627,9 @@ struct WorkUpdateArgs {
     /// Replace the item's opaque external planning reference.
     #[arg(long, value_name = "REF")]
     external: Option<String>,
+    /// Remove the external planning reference through an audited revision.
+    #[arg(long)]
+    clear_external: bool,
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
     /// Release your claim.

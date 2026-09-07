@@ -101,6 +101,7 @@ fn record_windows_traverse_every_native_and_inherited_member_without_mutating_th
                 UpdateInput {
                     work_ref: Some(work.clone()),
                     action: UpdateAction::Revise {
+                        clear_external: false,
                         external: None,
                         title: Some(format!("History revision {index}")),
                         outcome: None,

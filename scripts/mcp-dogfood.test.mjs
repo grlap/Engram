@@ -165,25 +165,63 @@ class McpClient {
   async close() {
     const started = performance.now();
     if (!this.child.stdin.destroyed) this.child.stdin.end();
-    let timer;
-    try {
-      const { code, signal } = await Promise.race([
-        this.closed,
-        new Promise((_, reject) => {
-          timer = setTimeout(() => {
-            const diagnostic = `exitCode=${this.child.exitCode} signalCode=${this.child.signalCode} elapsed=${(performance.now() - started).toFixed(1)}ms`;
-            this.child.kill();
-            reject(new Error(`MCP server did not close (${diagnostic}): ${this.stderr}`));
-          }, 5000);
-        }),
-      ]);
-      assert.equal(signal, null, `MCP server terminated by ${signal}`);
-      assert.equal(code, 0, this.stderr);
-    } finally {
-      clearTimeout(timer);
+    const waitForClose = async (milliseconds) => {
+      let timer;
+      try {
+        return await Promise.race([
+          this.closed,
+          new Promise(resolvePromise => { timer = setTimeout(resolvePromise, milliseconds); }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    // Locked rmcp 3.1.4 may spend 5 s draining responses after stdin EOF.
+    // A watchdog at that bound races legitimate drain completion; leave headroom for
+    // store close and runtime shutdown under host I/O contention.
+    const closed = await waitForClose(10000);
+    if (!closed) {
+      // The watchdog remains a failure, even if diagnostic observation
+      // later sees a clean exit. Never convert this window into a passing retry.
+      const exceededAt = performance.now();
+      const diagnostic = `pid=${this.child.pid} exitCode=${this.child.exitCode} signalCode=${this.child.signalCode} elapsed=${(exceededAt - started).toFixed(1)}ms stdinFinished=${this.child.stdin.writableFinished} stdinDestroyed=${this.child.stdin.destroyed} pending=${this.pending.size}`;
+      const sampledAt = performance.now();
+      const host = process.platform === "win32"
+        ? spawnSync("pwsh", ["-NoProfile", "-Command", "Get-Process -Name engram,cargo,rustc,MsMpEng -ErrorAction SilentlyContinue | Select-Object ProcessName,Id,CPU,WorkingSet64 | ConvertTo-Json -Compress"], { encoding: "utf8", timeout: 2000, maxBuffer: 16384, windowsHide: true })
+        : spawnSync("ps", ["-eo", "pid,comm,time,rss"], { encoding: "utf8", timeout: 2000, maxBuffer: 16384 });
+      const hostText = process.platform === "win32" ? host.stdout : host.stdout?.split("\n").filter(line => /engram|cargo|rustc/u.test(line)).join("\n");
+      const sample = `sampleMs=${(performance.now() - sampledAt).toFixed(1)} status=${host.status} processes=${hostText?.trim()} error=${host.error?.message ?? host.stderr?.trim() ?? ""}`;
+      const eventual = await waitForClose(Math.max(0, 15000 - (performance.now() - exceededAt)));
+      const observed = `observedElapsed=${(performance.now() - started).toFixed(1)}ms eventual=${JSON.stringify(eventual ?? null)}`;
+      if (!eventual) {
+        this.child.kill();
+        await waitForClose(1000);
+      }
+      throw new Error(`MCP server did not close (${diagnostic}); ${observed}; ${sample}; stderr=${this.stderr}`);
     }
+    assert.equal(closed.signal, null, `MCP server terminated by ${closed.signal}`);
+    assert.equal(closed.code, 0, this.stderr);
   }
 }
+
+test("MCP close watchdog leaves room beyond the rmcp drain bound", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let ended = 0;
+  const client = {
+    child: { stdin: { destroyed: false, end() { ended++; } } },
+    closed: new Promise(resolvePromise => {
+      setTimeout(() => resolvePromise({ code: 0, signal: null }), 6000);
+    }),
+    pending: new Map(),
+    stderr: "",
+  };
+  const checked = assert.doesNotReject(McpClient.prototype.close.call(client));
+  t.mock.timers.tick(5001);
+  await Promise.resolve();
+  t.mock.timers.tick(999);
+  await checked;
+  assert.equal(ended, 1);
+});
 
 function structured(result) {
   assert.equal(result.isError ?? false, false, JSON.stringify(result));
@@ -629,6 +667,27 @@ test("required child rejection and acceptance assertion agree through CLI and MC
       const shown = receipt(await client.call("show", { work_ref: child }));
       assert.equal(shown.status.work.lifecycle, "cancelled");
       assert.deepEqual(shown, cliJson(engramHome, session, "show", child));
+      const history = receipt(await client.call("show", { work_ref: child, history: true }));
+      const parentHistory = receipt(await client.call("show", { work_ref: parent, history: true }));
+      // Discard the original response and retry from new processes with the
+      // same session and intent. Neither atomic effect may be appended twice.
+      // Each surface retains its original source-skill attribution, which
+      // participates in canonical intent. Cross-surface attribution differs.
+      if (surface === "cli") {
+        const shellRetry = cliJson(engramHome, session, "update", child, "--reject", "Evidence disproves finding");
+        assert.deepEqual(shellRetry.receipt.result, rejected.receipt.result);
+      }
+      await client.close();
+      client = new McpClient(engramHome, session);
+      await client.initialize();
+      if (surface === "mcp") {
+        const mcpRetry = receipt(await client.call("update", { work_ref: child, action: "reject", reason: "Evidence disproves finding" }));
+        assert.deepEqual(mcpRetry.receipt.result, rejected.receipt.result);
+      }
+      assertRecordParity(receipt(await client.call("show", { work_ref: child, history: true })), history);
+      assertRecordParity(receipt(await client.call("show", { work_ref: parent, history: true })), parentHistory);
+      const changedIntent = await client.call("update", { work_ref: child, action: "reject", reason: "Different rejection intent" });
+      structuredError(changedIntent, "work_reject_refused");
     }
     const optional = cliJson(engramHome, session, "add", "Optional rejection refused", "--under", parent, "--optional").work.short_ref;
     const refused = await client.call("update", { work_ref: optional, action: "reject", reason: "not a required barrier" });
@@ -703,7 +762,7 @@ test("status resume recovers both roles across CLI and MCP process replacement w
         const resumed = receipt(await client.call("next"));
         const row = resumed.assigned.find(row => row.ref === reference);
         assert.deepEqual(row.current_status, shellRow.current_status);
-        assert.equal(row.current_status.by, replacement ? "another session" : "you");
+        assert.equal(row.current_status.by, replacement ? "you (another session)" : "you");
         assert.ok(Number.isFinite(Date.parse(row.current_status.recorded_at)));
         const text = cli(actor, session, "next");
         assert.equal(text.status, 0, text.stderr);
@@ -732,6 +791,113 @@ test("status resume recovers both roles across CLI and MCP process replacement w
     assert.equal(notes.filter(row => row.kind === "status").length, 2);
     assert.ok(json(coordinator, "coordinator-new", "ls", "--search", "planner:resolved-review").items.some(row => row.ref === x));
     assert.equal(json(coordinator, "coordinator-new", "show", x).external_ref, "planner:resolved-review");
+    const beforeClear = receipt(await client.call("show", { work_ref: x }));
+    const wrongAction = await client.call("update", { work_ref: x, action: "cancel", clear_external: true, reason: "must not cancel" });
+    const wrongActionError = structuredError(wrongAction, "invalid_argument");
+    assert.equal(wrongActionError.details.field, "clear_external");
+    const mixedAction = cli(coordinator, "coordinator-new", "update", x, "--clear-external", "--release");
+    assert.notEqual(mixedAction.status, 0);
+    assert.match(mixedAction.stderr, /exactly one action/);
+    assert.deepEqual(receipt(await client.call("show", { work_ref: x })), beforeClear);
+    receipt(await client.call("update", { work_ref: x, action: "revise", clear_external: true }));
+    const cleared = json(coordinator, "coordinator-new", "show", x);
+    assert.equal(cleared.external_ref, undefined);
+    assert.deepEqual(cleared.status.work.acceptance, beforeClear.status.work.acceptance);
+    const clearHistory = receipt(await client.call("show", { work_ref: x, history: true }));
+    assert.match(JSON.stringify(clearHistory.history), /external reference/);
+    assert.equal(json(coordinator, "coordinator-new", "ls", "--search", "planner:resolved-review").total, 0);
+    assert.equal(receipt(await client.call("next")).assigned.find(row => row.ref === x).external_ref, undefined);
+    json(coordinator, "coordinator-new", "update", x, "--external", "planner:clear-again");
+    json(coordinator, "coordinator-new", "update", x, "--clear-external");
+    assert.equal(receipt(await client.call("show", { work_ref: x })).external_ref, undefined);
+    const contradictory = await client.call("update", { work_ref: x, action: "revise", external: "planner:conflict", clear_external: true });
+    assert.equal(contradictory.isError, true);
+    assert.match(JSON.stringify(contradictory), /cannot set and clear/);
+    const blank = cli(coordinator, "coordinator-new", "update", x, "--external", "  ");
+    assert.notEqual(blank.status, 0);
+    assert.equal(receipt(await client.call("show", { work_ref: x })).external_ref, undefined);
+  } finally {
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
+  }
+});
+
+test("hygiene correction pending rejection gives conditional recovery on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-pending-reject-", t);
+  const session = "reject-reader";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const parent = cliJson(engramHome, session, "add", "Parent").work.short_ref;
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    for (const surface of ["cli", "mcp"]) {
+      for (const drift of ["child", "claim"]) {
+        const child = cliJson(engramHome, session, "add", `Pending ${surface} ${drift}`, "--under", parent).work.short_ref;
+        cliJson(engramHome, "peer-holder", "claim", child);
+        // Account for the holder's contribution so the later release is admitted.
+        cliJson(engramHome, "peer-holder", "note", child, "Peer inspection is complete");
+        const args = { work_ref: child, action: "reject", reason: "Evidence refutes finding" };
+        if (surface === "cli") {
+          assert.notEqual(cliWord(engramHome, session, "update", child, "--reject", args.reason).status, 0);
+        } else {
+          assert.equal((await client.call("update", args)).isError, true);
+        }
+        const originalChild = receipt(await client.call("show", { work_ref: child })).status.work;
+        if (drift === "child") {
+          cliJson(engramHome, "peer-holder", "update", child, "--title", `Revised pending ${surface}`);
+        } else {
+          cliJson(engramHome, "peer-holder", "update", child, "--release");
+        }
+        const before = receipt(await client.call("show", { work_ref: child }));
+        if (drift === "claim") {
+          assert.ok(originalChild);
+          assert.deepEqual(before.status.work, originalChild);
+        }
+        let error;
+        if (surface === "cli") {
+          const text = cliWord(engramHome, session, "update", child, "--reject", args.reason);
+          assert.notEqual(text.status, 0);
+          if (drift === "child") {
+            assert.ok(text.stderr.includes(`update ${child} --cancel`));
+            assert.ok(text.stderr.includes(`update ${parent} --waive ${child}`));
+          } else {
+            assert.match(text.stderr, /recorded claim or execution basis changed; the child is unchanged/);
+            assert.doesNotMatch(text.stderr, /--cancel|--waive/);
+          }
+          assert.doesNotMatch(text.stderr, /its recorded rejection|auto:|idempotency/);
+          const json = cliWord(engramHome, session, "update", child, "--reject", args.reason, "--json");
+          assert.notEqual(json.status, 0);
+          error = JSON.parse(json.stderr).error;
+        } else {
+          error = structuredError(await client.call("update", args), "work_reject_refused");
+        }
+        assert.equal(error.code, "work_reject_refused");
+        if (drift === "child") {
+          assert.equal(error.details.reason, "the child changed since the original rejection attempt");
+          assert.ok(error.details.remedy.includes(`update ${child} --cancel`));
+          assert.ok(error.details.remedy.includes(`update ${parent} --waive ${child}`));
+          assert.ok(error.details.remedy.includes("if"));
+        } else {
+          assert.equal(error.details.reason, "the recorded claim or execution basis changed; the child is unchanged");
+          assert.match(error.details.remedy, /different reason text or an explicit key/);
+          assert.doesNotMatch(error.details.remedy, /--cancel|--waive/);
+        }
+        assert.doesNotMatch(error.message, /its recorded rejection|auto:|idempotency/);
+        assert.deepEqual(error.next, [`engram work show ${child}`]);
+        assert.deepEqual(receipt(await client.call("show", { work_ref: child })), before);
+        if (drift === "claim") {
+          const reason = "Reassessed evidence refutes finding";
+          const fresh = surface === "cli"
+            ? cliJson(engramHome, session, "update", child, "--reject", reason)
+            : receipt(await client.call("update", { ...args, reason }));
+          assert.equal(fresh.receipt.result.required_child_waived, true);
+        }
+      }
+    }
   } finally {
     try {
       if (client) await client.close();

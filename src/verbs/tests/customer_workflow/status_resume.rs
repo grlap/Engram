@@ -2,6 +2,7 @@ use super::*;
 
 mod corrections;
 mod expiry;
+mod hygiene;
 
 #[test]
 fn status_resume_external_reference_is_audited_and_searchable() {
@@ -202,7 +203,7 @@ fn status_resume_both_roles_survive_session_replacement_without_authority() {
                 assert_eq!(
                     row["current_status"]["by"],
                     if replacement {
-                        "another session"
+                        "you (another session)"
                     } else {
                         "you"
                     }
@@ -371,7 +372,7 @@ fn status_resume_snapshot_roundtrips_linkage_and_status_without_authority() {
         shown.value["current_status"]["body_or_first_line"],
         "Await restored review"
     );
-    assert_eq!(shown.value["current_status"]["by"], "another session");
+    assert_eq!(shown.value["current_status"]["by"], "you (another session)");
     let window = reader
         .show_records(
             &reference,

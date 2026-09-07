@@ -1,6 +1,8 @@
 use super::*;
 use crate::domain::AppendRestoredWorkGateRequest;
 
+mod reject_retry;
+
 impl LocalWorkService {
     /// Applies one typed update to ambient focused work.
     ///
@@ -464,6 +466,13 @@ impl LocalWorkService {
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let intent = self.protocol_intent(&input);
         let (operation, core_operation, raw_key) = update_metadata(&input);
+        let protocol_operation = if matches!(&input, WorkUpdateInput::Reject { .. }) {
+            REJECT_PROTOCOL_OPERATION.to_owned()
+        } else {
+            format!("work_update:{operation}")
+        };
+        let auto_rejection =
+            raw_key.trim().is_empty() && protocol_operation == REJECT_PROTOCOL_OPERATION;
         if raw_key.is_empty()
             && let WorkUpdateInput::Claim {
                 ttl_seconds,
@@ -503,25 +512,61 @@ impl LocalWorkService {
                 now,
             );
         }
-        let protocol_operation = format!("work_update:{operation}");
         let raw_key =
             self.effective_idempotency_key(raw_key, &protocol_operation, &basis, &intent, now)?;
-        let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
-            project_id: &self.project_id,
-            session_id: &self.session_id,
-            operation: &protocol_operation,
-            idempotency_key: &raw_key,
-            intent: &intent,
-            basis: &basis,
-            now,
-        })?;
+        let attempt = store
+            .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
+                project_id: &self.project_id,
+                session_id: &self.session_id,
+                operation: &protocol_operation,
+                idempotency_key: &raw_key,
+                intent: &intent,
+                basis: &basis,
+                now,
+            })
+            .map_err(|error| {
+                // The derived key embeds the request's canonical intent hash,
+                // so a begin-time intent conflict has no ordinary retry path.
+                // Retain a bounded refusal for inconsistent stored request
+                // identity; this is defense in depth, not concurrent recovery.
+                if auto_rejection
+                    && matches!(error, StoreError::WorkOperationIdempotencyConflict { .. })
+                {
+                    reject_retry::refusal(
+                        &store,
+                        &basis,
+                        "the original rejection intent could not be recovered",
+                    )
+                } else {
+                    error
+                }
+            })?;
+        let scoped_key = self.core_operation_key(&protocol_operation, &raw_key, core_operation)?;
+        let core_receipt = if auto_rejection {
+            store.work_operation_result_value(core_operation, &scoped_key)?
+        } else {
+            None
+        };
+        if auto_rejection {
+            if let Some(receipt) = core_receipt.as_ref() {
+                reject_retry::guard_committed(&store, &basis, receipt)?;
+            } else if attempt.result.is_some() {
+                return Err(StoreError::InvalidWorkProjection(
+                    "completed rejection attempt has no committed core result".into(),
+                ));
+            }
+        }
         if let Some(result) = attempt.result {
             return serde_json::from_value(result).map_err(StoreError::from);
         }
+        let core_receipt = if auto_rejection {
+            core_receipt
+        } else {
+            store.work_operation_result_value(core_operation, &scoped_key)?
+        };
         let basis_matches =
             retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
-        let scoped_key = self.core_operation_key(&protocol_operation, &raw_key, core_operation)?;
-        if let Some(receipt) = store.work_operation_result_value(core_operation, &scoped_key)? {
+        if let Some(receipt) = core_receipt {
             let durable_basis: WorkProtocolBasis =
                 serde_json::from_value(attempt.basis.ok_or_else(|| {
                     StoreError::InvalidWorkProjection(
@@ -552,7 +597,26 @@ impl LocalWorkService {
             )?;
             return Ok(result);
         }
-        ensure_protocol_basis(basis_matches, &protocol_operation, &raw_key, false)?;
+        if let Err(error) =
+            ensure_protocol_basis(basis_matches, &protocol_operation, &raw_key, false)
+        {
+            if auto_rejection
+                && matches!(error, StoreError::WorkOperationIdempotencyConflict { .. })
+            {
+                let recorded_basis: WorkProtocolBasis =
+                    serde_json::from_value(attempt.basis.ok_or_else(|| {
+                        StoreError::InvalidWorkProjection(
+                            "pending rejection has no durable attempt basis".into(),
+                        )
+                    })?)?;
+                return Err(reject_retry::pending_refusal(
+                    &store,
+                    &basis,
+                    &recorded_basis,
+                ));
+            }
+            return Err(error);
+        }
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("update attempt has no bound focused work".into())
         })?;

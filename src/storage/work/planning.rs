@@ -699,7 +699,13 @@ impl SqliteStore {
                 "priority must be an integer from 0 through 4".into(),
             ));
         }
+        if request.patch.clear_external && request.patch.external_ref.is_some() {
+            return Err(StoreError::InvalidWork(
+                "cannot set and clear the external reference together".into(),
+            ));
+        }
         let changed = request.patch.external_ref.is_some()
+            || request.patch.clear_external
             || request.patch.title.is_some()
             || request.patch.outcome.is_some()
             || request.patch.acceptance.is_some()
@@ -747,6 +753,9 @@ impl SqliteStore {
         if let Some(external) = request.patch.external_ref.as_deref() {
             item.external_ref = crate::domain::normalize_external_reference(Some(external))
                 .map_err(StoreError::InvalidWork)?;
+        }
+        if request.patch.clear_external {
+            item.external_ref = None;
         }
         if let Some(outcome) = request.patch.outcome.as_deref() {
             item.outcome = normalize_text(outcome, "outcome")?;

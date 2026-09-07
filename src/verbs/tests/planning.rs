@@ -2,6 +2,7 @@ use super::*;
 
 fn revise(acceptance: Option<Vec<String>>, title: Option<&str>) -> UpdateAction {
     UpdateAction::Revise {
+        clear_external: false,
         external: None,
         acceptance,
         title: title.map(str::to_owned),
@@ -88,6 +89,7 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
                 UpdateInput {
                     work_ref: Some(work_ref.clone()),
                     action: UpdateAction::Revise {
+                        clear_external: false,
                         external: None,
                         title: Some("After".into()),
                         outcome: Some("Changed outcome".into()),

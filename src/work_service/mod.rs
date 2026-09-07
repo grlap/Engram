@@ -1,5 +1,7 @@
 //! Ambient six-operation protocol over the local work lifecycle.
 
+const REJECT_PROTOCOL_OPERATION: &str = "work_update:reject";
+
 use std::{
     fmt::{self, Write as _},
     path::PathBuf,

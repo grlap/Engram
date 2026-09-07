@@ -526,7 +526,10 @@ or mutation authority. The bounded `current_status` projection gives complete
 text or an explicit first-line omission and immutable note-detail command.
 Opaque `external_ref` linkage is an audited optional item field, searchable
 through the existing catalog projection and retained by graph snapshots; no
-schema change or source snapshot is implied. Capture imported criteria and
+schema change or source snapshot is implied. `update REF --clear-external`
+(MCP revise `clear_external: true`) clears it through the same audited item
+revision and catalog refresh as setting it; blank references and simultaneous
+set/clear are refused. Capture imported criteria and
 context explicitly rather than relying on either a reference or conversation
 summary. See the [word contract](cli-and-mcp.md#using-engram-as-an-agent).
 
@@ -1335,14 +1338,26 @@ before recording the attributed waiver.
 
 `update CHILD --reject "why"` (MCP `action: "reject"` with `reason`) composes
 that waiver with ordinary cancellation in one transaction. Admission requires
-an Open required child, an Open parent, and no existing waiver. Both existing
+an Open required child, an Open parent, no existing waiver, and a root execution
+able to record the waiver (including an eligible restored bootstrap). Both existing
 revision and authority checks remain: cancellation respects the live child's
 holder, while parent waiver uses project-bound attribution rather than parent
 claim ownership. The two immutable events carry the same reason; neither
 commits if either transition fails. Exact scoped replay returns both effects.
-Unsupported shapes return `work_reject_refused` with conditional cancel and
-parent-waive guidance, never partial success. Record evidence rejecting a
-finding in a note, then reject it; do not complete unsatisfied acceptance.
+Completed work is intercepted first by the existing late-finding refusal
+pointing to `note`/`gate`. Other unsupported shapes return `work_reject_refused`
+with conditional cancel and parent-waive guidance, never partial success.
+Record evidence rejecting a finding in a note, then reject it; do not complete
+unsatisfied acceptance.
+
+Keyless rejection identifies the canonical intent by project, session, and
+child, independently of its own cancellation and waiver effects. After a lost
+response, the same intent recovers the committed receipt only while the live
+child exactly equals that receipt's cancelled child. Changed or lifecycle-drifted
+child state refuses with bounded `work_reject_refused` inspection guidance
+instead of stale success. A pending attempt without committed effects retains
+strict original-basis checks, with no pending refresh. Explicit caller keys are
+unchanged; retry never transfers authority across sessions.
 
 Successful `done` reports the count of acceptance criteria asserted satisfied
 and that completion changed no criterion. The count comes from the returned

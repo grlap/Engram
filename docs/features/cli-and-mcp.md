@@ -34,7 +34,10 @@ edit, including assignment, does renew its existing live claim.
 accountable actor, using project-feed order, unaffected by ordinary notes or
 gates; former-owner notes remain history. It appears at top level on `show`
 and per held/assigned `next` row as `{body_or_first_line, complete, recorded_at,
-locator, by}`; `by` is `you` or `another session`. Text follows the parent line
+locator, by}`; `by` is `you` for the same actor and session,
+`you (another session)` for the same actor in a different session, or
+`another session` for a different actor. No actor principal is exposed.
+Text follows the parent line
 on `show` and is indented beneath `next` rows. Bodies start with a 768-byte
 UTF-8 cap; larger bodies show a bounded first nonblank line. Final text/JSON
 fitting may shorten either preview further before shedding resume rows,
@@ -47,7 +50,11 @@ statuses remain in `show --notes`. `add --external REF` and
 `next`/`ls`/`show` and searched by `ls --search`;
 capture source criteria in acceptance and source context in notes, because a
 reference alone is neither immutable intake nor external synchronization.
-Snapshots retain linkage and status provenance, not live claims.
+`update REF --clear-external` (MCP revise `clear_external: true`) removes
+linkage through an ordinary audited revision, including catalog search and
+subsequent snapshots. Setting and clearing together is refused; blank
+`--external` remains invalid. Snapshots retain linkage and status provenance,
+not live claims.
 Opaque references retain their normalized bytes, including control characters,
 through native writes and snapshots; terminal rendering frames those bytes.
 An assignee's late status on completed work may update this advisory display;
@@ -136,7 +143,9 @@ terminal children that did not fit. Actor and session references are relative
 words such as `you`, `another actor`, and `another session`; when present,
 bounded actor context is shown parenthetically
 (`you (model=opus-4.1;reasoning=high)`) on note and
-history attribution. Raw actor/session identifiers are not part of this view.
+history attribution. In contrast, `current_status.by` deliberately labels a
+different actor `another session`, as described above; that label does not imply
+the same actor. Raw actor/session identifiers are not part of this view.
 It also omits canonical UUIDs and hashes, revision and fence
 counters, and host-only run, claim, control-binding, obligation-page, and
 memory-version fields. Humans and hosts that need the rich projection use
@@ -395,6 +404,14 @@ Rules that matter:
   `work_reject_refused`, naming the child/parent and the conditional two-word
   path: cancel the child when admitted, then waive it from the parent only if
   required and waivable. No partial cancellation commits on refusal.
+  The root execution must be able to record the waiver, including an eligible
+  restored execution bootstrap. Completed work is intercepted first by the
+  existing late-finding refusal pointing to `note`/`gate`.
+  A keyless retry with the same project, session, child, and canonical intent
+  recovers both committed effects only while the child still exactly matches
+  the cancelled result. A changed child receives `work_reject_refused` with
+  inspection guidance. Pending attempts without a committed result retain
+  strict basis checks; explicit caller keys keep their existing semantics.
   Record the evidence that rejects a finding in a note first; `done` is for
   satisfied acceptance, not a synonym for rejecting a finding.
 - Successful `done` asserts satisfaction of the sealed revision's acceptance

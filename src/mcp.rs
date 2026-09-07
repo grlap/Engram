@@ -179,6 +179,9 @@ enum UpdateActionArg {
 struct UpdateArgs {
     /// Replace external planning linkage; requires action revise.
     external: Option<String>,
+    /// Remove external planning linkage as an audited revision.
+    #[serde(default)]
+    clear_external: bool,
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
     /// `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`,
@@ -417,6 +420,12 @@ impl McpServer {
         if args.external.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
             return invalid_argument("external", "external reference requires action revise");
         }
+        if args.clear_external && !matches!(args.action, UpdateActionArg::Revise) {
+            return invalid_argument(
+                "clear_external",
+                "clearing the external reference requires action revise",
+            );
+        }
         if args.acceptance.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
             return invalid_argument(
                 "acceptance",
@@ -438,6 +447,7 @@ impl McpServer {
                 };
                 UpdateAction::Revise {
                     external: args.external,
+                    clear_external: args.clear_external,
                     title: args.title,
                     outcome: args.outcome,
                     acceptance: args.acceptance,

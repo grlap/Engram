@@ -135,7 +135,11 @@ holder's planning edit, including assignment, renews its existing live claim.
 Use `add --external REF` or `update REF --external REF` for audited external
 planning linkage and `ls --search REF` to find it; record source criteria in
 acceptance and context in notes, since the reference alone is not immutable
-intake and local completion does not close external work.
+intake and local completion does not close external work. Clear obsolete linkage
+with `update REF --clear-external` (MCP revise `clear_external: true`), an ordinary
+audited revision. Blank `--external` and simultaneous set/clear are refused.
+Status labels distinguish `you`, `you (another session)`, and `another session`
+without exposing actor principals.
 
 Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME` and normally injects
@@ -256,9 +260,14 @@ Rules that matter:
 - Reject an evidence-disproved finding with an evidence note, then
   `update CHILD --reject "why"` for an Open required child of an Open,
   waivable parent. It atomically composes cancellation and the parent's waiver
-  with the same reason and existing authority checks. For other shapes follow
-  the typed conditional remedy: `update CHILD --cancel "why"`, then
+  with the same reason and existing authority checks. The root execution must
+  be able to record the waiver, including an eligible restored bootstrap.
+  Completed work keeps the late-finding `note`/`gate` refusal. For other shapes
+  follow the typed conditional remedy: `update CHILD --cancel "why"`, then
   `update PARENT --waive CHILD --reason "why"` only if required and admitted.
+  After a lost response, the same session and keyless intent recover both
+  committed effects only for the unchanged cancelled child; changed child
+  state receives inspection guidance, never stale success.
   `done` is reserved for satisfied current acceptance; its successful receipt
   visibly asserts the seal-bound criterion count and that completion changed
   no criterion. Do not replace rejection with false completion.

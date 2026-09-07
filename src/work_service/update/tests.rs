@@ -3,6 +3,7 @@ use super::super::*;
 use crate::domain::GATE_EVIDENCE_SUMMARY;
 
 mod observations;
+mod reject_retry;
 mod renewal;
 
 #[test]

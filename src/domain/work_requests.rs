@@ -98,6 +98,9 @@ pub struct WorkDecomposition {
 pub struct WorkRevisionPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_ref: Option<String>,
+    /// Remove planning linkage through the ordinary audited revision path.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clear_external: bool,
     pub title: Option<String>,
     pub outcome: Option<String>,
     pub acceptance: Option<Vec<String>>,
