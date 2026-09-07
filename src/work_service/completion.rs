@@ -54,10 +54,25 @@ impl LocalWorkService {
             now,
         })?;
         if let Some(result) = attempt.result {
-            let result: WorkCompleteResult = serde_json::from_value(result)?;
-            match &result {
+            let mut result: WorkCompleteResult = serde_json::from_value(result)?;
+            match &mut result {
                 WorkCompleteResult::Completed(receipt) => {
                     ensure_completion_replay_target(&basis, receipt.work_id, &raw_key)?;
+                    // The canonical replay receipt already proves completion.
+                    // An advisory reload failure must not turn it into refusal;
+                    // the agent renderer explicitly discloses unavailable facts.
+                    match acceptance::for_seal(
+                        &store,
+                        &receipt.seal,
+                        receipt.work_id,
+                        receipt.run_id,
+                    ) {
+                        Ok(facts) => receipt.acceptance_evidence = Some(facts),
+                        Err(error) => {
+                            receipt.acceptance_evidence_error_class =
+                                Some(advisory_error_class(&error));
+                        }
+                    }
                     return Ok(result);
                 }
                 WorkCompleteResult::Refused(_) => {
@@ -217,7 +232,6 @@ impl LocalWorkService {
         let scoped_key =
             self.core_operation_key("work_complete", &prepared.attempt_key, "complete_work")?;
         let evidence = prepared.evidence;
-        let acceptance = bind_completion_acceptance_evidence(acceptance, &evidence);
         let completion = store.complete_work_for_protocol(
             &CompleteWorkRequest {
                 work_id: work.work_id,

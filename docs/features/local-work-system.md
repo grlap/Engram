@@ -1388,8 +1388,37 @@ unchanged; retry never transfers authority across sessions.
 
 Successful `done` reports the count of acceptance criteria asserted satisfied
 and that completion changed no criterion. The count comes from the returned
-immutable seal, including on replay, not a later item revision. This disclosure
-does not add keyword gates or change completion enforcement.
+immutable seal, including on replay, not a later item revision. It also names
+the count and one-based seal positions whose own `AcceptanceResult.evidence`
+is empty, using "no evidence linked to this criterion". This does not mean
+no evidence exists on the work. Completed native `show` uses the same frozen
+vector; later notes and gates do not clear the disclosure. Positions are
+byte-bounded with exact omission counts, never identified by truncated text.
+An empty acceptance vector emits no criterion-evidence line or field. A
+missing or unreadable seal on native completed `show`, including notes/history
+windows, leaves intact item and audit context readable, not an empty vector.
+Both these reads and verified committed replay report per-criterion evidence
+unavailable with a fixed diagnostic error class, without positions or an
+inferred unlinked count. This does not relax canonical item/run validation or
+replay verification. Record-window
+fitting keeps any disclosure in the item header.
+Missing links do not refuse completion or downgrade `satisfied`; explicit
+criterion citations must still be a subset of the work-level completion
+evidence. No text is interpreted and no hash is demanded to complete. The
+thirteen-word `done` supplies only summary and a shared acceptance note, so
+new word-driven completions leave every criterion unlinked; hosts may supply
+explicit per-criterion evidence through the existing core input.
+
+Before this correction, completion automatically copied its entire work-level
+evidence set into each empty criterion evidence vector, paired with a storage
+rule refusing empty vectors. Those already frozen seals therefore disclose
+zero unlinked criteria: that is what their bytes record, not a fresh assessment
+of evidence quality. They are neither rewritten nor reinterpreted. Equality
+between a criterion's evidence and the whole completion set is never used to
+guess whether that binding was automatic or intentional. Graph snapshots
+retain inert completion summaries, not native acceptance-result vectors;
+restored-record-only completions explicitly state that this store holds no
+per-criterion evidence record, without inventing a count or naming criteria.
 
 Until action outcomes and resource leases are linked to `WorkRun`, V1 accepts
 only a **zero-linked-state** completion-drain attestation. An

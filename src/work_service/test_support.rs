@@ -174,7 +174,6 @@ pub(super) fn commit_completion_core_without_finishing(
         .core_operation_key("work_complete", &prepared.attempt_key, "complete_work")
         .expect("completion core key");
     let evidence = prepared.evidence;
-    let acceptance = bind_completion_acceptance_evidence(acceptance, &evidence);
     match store
         .complete_work_for_protocol(
             &CompleteWorkRequest {

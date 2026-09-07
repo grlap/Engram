@@ -79,6 +79,32 @@ fn fit_acceptance_prefix(
             upper = visible;
         }
     }
+    if best.is_none()
+        && let Some(facts) = view.acceptance_evidence.take()
+    {
+        // Keep the frozen positions before decorative/current criterion text.
+        // If even the body-free contract cannot fit, shed whole positions too.
+        view.status.work.acceptance.clear();
+        view.omissions.clone_from(&omissions);
+        record_show_omission(view, criteria.len());
+        let receipt = super::acceptance::fit_done(
+            &facts,
+            |page| {
+                // Render bounded facts in the header, before any record window.
+                // Window replacement must never remove only the text twin.
+                let mut bounded = view.clone();
+                bounded.acceptance_evidence = Some(page.facts());
+                if page.omitted_count() > 0 {
+                    record_show_omission(&mut bounded, page.omitted_count());
+                }
+                render(&bounded)
+            },
+            max_bytes,
+        )?;
+        if show_fits(&receipt, max_bytes)? {
+            return Ok(receipt);
+        }
+    }
     best.ok_or_else(|| {
         super::StoreError::InvalidWorkProjection(
             "show metadata exceeds the agent response byte budget".into(),
@@ -257,6 +283,12 @@ pub(super) struct ShowDetachedFrom {
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) acceptance_evidence: Option<super::acceptance::AcceptanceEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) acceptance_evidence_unavailable: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) acceptance_evidence_error_class: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) current_status: Option<crate::work_service::WorkCurrentStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) status_observation: Option<crate::work_service::WorkCurrentStatus>,
@@ -336,6 +368,17 @@ pub(super) fn show_relation(item: &WorkItemSummary) -> ShowRelation {
         child_resolution: super::child_obligations::ShowChildSuccessor::for_work(item),
         child_requirement: optional_child_requirement(item.child_requirement),
         prerequisite_state: item.prerequisite_state,
+    }
+}
+
+fn acceptance_unavailable(view: &WorkFocusView) -> Option<&'static str> {
+    if view.acceptance_evidence.is_some() {
+        None
+    } else if view.completed_by_record {
+        Some(super::acceptance::RESTORED_UNAVAILABLE)
+    } else {
+        view.acceptance_evidence_error_class
+            .map(|_| super::acceptance::REPLAY_UNAVAILABLE)
     }
 }
 
@@ -451,6 +494,15 @@ pub(super) fn show_lines(
             "  ({} more not shown)",
             work.acceptance_count - work.acceptance.len()
         ));
+    }
+    if let Some(facts) = &view.acceptance_evidence {
+        lines.extend(super::acceptance::AcceptanceEvidence::new(facts).lines());
+    }
+    if let Some(explanation) = acceptance_unavailable(view) {
+        lines.push(format!("criterion evidence: {explanation}"));
+        if let Some(class) = view.acceptance_evidence_error_class {
+            lines.push(format!("  diagnostic class: {class}"));
+        }
     }
     if !view.blockers.is_empty() {
         lines.push("blockers:".into());
@@ -612,6 +664,14 @@ pub(super) fn show_receipt_value(
     });
     let notes = show_notes(view, current_actor);
     ShowReceiptValue {
+        acceptance_evidence: view
+            .acceptance_evidence
+            .as_ref()
+            .filter(|facts| facts.criteria_count > 0)
+            .map(super::acceptance::AcceptanceEvidence::new),
+        acceptance_evidence_unavailable: acceptance_unavailable(view),
+        acceptance_evidence_error_class: acceptance_unavailable(view)
+            .and(view.acceptance_evidence_error_class),
         current_status: work.current_status.clone(),
         status_observation: work.status_observation.clone(),
         external_ref: work.external_ref.clone(),

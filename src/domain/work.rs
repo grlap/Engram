@@ -748,6 +748,9 @@ pub struct CompletionDrainAttestation {
 pub struct AcceptanceResult {
     pub criterion: String,
     pub satisfied: bool,
+    /// Explicit per-criterion citations drawn from the seal's completion evidence.
+    /// Empty means unlinked, not that the work is unevidenced. Pre-correction
+    /// seals retain their auto-bound values exactly as originally recorded.
     pub evidence: Vec<ObjectHash>,
     pub assurance: AssuranceLevel,
     pub note: String,

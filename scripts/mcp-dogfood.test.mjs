@@ -1056,6 +1056,61 @@ test("hygiene correction pending rejection gives conditional recovery on CLI and
   }
 });
 
+test("done criterion evidence disclosure agrees with frozen show and replay on CLI MCP", async (t) => {
+  const engramHome = fixtureHome("engram-criterion-evidence-", t);
+  const session = "criterion-reader";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const doneTool = (await client.tools()).find(({ name }) => name === "done");
+    assert.match(doneTool.description, /no evidence linked to this criterion/);
+    assert.match(doneTool.description, /what is still owed and the command that resolves it/);
+    assert.match(doneTool.inputSchema.properties.note.description, /does not link evidence/);
+    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["note", "summary", "work_ref"]);
+    const help = cliWord(engramHome, session, "done", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout.replace(/\s+/g, " "), /no evidence linked to this criterion/);
+    assert.match(help.stdout.replace(/\s+/g, " "), /does not link evidence to individual criteria/);
+    for (const surface of ["cli", "mcp"]) {
+      const ref = cliJson(engramHome, session, "add", `Criterion disclosure ${surface}`,
+        "--accept", "same opening first tail", "--accept", "same opening second tail").work.short_ref;
+      cliJson(engramHome, session, "claim", ref);
+      cliJson(engramHome, session, "note", ref, "both criteria have work-level discussion");
+      cliJson(engramHome, session, "gate", "criterion-check", "--work-ref", ref);
+      const complete = async () => surface === "cli"
+        ? cliJson(engramHome, session, "done", ref, "Both delivered", "--note", "Shared assertion")
+        : receipt(await client.call("done", { work_ref: ref, summary: "Both delivered", note: "Shared assertion" }));
+      const first = await complete();
+      const expected = {
+        criteria_count: 2, unlinked_count: 2, unlinked_positions: [1, 2],
+        unlinked_label: "no evidence linked to this criterion", omitted_count: 0,
+      };
+      assert.equal(first.work.lifecycle, "completed");
+      assert.equal(first.acceptance_criteria_asserted, 2);
+      assert.equal(first.acceptance_criteria_changed, false);
+      assert.deepEqual(first.acceptance_evidence, expected);
+      cliJson(engramHome, session, "note", ref, "Late evidence does not rewrite the seal");
+      const replay = await complete();
+      assert.equal(replay.seal, first.seal);
+      assert.deepEqual(replay.acceptance_evidence, expected);
+      assert.deepEqual(cliJson(engramHome, session, "show", ref).acceptance_evidence, expected);
+      assert.deepEqual(receipt(await client.call("show", { work_ref: ref })).acceptance_evidence, expected);
+      for (const command of [["show", ref], ["done", ref, "Both delivered", "--note", "Shared assertion"]]) {
+        const text = cliWord(engramHome, session, ...command);
+        assert.equal(text.status, 0, text.stderr);
+        assert.match(text.stdout, /criterion 1: no evidence linked to this criterion/);
+        assert.match(text.stdout, /criterion 2: no evidence linked to this criterion/);
+        assert.doesNotMatch(text.stdout, /no evidence exists/);
+      }
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("MCP show descriptions teach read-only targeting", async (t) => {
   const engramHome = fixtureHome("engram-show-contract-", t);
   let client;
@@ -2230,7 +2285,7 @@ test("CLI words translate the same ambient lifecycle service", (t) => {
     assert.equal(notedJson.full_detail, `engram work show '${workRef}' --notes`);
 
     const done = cliText(engramHome, actor, "done");
-    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nasserted 1 acceptance criterion satisfied; completion changed no criterion\nfull detail: engram work show 'w-[0-9a-f]{12}'\nreminders: none\nnext:\n/u);
+    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nasserted 1 acceptance criterion satisfied; completion changed no criterion\nfull detail: engram work show 'w-[0-9a-f]{12}'\ncriterion evidence: 1 of 1 criteria unlinked \(1 shown\)\n  criterion 1: no evidence linked to this criterion\nreminders: none\nnext:\n/u);
     assert.match(done, /\s+engram work next/u);
     const doneJson = cliJson(engramHome, actor, "done");
     assert.match(doneJson.seal, HASH);

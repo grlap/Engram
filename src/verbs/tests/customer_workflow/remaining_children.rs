@@ -310,7 +310,7 @@ fn remaining_child_diagnostics_preserve_live_ownership_under_a_backward_clock() 
             vec!["done parent".into()],
             Guidance::default(),
             json!({"completed":true}),
-            Ok(page),
+            &Ok(page),
             &parent,
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
@@ -349,7 +349,7 @@ fn remaining_child_summary_fits_final_bytes_and_keeps_exact_remainders() {
             vec!["done parent".into()],
             Guidance::default(),
             json!({"completed":true}),
-            service.remaining_optional_children(work.work_id, 5, at(8)),
+            &service.remaining_optional_children(work.work_id, 5, at(8)),
             &parent,
             budget,
         )
@@ -392,7 +392,7 @@ fn remaining_child_diagnostic_failure_never_changes_success_to_refusal() {
         vec!["done parent".into()],
         Guidance::default(),
         value,
-        Err(StoreError::InvalidWorkProjection(
+        &Err(StoreError::InvalidWorkProjection(
             "diagnostic failed".into(),
         )),
         "parent",
@@ -409,6 +409,82 @@ fn remaining_child_diagnostic_failure_never_changes_success_to_refusal() {
     assert!(receipt.value.get("child_obligations").is_none());
     assert!(receipt.text().contains("engram work show parent"));
     assert!(!receipt.text().contains("diagnostic failed"));
+}
+
+#[test]
+fn criterion_disclosure_composes_child_diagnostic_failure_with_available_or_unavailable_facts() {
+    let base = Receipt::assemble(
+        vec!["done parent".into()],
+        Guidance::default(),
+        json!({"completed": true}),
+        false,
+    );
+    let facts = crate::work_service::WorkAcceptanceEvidence {
+        criteria_count: 2,
+        unlinked_count: 1,
+        unlinked_positions: vec![2],
+    };
+    for available in [true, false] {
+        let receipt = crate::verbs::child_obligations::done_with_acceptance(
+            &base,
+            available.then_some(&facts),
+            (!available).then_some("canonical_object_invalid"),
+            &Err(StoreError::InvalidWorkProjection(
+                "diagnostic failed".into(),
+            )),
+            "parent",
+            MAX_AGENT_WORK_RESPONSE_BYTES,
+        )
+        .unwrap();
+        assert!(!receipt.owed);
+        assert_eq!(receipt.value["completed"], true);
+        assert_eq!(receipt.value["child_obligations_unavailable"], true);
+        assert_eq!(
+            receipt.value["child_obligations_error_class"],
+            "work_projection_invalid"
+        );
+        assert!(receipt.value.get("child_obligations").is_none());
+        let text = receipt.text();
+        assert!(text.contains("remaining optional children unavailable (work_projection_invalid)"));
+        assert!(text.contains("engram work show parent"));
+        assert!(!text.contains("diagnostic failed"));
+        if available {
+            assert_eq!(
+                receipt.value["acceptance_evidence"]["unlinked_positions"],
+                json!([2])
+            );
+            assert_eq!(receipt.value["acceptance_evidence"]["omitted_count"], 0);
+            assert!(text.contains("criterion 2: no evidence linked to this criterion"));
+            assert!(
+                receipt
+                    .value
+                    .get("acceptance_evidence_error_class")
+                    .is_none()
+            );
+            assert!(
+                receipt
+                    .value
+                    .get("acceptance_evidence_unavailable")
+                    .is_none()
+            );
+        } else {
+            assert_eq!(
+                receipt.value["acceptance_evidence_error_class"],
+                "canonical_object_invalid"
+            );
+            assert!(text.contains("diagnostic class: canonical_object_invalid"));
+            assert_eq!(
+                receipt.value["acceptance_evidence_unavailable"],
+                crate::verbs::acceptance::REPLAY_UNAVAILABLE
+            );
+            assert!(receipt.value.get("acceptance_evidence").is_none());
+        }
+        assert!(text.len() < MAX_AGENT_WORK_RESPONSE_BYTES);
+        assert!(
+            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
+                < MAX_AGENT_WORK_RESPONSE_BYTES
+        );
+    }
 }
 
 #[test]

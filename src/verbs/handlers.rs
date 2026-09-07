@@ -1465,7 +1465,8 @@ impl AgentVerbs {
         )
     }
 
-    /// `done`: complete the held item; a typed refusal says what is owed.
+    /// `done`: complete the held item and disclose absent criterion evidence
+    /// links from its frozen seal; a typed refusal says what is owed.
     ///
     /// # Errors
     ///
@@ -1595,14 +1596,21 @@ impl AgentVerbs {
                 super::child_obligations::MAX_CHILD_OBLIGATION_REFS,
                 now,
             );
-            return super::child_obligations::done_with_child_obligations(
-                receipt.lines,
-                Guidance {
-                    reminders: receipt.reminders,
-                    next: receipt.next,
-                },
-                receipt.value,
-                children,
+            let facts = match &result {
+                WorkCompleteResult::Completed(completed) => completed.acceptance_evidence.as_ref(),
+                WorkCompleteResult::Refused(_) => None,
+            };
+            let error_class = match &result {
+                WorkCompleteResult::Completed(completed) => {
+                    completed.acceptance_evidence_error_class
+                }
+                WorkCompleteResult::Refused(_) => None,
+            };
+            return super::child_obligations::done_with_acceptance(
+                &receipt,
+                facts,
+                error_class,
+                &children,
                 &work_ref,
                 MAX_AGENT_WORK_RESPONSE_BYTES,
             );

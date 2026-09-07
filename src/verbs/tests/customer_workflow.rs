@@ -1,5 +1,6 @@
 use super::*;
 
+mod acceptance_evidence;
 mod budgets;
 mod child_summary;
 mod contract_text;

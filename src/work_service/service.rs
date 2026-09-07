@@ -494,6 +494,18 @@ impl LocalWorkService {
             store.latest_work_run(work_id)?
         };
         let completed_by_record = store.work_completed_by_restored_record(work_id)?;
+        let (acceptance_evidence, acceptance_evidence_error_class) =
+            if matches!(text, FocusText::Full)
+                && status.work.lifecycle == crate::WorkLifecycle::Completed
+                && !completed_by_record
+            {
+                match super::acceptance::for_completed_run(store, run.as_ref(), work_id) {
+                    Ok(facts) => (Some(facts), None),
+                    Err(error) => (None, Some(super::advisory_error_class(&error))),
+                }
+            } else {
+                (None, None)
+            };
         let obligation_records = run
             .as_ref()
             .map(|run| store.work_run_obligations(run.run_id))
@@ -775,6 +787,8 @@ impl LocalWorkService {
             status.work.acceptance = acceptance;
         }
         let view = WorkFocusView {
+            acceptance_evidence,
+            acceptance_evidence_error_class,
             session: agent_work_session(&session),
             detached_from,
             status,

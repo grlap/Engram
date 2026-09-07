@@ -444,8 +444,29 @@ Rules that matter:
 - Successful `done` asserts satisfaction of the sealed revision's acceptance
   criteria. Text and JSON disclose `acceptance_criteria_asserted` (the count)
   and `acceptance_criteria_changed: false`; completion changes no criterion.
-  Replay reports the same seal-bound count, not criteria from a later revision.
-  This is a visible assertion of the existing contract, not prose enforcement.
+  `acceptance_evidence` also reports `criteria_count`, `unlinked_count`,
+  `unlinked_label`, and `unlinked_positions`: one-based positions in the frozen
+  seal's acceptance vector, never criterion-text matches. Each position means
+  exactly "no evidence linked to this criterion", not that no evidence exists on the
+  work. Whole positions are byte-fitted with `omitted_count` and the existing
+  omission manifest; text names the same positions and remainder. Native
+  seals with no criteria omit this disclosure's text and JSON field entirely.
+  Completed native `show`, including notes/history windows, and committed
+  completion replay remain readable if their advisory seal reload fails,
+  with `acceptance_evidence_unavailable` explicitly stating
+  "per-criterion evidence unavailable for this completed work", without positions
+  or an inferred unlinked count. `acceptance_evidence_error_class` and its text
+  twin retain a fixed diagnostic class, never raw error text or identifiers.
+  This does not relax canonical item/run validation or replay verification.
+  A record window keeps the disclosure in its header on both surfaces. Native
+  completed `show` and replay derive the same facts from that seal, not later
+  notes, gates, checkpoints, or a work-level evidence set. Restored-record-only
+  completions have no native seal: `acceptance_evidence_unavailable` explicitly
+  says this store holds no per-criterion evidence record, with no inferred count.
+  This does not refuse completion or change satisfaction. `done`'s summary and
+  shared `--note` do not link per-criterion evidence; no new argument or hash
+  obligation is introduced. See the
+  [historical binding qualification](local-work-system.md#audited-waivers-and-model-autonomy).
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   with the same identity and fence; expiry becomes the later of its existing
   expiry and now plus the requested TTL (one hour by default).
@@ -1111,7 +1132,10 @@ may refresh its live claim basis only after the original target binding is
 verified; committed successes replay, and an interrupted attempt cannot mutate
 a newly focused item. Omitting
 `work_complete.acceptance` asserts every current criterion with the note
-`accepted by <actor_id> via work done` (or the supplied `note`); omitting
+`accepted by <actor_id> via work done` (or the supplied `note`) and leaves each
+criterion's evidence empty. Explicit per-criterion citations pass through and
+must belong to the completion evidence set; work-level evidence is never
+automatically assigned to individual criteria. Omitting
 `work_update:checkpoint.evidence` acknowledges every evidence object already on
 the live run.
 

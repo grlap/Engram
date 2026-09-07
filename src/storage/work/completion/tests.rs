@@ -6,6 +6,52 @@ use super::*;
 mod obligations;
 
 #[test]
+fn criterion_disclosure_empty_links_are_admitted_but_foreign_citations_still_refuse() {
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let work = store
+        .create_work(
+            &root_request("criterion-subset", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    let first = CanonicalObject::freeze(&serde_json::json!({"artifact": "first"})).unwrap();
+    let other = CanonicalObject::freeze(&serde_json::json!({"artifact": "other"})).unwrap();
+    let mut result = AcceptanceResult {
+        criterion: work.acceptance[0].clone(),
+        satisfied: true,
+        evidence: Vec::new(),
+        assurance: AssuranceLevel::Asserted,
+        note: "asserted independently of evidence".into(),
+    };
+    let basis = vec![first.hash().clone()];
+    assert!(
+        validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted).unwrap()[0]
+            .evidence
+            .is_empty()
+    );
+    result.evidence = basis.clone();
+    assert_eq!(
+        validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted).unwrap()[0]
+            .evidence,
+        basis
+    );
+    result.evidence = vec![other.hash().clone()];
+    assert!(
+        matches!(validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted),
+        Err(StoreError::WorkCompletionRefused { reason, .. }) if reason.contains("outside the completion evidence set"))
+    );
+    result.evidence.clear();
+    result.satisfied = false;
+    assert!(matches!(
+        validate_acceptance(&work, &basis, &[result], AssuranceLevel::Asserted),
+        Err(StoreError::WorkCompletionRecoveryRequired {
+            work: refused_work,
+            cause: WorkCompletionRecoveryCause::MissingAcceptance { criterion },
+        }) if refused_work == work.work_id && criterion == work.acceptance[0]
+    ));
+}
+
+#[test]
 fn completed_gate_attempt_mismatch_refuses_before_appending() {
     let project = "completed-gate-attempt-mismatch";
     let holder = "gate-holder";

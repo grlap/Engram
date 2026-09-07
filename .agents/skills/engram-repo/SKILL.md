@@ -287,7 +287,13 @@ Rules that matter:
   state receives inspection guidance, never stale success.
   `done` is reserved for satisfied current acceptance; its successful receipt
   visibly asserts the seal-bound criterion count and that completion changed
-  no criterion. Do not replace rejection with false completion.
+  no criterion. It and completed native `show` name one-based seal positions
+  with "no evidence linked to this criterion", with exact omissions when
+  bounded. This is not a claim that the work has no evidence. Summary and
+  shared acceptance notes do not link artifacts to individual criteria;
+  absence does not refuse completion, and no new hash obligation is imposed.
+  Old frozen bindings remain exactly as recorded. Do not replace rejection
+  with false completion.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
   `done` again. Successful completion also names remaining open optional

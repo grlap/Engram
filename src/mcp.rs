@@ -280,7 +280,7 @@ struct DoneArgs {
     work_ref: Option<String>,
     /// What was delivered; recorded and checkpointed before sealing.
     summary: Option<String>,
-    /// Acceptance note recorded against every criterion.
+    /// Shared acceptance note; does not link evidence to individual criteria.
     note: Option<String>,
 }
 
@@ -578,10 +578,10 @@ impl McpServer {
         ))
     }
 
-    /// Complete the held item.
+    /// Complete the held item and disclose absent per-criterion evidence links.
     #[tool(
         name = "done",
-        description = "Complete the item you hold; a refusal says what is still owed and the command that resolves it"
+        description = "Complete the item you hold; success discloses criteria with no evidence linked to this criterion, without refusing completion for that absence; a refusal says what is still owed and the command that resolves it"
     )]
     fn done(&self, Parameters(args): Parameters<DoneArgs>) -> CallToolResult {
         verb(self.verbs().done(

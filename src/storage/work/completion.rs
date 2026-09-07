@@ -1788,9 +1788,8 @@ fn append_obligation_resolution_on(
     Ok(object.hash().clone())
 }
 
-/// Every work-anchored memory version and contradiction must sit in the
-/// project feed and its root-work feed; a missing entry would let peers miss a
-/// contested or new rule without any cursor gap.
+/// Empty criterion evidence is an asserted result without a linked artifact.
+/// Any explicit citation must still belong to the completion evidence set.
 fn validate_acceptance(
     item: &WorkItem,
     completion_evidence: &[ObjectHash],
@@ -1805,15 +1804,14 @@ fn validate_acceptance(
     let mut normalized = Vec::with_capacity(shaped.len());
     for mut result in shaped {
         let evidence = unique_hashes(&result.evidence);
-        if evidence.is_empty()
-            || evidence
-                .iter()
-                .any(|hash| !completion_evidence.contains(hash.as_str()))
+        if evidence
+            .iter()
+            .any(|hash| !completion_evidence.contains(hash.as_str()))
         {
             return Err(StoreError::WorkCompletionRefused {
                 work: item.work_id,
                 reason: format!(
-                    "acceptance criterion {:?} must cite completion evidence",
+                    "acceptance criterion {:?} cites evidence outside the completion evidence set",
                     result.criterion
                 ),
             });

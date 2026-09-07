@@ -577,12 +577,12 @@ enum WorkCommand {
         #[arg(long = "ref", value_name = "PATH_OR_URL")]
         refs: Vec<String>,
     },
-    /// Complete the item you hold.
+    /// Complete the item you hold; disclose criteria with no evidence linked to this criterion.
     Done {
         /// An optional item ref and what was delivered.
         #[arg(num_args = 0..=2, value_name = "[REF] [SUMMARY]")]
         args: Vec<String>,
-        /// Acceptance note recorded against every criterion.
+        /// Shared acceptance note; does not link evidence to individual criteria.
         #[arg(long)]
         note: Option<String>,
     },

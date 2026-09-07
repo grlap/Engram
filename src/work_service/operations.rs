@@ -249,6 +249,8 @@ pub struct WorkMutationReceipt {
 pub struct WorkAcceptanceInput {
     pub criterion: Option<String>,
     pub satisfied: bool,
+    /// Optional criterion-specific citations; each must belong to completion
+    /// evidence. An empty list stays empty, independently of work-level evidence.
     #[serde(default)]
     pub evidence: Vec<String>,
     pub note: String,
@@ -334,6 +336,14 @@ pub struct WorkCompletedReceipt {
     pub completed_at: DateTime<Utc>,
     /// Criteria asserted at this receipt's immutable seal, including on replay.
     pub acceptance_criteria_asserted: usize,
+    /// Transient disclosure reloaded from the frozen seal on replay, never
+    /// persisted in a protocol attempt or added to canonical seal bytes.
+    /// None preserves committed success with an explicit unavailable disclosure.
+    #[serde(skip)]
+    pub(crate) acceptance_evidence: Option<super::WorkAcceptanceEvidence>,
+    /// Safe advisory classification only; never persisted in replay bytes.
+    #[serde(skip)]
+    pub(crate) acceptance_evidence_error_class: Option<&'static str>,
     pub obligation_page: WorkObligationPage,
 }
 

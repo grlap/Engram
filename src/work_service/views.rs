@@ -428,6 +428,12 @@ pub(crate) struct WorkParentSummary {
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
+    /// Native frozen-seal disclosure for the agent detail renderer only.
+    #[serde(skip)]
+    pub(crate) acceptance_evidence: Option<super::WorkAcceptanceEvidence>,
+    /// Advisory seal failures never prevent reading intact item/audit context.
+    #[serde(skip)]
+    pub(crate) acceptance_evidence_error_class: Option<&'static str>,
     pub session: AgentWorkSession,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detached_from: Option<WorkDetachedFrom>,

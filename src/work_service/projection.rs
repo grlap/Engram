@@ -18,6 +18,22 @@ use super::{
     validate_gate_evidence_payload,
 };
 
+/// A fixed diagnostic class, never an error body, path, hash, or actor text.
+pub(crate) fn advisory_error_class(error: &StoreError) -> &'static str {
+    match error {
+        StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
+        StoreError::Sqlite(_) => "sqlite_error",
+        StoreError::Json(_) => "stored_json_invalid",
+        StoreError::HashMismatch { .. }
+        | StoreError::NonCanonicalObject(_)
+        | StoreError::ImmutableCollision(_)
+        | StoreError::ObjectKindMismatch { .. }
+        | StoreError::InvalidStoredHash(_) => "canonical_object_invalid",
+        // Unclassified failures stay unavailable, not a corruption claim.
+        _ => "store_error",
+    }
+}
+
 pub(super) fn selected_work_next_sections(requested: &[WorkNextSection]) -> Vec<WorkNextSection> {
     let mut sections = if requested.is_empty() {
         vec![

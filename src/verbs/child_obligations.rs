@@ -293,11 +293,93 @@ impl ShowChildObligations {
     }
 }
 
+/// Child guidance is unconditional; optional acceptance facts only add a layer.
+pub(super) fn done_with_acceptance(
+    base: &Receipt,
+    facts: Option<&crate::work_service::WorkAcceptanceEvidence>,
+    error_class: Option<&'static str>,
+    children: &Result<WorkChildFollowupPage, StoreError>,
+    parent_ref: &str,
+    budget: usize,
+) -> Result<Receipt, VerbError> {
+    let children_at = |limit| {
+        done_with_child_obligations(
+            base.lines.clone(),
+            Guidance {
+                reminders: base.reminders.clone(),
+                next: base.next.clone(),
+            },
+            base.value.clone(),
+            children,
+            parent_ref,
+            limit,
+        )
+    };
+    let Some(facts) = facts else {
+        let unavailable_base = super::acceptance::unavailable(base.clone(), error_class)?;
+        let reserve = unavailable_base
+            .text()
+            .len()
+            .saturating_sub(base.text().len())
+            .max(
+                serde_json::to_vec_pretty(&unavailable_base.value)?
+                    .len()
+                    .saturating_sub(serde_json::to_vec_pretty(&base.value)?.len()),
+            );
+        let mut child_budget = budget.saturating_sub(reserve);
+        loop {
+            let child_receipt = children_at(child_budget)?;
+            let has_child_rows = child_receipt.value["child_obligations"]["open_optional"]["items"]
+                .as_array()
+                .is_some_and(|rows| !rows.is_empty());
+            let composed = super::acceptance::unavailable(child_receipt, error_class)?;
+            if composed.text().len() < budget
+                && serde_json::to_vec_pretty(&composed.value)?.len() < budget
+            {
+                return Ok(composed);
+            }
+            if !has_child_rows {
+                // The empty-page, diagnostic-error and exhausted-row exits
+                // have only irreducible metadata. Preserve committed truth
+                // even when an artificial caller budget cannot contain it.
+                return Ok(composed);
+            }
+            // At most one retry: a zero child budget sheds every advisory row,
+            // retaining exact counts/navigation, then the final check repeats.
+            // All-or-nothing shedding here deliberately favors bounded recovery
+            // over maximizing visible child rows after diagnostic failure.
+            child_budget = 0;
+        }
+    };
+    if facts.criteria_count == 0 {
+        return children_at(budget);
+    }
+    super::acceptance::fit_done(
+        facts,
+        |page| {
+            // Reserve the larger final-twin increment before fitting children;
+            // both fitters use the same strict byte ceiling.
+            let disclosed_base = page.append(base)?;
+            let reserve = disclosed_base
+                .text()
+                .len()
+                .saturating_sub(base.text().len())
+                .max(
+                    serde_json::to_vec_pretty(&disclosed_base.value)?
+                        .len()
+                        .saturating_sub(serde_json::to_vec_pretty(&base.value)?.len()),
+                );
+            page.append(&children_at(budget.saturating_sub(reserve))?)
+        },
+        budget,
+    )
+}
+
 pub(super) fn done_with_child_obligations(
     lines: Vec<String>,
     guidance: Guidance,
     value: Value,
-    children: Result<WorkChildFollowupPage, StoreError>,
+    children: &Result<WorkChildFollowupPage, StoreError>,
     parent_ref: &str,
     budget: usize,
 ) -> Result<Receipt, VerbError> {
@@ -308,7 +390,7 @@ pub(super) fn done_with_child_obligations(
         Err(error) => {
             // Completion already committed. A diagnostic failure must never
             // relabel success as refusal or claim there are no remaining rows.
-            let class = advisory_error_class(&error);
+            let class = crate::work_service::advisory_error_class(error);
             let mut lines = lines;
             lines.push(format!(
                 "remaining optional children unavailable ({class}); {navigation}"
@@ -321,14 +403,14 @@ pub(super) fn done_with_child_obligations(
     };
     let items = page
         .items
-        .into_iter()
+        .iter()
         .map(|child| {
-            let (resolve_first, remedy) = match child.refusal {
+            let (resolve_first, remedy) = match child.refusal.clone() {
                 Some((reason, remedy)) => (Some(reason), remedy),
                 None => (None, super::handlers::detach_command(&child.work.short_ref)),
             };
             ChildObligationRow {
-                work_ref: child.work.short_ref,
+                work_ref: child.work.short_ref.clone(),
                 title: short_with_limit(&child.work.title, super::MAX_COMPACT_TITLE_BYTES),
                 remedy,
                 resolve_first,
@@ -350,8 +432,8 @@ pub(super) fn done_with_child_obligations(
         let mut rendered_value = value.clone();
         rendered_value["child_obligations"] = json!({"open_optional": group});
         let receipt = Receipt::assemble(rendered_lines, guidance.clone(), rendered_value, false);
-        if receipt.text().len() <= budget
-            && serde_json::to_vec_pretty(&receipt.value)?.len() <= budget
+        if receipt.text().len() < budget
+            && serde_json::to_vec_pretty(&receipt.value)?.len() < budget
         {
             return Ok(receipt);
         }
@@ -363,21 +445,5 @@ pub(super) fn done_with_child_obligations(
             // fixed count/navigation metadata. Only advisory rows are shed.
             return Ok(receipt);
         }
-    }
-}
-
-/// A fixed diagnostic class, never an error body, path, hash, or actor text.
-fn advisory_error_class(error: &StoreError) -> &'static str {
-    match error {
-        StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
-        StoreError::Sqlite(_) => "sqlite_error",
-        StoreError::Json(_) => "stored_json_invalid",
-        StoreError::HashMismatch { .. }
-        | StoreError::NonCanonicalObject(_)
-        | StoreError::ImmutableCollision(_)
-        | StoreError::ObjectKindMismatch { .. }
-        | StoreError::InvalidStoredHash(_) => "canonical_object_invalid",
-        // Unclassified failures stay unavailable, not a corruption claim.
-        _ => "store_error",
     }
 }

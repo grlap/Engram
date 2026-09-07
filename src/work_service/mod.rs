@@ -59,6 +59,8 @@ use crate::{
 #[cfg(test)]
 use crate::WorkReferenceCandidate;
 
+mod acceptance;
+pub(crate) use acceptance::WorkAcceptanceEvidence;
 mod catalog;
 mod completion;
 mod continuation;
@@ -648,6 +650,8 @@ fn completion_result(
         run_id: seal.run_id,
         completed_at: seal.completed_at,
         acceptance_criteria_asserted: seal.acceptance.len(),
+        acceptance_evidence: Some(WorkAcceptanceEvidence::from_seal(seal)),
+        acceptance_evidence_error_class: None,
         obligation_page: sealed_work_obligation_page(store, seal)?,
     }))
 }
@@ -747,18 +751,6 @@ fn completion_command_ref_from_resolution(
         Err(StoreError::WorkReferenceAmbiguous { .. }) => Ok(item.work_id.0.to_string()),
         Err(error) => Err(error),
     }
-}
-
-fn bind_completion_acceptance_evidence(
-    mut acceptance: Vec<AcceptanceResult>,
-    completion_evidence: &[ObjectHash],
-) -> Vec<AcceptanceResult> {
-    for result in &mut acceptance {
-        if result.evidence.is_empty() {
-            result.evidence = completion_evidence.to_vec();
-        }
-    }
-    acceptance
 }
 
 fn parse_hashes(values: &[String]) -> Result<Vec<ObjectHash>, StoreError> {
