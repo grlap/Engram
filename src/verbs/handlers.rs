@@ -9,8 +9,8 @@ use super::{
     WorkCompleteResult, WorkCompletionCaptureInput, WorkFocusView, WorkHandoffInput, WorkItemKind,
     WorkLifecycle, WorkNextQuery, WorkNextSection, WorkNextView, WorkObligationPage,
     WorkObligationState, WorkPrerequisiteState, WorkProposeInput, WorkProposeResult,
-    WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, collapse_changes, held_suffix,
-    item_line, json, lifecycle_word, nonempty,
+    WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, held_suffix, item_line, json,
+    lifecycle_word, nonempty,
     receipts::{
         append_changes_lines, compact_next_lines, compact_next_receipt, compact_next_value,
         ready_line,
@@ -339,13 +339,18 @@ impl AgentVerbs {
         })?;
         let mut held = lists.held;
         let ready = lists.ready;
-        let mut changes = collapse_changes(view.changes.as_deref().unwrap_or_default());
+        let mut compact_changes =
+            super::collapsed_changes(view.changes.as_deref().unwrap_or_default());
         let mut not_delivered = changes_not_delivered(&view);
         // Compact output may drain own-session-only pages within its bound.
         // Verbose output exposes the original exact page and its cursor, so
         // it must not acknowledge additional pages behind that receipt.
         let mut pages = 1;
-        while !input.verbose && changes.is_empty() && not_delivered > 0 && pages < MAX_NEXT_PAGES {
+        while !input.verbose
+            && compact_changes.is_empty()
+            && not_delivered > 0
+            && pages < MAX_NEXT_PAGES
+        {
             let more = self.service.work_next(
                 change_limit,
                 WorkNextQuery {
@@ -354,7 +359,7 @@ impl AgentVerbs {
                 },
                 now,
             )?;
-            changes = collapse_changes(more.changes.as_deref().unwrap_or_default());
+            compact_changes = super::collapsed_changes(more.changes.as_deref().unwrap_or_default());
             not_delivered = changes_not_delivered(&more);
             pages += 1;
         }
@@ -402,6 +407,10 @@ impl AgentVerbs {
             guidance.next.push("engram work add \"…\"".into());
         }
         let (lines, value, guidance) = if input.verbose {
+            let changes = compact_changes
+                .iter()
+                .map(|change| change.line.clone())
+                .collect::<Vec<_>>();
             loop {
                 let mut lines = Vec::new();
                 match &view.focus {
@@ -486,7 +495,8 @@ impl AgentVerbs {
                 .into_iter()
                 .map(|(id, holder, expiry)| (id, (holder, expiry)))
                 .collect();
-            let compact = compact_next_receipt(&view, &held, &ready, &changes, &claims, &guidance)?;
+            let compact =
+                compact_next_receipt(&view, &held, &ready, &compact_changes, &claims, &guidance)?;
             let lines = compact_next_lines(&compact);
             let value = compact_next_value(&compact);
             (lines, value, compact.guidance)

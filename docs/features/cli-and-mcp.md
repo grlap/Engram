@@ -16,8 +16,11 @@ agent sees thirteen words; every host and operator control lives under
 
 Record changed duties, waits, decisions, and the next permitted action with
 `note REF --status TEXT` (MCP `note` with `status: true`), not only in a
-conversation summary. A coordinator with no code work keeps an assigned or
-held coordination item; `next` is the resume read across fresh processes and
+conversation summary; record each real duty/wait/next-step change before going
+quiet. After compaction or replacement, explicitly read `next` before acting
+and follow clipped status locators; a conversation summary may predate a
+decision. A coordinator with no code work keeps an assigned or held
+coordination item; `next` is the resume read across fresh processes and
 replacement sessions, never a transfer of execution authority. Storage marks
 status at capture as owner-qualified only for the live holder session or the
 assigned actor when unclaimed; other status notes remain peer observations.
@@ -42,9 +45,20 @@ on `show` and is indented beneath `next` rows. Bodies start with a 768-byte
 UTF-8 cap; larger bodies show a bounded first nonblank line. Final text/JSON
 fitting may shorten either preview further before shedding resume rows,
 setting `complete: false` with explicit omission and a note-detail command.
-Missing current-owner status is explicit on `show` and
-adds no `next` status line; peer status observations appear separately. Older
-statuses remain in `show --notes`. `add --external REF` and
+Compact `next` renders each identified status capture and latest note head
+once, with `context_ref` on repeated discovery rows and references in change
+summaries; verbose retains the exact staged page and full change summaries.
+References require the same immutable capture, never text similarity; absent
+capture identity keeps the body. References retain change kind and actor
+attribution, and note session markers precede untrusted note text.
+If any retained status is clipped, receipt guidance requires reading its full
+note before acting on approval or STOP conditions: a prefix grants no
+permission. This guarantee covers status projections with `complete` and a
+locator; ordinary note heads remain bounded previews with `note_detail`
+navigation to `show REF --notes`, not status commitments.
+Missing current-owner status is explicit on `show` and adds no `next` status
+line; peer status observations appear separately. Older statuses remain in
+`show --notes`. `add --external REF` and
 `update REF --external REF` (MCP `external`) record audited opaque linkage as
 `external_ref` (nonblank, at most 1024 encoded JSON bytes), shown by
 `next`/`ls`/`show` and searched by `ls --search`;
@@ -213,13 +227,18 @@ Rules that matter:
   completion proof or execution authority.
 - Claimless `next` includes nonempty `assigned` and `participated` sections
   between held and ready work, at most five rows each with exact omitted counts.
-  Rows name the work, title, holder word, and first line of this session's latest
-  own note when present, with `note_session_id` identifying the recorded session
+  Full rows name the work, title, holder word, and first line of this session's
+  latest own note when present, with `note_session_id` identifying the session
   that preview reflects (also named in text), only for the reader's own actor.
+  Compact repeated rows instead contain only `{ref, context_ref}`; the
+  presence of `context_ref` is the discriminator. It names the retained
+  `held REF`, `assigned REF`, or `participated REF` primary row containing
+  the full projection. Do not read title, holder, status or note from a
+  reference row. Verbose rows retain the full shape.
   Another actor's session field is omitted. This is asserted attribution,
   not authenticated identity. This is recent-work discovery, not a review
-  obligation or claim; keep owed decisions on a claimed coordination item. See the
-  [resume discovery contract](local-work-system.md#agent-native-protocol).
+  obligation or claim; keep owed decisions on a claimed coordination item.
+  See the [resume discovery contract](local-work-system.md#agent-native-protocol).
 - `update CHILD --detach "why"` (MCP `update { work_ref: CHILD, action:
   "detach", reason: "why" }`) atomically creates an independent root and
   supersedes an Open child stranded beneath a terminal ancestor. It copies
@@ -527,7 +546,8 @@ and a host picks per project:
   tracked `.engram-project`; the host supplies the stable project identity
   and asserted actor/session binding to the MCP child), plus a
   start-of-session nudge that runs `engram work next` on session start and
-  after compaction and injects its text as context. Any host that can register
+  after compaction and injects its text as context at the next dispatched
+  prompt, not an immediate runtime-authored continuation. Any host that can register
   an MCP server and run a hook can do this. It carried every benefit measured
   so far.
 - **Turn-gated** (`turn_gated`, the optional tier of the checklist and of

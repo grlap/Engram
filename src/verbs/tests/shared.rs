@@ -31,7 +31,10 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
     ];
 
     assert_eq!(
-        collapse_changes(&changes),
+        collapsed_changes(&changes)
+            .into_iter()
+            .map(|change| change.line)
+            .collect::<Vec<_>>(),
         vec!["w-000000000001 completed by peer (model=peer;reasoning=high): \"Delivered title\""]
     );
 }

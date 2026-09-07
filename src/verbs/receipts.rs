@@ -125,7 +125,7 @@ pub(super) struct CompactNextReceipt {
     pub(super) focus: Option<CompactWorkRow>,
     pub(super) held: Vec<CompactWorkRow>,
     pub(super) ready: Vec<CompactWorkRow>,
-    pub(super) changes: Vec<String>,
+    pub(super) changes: Vec<super::next_context::CompactChange>,
     pub(super) memories: Option<ProjectMemorySignal>,
     pub(super) omissions: Vec<CompactSectionOmission>,
     pub(super) guidance: Guidance,
@@ -634,7 +634,7 @@ pub(super) fn compact_next_receipt(
     view: &WorkNextView,
     held: &[(ReadyWorkSummary, DateTime<Utc>)],
     ready: &[ReadyWorkSummary],
-    changes: &[String],
+    changes: &[super::next_context::CompactChange],
     claims: &HashMap<WorkId, (SessionId, DateTime<Utc>)>,
     guidance: &Guidance,
 ) -> Result<CompactNextReceipt, VerbError> {
@@ -651,7 +651,7 @@ pub(super) fn compact_next_receipt(
             .map(|(item, _)| compact_row(item, claims))
             .collect(),
         ready: ready.iter().map(|item| compact_row(item, claims)).collect(),
-        changes: changes.iter().map(|change| short(change)).collect(),
+        changes: changes.to_vec(),
         memories: view.memories.clone(),
         omissions: view
             .omissions
@@ -706,6 +706,7 @@ pub(super) fn fit_compact_next_to(
     max_bytes: usize,
 ) -> Result<CompactNextReceipt, VerbError> {
     loop {
+        super::next_context::refresh_guidance(&mut compact);
         let value = compact_next_value(&compact);
         let current_bytes = serde_json::to_vec_pretty(&value)?.len();
         // Escaped terminal data can be larger than its UTF-8 JSON value. Fit
@@ -833,14 +834,15 @@ pub(super) fn compact_row_at_mut(
 }
 
 pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
+    let context = super::next_context::Context::new(compact);
     let mut value = json!({
         // Identity participates in byte fitting, not a post-fit append.
         "build_fingerprint": crate::build_identity::current().build_fingerprint,
         "read_cut": compact.read_cut,
         "focus": compact.focus,
-        "held": compact.held,
+        "held": context.held.iter().map(|row| &row.value).collect::<Vec<_>>(),
         "ready": compact.ready,
-        "changes": compact.changes,
+        "changes": context.changes,
         "memories": compact.memories,
         "omissions": compact.omissions,
         "reminders": compact.guidance.reminders,
@@ -853,6 +855,14 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
         (json!(compact.discovery), &mut value)
     {
         receipt.extend(discovery);
+    }
+    for (name, rows) in [
+        ("assigned", &context.assigned),
+        ("participated", &context.participated),
+    ] {
+        if !rows.is_empty() {
+            value[name] = json!(rows.iter().map(|row| &row.value).collect::<Vec<_>>());
+        }
     }
     value
 }
@@ -888,6 +898,7 @@ pub(super) fn compact_section_name(section: WorkNextSection) -> &'static str {
 }
 
 pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
+    let context = super::next_context::Context::new(compact);
     let mut lines = Vec::new();
     match &compact.focus {
         Some(focus) => lines.push(format!("focus: {}", compact_row_line(focus))),
@@ -897,10 +908,10 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         None => lines.push("focus: none".into()),
     }
     lines.push(format!("held by you ({} shown):", compact.held.len()));
-    for held in &compact.held {
-        lines.push(format!("  {}", compact_row_line(held)));
+    for held in &context.held {
+        lines.extend(held.lines.clone());
     }
-    append_discovery_lines(&mut lines, &compact.discovery);
+    context.append_discovery_lines(&mut lines, &compact.discovery);
     lines.push(format!("ready ({} shown):", compact.ready.len()));
     for ready in &compact.ready {
         lines.push(format!("  {}", compact_row_line(ready)));
@@ -909,7 +920,7 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         compact_omitted_for_reason(compact, "changes", WorkSectionOmissionReason::Staged);
     let byte_budget_changes =
         compact_omitted_for_reason(compact, "changes", WorkSectionOmissionReason::ByteBudget);
-    append_changes_lines(&mut lines, &compact.changes, staged_changes);
+    append_changes_lines(&mut lines, &context.changes, staged_changes);
     if byte_budget_changes > 0 {
         if compact.changes.is_empty() && staged_changes == 0 {
             lines.push("changes by others (none shown):".into());
@@ -957,48 +968,59 @@ pub(super) fn append_discovery_lines(
         }
         lines.push(format!("{name} ({} shown):", rows.len()));
         for row in rows {
-            let external = row
-                .external_ref
-                .as_ref()
-                .map_or(String::new(), |reference| {
-                    format!(" external:{}", terminal_short(reference, 192))
-                });
-            let note = row.note.as_ref().map_or(String::new(), |note| {
-                let session = row
-                    .note_session_id
-                    .as_ref()
-                    .map_or(String::new(), |session| {
-                        format!(" [note session {}]", terminal_safe_line(&session.0))
-                    });
-                format!("{session} — {}", super::terminal_safe_line(note))
-            });
-            lines.push(format!(
-                "  {} \"{}\" ({}){external}{note}",
-                row.work_ref,
-                terminal_safe_line(&row.title),
-                terminal_safe_line(&row.holder)
-            ));
-            if let Some(status) = &row.current_status {
-                lines.extend(super::status_text_lines(
-                    &row.work_ref,
-                    status,
-                    "status",
-                    "    ",
-                ));
-            }
-            if let Some(peer) = &row.status_observation {
-                lines.extend(super::status_text_lines(
-                    &row.work_ref,
-                    peer,
-                    "peer status observation",
-                    "    ",
-                ));
-            }
+            append_discovery_row(lines, row);
         }
         if omitted > 0 {
             lines.push(format!("  ({omitted} more {name} not shown)"));
         }
     }
+}
+
+pub(super) fn append_discovery_row(
+    lines: &mut Vec<String>,
+    row: &crate::work_service::WorkDiscoverySummary,
+) {
+    let external = row
+        .external_ref
+        .as_ref()
+        .map_or(String::new(), |reference| {
+            format!(" external:{}", terminal_short(reference, 192))
+        });
+    let note = discovery_note_text(row);
+    lines.push(format!(
+        "  {} \"{}\" ({}){external}{note}",
+        row.work_ref,
+        terminal_safe_line(&row.title),
+        terminal_safe_line(&row.holder)
+    ));
+    if let Some(status) = &row.current_status {
+        lines.extend(super::status_text_lines(
+            &row.work_ref,
+            status,
+            "status",
+            "    ",
+        ));
+    }
+    if let Some(peer) = &row.status_observation {
+        lines.extend(super::status_text_lines(
+            &row.work_ref,
+            peer,
+            "peer status observation",
+            "    ",
+        ));
+    }
+}
+
+pub(super) fn discovery_note_text(row: &crate::work_service::WorkDiscoverySummary) -> String {
+    row.note.as_ref().map_or(String::new(), |note| {
+        let session = row
+            .note_session_id
+            .as_ref()
+            .map_or(String::new(), |session| {
+                format!(" [note session {}]", terminal_safe_line(&session.0))
+            });
+        format!("{session} — {}", super::terminal_safe_line(note))
+    })
 }
 
 pub(super) fn compact_omitted(compact: &CompactNextReceipt, section: &str) -> usize {

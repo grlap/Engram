@@ -524,6 +524,11 @@ owner's waits remain history, and peer observations are displayed separately.
 Fresh processes and replacement sessions recover this context without claims
 or mutation authority. The bounded `current_status` projection gives complete
 text or an explicit first-line omission and immutable note-detail command.
+Compact `next` shares proven same-capture status/note context per item;
+repeated rows reference it without merging distinct captures. A clipped
+status requires a full-note read before approval/STOP decisions. This guarantee
+covers status projections with explicit completeness and a detail locator;
+ordinary note heads remain bounded previews with `show REF --notes` navigation.
 Opaque `external_ref` linkage is an audited optional item field, searchable
 through the existing catalog projection and retained by graph snapshots; no
 schema change or source snapshot is implied. `update REF --clear-external`

@@ -44,9 +44,11 @@ it requires the host to mediate turns or actions.
    connection for its lifetime; a failed operation rolls back before the next
    call.
 4. **Show the agent what is ready.** Run `engram work next` at session start
-   and after every context compaction, and inject its text; it is the whole
-   orientation an agent needs. Receipts end with `reminders` and `next`
-   commands; agents follow them.
+   and after every context compaction, and inject its text at the next
+   dispatched prompt, not an immediate runtime-authored continuation; agents
+   explicitly read `next` before resuming action and follow clipped-status
+   locators. Receipts end with `reminders` and `next` commands; agents follow
+   them.
 5. **State the assurance honestly.** Without turn mediation the deployment is
    `advisory`: the agent can bypass Engram. `engram doctor` prints the
    required assurance and supported effects in its `--json` report and the

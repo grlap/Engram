@@ -19,6 +19,8 @@ pub(crate) struct WorkDiscoveryRow {
     pub work: WorkItem,
     pub claim: Option<WorkClaim>,
     pub note: Option<String>,
+    /// Identity of the selected, canonically verified note; presentation only.
+    pub note_identity: Option<String>,
     /// Private canonical attribution for presentation policy, never serialized.
     pub note_actor_id: Option<String>,
 }
@@ -176,6 +178,7 @@ impl SqliteStore {
                     .flatten();
                 let hash: Option<String> = row.get(2)?;
                 let note = hash
+                    .as_ref()
                     .map(|hash| {
                         let family: String = row.get(3)?;
                         let kind: String = row.get(4)?;
@@ -184,7 +187,7 @@ impl SqliteStore {
                             project,
                             session,
                             work_id,
-                            &hash,
+                            hash,
                             &family,
                             &kind,
                         )
@@ -194,10 +197,12 @@ impl SqliteStore {
                 let (note, note_actor_id) = note
                     .map(|(summary, actor)| (Some(summary), Some(actor)))
                     .unwrap_or_default();
+                let note_identity = note.as_ref().and(hash);
                 page.items.push(WorkDiscoveryRow {
                     work,
                     claim,
                     note,
+                    note_identity,
                     note_actor_id,
                 });
             }

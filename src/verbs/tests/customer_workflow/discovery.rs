@@ -29,8 +29,28 @@ fn resume_discovery_terminal_rows_frame_controls_without_rewriting_json() {
             )
             .unwrap();
         assert_eq!(shown.value["assigned"][0]["title"], title);
-        assert_eq!(shown.value["participated"][0]["note"], finding);
+        if verbose {
+            assert_eq!(shown.value["participated"][0]["note"], finding);
+        } else {
+            assert_eq!(shown.value["assigned"][0]["note"], finding);
+            assert_eq!(
+                shown.value["participated"][0]["context_ref"],
+                format!("assigned {reference}")
+            );
+            assert!(shown.value["participated"][0].get("note").is_none());
+        }
         let text = shown.text();
+        if !verbose {
+            assert_eq!(text.matches(&terminal_safe_line(finding)).count(), 1);
+            assert_eq!(
+                shown
+                    .value
+                    .to_string()
+                    .matches(&serde_json::to_string(finding).unwrap())
+                    .count(),
+                1
+            );
+        }
         let discovery = text
             .split_once("assigned (")
             .unwrap()
@@ -46,8 +66,19 @@ fn resume_discovery_terminal_rows_frame_controls_without_rewriting_json() {
                 .lines()
                 .filter(|line| line.contains(reference))
                 .count(),
-            2
+            if verbose { 2 } else { 3 }
         );
+        if !verbose {
+            let command = format!("engram work show {reference} --notes");
+            assert_eq!(shown.value["assigned"][0]["note_detail"], command);
+            assert_eq!(
+                discovery
+                    .lines()
+                    .filter(|line| *line == format!("    note detail: {command}"))
+                    .count(),
+                1
+            );
+        }
         assert!(discovery.contains("\\r\\u{1b}[2J"));
         assert!(text.len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
         assert!(serde_json::to_vec(&shown.value).unwrap().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
@@ -209,7 +240,8 @@ fn resume_discovery_finds_assignment_and_own_participation_without_a_claim() {
         receipt.value["participated"],
         json!([{
             "ref": other, "title": "Reviewed elsewhere", "holder": "another session", "note": "My review finding",
-            "note_session_id": "coordinator-session"
+            "note_session_id": "coordinator-session",
+            "note_detail": format!("engram work show {other} --notes")
         }])
     );
     assert_eq!(receipt.value["held"], json!([]));
@@ -235,7 +267,18 @@ fn resume_discovery_finds_assignment_and_own_participation_without_a_claim() {
             at(9),
         )
         .expect("verbose");
-    assert_eq!(verbose.value["participated"], receipt.value["participated"]);
+    let mut compact_with_only_shared_fields = receipt.value["participated"].clone();
+    assert_eq!(
+        compact_with_only_shared_fields[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("note_detail"),
+        Some(json!(format!("engram work show {other} --notes")))
+    );
+    assert_eq!(
+        verbose.value["participated"],
+        compact_with_only_shared_fields
+    );
 }
 
 #[test]

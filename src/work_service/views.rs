@@ -111,6 +111,10 @@ fn discovery_count_is_zero(count: &usize) -> bool {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct WorkDiscoverySummary {
+    /// Verified capture identity for the outer compact projection only.
+    /// Not a new core/verbose wire field or a delivery cursor.
+    #[serde(skip)]
+    pub(crate) note_identity: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_status: Option<WorkCurrentStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -92,12 +92,7 @@ fn hygiene_status_labels_distinguish_actor_and_session_on_show_and_next() {
                     at(4),
                 )
                 .unwrap();
-            let row = next.value["assigned"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|row| row["ref"] == reference)
-                .unwrap();
+            let row = next_status_row(&next, &reference, verbose);
             assert_eq!(row["current_status"]["by"], expected);
             assert!(next.text().contains(&format!("; {expected}]")));
             assert!(

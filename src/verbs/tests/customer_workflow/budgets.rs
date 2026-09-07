@@ -307,10 +307,46 @@ fn a_fourth_coordination_note_does_not_erase_resume_discovery() {
                 .contains(&format!("participated ({expected} shown):"))
         );
         for row in next.value["participated"].as_array().unwrap() {
-            let first_line = row["note"].as_str().unwrap();
+            let primary = if let Some(target) = row["context_ref"].as_str() {
+                let reference = row["ref"].as_str().unwrap();
+                assert_eq!(target, format!("assigned {reference}"));
+                assert!(row.get("note").is_none());
+                next.value["assigned"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|assigned| assigned["ref"] == reference)
+                    .unwrap()
+            } else {
+                row
+            };
+            let first_line = primary["note"].as_str().unwrap();
+            let child = view
+                .children
+                .iter()
+                .find(|child| row["ref"] == child.short_ref)
+                .unwrap();
+            let index: i64 = child
+                .title
+                .strip_prefix("Child ")
+                .unwrap()
+                .split_once(':')
+                .unwrap()
+                .0
+                .parse()
+                .unwrap();
+            let expected_note = coordination_note(index);
+            assert_eq!(first_line, expected_note.lines().next().unwrap());
             assert!(first_line.starts_with("Requested design"));
             assert!(!first_line.contains('\n'));
-            assert!(next.text().contains(first_line));
+            assert_eq!(next.text().matches(first_line).count(), 1);
+            assert_eq!(
+                next.value
+                    .to_string()
+                    .matches(&serde_json::to_string(first_line).unwrap())
+                    .count(),
+                1
+            );
         }
         assert!(next.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
         assert!(

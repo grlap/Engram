@@ -1,5 +1,6 @@
 use super::*;
 
+mod context;
 mod corrections;
 mod expiry;
 mod hygiene;
@@ -101,6 +102,27 @@ fn capture_status(verbs: &AgentVerbs, reference: &str, body: &str, now: i64) {
         .unwrap();
 }
 
+fn next_status_row<'a>(receipt: &'a Receipt, reference: &str, verbose: bool) -> &'a Value {
+    let assigned = receipt.value["assigned"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["ref"] == reference)
+        .unwrap();
+    if !verbose && assigned.get("context_ref").is_some() {
+        assert_eq!(assigned["context_ref"], format!("held {reference}"));
+        assert!(assigned.get("current_status").is_none());
+        receipt.value["held"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["ref"] == reference)
+            .unwrap()
+    } else {
+        assigned
+    }
+}
+
 fn assigned(verbs: &AgentVerbs, title: &str, actor: &str, now: i64) -> String {
     verbs
         .add(
@@ -193,12 +215,7 @@ fn status_resume_both_roles_survive_session_replacement_without_authority() {
                         at(6),
                     )
                     .unwrap();
-                let row = receipt.value["assigned"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .find(|row| row["ref"] == *reference)
-                    .unwrap();
+                let row = next_status_row(&receipt, reference, verbose);
                 assert_eq!(row["current_status"]["body_or_first_line"], expected);
                 assert_eq!(
                     row["current_status"]["by"],

@@ -543,6 +543,7 @@ fn discovery_summary(
             }
         });
     WorkDiscoverySummary {
+        note_identity: row.note_identity,
         current_status: None,
         status_observation: None,
         external_ref: row.work.external_ref,

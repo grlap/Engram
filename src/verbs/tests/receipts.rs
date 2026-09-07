@@ -1,5 +1,7 @@
 use super::*;
 
+mod next_context;
+
 fn test_next_cut() -> crate::work_service::WorkNextReadCut {
     crate::work_service::WorkNextReadCut {
         project_position: 0,
@@ -12,6 +14,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
     use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
     let controls = "\u{9b}".repeat(96);
     let row = |index| WorkDiscoverySummary {
+        note_identity: None,
         current_status: None,
         status_observation: None,
         external_ref: None,
@@ -133,6 +136,7 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
         guidance: Guidance::default(),
     };
     let row = |index| WorkDiscoverySummary {
+        note_identity: None,
         current_status: None,
         status_observation: None,
         external_ref: None,
@@ -176,7 +180,7 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
         held: (1..=20).map(compact_test_row).collect(),
         ready: (21..=40).map(compact_test_row).collect(),
         changes: (0..8)
-            .map(|index| format!("change {index}: {}", "x".repeat(90)))
+            .map(|index| format!("change {index}: {}", "x".repeat(90)).into())
             .collect(),
         memories: Some(ProjectMemorySignal {
             count: 3,

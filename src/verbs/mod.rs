@@ -35,6 +35,7 @@ mod child_obligations;
 mod handlers;
 mod listing;
 mod mutation;
+mod next_context;
 mod receipts;
 mod record_windows;
 mod show;
@@ -162,7 +163,7 @@ fn append_status_text(
 /// evidence object, an evidence-added event, and a checkpoint; they collapse
 /// into one `noted` line. Summaries that repeat their change kind as a prefix
 /// lose the prefix.
-fn collapse_changes(changes: &[WorkChange]) -> Vec<String> {
+fn collapsed_changes(changes: &[WorkChange]) -> Vec<next_context::CompactChange> {
     let visible = changes
         .iter()
         .map(|change| match &change.delivery {
@@ -179,16 +180,14 @@ fn collapse_changes(changes: &[WorkChange]) -> Vec<String> {
             WorkChangeProjection::Omitted(_) => None,
         })
         .collect::<Vec<_>>();
-    let mut lines: Vec<String> = Vec::new();
+    let mut lines = Vec::new();
     let mut last_note: Option<(String, String)> = None;
     for (index, change) in changes.iter().enumerate() {
         let Some((subject, kind, text, actor_id, actor_context)) = visible[index].as_ref() else {
             last_note = None;
             if let WorkChangeProjection::Omitted(omission) = &change.delivery {
-                lines.push(format!(
-                    "{} (not visible from your focus)",
-                    omission.object_kind
-                ));
+                lines
+                    .push(format!("{} (not visible from your focus)", omission.object_kind).into());
             }
             continue;
         };
@@ -229,7 +228,12 @@ fn collapse_changes(changes: &[WorkChange]) -> Vec<String> {
                 )
             })
             .unwrap_or_default();
-        lines.push(format!("{subject} {verb}{actor}: {}", short(text)));
+        lines.push(next_context::CompactChange {
+            line: format!("{subject} {verb}{actor}: {}", short(text)),
+            attribution: format!("{subject} {verb}{actor}"),
+            note: matches!(kind.as_str(), "evidence" | "checkpoint")
+                .then(|| (subject.clone(), change.entry.object_hash.as_str().into())),
+        });
     }
     lines
 }

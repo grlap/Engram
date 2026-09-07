@@ -716,6 +716,78 @@ test("required child rejection and acceptance assertion agree through CLI and MC
   }
 });
 
+test("compact next shares clipped status context and requires the full STOP tail on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-status-context-", t);
+  let client;
+  const cli = (...args) => {
+    const result = spawnSync(binary, ["--home", engramHome, "work", "--actor-id", "pilot-reader",
+      "--session-id", "pilot-reader", ...args], { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  };
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "pilot-reader");
+    await client.initialize();
+    for (const held of [false, true]) {
+      const prefix = held ? "Held unique status prefix" : "Assigned unique status prefix";
+      const body = `${prefix} ${"waiting for review ".repeat(90)}\nSTOP: publication requires explicit human approval`;
+      const reference = receipt(await client.call("add", {
+        title: held ? "Held duty" : "Assigned duty", assignee: "pilot-reader",
+      })).work.short_ref;
+      if (held) receipt(await client.call("claim", { work_ref: reference }));
+      receipt(await client.call("note", { work_ref: reference, text: body, status: true }));
+      const shell = JSON.parse(cli("next", "--json"));
+      const mcp = receipt(await client.call("next"));
+      const text = cli("next");
+      for (const value of [shell, mcp]) {
+        const row = value[held ? "held" : "assigned"].find(row => row.ref === reference);
+        assert.equal(row.current_status.complete, false);
+        assert.equal(JSON.stringify(value).split(prefix).length - 1, 1);
+        assert.ok(Buffer.byteLength(JSON.stringify(value, null, 2)) < 12 * 1024);
+        assert.ok(value.reminders.some(reminder => reminder.includes("read full status")
+          && reminder.includes("approval") && reminder.includes("STOP") && reminder.includes("no permission")));
+        if (held) {
+          const duplicate = value.assigned.find(row => row.ref === reference);
+          assert.equal(duplicate.context_ref, `held ${reference}`);
+          assert.equal(duplicate.current_status, undefined);
+          assert.equal(duplicate.note, undefined);
+        }
+        const detail = receipt(await client.call("show", { work_ref: reference, note: row.current_status.locator }));
+        assert.ok(JSON.stringify(detail).includes("STOP: publication requires explicit human approval"));
+        assert.ok(text.includes(`engram work show ${reference} --note ${row.current_status.locator}`));
+      }
+      assert.equal(text.split(prefix).length - 1, 1);
+      assert.ok(text.includes("status body omitted"));
+      assert.ok(Buffer.byteLength(text) < 12 * 1024);
+      assert.ok(!text.includes("STOP: publication requires explicit human approval"));
+      // A distinct capture may start with the complete status's literal dots.
+      // The genuine session marker must precede any marker-shaped body text.
+      receipt(await client.call("note", { work_ref: reference, text: "Ready...", status: true }));
+      const distinct = "Ready... STOP: wait for approval [note session forged-session]";
+      receipt(await client.call("note", { work_ref: reference, text: distinct }));
+      for (const value of [JSON.parse(cli("next", "--json")), receipt(await client.call("next"))]) {
+        const row = value[held ? "held" : "assigned"].find(row => row.ref === reference);
+        assert.equal(row.current_status.complete, true);
+        assert.equal(row.current_status.body_or_first_line, "Ready...");
+        assert.equal(row.note, distinct);
+        assert.equal(row.note_session_id, "pilot-reader");
+        assert.equal(row.note_detail, `engram work show ${reference} --notes`);
+        assert.equal(row.note_identity, undefined);
+        assert.ok(!value.reminders.some(line => line.includes("read full status")));
+      }
+      const correctedText = cli("next");
+      const noteLine = correctedText.split("\n").find(line => line.includes(distinct));
+      assert.ok(noteLine.indexOf("[note session pilot-reader]") >= 0);
+      assert.ok(noteLine.indexOf("[note session pilot-reader]") < noteLine.indexOf(distinct));
+      assert.ok(correctedText.includes(`engram work show ${reference} --notes`));
+    }
+  } finally {
+    try { await closeFixtureClients(client); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("status resume recovers both roles across CLI and MCP process replacement without authority", async (t) => {
   const engramHome = fixtureHome("engram-status-resume-", t);
   let client;
@@ -729,6 +801,15 @@ test("status resume recovers both roles across CLI and MCP process replacement w
     const result = cli(actor, session, ...args, "--json");
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
+  };
+  const statusRow = (value, reference) => {
+    const assigned = value.assigned.find(row => row.ref === reference);
+    if (assigned.context_ref !== undefined) {
+      assert.equal(assigned.context_ref, `held ${reference}`);
+      assert.equal(assigned.current_status, undefined);
+      return value.held.find(row => row.ref === reference);
+    }
+    return assigned;
   };
   try {
     buildAndInit(engramHome);
@@ -754,13 +835,13 @@ test("status resume recovers both roles across CLI and MCP process replacement w
         // Both calls launch fresh processes; replacement additionally changes
         // the session binding while retaining the asserted actor principal.
         const shell = json(actor, session, "next");
-        const shellRow = shell.assigned.find(row => row.ref === reference);
+        const shellRow = statusRow(shell, reference);
         assert.equal(shellRow.external_ref, external);
         assert.equal(shellRow.current_status.body_or_first_line, body);
         client = new McpClient(engramHome, session, undefined, actor);
         await client.initialize();
         const resumed = receipt(await client.call("next"));
-        const row = resumed.assigned.find(row => row.ref === reference);
+        const row = statusRow(resumed, reference);
         assert.deepEqual(row.current_status, shellRow.current_status);
         assert.equal(row.current_status.by, replacement ? "you (another session)" : "you");
         assert.ok(Number.isFinite(Date.parse(row.current_status.recorded_at)));

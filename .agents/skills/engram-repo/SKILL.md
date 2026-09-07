@@ -119,8 +119,11 @@ policy outside the core. Extend ports using neutral request/response records.
 
 Record changed duties, waits, decisions, and the next permitted action with
 `engram work note REF --status TEXT` (MCP `status: true`), not only in a
-conversation summary. A coordinator without code work keeps one assigned or
-held coordination item; `next` is the resume read. Current status is the
+conversation summary; checkpoint each real duty/wait/next-step change before
+going quiet. After compaction or session replacement, explicitly read `next`
+before acting and follow any clipped status's full-note locator.
+A coordinator without code work keeps one assigned or held coordination
+item; `next` is the resume read. Current status is the
 newest status qualified by storage at capture for the currently accountable
 actor (live holder, otherwise assignee); peer status notes remain observations,
 and ordinary notes/gates do not replace the commitment. `show --notes` retains
