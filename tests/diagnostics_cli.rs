@@ -38,6 +38,57 @@ fn diagnosis(home: &Path) -> Value {
 }
 
 #[test]
+fn doctor_discloses_the_verified_snapshot_in_json_and_text() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let home = directory.path();
+    success(home, &["init"]);
+    let empty = diagnosis(home);
+    assert_eq!(
+        empty["verified_snapshot"]["project_feed_head"]["position"],
+        0
+    );
+    success(
+        home,
+        &[
+            "work",
+            "--actor-id",
+            "snapshot",
+            "--session-id",
+            "snapshot",
+            "add",
+            "Snapshot disclosure",
+        ],
+    );
+    let report = diagnosis(home);
+    let connection = rusqlite::Connection::open(report["database"].as_str().unwrap()).unwrap();
+    let objects: i64 = connection
+        .query_row("SELECT COUNT(*) FROM objects", [], |row| row.get(0))
+        .unwrap();
+    let position: i64 = connection
+        .query_row(
+            "SELECT position FROM work_feed_heads WHERE feed_kind = 'project' AND feed_id = ?1",
+            [report["project_id"].as_str().unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(position > 0);
+    assert_eq!(
+        report["verified_snapshot"],
+        json!({
+            "object_count": objects,
+            "project_feed_head": {
+                "feed": {"kind": "project", "id": report["project_id"]},
+                "position": position,
+            },
+        })
+    );
+    let text = String::from_utf8(success(home, &["doctor"]).stdout).unwrap();
+    assert!(text.contains(&format!(
+        "Verified snapshot: {objects} immutable object(s); selected project feed head position {position}"
+    )));
+}
+
+#[test]
 fn version_next_and_doctor_share_runtime_identity_across_processes() {
     let directory = crate::test_support::temp_home().unwrap();
     let home = directory.path();

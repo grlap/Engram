@@ -22,6 +22,14 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+thread_local! {
+    // One-shot deterministic writer interleaving, absent from production builds.
+    static AFTER_EVENT_SCAN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
 impl SqliteStore {
     pub(in crate::storage) fn verify_work_projections(
         &self,
@@ -32,6 +40,14 @@ impl SqliteStore {
     pub(in crate::storage) fn verify_work_projections_on(
         connection: &Connection,
     ) -> Result<(usize, Vec<String>), StoreError> {
+        // Graph snapshots and doctor already own a transaction; standalone
+        // integrity callers need the same event/projection read consistency.
+        if connection.is_autocommit() {
+            let snapshot = connection.unchecked_transaction()?;
+            let report = Self::verify_work_projections_on(&snapshot)?;
+            snapshot.commit()?;
+            return Ok(report);
+        }
         let mut checked = 0_usize;
         let mut invalid = Vec::new();
         let mut seen_events = HashSet::new();
@@ -401,6 +417,11 @@ impl SqliteStore {
             }
         }
         drop(statement);
+
+        #[cfg(test)]
+        if let Some(after_scan) = AFTER_EVENT_SCAN.with(|callback| callback.borrow_mut().take()) {
+            after_scan();
+        }
 
         verify_json_projection::<WorkItem>(
             connection,

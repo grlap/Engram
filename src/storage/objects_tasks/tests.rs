@@ -91,6 +91,10 @@ fn append_is_idempotent_and_round_trips_verified_content() {
     assert_eq!(
         store.verify_all().unwrap(),
         IntegrityReport {
+            snapshot: crate::storage::IntegritySnapshot {
+                object_count: 4,
+                project_feed_heads: Vec::new(),
+            },
             checked_objects: 4,
             invalid_objects: Vec::new(),
             checked_graph_snapshot_audits: 0,

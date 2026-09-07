@@ -62,6 +62,7 @@ pub(crate) fn doctor(
     let control = match store.control_diagnostics_at(chrono::Utc::now()) {
         Ok(control) => control,
         Err(error) => {
+            println!("{}", verified_snapshot_line(&report, project_id));
             return report_error(
                 database,
                 project_id,
@@ -79,6 +80,7 @@ pub(crate) fn doctor(
         report.checked_control_records,
         report.checked_work_records
     );
+    println!("{}", verified_snapshot_line(&report, project_id));
     print_graph_snapshot_audits(&store, project_id)?;
     println!(
         "Control policy schema={} id={} epoch={} required={} obligation_rules={} supported={:?}; sessions={} issued={} begun={}",
@@ -227,6 +229,7 @@ fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool)
                 "project_id": project_id,
                 "database": canonical_database_path(database)?,
                 "healthy": report.is_healthy(),
+                "verified_snapshot": verified_snapshot_json(&report, project_id),
                 "checked_objects": report.checked_objects,
                 "checked_graph_snapshot_audits": report.checked_graph_snapshot_audits,
                 "checked_control_records": report.checked_control_records,
@@ -245,6 +248,7 @@ fn repair_store_projections(database: &Path, project_id: &ProjectId, json: bool)
             report.checked_control_records,
             report.checked_work_records
         );
+        println!("{}", verified_snapshot_line(&report, project_id));
     }
     Ok(())
 }
@@ -253,6 +257,43 @@ struct DoctorJsonReport {
     value: serde_json::Value,
     control: Option<engram::storage::ControlDiagnostics>,
     failure: Option<String>,
+}
+
+fn verified_project_head(
+    report: &engram::storage::IntegrityReport,
+    project_id: &ProjectId,
+) -> engram::domain::FeedPosition {
+    report
+        .snapshot
+        .project_feed_heads
+        .iter()
+        .find(|head| matches!(&head.feed, engram::domain::FeedId::Project(id) if id == project_id))
+        .cloned()
+        .unwrap_or_else(|| engram::domain::FeedPosition {
+            feed: engram::domain::FeedId::Project(project_id.clone()),
+            position: 0,
+        })
+}
+
+fn verified_snapshot_json(
+    report: &engram::storage::IntegrityReport,
+    project_id: &ProjectId,
+) -> serde_json::Value {
+    serde_json::json!({
+        "object_count": report.snapshot.object_count,
+        "project_feed_head": verified_project_head(report, project_id),
+    })
+}
+
+fn verified_snapshot_line(
+    report: &engram::storage::IntegrityReport,
+    project_id: &ProjectId,
+) -> String {
+    format!(
+        "Verified snapshot: {} immutable object(s); selected project feed head position {}",
+        report.snapshot.object_count,
+        verified_project_head(report, project_id).position,
+    )
 }
 
 fn build_doctor_json_report(
@@ -279,8 +320,10 @@ fn assemble_doctor_json_report(
         && engram::storage::store_open_refusal_kind(error)
             != engram::storage::StoreOpenRefusalKind::CorruptStore
     {
+        let mut value = refusals::refusal(database, project_id, error, Phase::ControlDiagnostics);
+        value["verified_snapshot"] = verified_snapshot_json(report, project_id);
         return Ok(DoctorJsonReport {
-            value: refusals::refusal(database, project_id, error, Phase::ControlDiagnostics),
+            value,
             control: None,
             failure: Some(format!("control diagnostics failed: {error}")),
         });
@@ -321,6 +364,7 @@ fn assemble_doctor_json_report(
         "project_id": project_id,
         "database": canonical_database,
         "work_schema_version": store.work_schema_version(),
+        "verified_snapshot": verified_snapshot_json(report, project_id),
         "checked": {
             "objects": report.checked_objects,
             "graph_snapshot_audits": report.checked_graph_snapshot_audits,
@@ -618,6 +662,38 @@ mod tests {
         assert!(rendered.len() <= MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES);
         assert!(rendered.ends_with('…'));
         assert!(std::str::from_utf8(rendered.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn doctor_snapshot_disclosure_does_not_reread_after_verification() {
+        let directory = crate::test_support::temp_home().unwrap();
+        let database = directory.path().join("snapshot.db");
+        let mut store = SqliteStore::open(&database).unwrap();
+        let project = ProjectId("snapshot".into());
+        let report = store.verify_all().unwrap();
+        store
+            .append(
+                "snapshot_test",
+                &serde_json::json!({"committed": "after verification"}),
+            )
+            .unwrap();
+        assert!(store.verify_all().unwrap().snapshot.object_count > report.snapshot.object_count);
+        let rendered = build_doctor_json_report(&store, &database, &project, &report).unwrap();
+        assert_eq!(
+            rendered.value["verified_snapshot"],
+            verified_snapshot_json(&report, &project)
+        );
+        assert_eq!(
+            rendered.value["verified_snapshot"]["object_count"],
+            report.snapshot.object_count
+        );
+        assert_eq!(
+            verified_snapshot_line(&report, &project),
+            format!(
+                "Verified snapshot: {} immutable object(s); selected project feed head position 0",
+                report.snapshot.object_count,
+            )
+        );
     }
 
     #[test]

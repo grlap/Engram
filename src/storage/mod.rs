@@ -887,9 +887,20 @@ pub enum StoreError {
     },
 }
 
-/// Result of scanning every immutable object in the store.
+/// Diagnostic identity of the read snapshot, not a replay or authority token.
+/// Captured inside verification's transaction, never refreshed after the scan.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct IntegritySnapshot {
+    /// Actual rows in `objects`, excluding additional projection checks.
+    pub object_count: usize,
+    /// Named project-feed heads in this store, ordered by project id.
+    pub project_feed_heads: Vec<crate::domain::FeedPosition>,
+}
+
+/// Result of verifying immutable history and projections in one read snapshot.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct IntegrityReport {
+    pub snapshot: IntegritySnapshot,
     pub checked_objects: usize,
     pub invalid_objects: Vec<String>,
     pub checked_graph_snapshot_audits: usize,

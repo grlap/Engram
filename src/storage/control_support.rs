@@ -57,6 +57,12 @@ impl SqliteStore {
     pub(super) fn verify_control_policy_history(
         connection: &Connection,
     ) -> Result<ControlPolicyProjection, StoreError> {
+        if connection.is_autocommit() {
+            let snapshot = connection.unchecked_transaction()?;
+            let projection = Self::verify_control_policy_history(&snapshot)?;
+            snapshot.commit()?;
+            return Ok(projection);
+        }
         let (projection, active_policy, active_authority) =
             Self::load_control_policy_head(connection)?;
         Self::verify_control_policy_chain(

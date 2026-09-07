@@ -4,6 +4,8 @@ use crate::storage::work::*;
 
 use crate::storage::work::query::load_work_claim_optional;
 
+mod snapshot;
+
 // Seed valid canonical representations with omitted serde defaults, not a
 // captured store or a pinned object digest. Only this synthetic fixture is edited.
 fn omit_native_restore_defaults(store: &SqliteStore, work: WorkId) {

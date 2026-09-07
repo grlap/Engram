@@ -188,6 +188,16 @@ Current work projections are checked by `engram doctor` against canonical typed
 work events: exact item/run/root/claim/handoff/blocker snapshots, prerequisite
 and blocker-event bindings, evidence/run bindings, completion seals, dense feed
 heads, typed feed membership, and cross-feed order.
+Every integrity entry point holds one read transaction across its canonical
+and projection checks, reusing a caller's existing transaction or savepoint.
+This includes standalone work verification used by graph snapshots and the
+diagnostics-only control-policy recovery path. Commits after the first read
+cannot change the remaining checks or produce mixed-state corruption findings.
+Doctor's `verified_snapshot` disclosure names the actual store-wide immutable
+object count and the selected project's named dense feed head position from
+that same snapshot. These are diagnostic context, not a replay or authority
+token; other diagnostic sections may reflect later reads. The `checked` counts
+also include projection checks and need not equal the snapshot's object count.
 Non-holder `WorkObservation` objects bind the canonical planning state they
 observed and a non-holder attribution marker. Their `work_observations` index
 is rebuildable; verification checks its exact bindings and dense per-item

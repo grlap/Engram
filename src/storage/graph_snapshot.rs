@@ -261,6 +261,12 @@ impl SqliteStore {
 pub(super) fn verify_work_graph_snapshot_saved_events_on(
     connection: &Connection,
 ) -> Result<(usize, Vec<String>), StoreError> {
+    if connection.is_autocommit() {
+        let snapshot = connection.unchecked_transaction()?;
+        let report = verify_work_graph_snapshot_saved_events_on(&snapshot)?;
+        snapshot.commit()?;
+        return Ok(report);
+    }
     let rows = connection
         .prepare(
             "SELECT object_hash, canonical_json

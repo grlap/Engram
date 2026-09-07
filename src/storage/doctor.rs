@@ -17,8 +17,8 @@ use super::{
 mod tests;
 
 impl SqliteStore {
-    /// Verifies canonical bytes and hashes for every stored object and control
-    /// observation.
+    /// Verifies canonical bytes, audit bindings and mutable projections in one
+    /// read transaction. Reuses an existing caller-owned transaction/savepoint.
     ///
     /// # Errors
     ///
@@ -28,6 +28,14 @@ impl SqliteStore {
         reason = "the integrity scanner enumerates every canonical and operational control tier"
     )]
     pub fn verify_all(&self) -> Result<IntegrityReport, StoreError> {
+        // Keep canonical scans and mutable projections on the same read cut.
+        // An embedding caller's transaction or savepoint remains caller-owned.
+        if self.connection.is_autocommit() {
+            let snapshot = self.connection.unchecked_transaction()?;
+            let report = self.verify_all()?;
+            snapshot.commit()?;
+            return Ok(report);
+        }
         let mut statement = self
             .connection
             .prepare("SELECT object_hash, canonical_json FROM objects ORDER BY object_hash")?;
@@ -46,6 +54,15 @@ impl SqliteStore {
             }
         }
         drop(statement);
+        report.snapshot.object_count = report.checked_objects;
+        report.snapshot.project_feed_heads = self.connection.prepare(
+            "SELECT feed_id, position FROM work_feed_heads WHERE feed_kind = 'project' ORDER BY feed_id",
+        )?.query_map([], |row| {
+            Ok(crate::domain::FeedPosition {
+                feed: crate::domain::FeedId::Project(crate::domain::ProjectId(row.get(0)?)),
+                position: row.get(1)?,
+            })
+        })?.collect::<Result<Vec<_>, _>>()?;
         Self::verify_memory_head_projections_on(
             &self.connection,
             &mut report.checked_objects,
@@ -62,15 +79,7 @@ impl SqliteStore {
             &mut report.invalid_objects,
         )?;
 
-        if self.connection.is_autocommit() {
-            let policy_snapshot = self.connection.unchecked_transaction()?;
-            Self::verify_control_policy_records_on(&policy_snapshot, &mut report)?;
-            policy_snapshot.commit()?;
-        } else {
-            // Corruption fixtures and embedders may already own a transaction
-            // or savepoint. Reuse that snapshot instead of nesting BEGIN.
-            Self::verify_control_policy_records_on(&self.connection, &mut report)?;
-        }
+        Self::verify_control_policy_records_on(&self.connection, &mut report)?;
 
         let mut control_statement = self.connection.prepare(
             "SELECT sequence, session_id, task_id, idempotency_key, intent_hash,
@@ -380,6 +389,12 @@ impl SqliteStore {
         connection: &Connection,
     ) -> Result<ControlPolicyRecoveryReport, StoreError> {
         const GUIDANCE: &str = "ordinary Engram open remains fail-closed; restore a verified backup or inspect the named immutable bindings before an explicit operator-directed repair; this command did not select, rewrite, or activate a policy";
+        if connection.is_autocommit() {
+            let snapshot = connection.unchecked_transaction()?;
+            let report = Self::diagnose_control_policy_records_on(&snapshot)?;
+            snapshot.commit()?;
+            return Ok(report);
+        }
         let mut report = ControlPolicyRecoveryReport {
             checked_control_records: 1,
             invalid_control_records: Vec::new(),
