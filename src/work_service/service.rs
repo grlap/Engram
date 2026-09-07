@@ -150,6 +150,15 @@ impl LocalWorkService {
         Ok(store)
     }
 
+    /// Read words validate attribution but do not register a process-default
+    /// session. Its first stateful operation still initializes it in `store_at`.
+    pub(super) fn read_store_at(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+        self.lock_store_at(now)
+    }
+
     fn lock_store_at(&self, now: DateTime<Utc>) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
         if self.actor_id.trim().is_empty() || self.session_id.0.trim().is_empty() {
             return Err(StoreError::InvalidWork(

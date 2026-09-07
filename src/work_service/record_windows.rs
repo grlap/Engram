@@ -108,18 +108,17 @@ impl LocalWorkService {
                 "continuation belongs to another item, project or window kind",
             ));
         }
-        let mut store = self.store_at(now)?;
-        let item = store.resolve_work_ref(&self.project_id, work_ref)?;
-        if cursor
-            .as_ref()
-            .is_some_and(|cursor| cursor.work != item.work_id)
-        {
-            return Err(invalid(
-                "continuation belongs to another item, project or window kind",
-            ));
-        }
-        store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
+        let store = self.read_store_at(now)?;
         store.work_read_snapshot(|store| {
+            let item = store.resolve_work_ref(&self.project_id, work_ref)?;
+            if cursor
+                .as_ref()
+                .is_some_and(|cursor| cursor.work != item.work_id)
+            {
+                return Err(invalid(
+                    "continuation belongs to another item, project or window kind",
+                ));
+            }
             let cut = store.work_read_cut(&self.project_id, now)?;
             let mut index = store.work_record_index(&self.project_id, item.work_id, kind)?;
             let mut families = BTreeMap::new();
@@ -152,7 +151,7 @@ impl LocalWorkService {
             let view = self.focus_view_for_projection(
                 store,
                 item.work_id,
-                true,
+                false,
                 true,
                 super::service::FocusText::Full,
                 now,
@@ -210,10 +209,9 @@ impl LocalWorkService {
                 Vec::new(),
             ));
         }
-        let mut store = self.store_at(now)?;
-        let item = store.resolve_work_ref(&self.project_id, work_ref)?;
-        store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
+        let store = self.read_store_at(now)?;
         store.work_read_snapshot(|store| {
+            let item = store.resolve_work_ref(&self.project_id, work_ref)?;
             let index = store.work_record_index(
                 &self.project_id,
                 item.work_id,

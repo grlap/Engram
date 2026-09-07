@@ -114,7 +114,10 @@ pub(super) fn continuation_header(view: &WorkFocusView) -> Receipt {
             format!("{} \"{}\"", work.short_ref, super::short(&work.title)),
             format!("full detail: {}", super::terminal_command(&detail)),
         ],
-        Guidance::default(),
+        Guidance {
+            reminders: Vec::new(),
+            next: vec![detail.clone()],
+        },
         json!({"work": {"short_ref": work.short_ref, "title": work.title}, "full_detail": detail}),
         false,
     )

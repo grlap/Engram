@@ -461,7 +461,7 @@ impl VerbError {
             }
             StoreError::InvalidWork(reason) if reason == super::GATE_WORK_REF_REQUIRED => (
                 vec![super::GATE_WORK_REF_REQUIRED.into()],
-                Vec::new(),
+                vec!["engram work next".into()],
             ),
             StoreError::InvalidWork(reason) if reason.contains("no focused work") => (
                 vec!["no item is selected; name one or claim one first".into()],

@@ -564,7 +564,7 @@ impl AgentVerbs {
             .map_err(|error| VerbError::for_listing(error.error, &command))
     }
 
-    /// `show`: one item in agent detail; selects it as ambient focus without
+    /// `show`: one item in agent detail without changing ambient focus or
     /// claiming. Host authority and integrity fields remain on `work core
     /// focus`.
     ///

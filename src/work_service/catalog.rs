@@ -56,7 +56,7 @@ impl LocalWorkService {
                 "continuation belongs to different filters or project",
             ));
         }
-        let store = self.store_at(now)?;
+        let store = self.read_store_at(now)?;
         store.work_read_snapshot(|store| {
             let mut query = query.clone();
             if let Some(parent) = under {

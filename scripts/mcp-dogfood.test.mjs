@@ -2,10 +2,11 @@
 
 import assert from "node:assert/strict";
 
-import { fixtureHome, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
+import { fixtureHome as ownedFixtureHome, removeFixtureHomes as cleanupFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
+import { readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import test, { after } from "node:test";
+import nodeTest, { after } from "node:test";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
@@ -33,6 +34,66 @@ const AGENT_TOOLS = [
   "forget",
 ];
 const HASH = /\b[0-9a-f]{64}\b/u;
+const SOFT_TIMING_MS = 2000;
+const fixtureTimings = new Map();
+const testTimings = new WeakMap();
+
+function walBytes(home) {
+  try {
+    return readdirSync(join(home, "projects"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .reduce((total, entry) => {
+        try { return total + statSync(join(home, "projects", entry.name, "engram.db-wal")).size; }
+        catch (error) { if (error.code === "ENOENT") return total; throw error; }
+      }, 0);
+  } catch { return null; }
+}
+
+function timingLine(kind, name, elapsed, bytes) {
+  if (elapsed < SOFT_TIMING_MS) return undefined;
+  return `MCP timing: ${kind}=${JSON.stringify(name)} elapsed_ms=${elapsed.toFixed(1)} soft_threshold_ms=${SOFT_TIMING_MS} wal_bytes=${bytes ?? "unavailable"} (sampled floor; close may truncate WAL)`;
+}
+
+function test(name, body) {
+  return nodeTest(name, async (context) => {
+    const timing = { started: performance.now(), homes: new Map() };
+    testTimings.set(context, timing);
+    try { return await body(context); }
+    finally {
+      const sizes = [...timing.homes.values()];
+      const bytes = sizes.length && sizes.every((size) => size !== null)
+        ? sizes.reduce((total, size) => total + size, 0) : null;
+      const line = timingLine("test", name, performance.now() - timing.started, bytes);
+      if (line) console.error(`${line} wal_sample=maximum_observed`);
+      for (const home of timing.homes.keys()) fixtureTimings.delete(home);
+    }
+  });
+}
+
+function fixtureHome(prefix, context) {
+  const home = ownedFixtureHome(prefix, context);
+  const timing = testTimings.get(context);
+  if (timing) { timing.homes.set(home, null); fixtureTimings.set(home, timing); }
+  return home;
+}
+
+function removeFixtureHomes(...homes) {
+  for (const home of homes) recordWalSample(home);
+  cleanupFixtureHomes(...homes);
+}
+
+function recordWalSample(home) {
+  const bytes = walBytes(home);
+  const timing = fixtureTimings.get(home);
+  if (timing && bytes !== null) timing.homes.set(home, Math.max(timing.homes.get(home) ?? 0, bytes));
+  return bytes;
+}
+
+test("slow MCP diagnostics preserve the soft threshold and unknown WAL state", () => {
+  assert.equal(timingLine("call", "note", SOFT_TIMING_MS - 1, 42), undefined);
+  assert.equal(timingLine("call", "note", SOFT_TIMING_MS, 42), 'MCP timing: call="note" elapsed_ms=2000.0 soft_threshold_ms=2000 wal_bytes=42 (sampled floor; close may truncate WAL)');
+  assert.match(timingLine("test", "fixture", SOFT_TIMING_MS, null), /wal_bytes=unavailable /);
+});
 
 function shortRef(workId) {
   assert.match(workId, /^[0-9a-f-]{36}$/u);
@@ -41,6 +102,7 @@ function shortRef(workId) {
 
 class McpClient {
   constructor(engramHome, sessionId, actorContext, actorId = sessionId) {
+    this.engramHome = engramHome;
     this.nextId = 1;
     this.pending = new Map();
     this.stderr = "";
@@ -152,17 +214,23 @@ class McpClient {
 
   async call(name, arguments_ = {}) {
     const started = performance.now();
-    const result = await this.request("tools/call", {
-      name,
-      arguments: arguments_,
-    });
-    const elapsed = performance.now() - started;
+    let result;
+    let elapsed;
+    try {
+      result = await this.request("tools/call", { name, arguments: arguments_ });
+    } finally {
+      elapsed = performance.now() - started;
+      if (elapsed >= SOFT_TIMING_MS) console.error(timingLine("call", name, elapsed, recordWalSample(this.engramHome)));
+    }
     // Catch the former 14s pathology; precise bounds live in Rust decode/statement-count regressions.
     assert.ok(elapsed < 10000, `${name} took ${elapsed.toFixed(1)}ms; sanity limit is 10000ms`);
     return result;
   }
 
   async close() {
+    // Closing the last SQLite owner may checkpoint/remove the WAL. Capture
+    // it before EOF as well as on slow calls and before fixture cleanup.
+    recordWalSample(this.engramHome);
     const started = performance.now();
     if (!this.child.stdin.destroyed) this.child.stdin.end();
     const waitForClose = async (milliseconds) => {
@@ -988,6 +1056,105 @@ test("hygiene correction pending rejection gives conditional recovery on CLI and
   }
 });
 
+test("MCP show descriptions teach read-only targeting", async (t) => {
+  const engramHome = fixtureHome("engram-show-contract-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "show-contract");
+    await client.initialize();
+    const show = (await client.tools()).find(({ name }) => name === "show");
+    assert.match(show.description, /reading changes neither focus nor claims/);
+    assert.match(show.inputSchema.properties.work_ref.description, /reading changes neither focus nor claims/);
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+test("CLI show help teaches read-only targeting", (t) => {
+  const engramHome = fixtureHome("engram-show-help-", t);
+  try {
+    buildAndInit(engramHome);
+    const help = cliWord(engramHome, "show-help", "show", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /reading changes neither focus nor claims/);
+  } finally { removeFixtureHomes(engramHome); }
+});
+
+test("missing-focus gate offers discovery on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-gate-discovery-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    cliJson(engramHome, "gate-discovery-owner", "add", "Available item");
+    client = new McpClient(engramHome, "gate-discovery-mcp");
+    await client.initialize();
+    const mcp = structuredError(await client.call("gate", { name: "check" }), "work_invalid");
+    const cli = cliWord(engramHome, "gate-discovery-cli", "gate", "check", "--json");
+    assert.notEqual(cli.status, 0);
+    for (const error of [mcp, JSON.parse(cli.stderr).error]) {
+      assert.deepEqual(error.next, ["engram work next"]);
+      assert.deepEqual(error.reminders, ["no item is selected for this gate; use gate NAME --work-ref REF"]);
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+test("targeted reads do not steer later bare writes on CLI or MCP", async (t) => {
+  const engramHome = fixtureHome("engram-read-target-", t);
+  const session = "read-target-session";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const other = cliJson(engramHome, "peer", "add", "Read without selecting").work.short_ref;
+    cliJson(engramHome, "peer", "note", other, "Committed note for reading");
+    const locator = cliJson(engramHome, "peer", "show", other, "--notes").notes[0].locator;
+    const held = cliJson(engramHome, session, "add", "Keep execution here").work.short_ref;
+    cliJson(engramHome, session, "claim", held);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const modes = [
+      [[], {}],
+      [["--notes"], { notes: true }],
+      [["--notes", "--gates"], { notes: true, gates: true }],
+      [["--history"], { history: true }],
+      [["--note", locator], { note: locator }],
+    ];
+    for (const surface of ["cli", "mcp"]) {
+      for (const [flags, args] of modes) {
+        const shown = surface === "cli"
+          ? cliJson(engramHome, session, "show", other, ...flags)
+          : receipt(await client.call("show", { work_ref: other, ...args }));
+        assert.equal(args.note ? shown.work_ref : shown.status.work.short_ref, other);
+        assert.ok(shown.next.length > 0);
+        assert.ok(shown.next.every((command) => command.includes(other)));
+        const text = `Bare note remains on held item ${surface} ${flags.join(" ")}`;
+        const written = surface === "cli"
+          ? cliJson(engramHome, session, "note", text)
+          : receipt(await client.call("note", { text }));
+        assert.equal(written.work.short_ref, held);
+      }
+      const text = `Explicit observation on read item ${surface}`;
+      const written = surface === "cli"
+        ? cliJson(engramHome, session, "note", other, text)
+        : receipt(await client.call("note", { work_ref: other, text }));
+      assert.equal(written.work.short_ref, other);
+      // An explicit mutation still selects its target; restore execution focus
+      // by renewing the existing claim before the next surface's read matrix.
+      cliJson(engramHome, session, "claim", held);
+    }
+  } finally {
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
+  }
+});
+
 test("show parent context agrees across CLI and MCP for required optional and root", async (t) => {
   const engramHome = fixtureHome("engram-show-parent-", t);
   const session = "parent-reader";
@@ -1613,6 +1780,12 @@ test("detach exposes the same remedy and independent root through MCP", async (t
     });
     assert.deepEqual(JSON.parse(completed.content[0].text), completedValue);
     assert.equal(receipt(await client.call("show", { work_ref: child })).next[0], command);
+    const afterRead = receipt(await client.call("next", {}));
+    assert.equal(afterRead.focus.ref, parent);
+    assert.equal(afterRead.focus.state, "completed");
+    assert.deepEqual(afterRead.reminders, []);
+    assert.ok(!afterRead.next.includes(command));
+    cliJson(engramHome, "detacher", "core", "focus", child);
     assert.equal(receipt(await client.call("next", {})).next[0], command);
     const blocked = await client.call("ls", { blocked: true });
     const blockedValue = receipt(blocked);

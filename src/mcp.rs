@@ -110,7 +110,7 @@ struct LsArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ShowArgs {
-    /// Short work ref or full UUID; becomes the focus for later calls.
+    /// Short work ref or full UUID; reading changes neither focus nor claims.
     work_ref: String,
     /// Newest notes/observations, excluding gates, with exact omissions.
     notes: Option<bool>,
@@ -352,10 +352,10 @@ impl McpServer {
         ))
     }
 
-    /// Inspect one item and make it the focus.
+    /// Inspect one item without changing focus or claims.
     #[tool(
         name = "show",
-        description = "One item: outcome, acceptance, holder, blockers, reminders; later calls default to it"
+        description = "One item: outcome, acceptance, holder, blockers, reminders; reading changes neither focus nor claims"
     )]
     fn show(&self, Parameters(args): Parameters<ShowArgs>) -> CallToolResult {
         verb(self.verbs().show_records(

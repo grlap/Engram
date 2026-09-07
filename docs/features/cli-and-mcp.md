@@ -108,6 +108,13 @@ existing shape.
 contract: compact `next` relies on the stderr notice, while verbose `next`
 already returns its session object.
 
+Reading an item never steers where a later write lands: `show REF`, including
+notes, history, continuations and note detail, preserves ambient focus and
+staged delivery. Use the explicitly targeted commands offered by its receipt.
+Claiming or explicitly targeting a mutation establishes focus; a bare mutation
+keeps its existing target, not the item just read. These reads do not register
+a fresh process-default session; registration waits for a stateful operation.
+
 ```bash
 engram work next [--verbose]      # what is ready, what you hold, what others changed
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
@@ -256,8 +263,9 @@ Rules that matter:
   execution receives cancellation's audited waiver for a missing contributor.
   Open descendants, live ownership, independent blockers, unfinished
   prerequisites, and future deferral refuse with `work_detach_refused` and a
-  remedy naming what to resolve first. `show`, focused `next`, and `ls --blocked`
-  display the terminal-parent cause and exact detach command when admitted.
+  remedy naming what to resolve first. `show CHILD` and `ls --blocked` display
+  the terminal-parent cause and exact detach command when admitted. `next`
+  does so when the child is already focused; reading it does not select focus.
   Inspect the old child's successor after an uncertain response; a keyless
   repeat after supersession refuses without creating another root. See
   [detached follow-ups](local-work-system.md#gates-prerequisites-supersession-and-project-memories).
@@ -297,9 +305,9 @@ Rules that matter:
   one `full_detail` item-read command; it does not repeat outcome, acceptance,
   completion or child-context projections. The first page keeps ordinary
   item context. Both forms fit the same 12 KiB text/JSON ceiling.
-  An exhausted continuation may have `next: []` (`next: none` in text);
-  its single `full_detail` command remains the way back to item context and
-  is deliberately not duplicated in `next`.
+  Every continuation retains its shared quoted `full_detail` command in
+  `next`, including an exhausted page, so item context remains reachable
+  through the runnable navigation list.
   `--history` (MCP `history: true`) uses the same window fields under
   `history.window`, with records in `history.items` and exact `omitted`.
   Its row `family` is `history` for events/completion, or `notes`,
@@ -880,7 +888,7 @@ operation enforces the live control-session/run binding described above.
 | --- | --- |
 | `next` | What is ready, what this session holds, and the changes since its previous call |
 | `ls` | Open items with `search`, `blocked`, `mine`, `all`, `label`, direct-parent `under` and `optional`/`required` filters, plus non-confidential `after` continuation |
-| `show` | One item in safe agent detail; selects it as focus without claiming |
+| `show` | One item in safe agent detail; changes neither focus nor claims |
 | `add` | A root from a title, or one child with `under`; `optional` permits a peer proposal beneath a foreign-held parent; `notes` records ordered initial observations atomically; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
 | `update` | One `action`: `release`, `blocked`, `unblock`, `revise`, `cancel`, `reject`, `after`, `drop_after`, `waive`, `detach`, or `supersede` |

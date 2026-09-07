@@ -137,16 +137,16 @@ impl LocalWorkService {
         work_ref: &str,
         now: DateTime<Utc>,
     ) -> Result<WorkFocusView, StoreError> {
-        let mut store = self.store_at(now)?;
-        let item = store.resolve_work_ref(&self.project_id, work_ref)?;
-        store.focus_work_session(&self.project_id, &self.session_id, item.work_id, now)?;
-        // Focus selection is the existing write. All advisory sections that
-        // follow, including complete child counts, observe one read cut.
+        let store = self.read_store_at(now)?;
+        // Reading never selects ambient focus or discards a staged delivery.
+        // Resolve the explicit target and its advisory sections in one cut.
         store.work_read_snapshot(|store| {
+            let item = store.resolve_work_ref(&self.project_id, work_ref)?;
             self.focus_view_for_projection(
                 store,
                 item.work_id,
-                true,
+                // The agent renderer does not emit the focus-bound memory index.
+                false,
                 true,
                 super::service::FocusText::Full,
                 now,

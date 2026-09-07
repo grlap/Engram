@@ -179,6 +179,11 @@ it. Host-only `work core` reads remain full.
 
 Rules that matter:
 
+- Reading never steers a later write: `show REF`, including notes, history,
+  continuations and detail, preserves focus and staged delivery. Follow its
+  explicitly targeted commands. Claiming or explicitly targeting a mutation
+  establishes focus; a bare mutation keeps its existing target.
+
 - For unfinished work stranded beneath a completed, cancelled, or superseded
   ancestor, follow the exact `update CHILD --detach "why"` command offered by
   `show`, `next`, or `ls --blocked`. This atomically creates an independent

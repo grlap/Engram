@@ -40,13 +40,29 @@ fn detach_guidance_and_one_command_successor_are_consistent() {
         serde_json::json!(["parent completed"])
     );
     assert_eq!(shown.value["next"][0], command);
+    // Reading the child does not steer ambient next away from the completed
+    // parent. Its own show and blocked listing retain the explicit remedy.
     let next = verbs.next(&NextInput::default(), at(5)).expect("next");
-    assert!(next.text().contains(&command));
+    assert_eq!(next.value["focus"]["ref"], parent);
+    assert_eq!(next.value["focus"]["state"], "completed");
+    assert_eq!(next.value["reminders"], serde_json::json!([]));
+    assert!(!next.next.contains(&command));
+    assert!(!next.text().contains(&command));
+    // Explicit selection remains supported and retains the original focused
+    // detach guidance; only implicit read-side steering is removed.
+    verbs
+        .service
+        .select_work(&child, at(5))
+        .expect("explicit focus");
+    let focused = verbs
+        .next(&NextInput::default(), at(5))
+        .expect("focused next");
+    assert!(focused.text().contains(&command));
     assert_eq!(
-        next.value["reminders"],
+        focused.value["reminders"],
         serde_json::json!(["parent completed"])
     );
-    assert_eq!(next.value["next"][0], command);
+    assert_eq!(focused.value["next"][0], command);
     let listed = verbs
         .ls(
             &LsInput {

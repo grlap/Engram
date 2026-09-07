@@ -68,8 +68,13 @@ fn rich_focus_fixture_bindings_close_both_services_before_directory() {
 #[test]
 fn next_does_not_shed_discovery_for_hidden_core_metadata() {
     let (_directory, verbs, _service, root) = rich_focus(8);
-    verbs.show(&root, at(100)).expect("select root");
+    verbs
+        .service
+        .select_work(&root, at(100))
+        .expect("select root");
+    verbs.show(&root, at(100)).expect("read root");
     let receipt = verbs.next(&NextInput::default(), at(101)).expect("next");
+    assert_eq!(receipt.value["focus"]["ref"], root);
     assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
     assert!(
         serde_json::to_vec_pretty(&receipt.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
@@ -289,6 +294,7 @@ fn a_fourth_coordination_note_does_not_erase_resume_discovery() {
                 .unwrap();
             note(&verbs, &fourth.short_ref, &coordination_note(3), now + 1);
         }
+        service.select_work(&root, at(now + 2)).unwrap();
         let shown = verbs.show(&root, at(now + 2)).unwrap();
         assert_eq!(shown.value["children"].as_array().unwrap().len(), 8);
         assert_eq!(shown.value["children_omitted"], 4);
@@ -297,6 +303,7 @@ fn a_fourth_coordination_note_does_not_erase_resume_discovery() {
             serde_json::to_vec_pretty(&shown.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
         );
         let next = verbs.next(&NextInput::default(), at(now + 3)).unwrap();
+        assert_eq!(next.value["focus"]["ref"], root);
         assert_eq!(
             next.value["participated"].as_array().map(Vec::len),
             Some(expected)

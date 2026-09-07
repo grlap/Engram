@@ -659,7 +659,13 @@ delivery, a pending protocol attempt, a live claim, or an open handoff offer
 prevents reclamation. Those tables are operational only; canonical work,
 events, evidence, and result objects remain intact.
 
-A staged page never blocks anything. Changing focus discards the un-delivered
+A targeted agent read never changes focus or staged delivery. Reading an item
+does not steer a later write; use the explicit target in receipt commands.
+Process-default session registration is lazy for these reads, catalog queries,
+and project-memory reads; a subsequent stateful operation registers normally.
+
+A staged page never blocks anything. Core explicit focus and mutation binding
+still change focus. Changing focus discards the un-delivered
 page, because its omission decisions were made under the previous focus; the
 next call recomputes the same interval under the new visibility basis and the
 confirmed cursor does not move. The delta interval is the authoritative
@@ -773,10 +779,11 @@ only the selected stream. `includes_gates` records the cursor-bound mode and
 all continuation/refusal commands preserve it. Canonical detail locators are
 independent of the filter. Inherited generations retain member order, followed by
 every native note family in dense project-feed order across run generations.
-The focus projection, count, members and continuation basis share one read
-transaction after the existing focus selection. `notes[].summary` is a full
-body. Explicit note rows in window/detail JSON also expose the recorded
-`actor_session_id` for the reader's own actor (null when absent on the record;
+Explicit target resolution, advisory item projection, count, members and
+continuation basis share one read snapshot without selecting focus.
+`notes[].summary` is a full body. Explicit note rows in window/detail JSON
+also expose the recorded `actor_session_id` for the reader's own actor
+(null when absent on the record;
 omitted for another actor) and native project `feed_position` for every actor.
 Inherited rows omit `feed_position`: their member order is not a position in
 this host's project feed. These diagnostic detail fields do not change note
@@ -829,8 +836,8 @@ Note/history windows print their active byte budget and reflected read cut.
 Continuation pages carry only a ref/title header, window/family/omission
 counts, records and navigation, plus `full_detail`; outcome, acceptance,
 completion and child context remain on the first page and explicit item read.
-An exhausted continuation may emit an empty `next`; the single `full_detail`
-command still navigates back to the item without repetition in that list.
+Every continuation retains the shared quoted `full_detail` command in `next`,
+including an exhausted page, so navigation always offers the explicit item read.
 The existing ceiling, cursor admission and canonical detail rules still apply.
 
 The `add` receipt names defaulted acceptance in both text and JSON reminders:
@@ -1579,7 +1586,7 @@ daily workflow it covers, kept for anyone arriving from the previous tracker
 | --- | --- |
 | `bd create`, parent/child | `work_propose` |
 | `bd ready` | `work_next` with typed readiness reasons |
-| `bd show`, search/list | `work_focus` plus query views |
+| `bd show`, search/list | Explicit `show REF` plus `ls`/`search` query views, without focus selection |
 | `bd dep add`, blocked | prerequisite edges and typed blockers through `update --after` / `--drop-after` |
 | assignee vs. `bd update --claim` | durable assignment vs. fenced live claim; resource mutation still needs leases |
 | notes/design/acceptance | typed work fields plus work-scoped shared/private memory and evidence |

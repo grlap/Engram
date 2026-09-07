@@ -45,7 +45,7 @@ impl LocalWorkService {
         after: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryList, StoreError> {
-        self.store_at(now)?.project_memories(
+        self.read_store_at(now)?.project_memories(
             &self.project_id,
             &self.session_id,
             &self.actor("memories", "list attributed project memories"),
@@ -65,7 +65,7 @@ impl LocalWorkService {
         key: &str,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryFullResponse, StoreError> {
-        let full = self.store_at(now)?.project_memory_full(
+        let full = self.read_store_at(now)?.project_memory_full(
             &self.project_id,
             &self.session_id,
             &self.actor("memories", "read attributed project memory"),

@@ -454,7 +454,7 @@ enum WorkCommand {
     },
     /// One item: outcome, acceptance, holder, blockers, reminders.
     Show {
-        /// Short work ref or full UUID; later words default to it.
+        /// Short work ref or full UUID; reading changes neither focus nor claims.
         work_ref: String,
         /// Newest notes/observations, excluding gates, with exact omissions.
         #[arg(long, conflicts_with_all = ["history", "note"])]

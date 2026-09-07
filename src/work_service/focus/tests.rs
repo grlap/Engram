@@ -3,7 +3,7 @@ use super::super::*;
 use crate::domain::{GATE_EVIDENCE_SUMMARY, SCHEMA_VERSION};
 
 #[test]
-fn show_child_summary_and_focus_share_one_read_cut_after_focus_selection() {
+fn show_child_summary_and_explicit_target_share_one_read_cut() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");
     let project = ProjectId("child-snapshot".into());

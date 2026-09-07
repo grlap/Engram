@@ -68,6 +68,17 @@ fn traverse(verbs: &AgentVerbs, work: &str, history: bool, time: i64) -> Vec<ser
         after = meta["after"].as_str().map(str::to_owned);
         if after.is_none() {
             assert_eq!(newest_first.len() as u64, meta["total"].as_u64().unwrap());
+            if meta["newer"].as_u64().unwrap() > 0 {
+                let command = format!("engram work show '{work}'");
+                assert!(receipt.next.contains(&command));
+                assert!(
+                    receipt.value["next"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!(command))
+                );
+                assert!(receipt.text().contains(&command));
+            }
             break;
         }
         assert!(!rows.is_empty());
@@ -123,7 +134,11 @@ fn record_windows_traverse_every_native_and_inherited_member_without_mutating_th
         first.value["notes"].as_array().unwrap().last().unwrap()["summary"],
         bodies[29]
     );
-    let connection = rusqlite::Connection::open(restored_path).unwrap();
+    let connection = rusqlite::Connection::open(&restored_path).unwrap();
+    let mut writer = rusqlite::Connection::open(&restored_path).unwrap();
+    let transaction = writer
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .unwrap();
     let before = crate::storage::test_database_shape_snapshot(&connection);
     let notes = traverse(&restored, &work, false, 130);
     assert_eq!(
@@ -144,6 +159,7 @@ fn record_windows_traverse_every_native_and_inherited_member_without_mutating_th
             .all(|row| !row["locator"].as_str().unwrap().contains(':'))
     );
     let history = traverse(&restored, &work, true, 130);
+    transaction.rollback().unwrap();
     assert!(history.len() > notes.len());
     let unique = history
         .iter()

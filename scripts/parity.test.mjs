@@ -76,6 +76,12 @@ test("detach makes a stranded child independently executable through one CLI upd
     const history = json("show", parent).history;
     const command = `engram work update ${child} --detach "Continue as independent work"`;
     assert.equal(json("show", child).next[0], command);
+    const afterRead = json("next");
+    assert.equal(afterRead.focus.ref, parent);
+    assert.equal(afterRead.focus.state, "completed");
+    assert.deepEqual(afterRead.reminders, []);
+    assert.ok(!afterRead.next.includes(command));
+    json("core", "focus", child);
     assert.equal(json("next").next[0], command);
     const blocked = json("ls", "--blocked");
     assert.equal(blocked.total, 1);

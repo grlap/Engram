@@ -554,13 +554,16 @@ fn phoenix_gate_without_focus_names_explicit_target_and_never_guesses_completed_
         failed: Vec::new(),
         evidence_ref: None,
     };
+    words.show(&root.short_ref, at(3)).unwrap();
     let error = words.gate(gate(None), at(3)).unwrap_err();
+    assert!(matches!(&error.error, StoreError::InvalidWork(reason)
+        if reason == "no item is selected for this gate; use gate NAME --work-ref REF"));
     let guidance = error.guidance();
     assert_eq!(
         guidance.reminders,
         vec![crate::verbs::GATE_WORK_REF_REQUIRED]
     );
-    assert!(guidance.next.is_empty());
+    assert_eq!(guidance.next, vec!["engram work next"]);
     let structured = crate::mcp::store_error_value(&error.error);
     assert_eq!(
         structured["error"]["details"]["remedy"],

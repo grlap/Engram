@@ -239,7 +239,7 @@ fn collapsed_changes(changes: &[WorkChange]) -> Vec<next_context::CompactChange>
 }
 
 pub(crate) const GATE_WORK_REF_REQUIRED: &str =
-    "no item is selected for this gate; use gate NAME --work-ref REF, or show REF first";
+    "no item is selected for this gate; use gate NAME --work-ref REF";
 
 fn strip_kind_prefix(summary: &str, kind: &str) -> String {
     let prefix = format!("{kind}: ");
