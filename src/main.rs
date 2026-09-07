@@ -542,6 +542,12 @@ enum WorkCommand {
         /// Safe permanent project-memory key.
         #[arg(long)]
         key: Option<String>,
+        /// Append an attributed version to this live key, retaining its history.
+        #[arg(long, requires = "key")]
+        revise: bool,
+        /// Refuse unless this revision is still current; omit to revise the current head.
+        #[arg(long, requires = "revise")]
+        expected_revision: Option<u64>,
     },
     /// List/search project memories, or read one key in full.
     Memories {
@@ -553,6 +559,9 @@ enum WorkCommand {
         /// Return the dedicated full body for the positional key.
         #[arg(long)]
         full: bool,
+        /// Read one historical version; omitted to read the current version.
+        #[arg(long, requires = "full")]
+        revision: Option<u64>,
     },
     /// Permanently retire one project-memory key.
     Forget { key: String },
@@ -1291,10 +1300,34 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             },
             now,
         ),
-        WorkCommand::Remember { text, key } => verbs.remember(RememberInput { text, key }, now),
-        WorkCommand::Memories { query, after, full } => {
-            verbs.memories(&MemoriesInput { query, after, full }, now)
-        }
+        WorkCommand::Remember {
+            text,
+            key,
+            revise,
+            expected_revision,
+        } => verbs.remember(
+            RememberInput {
+                text,
+                key,
+                revise,
+                expected_revision,
+            },
+            now,
+        ),
+        WorkCommand::Memories {
+            query,
+            after,
+            full,
+            revision,
+        } => verbs.memories(
+            &MemoriesInput {
+                query,
+                after,
+                full,
+                revision,
+            },
+            now,
+        ),
         WorkCommand::Forget { key } => verbs.forget(ForgetInput { key }, now),
         WorkCommand::Note {
             mut args,

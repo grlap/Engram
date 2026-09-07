@@ -12,11 +12,13 @@ impl LocalWorkService {
     /// # Errors
     ///
     /// Returns a typed storage refusal when authorization, normalization,
-    /// size, redaction, or create-only lifecycle admission fails.
+    /// size, redaction, revision-basis, or terminal lifecycle admission fails.
     pub fn remember_project_memory(
         &self,
         body: String,
         key: Option<String>,
+        revise: bool,
+        expected_revision: Option<u64>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
         self.store_at(now)?.remember_project_memory_with_admission(
@@ -24,6 +26,8 @@ impl LocalWorkService {
                 project_id: self.project_id.clone(),
                 session_id: self.session_id.clone(),
                 key,
+                revise,
+                expected_revision,
                 body,
                 actor: self.actor("remember", "record attributed project memory"),
                 created_at: now,
@@ -63,6 +67,7 @@ impl LocalWorkService {
     pub(crate) fn project_memory_full(
         &self,
         key: &str,
+        revision: Option<u64>,
         now: DateTime<Utc>,
     ) -> Result<ProjectMemoryFullResponse, StoreError> {
         let full = self.read_store_at(now)?.project_memory_full(
@@ -70,6 +75,7 @@ impl LocalWorkService {
             &self.session_id,
             &self.actor("memories", "read attributed project memory"),
             key,
+            revision,
         )?;
         project_memory_full_response(full).map_err(|error| match error {
             StoreError::InvalidProjectMemory(detail) => StoreError::InvalidMemoryProjection(detail),

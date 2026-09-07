@@ -157,6 +157,13 @@ fn prepare_load(
                 sensitivity: Sensitivity::Restricted,
                 ..
             } => Some(memory.key.clone()),
+            _ if memory
+                .history
+                .iter()
+                .any(|entry| entry.sensitivity == Sensitivity::Restricted) =>
+            {
+                Some(memory.key.clone())
+            }
             _ => None,
         })
         .collect();
@@ -208,13 +215,17 @@ fn validate_summary(document: &WorkGraphSnapshotDocument) -> Result<(), StoreErr
         .memories
         .iter()
         .filter(|memory| {
-            matches!(
-                memory.state,
-                WorkGraphSnapshotMemoryState::Active {
-                    body: WorkGraphSnapshotText::Redacted { .. },
-                    ..
-                }
-            )
+            memory
+                .history
+                .iter()
+                .any(|entry| matches!(entry.body, WorkGraphSnapshotText::Redacted { .. }))
+                || matches!(
+                    memory.state,
+                    WorkGraphSnapshotMemoryState::Active {
+                        body: WorkGraphSnapshotText::Redacted { .. },
+                        ..
+                    }
+                )
         })
         .count();
     let actual_redactions = WorkGraphSnapshotRedactedCounts {
@@ -915,36 +926,72 @@ fn validate_memories(document: &WorkGraphSnapshotDocument) -> Result<(), StoreEr
         }
         super::super::validate_stored_project_memory_key(&memory.key)
             .map_err(|_| corrupt("project-memory key is invalid"))?;
+        let mut prior_at = None;
+        for (index, prior) in memory.history.iter().enumerate() {
+            if prior.revision != index as u64 + 1
+                || prior_at.is_some_and(|at| prior.remembered_at < at)
+            {
+                return Err(corrupt(
+                    "project-memory history is not a dense ordered revision chain",
+                ));
+            }
+            validate_memory_body(
+                &prior.body,
+                prior.sensitivity,
+                &prior.actor,
+                document.body.summary.widened,
+            )?;
+            prior_at = Some(prior.remembered_at);
+        }
         match &memory.state {
             WorkGraphSnapshotMemoryState::Active {
                 body,
                 sensitivity,
                 actor,
-                ..
+                remembered_at,
             } => {
-                validate_actor(actor)?;
-                match body {
-                    WorkGraphSnapshotText::Present { value } => {
-                        if *sensitivity == Sensitivity::Restricted && !document.body.summary.widened
-                        {
-                            return Err(corrupt(
-                                "restricted memory plaintext requires a widened snapshot",
-                            ));
-                        }
-                        validate_text(value, "project-memory body")?;
-                        if value.len() > MAX_PROJECT_MEMORY_BODY_BYTES {
-                            return Err(corrupt("project-memory body exceeds the live limit"));
-                        }
-                    }
-                    WorkGraphSnapshotText::Redacted {
-                        sensitivity: redacted,
-                    } if redacted == sensitivity && *sensitivity == Sensitivity::Restricted => {}
-                    WorkGraphSnapshotText::Redacted { .. } => {
-                        return Err(corrupt("memory placeholder sensitivity is invalid"));
-                    }
+                if prior_at.is_some_and(|at| *remembered_at < at) {
+                    return Err(corrupt("current project memory precedes its history"));
                 }
+                validate_memory_body(body, *sensitivity, actor, document.body.summary.widened)?;
             }
-            WorkGraphSnapshotMemoryState::Tombstone { actor, .. } => validate_actor(actor)?,
+            WorkGraphSnapshotMemoryState::Tombstone { actor, .. } => {
+                if !memory.history.is_empty() {
+                    return Err(corrupt(
+                        "retired project memory must carry no version bodies",
+                    ));
+                }
+                validate_actor(actor)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_memory_body(
+    body: &WorkGraphSnapshotText,
+    sensitivity: Sensitivity,
+    actor: &ActorContext,
+    widened: bool,
+) -> Result<(), StoreError> {
+    validate_actor(actor)?;
+    match body {
+        WorkGraphSnapshotText::Present { value } => {
+            if sensitivity == Sensitivity::Restricted && !widened {
+                return Err(corrupt(
+                    "restricted memory plaintext requires a widened snapshot",
+                ));
+            }
+            validate_text(value, "project-memory body")?;
+            if value.len() > MAX_PROJECT_MEMORY_BODY_BYTES {
+                return Err(corrupt("project-memory body exceeds the live limit"));
+            }
+        }
+        WorkGraphSnapshotText::Redacted {
+            sensitivity: redacted,
+        } if *redacted == sensitivity && sensitivity == Sensitivity::Restricted => {}
+        WorkGraphSnapshotText::Redacted { .. } => {
+            return Err(corrupt("memory placeholder sensitivity is invalid"));
         }
     }
     Ok(())
@@ -1179,6 +1226,49 @@ fn insert_memory_on(
     memory: &crate::WorkGraphSnapshotMemory,
     loaded_at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
+    let mut previous = None;
+    for revision in &memory.history {
+        let prior = crate::WorkGraphSnapshotMemory {
+            key: memory.key.clone(),
+            history: Vec::new(),
+            state: WorkGraphSnapshotMemoryState::Active {
+                body: revision.body.clone(),
+                sensitivity: revision.sensitivity,
+                remembered_at: revision.remembered_at,
+                actor: revision.actor.clone(),
+            },
+        };
+        previous = Some(insert_memory_version_on(
+            transaction,
+            project_id,
+            body_hash,
+            &prior,
+            loaded_at,
+            previous.as_ref(),
+            false,
+        )?);
+    }
+    insert_memory_version_on(
+        transaction,
+        project_id,
+        body_hash,
+        memory,
+        loaded_at,
+        previous.as_ref(),
+        true,
+    )?;
+    Ok(())
+}
+
+fn insert_memory_version_on(
+    transaction: &Transaction<'_>,
+    project_id: &ProjectId,
+    body_hash: &ObjectHash,
+    memory: &crate::WorkGraphSnapshotMemory,
+    loaded_at: DateTime<Utc>,
+    previous: Option<&ObjectHash>,
+    project_head: bool,
+) -> Result<ObjectHash, StoreError> {
     let (body, sensitivity, remembered_at, actor, status, assertion_at, source_ref) =
         match &memory.state {
             WorkGraphSnapshotMemoryState::Active {
@@ -1213,7 +1303,7 @@ fn insert_memory_on(
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id,
         project_key: Some(memory.key.clone()),
-        parents: Vec::new(),
+        parents: previous.cloned().into_iter().collect(),
         kind: MemoryKind::Episode,
         authority: Authority::Soft,
         delivery: Delivery::OnDemand,
@@ -1265,15 +1355,19 @@ fn insert_memory_on(
         &memory.key,
     )?;
     SqliteStore::insert_object(transaction, "memory_assertion_event", &assertion_object)?;
-    SqliteStore::apply_memory_projection(
-        transaction,
-        version_object.hash(),
-        assertion_object.hash(),
-        &version,
-        &assertion,
-        super::super::MemoryProjectionMode::Live,
-    )?;
-    Ok(())
+    // Retain all canonical versions first. The final application validates the
+    // complete chain once and projects only its head, within the load transaction.
+    if project_head {
+        SqliteStore::apply_memory_projection(
+            transaction,
+            version_object.hash(),
+            assertion_object.hash(),
+            &version,
+            &assertion,
+            super::super::MemoryProjectionMode::Live,
+        )?;
+    }
+    Ok(version_object.hash().clone())
 }
 
 fn restored_memory_id(body_hash: &ObjectHash, key: &str) -> MemoryId {

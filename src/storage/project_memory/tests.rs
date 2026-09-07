@@ -8,6 +8,8 @@ use crate::storage::{
 use crate::*;
 use crate::{ProjectId, domain::ProvenanceLink};
 
+mod revisions;
+
 fn admit_project_memory_full(full: &ProjectMemoryFull) -> Result<(), StoreError> {
     crate::work_service::project_memory_full_response(full.clone()).map(drop)
 }
@@ -47,6 +49,8 @@ fn project_memory_request(
     at_ms: i64,
 ) -> RememberProjectMemoryRequest {
     RememberProjectMemoryRequest {
+        revise: false,
+        expected_revision: None,
         project_id: ProjectId(project.into()),
         session_id: SessionId(session.into()),
         key: key.map(str::to_owned),
@@ -275,7 +279,7 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
         Err(StoreError::ProjectMemoryExists(key)) if key == created.key
     ));
     let full = store
-        .project_memory_full(&project, &session, &actor(&session.0), &created.key)
+        .project_memory_full(&project, &session, &actor(&session.0), &created.key, None)
         .expect("full read");
     assert_eq!(full.body, request.body);
     let list = store
@@ -330,7 +334,7 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
     ));
     assert_eq!(
         store
-            .project_memory_full(&project, &session, &actor(&session.0), &created.key)
+            .project_memory_full(&project, &session, &actor(&session.0), &created.key, None)
             .expect("clock-skew refusal leaves memory active")
             .body,
         request.body
@@ -365,7 +369,7 @@ fn project_memory_create_refuse_read_forget_and_advertise_are_typed() {
             .duplicate
     );
     assert!(matches!(
-        store.project_memory_full(&project, &session, &actor(&session.0), &created.key),
+        store.project_memory_full(&project, &session, &actor(&session.0), &created.key, None),
         Err(StoreError::ProjectMemoryRetired(_))
     ));
     assert!(matches!(
@@ -699,7 +703,7 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
         "terminal rebuild observation",
         created_at.timestamp_millis(),
     );
-    let prepared = prepare_project_memory(&request, key).expect("prepare memory");
+    let prepared = prepare_project_memory(&request, key, None).expect("prepare memory");
     let tombstone = MemoryAssertionEvent {
         schema_version: SCHEMA_VERSION,
         memory_id: prepared.version.memory_id,
@@ -761,7 +765,7 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
     ));
     drop(live_transaction);
     assert!(matches!(
-        store.project_memory_full(&project, &session, &actor(&session.0), key),
+        store.project_memory_full(&project, &session, &actor(&session.0), key, None),
         Err(StoreError::ProjectMemoryRetired(retired)) if retired == key
     ));
     assert!(
@@ -859,6 +863,7 @@ fn project_memory_size_and_binding_refuse_before_persistence() {
             &missing_session,
             &actor(&missing_session.0),
             "never-used",
+            None,
         ),
         Err(StoreError::ProjectMemoryNotFound(key)) if key == "never-used"
     ));
@@ -1003,7 +1008,7 @@ fn project_memory_attribution_is_bounded_and_redacted_on_create_and_forget() {
     ));
     assert!(
         store
-            .project_memory_full(&project, &session, &actor(&session.0), "retained")
+            .project_memory_full(&project, &session, &actor(&session.0), "retained", None)
             .is_ok(),
         "a refused forget must leave the retained memory live"
     );
@@ -1038,6 +1043,8 @@ fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
         reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
     });
     let incoming = ProjectMemoryFull {
+        revision: 1,
+        current_revision: 1,
         key: "context-replay-boundary".into(),
         body: retry.body.clone(),
         remembered_at: retry.created_at,
@@ -1058,7 +1065,7 @@ fn project_memory_context_only_retry_uses_the_stored_delivery_envelope() {
         .expect("context-only retry uses the stored original envelope");
     assert!(replay.duplicate);
     let retained = store
-        .project_memory_full(&project, &session, &request.actor, &created.key)
+        .project_memory_full(&project, &session, &request.actor, &created.key, None)
         .expect("retained original memory");
     assert_eq!(retained.actor_context, None);
     assert_eq!(retained.remembered_at, request.created_at);
@@ -1132,6 +1139,7 @@ fn project_memory_session_spelling_matches_the_work_actor_convention() {
             &padded_session,
             &actor(&padded_session.0),
             "padded-session",
+            None,
         )
         .expect("read padded-session attribution");
     assert_eq!(padded_full.session_id, Some(padded_session));
@@ -1154,7 +1162,7 @@ fn keyed_project_memory_shape_is_rechecked_from_canonical_bytes() {
         "valid body",
         1_700_000_000_000,
     );
-    let prepared = prepare_project_memory(&request, "valid-key").expect("prepare fixture");
+    let prepared = prepare_project_memory(&request, "valid-key", None).expect("prepare fixture");
     let mut invalid_versions = Vec::new();
     let mut invalid_key = prepared.version.clone();
     invalid_key.project_key = Some("Unsafe Key".into());
@@ -1191,7 +1199,7 @@ fn project_memory_rebuild_refuses_a_hash_consistent_unsafe_key() {
         "valid body",
         1_700_000_000_000,
     );
-    let prepared = prepare_project_memory(&request, "valid-key").expect("prepare fixture");
+    let prepared = prepare_project_memory(&request, "valid-key", None).expect("prepare fixture");
     let mut version = prepared.version;
     version.project_key = Some("Unsafe Key".into());
     let version_object = CanonicalObject::freeze(&version).expect("freeze malformed version");
@@ -1254,7 +1262,13 @@ fn project_memory_reads_reject_projection_and_canonical_drift() {
         )
         .expect("corrupt projected status");
     assert!(matches!(
-        store.project_memory_full(&project, &session, &actor(&session.0), "integrity-key"),
+        store.project_memory_full(
+            &project,
+            &session,
+            &actor(&session.0),
+            "integrity-key",
+            None
+        ),
         Err(StoreError::InvalidMemoryProjection(_))
     ));
     store
@@ -1289,7 +1303,7 @@ fn project_memory_reads_reject_projection_and_canonical_drift() {
         )
         .expect("corrupt canonical key without changing its hash");
     assert!(matches!(
-        store.project_memory_full(&project, &session, &actor(&session.0), "forged-key",),
+        store.project_memory_full(&project, &session, &actor(&session.0), "forged-key", None),
         Err(StoreError::HashMismatch { .. })
     ));
 }
@@ -1329,7 +1343,13 @@ fn project_memory_reads_and_forget_verify_the_complete_head_projection() {
         )
         .expect("corrupt projected memory id");
     assert!(matches!(
-        store.project_memory_full(&project, &session, &actor(&session.0), "complete-head"),
+        store.project_memory_full(
+            &project,
+            &session,
+            &actor(&session.0),
+            "complete-head",
+            None
+        ),
         Err(StoreError::InvalidMemoryProjection(_))
     ));
     assert!(matches!(
@@ -1375,7 +1395,13 @@ fn project_memory_reads_and_forget_verify_the_complete_head_projection() {
         )
         .expect("corrupt projected metadata");
     assert!(matches!(
-        store.project_memory_full(&project, &session, &actor(&session.0), "complete-head"),
+        store.project_memory_full(
+            &project,
+            &session,
+            &actor(&session.0),
+            "complete-head",
+            None
+        ),
         Err(StoreError::InvalidMemoryProjection(_))
     ));
 }
@@ -1608,8 +1634,8 @@ fn project_memory_unique_index_collision_fails_closed_as_a_typed_refusal() {
         "second body",
         1_700_000_001_000,
     );
-    let first = prepare_project_memory(&first_request, key).expect("prepare first memory");
-    let second = prepare_project_memory(&second_request, key).expect("prepare second memory");
+    let first = prepare_project_memory(&first_request, key, None).expect("prepare first memory");
+    let second = prepare_project_memory(&second_request, key, None).expect("prepare second memory");
     let transaction = store
         .connection
         .transaction()

@@ -173,6 +173,8 @@ fn read_contention_fresh_process_read_defers_session_registration() {
         .remember_project_memory(
             "Read-only project memory".into(),
             Some("read-only-memory".into()),
+            false,
+            None,
             at(1),
         )
         .unwrap();
@@ -229,7 +231,7 @@ fn read_contention_fresh_process_read_defers_session_registration() {
         );
         reader
             .service
-            .project_memory_full("read-only-memory", at(3))
+            .project_memory_full("read-only-memory", None, at(3))
             .unwrap();
         assert_eq!(
             crate::storage::test_database_shape_snapshot(&inspect).unwrap(),

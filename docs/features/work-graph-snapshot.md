@@ -97,6 +97,15 @@ hash, records by item then generation index, memories by key. Work ids,
 short refs, blocker ids, and source snapshot hashes are Engram's own and are
 preserved; nothing in the file is a foreign identifier.
 
+Each live memory also carries `history`: its superseded attributed versions
+in dense revision order, oldest first, with each body's sensitivity label,
+timestamp and original actor. The top-level memory body remains current.
+Retired keys carry an empty history and only their tombstone: no current or
+superseded body crosses the host boundary. Native canonical history remains
+on the origin host, inaccessible through retired-key reads. Redaction applies
+independently to each live historical body; the memory redaction count counts
+keys with any redacted version, not individual versions.
+
 Non-holder work observations are carried as native-layer notes with their
 original non-holder provenance marker; on load they become inert history, not
 execution credit. Native notes use their shared dense project-feed order,
@@ -284,6 +293,10 @@ lands, or nothing does.
   The restored provenance keeps that marker on every later save,
   including a widened save that cannot recover missing source text. Tombstones
   land as tombstones, so a retired key stays permanently reserved.
+  Live memory history recreates one linear same-key chain in saved revision
+  order, with the current body current and every original actor retained.
+  Missing, duplicate or out-of-order revision numbers, backwards timestamps,
+  or any history on a retired key refuse the whole load before writes.
 - No claim, lease, session, cursor, grant, or scratch is created.
 - One audit event records the load: snapshot body hash, as-of cut, exporting
   build, `widened` and its reason, destination redacted counts, loading actor,

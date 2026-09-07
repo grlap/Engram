@@ -12,8 +12,11 @@ use super::{
     fts_query, normalize_project_memory_query, params,
 };
 
+mod history;
 #[cfg(test)]
 mod tests;
+use history::memory_full;
+pub(in crate::storage) use history::project_memory_history_on;
 
 pub(crate) fn validate_context_generation(
     context_generation: Option<&str>,
@@ -34,7 +37,7 @@ impl SqliteStore {
     /// # Errors
     ///
     /// Returns a typed project-memory refusal when authorization, key, size,
-    /// redaction, or create-only lifecycle admission fails.
+    /// redaction, revision-basis, or terminal lifecycle admission fails.
     #[cfg(test)]
     pub fn remember_project_memory<R: Redactor>(
         &mut self,
@@ -52,7 +55,7 @@ impl SqliteStore {
     ) -> Result<ProjectMemoryMutationReceipt, StoreError>
     where
         R: Redactor,
-        A: FnOnce(&ProjectMemoryFull) -> Result<(), StoreError>,
+        A: Fn(&ProjectMemoryFull) -> Result<(), StoreError>,
     {
         validate_project_memory_authorization(&request.session_id, &request.actor)?;
         let actor = validated_project_memory_actor(&request.actor, redactor)?;
@@ -74,6 +77,14 @@ impl SqliteStore {
             Some(key) => validate_project_memory_key(key)?,
             None => slug_project_memory_key(&request.body)?,
         };
+        if (request.revise && request.key.is_none())
+            || (!request.revise && request.expected_revision.is_some())
+            || request.expected_revision == Some(0)
+        {
+            return Err(StoreError::InvalidProjectMemory(
+                "--revise requires --key; --expected-revision requires --revise and a positive revision".into(),
+            ));
+        }
         let mut request = request.clone();
         request.actor = actor;
 
@@ -81,52 +92,82 @@ impl SqliteStore {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let _ = project_memory_state_on(&transaction, &request.project_id)?;
-        if let Some(existing) = lookup_project_memory_on(&transaction, &request.project_id, &key)? {
-            return match existing.assertion.status {
-                MemoryStatus::Tombstoned => Err(StoreError::ProjectMemoryRetired(key)),
-                MemoryStatus::Active
-                    if existing.version.body == request.body
-                        && existing.version.actor.actor_id == request.actor.actor_id
-                        && existing.version.actor.session_id == request.actor.session_id =>
-                {
-                    let stored_full = ProjectMemoryFull {
-                        key: key.clone(),
-                        body: existing.version.body.clone(),
-                        remembered_at: existing.version.created_at,
-                        actor_id: existing.version.actor.actor_id.clone(),
-                        actor_context: existing
-                            .version
-                            .actor
-                            .attribution_context()
-                            .map(str::to_owned),
-                        session_id: existing.version.actor.session_id.clone(),
-                    };
-                    admit_full_response(&stored_full)?;
-                    Ok(ProjectMemoryMutationReceipt {
-                        key,
-                        remembered_at: existing.version.created_at,
-                        forgotten_at: None,
-                        duplicate: true,
-                    })
-                }
-                MemoryStatus::Active => Err(StoreError::ProjectMemoryExists(key)),
-                status => Err(StoreError::InvalidMemoryProjection(format!(
-                    "project memory key has unsupported status {status:?}"
-                ))),
+        let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
+        let existing = history.last();
+        let current = history_revision(&history)?;
+        if let Some(existing) = &existing {
+            if existing.assertion.status == MemoryStatus::Tombstoned {
+                return Err(StoreError::ProjectMemoryRetired(key));
+            }
+            // A supplied basis identifies an exact historical revision intent.
+            // Without a basis, only an identical current capture replays; a
+            // later differing head is a new append, never an old-head overwrite.
+            let replay_revision = if request.revise {
+                request
+                    .expected_revision
+                    .map_or(Some(current), |basis| basis.checked_add(1))
+            } else {
+                Some(1)
             };
+            if let Some(replay_revision) = replay_revision
+                && let Some(replay) = usize::try_from(replay_revision.saturating_sub(1))
+                    .ok()
+                    .and_then(|index| history.get(index))
+                && (request.revise == (replay_revision > 1))
+                && replay.version.body == request.body
+                && replay.version.actor.actor_id == request.actor.actor_id
+                && replay.version.actor.session_id == request.actor.session_id
+            {
+                admit_full_response(&memory_full(&key, replay, replay_revision, current))?;
+                return Ok(ProjectMemoryMutationReceipt {
+                    key,
+                    revision: replay_revision,
+                    replaced_revision: request.revise.then_some(replay_revision - 1),
+                    remembered_at: replay.version.created_at,
+                    forgotten_at: None,
+                    duplicate: true,
+                });
+            }
+            if !request.revise {
+                return Err(StoreError::ProjectMemoryExists(key));
+            }
+            if let Some(expected) = request.expected_revision
+                && expected != current
+            {
+                return Err(StoreError::ProjectMemoryRevisionConflict {
+                    key,
+                    expected,
+                    current,
+                });
+            }
+            if request.created_at < existing.version.created_at {
+                return Err(StoreError::InvalidProjectMemory(
+                    "revision timestamp precedes the current memory".into(),
+                ));
+            }
+        } else if request.revise {
+            return Err(StoreError::ProjectMemoryNotFound(key));
         }
+        let revision = current.checked_add(1).ok_or_else(|| {
+            StoreError::InvalidProjectMemory("memory revision exceeds its range".into())
+        })?;
 
         let full = ProjectMemoryFull {
             key: key.clone(),
+            revision,
+            current_revision: revision,
             body: request.body.clone(),
             remembered_at: request.created_at,
             actor_id: request.actor.actor_id.clone(),
             actor_context: request.actor.attribution_context().map(str::to_owned),
             session_id: request.actor.session_id.clone(),
         };
+        for (index, prior) in history.iter().enumerate() {
+            admit_full_response(&memory_full(&key, prior, index as u64 + 1, revision))?;
+        }
         admit_full_response(&full)?;
 
-        let prepared = prepare_project_memory(&request, &key)?;
+        let prepared = prepare_project_memory(&request, &key, existing)?;
         Self::insert_project_memory_version_object(
             &transaction,
             &prepared.version_object,
@@ -146,10 +187,16 @@ impl SqliteStore {
             &prepared.assertion,
             MemoryProjectionMode::Live,
         )?;
-        advance_project_memory_state_on(&transaction, &request.project_id, 1)?;
+        advance_project_memory_state_on(
+            &transaction,
+            &request.project_id,
+            i64::from(existing.is_none()),
+        )?;
         transaction.commit()?;
         Ok(ProjectMemoryMutationReceipt {
             key,
+            revision,
+            replaced_revision: request.revise.then_some(current),
             remembered_at: request.created_at,
             forgotten_at: None,
             duplicate: false,
@@ -175,11 +222,16 @@ impl SqliteStore {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let _ = project_memory_state_on(&transaction, &request.project_id)?;
-        let existing = lookup_project_memory_on(&transaction, &request.project_id, &key)?
+        let history = lookup_project_memory_history_on(&transaction, &request.project_id, &key)?;
+        let existing = history
+            .last()
             .ok_or_else(|| StoreError::ProjectMemoryNotFound(key.clone()))?;
+        let revision = history_revision(&history)?;
         if existing.assertion.status == MemoryStatus::Tombstoned {
             return Ok(ProjectMemoryMutationReceipt {
                 key,
+                revision,
+                replaced_revision: None,
                 remembered_at: existing.version.created_at,
                 forgotten_at: Some(existing.assertion.created_at),
                 duplicate: true,
@@ -220,6 +272,8 @@ impl SqliteStore {
         transaction.commit()?;
         Ok(ProjectMemoryMutationReceipt {
             key,
+            revision,
+            replaced_revision: None,
             remembered_at: existing.version.created_at,
             forgotten_at: Some(request.created_at),
             duplicate: false,
@@ -238,10 +292,19 @@ impl SqliteStore {
         session_id: &SessionId,
         actor: &ActorContext,
         key: &str,
+        revision: Option<u64>,
     ) -> Result<ProjectMemoryFull, StoreError> {
+        if self.connection.is_autocommit() {
+            let snapshot = self.connection.unchecked_transaction()?;
+            let full = self.project_memory_full(project_id, session_id, actor, key, revision)?;
+            snapshot.commit()?;
+            return Ok(full);
+        }
         validate_project_memory_authorization(session_id, actor)?;
         let key = validate_project_memory_key(key)?;
-        let existing = lookup_project_memory_on(&self.connection, project_id, &key)?
+        let history = lookup_project_memory_history_on(&self.connection, project_id, &key)?;
+        let existing = history
+            .last()
             .ok_or_else(|| StoreError::ProjectMemoryNotFound(key.clone()))?;
         if existing.assertion.status == MemoryStatus::Tombstoned {
             return Err(StoreError::ProjectMemoryRetired(key));
@@ -252,19 +315,18 @@ impl SqliteStore {
                 existing.assertion.status
             )));
         }
-        let full = ProjectMemoryFull {
-            key,
-            body: existing.version.body,
-            remembered_at: existing.version.created_at,
-            actor_id: existing.version.actor.actor_id.clone(),
-            actor_context: existing
-                .version
-                .actor
-                .attribution_context()
-                .map(str::to_owned),
-            session_id: existing.version.actor.session_id,
-        };
-        Ok(full)
+        let current = history_revision(&history)?;
+        let revision = revision.unwrap_or(current);
+        let entry = revision
+            .checked_sub(1)
+            .and_then(|n| usize::try_from(n).ok())
+            .and_then(|index| history.get(index))
+            .ok_or_else(|| StoreError::ProjectMemoryRevisionNotFound {
+                key: key.clone(),
+                revision,
+                current,
+            })?;
+        Ok(memory_full(&key, entry, revision, current))
     }
 
     /// Lists live project memories without returning their bodies.
@@ -579,13 +641,17 @@ fn project_memory_context_generation_digest(value: &str) -> String {
 fn prepare_project_memory(
     request: &RememberProjectMemoryRequest,
     key: &str,
+    previous: Option<&StoredProjectMemory>,
 ) -> Result<PreparedProjectMemory, StoreError> {
-    let memory_id = MemoryId::new();
+    let memory_id = previous.map_or_else(MemoryId::new, |entry| entry.version.memory_id);
     let version = MemoryVersion {
         schema_version: SCHEMA_VERSION,
         memory_id,
         project_key: Some(key.to_owned()),
-        parents: Vec::new(),
+        parents: previous
+            .map(|entry| entry.version_hash.clone())
+            .into_iter()
+            .collect(),
         kind: MemoryKind::Episode,
         authority: Authority::Soft,
         delivery: Delivery::OnDemand,
@@ -694,7 +760,7 @@ pub(super) fn validate_keyed_project_memory_shape(
             || source.source_ref == super::graph_snapshot::RESTORED_REDACTED_MEMORY_SOURCE)
             && ObjectHash::from_stored(source.fingerprint.clone()).is_some()
     });
-    if version.parents.is_empty()
+    if version.parents.len() <= 1
         && version.kind == MemoryKind::Episode
         && version.authority == Authority::Soft
         && version.delivery == Delivery::OnDemand
@@ -761,6 +827,22 @@ pub(super) fn lookup_project_memory_on(
     project_id: &crate::domain::ProjectId,
     key: &str,
 ) -> Result<Option<StoredProjectMemory>, StoreError> {
+    Ok(lookup_project_memory_history_on(connection, project_id, key)?.pop())
+}
+
+fn history_revision(history: &[StoredProjectMemory]) -> Result<u64, StoreError> {
+    u64::try_from(history.len()).map_err(|_| {
+        StoreError::InvalidMemoryProjection("memory revision exceeds its range".into())
+    })
+}
+
+// Return the validated chain to callers needing its head and revision count;
+// neither counting nor selecting a historical body bypasses validation.
+fn lookup_project_memory_history_on(
+    connection: &Connection,
+    project_id: &crate::domain::ProjectId,
+    key: &str,
+) -> Result<Vec<StoredProjectMemory>, StoreError> {
     // The hard index requirement makes a missing or incompatible rebuildable
     // projection fail closed; open/doctor names the explicit repair command.
     let stored = connection
@@ -819,7 +901,7 @@ pub(super) fn lookup_project_memory_on(
                 "project memory key is reserved but its durable head is missing".into(),
             ));
         }
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let version_hash = ObjectHash::from_stored(stored.version_hash.clone())
         .ok_or_else(|| StoreError::InvalidStoredHash(stored.version_hash.clone()))?;
@@ -857,11 +939,16 @@ pub(super) fn lookup_project_memory_on(
             "project memory key projection does not match its canonical objects".into(),
         ));
     }
-    Ok(Some(StoredProjectMemory {
-        version_hash,
-        version,
-        assertion,
-    }))
+    let history = project_memory_history_on(connection, project_id, key)?;
+    if history
+        .last()
+        .is_none_or(|entry| entry.version_hash != version_hash || entry.assertion != assertion)
+    {
+        return Err(StoreError::InvalidMemoryProjection(
+            "project memory head is not the current canonical revision".into(),
+        ));
+    }
+    Ok(history)
 }
 
 pub(in crate::storage) fn validate_stored_project_memory_key(
@@ -962,26 +1049,32 @@ fn project_memory_rows_on(
         .into_iter()
         .map(|key| {
             let key = validate_stored_project_memory_key(&key)?;
-            let stored =
-                lookup_project_memory_on(connection, project_id, &key)?.ok_or_else(|| {
-                    StoreError::InvalidMemoryProjection(
-                        "project memory list candidate has no canonical binding".into(),
-                    )
-                })?;
+            let history = lookup_project_memory_history_on(connection, project_id, &key)?;
+            let stored = history.last().ok_or_else(|| {
+                StoreError::InvalidMemoryProjection(
+                    "project memory list candidate has no canonical binding".into(),
+                )
+            })?;
             if stored.assertion.status != MemoryStatus::Active {
                 return Err(StoreError::InvalidMemoryProjection(
                     "project memory list candidate is not active".into(),
                 ));
             }
-            Ok(project_memory_list_row(key, &stored))
+            let revision = history_revision(&history)?;
+            Ok(project_memory_list_row(key, stored, revision))
         })
         .collect::<Result<Vec<_>, StoreError>>()?;
     Ok((rows, total_matches))
 }
 
-fn project_memory_list_row(key: String, stored: &StoredProjectMemory) -> ProjectMemoryListRow {
+fn project_memory_list_row(
+    key: String,
+    stored: &StoredProjectMemory,
+    revision: u64,
+) -> ProjectMemoryListRow {
     ProjectMemoryListRow {
         key,
+        revision,
         first_line: project_memory_first_line(&stored.version.body),
         remembered_at: stored.version.created_at,
         actor_id: stored.version.actor.actor_id.clone(),
@@ -1056,9 +1149,15 @@ fn advance_project_memory_state_on(
              WHERE project_id = ?1 AND active_count > 0",
             [project_id.0.as_str()],
         )?
+    } else if active_delta == 0 {
+        connection.execute(
+            "UPDATE project_memory_state SET change_position = change_position + 1
+             WHERE project_id = ?1 AND active_count > 0",
+            [project_id.0.as_str()],
+        )?
     } else {
         return Err(StoreError::InvalidMemoryProjection(
-            "project memory state delta must be exactly one".into(),
+            "project memory state delta must be minus one, zero or one".into(),
         ));
     };
     if changed != 1 {
@@ -1085,12 +1184,13 @@ pub(super) fn derived_project_memory_state_rows_on(
                     SUM(CASE WHEN head.status = 'active' THEN 1 ELSE 0 END),
                     SUM(COALESCE(assertion_counts.assertion_count, 0))
              FROM objects AS version
-             JOIN memory_heads AS head ON head.version_hash = version.object_hash
+             LEFT JOIN memory_heads AS head ON head.version_hash = version.object_hash
              LEFT JOIN assertion_counts ON assertion_counts.version_hash = version.object_hash
              WHERE version.object_kind = 'memory_version'
                AND json_extract(version.canonical_json, '$.scope.kind') = 'project'
                AND json_type(version.canonical_json, '$.project_key') = 'text'
-             GROUP BY project_id ORDER BY project_id",
+             GROUP BY json_extract(version.canonical_json, '$.scope.project')
+             ORDER BY json_extract(version.canonical_json, '$.scope.project')",
         )?
         .query_map([], |row| {
             Ok((
@@ -1108,9 +1208,10 @@ pub(super) fn derived_project_memory_state_on(
 ) -> Result<(i64, i64), StoreError> {
     let heads = connection
         .prepare(
-            "SELECT head.memory_id, head.status, head.version_hash
+            "SELECT json_extract(version.canonical_json, '$.memory_id'),
+                    COALESCE(head.status, 'superseded'), version.object_hash
              FROM objects AS version INDEXED BY objects_project_memory_key
-             JOIN memory_heads AS head ON head.version_hash = version.object_hash
+             LEFT JOIN memory_heads AS head ON head.version_hash = version.object_hash
              WHERE version.object_kind = 'memory_version'
                AND json_extract(version.canonical_json, '$.scope.kind') = 'project'
                AND json_type(version.canonical_json, '$.project_key') = 'text'

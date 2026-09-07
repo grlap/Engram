@@ -906,6 +906,22 @@ impl SqliteStore {
         }
         validate_keyed_project_memory_shape(version, assertion)?;
 
+        if let (Some(key), Scope::Project { project }) = (&version.project_key, &version.scope) {
+            let history =
+                super::project_memory::project_memory_history_on(transaction, project, key)?;
+            if history
+                .last()
+                .is_none_or(|entry| &entry.version_hash != version_hash)
+            {
+                if mode == MemoryProjectionMode::Replay {
+                    return Ok(());
+                }
+                return Err(StoreError::InvalidMemoryProjection(
+                    "a live assertion cannot replace a newer project-memory revision".into(),
+                ));
+            }
+        }
+
         let (scope_kind, project_id, task_id, work_id, agent_id) = match &version.scope {
             Scope::Project { project } => ("project", &project.0, None, None, None),
             Scope::Task { project, task } => {
@@ -989,8 +1005,15 @@ impl SqliteStore {
             )));
         }
         transaction.execute(
-            "DELETE FROM object_fts WHERE object_hash = ?1",
-            [version_hash.as_str()],
+            "DELETE FROM object_fts WHERE object_hash IN (?1, ?2)",
+            params![
+                version_hash.as_str(),
+                version
+                    .project_key
+                    .as_ref()
+                    .and_then(|_| version.parents.first())
+                    .map(ObjectHash::as_str)
+            ],
         )?;
         transaction.execute(
             "INSERT INTO object_fts (object_hash, title, body) VALUES (?1, ?2, ?3)",

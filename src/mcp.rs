@@ -235,6 +235,10 @@ struct RememberArgs {
     /// Safe permanent key; omitted to derive a slug from the first words.
     #[schemars(length(max = 64))]
     key: Option<String>,
+    /// Append an attributed version to an existing key, retaining all prior versions.
+    revise: Option<bool>,
+    /// Optional current revision check; stale values refuse. Omit to revise the current head.
+    expected_revision: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -247,6 +251,8 @@ struct MemoriesArgs {
     after: Option<String>,
     /// Return one dedicated full body for the positional key.
     full: Option<bool>,
+    /// With full and an exact key, read this historical revision instead of the current one.
+    revision: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -512,13 +518,15 @@ impl McpServer {
     /// Store one attributed project memory.
     #[tool(
         name = "remember",
-        description = "Store one attributed project note under a safe permanent key; no work focus or claim changes"
+        description = "Store an attributed project note; revise an existing key with retained history. Optional expected_revision refuses stale writes; no focus or claim changes"
     )]
     fn remember(&self, Parameters(args): Parameters<RememberArgs>) -> CallToolResult {
         verb(self.verbs().remember(
             RememberInput {
                 text: args.text,
                 key: args.key,
+                revise: args.revise.unwrap_or(false),
+                expected_revision: args.expected_revision,
             },
             Utc::now(),
         ))
@@ -527,7 +535,7 @@ impl McpServer {
     /// List, search, or fully read project memories.
     #[tool(
         name = "memories",
-        description = "List compact project-memory rows, search them, or set full with an exact key to read one body"
+        description = "List or search current project memories; full with an exact key reads one body, with optional revision for attributed history"
     )]
     fn memories(&self, Parameters(args): Parameters<MemoriesArgs>) -> CallToolResult {
         verb(self.verbs().memories(
@@ -535,6 +543,7 @@ impl McpServer {
                 query: args.query,
                 after: args.after,
                 full: args.full.unwrap_or(false),
+                revision: args.revision,
             },
             Utc::now(),
         ))
@@ -686,7 +695,23 @@ pub fn store_error_value(error: &StoreError) -> Value {
         | StoreError::PacketAccessDenied(hash) => json!({ "object_hash": hash }),
         StoreError::ProjectMemoryExists(key) => json!({
             "key": key,
-            "remedy": format!("run memories {key} --full or choose another --key"),
+            "remedy": format!("read memories {key} --full; use remember with --key {key} --revise to retain history"),
+        }),
+        StoreError::ProjectMemoryRevisionConflict {
+            key,
+            expected,
+            current,
+        } => json!({
+            "key": key, "expected_revision": expected, "current_revision": current,
+            "remedy": format!("read memories {key} --full and reconcile before revising"),
+        }),
+        StoreError::ProjectMemoryRevisionNotFound {
+            key,
+            revision,
+            current,
+        } => json!({
+            "key": key, "revision": revision, "current_revision": current,
+            "remedy": format!("read memories {key} --full for history navigation"),
         }),
         StoreError::ProjectMemoryRetired(key) => json!({
             "key": key,
@@ -897,6 +922,8 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::MemoryAccessDenied(_) => "memory_access_denied",
         StoreError::MemoryNotFound(_) | StoreError::ProjectMemoryNotFound(_) => "memory_not_found",
         StoreError::ProjectMemoryExists(_) => "memory_exists",
+        StoreError::ProjectMemoryRevisionConflict { .. } => "memory_revision_conflict",
+        StoreError::ProjectMemoryRevisionNotFound { .. } => "memory_revision_not_found",
         StoreError::ProjectMemoryRetired(_) => "memory_retired",
         StoreError::ProjectMemoryBindingInvalid => "memory_binding_invalid",
         StoreError::InvalidProjectMemory(_) => "memory_invalid",

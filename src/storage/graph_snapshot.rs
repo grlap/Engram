@@ -1355,11 +1355,43 @@ fn memories_on(
                 "snapshot project memory projection does not match its canonical objects".into(),
             ));
         }
+        let chain = super::project_memory::project_memory_history_on(connection, project_id, &key)?;
+        if chain
+            .last()
+            .is_none_or(|entry| entry.version_hash != version_hash || entry.assertion != assertion)
+        {
+            return Err(StoreError::InvalidMemoryProjection(
+                "snapshot memory is not its current canonical revision".into(),
+            ));
+        }
+        let mut history = Vec::new();
+        let mut memory_redacted = false;
+        if projected_status == MemoryStatus::Active {
+            for (index, entry) in chain.iter().take(chain.len().saturating_sub(1)).enumerate() {
+                let (prior, hidden) = snapshot_active_memory(entry.version.clone(), widened);
+                memory_redacted |= hidden;
+                if let WorkGraphSnapshotMemoryState::Active {
+                    body,
+                    sensitivity,
+                    remembered_at,
+                    actor,
+                } = prior
+                {
+                    history.push(crate::graph_snapshot::WorkGraphSnapshotMemoryRevision {
+                        revision: index as u64 + 1,
+                        body,
+                        sensitivity,
+                        remembered_at,
+                        actor,
+                    });
+                }
+            }
+        }
         let state = match projected_status {
             MemoryStatus::Active => {
                 active_count += 1;
                 let (state, was_redacted) = snapshot_active_memory(version, widened);
-                redacted += usize::from(was_redacted);
+                memory_redacted |= was_redacted;
                 state
             }
             MemoryStatus::Tombstoned => WorkGraphSnapshotMemoryState::Tombstone {
@@ -1372,7 +1404,12 @@ fn memories_on(
                 ));
             }
         };
-        memories.push(WorkGraphSnapshotMemory { key, state });
+        redacted += usize::from(memory_redacted);
+        memories.push(WorkGraphSnapshotMemory {
+            key,
+            history,
+            state,
+        });
     }
     if active_count != expected_active_count {
         return Err(StoreError::InvalidMemoryProjection(

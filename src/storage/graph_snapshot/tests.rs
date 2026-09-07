@@ -1,6 +1,7 @@
 use chrono::{Duration, TimeZone};
 
 mod input_validation;
+mod memory_revisions;
 
 use super::*;
 use crate::{
@@ -258,6 +259,8 @@ fn consecutive_idle_saves_keep_body_cut_digest_and_order() {
     store
         .remember_project_memory(
             &RememberProjectMemoryRequest {
+                revise: false,
+                expected_revision: None,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -467,6 +470,8 @@ fn save_refuses_project_memory_state_position_drift() {
     store
         .remember_project_memory(
             &RememberProjectMemoryRequest {
+                revise: false,
+                expected_revision: None,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -514,6 +519,8 @@ fn save_refuses_project_memory_head_projection_drift() {
     store
         .remember_project_memory(
             &RememberProjectMemoryRequest {
+                revise: false,
+                expected_revision: None,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -800,6 +807,8 @@ fn widened_save_records_reason_even_when_current_project_memories_are_internal()
     store
         .remember_project_memory(
             &RememberProjectMemoryRequest {
+                revise: false,
+                expected_revision: None,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -1040,6 +1049,7 @@ fn restored_redacted_memory_stays_typed_when_a_later_save_is_widened() {
             &crate::SessionId("reader-session".into()),
             &actor("reader-session"),
             "restricted-entry",
+            None,
         )
         .expect("read restored placeholder");
     assert_eq!(restored_memory.body, REDACTED_MEMORY_PLACEHOLDER);
@@ -1127,6 +1137,7 @@ fn widened_restricted_load_stores_only_audited_placeholders() {
                 &crate::SessionId("peer".into()),
                 &actor("peer"),
                 "restricted-entry",
+                None,
             )
             .expect("peer reads only placeholder");
         assert_eq!(memory.body, REDACTED_MEMORY_PLACEHOLDER);
@@ -1390,6 +1401,8 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
     source
         .remember_project_memory(
             &RememberProjectMemoryRequest {
+                revise: false,
+                expected_revision: None,
                 project_id: project.clone(),
                 session_id: crate::SessionId("memory-session".into()),
                 key: Some("snapshot-contract".into()),
@@ -1464,6 +1477,7 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
             &crate::SessionId("reader-session".into()),
             &actor("reader-session"),
             "snapshot-contract",
+            None,
         )
         .expect("read restored project memory");
     assert_eq!(memory.body, "recreate the keyed project memory");

@@ -1082,6 +1082,89 @@ test("CLI show help teaches read-only targeting", (t) => {
   } finally { removeFixtureHomes(engramHome); }
 });
 
+test("project memory revisions agree on CLI MCP history conflicts and terminal retirement", async (t) => {
+  const engramHome = fixtureHome("engram-memory-revisions-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, "memory-revision-peer");
+    await client.initialize();
+    const tools = await client.tools();
+    const remember = tools.find(({ name }) => name === "remember");
+    const memories = tools.find(({ name }) => name === "memories");
+    assert.match(remember.description, /revise.*retained history/);
+    assert.match(remember.inputSchema.properties.expected_revision.description, /Optional.*stale/);
+    assert.match(memories.inputSchema.properties.revision.description, /historical revision/);
+    const help = cliWord(engramHome, "memory-help", "remember", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /--revise/);
+    assert.match(help.stdout, /--expected-revision/);
+    assert.match(help.stdout, /retaining its history/);
+    const readHelp = cliWord(engramHome, "memory-help", "memories", "--help");
+    assert.equal(readHelp.status, 0, readHelp.stderr);
+    assert.match(readHelp.stdout, /--revision/);
+    structuredError(await client.call("remember", { text: "Cannot derive revision key", revise: true }), "memory_invalid");
+    structuredError(await client.call("memories", { query: "missing", revision: 1 }), "memory_invalid");
+    const key = "stable-observation";
+    const original = cliJson(engramHome, "memory-revision-author", "remember", "Original body", "--key", key);
+    assert.equal(original.revision, 1);
+    const args = { key, text: "Corrected body", revise: true, expected_revision: 1 };
+    const changed = receipt(await client.call("remember", args));
+    assert.equal(changed.revision, 2);
+    assert.equal(changed.replaced_revision, 1);
+    const replay = receipt(await client.call("remember", args));
+    assert.equal(replay.duplicate, true);
+    assert.equal(replay.revision, 2);
+    const conflict = structuredError(await client.call("remember", { ...args, text: "Stale different body" }), "memory_revision_conflict");
+    assert.equal(conflict.details.current_revision, 2);
+    const cliConflict = cliWord(engramHome, "memory-revision-author", "remember", "Stale CLI body", "--key", key, "--revise", "--expected-revision", "1", "--json");
+    assert.notEqual(cliConflict.status, 0);
+    assert.equal(JSON.parse(cliConflict.stderr).error.details.current_revision, 2);
+    assert.equal(JSON.parse(cliConflict.stderr).error.code, "memory_revision_conflict");
+    const third = cliJson(engramHome, "memory-revision-author", "remember", "Current body", "--key", key, "--revise");
+    assert.equal(third.revision, 3);
+    assert.equal(third.replaced_revision, 2);
+    const missingRevision = structuredError(await client.call("memories", { query: key, full: true, revision: 4 }), "memory_revision_not_found");
+    const cliMissing = cliWord(engramHome, "memory-revision-peer", "memories", key, "--full", "--revision", "4", "--json");
+    assert.notEqual(cliMissing.status, 0);
+    for (const error of [missingRevision, JSON.parse(cliMissing.stderr).error]) {
+      assert.equal(error.code, "memory_revision_not_found");
+      assert.deepEqual(error.details, { key, revision: 4, current_revision: 3, remedy: `read memories ${key} --full for history navigation` });
+      assert.deepEqual(error.next, [`engram work memories ${key} --full --revision 3`]);
+      assert.deepEqual(error.reminders, [`project memory ${key} has no revision 4; valid revisions are 1..3`]);
+    }
+    const earlierReplay = receipt(await client.call("remember", args));
+    assert.equal(earlierReplay.duplicate, true);
+    assert.equal(earlierReplay.revision, 2);
+    const current = receipt(await client.call("memories", { query: key, full: true }));
+    assert.equal(current.body, "Current body");
+    assert.equal(current.revision, 3);
+    assert.ok(current.next.includes(`engram work memories ${key} --full --revision 2`));
+    for (const [index, body] of ["Original body", "Corrected body", "Current body"].entries()) {
+      const mcp = receipt(await client.call("memories", { query: key, full: true, revision: index + 1 }));
+      const cli = cliJson(engramHome, "memory-revision-peer", "memories", key, "--full", "--revision", String(index + 1));
+      assert.deepEqual(mcp, cli);
+      assert.equal(mcp.body, body);
+      assert.equal(mcp.current_revision, 3);
+      assert.equal(mcp.session_id, index === 1 ? "memory-revision-peer" : "memory-revision-author");
+    }
+    const listed = receipt(await client.call("memories", {}));
+    assert.equal(listed.memories.length, 1);
+    assert.equal(listed.memories[0].revision, 3);
+    assert.equal(listed.memories[0].first_line, "Current body");
+    const exists = structuredError(await client.call("remember", { key, text: "Use revise" }), "memory_exists");
+    assert.match(exists.details.remedy, /--revise/);
+    receipt(await client.call("forget", { key }));
+    structuredError(await client.call("remember", args), "memory_retired");
+    structuredError(await client.call("memories", { query: key, full: true, revision: 1 }), "memory_retired");
+    const retired = cliWord(engramHome, "memory-revision-author", "memories", key, "--full", "--revision", "1", "--json");
+    assert.equal(JSON.parse(retired.stderr).error.code, "memory_retired");
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("missing-focus gate offers discovery on CLI and MCP", async (t) => {
   const engramHome = fixtureHome("engram-gate-discovery-", t);
   let client;

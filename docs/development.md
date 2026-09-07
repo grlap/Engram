@@ -119,7 +119,9 @@ development store can refuse until `engram doctor --repair-projections` is run
 once. The Cut A gate lookup adds the rebuildable
 `objects_work_evidence_gate_name` expression index, and Cut B adds the
 rebuildable `objects_project_memory_key` expression index plus its advisory
-advertisement table. Repairing them does not rewrite canonical objects.
+advertisement table. Project-memory revisions make that lookup nonunique and
+add the rebuildable unique `objects_project_memory_root` index, reserving each
+key only at its canonical root. Repairing them does not rewrite canonical objects.
 The advertisement table is discardable delivery bookkeeping rather than
 canonical memory state: repair drops its acknowledgements, so each session may
 receive one harmless content-free memory-count reannouncement afterward.

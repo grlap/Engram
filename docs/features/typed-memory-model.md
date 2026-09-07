@@ -36,8 +36,13 @@ Engram represents that edge as a canonical contradiction event carrying two
 shared version hashes plus an attributed reason. The current agent MCP surface
 does not expose general-purpose version, contradiction, merge, or resolution
 mutation. Its constrained `remember`/`forget` exception creates attributed
-project-scoped Episodes under permanent safe keys and can only append a
-terminal tombstone. Engram does not pretend keyword or model inference can
+project-scoped Episodes under permanent safe keys. `remember --revise` appends
+a linear attributed revision under the same key; optional expected revision
+checks refuse stale writes, and omitted checks explicitly report the replaced
+and new revisions. Earlier versions remain discoverable until terminal
+`forget`, which retires the key and all its reads without erasing local history.
+This constrained episode operation is not general-purpose merge or conflict
+resolution. Engram does not pretend keyword or model inference can
 safely discover every semantic conflict. The edge makes both records visibly
 contested, and an applicable firm/hard pinned pair stops packet construction.
 Explicit contradiction, merge, and resolution operations remain host/operator

@@ -801,6 +801,10 @@ impl SqliteStore {
         transaction.execute("DELETE FROM memory_contradictions", [])?;
         transaction.execute("DELETE FROM memory_contradiction_edges", [])?;
         let mut activated = 0;
+        // Canonical objects do not change during this rebuild transaction.
+        // Validate each complete keyed chain once before selecting its head;
+        // ordinary per-assertion validation below still applies to every row.
+        let mut project_heads = HashMap::new();
         for (stored_hash, bytes) in assertions {
             let assertion_hash = ObjectHash::from_stored(stored_hash.clone())
                 .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
@@ -838,6 +842,27 @@ impl SqliteStore {
                 continue;
             }
             let version: MemoryVersion = version_object.decode()?;
+            if let (Some(key), Scope::Project { project }) = (&version.project_key, &version.scope)
+            {
+                let identity = (project.clone(), key.clone());
+                if !project_heads.contains_key(&identity) {
+                    let history = super::project_memory::project_memory_history_on(
+                        &transaction,
+                        project,
+                        key,
+                    )?;
+                    let head = history.last().ok_or_else(|| {
+                        StoreError::InvalidMemoryProjection(
+                            "rebuilt project memory has no canonical head".into(),
+                        )
+                    })?;
+                    project_heads.insert(identity.clone(), head.version_hash.clone());
+                }
+                if project_heads.get(&identity) != Some(&assertion.version) {
+                    activated += 1;
+                    continue;
+                }
+            }
             Self::apply_memory_projection(
                 &transaction,
                 &assertion.version,

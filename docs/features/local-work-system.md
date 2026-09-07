@@ -1247,29 +1247,44 @@ full-read envelope and terminal-safe shell rendering fit the 12 KiB ceiling;
 anything larger is rejected before persistence, with escape-heavy boundary
 tests among the named targets.
 
-The mutation contract is create/refuse/forget — no update-in-place:
-`remember` creates only when the safe key has never been used; a live key
-is the typed `memory_exists` refusal, and a tombstoned key is the typed
-`memory_retired` refusal whose satisfiable next action is choosing another
-key (`memories` lists what is taken) — tombstoned keys are permanently
-reserved, never recreated. `forget` tombstones idempotently. The durable
-representation is the simplest one: the safe key lives in the existing
-`MemoryVersion` shape, changed in place at marker 1, unique per project,
-with `Tombstoned` as the terminal status. The existing durable memory head
-carries that terminal state and is verified against canonical history; key
-uniqueness is rebuildable from canonical versions, and no new canonical object
-kind exists. Keyed project memories cannot be contradiction endpoints; their
-narrow lifecycle is remember, optional full read, then forget. With one create
-and one idempotent tombstone per key
-forever, ordinary argument-derived operation idempotency is generation-safe
-by construction; `next` installs no per-key session state, and no hash or
-id is ever model-visible. Tests cover create/refuse/forget, listing
-continuation, escape-heavy size boundaries, and ordinary idempotency.
+`remember TEXT --key KEY --revise` appends an attributed immutable revision
+to a live key; it never edits an earlier body. Lists and ordinary full reads
+return the current version, with its numeric revision. Optional
+`--expected-revision N` enforces a current-version check: a stale different
+intent receives `memory_revision_conflict` naming the current revision.
+Without a basis the write revises the current head, and its receipt explicitly
+names both the replaced and new revisions. An identical same-actor/session
+body with the same supplied basis replays the original revision, even after a
+later append; without a basis only an identical current revision replays.
+Use `memories KEY --full --revision N` to read one prior attributed version;
+each full read offers bounded previous-version navigation. There is no need
+for a companion key to correct a note. Without `--revise`, an existing live
+key still refuses `memory_exists` with revision guidance, except an identical
+creation retry. `forget` permanently retires the key, including all history
+reads; it is a tombstone, never erasure or recreation.
+
+The existing `MemoryVersion.parents` links form one verified linear same-key,
+same-memory chain. Its root reserves the key uniquely per project; canonical
+edges determine revision order, never timestamps or hashes. Rebuild and doctor
+validate the chain and its current head; FTS indexes only the current version.
+A listing or search refuses its requested page or match set if a selected
+key fails validation, rather than returning a partial list; this does not
+prevent direct reads of other sound keys. Chain-topology failures name the
+damaged key; lower-level object, shape, and head failures retain their own
+diagnostics. Inspect the store with `doctor` before relying on a refused result.
+Revisions advance the memory change position without increasing the live-key
+count. No new canonical object kind or per-key delivery state exists. Full-read
+admission reserves space for history navigation before accepting a body.
+Graph snapshots carry every attributed version of a live key in order, but a
+forgotten key exports only its tombstone, with none of its version bodies.
+The origin retains canonical history locally. See
+[snapshot retention](work-graph-snapshot.md#load).
 
 `memories` is the source of truth; `next` only advertises. The positional
 argument is a query unless `--full` names a key, and `--after` always
 takes a key. Unfiltered `memories` lists compact rows (key, bounded first line,
-actor attribution, remembered-at) in key order and may continue with the shell-safe
+revision, actor attribution, remembered-at) in key order and may continue with
+the shell-safe
 `memories --after KEY`; an exhausted listing says so. Filtered `memories
 QUERY` returns a bounded set of top matches only and never emits a
 continuation — its omission note tells the agent to refine the query. Final

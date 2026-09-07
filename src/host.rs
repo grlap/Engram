@@ -547,6 +547,8 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
         StoreError::ProjectMemoryExists(_) => "memory_exists",
+        StoreError::ProjectMemoryRevisionConflict { .. } => "memory_revision_conflict",
+        StoreError::ProjectMemoryRevisionNotFound { .. } => "memory_revision_not_found",
         StoreError::ProjectMemoryRetired(_) => "memory_retired",
         StoreError::ProjectMemoryNotFound(_) => "memory_not_found",
         StoreError::ProjectMemoryBindingInvalid => "memory_binding_invalid",

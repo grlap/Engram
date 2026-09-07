@@ -129,17 +129,32 @@ pub(crate) struct ProjectMemoryFullResponse {
 impl ProjectMemoryFullResponse {
     #[must_use]
     pub(crate) fn new(memory: ProjectMemoryFull) -> Self {
+        let mut next = Vec::new();
+        if memory.revision > 1 {
+            next.push(format!(
+                "engram work memories {} --full --revision {}",
+                memory.key,
+                memory.revision - 1
+            ));
+        }
+        if memory.revision != memory.current_revision {
+            next.push(format!("engram work memories {} --full", memory.key));
+        }
+        next.push("engram work memories".into());
         Self {
             memory,
             reminders: Vec::new(),
-            next: vec!["engram work memories".into()],
+            next,
         }
     }
 
     #[must_use]
     pub(crate) fn terminal_lines(&self) -> Vec<String> {
         vec![
-            format!("memory {}:", self.memory.key),
+            format!(
+                "memory {} (revision {}; current {}):",
+                self.memory.key, self.memory.revision, self.memory.current_revision
+            ),
             format!(
                 "by {}",
                 terminal_safe_actor_label(
@@ -229,7 +244,13 @@ fn terminal_safe_data_block(text: &str) -> String {
 }
 
 fn ensure_project_memory_full_is_admissible(memory: &ProjectMemoryFull) -> Result<(), StoreError> {
-    project_memory_full_response(memory.clone()).map(drop)
+    project_memory_full_response(memory.clone())?;
+    // Reserve the largest numeric/history-navigation envelope up front: a
+    // later revision must not make an accepted earlier body unreadable.
+    let mut historical = memory.clone();
+    historical.revision = u64::MAX - 1;
+    historical.current_revision = u64::MAX;
+    project_memory_full_response(historical).map(drop)
 }
 
 /// Locally derived source used when a shell omits its asserted actor id.

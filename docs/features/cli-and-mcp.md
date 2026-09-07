@@ -127,8 +127,8 @@ engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-refer
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
-engram work remember "Project note" [--key KEY]
-engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
+engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
 ```
 
@@ -512,6 +512,16 @@ Rules that matter:
   observation, never a rule or a decision record, kept in full until an
   explicit `forget`. `next` only signals how many notes exist and whether
   any changed; `memories` is the source of truth.
+  `remember TEXT --key KEY --revise` retains earlier attributed versions under
+  that key. Optional `--expected-revision N` refuses a stale basis with the
+  current revision; without it, the receipt names the replaced and new
+  revisions. An identical same-session body and explicit basis replays;
+  without a basis, only an identical current revision replays. `memories KEY
+  --full` reads the current body and offers previous-version navigation;
+  `--revision N` reads one historical body. `forget` permanently retires all
+  reads of the key, retaining local canonical history. Snapshots transfer live
+  histories, but only the tombstone for forgotten keys. MCP uses `revise`,
+  `expected_revision`, and `revision` with the same meanings.
 
 The same thirteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
 `update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`, and
@@ -897,8 +907,8 @@ operation enforces the live control-session/run binding described above.
 | `done` | Complete the held item; an open obligation returns the typed `open_work_obligations` result |
 | `search` | `ls` over every lifecycle |
 | `handoff` | `offer`, `accept`, or `cancel` the unique checkpoint-coupled handoff |
-| `remember` | Store one attributed project episode under a safe permanent key |
-| `memories` | List/search compact rows or fully read one exact live key |
+| `remember` | Create or explicitly revise an attributed episode under one permanent key; retain history |
+| `memories` | List/search current rows or read one current/historical revision of a live key |
 | `forget` | Append an attributed terminal tombstone; never erase or reuse the key |
 
 Every agent tool result keeps its structured shape and adds two fields.

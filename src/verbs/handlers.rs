@@ -185,6 +185,9 @@ pub(super) fn normalize_gate_input(input: &GateInput) -> Result<GateInput, VerbE
 pub struct RememberInput {
     pub text: String,
     pub key: Option<String>,
+    #[serde(default)]
+    pub revise: bool,
+    pub expected_revision: Option<u64>,
 }
 
 /// `memories`: compact list/search or one dedicated full read.
@@ -194,6 +197,7 @@ pub struct MemoriesInput {
     pub after: Option<String>,
     #[serde(default)]
     pub full: bool,
+    pub revision: Option<u64>,
 }
 
 /// `forget`: permanently retire one project-memory key.
@@ -1279,11 +1283,15 @@ impl AgentVerbs {
     /// # Errors
     ///
     /// Returns [`VerbError`] when authorization, key, size, redaction, or
-    /// create-only lifecycle admission fails.
+    /// revision-basis or terminal lifecycle admission fails.
     pub fn remember(&self, input: RememberInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
-        let receipt = self
-            .service
-            .remember_project_memory(input.text, input.key, now)?;
+        let receipt = self.service.remember_project_memory(
+            input.text,
+            input.key,
+            input.revise,
+            input.expected_revision,
+            now,
+        )?;
         let guidance = Guidance {
             reminders: Vec::new(),
             next: vec![
@@ -1292,7 +1300,17 @@ impl AgentVerbs {
             ],
         };
         let replay = if receipt.duplicate { " (replayed)" } else { "" };
-        let lines = vec![format!("remembered project memory {}{replay}", receipt.key)];
+        let line = match receipt.replaced_revision {
+            Some(previous) => format!(
+                "revised project memory {}: revision {previous} → {}{replay}",
+                receipt.key, receipt.revision
+            ),
+            None => format!(
+                "remembered project memory {} (revision {}){replay}",
+                receipt.key, receipt.revision
+            ),
+        };
+        let lines = vec![line];
         Ok(Receipt::assemble(
             lines,
             guidance,
@@ -1312,6 +1330,12 @@ impl AgentVerbs {
         input: &MemoriesInput,
         now: DateTime<Utc>,
     ) -> Result<Receipt, VerbError> {
+        if input.revision.is_some() && !input.full {
+            return Err(StoreError::InvalidProjectMemory(
+                "--revision requires --full and a memory key".into(),
+            )
+            .into());
+        }
         if input.full {
             if input.after.is_some() {
                 return Err(StoreError::InvalidProjectMemory(
@@ -1322,7 +1346,7 @@ impl AgentVerbs {
             let key = input.query.as_deref().ok_or_else(|| {
                 StoreError::InvalidProjectMemory("--full requires a memory key".into())
             })?;
-            let envelope = self.service.project_memory_full(key, now)?;
+            let envelope = self.service.project_memory_full(key, input.revision, now)?;
             let lines = envelope.terminal_lines();
             return Ok(Receipt::assemble(
                 lines,
@@ -2006,8 +2030,9 @@ fn project_memory_list_receipt(
     let mut lines = vec![format!("{} project memory item(s):", result.memories.len())];
     for row in &result.memories {
         lines.push(format!(
-            "  {} — {} — by {} ({})",
+            "  {} (revision {}) — {} — by {} ({})",
             row.key,
+            row.revision,
             short(&terminal_safe_multiline(&row.first_line)),
             terminal_safe_actor_label(&row.actor_id, row.actor_context.as_deref()),
             row.remembered_at.format("%Y-%m-%d %H:%M UTC")

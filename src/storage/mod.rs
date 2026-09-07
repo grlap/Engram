@@ -260,6 +260,7 @@ const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[&str] = &[
     "object_fts",
     "objects_memory_assertion_version",
     "objects_project_memory_key",
+    "objects_project_memory_root",
     "objects_graph_snapshot_audit",
     "objects_graph_snapshot_load_audit",
     "memory_heads_scope",
@@ -702,6 +703,20 @@ pub enum StoreError {
     MemoryAccessDenied(ObjectHash),
     #[error("project memory key {0:?} already exists")]
     ProjectMemoryExists(String),
+    #[error(
+        "project memory key {key:?} changed: expected revision {expected}, current revision {current}"
+    )]
+    ProjectMemoryRevisionConflict {
+        key: String,
+        expected: u64,
+        current: u64,
+    },
+    #[error("project memory key {key:?} has no revision {revision}; current revision is {current}")]
+    ProjectMemoryRevisionNotFound {
+        key: String,
+        revision: u64,
+        current: u64,
+    },
     #[error("project memory key {0:?} is permanently retired")]
     ProjectMemoryRetired(String),
     #[error("project memory key {0:?} was not found")]

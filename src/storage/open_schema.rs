@@ -523,7 +523,16 @@ impl SqliteStore {
              CREATE INDEX IF NOT EXISTS objects_memory_assertion_version
                  ON objects(json_extract(canonical_json, '$.version'))
                  WHERE object_kind = 'memory_assertion_event';
-             CREATE UNIQUE INDEX IF NOT EXISTS objects_project_memory_key
+             CREATE UNIQUE INDEX IF NOT EXISTS objects_project_memory_root
+                 ON objects (
+                     json_extract(canonical_json, '$.scope.project'),
+                     json_extract(canonical_json, '$.project_key')
+                 )
+                 WHERE object_kind = 'memory_version'
+                   AND json_extract(canonical_json, '$.scope.kind') = 'project'
+                   AND json_type(canonical_json, '$.project_key') = 'text'
+                   AND json_array_length(canonical_json, '$.parents') = 0;
+             CREATE INDEX IF NOT EXISTS objects_project_memory_key
                  ON objects(
                      json_extract(canonical_json, '$.scope.project'),
                      json_extract(canonical_json, '$.project_key')
@@ -1363,19 +1372,9 @@ impl SqliteStore {
     }
 
     fn repair_core_rebuildable_schema_on(connection: &Connection) -> Result<bool, StoreError> {
-        let mut checked_heads = 0;
-        let mut invalid_heads = Vec::new();
-        Self::verify_memory_head_projections_on(
-            connection,
-            &mut checked_heads,
-            &mut invalid_heads,
-        )?;
-        if !invalid_heads.is_empty() {
-            return Err(StoreError::InvalidMemoryProjection(format!(
-                "projection repair refused because durable memory heads are invalid: {}",
-                invalid_heads.join(", ")
-            )));
-        }
+        // The caller owns one repair transaction. Restore disposable indexes
+        // before validation uses INDEXED BY; invalid durable heads still roll
+        // back all schema changes, and are never rewritten by this repair.
         for object in CORE_REBUILDABLE_SCHEMA_OBJECTS {
             drop_schema_object(connection, object)?;
         }
@@ -1388,7 +1387,16 @@ impl SqliteStore {
              CREATE INDEX IF NOT EXISTS objects_memory_assertion_version
                  ON objects(json_extract(canonical_json, '$.version'))
                  WHERE object_kind = 'memory_assertion_event';
-             CREATE UNIQUE INDEX IF NOT EXISTS objects_project_memory_key
+             CREATE UNIQUE INDEX IF NOT EXISTS objects_project_memory_root
+                 ON objects (
+                     json_extract(canonical_json, '$.scope.project'),
+                     json_extract(canonical_json, '$.project_key')
+                 )
+                 WHERE object_kind = 'memory_version'
+                   AND json_extract(canonical_json, '$.scope.kind') = 'project'
+                   AND json_type(canonical_json, '$.project_key') = 'text'
+                   AND json_array_length(canonical_json, '$.parents') = 0;
+             CREATE INDEX IF NOT EXISTS objects_project_memory_key
                  ON objects(
                      json_extract(canonical_json, '$.scope.project'),
                      json_extract(canonical_json, '$.project_key')
@@ -1439,6 +1447,19 @@ impl SqliteStore {
                  change_position INTEGER NOT NULL CHECK(change_position >= 0)
              ) STRICT;",
         )?;
+        let mut checked_heads = 0;
+        let mut invalid_heads = Vec::new();
+        Self::verify_memory_head_projections_on(
+            connection,
+            &mut checked_heads,
+            &mut invalid_heads,
+        )?;
+        if !invalid_heads.is_empty() {
+            return Err(StoreError::InvalidMemoryProjection(format!(
+                "projection repair refused because durable memory heads are invalid: {}",
+                invalid_heads.join(", ")
+            )));
+        }
         Self::rebuild_object_fts_from_heads_on(connection)?;
         Self::rebuild_project_memory_state_on(connection)?;
         let mut checked = 0;
@@ -1540,6 +1561,11 @@ impl SqliteStore {
                         "memory head {} does not match its canonical version and assertion",
                         stored.memory_id
                     )));
+                }
+                if let (Some(key), Scope::Project { project }) =
+                    (&version.project_key, &version.scope)
+                {
+                    super::project_memory::lookup_project_memory_on(connection, project, key)?;
                 }
                 Ok(())
             })();

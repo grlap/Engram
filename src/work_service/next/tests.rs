@@ -1197,7 +1197,13 @@ fn compact_agent_memory_signal_is_acknowledged_only_after_delivery() {
         Some("memory-advertisement-test".into()),
     );
     service
-        .remember_project_memory("retained fact".into(), Some("retained-fact".into()), at(0))
+        .remember_project_memory(
+            "retained fact".into(),
+            Some("retained-fact".into()),
+            false,
+            None,
+            at(0),
+        )
         .expect("remember fixture");
     let query = WorkNextQuery {
         sections: vec![WorkNextSection::Memories],

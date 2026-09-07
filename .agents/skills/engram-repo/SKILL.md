@@ -166,8 +166,8 @@ engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-refer
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
-engram work remember "Project note" [--key KEY]
-engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
+engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
+engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
 ```
 
@@ -265,6 +265,15 @@ Rules that matter:
 - `remember` is for attributed project notes and observations, never rules or
   secrets. `memories` is the source of truth; `forget` tombstones rather than
   erases and permanently retires the safe key.
+  Correct an existing note with `remember TEXT --key KEY --revise`, not a
+  companion key. Prior attributed versions stay reachable through `memories
+  KEY --full --revision N`; ordinary reads return the current version. An
+  optional `--expected-revision N` refuses stale writes with the current
+  revision; without it the receipt states which revision was replaced and
+  which was appended. Identical same-session body and supplied basis replay;
+  without a basis only an identical current revision replays. Forget retires
+  history reads too; snapshots carry live history but only tombstones for
+  forgotten keys, never their old bodies.
 - Reject an evidence-disproved finding with an evidence note, then
   `update CHILD --reject "why"` for an Open required child of an Open,
   waivable parent. It atomically composes cancellation and the parent's waiver

@@ -200,6 +200,9 @@ pub struct RememberProjectMemoryRequest {
     pub project_id: ProjectId,
     pub session_id: SessionId,
     pub key: Option<String>,
+    #[serde(default)]
+    pub revise: bool,
+    pub expected_revision: Option<u64>,
     pub body: String,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
@@ -219,6 +222,9 @@ pub struct ForgetProjectMemoryRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectMemoryMutationReceipt {
     pub key: String,
+    pub revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaced_revision: Option<u64>,
     pub remembered_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forgotten_at: Option<DateTime<Utc>>,
@@ -230,6 +236,7 @@ pub struct ProjectMemoryMutationReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectMemoryListRow {
     pub key: String,
+    pub revision: u64,
     pub first_line: String,
     pub remembered_at: DateTime<Utc>,
     pub actor_id: String,
@@ -255,6 +262,8 @@ pub struct ProjectMemoryList {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProjectMemoryFull {
     pub key: String,
+    pub revision: u64,
+    pub current_revision: u64,
     pub body: String,
     pub remembered_at: DateTime<Utc>,
     pub actor_id: String,

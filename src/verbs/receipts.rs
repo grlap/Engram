@@ -424,7 +424,7 @@ impl VerbError {
             } => ambiguous_reference_guidance(candidates, *more),
             StoreError::ProjectMemoryExists(key) => (
                 vec![format!(
-                    "project memory {key} already exists; retry remember with an explicit --key"
+                    "project memory {key} already exists; use remember --key {key} --revise to retain its attributed history"
                 )],
                 vec![
                     format!("engram work memories {key} --full"),
@@ -440,6 +440,14 @@ impl VerbError {
             StoreError::ProjectMemoryNotFound(_) => (
                 vec!["no project memory uses that key".into()],
                 vec!["engram work memories".into()],
+            ),
+            StoreError::ProjectMemoryRevisionConflict { key, current, .. } => (
+                vec![format!("project memory {key} is at revision {current}; inspect and reconcile before revising")],
+                vec![format!("engram work memories {key} --full")],
+            ),
+            StoreError::ProjectMemoryRevisionNotFound { key, revision, current } => (
+                vec![format!("project memory {key} has no revision {revision}; valid revisions are 1..{current}")],
+                vec![format!("engram work memories {key} --full --revision {current}")],
             ),
             StoreError::ProjectMemoryBindingInvalid => (
                 vec![

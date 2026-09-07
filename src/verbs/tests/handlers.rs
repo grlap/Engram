@@ -270,6 +270,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     let full_after = verbs
         .memories(
             &MemoriesInput {
+                revision: None,
                 query: Some("memory-key".into()),
                 after: Some("after-key".into()),
                 full: true,
@@ -281,6 +282,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     let full_without_key = verbs
         .memories(
             &MemoriesInput {
+                revision: None,
                 query: None,
                 after: None,
                 full: true,
@@ -297,6 +299,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     verbs
         .remember(
             RememberInput {
+                revise: false,
+                expected_revision: None,
                 text: "x".repeat(crate::domain::MAX_PROJECT_MEMORY_BODY_BYTES),
                 key: Some("plain-boundary".into()),
             },
@@ -306,6 +310,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     let full = verbs
         .memories(
             &MemoriesInput {
+                revision: None,
                 query: Some("plain-boundary".into()),
                 after: None,
                 full: true,
@@ -326,6 +331,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     let refusal = verbs
         .remember(
             RememberInput {
+                revise: false,
+                expected_revision: None,
                 text: format_heavy_body,
                 key: Some("format-heavy-boundary".into()),
             },
@@ -342,6 +349,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     verbs
         .remember(
             RememberInput {
+                revise: false,
+                expected_revision: None,
                 text: raw_control_body.into(),
                 key: Some("terminal-safe".into()),
             },
@@ -351,6 +360,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     let rendered = verbs
         .memories(
             &MemoriesInput {
+                revision: None,
                 query: Some("terminal-safe".into()),
                 after: None,
                 full: true,
@@ -377,6 +387,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     let listed = verbs
         .memories(
             &MemoriesInput {
+                revision: None,
                 query: Some("terminal-safe".into()),
                 after: None,
                 full: false,
@@ -409,6 +420,8 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     unsafe_actor_verbs
         .remember(
             RememberInput {
+                revise: false,
+                expected_revision: None,
                 text: "Actor labels are escaped at the receipt boundary.".into(),
                 key: Some("unsafe-actor-label".into()),
             },
@@ -418,6 +431,7 @@ fn project_memory_full_shape_refuses_early_and_uses_the_bounded_shared_envelope(
     let unsafe_actor_list = unsafe_actor_verbs
         .memories(
             &MemoriesInput {
+                revision: None,
                 query: Some("unsafe-actor-label".into()),
                 after: None,
                 full: false,
@@ -448,6 +462,8 @@ fn project_memory_listing_sheds_escape_heavy_rows_without_skipping_a_blank_query
         verbs
             .remember(
                 RememberInput {
+                    revise: false,
+                    expected_revision: None,
                     text: "\u{7}".repeat(160),
                     key: Some(format!("escape-heavy-{index:02}")),
                 },
@@ -459,6 +475,7 @@ fn project_memory_listing_sheds_escape_heavy_rows_without_skipping_a_blank_query
     let mut receipt = verbs
         .memories(
             &MemoriesInput {
+                revision: None,
                 query: Some(" \t ".into()),
                 ..MemoriesInput::default()
             },
@@ -494,6 +511,7 @@ fn project_memory_listing_sheds_escape_heavy_rows_without_skipping_a_blank_query
         receipt = verbs
             .memories(
                 &MemoriesInput {
+                    revision: None,
                     after: Some(after.to_owned()),
                     ..MemoriesInput::default()
                 },

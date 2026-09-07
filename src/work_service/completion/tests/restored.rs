@@ -38,7 +38,13 @@ fn multiline_work_and_memory_save_and_reload_verbatim() {
         .work_note_on(Some(&root.short_ref), note, &[], at(2))
         .expect("multiline note");
     source
-        .remember_project_memory(memory.into(), Some("multiline-memory".into()), at(3))
+        .remember_project_memory(
+            memory.into(),
+            Some("multiline-memory".into()),
+            false,
+            None,
+            at(3),
+        )
         .expect("multiline memory");
     assert!(matches!(
         source

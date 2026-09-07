@@ -36,6 +36,7 @@ pub struct WorkGraphSnapshotRedactedCounts {
     pub blockers: usize,
     pub sources: usize,
     pub records: usize,
+    /// Memory keys with at least one redacted version, not version/body count.
     pub memories: usize,
 }
 
@@ -286,9 +287,21 @@ pub enum WorkGraphSnapshotMemoryState {
 }
 
 /// One key-ordered project-memory entry.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkGraphSnapshotMemoryRevision {
+    pub revision: u64,
+    pub body: WorkGraphSnapshotText,
+    pub sensitivity: Sensitivity,
+    pub remembered_at: DateTime<Utc>,
+    pub actor: ActorContext,
+}
+
+/// One key and its ordered superseded versions. Retirement carries no bodies.
 #[derive(Clone, Debug, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct WorkGraphSnapshotMemory {
     pub key: String,
+    pub history: Vec<WorkGraphSnapshotMemoryRevision>,
     #[serde(flatten)]
     pub state: WorkGraphSnapshotMemoryState,
 }
@@ -540,6 +553,7 @@ enum StrictRecord {
 enum StrictMemory {
     Active {
         key: String,
+        history: Vec<WorkGraphSnapshotMemoryRevision>,
         body: WorkGraphSnapshotText,
         sensitivity: Sensitivity,
         remembered_at: DateTime<Utc>,
@@ -547,6 +561,7 @@ enum StrictMemory {
     },
     Tombstone {
         key: String,
+        history: Vec<WorkGraphSnapshotMemoryRevision>,
         retired_at: DateTime<Utc>,
         actor: ActorContext,
     },
@@ -618,12 +633,14 @@ impl From<StrictMemory> for WorkGraphSnapshotMemory {
         match value {
             StrictMemory::Active {
                 key,
+                history,
                 body,
                 sensitivity,
                 remembered_at,
                 actor,
             } => Self {
                 key,
+                history,
                 state: WorkGraphSnapshotMemoryState::Active {
                     body,
                     sensitivity,
@@ -633,10 +650,12 @@ impl From<StrictMemory> for WorkGraphSnapshotMemory {
             },
             StrictMemory::Tombstone {
                 key,
+                history,
                 retired_at,
                 actor,
             } => Self {
                 key,
+                history,
                 state: WorkGraphSnapshotMemoryState::Tombstone { retired_at, actor },
             },
         }

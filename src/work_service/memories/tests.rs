@@ -18,6 +18,8 @@ fn project_memory_advisory_is_constant_decode_at_scale() {
             .remember_project_memory(
                 format!("retained project observation {index}"),
                 Some(format!("memory-{index:03}")),
+                false,
+                None,
                 at(index),
             )
             .expect("remember scale fixture");
