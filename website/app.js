@@ -83,12 +83,12 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".site-header") && !mobileNav.hidden) closeMenu();
 });
-window.matchMedia("(min-width: 761px)").addEventListener("change", closeMenu);
+window.matchMedia("(min-width: 1101px)").addEventListener("change", closeMenu);
 
 const folios = [...document.querySelectorAll("[data-folio]")];
 const folioLinks = [...document.querySelectorAll("[data-folio-link]")];
 const nextFolio = document.querySelector("#next-folio");
-const folioTitles = ["The idea", "The mechanism", "Your notebook"];
+const folioTitles = ["The idea", "The mechanism", "Your notebook", "Agent notes"];
 let activeFolio = -1;
 let folioFrame;
 

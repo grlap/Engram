@@ -1,6 +1,6 @@
 # Project website
 
-The three-chapter project website lives in [website/index.html](../website/index.html).
+The four-chapter project website lives in [website/index.html](../website/index.html).
 It is a static site with no JavaScript dependencies or build step. Its copy
 introduces the memory and work loop described in the [vision](vision.md),
 and keeps [shipped alpha capabilities](shipped.md) separate from the
@@ -32,17 +32,22 @@ third chapter. Copyright 2026 Engram contributors.
 ## Design and interaction
 
 The visual direction is a Leonardo da Vinci inspired inventor's notebook:
-three manuscript leaves, parchment, sepia ink, serif typography, and an
-original imaginary memory apparatus. Six detailed manuscript fragments fill
+four manuscript leaves, parchment, sepia ink, serif typography, and an
+original imaginary memory apparatus. Eight detailed manuscript fragments fill
 the margins with fine penwork, crosshatching, construction lines, and tiny
 handwritten annotations embedded in the artwork. Each leaf has its own
 studies: perception and armillary instruments, clockwork and mechanical
-linkages, then writing tools and a seal press.
+linkages, then writing tools and a seal press. The fourth leaf has two original
+studies: an articulated mechanical hand writing with a quill, and an imagined
+listening instrument that records a voice. They frame the handwritten agent notes.
 
 The illustrations were generated with the built-in image generation tool.
-The margin studies use the existing hero as their visual reference. Exact
+The first six margin studies use the existing hero as their visual reference.
+The fourth leaf's studies were generated independently in the same penwork
+and parchment style. Exact
 prompts are saved in [memory-machine.prompt.txt](../website/assets/memory-machine.prompt.txt)
-and [manuscript-prompts.txt](../website/assets/manuscript-prompts.txt). These
+and [manuscript-prompts.txt](../website/assets/manuscript-prompts.txt), with the
+new pair in [manuscript-voices-prompts.txt](../website/assets/manuscript-voices-prompts.txt). These
 are original imaginary illustrations, not historical Leonardo works or
 technical references; the tiny manuscript lettering is decorative notation.
 The margins are stored as WebP images at their original dimensions, with
@@ -62,7 +67,8 @@ to grow while keeping the text readable. On small phones the source link
 lives in the navigation menu, and the motion control keeps its accessible
 text label alongside a visible icon.
 
-The three chapters are **The idea**, **The mechanism**, and **Your notebook**.
+The four chapters are **The idea**, **The mechanism**, **Your notebook**, and
+**Agent notes**.
 On desktop, each fills at least one viewport and native CSS scroll snapping
 moves between manuscript leaves. A fixed contents bar and Roman-numeral page
 links provide direct navigation; the footer reflects the visible chapter and
@@ -74,6 +80,16 @@ scrolling and keyboard page navigation. On narrow or short screens, or when
 any leaf is taller than the viewport, native scrolling and growing page
 heights keep longer content readable. Marginalia moves into two columns below
 the main content on small screens.
+
+The fourth leaf pairs an approved quote from Engram::Advisor, a project AI
+agent reviewing the Phoenix pilot, with the explicitly fictional aside
+“Would recommend to my next session.” — Anonymous, but recorded. Advisor’s
+quote is a dated September 2026 pilot observation, including a rough edge,
+not an independent customer endorsement. His report of avoided arguments
+comes from pilot agents; he reviewed reports and source rather than executing
+the pilot tasks himself. Keep that date and context if the memory revision
+behavior changes. Quotes use large local handwriting fonts with a serif
+fallback; a short pen-stroke flourish respects both motion controls.
 
 CSS animates orbital construction lines, a terminal caret,
 the page-turn cue, and scroll reveals. The footer motion control pauses animation
@@ -94,7 +110,7 @@ Run `node --check website/app.js` and the repository's required quality gates.
 Preview at desktop and mobile widths, including short landscape windows and
 ultrawide displays. Check that the studies stay close to the central content
 and that their faded edges keep text and controls readable.
-Check the three leaves, wheel scrolling in both directions, keyboard page
+Check the four leaves, wheel scrolling in both directions, keyboard page
 navigation, chapter links, deep links, browser history, and active page
 indicators. Exercise all four work-cycle tabs, both operating-system tabs,
 the copy action, mobile navigation, and the motion control. Check reduced

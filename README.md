@@ -46,15 +46,16 @@ Explore the animated project website with the [local preview guide](docs/website
   and on-demand full-text search. Every packet has a reproducible content hash
   plus an ordered event cursor for peer deltas. See
   [context packets](docs/features/context-packets.md).
-- **A local work system, not an external-tracker binding** — the target owns
+- **A local work system, not an external-tracker binding** — Engram owns
   decomposition, dependencies, priority, readiness, assignment, claims,
-  evidence, and completion. Its six-operation ambient model protocol avoids
-  turning a CLI into agent ceremony. See
+  evidence, and completion. Thirteen agent words over a six-operation ambient
+  protocol keep the CLI from becoming agent ceremony. See
   [local work system](docs/features/local-work-system.md).
-- **Planned multi-session coordination** — root-shared memory, one
-  executor/claim per child run, atomic resource leases with fencing, explicit
-  handoff, typed acknowledged peer deltas, a root contribution/child-seal
-  barrier, and separate fenced report assembly.
+- **Multi-session coordination** — root-shared memory, one executor/claim per
+  child run, fenced claims with renewal and explicit handoff, typed
+  acknowledged peer deltas, and a root contribution/child-seal barrier are
+  shipped; atomic resource leases with fencing run on the host-private
+  channel; separate fenced report assembly is planned.
 - **Behavior that memory can govern** — the shipped host-private alpha binds
   sessions, attaches transactional context to durable turn grants, rechecks
   freshness at begin, and requires restart-safe checkpoints. Single-use
@@ -104,6 +105,62 @@ it. Details in
 [architecture](docs/architecture.md).
 
 ## Status
+
+[Shipped today](docs/shipped.md) is the exact installed-build inventory; this
+section is the short version.
+
+**Agents.** The local work graph and the six-operation ambient protocol ship
+through one service core with CLI and MCP faces. An agent uses thirteen words
+— `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`, `note`, `done`,
+`handoff`, `remember`, `memories`, `forget` (MCP adds `search`) — as flat
+commands: `add → claim → done` is three commands with no JSON, hashes, fences,
+or keys, and every receipt ends with `reminders` and `next`. `engram work next`
+is the whole orientation a session needs: what it holds, what is assigned and
+ready, and what changed, with the owner's status captured by `note --status`
+recovered per row, explicit omissions instead of silent truncation, and one
+detail command for anything clipped. Responses stay under 12 KiB. Required
+and optional children, prerequisites, blockers, deferral, one-word rejection
+of a disproved finding (`update CHILD --reject`), evidence-gated completion
+that asserts the sealed acceptance, late notes and gates on completed work,
+claim renewal, handoff, attributed project memories, and audited external
+planning references are installed.
+
+**Hosts.** The base tier is advisory: inject identity, run one MCP child per
+session, and inject `engram work next` at session start and after every
+compaction — see the [host checklist](docs/host-checklist.md), which includes
+a Claude Code recipe. A host that mediates turns uses the host-private
+JSON-lines control channel (`session_bind → turn_evaluate → turn_begin →
+turn_checkpoint`) with transactional context delivery, restart-safe grants,
+resource-scoped fenced leases, and a hash-addressed obligation rule set. The
+built-in enforced policy admits `observe`, `communicate`, turn-gated
+`coordinate` leases, and lease-backed `mutate_local`; everything else fails
+closed. Per-tool action mediation is not shipped, so a host declaration of
+`action_gated` is refused, and the agent-facing MCP loop stays advisory until
+the host actually withholds prompts.
+
+**Operators.** `engram init` (with an explicit `--required-assurance` for an
+honest advisory pilot), `engram doctor` (verifies every immutable object and
+projection in one read snapshot and names the snapshot it verified;
+`--repair-projections` rebuilds only declared indexes, triggers, and FTS),
+`engram backup` and `engram restore` for verified host-local copies,
+`engram graph save` and `engram graph load` for one deterministic
+planning/history snapshot that recreates a project on another machine by
+hand, `engram control-policy` for the immutable policy, and `engram authority`
+for audited lifecycle exceptions. Ordinary open refuses a store written by a
+different build; there is no migration chain before release.
+
+**Proof.** This repository and a pilot project use Engram as their only
+writable tracker; every landing is installed and checked with `doctor`, and
+the test suites keep every fixture under one `Temp\engram` directory per run
+and clean up after themselves.
+
+**Next.** Host Enforcement SDK binding, action and resource outcomes linked to
+work runs, off-host durability (`local_backed_up` and sequential `portable`
+handoff over the snapshot path), and optional publication — see the
+[roadmap](docs/roadmap.md).
+
+<details>
+<summary>Control-plane detail</summary>
 
 The first coding-agent memory loop is implemented and process-level tested.
 That current alpha still uses an external task reference to rendezvous
@@ -218,39 +275,33 @@ constant-sized as history grows. CLI and two-process MCP dogfood tests
 exercise the full lifecycle without manually shuttling work/run/claim/offer
 ids.
 
-The Host Enforcement SDK binding, action/resource outcomes linked to work
-runs, recovery snapshots/portable handoff, Beads round-trip migration, and
-optional publication remain the next implementation slices. Until the host
-SDK mediates prompt/action dispatch, agent-facing MCP work calls are still an
-advisory interface even though their lifecycle transactions enforce claims,
-fences, and project binding.
+Until the host SDK mediates prompt/action dispatch, agent-facing MCP work
+calls are still an advisory interface even though their lifecycle
+transactions enforce claims, fences, and project binding.
+
+</details>
 
 The CLI requires `ENGRAM_HOME` (or `--home`) and resolves this repository's
 tracked `.engram-project` identity to one database shared across worktrees.
-Initialize with `engram init` or make an attributed bootstrap choice with
+Make the attributed bootstrap choice with
 `engram init --required-assurance <level> --authorized-by <actor> --reason
-<text>`, verify with `engram doctor`, change the immutable policy through
+<text>`, verify with `engram doctor`, and change the immutable policy through
 `engram control-policy set-required-assurance --idempotency-key <key>` (the
-durable key replays the exact receipt after an uncertain response), or select a
-validated typed obligation set with
+durable key replays the exact receipt after an uncertain response) or
 `engram control-policy set-obligation-rule-set --input <JSON|@file>
---idempotency-key <key>`. Ordinary open never repairs indexes, triggers, or FTS;
-the explicit `engram doctor --repair-projections` path recreates them and
-repopulates FTS from exact-current durable rows without rewriting those rows.
-Run the MCP
-server
-with `engram mcp --actor-id <agent> --session-id <session>`, or run the
-host-private service with `engram control --actor-id <agent> --session-id
-<session>`, or run `engram work --actor-id <agent> --session-id <session>`.
-See the
-[CLI and MCP guide](docs/features/cli-and-mcp.md) for host configuration and
-the exact shipped tool set.
+--idempotency-key <key>`. Run the MCP server with
+`engram mcp --actor-id <agent> --session-id <session>`, the host-private
+service with `engram control --actor-id <agent> --session-id <session>`, or
+the words directly with `engram work --actor-id <agent> --session-id
+<session>`. See the [CLI and MCP guide](docs/features/cli-and-mcp.md) for host
+configuration and the exact shipped tool set.
 
 ## Documentation
 
 | Doc | What it covers |
 | --- | --- |
 | [Shipped today](docs/shipped.md) | Exact installed-build capability inventory, kept separate from planned work |
+| [CLI and MCP](docs/features/cli-and-mcp.md) | Host configuration, the thirteen agent words and MCP tools, operator commands, build identity |
 | [Host checklist](docs/host-checklist.md) | The base-tier integration any host needs: identity injection, one MCP child, the `next` hook, honest assurance |
 | [Vision](docs/vision.md) | Why Engram exists; behavioral control, memory, and reporting |
 | [Architecture](docs/architecture.md) | Components, object model, ports, data flow |
