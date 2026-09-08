@@ -70,6 +70,8 @@ fn assert_service_citation_refusal(malformed: bool) {
         .work_complete_on(
             Some(&reference),
             WorkCompleteInput {
+                links: Vec::new(),
+                link_basis: None,
                 capture: None,
                 evidence: Vec::new(),
                 acceptance: Some(vec![WorkAcceptanceInput {
@@ -130,6 +132,9 @@ fn criterion_disclosure_fitters_exclude_the_exact_final_twin_ceiling() {
         .service
         .remaining_optional_children(view.status.work.work_id, 5, at(3));
     let facts = crate::work_service::WorkAcceptanceEvidence {
+        work_id: None,
+        link_count: 0,
+        links: Vec::new(),
         // Enough removable JSON rows to pay for the omission manifest itself;
         // this probes fitting, not the fixed-metadata success fallback.
         criteria_count: 32,
@@ -244,6 +249,8 @@ fn criterion_disclosure_words_keep_work_evidence_separate_and_frozen() {
         )
         .unwrap();
     let input = DoneInput {
+        links: Vec::new(),
+        link_basis: None,
         work_ref: Some(reference.clone()),
         summary: Some("Both delivered".into()),
         note: Some("This shared note is not a criterion citation".into()),
@@ -324,6 +331,8 @@ fn criterion_disclosure_explicit_and_mixed_core_inputs_use_seal_positions() {
             )
             .unwrap();
         let input = WorkCompleteInput {
+            links: Vec::new(),
+            link_basis: None,
             capture: None,
             evidence: Vec::new(),
             note: None,
@@ -371,6 +380,8 @@ fn criterion_disclosure_explicit_and_mixed_core_inputs_use_seal_positions() {
         let done = verbs
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(reference.clone()),
                     ..DoneInput::default()
                 },
@@ -412,6 +423,8 @@ fn criterion_disclosure_restored_completion_states_unavailability_without_counts
     verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(reference.clone()),
                 summary: Some("delivered".into()),
                 ..DoneInput::default()
@@ -444,6 +457,8 @@ fn criterion_disclosure_large_seals_fit_with_exact_positional_omissions() {
     let done = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(reference.clone()),
                 summary: Some("All asserted".into()),
                 ..DoneInput::default()
@@ -526,6 +541,8 @@ fn criterion_disclosure_window_refitting_keeps_both_twins_and_one_omission_total
     verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(reference.clone()),
                 summary: Some("All asserted".into()),
                 ..DoneInput::default()
@@ -601,6 +618,8 @@ fn criterion_disclosure_composes_many_positions_with_optional_child_guidance() {
         .map(|child| store.resolve_work_ref(&project, child).unwrap())
         .collect();
     let input = DoneInput {
+        links: Vec::new(),
+        link_basis: None,
         work_ref: Some(reference.clone()),
         summary: Some("Parent delivered".into()),
         ..DoneInput::default()
@@ -664,6 +683,8 @@ fn criterion_disclosure_absent_transient_facts_still_render_optional_children() 
         .work_complete_on(
             Some(&reference),
             WorkCompleteInput {
+                links: Vec::new(),
+                link_basis: None,
                 capture: Some(crate::work_service::WorkCompletionCaptureInput {
                     summary: "delivered".into(),
                     refs: Vec::new(),
@@ -800,6 +821,9 @@ fn criterion_disclosure_zero_criteria_emit_nothing_and_omissions_merge_exactly()
         false,
     );
     let zero = WorkAcceptanceEvidence {
+        work_id: None,
+        link_count: 0,
+        links: Vec::new(),
         criteria_count: 0,
         unlinked_count: 0,
         unlinked_positions: Vec::new(),
@@ -810,6 +834,9 @@ fn criterion_disclosure_zero_criteria_emit_nothing_and_omissions_merge_exactly()
     assert_eq!(unchanged.text(), base.text());
     assert_eq!(unchanged.value, base.value);
     let partial = AcceptanceEvidence::new(&WorkAcceptanceEvidence {
+        work_id: None,
+        link_count: 0,
+        links: Vec::new(),
         criteria_count: 5,
         unlinked_count: 5,
         unlinked_positions: vec![1, 2],
@@ -842,6 +869,8 @@ fn criterion_disclosure_damaged_native_run_refuses_without_writes() {
     verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(reference.clone()),
                 summary: Some("delivered".into()),
                 ..DoneInput::default()
@@ -887,6 +916,8 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
         let (_directory, verbs, path, _) = fixture();
         let reference = claimed(&verbs, vec!["delivered".into()]);
         let core_input = WorkCompleteInput {
+            links: Vec::new(),
+            link_basis: None,
             capture: Some(crate::work_service::WorkCompletionCaptureInput {
                 summary: "delivered".into(),
                 refs: Vec::new(),
@@ -905,6 +936,8 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             panic!("expected completion")
         };
         let word = DoneInput {
+            links: Vec::new(),
+            link_basis: None,
             work_ref: Some(reference.clone()),
             ..DoneInput::default()
         };
@@ -1060,6 +1093,9 @@ fn criterion_disclosure_restored_predicate_is_shared_even_for_conflicting_projec
             view.completed_by_record = restored;
             view.acceptance_evidence =
                 count.map(|count| crate::work_service::WorkAcceptanceEvidence {
+                    work_id: None,
+                    link_count: 0,
+                    links: Vec::new(),
                     criteria_count: count,
                     unlinked_count: count,
                     unlinked_positions: (1..=count).collect(),
@@ -1094,6 +1130,9 @@ fn criterion_disclosure_restored_predicate_is_shared_even_for_conflicting_projec
 #[test]
 fn criterion_disclosure_invalid_hand_constructed_counts_do_not_underflow() {
     let facts = crate::work_service::WorkAcceptanceEvidence {
+        work_id: None,
+        link_count: 0,
+        links: Vec::new(),
         criteria_count: 1,
         unlinked_count: 1,
         unlinked_positions: vec![1, 2],

@@ -88,6 +88,8 @@ fn finish(verbs: &AgentVerbs, work: &str, now: i64) {
     let receipt = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(work.into()),
                 summary: Some("Delivered".into()),
                 note: None,

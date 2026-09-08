@@ -128,6 +128,8 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
     let completed = service
         .work_complete(
             WorkCompleteInput {
+                links: Vec::new(),
+                link_basis: None,
                 capture: Some(WorkCompletionCaptureInput {
                     summary: "delivered".into(),
                     refs: Vec::new(),
@@ -191,6 +193,8 @@ fn explicit_empty_acceptance_still_fails_and_note_needs_omitted_acceptance() {
         .expect("claim");
     let complete = |acceptance: Option<Vec<WorkAcceptanceInput>>, note: Option<&str>, key: &str| {
         WorkCompleteInput {
+            links: Vec::new(),
+            link_basis: None,
             capture: Some(WorkCompletionCaptureInput {
                 summary: "delivered".into(),
                 refs: Vec::new(),
@@ -274,6 +278,8 @@ fn completion_on_a_lapsed_claim_refuses_without_retaking() {
         .expect("claim");
 
     let input = WorkCompleteInput {
+        links: Vec::new(),
+        link_basis: None,
         capture: Some(WorkCompletionCaptureInput {
             summary: "delivered".into(),
             refs: Vec::new(),
@@ -353,6 +359,8 @@ fn lapsed_completion_refuses_before_capture_for_explicit_and_derived_keys() {
             )
             .expect("claim");
         let input = WorkCompleteInput {
+            links: Vec::new(),
+            link_basis: None,
             capture: Some(WorkCompletionCaptureInput {
                 summary: "delivered once".into(),
                 refs: Vec::new(),
@@ -434,6 +442,8 @@ fn missing_contribution_recovery_names_the_participant_and_root() {
     let completion = service
         .work_complete(
             WorkCompleteInput {
+                links: Vec::new(),
+                link_basis: None,
                 capture: Some(WorkCompletionCaptureInput {
                     summary: "root implementation complete".into(),
                     refs: Vec::new(),
@@ -617,6 +627,8 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
     let cancelled = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(root.short_ref.clone()),
                 summary: Some("parent delivered".into()),
                 note: None,
@@ -1091,6 +1103,8 @@ fn capture_completion_rejects_bad_acceptance_without_substeps() {
         drop(before);
 
         let input = WorkCompleteInput {
+            links: Vec::new(),
+            link_basis: None,
             capture: Some(WorkCompletionCaptureInput {
                 summary: format!("capture must not commit for {name}"),
                 refs: vec![format!("test:{name}")],
@@ -1194,6 +1208,8 @@ fn capture_completion_replays_after_evidence_or_checkpoint_commit() {
             )
             .expect("claim focused work");
         let input = WorkCompleteInput {
+            links: Vec::new(),
+            link_basis: None,
             capture: Some(WorkCompletionCaptureInput {
                 summary: "completion evidence was durably captured".into(),
                 refs: vec!["test:completion-replay".into()],
@@ -1512,6 +1528,8 @@ fn pending_completion_resumes_after_holder_evidence_and_seals_the_current_set() 
         )
         .expect("claim focused work");
     let input = WorkCompleteInput {
+        links: Vec::new(),
+        link_basis: None,
         capture: Some(WorkCompletionCaptureInput {
             summary: "completion checkpoint includes current evidence".into(),
             refs: vec!["test:current-evidence-completion".into()],
@@ -1611,6 +1629,8 @@ fn stored_completion_refusal_is_a_corrupt_projection() {
         )
         .expect("claim focused work");
     let input = WorkCompleteInput {
+        links: Vec::new(),
+        link_basis: None,
         capture: None,
         evidence: Vec::new(),
         acceptance: Some(Vec::new()),
@@ -1674,6 +1694,8 @@ fn pending_completion_conflicts_after_foreign_claim_fence_change() {
         )
         .expect("short original claim");
     let input = WorkCompleteInput {
+        links: Vec::new(),
+        link_basis: None,
         capture: Some(WorkCompletionCaptureInput {
             summary: "this stale attempt must never commit".into(),
             refs: Vec::new(),

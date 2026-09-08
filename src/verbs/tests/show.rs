@@ -78,6 +78,8 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
             service
                 .work_complete(
                     WorkCompleteInput {
+                        links: Vec::new(),
+                        link_basis: None,
                         capture: Some(WorkCompletionCaptureInput {
                             summary: format!("Completed child {index}"),
                             refs: Vec::new(),

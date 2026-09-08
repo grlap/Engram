@@ -1068,7 +1068,8 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
     assert.match(doneTool.description, /no evidence linked to this criterion/);
     assert.match(doneTool.description, /what is still owed and the command that resolves it/);
     assert.match(doneTool.inputSchema.properties.note.description, /does not link evidence/);
-    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["note", "summary", "work_ref"]);
+    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["link_basis", "links", "note", "summary", "work_ref"]);
+    assert.match(doneTool.inputSchema.properties.link_basis.description, /Required with links/);
     const help = cliWord(engramHome, session, "done", "--help");
     assert.equal(help.status, 0, help.stderr);
     assert.match(help.stdout.replace(/\s+/g, " "), /no evidence linked to this criterion/);
@@ -1104,6 +1105,91 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
         assert.match(text.stdout, /criterion 2: no evidence linked to this criterion/);
         assert.doesNotMatch(text.stdout, /no evidence exists/);
       }
+    }
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+test("criterion links reuse existing records and fence the authors read on CLI MCP", async (t) => {
+  const engramHome = fixtureHome("engram-criterion-links-", t);
+  const session = "criterion-link-author";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    for (const surface of ["cli", "mcp"]) {
+      const ref = cliJson(engramHome, session, "add", `Explicit links ${surface}`,
+        "--accept", "First outcome", "--accept", "Second outcome").work.short_ref;
+      cliJson(engramHome, session, "claim", ref);
+      cliJson(engramHome, session, "note", ref, "Existing artifact establishes the first outcome");
+      const shown = cliJson(engramHome, session, "show", ref);
+      const records = receipt(await client.call("show", {work_ref: ref, notes: true, gates: true}));
+      const locator = records.notes[0].locator;
+      const args = {work_ref: ref, summary: "Delivered", link_basis: shown.acceptance_basis,
+        links: [{criterion: 1, locator}]};
+      for (const malformed of ["missing-separator", "word=12345678"]) {
+        const output = cliWord(engramHome, session, "done", ref, "--link", malformed,
+          "--link-basis", String(args.link_basis), "--json");
+        assert.notEqual(output.status, 0);
+        const error = JSON.parse(output.stderr).error;
+        assert.equal(error.code, "work_criterion_link_invalid");
+        assert.equal(error.details.criterion, undefined);
+        assert.deepEqual(error.next, [`engram work show ${ref}`, `engram work show ${ref} --notes --gates`]);
+        assert.doesNotMatch(output.stderr, /criterion 0|linked-completion:/);
+      }
+      for (const shape of [
+        {work_ref: ref, links: args.links},
+        {...args, links: Array.from({length: 65}, () => args.links[0])},
+        {...args, links: [{criterion: 0, locator}]},
+      ]) {
+        const error = structuredError(await client.call("done", shape), "work_criterion_link_invalid");
+        assert.equal(error.details.criterion, undefined);
+        assert.doesNotMatch(JSON.stringify(error), /criterion 0|linked-completion:/);
+      }
+      const complete = () => surface === "cli"
+        ? Promise.resolve(cliJson(engramHome, session, "done", ref, "Delivered", "--link", `1=${locator}`, "--link-basis", String(args.link_basis)))
+        : client.call("done", args).then(receipt);
+      const first = await complete();
+      assert.doesNotMatch(JSON.stringify(first), /linked-completion:/);
+      assert.deepEqual(first.acceptance_evidence.unlinked_positions, [2]);
+      assert.equal(first.acceptance_evidence.links[0].locator, locator);
+      assert.match(first.acceptance_evidence.links[0].preview, /Existing artifact/);
+      assert.equal(first.acceptance_evidence.link_label, "author-linked evidence; not verification");
+      assert.deepEqual((await complete()).acceptance_evidence, first.acceptance_evidence);
+      const otherAuthor = cliWord(engramHome, "different-link-session", "done", ref, "Delivered",
+        "--link", `1=${locator}`, "--link-basis", String(args.link_basis), "--json");
+      assert.notEqual(otherAuthor.status, 0);
+      const otherError = JSON.parse(otherAuthor.stderr).error;
+      assert.equal(otherError.code, "work_criterion_link_invalid");
+      assert.match(otherError.details.reason, /completion is frozen/);
+      assert.doesNotMatch(otherAuthor.stderr, /linked-completion:/);
+      assert.deepEqual(receipt(await client.call("show", {work_ref: ref})).acceptance_evidence, first.acceptance_evidence);
+      const text = cliWord(engramHome, session, "show", ref);
+      assert.equal(text.status, 0, text.stderr);
+      assert.match(text.stdout, /criterion 2: no evidence linked to this criterion/);
+      assert.match(text.stdout, /author-linked evidence; not verification/);
+
+      const stale = cliJson(engramHome, session, "add", `Stale basis ${surface}`).work.short_ref;
+      cliJson(engramHome, session, "claim", stale);
+      cliJson(engramHome, session, "note", stale, "Real current-run evidence");
+      const prior = cliJson(engramHome, session, "show", stale, "--notes");
+      cliJson(engramHome, session, "update", stale, "--accept", "Revised criterion");
+      let error;
+      if (surface === "cli") {
+        const refused = cliWord(engramHome, session, "done", stale, "No capture should occur", "--link", `1=${prior.notes[0].locator}`, "--link-basis", String(prior.acceptance_basis), "--json");
+        assert.notEqual(refused.status, 0);
+        error = JSON.parse(refused.stderr).error;
+      } else {
+        error = structuredError(await client.call("done", {work_ref: stale, summary: "No capture should occur",
+          links: [{criterion: 1, locator: prior.notes[0].locator}], link_basis: prior.acceptance_basis}), "work_criterion_link_invalid");
+      }
+      assert.equal(error.code, "work_criterion_link_invalid");
+      assert.match(error.details.reason, /basis changed/);
+      assert.deepEqual(error.next, [`engram work show ${stale}`, `engram work show ${stale} --notes --gates`]);
+      assert.equal(cliJson(engramHome, session, "show", stale).status.work.lifecycle, "open");
     }
   } finally {
     try { if (client) await client.close(); }
@@ -1874,7 +1960,7 @@ test("full contract text round-trips through CLI and MCP show", async (t) => {
       return result.stdout;
     };
     assert.equal(JSON.parse(cli(["show", work, "--json"])).status.work.acceptance[0], criterion);
-    assert.ok(cli(["show", work]).includes(`  - ${criterion}\n`));
+    assert.ok(cli(["show", work]).includes(`  1. ${criterion}\n`));
     assert.equal(JSON.parse(cli(["show", work, "--notes", "--json"])).status.work.acceptance[0], criterion);
     const parent = receipt(await client.call("add", { title: "Parent" })).work.short_ref;
     const child = receipt(await client.call("add", { title: "Optional", under: parent, optional: true })).work.short_ref;
@@ -2245,7 +2331,7 @@ test("CLI words translate the same ambient lifecycle service", (t) => {
     assert.match(shown, /^w-[0-9a-f]{12} "Dogfood work CLI" — held by you until/u);
     assert.match(shown, /kind: chore  priority: 1  labels: dogfood/u);
     assert.match(shown, /outcome: The shell completes an ambient local lifecycle/u);
-    assert.match(shown, /acceptance:\n\s+- CLI completion is sealed/u);
+    assert.match(shown, /acceptance:\n  acceptance basis: \d+ \(pass --link-basis with --link\)\n  1\. CLI completion is sealed\n/u);
     assert.match(shown, /reminders:\n\s+- you hold this item but have not noted progress yet/u);
     assert.match(shown, new RegExp(`\\s+engram work note ${workRef} "…"`, "u"));
     assert.doesNotMatch(shown, new RegExp(`^\\s*engram work show ${workRef}\\s*$`, "mu"));

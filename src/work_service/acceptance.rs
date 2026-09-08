@@ -4,12 +4,23 @@ use super::{CompletionSeal, ObjectHash, SqliteStore, StoreError, WorkId, WorkRun
 
 /// Valid projections keep `unlinked_positions.len() <= unlinked_count <= criteria_count`;
 /// byte shedding removes positions only, never changes the frozen totals.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct WorkAcceptanceEvidence {
+    pub work_id: Option<WorkId>,
+    pub link_count: usize,
+    pub links: Vec<WorkAcceptanceLink>,
     pub criteria_count: usize,
     pub unlinked_count: usize,
     /// One-based positions in the seal's acceptance vector. Text is not identity.
     pub unlinked_positions: Vec<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct WorkAcceptanceLink {
+    pub criterion: usize,
+    pub evidence: ObjectHash,
+    pub preview: Option<String>,
+    pub preview_error_class: Option<&'static str>,
 }
 
 impl WorkAcceptanceEvidence {
@@ -25,10 +36,56 @@ impl WorkAcceptanceEvidence {
             .filter_map(|(index, result)| result.evidence.is_empty().then_some(index + 1))
             .collect();
         Self {
+            work_id: Some(seal.work_id),
+            link_count: seal
+                .acceptance
+                .iter()
+                .map(|result| result.evidence.len())
+                .sum(),
+            links: seal
+                .acceptance
+                .iter()
+                .enumerate()
+                .flat_map(|(index, result)| {
+                    result.evidence.iter().map(move |hash| WorkAcceptanceLink {
+                        criterion: index + 1,
+                        evidence: hash.clone(),
+                        preview: None,
+                        preview_error_class: None,
+                    })
+                })
+                .take(16)
+                .collect(),
             criteria_count: seal.acceptance.len(),
             unlinked_count: unlinked_positions.len(),
             unlinked_positions,
         }
+    }
+
+    pub(super) fn with_previews(mut self, store: &SqliteStore) -> Self {
+        // Committed links remain readable even if an advisory body read fails.
+        // Decode only bounded retained rows, never the entire linked history.
+        if let Some(work) = self.work_id {
+            let item = store.get_work_item(work);
+            for link in &mut self.links {
+                let result = match &item {
+                    Ok(item) => {
+                        store.criterion_evidence_preview(&item.project_id, work, &link.evidence)
+                    }
+                    Err(error) => {
+                        link.preview_error_class = Some(super::advisory_error_class(error));
+                        continue;
+                    }
+                };
+                match result {
+                    Ok(body) => link.preview = body.map(|body| super::compact_text(&body)),
+                    Err(error) => {
+                        link.preview_error_class = Some(super::advisory_error_class(&error));
+                    }
+                }
+            }
+        }
+        self
     }
 }
 
@@ -59,13 +116,101 @@ pub(super) fn for_seal(
             "acceptance disclosure seal crosses its work or run binding".into(),
         ));
     }
-    Ok(WorkAcceptanceEvidence::from_seal(&seal))
+    Ok(WorkAcceptanceEvidence::from_seal(&seal).with_previews(store))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::work_service::test_support::at;
+
+    #[test]
+    fn criterion_links_preview_failures_remain_advisory_and_classified() {
+        use crate::work_service::test_support::{proposed_root, root_input};
+        use crate::work_service::{LocalWorkService, WorkUpdateInput};
+        let home = crate::test_support::temp_home().unwrap();
+        let path = home.path().join("work.db");
+        let service = LocalWorkService::new(
+            path.clone(),
+            crate::ProjectId("preview".into()),
+            "agent".into(),
+            crate::SessionId("agent".into()),
+            None,
+        );
+        let work = proposed_root(
+            service
+                .work_propose(root_input("Preview", "root"), at(0))
+                .unwrap(),
+        );
+        service
+            .work_update(
+                WorkUpdateInput::Claim {
+                    ttl_seconds: Some(300),
+                    recovery_reason: None,
+                    idempotency_key: "claim".into(),
+                },
+                at(1),
+            )
+            .unwrap();
+        let hash: ObjectHash = serde_json::from_value(
+            service
+                .work_update(
+                    WorkUpdateInput::Evidence {
+                        summary: "Advisory body".into(),
+                        refs: vec![],
+                        attach: None,
+                        idempotency_key: "note".into(),
+                    },
+                    at(2),
+                )
+                .unwrap()
+                .receipt
+                .result,
+        )
+        .unwrap();
+        let store = SqliteStore::open(&path).unwrap();
+        let facts = WorkAcceptanceEvidence {
+            work_id: Some(work.work_id),
+            link_count: 1,
+            links: vec![WorkAcceptanceLink {
+                criterion: 1,
+                evidence: hash.clone(),
+                preview: None,
+                preview_error_class: None,
+            }],
+            criteria_count: 1,
+            unlinked_count: 0,
+            unlinked_positions: vec![],
+        };
+        assert_eq!(
+            facts.clone().with_previews(&store).links[0]
+                .preview
+                .as_deref(),
+            Some("Advisory body")
+        );
+        // Exercise the advisory boundary itself. Corruption may separately
+        // refuse other mandatory reads before a front door reaches this code.
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute(
+                "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_hash = ?1",
+                [hash.as_str()],
+            )
+            .unwrap();
+        let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+        let failed = facts.with_previews(&store);
+        assert_eq!(failed.link_count, 1);
+        assert_eq!(failed.links[0].evidence, hash);
+        assert!(failed.links[0].preview.is_none());
+        assert_eq!(
+            failed.links[0].preview_error_class,
+            Some("canonical_object_invalid")
+        );
+        assert_eq!(
+            crate::storage::test_database_shape_snapshot(&connection).unwrap(),
+            before
+        );
+    }
 
     #[test]
     fn criterion_disclosure_requires_seal_for_every_native_completed_run() {

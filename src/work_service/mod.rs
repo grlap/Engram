@@ -60,7 +60,7 @@ use crate::{
 use crate::WorkReferenceCandidate;
 
 mod acceptance;
-pub(crate) use acceptance::WorkAcceptanceEvidence;
+pub(crate) use acceptance::{WorkAcceptanceEvidence, WorkAcceptanceLink};
 mod catalog;
 mod completion;
 mod continuation;
@@ -650,7 +650,7 @@ fn completion_result(
         run_id: seal.run_id,
         completed_at: seal.completed_at,
         acceptance_criteria_asserted: seal.acceptance.len(),
-        acceptance_evidence: Some(WorkAcceptanceEvidence::from_seal(seal)),
+        acceptance_evidence: Some(WorkAcceptanceEvidence::from_seal(seal).with_previews(store)),
         acceptance_evidence_error_class: None,
         obligation_page: sealed_work_obligation_page(store, seal)?,
     }))

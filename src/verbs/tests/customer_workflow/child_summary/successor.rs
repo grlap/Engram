@@ -250,6 +250,8 @@ fn required_successor_resolution_keeps_nonqualifying_immediate_successors_owed()
         let receipt = verbs
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(parent.clone()),
                     summary: Some("Parent delivery".into()),
                     note: None,
@@ -340,6 +342,8 @@ fn required_successor_resolution_never_transfers_across_root_generations() {
     let refused = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(parent),
                 summary: Some("Still missing old requirement".into()),
                 note: None,
@@ -424,6 +428,8 @@ fn required_successor_resolution_does_not_adopt_restored_only_completion() {
     let receipt = reader
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(parent.clone()),
                 summary: Some("Parent".into()),
                 note: None,

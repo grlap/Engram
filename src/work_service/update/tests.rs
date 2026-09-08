@@ -1416,6 +1416,8 @@ fn gate_heavy_evidence_membership_has_constant_decode_cost() {
             .work_complete_on(
                 Some(&work.short_ref),
                 WorkCompleteInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     capture: None,
                     evidence: Vec::new(),
                     acceptance: None,
@@ -1768,6 +1770,8 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
         let completed = measure_scale_operation(&mut complete_samples, || {
             writer.work_complete(
                 WorkCompleteInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     capture: None,
                     evidence: Vec::new(),
                     acceptance: None,

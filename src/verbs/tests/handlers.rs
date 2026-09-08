@@ -133,6 +133,8 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
     verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(target.short_ref.clone()),
                 summary: Some("exact target completed".into()),
                 note: None,

@@ -219,6 +219,12 @@ pub struct NoteInput {
 /// `done`: complete the held item.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct DoneInput {
+    // This shared core DTO is only a transport-neutral positional citation:
+    // CLI and MCP must use the same shape and service-owned admission rules.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<crate::work_service::WorkCriterionLinkInput>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_basis: Option<i64>,
     pub work_ref: Option<String>,
     pub summary: Option<String>,
     pub note: Option<String>,
@@ -1482,6 +1488,8 @@ impl AgentVerbs {
             .work_complete_on(
                 Some(&target),
                 WorkCompleteInput {
+                    links: input.links,
+                    link_basis: input.link_basis,
                     capture: nonempty(input.summary).map(|summary| WorkCompletionCaptureInput {
                         summary,
                         refs: Vec::new(),

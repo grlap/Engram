@@ -94,6 +94,8 @@ fn note_window_family_index_avoids_observation_and_restored_body_probes() {
         !verbs
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(work.clone()),
                     summary: Some("Completed source".into()),
                     note: None
@@ -327,6 +329,8 @@ fn note_window_gate_families_survive_restore_and_late_restored_gates() {
     let completed = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(work.clone()),
                 summary: Some("Completed source".into()),
                 note: None,

@@ -164,7 +164,7 @@ engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; 
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
-engram work done ["What was delivered"]
+engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
 engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
@@ -172,8 +172,9 @@ engram work forget KEY
 ```
 
 Add `--json` to any word for its structured receipt. `next` and `ls` stay
-short in text, JSON, and MCP; use `show REF` for safe agent detail without
-canonical ids, hashes, fences, or host-control fields. `--verbose` restores
+short in text, JSON, and MCP; use `show REF` for safe agent detail. Apart from
+note/detail locators, sealed links and the scoped `acceptance_basis` read token,
+it hides canonical ids, hashes, fences, and host-control fields. `--verbose` restores
 the full structured list projection for a human or host that explicitly needs
 it. Host-only `work core` reads remain full.
 
@@ -294,6 +295,22 @@ Rules that matter:
   absence does not refuse completion, and no new hash obligation is imposed.
   Old frozen bindings remain exactly as recorded. Do not replace rejection
   with false completion.
+- To link existing evidence, read `show REF` for one-based acceptance positions
+  and `acceptance_basis`; use `done REF --link POSITION=LOCATOR --link-basis N`.
+  Supply at most 64 links; MCP takes `links` objects with `criterion` and
+  `locator`, plus `link_basis`. The basis must travel with the write: any work
+  revision change requires re-reading and re-linking, never hidden read-side
+  state. Reuse current-run holder note/status or gate locators from
+  `show REF --notes --gates`; do not rewrite their bodies. Observations,
+  earlier-run evidence, inherited members, checkpoints and artifact URLs are
+  not substitutes. Follow the specific refusal's read commands. Read back
+  the sealed links and original detail: "author-linked evidence; not
+  verification" means relevance asserted by the author, not proven satisfaction.
+  Unlinked criteria remain disclosed; no link is mandatory for completion.
+  Frozen readback retains at most 16 links before byte fitting. A repeated
+  `show` has the same cap, not complete mapping continuation. Failed advisory
+  previews disclose a bounded error class without erasing the link. An
+  identical request from another session is not the completing author's retry.
 - `done` completes the item you hold. If something is still owed, the answer
   is one sentence saying what and a command that resolves it. Do it and run
   `done` again. Successful completion also names remaining open optional
@@ -308,8 +325,10 @@ Rules that matter:
   `full_detail` command for the full item or durable note/gate evidence;
   completion still includes optional-child follow-ups and detach commands.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
-  (commands you can run now). Mutation words never ask for hashes, fences, or
-  idempotency keys. Explicit note-detail locators are read-only exceptions.
+  (commands you can run now). Ordinary mutation words never ask for hashes,
+  fences, or idempotency keys. Optional criterion linking explicitly reuses
+  note locators and the `acceptance_basis` read token; it grants no authority.
+  Note-detail navigation is the other scoped locator exception.
   The `next` build token is a
   diagnostic exception: compare it with `engram --version` after an install
   to detect a stale MCP child, never copy it into a work command. See

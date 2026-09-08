@@ -889,6 +889,11 @@ pub enum StoreError {
         work: crate::domain::WorkId,
         reason: String,
     },
+    #[error("evidence link refused: {reason}")]
+    WorkCriterionLinkInvalid {
+        criterion: Option<usize>,
+        reason: &'static str,
+    },
     #[error("completion for work {work:?} requires recovery: {cause:?}")]
     WorkCompletionRecoveryRequired {
         work: crate::domain::WorkId,

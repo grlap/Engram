@@ -17,6 +17,8 @@ fn finish(verbs: &AgentVerbs, work_ref: &str, now: i64) -> Receipt {
     let receipt = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(work_ref.into()),
                 summary: Some("Delivered".into()),
                 note: None,
@@ -420,6 +422,9 @@ fn criterion_disclosure_composes_child_diagnostic_failure_with_available_or_unav
         false,
     );
     let facts = crate::work_service::WorkAcceptanceEvidence {
+        work_id: None,
+        link_count: 0,
+        links: Vec::new(),
         criteria_count: 2,
         unlinked_count: 1,
         unlinked_positions: vec![2],

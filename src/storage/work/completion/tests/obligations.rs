@@ -604,6 +604,8 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         Some("obligation-protocol-test".into()),
     );
     let input = WorkCompleteInput {
+        links: Vec::new(),
+        link_basis: None,
         capture: Some(WorkCompletionCaptureInput {
             summary: "capture the exact completion evidence cut".into(),
             refs: Vec::new(),

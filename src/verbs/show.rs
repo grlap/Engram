@@ -282,6 +282,9 @@ pub(super) struct ShowDetachedFrom {
 /// focus` for hosts that need authority and integrity fields.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
+    /// Explicit read-concurrency token, not read-side state or authority.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) acceptance_basis: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_evidence: Option<super::acceptance::AcceptanceEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -482,17 +485,27 @@ pub(super) fn show_lines(
         super::terminal_safe_line(&view.outcome)
     ));
     lines.push("acceptance:".into());
-    for criterion in &work.acceptance {
+    if work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0 {
+        lines.push(format!(
+            "  acceptance basis: {} (pass --link-basis with --link)",
+            work.revision
+        ));
+    }
+    for (position, criterion) in work.acceptance.iter().enumerate() {
         let safe = super::terminal_data_block(criterion);
         for (index, line) in safe.split('\n').enumerate() {
-            let prefix = if index == 0 { "  - " } else { "    " };
+            let prefix = if index == 0 {
+                format!("  {}. ", position + 1)
+            } else {
+                "    ".into()
+            };
             lines.push(format!("{prefix}{line}"));
         }
     }
     if work.acceptance_count > work.acceptance.len() {
         lines.push(format!(
-            "  ({} more not shown)",
-            work.acceptance_count - work.acceptance.len()
+            "  ({} more not shown); hidden criteria continue from position {} in the same numbering",
+            work.acceptance_count - work.acceptance.len(), work.acceptance.len() + 1
         ));
     }
     if let Some(facts) = &view.acceptance_evidence {
@@ -664,6 +677,8 @@ pub(super) fn show_receipt_value(
     });
     let notes = show_notes(view, current_actor);
     ShowReceiptValue {
+        acceptance_basis: (work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0)
+            .then_some(work.revision),
         acceptance_evidence: view
             .acceptance_evidence
             .as_ref()

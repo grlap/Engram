@@ -5,6 +5,7 @@ mod budgets;
 mod child_summary;
 mod contract_text;
 mod creation;
+mod criterion_links;
 mod detach;
 mod discovery;
 mod listing;
@@ -242,6 +243,8 @@ fn terminalize(verbs: &AgentVerbs, parent: &str, lifecycle: WorkLifecycle) {
         let done = verbs
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(parent.into()),
                     summary: Some("Delivered parent".into()),
                     note: Some("Terminal parent is done".into()),
@@ -400,6 +403,8 @@ fn phoenix_full_notes_include_inherited_late_restored_and_reopened_native_genera
         !verbs
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(work.clone()),
                     summary: Some("First completion".into()),
                     note: None

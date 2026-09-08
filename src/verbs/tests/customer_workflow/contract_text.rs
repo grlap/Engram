@@ -55,8 +55,12 @@ fn show_keeps_full_criteria_beyond_summary_length_and_count_limits() {
                 .get("acceptance_omitted")
                 .is_none()
         );
-        for criterion in &criteria {
-            assert!(shown.text().contains(&format!("  - {criterion}\n")));
+        for (index, criterion) in criteria.iter().enumerate() {
+            assert!(
+                shown
+                    .text()
+                    .contains(&format!("  {}. {criterion}\n", index + 1))
+            );
         }
         assert!(receipt_bytes(&shown) < MAX_AGENT_WORK_RESPONSE_BYTES);
     }
@@ -106,6 +110,11 @@ fn show_drops_whole_criteria_from_the_end_with_exact_omission_counts() {
             shown.value["status"]["work"]["acceptance_omitted"],
             criteria.len() - retained
         );
+        assert!(shown.value.get("acceptance_basis").is_some());
+        assert!(shown.text().contains(&format!(
+            "hidden criteria continue from position {}",
+            retained + 1
+        )));
         assert!(
             shown
                 .text()
@@ -116,6 +125,13 @@ fn show_drops_whole_criteria_from_the_end_with_exact_omission_counts() {
             criteria.len() - retained
         );
     }
+    // A synthetic zero-criterion projection tests presentation without
+    // manufacturing a native contract storage does not admit.
+    source.status.work.acceptance.clear();
+    source.status.work.acceptance_count = 0;
+    let empty = verbs.render_show(&source, at(2)).unwrap();
+    assert!(empty.value.get("acceptance_basis").is_none());
+    assert!(!empty.text().contains("--link-basis"));
 }
 
 #[test]

@@ -256,10 +256,29 @@ pub struct WorkAcceptanceInput {
     pub note: String,
 }
 
+/// Maximum explicit links admitted by one completion request.
+pub const MAX_CRITERION_LINKS: usize = 64;
+
+/// An explicit author citation to an existing record for one read-basis criterion.
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkCriterionLinkInput {
+    /// One-based position in the acceptance list read with `link_basis`.
+    pub criterion: usize,
+    /// Existing note/gate detail locator, not an artifact URL or checkpoint.
+    pub locator: String,
+}
+
 /// Evidence-backed completion of ambient focused work.
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkCompleteInput {
+    /// At most 64 explicit author links; never inferred from work-level evidence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<WorkCriterionLinkInput>,
+    /// Required with links: the acceptance basis printed by the author's read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_basis: Option<i64>,
     /// Optional one-call capture: records this evidence and checkpoints the
     /// exact completion evidence set before attempting the seal.
     pub capture: Option<WorkCompletionCaptureInput>,

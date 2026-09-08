@@ -372,6 +372,10 @@ impl VerbError {
                 )],
                 vec![format!("engram work claim {target}")],
             ),
+            StoreError::WorkCriterionLinkInvalid { criterion, reason } => (
+                vec![criterion.map_or_else(|| (*reason).to_owned(), |position| format!("criterion {position}: {reason}"))],
+                vec![format!("engram work show {target}"), format!("engram work show {target} --notes --gates")],
+            ),
             StoreError::WorkCompletionRefused { reason, .. } => {
                 let words = if reason.contains("at least one evidence")
                     || reason.contains("no checkpoint")

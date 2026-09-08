@@ -281,6 +281,8 @@ fn phoenix_acceptance_replacement_is_presence_aware_audited_and_terminal_safe() 
     let done = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(work_ref.clone()),
                 summary: Some("Delivered and verified final acceptance".into()),
                 note: None,

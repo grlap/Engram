@@ -112,6 +112,8 @@ fn restored_parent_without_a_run_agrees_with_successor_completion() {
         reader
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(parent.clone()),
                     summary: Some("Not claimed".into()),
                     note: None
@@ -140,6 +142,8 @@ fn restored_parent_without_a_run_agrees_with_successor_completion() {
     let completed = reader
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(parent.clone()),
                 summary: Some("Delivered".into()),
                 note: None,
@@ -262,6 +266,8 @@ fn done_refusal_keeps_the_show_successor_reason_and_core_shape() {
         let refused = verbs
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(parent.clone()),
                     summary: Some("Still owed".into()),
                     note: None,
@@ -306,6 +312,8 @@ fn done_refusal_keeps_the_show_successor_reason_and_core_shape() {
             .work_complete_on(
                 Some(&parent),
                 crate::work_service::WorkCompleteInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     capture: None,
                     evidence: Vec::new(),
                     acceptance: None,

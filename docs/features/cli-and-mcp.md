@@ -125,7 +125,7 @@ engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; 
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
-engram work done ["What was delivered"]
+engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
 engram work handoff REF --to ACTOR | --accept | --cancel "why"
 engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
@@ -167,9 +167,12 @@ bounded actor context is shown parenthetically
 history attribution. In contrast, `current_status.by` deliberately labels a
 different actor `another session`, as described above; that label does not imply
 the same actor. Raw actor/session identifiers are not part of this view.
-It also omits canonical UUIDs and hashes, revision and fence
-counters, and host-only run, claim, control-binding, obligation-page, and
-memory-version fields. Humans and hosts that need the rich projection use
+It otherwise omits canonical UUIDs and hashes, revision and fence counters,
+and host-only run, claim, control-binding, obligation-page, and memory-version
+fields. The scoped exceptions are note/detail locators, sealed evidence links,
+and an open item's `acceptance_basis` when it has criteria to link; the basis
+is a read-concurrency token, not execution authority. Humans and hosts that
+need the rich projection use
 host-only `work core focus`; full list projections remain available through
 `next --verbose` and `ls --verbose` (or the equivalent MCP arguments). Compact
 rows retain up to 80 UTF-8 bytes of title, omit redundant lifecycle and blocked
@@ -464,9 +467,44 @@ Rules that matter:
   completions have no native seal: `acceptance_evidence_unavailable` explicitly
   says this store holds no per-criterion evidence record, with no inferred count.
   This does not refuse completion or change satisfaction. `done`'s summary and
-  shared `--note` do not link per-criterion evidence; no new argument or hash
-  obligation is introduced. See the
+  shared `--note` do not link per-criterion evidence; completion without links
+  remains admissible. See the
   [historical binding qualification](local-work-system.md#audited-waivers-and-model-autonomy).
+- To link existing evidence explicitly, read `show REF` and copy its
+  `acceptance_basis`, then use `done REF --link 2=LOCATOR --link-basis N`.
+  Repeat `--link` for multiple links. MCP uses `links: [{criterion: 2,
+  locator: "..."}]` and `link_basis: N`. Criterion positions are one-based in
+  the displayed acceptance order. Both open and completed `show` number their
+  criteria instead of dash bullets, so the author can select a position and
+  compare the same position in sealed readback. This basis is the work revision,
+  exposed only as a read-concurrency token: any intervening work revision
+  refuses and asks for a fresh read. Reads do not save a basis or steer writes.
+  A basis is mandatory with links and is refused without them.
+  Find the evidence in `show REF --notes --gates`; reuse its native note/gate
+  locator (a unique prefix of at least eight hex digits or its full identity),
+  not an opaque artifact URL, checkpoint, or history-event identity. Current-run
+  holder notes, status captures, and gates already belong to completion
+  evidence. Observations made before claiming or by non-holders, earlier-run
+  evidence, and inherited members do not; refusals distinguish these causes
+  and offer current-item read commands. Citation never widens that set.
+  `acceptance_evidence` retains the unlinked disclosure and adds `link_count`,
+  bounded `links` with criterion/locator/preview/detail, and `links_omitted`
+  when nonzero. The label is "author-linked evidence; not verification".
+  Previews are bounded; the original detail command is the readable basis.
+  An unavailable preview does not erase a frozen link; failed advisory reads
+  disclose a bounded `preview_error_class`, never the underlying error text.
+  Input is limited to 64 links. Readback retains at most 16, and byte fitting
+  can retain fewer. `show` has the same cap: no complete frozen-mapping
+  continuation exists on this surface yet, so another `show` is not promised
+  to reveal omitted links. Original note detail is not a mapping continuation.
+  Exact same-session linked intent replays its committed receipt. An identical
+  request from a different session is not that author's retry; it refuses,
+  as do new or late links attempting to amend the frozen seal.
+  Open items with no criteria advertise no link basis. Hidden criteria continue
+  the visible one-based numbering; omission does not renumber them.
+  Core explicit acceptance cannot be combined with these positional links.
+  Neither a link nor a passing gate verifies that
+  the criterion is satisfied: satisfaction remains the author's assertion.
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   with the same identity and fence; expiry becomes the later of its existing
   expiry and now plus the requested TTL (one hour by default).
@@ -503,8 +541,10 @@ Rules that matter:
   outcome without pretending the remaining count is zero. The diagnostic
   class never contains the underlying error body, path, hash, or actor text.
 - Every answer ends with `reminders` (what is owed, in words) and `next`
-  (commands you can run now). Mutation words never ask for hashes, fences, or
-  idempotency keys. Explicit note locators are read-only exceptions, as above.
+  (commands you can run now). Ordinary mutation words never ask for hashes,
+  fences, or idempotency keys. Optional criterion linking explicitly reuses
+  note locators and the `acceptance_basis` read token; it grants no authority.
+  Note-detail navigation is the other scoped locator exception, as above.
   Safe project-memory keys are
   intentional navigation tokens for `memories` and `forget`. JSON retains the
   complete command list; the text renderer shows at most four and prints
@@ -1133,7 +1173,9 @@ verified; committed successes replay, and an interrupted attempt cannot mutate
 a newly focused item. Omitting
 `work_complete.acceptance` asserts every current criterion with the note
 `accepted by <actor_id> via work done` (or the supplied `note`) and leaves each
-criterion's evidence empty. Explicit per-criterion citations pass through and
+criterion's evidence empty unless explicit `links` and `link_basis` bind
+existing records to selected positions. Those links cannot be combined with
+explicit `acceptance`. Explicit per-criterion citations pass through and
 must belong to the completion evidence set; work-level evidence is never
 automatically assigned to individual criteria. Omitting
 `work_update:checkpoint.evidence` acknowledges every evidence object already on

@@ -1405,9 +1405,27 @@ fitting keeps any disclosure in the item header.
 Missing links do not refuse completion or downgrade `satisfied`; explicit
 criterion citations must still be a subset of the work-level completion
 evidence. No text is interpreted and no hash is demanded to complete. The
-thirteen-word `done` supplies only summary and a shared acceptance note, so
-new word-driven completions leave every criterion unlinked; hosts may supply
-explicit per-criterion evidence through the existing core input.
+thirteen-word `done` without links leaves every criterion unlinked. Optional
+`--link POSITION=LOCATOR` inputs explicitly select existing current-run
+note/gate evidence; `--link-basis` is required and carries the work revision
+from the author's `show` read. Any revision drift refuses before new evidence
+capture. The internal completion fence protects only the in-call interval;
+it cannot protect an earlier read unless that basis travels with the write.
+No read-side state is introduced. See the
+[agent link contract](cli-and-mcp.md#using-engram-as-an-agent) for syntax,
+readback, and non-member refusals. Core explicit acceptance stays available
+but cannot be combined with positional links. Linked keyless intent uses
+project, session, target, and the explicit guarded input, retaining its
+identity across sealing; changed intent cannot amend an existing seal.
+Pending recovery requires this intent's committed core result and its original
+accepted basis and criterion mapping, not a different completion of the run.
+An identical request from another session is not a retry of the author's
+completion. Inputs admit at most 64 links; readback retains at most 16 before
+byte fitting. A further `show` has the same cap, not complete mapping
+continuation. Preview failures retain the frozen link and disclose only a
+bounded diagnostic class.
+Links assert relevance, not verification or satisfaction. Only explicitly
+selected criteria gain citations, while all omitted links remain visible.
 
 Before this correction, completion automatically copied its entire work-level
 evidence set into each empty criterion evidence vector, paired with a storage

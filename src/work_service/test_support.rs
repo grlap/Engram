@@ -99,6 +99,8 @@ pub(super) fn proposed_root(result: WorkProposeResult) -> WorkItemSummary {
 
 pub(super) fn completion_input(summary: &str, key: &str) -> WorkCompleteInput {
     WorkCompleteInput {
+        links: Vec::new(),
+        link_basis: None,
         capture: Some(WorkCompletionCaptureInput {
             summary: summary.into(),
             refs: Vec::new(),

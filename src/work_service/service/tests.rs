@@ -677,6 +677,8 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let seal = b
         .work_complete(
             WorkCompleteInput {
+                links: Vec::new(),
+                link_basis: None,
                 capture: None,
                 evidence: Vec::new(),
                 acceptance: Some(vec![WorkAcceptanceInput {

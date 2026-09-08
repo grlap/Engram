@@ -579,6 +579,16 @@ enum WorkCommand {
     },
     /// Complete the item you hold; disclose criteria with no evidence linked to this criterion.
     Done {
+        /// Link an existing note/gate locator to a one-based criterion; repeat up to 64 times, not verification.
+        #[arg(
+            long = "link",
+            value_name = "CRITERION=LOCATOR",
+            requires = "link_basis"
+        )]
+        links: Vec<String>,
+        /// `acceptance_basis` from show; required with links and refuses any intervening work revision.
+        #[arg(long, requires = "links")]
+        link_basis: Option<i64>,
         /// An optional item ref and what was delivered.
         #[arg(num_args = 0..=2, value_name = "[REF] [SUMMARY]")]
         args: Vec<String>,
@@ -1354,7 +1364,12 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 now,
             )
         }
-        WorkCommand::Done { mut args, note } => {
+        WorkCommand::Done {
+            mut args,
+            note,
+            links,
+            link_basis,
+        } => {
             let (work_ref, summary) = match args.len() {
                 0 => (None, None),
                 1 => {
@@ -1370,14 +1385,32 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                     (Some(args.remove(0)), Some(summary))
                 }
             };
-            verbs.done(
-                DoneInput {
-                    work_ref,
-                    summary,
-                    note,
-                },
-                now,
-            )
+            let parsed = links.iter().map(|value| {
+                        let (criterion, locator) = value.split_once('=').ok_or_else(|| {
+                            engram::StoreError::WorkCriterionLinkInvalid { criterion: None, reason: "use --link CRITERION=LOCATOR with a one-based criterion position" }
+                        })?;
+                        let criterion = criterion.parse().map_err(|_| engram::StoreError::WorkCriterionLinkInvalid {
+                            criterion: None, reason: "criterion must be a one-based integer from show",
+                        })?;
+                        Ok(engram::work_service::WorkCriterionLinkInput { criterion, locator: locator.to_owned() })
+                    }).collect::<Result<Vec<_>, engram::StoreError>>();
+            match parsed {
+                Ok(links) => verbs.done(
+                    DoneInput {
+                        links,
+                        link_basis,
+                        work_ref,
+                        summary,
+                        note,
+                    },
+                    now,
+                ),
+                Err(error) => {
+                    let mut error: engram::verbs::VerbError = error.into();
+                    error.work_ref = work_ref;
+                    Err(error)
+                }
+            }
         }
         WorkCommand::Handoff {
             work_ref,

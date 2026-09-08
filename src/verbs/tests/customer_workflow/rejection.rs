@@ -19,6 +19,8 @@ fn rejection_correction_closed_root_is_typed_and_atomic() {
     let done = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(root),
                 summary: Some("Root delivered".into()),
                 ..DoneInput::default()
@@ -122,6 +124,8 @@ fn rejection_correction_completed_child_keeps_late_finding_guidance() {
     let done = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(child.clone()),
                 summary: Some("Child delivered".into()),
                 ..DoneInput::default()
@@ -242,6 +246,8 @@ fn rejection_cancels_required_child_and_waives_parent_without_claiming_it() {
     let done = verbs
         .done(
             DoneInput {
+                links: Vec::new(),
+                link_basis: None,
                 work_ref: Some(parent),
                 summary: Some("Accepted outcome delivered; false finding rejected".into()),
                 ..DoneInput::default()
@@ -333,6 +339,8 @@ fn rejection_done_disclosure_uses_unchanged_current_acceptance_and_replays() {
         let done = verbs
             .done(
                 DoneInput {
+                    links: Vec::new(),
+                    link_basis: None,
                     work_ref: Some(reference.into()),
                     summary: Some("Both delivered".into()),
                     ..DoneInput::default()

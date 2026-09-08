@@ -276,6 +276,10 @@ struct NoteArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct DoneArgs {
+    /// At most 64 explicit author links, not verification: criterion position and an existing note/gate locator.
+    links: Option<Vec<crate::work_service::WorkCriterionLinkInput>>,
+    /// Required with links; pass `acceptance_basis` from show. Any work revision change refuses.
+    link_basis: Option<i64>,
     /// Item to complete; defaults to the focus.
     work_ref: Option<String>,
     /// What was delivered; recorded and checkpointed before sealing.
@@ -581,11 +585,13 @@ impl McpServer {
     /// Complete the held item and disclose absent per-criterion evidence links.
     #[tool(
         name = "done",
-        description = "Complete the item you hold; success discloses criteria with no evidence linked to this criterion, without refusing completion for that absence; a refusal says what is still owed and the command that resolves it"
+        description = "Complete the item you hold; optional links cite existing note/gate evidence with the required link_basis from show, author linkage not verification. Success discloses criteria with no evidence linked to this criterion, without refusing completion for that absence; a refusal says what is still owed and the command that resolves it"
     )]
     fn done(&self, Parameters(args): Parameters<DoneArgs>) -> CallToolResult {
         verb(self.verbs().done(
             DoneInput {
+                links: args.links.unwrap_or_default(),
+                link_basis: args.link_basis,
                 work_ref: args.work_ref,
                 summary: args.summary,
                 note: args.note,
@@ -782,6 +788,16 @@ pub fn store_error_value(error: &StoreError) -> Value {
             "reason": reason, "candidates": candidates, "more": more,
             "remedy": "use the complete locator printed beside the note",
         }),
+        StoreError::WorkCriterionLinkInvalid { criterion, reason } => {
+            let mut details = json!({
+                "reason": reason,
+                "remedy": "read show for the current acceptance basis and show --notes --gates for existing current-run evidence; an explicit author link is not verification",
+            });
+            if let (Some(position), Value::Object(fields)) = (criterion, &mut details) {
+                fields.insert("criterion".into(), json!(position));
+            }
+            details
+        }
         StoreError::WorkNoteTooLarge { bytes, limit } => json!({
             "bytes": bytes, "limit": limit,
             "reason": "note body exceeds the UTF-8 byte limit",
@@ -947,6 +963,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkCatalogCursorInvalid { .. } => "work_catalog_cursor_invalid",
         StoreError::WorkShowCursorInvalid { .. } => "work_show_cursor_invalid",
         StoreError::WorkNoteReferenceInvalid { .. } => "work_note_reference_invalid",
+        StoreError::WorkCriterionLinkInvalid { .. } => "work_criterion_link_invalid",
         StoreError::WorkNoteTooLarge { .. } => "work_note_too_large",
         StoreError::WorkPeerDecompositionRefused { .. } => "work_peer_decomposition_refused",
         StoreError::WorkClaimHeld { .. } => "work_claim_held",

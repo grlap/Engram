@@ -1,5 +1,7 @@
 use super::*;
 
+mod links;
+
 impl LocalWorkService {
     /// Completes ambient focused work under inferred run/claim/fence state.
     ///
@@ -33,17 +35,30 @@ impl LocalWorkService {
         input: WorkCompleteInput,
         now: DateTime<Utc>,
     ) -> Result<WorkCompleteResult, StoreError> {
+        links::validate_shape(&input)?;
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, false, target, now)?;
         let intent = self.protocol_intent(&input);
-        let raw_key = self.effective_idempotency_key(
-            &input.idempotency_key,
-            "work_complete",
-            &basis,
-            &intent,
-            now,
-        )?;
+        let raw_key = if !input.links.is_empty() && input.idempotency_key.trim().is_empty() {
+            // A positional link already carries an explicit read basis. Its
+            // exact intent must retain its identity across the sealed revision;
+            // a different intent still cannot amend an existing seal.
+            let identity = CanonicalObject::freeze(&serde_json::json!({
+                "project": self.project_id, "session": self.session_id,
+                "operation": "work_complete", "work": basis.focused_work.as_ref().map(|work| work.work_id),
+                "intent": intent,
+            }))?;
+            format!("linked-completion:{}", identity.hash())
+        } else {
+            self.effective_idempotency_key(
+                &input.idempotency_key,
+                "work_complete",
+                &basis,
+                &intent,
+                now,
+            )?
+        };
         let attempt = store.begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
             project_id: &self.project_id,
             session_id: &self.session_id,
@@ -93,6 +108,9 @@ impl LocalWorkService {
                     "pending completion attempt has no bound focused work".into(),
                 )
             })?;
+            if stored_work.lifecycle == WorkLifecycle::Completed {
+                links::frozen(&input)?;
+            }
             ensure_completion_replay_target(&basis, stored_work.work_id, &raw_key)?;
             let stored_run_id = if let Some(claim) = stored_basis.claim.as_ref() {
                 if claim.work_id != stored_work.work_id {
@@ -123,6 +141,45 @@ impl LocalWorkService {
                                 .into(),
                         ));
                     }
+                    if !input.links.is_empty() {
+                        // Mirror prepare_completion_evidence: capture keys its
+                        // pre-checkpoint cut; no capture keys the current head.
+                        let attempt_cut = if input.capture.is_some() {
+                            let checkpoint_hash = seal.checkpoint.as_ref().ok_or_else(|| {
+                                StoreError::InvalidWorkProjection(
+                                    "captured completion has no checkpoint binding".into(),
+                                )
+                            })?;
+                            let checkpoint: crate::domain::WorkCheckpoint =
+                                store.get(checkpoint_hash)?.ok_or_else(|| {
+                                    StoreError::InvalidWorkProjection(
+                                        "completed pending run has no canonical checkpoint".into(),
+                                    )
+                                })?;
+                            checkpoint.acknowledged_run_position
+                        } else {
+                            seal.completion_cut.clone()
+                        };
+                        let attempt_key = completion_attempt_key(&raw_key, &attempt_cut)?;
+                        let core_key = self.core_operation_key(
+                            "work_complete",
+                            &attempt_key,
+                            "complete_work",
+                        )?;
+                        let committed = store
+                            .work_operation_result_value("complete_work", &core_key)?
+                            .map(serde_json::from_value::<CompletionSeal>)
+                            .transpose()?;
+                        if committed.as_ref() != Some(&seal) {
+                            links::frozen(&input)?;
+                        }
+                    }
+                    links::validate_recovered_seal(
+                        stored_basis,
+                        &input,
+                        &seal,
+                        &self.actor("work_complete", "complete ambient local work"),
+                    )?;
                     let result = completion_result(&store, &seal)?;
                     store.finish_work_protocol_attempt(
                         &self.project_id,
@@ -167,6 +224,7 @@ impl LocalWorkService {
             && let Some(run) = store.latest_work_run(work.work_id)?
             && let Some(seal_hash) = run.completion_seal
         {
+            links::frozen(&input)?;
             let seal: CompletionSeal = store.get(&seal_hash)?.ok_or_else(|| {
                 StoreError::InvalidWorkProjection(
                     "completed work has no canonical completion seal".into(),
@@ -182,28 +240,22 @@ impl LocalWorkService {
             )?;
             return Ok(result);
         }
+        if !basis_matches && !input.links.is_empty() {
+            return Err(StoreError::WorkCriterionLinkInvalid {
+                criterion: None,
+                reason: "the pending completion basis changed; read show and reconcile the links before a new intent",
+            });
+        }
         ensure_protocol_basis(basis_matches, "work_complete", &raw_key, false)?;
-        let WorkCompleteInput {
-            capture,
-            evidence: supplied_evidence,
-            acceptance: supplied_acceptance,
-            note,
-            idempotency_key: _,
-        } = input;
         let work = basis.focused_work.clone().ok_or_else(|| {
             StoreError::InvalidWorkProjection("completion attempt has no bound focused work".into())
         })?;
         let actor = self.actor("work_complete", "complete ambient local work");
         let claim = self.live_protocol_claim(&basis, &work, now)?;
-        let evidence_basis = Self::completion_evidence_basis(&store, &claim, &supplied_evidence)?;
-        let acceptance = match Self::prevalidate_completion_acceptance(
-            &work,
-            supplied_acceptance.as_deref(),
-            note.as_deref(),
-            &evidence_basis,
-            actor.assurance,
-            &actor.actor_id,
-        ) {
+        let evidence_basis = Self::completion_evidence_basis(&store, &claim, &input.evidence)?;
+        let validated_acceptance =
+            links::validated_acceptance(&store, &work, &claim, &input, &actor, &evidence_basis);
+        let acceptance = match validated_acceptance {
             Ok(acceptance) => acceptance,
             Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) => {
                 let snapshot = store.work_completion_recovery(&work, &claim, now, &cause)?;
@@ -218,6 +270,7 @@ impl LocalWorkService {
             }
             Err(error) => return Err(error),
         };
+        let capture = input.capture;
         let prepared = self.prepare_completion_evidence(
             &mut store,
             CompletionEvidencePlan {
