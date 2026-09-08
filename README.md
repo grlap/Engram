@@ -1,325 +1,239 @@
 # Engram
 
-Host-local work, behavioral control, and audit-grade memory for coding agents
-— from decomposition and ready-work selection through evidence-backed
-completion, with optional external intake, durability, and publication.
+Engram is a local task tracker and persistent memory store for coding agents.
 
-Engram is a standalone Rust tool evolving into a first-class local work system
-and behavioral/coordination decision plane backed by concurrent execution
-memory. In the
-target architecture, a conforming host asks Engram before each agent turn and,
-at the strongest assurance level, before each declared material action.
-Engram then grants a bounded execution envelope or returns typed recovery
-directives. The host remains the actuator and reference monitor; an agent
-cannot authorize itself through MCP.
+It keeps tasks, decisions, test results, and project notes outside the chat.
+An agent can return after a restart or context compaction and see what it
+owns, what changed, and what to do next. Multiple sessions share one project
+database without sharing the same task claim.
 
-The target core has a local work graph plus two deliberate lifecycle layers:
+Engram is written in Rust. It provides a CLI and a Model Context Protocol
+(MCP) server. Data stays in SQLite on your machine. No external tracker or
+cloud service is required.
 
-1. **Local work** — roots, bounded decomposition, prerequisites, ready views,
-   assignment, fenced claims, evidence, and completion. Work may originate
-   locally; an external snapshot is optional.
-2. **Local working memory** — agent-private scratch plus a task-shared working
-   set for constraints, decisions, evidence, ownership, handoffs, and
-   intermediate findings. The shared task ring is the operational source of
-   truth during execution.
-3. **An optional durable final report** — at root completion, Engram assembles
-   working memory, required child seals, and root contributions under a
-   separate fenced report-assembly claim for one polish/freeze step, then
-   may publish the immutable report through a separately authorized adapter
-   under an idempotent, receipted handoff. Intake, backup/portable/sync, and
-   publication are independent optional capabilities; publication is never a
-   live mirror.
+This is prerelease software. We use it to track development of Engram itself.
 
-The local-work/control design is in the [specification](docs/spec.md) (Draft 0.8).
-Start with the [vision](docs/vision.md) for the short version.
+## What you can do
 
-Explore the animated project website with the [local preview guide](docs/website.md).
+- Create tasks with acceptance criteria, dependencies, and child tasks.
+- Assign work and claim it for one executing session at a time.
+- Record progress, decisions, test results, and handoffs.
+- Resume work without marking unread changes as delivered.
+- Complete work with a permanent record of its criteria and evidence.
+- Keep project notes with revision history.
+- Check database integrity, make local backups, and export planning history.
 
-## Highlights
+The [feature inventory](docs/shipped.md) lists what is available today.
 
-- **Typed memory, not a bag of strings** — every memory has a `kind`
-  (constraint / decision / convention / fact / preference / episode), an
-  `authority` (hard / firm / soft), and a delivery mode derived from both.
-  See [typed memory model](docs/features/typed-memory-model.md).
-- **Budgeted context packets** — three retrieval rungs under hard byte
-  budgets: pinned constraints (complete or fail-closed), a titles-only index,
-  and on-demand full-text search. Every packet has a reproducible content hash
-  plus an ordered event cursor for peer deltas. See
-  [context packets](docs/features/context-packets.md).
-- **A local work system, not an external-tracker binding** — Engram owns
-  decomposition, dependencies, priority, readiness, assignment, claims,
-  evidence, and completion. Thirteen agent words over a six-operation ambient
-  protocol keep the CLI from becoming agent ceremony. See
-  [local work system](docs/features/local-work-system.md).
-- **Multi-session coordination** — root-shared memory, one executor/claim per
-  child run, fenced claims with renewal and explicit handoff, typed
-  acknowledged peer deltas, and a root contribution/child-seal barrier are
-  shipped; atomic resource leases with fencing run on the host-private
-  channel; separate fenced report assembly is planned.
-- **Behavior that memory can govern** — the shipped host-private alpha binds
-  sessions, attaches transactional context to durable turn grants, rechecks
-  freshness at begin, and requires restart-safe checkpoints. Single-use
-  action grants, scoped ownership, and controlled finalization are next. See
-  [behavioral control plane](docs/features/behavioral-control-plane.md).
-- **One write, many views** — low-friction prose capture feeds task state,
-  handoffs, and the final report instead of creating another status ledger.
-- **Append-only truth** — immutable, content-addressed versions and events;
-  state is derived, history is the audit log. Contradictions become visible
-  *contested* state, never last-writer-wins.
-- **Completion seal plus optional report pipeline** — the shipped zero-linked-
-  state path validates evidence, required children, contributions, and the
-  accepted claim fence, refuses live descendant claims, handoffs, or open run
-  obligations, then atomically freezes a `CompletionSeal` with the exact
-  definition/resolution pairs at its dense cut. Old child runs are fenced by the
-  closed ancestor/root-execution generation and cannot cross a root reopen. A
-  durable
-  `completion_pending` drain for linked actions and resource leases is the next
-  control-plane stage. Optional `finalization_pending → report_ready →
-  publishing → published` consumes the seal without a second drain. A separately requested
-  publication binds target and idempotency key, and only an adapter receipt
-  marks `published`. See
-  [local tasks & reports](docs/features/local-tasks-and-reports.md).
-- **Vendor-neutral optional adapters** — source snapshots, restore-only backup,
-  sequential portable handoff, later concurrent sync, and publication are
-  independent capabilities. The dummy publication path proves deterministic
-  local receipts. See
-  [tracker adapter](docs/features/tracker-adapter.md).
-- **Honest trust model** — actor identity is asserted runtime context (tool +
-  skill instruction metadata), recorded with an assurance level, never
-  overclaimed. See [security & trust](docs/features/security-and-trust.md).
+## Build and set up
 
-## Architecture at a glance
+You need a stable Rust toolchain and a C/C++ compiler for bundled SQLite.
+From this repository, install the CLI:
 
-```
-optional source ─────────────────────┐
-Host + Enforcement SDK ── control ───┼──► Engram core ──► canonical local SQLite
-CLI / agent MCP ── local work ───────┘       │
-                                             ├─ optional backup/portable/sync
-                                             └─ optional frozen publication
+```sh
+cargo +stable install --path . --locked
+engram --version
 ```
 
-The target architecture keeps the object model, context delivery,
-coordination state, and deterministic control decisions in one core. CLI,
-agent-facing MCP, and the host-private control channel remain thin faces over
-it. Details in
-[architecture](docs/architecture.md).
+Each project needs a tracked `.engram-project` file containing one stable
+project ID, such as `example.com/team/my-project`. This repository already
+has one. Keep the same ID across checkouts of the same project.
 
-## Status
+Set an absolute data directory, an actor name, and a session ID. For example,
+in a POSIX shell:
 
-[Shipped today](docs/shipped.md) is the exact installed-build inventory; this
-section is the short version.
+```sh
+export ENGRAM_HOME=/absolute/path/to/engram-data
+export ENGRAM_ACTOR_ID=alice
+export ENGRAM_SESSION_ID=alice-session-1
+```
 
-**Agents.** The local work graph and the six-operation ambient protocol ship
-through one service core with CLI and MCP faces. An agent uses thirteen words
-— `next`, `ls`, `show`, `add`, `claim`, `update`, `gate`, `note`, `done`,
-`handoff`, `remember`, `memories`, `forget` (MCP adds `search`) — as flat
-commands: `add → claim → done` is three commands with no JSON, hashes, fences,
-or keys, and every receipt ends with `reminders` and `next`. `engram work next`
-is the whole orientation a session needs: what it holds, what is assigned and
-ready, and what changed, with the owner's status captured by `note --status`
-recovered per row, explicit omissions instead of silent truncation, and one
-detail command for anything clipped. Responses stay under 12 KiB. Required
-and optional children, prerequisites, blockers, deferral, one-word rejection
-of a disproved finding (`update CHILD --reject`), evidence-gated completion
-that asserts the sealed acceptance, late notes and gates on completed work,
-claim renewal, handoff, attributed project memories, and audited external
-planning references are installed.
+In PowerShell, use:
 
-**Hosts.** The base tier is advisory: inject identity, run one MCP child per
-session, and inject `engram work next` at session start and after every
-compaction — see the [host checklist](docs/host-checklist.md), which includes
-a Claude Code recipe. A host that mediates turns uses the host-private
-JSON-lines control channel (`session_bind → turn_evaluate → turn_begin →
-turn_checkpoint`) with transactional context delivery, restart-safe grants,
-resource-scoped fenced leases, and a hash-addressed obligation rule set. The
-built-in enforced policy admits `observe`, `communicate`, turn-gated
-`coordinate` leases, and lease-backed `mutate_local`; everything else fails
-closed. Per-tool action mediation is not shipped, so a host declaration of
-`action_gated` is refused, and the agent-facing MCP loop stays advisory until
-the host actually withholds prompts.
+```powershell
+$env:ENGRAM_HOME = 'C:/engram-data'
+$env:ENGRAM_ACTOR_ID = 'alice'
+$env:ENGRAM_SESSION_ID = 'alice-session-1'
+```
 
-**Operators.** `engram init` (with an explicit `--required-assurance` for an
-honest advisory pilot), `engram doctor` (verifies every immutable object and
-projection in one read snapshot and names the snapshot it verified;
-`--repair-projections` rebuilds only declared indexes, triggers, and FTS),
-`engram backup` and `engram restore` for verified host-local copies,
-`engram graph save` and `engram graph load` for one deterministic
-planning/history snapshot that recreates a project on another machine by
-hand, `engram control-policy` for the immutable policy, and `engram authority`
-for audited lifecycle exceptions. Ordinary open refuses a store written by a
-different build; there is no migration chain before release.
+Use a different session ID for each concurrent session. Reuse it when
+resuming that same logical session. An agent host should set these values
+for both its MCP process and shell commands.
 
-**Proof.** This repository and a pilot project use Engram as their only
-writable tracker; every landing is installed and checked with `doctor`, and
-the test suites keep every fixture under one `Temp\engram` directory per run
-and clean up after themselves.
+Run these commands from the project directory:
 
-**Next.** Host Enforcement SDK binding, action and resource outcomes linked to
-work runs, off-host durability (`local_backed_up` and sequential `portable`
-handoff over the snapshot path), and optional publication — see the
-[roadmap](docs/roadmap.md).
+```sh
+engram init --required-assurance advisory \
+  --authorized-by alice --reason "Use Engram as a local task tracker"
+engram doctor
+```
 
-<details>
-<summary>Control-plane detail</summary>
+`advisory` means Engram tracks work but does not control the agent's tool
+execution. A plain `init` defaults to a stronger policy, so use the explicit
+option for this setup.
 
-The first coding-agent memory loop is implemented and process-level tested.
-That current alpha still uses an external task reference to rendezvous
-sessions, captures task-shared or agent-private prose, returns bounded context
-and ordered deltas, supports provenance inspection, survives MCP process
-restart, and coordinates with expiring claims.
-Natural rule cues become pinned constraints, claim retries preserve their
-original lease, and explicitly declared pinned contradictions stop context
-assembly before an agent acts.
-A host-private JSON-lines service now provides a working `session_bind →
-turn_evaluate → turn_begin → turn_checkpoint` loop. It can bind the session to
-an exact live `WorkRun` claim and atomically record host execution observations
-and host-minted verification/environment evidence on that run at the control
-checkpoint. When the host supplies bounded environment components (toolchain,
-optional sandbox/image identity, workspace id, and capability-map revision),
-Engram derives and checks their canonical fingerprint and rejects a workspace
-or bound-session capability-map mismatch. Verification may cite that exact
-environment object, while its anti-stale decision remains bound to the check,
-run, and full-content source revision; a later mutation makes it stale. These
-values are asserted host facts, not attestation, and must not contain secrets.
-Claim ownership is the exact control session id. The claim
-receipt and focus view expose a paste-ready
-root/work/run/claim/fence tuple, so the host never needs to query SQLite to
-construct the binding. It persists routing,
-session phases, exact context delivery, short-lived grants, idempotent
-operation results, and canonical checkpoint events. A control-process restart
-invalidates every unbegun grant and resumes at `sync_required`; retry evidence
-remains durable without resurrecting authority.
-The active immutable control policy now selects a canonical, hash-addressed
-obligation rule set. The built-in set contains one typed rule: every host
-observation that reports `source_changed=true` opens an immutable test
-obligation on the exact run, even when the action failed or supplied no source
-basis. Each observation and resulting obligation freeze the selected rule-set
-hash from the grant's policy epoch, so a later policy change affects only new
-observations and never reinterprets recorded history. A later passed test may
-satisfy the stock obligation only against the newest basis-bearing source
-mutation at the evaluated feed cut. The operator-only control-policy CLI can
-select another bounded typed set whose test requirement pins an exact command
-fingerprint and previously recorded environment-evidence hash; this is not a
-general natural-language policy engine.
-If the newest mutation has no basis, the open obligations remain waiver-only
-until another basis-bearing mutation and test arrive. Focus, nested next views,
-updates, and both completion outcomes share one bounded `obligation_page`
-with typed guidance and an explicit omission count. Dense deltas still show
-definition and terminal satisfaction/waiver events. Waiver remains host/
-operator-only: the CLI and private JSON-lines channel require dedicated
-authority, while MCP and `work_update` expose no waiver operation. Agent pages
-and host receipts omit the grant and reason. `work_complete` returns a
-durably replayable `open_work_obligations` result until every applicable
-definition is satisfied or waived and its typed evidence is acknowledged by
-the final checkpoint. New completion seals also bind the sorted, distinct
-environment-evidence hashes visible at their dense run-feed cut (at most 64),
-without copying toolchain or sandbox bytes into the seal.
-Opening a replacement process rotates an internal connection generation, so a
-still-running predecessor fails with `control_connection_superseded`. Begun
-turns remain checkpoint-required. `session_status.open_grant_id` identifies
-every uncertain turn; for an observe-only partial recovery page,
-`session_status.recoverable_grant` also returns the exact frozen payload so a
-replacement host can redeliver it without advancing the confirmed cursor.
-The same channel now provides resource-scoped `lease_acquire` and
-`lease_release`. Before it reserves a resource, lease acquisition enforces the
-project floor first, then the effect floor, declared and effective mediation,
-supported effects, and the session policy epoch. Policy refusals are durable
-decisions under the request's bind-scoped idempotency key. A key from an older
-bind conflicts instead of replaying obsolete authority. The alpha policy
-permits a `mutate_local` turn only when the host declared that effect mediated
-and every requested resource is covered by a live exclusive execution lease
-held by the session. Grants capture the lease id, subject, expiry, and
-monotonically increasing fence and recheck that
-basis at `turn_begin`. A begun mutation turn pins those leases across release,
-nominal expiry, and host restart until its checkpoint closes the uncertain
-authority; conflicting acquisition reports that checkpoint obligation. Path
-subjects are bound to the session project and Unicode-normalized. The first
-opener atomically persists the host filesystem
-identity policy: Windows and macOS defaults case-fold, Linux defaults
-case-sensitive, and Windows also rejects reserved names and filename aliases.
-Later openers must match it.
-Context assembly and the stamped task head share one SQLite transaction;
-`turn_begin` refuses a stale grant when task membership, lifecycle, policy,
-capability mapping, delivery token, or task head changed. `engram doctor`
-hash-verifies both the earlier shadow observations and the enforced session,
-grant, decision, and operation records.
+The multi-line command examples use POSIX shell syntax. In PowerShell, put
+each command on one line without the trailing backslash. See the
+[CLI and MCP guide](docs/features/cli-and-mcp.md) for more configuration options.
 
-The built-in enforced policy is deliberately limited to `observe`,
-`communicate`, turn-gated Engram-internal `coordinate` leases, and lease-backed,
-turn-gated `mutate_local`. `coordinate` is not a model-turn capability. Shared
-mutation, external effects, and lifecycle requests fail closed. The
-agent-facing MCP loop remains **advisory**, and shipping the decision service
-alone does not
-make a deployment `turn_gated`: the embedding host must actually withhold
-prompts unless it receives and begins a grant. Per-tool action mediation,
-lease renewal/handoff/recovery, report assembly/publication, and the broader
-administrative CLI remain under development. The shipped policy CLI can
-select `advisory`, `turn_gated`, or fail-closed `action_gated` as the project
-requirement; a host declaration of `action_gated` is still rejected because
-per-tool action mediation is not shipped.
+## Basic workflow
 
-The first-class local work graph and six-operation ambient protocol are now
-shipped through one service core with CLI and MCP translations. It includes
-bounded root/decomposition admission, typed prerequisites/blockers,
-deterministic readiness, assignment/deferral revision, fenced claims,
-checkpoint/evidence, explicit handoff, evidence-gated completion/reopen,
-project-bound planning with reason-attributed waivers, dense
-project/root/run feeds with acknowledged exact-page replay, ambient per-session
-focus/cursors, typed work-scoped shared/private memory, query/history views,
-honest cancel/supersede lifecycles, one-call evidence capture/completion, and
-work-projection integrity verification. Agent work responses are capped at
-12 KiB: `work_next` supports selectable compact sections, stages only the dense
-summary prefix actually delivered, and exposes full memory content on demand
-rather than repeating canonical snapshots. Update/handoff responses remain
-constant-sized as history grows. CLI and two-process MCP dogfood tests
-exercise the full lifecycle without manually shuttling work/run/claim/offer
-ids.
+Create a task:
 
-Until the host SDK mediates prompt/action dispatch, agent-facing MCP work
-calls are still an advisory interface even though their lifecycle
-transactions enforce claims, fences, and project binding.
+```sh
+engram work add "Fix configuration loading" \
+  --accept "Invalid configuration returns a clear error"
+```
 
-</details>
+Use the task reference returned by `add` in place of `REF` below:
 
-The CLI requires `ENGRAM_HOME` (or `--home`) and resolves this repository's
-tracked `.engram-project` identity to one database shared across worktrees.
-Make the attributed bootstrap choice with
-`engram init --required-assurance <level> --authorized-by <actor> --reason
-<text>`, verify with `engram doctor`, and change the immutable policy through
-`engram control-policy set-required-assurance --idempotency-key <key>` (the
-durable key replays the exact receipt after an uncertain response) or
-`engram control-policy set-obligation-rule-set --input <JSON|@file>
---idempotency-key <key>`. Run the MCP server with
-`engram mcp --actor-id <agent> --session-id <session>`, the host-private
-service with `engram control --actor-id <agent> --session-id <session>`, or
-the words directly with `engram work --actor-id <agent> --session-id
-<session>`. See the [CLI and MCP guide](docs/features/cli-and-mcp.md) for host
-configuration and the exact shipped tool set.
+```sh
+engram work claim REF
+engram work note REF "The parser accepts an empty configuration."
+```
+
+Do the work and run your checks. Then record their result and complete
+the task:
+
+```sh
+engram work gate parser-tests --work-ref REF
+engram work done REF "Added validation and regression tests."
+```
+
+`gate` records a result; it does not run the test. Use `--failed "failure"`
+to record a failed check. Do not record a pass before running it.
+
+If work is still required, `done` refuses completion and explains what is
+missing. Responses include reminders and suggested next commands.
+
+### Resume and inspect
+
+```sh
+engram work next --peek
+engram work show REF
+engram work show REF --notes --gates
+```
+
+`next --peek` reads the current work summary without changing focus or
+delivery state. Use it after context compaction or when you only want to
+look. It requires an initialized store. Repeated calls show a bounded preview;
+they do not move through older pages.
+
+Ordinary `next` advances delivery. Do not use it in a recovery hook: it can
+stage a page that a later call acknowledges even if the agent never saw it.
+
+`show REF` does not select a target for later writes. Use explicit task
+references when recording or changing work.
+
+Compact responses and note/history windows have a 12 KiB limit. They report
+omitted content. Note/history pages provide commands to read more. Follow
+a note's detail command when its full text is needed, especially for approval
+or stop instructions.
+
+### Link evidence to a criterion
+
+Completion does not silently change acceptance criteria. It also reports
+which criteria have no evidence linked to them.
+
+Links are optional. To add one, read `show REF` for criterion positions and
+`acceptance_basis`, then read `show REF --notes --gates` for evidence locators:
+
+```sh
+engram work done REF "Added validation and regression tests." \
+  --link POSITION=LOCATOR --link-basis BASIS
+```
+
+Replace the placeholders with values from those reads. A link must refer to
+an existing holder note, status, or gate from the current run. If the task
+changes before completion, read it again before linking.
+
+A link is the author's evidence citation, not independent verification.
+“No evidence linked to this criterion” does not mean “no evidence exists.”
+
+### Keep project notes
+
+```sh
+engram work remember "Configuration files use UTF-8." --key config-format
+engram work memories
+engram work memories config-format --full
+engram work remember "Configuration files use UTF-8 without a BOM." \
+  --key config-format --revise --expected-revision 1
+engram work memories config-format --full --revision 1
+```
+
+Revisions preserve earlier versions under the same key. The optional
+expected revision prevents a stale update. `forget KEY` permanently retires
+the key and stops current and historical reads; it does not erase the stored
+history. Do not put secrets in project notes.
+
+## Connect an agent host
+
+Start one MCP process per session, with the same environment as the agent:
+
+```sh
+engram mcp --actor-id alice --session-id alice-session-1
+```
+
+MCP exposes the same work commands as the CLI, plus `search`. For recovery,
+call the `next` tool with `peek: true`. A host can inject this summary at the
+next prompt after session start or compaction.
+
+The standard integration is advisory. Engram checks its task rules, but
+the agent can still edit files or run tools without asking it.
+
+For hosts that need execution control, a separate private API can admit
+model turns and manage exclusive resource leases. The host must enforce
+those decisions. Per-tool action gating is not yet available.
+
+See the [host checklist](docs/host-checklist.md) for setup and the
+[control-plane guide](docs/features/behavioral-control-plane.md) for the
+optional private API.
+
+## Data and limits
+
+SQLite is the source of truth for a project on one host. Work history and
+memory versions are stored as immutable, content-addressed records.
+Concurrent sessions use transactions and checked ownership to coordinate.
+
+`engram doctor` verifies objects and stored state in one read snapshot.
+`backup` and `restore` provide verified local copies. `graph save` and
+`graph load` export and restore planning history; they do not transfer live
+claims or execution authority.
+
+Important limits:
+
+- Identity comes from the caller. It is recorded, not authenticated.
+- The development redactor is a no-op. It does not detect or remove secrets.
+- Prerelease builds can reject an incompatible store. There is no automatic
+  migration chain. Read the [upgrade guidance](docs/development.md) first.
+- Installing a new binary does not update an already-running MCP process.
+  Compare its `next` build token with `engram --version` and restart the
+  child process when needed.
+- External plan intake, automatic off-host backup, cross-host sync, report
+  assembly, and external publication are not yet available as a complete
+  workflow.
+
+See the [roadmap](docs/roadmap.md) for planned work.
 
 ## Documentation
 
-| Doc | What it covers |
-| --- | --- |
-| [Shipped today](docs/shipped.md) | Exact installed-build capability inventory, kept separate from planned work |
-| [CLI and MCP](docs/features/cli-and-mcp.md) | Host configuration, the thirteen agent words and MCP tools, operator commands, build identity |
-| [Host checklist](docs/host-checklist.md) | The base-tier integration any host needs: identity injection, one MCP child, the `next` hook, honest assurance |
-| [Vision](docs/vision.md) | Why Engram exists; behavioral control, memory, and reporting |
-| [Architecture](docs/architecture.md) | Components, object model, ports, data flow |
-| [Specification](docs/spec.md) | The normative Draft 0.8 working design |
-| [Feature briefs](docs/features/README.md) | Per-feature design briefs |
-| [Local work system](docs/features/local-work-system.md) | Decomposition, readiness, claims, evidence, agent protocol, optional adapters |
-| [Behavioral control plane](docs/features/behavioral-control-plane.md) | Turn/action gates, coordination protocol, host contract |
-| [Development](docs/development.md) | Dev & review workflow, quality gates, conventions |
-| [Roadmap](docs/roadmap.md) | V1 cut, V1.x, and what is deliberately deferred |
+- [CLI and MCP guide](docs/features/cli-and-mcp.md): commands and configuration.
+- [Available features](docs/shipped.md): current implementation.
+- [Local work model](docs/features/local-work-system.md): tasks and completion.
+- [Memory model](docs/features/typed-memory-model.md): types, scope, and history.
+- [Security and trust](docs/features/security-and-trust.md): guarantees and limits.
+- [Architecture](docs/architecture.md): internal components and data flow.
+- [Development](docs/development.md): builds, tests, and contribution workflow.
+- [Vision](docs/vision.md) and [specification](docs/spec.md): goals and full design.
+- [Website preview](docs/website.md): run the project website locally.
 
 ## License
 
 Copyright 2026 Engram contributors.
 
-Unless otherwise noted, Engram's code, documentation, and website are licensed
-under the [Apache License, Version 2.0](LICENSE).
+Code, documentation, and website content are licensed under
+[Apache License 2.0](LICENSE), unless stated otherwise.
 
-Third-party components retain their own licenses. See
-[third-party notices](THIRD-PARTY-NOTICES.txt) for the dependency licenses,
-attributions, and bundled Unicode and SQLite information. Include the applicable
-notices when distributing Engram with those components.
+Third-party components keep their own licenses. See
+[third-party notices](THIRD-PARTY-NOTICES.txt) and include the applicable
+notices when distributing Engram.
