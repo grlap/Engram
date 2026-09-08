@@ -9,7 +9,7 @@ use crate::domain::{ChildRequirement, CompletionSeal, DecomposeWorkRequest, Reop
 // These are logical canonical/SQL payload bytes, not SQLite pages, WAL or I/O.
 // The limits are not slack: subtract the actual named widths, then require
 // exact equality. Even one unexplained payload byte must fail the comparison.
-const PROPERTY: &str = "BRAK ZALEŻNOŚCI PAYLOADU OD NIEZMIENIONEJ HISTORII, POZA NAZWANYM I OGRANICZONYM NARZUTEM METADANYCH";
+const PROPERTY: &str = "Payload size does not depend on unchanged history, except for named and bounded metadata overhead";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Payload {
