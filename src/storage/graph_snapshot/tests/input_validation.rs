@@ -275,6 +275,7 @@ fn terminal_snapshot_layers_bind_their_latest_disposal_event() {
             generation_index: 1,
             payload: WorkGraphSnapshotRecordPayload::Native {
                 history: Box::new(WorkGraphSnapshotHistory {
+                    source_notices: Vec::new(),
                     notes: Vec::new(),
                     events: Vec::new(),
                     completion: None,

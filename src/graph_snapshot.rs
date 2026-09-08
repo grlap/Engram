@@ -15,7 +15,7 @@ use crate::{
     WorkOrigin, WorkSourceSnapshot, storage::StoreError,
 };
 
-mod json_input;
+pub(crate) mod json_input;
 
 /// Current pre-release work-graph snapshot schema.
 pub const WORK_GRAPH_SNAPSHOT_SCHEMA_VERSION: u16 = 1;
@@ -192,6 +192,8 @@ pub struct WorkGraphSnapshotCompletion {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkGraphSnapshotHistory {
+    /// Inert source divergence history, never imported execution authority.
+    pub source_notices: Vec<crate::domain::WorkSourceNotice>,
     pub notes: Vec<WorkGraphSnapshotNote>,
     pub events: Vec<WorkGraphSnapshotEvent>,
     pub completion: Option<WorkGraphSnapshotCompletion>,
@@ -235,6 +237,31 @@ pub struct RestoredRecord {
     pub item: WorkGraphSnapshotItem,
     pub relations: RestoredRelationBasis,
     pub history: WorkGraphSnapshotHistory,
+}
+
+/// Later terminal notice/late-note layers carry their predecessor's disposal
+/// proof without recording another transition. Select those exact copies once
+/// for both history readers, while leaving canonical members and indices intact.
+/// Equality includes the entire event, not just its reason or rendered text.
+pub(crate) fn carried_disposal_layers(records: &[RestoredRecord]) -> Vec<bool> {
+    let mut previous = None;
+    records
+        .iter()
+        .map(|record| {
+            let event = record.history.events.last();
+            let carried = matches!(
+                record.item.lifecycle,
+                WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+            ) && record.history.events.len() == 1
+                && event.is_some_and(|event| {
+                    event.kind == "disposed" && previous == Some((record.work_id, event))
+                });
+            if let Some(event) = event {
+                previous = Some((record.work_id, event));
+            }
+            carried
+        })
+        .collect()
 }
 
 /// Planning relation cut bound into one inert restored history generation.

@@ -66,6 +66,8 @@ mod completion;
 mod continuation;
 mod focus;
 mod handoff;
+mod import;
+pub use import::{MAX_WORK_IMPORT_INPUT_BYTES, parse_work_import_input};
 pub(crate) mod identity;
 mod memories;
 mod next;
@@ -830,8 +832,8 @@ fn verified_bounded_work_changes(
                     entry.object_hash
                 ))
             })?;
-        let from_current_session = source_is_from_session(&object, session_id);
-        let display_producer = source_display_producer(&object);
+        let from_current_session = source_is_from_session(&entry.object_kind, &object, session_id);
+        let display_producer = source_display_producer(&entry.object_kind, &object);
         let delivery = agent_change_object(
             store,
             project_id,
@@ -897,27 +899,37 @@ fn verify_staged_work_change_page(
                 ))
             })?;
         let expected = matches!(&change.delivery, WorkChangeProjection::Visible(_))
-            && source_is_from_session(&object, session_id);
+            && source_is_from_session(&entry.object_kind, &object, session_id);
         if change.from_current_session != expected {
             return Err(StoreError::InvalidWorkProjection(
                 "staged work attribution differs from the receiving session".into(),
             ));
         }
-        change.display_producer = source_display_producer(&object);
+        change.display_producer = source_display_producer(&entry.object_kind, &object);
     }
     Ok(())
 }
 
-fn source_is_from_session(object: &serde_json::Value, session_id: &SessionId) -> bool {
-    object
-        .get("actor")
+fn source_actor<'a>(kind: &str, object: &'a serde_json::Value) -> Option<&'a serde_json::Value> {
+    object.get("actor").or_else(|| {
+        (kind == "work_source_proposal")
+            .then(|| object.get("notice")?.get("actor"))
+            .flatten()
+    })
+}
+
+fn source_is_from_session(kind: &str, object: &serde_json::Value, session_id: &SessionId) -> bool {
+    source_actor(kind, object)
         .and_then(|actor| actor.get("session_id"))
         .and_then(serde_json::Value::as_str)
         == Some(session_id.0.as_str())
 }
 
-fn source_display_producer(object: &serde_json::Value) -> Option<(String, Option<SessionId>)> {
-    let actor = object.get("actor")?;
+fn source_display_producer(
+    kind: &str,
+    object: &serde_json::Value,
+) -> Option<(String, Option<SessionId>)> {
+    let actor = source_actor(kind, object)?;
     Some((
         actor.get("actor_id")?.as_str()?.into(),
         actor
@@ -1060,6 +1072,27 @@ fn agent_change_object(
                 actor_id: Some(compact_text(&observation.actor.actor_id)),
                 actor_context: projected_actor_context(&observation.actor),
                 created_at: observation.created_at,
+            }))
+        }
+        "work_source_proposal" => {
+            let proposal = serde_json::from_value::<crate::domain::WorkSourceProposal>(object)?;
+            let item = store.get_work_item(proposal.work_id)?;
+            if &proposal.project_id != project_id || proposal.root_id != item.root_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "source notice crosses its project".into(),
+                ));
+            }
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: proposal.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(item.work_id),
+                work_ref: Some(item.short_ref),
+                revision: Some(proposal.notice.work_revision),
+                change_kind: "source_changed".into(),
+                summary: "external source changed; local work unchanged; inspect the item".into(),
+                actor_id: Some(compact_text(&proposal.notice.actor.actor_id)),
+                actor_context: projected_actor_context(&proposal.notice.actor),
+                created_at: proposal.notice.recorded_at,
             }))
         }
         "work_restored_evidence" => {

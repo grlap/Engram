@@ -635,15 +635,57 @@ fn work_sections_on(
                 },
             });
         }
+        let source_notices = super::work::native_source_notices_on(connection, &item)?;
+        for (_, _, record) in &restored_records {
+            super::work::validate_restored_source_notices_on(connection, &item, record)?;
+        }
+        for notice in restored_records
+            .iter()
+            .flat_map(|(_, _, record)| &record.history.source_notices)
+            .chain(&source_notices)
+        {
+            for hash in [&notice.cited_snapshot, &notice.proposed_snapshot] {
+                if !sources.contains_key(hash) {
+                    sources.insert(hash.clone(), load_source_on(connection, hash)?);
+                }
+            }
+        }
         let notes = notes_for_item_on(connection, project_id, work_id)?;
-        if !events.is_empty() || !notes.is_empty() {
+        if !events.is_empty() || !notes.is_empty() || !source_notices.is_empty() {
+            let mut history_events = snapshot_events_on(connection, &events)?;
+            if events.is_empty()
+                && matches!(
+                    item.lifecycle,
+                    WorkLifecycle::Cancelled | WorkLifecycle::Superseded
+                )
+            {
+                // A notice-only layer retains the original disposal as proof,
+                // not as a new transition. Inherited bytes and live feeds stay
+                // untouched; each terminal layer still passes disposal checks.
+                let disposal = restored_records
+                    .last()
+                    .and_then(|(_, _, record)| record.history.events.last())
+                    .filter(|event| {
+                        event.kind == "disposed"
+                            && event.lifecycle == Some(item.lifecycle)
+                            && event.reason == snapshot.disposal_reason
+                            && event.related_work_id == item.superseded_by
+                    })
+                    .ok_or_else(|| {
+                        StoreError::InvalidWorkProjection(
+                            "terminal notice layer has no inherited disposal proof".into(),
+                        )
+                    })?;
+                history_events.push(disposal.clone());
+            }
             records.push(WorkGraphSnapshotRecord {
                 work_id,
                 generation_index: restored_records.len(),
                 payload: WorkGraphSnapshotRecordPayload::Native {
                     history: Box::new(WorkGraphSnapshotHistory {
+                        source_notices,
                         notes,
-                        events: snapshot_events_on(connection, &events)?,
+                        events: history_events,
                         completion: completion_from_events(
                             connection,
                             &item,
@@ -765,8 +807,14 @@ fn restored_records_on(
         }
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-        let canonical_json = load_verified_value_on(connection, &hash, "work_restored_record")?;
-        let record: RestoredRecord = serde_json::from_value(canonical_json.clone())?;
+        let object =
+            SqliteStore::get_canonical_object_on(connection, &hash, "work_restored_record")?
+                .ok_or_else(|| {
+                    StoreError::InvalidWorkProjection("restored record is missing".into())
+                })?;
+        let record: RestoredRecord =
+            super::work::decode_work_object("work_restored_record", &object)?;
+        let canonical_json = object.decode()?;
         if record.work_id != work_id || record.generation_index != expected {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "restored history for {work_id:?} differs from its projection binding"

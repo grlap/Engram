@@ -127,8 +127,8 @@ fn prepare_load(
     validate_section_order(&document)?;
 
     validate_items_and_relations(&document)?;
-    validate_sources(&document)?;
     let records = validate_and_materialize_records(&document)?;
+    validate_sources(&document, &records)?;
     validate_lifecycle_proofs(&document, &records)?;
     validate_memories(&document)?;
 
@@ -483,23 +483,23 @@ fn validate_combined_graph(items: &[crate::WorkGraphSnapshotItem]) -> Result<(),
     Ok(())
 }
 
-fn validate_sources(document: &WorkGraphSnapshotDocument) -> Result<(), StoreError> {
-    let expected = document
-        .body
-        .items
-        .iter()
-        .filter_map(|item| item.source_snapshot_id.clone())
-        .collect::<HashSet<_>>();
-    let mut seen = HashSet::new();
+fn validate_sources(
+    document: &WorkGraphSnapshotDocument,
+    records: &[(RestoredRecord, CanonicalObject)],
+) -> Result<(), StoreError> {
+    // Decode each source once and reuse the already materialized histories.
+    // Hash and exact typed-byte checks still precede notice binding checks.
+    let mut sources = HashMap::new();
     for source in &document.body.sources {
-        if !seen.insert(source.hash.clone()) {
+        if sources.contains_key(&source.hash) {
             return Err(corrupt("duplicate source hash"));
         }
         let object = CanonicalObject::freeze(&source.canonical_json)?;
         if object.hash() != &source.hash {
             return Err(corrupt("source hash differs from its canonical JSON"));
         }
-        let snapshot: WorkSourceSnapshot = serde_json::from_value(source.canonical_json.clone())
+        let snapshot: WorkSourceSnapshot = object
+            .decode()
             .map_err(|_| corrupt("source canonical JSON has an invalid shape"))?;
         let typed = CanonicalObject::freeze(&snapshot)?;
         if typed.hash() != &source.hash || typed.bytes() != object.bytes() {
@@ -508,8 +508,57 @@ fn validate_sources(document: &WorkGraphSnapshotDocument) -> Result<(), StoreErr
             ));
         }
         super::super::work::validate_work_source_snapshot_for_restore(&snapshot)?;
+        sources.insert(&source.hash, snapshot);
     }
-    if expected != seen {
+    let items = document
+        .body
+        .items
+        .iter()
+        .map(|item| (item.work_id, item))
+        .collect::<HashMap<_, _>>();
+    let mut expected = document
+        .body
+        .items
+        .iter()
+        .filter_map(|item| item.source_snapshot_id.clone())
+        .collect::<HashSet<_>>();
+    let mut notice_bindings = HashSet::new();
+    for (record, _) in records {
+        let item = items
+            .get(&record.work_id)
+            .ok_or_else(|| corrupt("source notice has no work item"))?;
+        for notice in &record.history.source_notices {
+            if !notice_bindings.insert((record.work_id, notice.proposed_snapshot.clone())) {
+                return Err(corrupt(
+                    "duplicate source-change notice across history layers",
+                ));
+            }
+            if item.source_snapshot_id.as_ref() != Some(&notice.cited_snapshot)
+                || notice.cited_snapshot == notice.proposed_snapshot
+                || notice.work_revision < 1
+            {
+                return Err(corrupt("source notice disagrees with its cited item"));
+            }
+            let cited = sources
+                .get(&notice.cited_snapshot)
+                .ok_or_else(|| corrupt("source notice has a missing snapshot"))?;
+            let proposed = sources
+                .get(&notice.proposed_snapshot)
+                .ok_or_else(|| corrupt("source notice has a missing snapshot"))?;
+            if cited.adapter_kind != proposed.adapter_kind
+                || cited.canonical_ref != proposed.canonical_ref
+                || cited.captured_at > notice.recorded_at
+                || proposed.captured_at > notice.recorded_at
+            {
+                return Err(corrupt(
+                    "source notice changes source identity or predates capture",
+                ));
+            }
+            expected.insert(notice.cited_snapshot.clone());
+            expected.insert(notice.proposed_snapshot.clone());
+        }
+    }
+    if expected.len() != sources.len() || expected.iter().any(|hash| !sources.contains_key(hash)) {
         return Err(corrupt("source section differs from item source bindings"));
     }
     Ok(())
@@ -547,7 +596,8 @@ fn validate_and_materialize_records(
                 if object.hash() != object_hash {
                     return Err(corrupt("restored record hash differs from canonical JSON"));
                 }
-                let restored: RestoredRecord = serde_json::from_value(canonical_json.clone())
+                let restored: RestoredRecord = object
+                    .decode()
                     .map_err(|_| corrupt("restored record canonical JSON has an invalid shape"))?;
                 let typed = CanonicalObject::freeze(&restored)?;
                 if typed.hash() != object_hash || typed.bytes() != object.bytes() {
@@ -750,6 +800,12 @@ fn validate_history(
     history: &WorkGraphSnapshotHistory,
     item_ids: &HashSet<WorkId>,
 ) -> Result<(), StoreError> {
+    for notice in &history.source_notices {
+        validate_actor(&notice.actor)?;
+        if notice.work_revision < 1 || notice.cited_snapshot == notice.proposed_snapshot {
+            return Err(corrupt("invalid source-change notice"));
+        }
+    }
     for note in &history.notes {
         validate_text(&note.summary, "history note")?;
         validate_string_set(&note.refs, "history refs")?;

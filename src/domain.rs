@@ -6,6 +6,7 @@ mod memory;
 mod provenance;
 mod task;
 mod work;
+mod work_import;
 mod work_observation;
 mod work_requests;
 
@@ -19,5 +20,6 @@ pub use memory::*;
 pub use provenance::*;
 pub use task::*;
 pub use work::*;
+pub use work_import::*;
 pub use work_observation::*;
 pub use work_requests::*;

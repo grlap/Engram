@@ -318,6 +318,10 @@ pub(super) fn different_build_store_error() -> StoreError {
     StoreError::InvalidControlProjection(DIFFERENT_BUILD_STORE_MESSAGE.into())
 }
 
+pub(crate) fn is_different_build_store_error(error: &StoreError) -> bool {
+    matches!(error, StoreError::InvalidControlProjection(message) if message == DIFFERENT_BUILD_STORE_MESSAGE)
+}
+
 pub(super) fn require_current_schema_marker(stored: i64, current: i64) -> Result<(), StoreError> {
     if stored == current {
         Ok(())

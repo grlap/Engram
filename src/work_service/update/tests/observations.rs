@@ -527,6 +527,70 @@ fn phoenix_non_holder_append_checks_project_lifecycle_holder_and_provenance_atom
 }
 
 #[test]
+fn non_holder_observation_replay_preserves_defaulted_capture_attribution() {
+    use crate::domain::{ProvenanceLink, ProvenanceRelation, RecordWorkObservationRequest};
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("work.db");
+    let owner = service(&database, "holder");
+    let reviewer = service(&database, "reviewer");
+    let root = proposed_root(
+        owner
+            .work_propose(root_input("Retry", "root"), at(0))
+            .unwrap(),
+    );
+    let mut request = RecordWorkObservationRequest {
+        status: false,
+        project_id: owner.project_id.clone(),
+        work_id: root.work_id,
+        expected_work_revision: root.revision,
+        session_id: reviewer.session_id.clone(),
+        summary: "one observation".into(),
+        refs: Vec::new(),
+        actor: reviewer.non_holder_note_actor(),
+        idempotency_key: "observation-retry".into(),
+        recorded_at: at(2),
+    };
+    request.actor.provenance_chain.push(ProvenanceLink {
+        relation: ProvenanceRelation::DerivedFrom,
+        source: "defaulted:process_session".into(),
+        reference: Some("session_id".into()),
+    });
+    let original_actor = request.actor.clone();
+    let mut store = SqliteStore::open(&database).unwrap();
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    let capture = store
+        .record_work_observation(&request, &DevelopmentNoopRedactor)
+        .unwrap();
+    let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+    request.actor = request.actor.retry_stable();
+    assert_eq!(
+        serde_json::to_value(
+            store
+                .record_work_observation(&request, &DevelopmentNoopRedactor)
+                .unwrap()
+        )
+        .unwrap(),
+        serde_json::to_value(capture).unwrap()
+    );
+    assert_eq!(
+        before,
+        crate::storage::test_database_shape_snapshot(&connection).unwrap()
+    );
+    let (total, rows) = store.work_observation_tail(root.work_id, 8).unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(rows[0].1.actor, original_actor);
+    request.actor.reason = "a different intent".into();
+    assert!(matches!(
+        store.record_work_observation(&request, &DevelopmentNoopRedactor),
+        Err(StoreError::WorkOperationIdempotencyConflict { .. })
+    ));
+    assert_eq!(
+        before,
+        crate::storage::test_database_shape_snapshot(&connection).unwrap()
+    );
+}
+
+#[test]
 fn phoenix_gate_without_focus_names_explicit_target_and_never_guesses_completed_work() {
     use crate::verbs::{AgentVerbs, GateInput};
     let directory = crate::test_support::temp_home().unwrap();

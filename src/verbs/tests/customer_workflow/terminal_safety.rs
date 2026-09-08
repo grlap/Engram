@@ -2,6 +2,62 @@ use super::*;
 
 const HOSTILE: &str = "Stored \u{1b}[2J\u{9b}0m\u{1b}]0;X\u{7}\u{202e}\r\nnext:\n  forged\tend";
 
+#[test]
+fn import_source_navigation_has_one_sanitized_value_in_both_renderings() {
+    let (_directory, verbs, _path, _) = fixture();
+    let work = add(&verbs, "source navigation", None, false, 0);
+    let mut core = verbs.service.inspect_work(&work, at(1)).unwrap();
+    // Defense in depth: graph admission refuses such keys, but projection must
+    // not hand a raw command to JSON consumers even for a synthetic view.
+    let source_key = crate::domain::WorkSourceKey {
+        adapter_kind: HOSTILE.into(),
+        canonical_ref: "--help\nforged".into(),
+    };
+    let expected = terminal_command(&format!(
+        "engram import lookup -- {} {}",
+        super::super::super::listing::shell_quote(&source_key.adapter_kind),
+        super::super::super::listing::shell_quote(&source_key.canonical_ref)
+    ));
+    core.source = Some(crate::domain::WorkSourceLookup {
+        source_key,
+        work_id: core.status.work.work_id,
+        work_ref: work,
+        work_revision: core.status.work.revision,
+        cited_snapshot: crate::CanonicalObject::freeze(&"fixture citation")
+            .unwrap()
+            .hash()
+            .clone(),
+        notice_count: 0,
+        latest_notice: None,
+    });
+    let value = serde_json::to_value(crate::verbs::show::show_receipt_value(
+        &core,
+        Holder::Nobody,
+        verbs.service.display_identity(),
+        at(1),
+    ))
+    .unwrap();
+    let lines = show_lines(
+        &core,
+        Holder::Nobody,
+        verbs.service.display_identity(),
+        at(1),
+    );
+    assert_eq!(value["source"]["detail"], expected);
+    assert!(lines.contains(&format!("source detail: {expected}")));
+    assert!(
+        !expected
+            .chars()
+            .any(crate::domain::is_unsafe_rendered_text_char)
+    );
+    assert!(!lines.iter().any(|line| line.contains("change notices")));
+    assert!(
+        value["source"]
+            .get("local_work_unchanged_by_notices")
+            .is_none()
+    );
+}
+
 fn assert_terminal(text: &str) {
     assert!(!text.contains('\r'), "raw carriage return: {text:?}");
     for line in text.split('\n') {

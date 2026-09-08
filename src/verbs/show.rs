@@ -283,6 +283,10 @@ pub(super) struct ShowDetachedFrom {
 /// focus` for hosts that need authority and integrity fields.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct ShowReceiptValue {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) source: Option<ShowSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) source_error_class: Option<&'static str>,
     /// Explicit read-concurrency token, not read-side state or authority.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_basis: Option<i64>,
@@ -328,6 +332,23 @@ pub(super) struct ShowReceiptValue {
     pub(super) allowed_next: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) omissions: Vec<WorkSectionOmission>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowSource {
+    source_key: crate::domain::WorkSourceKey,
+    notice_count: usize,
+    notices_omitted: usize,
+    latest_notice_at: Option<DateTime<Utc>>,
+    detail: String,
+}
+
+fn source_detail(source: &crate::domain::WorkSourceKey) -> String {
+    super::terminal_command(&format!(
+        "engram import lookup -- {} {}",
+        super::listing::shell_quote(&source.adapter_kind),
+        super::listing::shell_quote(&source.canonical_ref)
+    ))
 }
 
 pub(super) fn live(claim: &WorkClaim, now: DateTime<Utc>) -> bool {
@@ -456,6 +477,35 @@ pub(super) fn show_lines(
                 super::terminal_safe_line(&origin.reason)
             ));
         }
+    }
+    if let Some(class) = view.source_error_class {
+        lines.push(format!("source disclosure unavailable: {class}"));
+    }
+    if let Some(source) = &view.source {
+        let mut line = format!(
+            "source: {} / {}",
+            super::terminal_safe_line(&source.source_key.adapter_kind),
+            super::terminal_safe_line(&source.source_key.canonical_ref)
+        );
+        if source.notice_count > 0 {
+            let _ = write!(
+                line,
+                "; {} change notices ({} older not shown); local work not changed by notices",
+                source.notice_count,
+                source.notice_count.saturating_sub(1)
+            );
+        }
+        lines.push(line);
+        if let Some(notice) = &source.latest_notice {
+            lines.push(format!(
+                "latest source notice: {}",
+                clock(notice.recorded_at, now)
+            ));
+        }
+        lines.push(format!(
+            "source detail: {}",
+            source_detail(&source.source_key)
+        ));
     }
     lines.push(format!(
         "outcome: {}",
@@ -664,6 +714,17 @@ pub(super) fn show_receipt_value(
     });
     let notes = show_notes(view, identity);
     ShowReceiptValue {
+        source_error_class: view.source_error_class,
+        source: view.source.as_ref().map(|source| ShowSource {
+            source_key: source.source_key.clone(),
+            notice_count: source.notice_count,
+            notices_omitted: source.notice_count.saturating_sub(1),
+            latest_notice_at: source
+                .latest_notice
+                .as_ref()
+                .map(|notice| notice.recorded_at),
+            detail: source_detail(&source.source_key),
+        }),
         acceptance_basis: (work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0)
             .then_some(work.revision),
         acceptance_evidence: view

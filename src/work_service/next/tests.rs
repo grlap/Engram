@@ -3,6 +3,45 @@ use super::super::*;
 use crate::domain::SCHEMA_VERSION;
 
 #[test]
+fn source_notice_actor_fallback_requires_proposal_kind() {
+    let nested = serde_json::json!({"notice": {"actor": {
+        "actor_id": "external", "session_id": "source-session"
+    }}});
+    let session = SessionId("source-session".into());
+    for kind in [
+        "work_source_snapshot",
+        "work_event",
+        "memory_version",
+        "unknown",
+    ] {
+        assert!(!source_is_from_session(kind, &nested, &session));
+        assert_eq!(source_display_producer(kind, &nested), None);
+    }
+    assert!(source_is_from_session(
+        "work_source_proposal",
+        &nested,
+        &session
+    ));
+    assert_eq!(
+        source_display_producer("work_source_proposal", &nested),
+        Some(("external".into(), Some(session)))
+    );
+    let direct = serde_json::json!({"actor": {"actor_id": "direct", "session_id": "direct-session"},
+        "notice": nested["notice"]});
+    for kind in ["work_event", "work_source_proposal"] {
+        assert!(source_is_from_session(
+            kind,
+            &direct,
+            &SessionId("direct-session".into())
+        ));
+        assert_eq!(
+            source_display_producer(kind, &direct),
+            Some(("direct".into(), Some(SessionId("direct-session".into()))))
+        );
+    }
+}
+
+#[test]
 fn peek_uses_one_snapshot_for_advisory_memories_and_change_page() {
     use std::sync::{Arc, Barrier};
     let directory = crate::test_support::temp_home().unwrap();

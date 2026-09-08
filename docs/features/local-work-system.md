@@ -151,11 +151,11 @@ events enter the project/root/current-run feeds, are delivered as typed
 
 A `WorkSourceSnapshot` records adapter kind, canonical external reference,
 captured time, source revision/fingerprint, projected fields, and canonical
-payload hash plus bounded extension data. Import activates only a typed,
-hash-verified canonical snapshot, maps selected fields into a new local work
-revision, and keeps the snapshot as provenance. Refresh creates a proposed
-local revision; it never overwrites local state or implicitly
-reopens/completes work.
+payload hash plus bounded extension data. [File intake](source-intake.md)
+stores a typed, hash-verified snapshot as provenance. First import requires
+an authored local title and outcome; it does not map external fields into
+local work. Refresh records an immutable source-change notice that applies
+nothing. It never overwrites local state or implicitly reopens/completes work.
 
 ### Claim and resource lease
 
@@ -1526,6 +1526,11 @@ evidence, but mutation is never conditioned on the model first writing a
 status sentence.
 
 ## Optional external intake, storage, and publication
+
+[File intake](source-intake.md) previews and admits one source snapshot as a
+local root. An exact project-scoped source key finds its original citation
+and latest change notice. Refresh never applies local fields; ordinary show
+reports notices with exact counts and detail navigation.
 
 Adapters have independent capability families:
 

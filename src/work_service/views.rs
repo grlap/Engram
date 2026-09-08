@@ -447,6 +447,12 @@ pub(crate) struct WorkParentSummary {
 /// Full bounded context for the ambient focused item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkFocusView {
+    /// Agent detail only; raw source attribution never widens the ambient wire.
+    #[serde(skip)]
+    pub(crate) source: Option<crate::domain::WorkSourceLookup>,
+    /// Inert provenance failure must not hide intact local work context.
+    #[serde(skip)]
+    pub(crate) source_error_class: Option<&'static str>,
     /// Native frozen-seal disclosure for the agent detail renderer only.
     #[serde(skip)]
     pub(crate) acceptance_evidence: Option<super::WorkAcceptanceEvidence>,

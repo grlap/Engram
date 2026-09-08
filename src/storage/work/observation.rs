@@ -42,7 +42,9 @@ impl SqliteStore {
     ) -> Result<WorkNoteCapture, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.session_id)?;
-        let request_object = request_object(request)?;
+        let mut retry_request = request.clone();
+        retry_request.actor = request.actor.retry_stable();
+        let request_object = request_object(&retry_request)?;
         let transaction = self.begin_work_mutation()?;
         // Same result namespace as holder notes: recovery after a committed
         // append must not choose a different authority path on retry.

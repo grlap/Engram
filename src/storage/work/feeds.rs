@@ -550,7 +550,33 @@ pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
             requested: object_kind.into(),
         });
     }
-    CanonicalObject::verify(hash, bytes)?.decode()
+    decode_work_object(object_kind, &CanonicalObject::verify(hash, bytes)?)
+}
+
+/// Keep the current required restored shape distinct from ordinary corruption.
+/// Healthy typed reads do no extra parsing or storage work. On failure inspect
+/// only the already verified object's history, never sample or scan the store.
+pub(in crate::storage) fn decode_work_object<T: DeserializeOwned>(
+    kind: &str,
+    object: &CanonicalObject,
+) -> Result<T, StoreError> {
+    object.decode().map_err(|error| {
+        if kind == "work_restored_record"
+            && serde_json::from_slice::<serde_json::Value>(object.bytes())
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("history")
+                        .and_then(serde_json::Value::as_object)
+                        .map(|history| !history.contains_key("source_notices"))
+                })
+                == Some(true)
+        {
+            super::super::different_build_store_error()
+        } else {
+            error
+        }
+    })
 }
 
 pub(super) fn load_handoff_offer_projection(
@@ -703,6 +729,7 @@ pub(super) fn validate_work_source_snapshot(
 pub(super) fn validate_work_source_snapshot_shape(
     snapshot: &WorkSourceSnapshot,
 ) -> Result<(), StoreError> {
+    super::import::validate_key(&super::import::key(snapshot))?;
     let required_text_is_valid = [
         &snapshot.adapter_kind,
         &snapshot.canonical_ref,

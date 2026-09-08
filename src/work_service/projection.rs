@@ -21,6 +21,7 @@ use super::{
 /// A fixed diagnostic class, never an error body, path, hash, or actor text.
 pub(crate) fn advisory_error_class(error: &StoreError) -> &'static str {
     match error {
+        error if crate::storage::is_different_build_store_error(error) => "store_different_build",
         StoreError::InvalidWorkProjection(_) => "work_projection_invalid",
         StoreError::Sqlite(_) => "sqlite_error",
         StoreError::Json(_) => "stored_json_invalid",

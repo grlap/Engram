@@ -65,6 +65,12 @@ line; peer status observations appear separately. Older statuses remain in
 `next`/`ls`/`show` and searched by `ls --search`;
 capture source criteria in acceptance and source context in notes, because a
 reference alone is neither immutable intake nor external synchronization.
+The operator [source-intake workflow](source-intake.md) provides immutable
+file-based preview/apply instead. On an imported item, ordinary `show.source`
+reports its exact source key, notice count, older-notice omission count and
+latest notice time, with an `engram import lookup` detail command. Lookup
+keeps the original citation distinct from the latest proposed snapshot.
+Source notices never apply local changes or count as execution evidence.
 `update REF --clear-external` (MCP revise `clear_external: true`) removes
 linkage through an ordinary audited revision, including catalog search and
 subsequent snapshots. Setting and clearing together is refused; blank

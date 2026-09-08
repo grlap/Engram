@@ -18,6 +18,7 @@ references another.
 | [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; sequential portability; deferred concurrent sync |
 | [Work-graph snapshot](work-graph-snapshot.md) | Shipped deterministic save/load of the agent-visible work graph, inert history, and keyed project memories |
 | [External adapters](tracker-adapter.md) | Optional snapshot intake, backup/portable storage, and separately authorized publication |
+| [Source intake](source-intake.md) | Explicit file preview/apply, authored local work, and immutable source-change notices |
 | [Execution pipeline](execution-pipeline.md) | Layer map from external ticket to report, including shipped WorkRun-bound environment evidence, obligations, and completion gating |
 | [Security & trust](security-and-trust.md) | Asserted runtime identity with assurance levels; sensitivity labels; redaction; purge realism |
 | [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing local-work tools and host-private turn channel over one core; material action mediation remains planned |

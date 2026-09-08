@@ -11,7 +11,12 @@ mod completion;
 mod discovery;
 mod execution;
 mod feeds;
+pub(in crate::storage) use feeds::decode_work_object;
+mod import;
 mod integrity;
+pub(in crate::storage) use import::{
+    native_source_notices_on, validate_restored_source_notices_on,
+};
 mod notes;
 mod observation;
 mod planning;

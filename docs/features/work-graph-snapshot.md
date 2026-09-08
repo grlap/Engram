@@ -88,7 +88,7 @@ routine semver drift.
 | --- | --- | --- |
 | `items` | work id, short ref, title, outcome, acceptance, kind, priority, labels, origin, source snapshot id, lifecycle, child requirement, parent, prerequisites, supersession, assignment, defer-until, disposal reason | runs, root executions, claims, fences, checkpoints, seals, required-child waivers (execution-generation state, kept in records as history), obligation pages, control bindings; the project's control policy and obligation rule sets, which the operator re-applies at `init` |
 | `blockers` | per item, every active `WorkBlocker`: blocker id, kind, detail, creator, time | cleared blockers (they remain in records) |
-| `sources` | every `WorkSourceSnapshot` cited by an item, verbatim canonical JSON | nothing; no source bears a label today, and the build that first labels sources defines their exclusion |
+| `sources` | every `WorkSourceSnapshot` cited by an item or its retained source notices, verbatim canonical JSON | nothing; no source bears a label today, and the build that first labels sources defines their exclusion |
 | `records` | per item, an ordered list of history layers, oldest first, each restored layer binding its project, full planning-item cut, relations, and generation index: every `RestoredRecord` the item already carries, verbatim, then the store's own **native layer** — notes (evidence kind, summary, gate name / failures / opaque ref, recorded-at), compact events (transition kind, time, reason, including waivers with the child's exact disposed revision), and for a completed item its completion summary and time — each entry carrying the original `ActorContext` verbatim (actor id, kind, assurance, session, context), so asserted and stronger attribution stay distinguishable | evidence object hashes as authority (they may appear as provenance strings), verification and environment evidence bodies, delivery cursors, session focus, handoff offers |
 | `memories` | every permanent project-memory key, body, sensitivity label, remembered-at, and the original `ActorContext` verbatim; retired keys as tombstones with their retiring `ActorContext` and time | unkeyed typed project-scope observations and agent-private scratch; `restricted` bodies unless widened; the store-side `restored` link, which is write-only |
 
@@ -105,6 +105,14 @@ superseded body crosses the host boundary. Native canonical history remains
 on the origin host, inaccessible through retired-key reads. Redaction applies
 independently to each live historical body; the memory redaction count counts
 keys with any redacted version, not individual versions.
+
+[Source-change notices](source-intake.md) are carried in each item's history,
+in recorded order, with original attribution and both source snapshot hashes.
+The source section includes those snapshots as well as the item's citation.
+Load refuses missing, duplicate or mismatched notice bindings and retains the
+notices as inert history, never native proposal feeds or execution authority.
+Later saves preserve inherited notices once; ordinary item reads still expose
+their exact count and latest notice after recovery.
 
 Non-holder work observations are carried as native-layer notes with their
 original non-holder provenance marker; on load they become inert history, not

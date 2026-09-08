@@ -92,6 +92,25 @@ pub(crate) const ACTOR_CONTEXT_NORMALIZED_REFERENCE: &str = "actor_context_norma
 pub const MAX_ACTOR_CONTEXT_BYTES: usize = 256;
 
 impl ActorContext {
+    /// Retry comparison excludes only the known shell-default audit markers.
+    /// Principals, assurance, host context and all other provenance still bind
+    /// the intent. Persist the original actor, never this comparison projection.
+    pub(crate) fn retry_stable(&self) -> Self {
+        let mut actor = self.clone();
+        actor.provenance_chain.retain(|link| {
+            !(link.relation == ProvenanceRelation::DerivedFrom
+                && matches!(
+                    (link.source.as_str(), link.reference.as_deref()),
+                    ("defaulted:process_session", Some("session_id"))
+                        | (
+                            "defaulted:os_user_environment" | "defaulted:process_actor",
+                            Some("actor_id")
+                        )
+                ))
+        });
+        actor
+    }
+
     /// Validates the optional actor-context provenance contract.
     ///
     /// # Errors

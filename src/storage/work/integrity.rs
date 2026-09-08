@@ -868,6 +868,17 @@ pub(super) fn verify_work_feed_integrity(
                 .and_then(|observation| {
                     expected_feeds_for_work(work_items, observation.work_id, None)
                 }),
+            "work_source_proposal" => object
+                .decode::<crate::domain::WorkSourceProposal>()
+                .ok()
+                .and_then(|proposal| {
+                    super::query::load_work_item(connection, proposal.work_id)
+                        .ok()
+                        .filter(|item| {
+                            super::import::validate_proposal_on(connection, item, &proposal).is_ok()
+                        })
+                        .and_then(|_| expected_feeds_for_work(work_items, proposal.work_id, None))
+                }),
             "execution_observation" => object
                 .decode::<ExecutionObservation>()
                 .ok()
@@ -1053,7 +1064,7 @@ pub(super) fn verify_work_feed_integrity(
          LEFT JOIN work_feed_entries entry
            ON entry.object_hash = object.object_hash
          WHERE object.object_kind IN (
-             'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation',
+             'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
              'verification_evidence', 'environment_evidence',
              'work_obligation', 'work_obligation_resolution'
          )

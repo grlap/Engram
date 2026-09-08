@@ -89,6 +89,17 @@ fn resolve_host_path_identity(
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Preview or apply explicit source snapshots; refresh never revises local work.
+    Import {
+        #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
+        actor_id: Option<String>,
+        #[arg(long, env = "ENGRAM_SESSION_ID", global = true)]
+        session_id: Option<String>,
+        #[arg(long, env = "ENGRAM_ACTOR_CONTEXT", global = true)]
+        actor_context: Option<String>,
+        #[command(subcommand)]
+        operation: ImportCommand,
+    },
     /// Create or verify the local Engram database.
     Init {
         /// Minimum host-control assurance required by the bootstrap policy.
@@ -402,6 +413,21 @@ enum GraphCommand {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum ImportCommand {
+    /// Inspect one snapshot and explicit local draft without writing.
+    Preview { file: PathBuf },
+    /// Commit only the inspected effect; a changed local basis refuses.
+    Apply {
+        file: PathBuf,
+        /// Exact token returned by preview; not authority or a source revision.
+        #[arg(long)]
+        preview: String,
+    },
+    /// Find an exact project-scoped source key and its cited and proposed snapshots.
+    Lookup { adapter: String, reference: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -811,9 +837,10 @@ async fn run_cli() -> Result<ExitCode> {
             return Err(error);
         }
     };
-    // A peek must not create a filesystem-probe marker merely to read
-    // orientation. Other command startup behavior is unchanged here.
-    let identity = if matches!(&cli.command, Command::Work { operation, .. }
+    // Peek and intake reads must not create a filesystem-probe marker.
+    // Intake never consumes host-control path identity, including on apply.
+    let identity = if matches!(&cli.command, Command::Import { .. })
+        || matches!(&cli.command, Command::Work { operation, .. }
             if matches!(operation.as_ref(), WorkCommand::Next { peek: true, .. }))
     {
         None
@@ -821,6 +848,21 @@ async fn run_cli() -> Result<ExitCode> {
         resolve_host_path_identity(&root, cli.host_path_policy)
     };
     match cli.command {
+        Command::Import {
+            actor_id,
+            session_id,
+            actor_context,
+            operation,
+        } => {
+            return bin_support::import::run(
+                database,
+                project_id,
+                actor_id,
+                session_id,
+                actor_context,
+                operation,
+            );
+        }
         Command::Init {
             required_assurance,
             authorized_by,

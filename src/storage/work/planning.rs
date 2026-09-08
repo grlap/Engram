@@ -49,7 +49,7 @@ mod detach;
 
 /// Creates a root within the caller's write transaction after request validation.
 /// The caller owns operation replay and commit, including coupled graph changes.
-fn create_root_on<R: Redactor>(
+pub(super) fn create_root_on<R: Redactor>(
     transaction: &Transaction<'_>,
     request: &CreateWorkRequest,
     initial_notes: &[String],

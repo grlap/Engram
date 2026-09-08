@@ -135,7 +135,9 @@ impl SqliteStore {
             return Err(invalid("record window cannot cross projects"));
         }
         let mut indexed = Vec::new();
-        for record in restored_records_for_item(&self.connection, work_id)? {
+        let records = restored_records_for_item(&self.connection, work_id)?;
+        let carried_disposals = crate::graph_snapshot::carried_disposal_layers(&records);
+        for (record, carried_disposal) in records.into_iter().zip(carried_disposals) {
             // Use the verified stored identity, never re-freeze historical data.
             let raw: String = self.connection.query_row(
                 "SELECT record_hash FROM work_restored_records WHERE work_id = ?1 AND generation_index = ?2",
@@ -157,6 +159,7 @@ impl SqliteStore {
                         .events
                         .iter()
                         .enumerate()
+                        .filter(|_| !carried_disposal)
                         .map(|(index, event)| {
                             (event.occurred_at, RestoredMember::Event(index + 1))
                         }),

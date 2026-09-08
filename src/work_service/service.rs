@@ -790,6 +790,16 @@ impl LocalWorkService {
         } else {
             None
         };
+        // Degrade only advisory fields whose absence can be stated truthfully;
+        // unreadable item/history context must refuse, not imply completeness.
+        let (source, source_error_class) = if matches!(text, FocusText::Full) {
+            match store.work_source_for_item(status.work.work_id) {
+                Ok(source) => (source, None),
+                Err(error) => (None, Some(super::advisory_error_class(&error))),
+            }
+        } else {
+            (None, None)
+        };
         let mut status = ready_work_summary(status);
         if matches!(text, FocusText::Full) {
             (status.work.current_status, status.work.status_observation) =
@@ -800,6 +810,8 @@ impl LocalWorkService {
             status.work.acceptance = acceptance;
         }
         let view = WorkFocusView {
+            source,
+            source_error_class,
             acceptance_evidence,
             acceptance_evidence_error_class,
             session: agent_work_session(&session),
@@ -919,7 +931,8 @@ impl LocalWorkService {
 
 fn restored_history_view(records: Vec<crate::RestoredRecord>) -> RestoredHistoryView {
     let mut entries = Vec::new();
-    for record in records {
+    let carried_disposals = crate::graph_snapshot::carried_disposal_layers(&records);
+    for (record, carried_disposal) in records.into_iter().zip(carried_disposals) {
         let generation_index = record.generation_index;
         entries.extend(record.history.notes.into_iter().map(|note| {
             RestoredHistoryEntry {
@@ -939,21 +952,28 @@ fn restored_history_view(records: Vec<crate::RestoredRecord>) -> RestoredHistory
                 created_at: note.recorded_at,
             }
         }));
-        entries.extend(record.history.events.into_iter().map(|event| {
-            let summary = event.reason.unwrap_or_else(|| {
-                event.lifecycle.map_or_else(
-                    || event.kind.clone(),
-                    |lifecycle| work_lifecycle_word(lifecycle).to_owned(),
-                )
-            });
-            RestoredHistoryEntry {
-                generation_index,
-                kind: event.kind,
-                summary: compact_text(&summary),
-                actor: event.actor,
-                created_at: event.occurred_at,
-            }
-        }));
+        entries.extend(
+            record
+                .history
+                .events
+                .into_iter()
+                .filter(|_| !carried_disposal)
+                .map(|event| {
+                    let summary = event.reason.unwrap_or_else(|| {
+                        event.lifecycle.map_or_else(
+                            || event.kind.clone(),
+                            |lifecycle| work_lifecycle_word(lifecycle).to_owned(),
+                        )
+                    });
+                    RestoredHistoryEntry {
+                        generation_index,
+                        kind: event.kind,
+                        summary: compact_text(&summary),
+                        actor: event.actor,
+                        created_at: event.occurred_at,
+                    }
+                }),
+        );
         if let Some(completion) = record.history.completion {
             entries.push(RestoredHistoryEntry {
                 generation_index,

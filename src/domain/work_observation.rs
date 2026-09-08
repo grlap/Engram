@@ -171,7 +171,7 @@ pub struct WorkObservation {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(crate) struct RecordWorkObservationRequest {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub status: bool,

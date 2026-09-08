@@ -12,6 +12,10 @@ a side-effect-free dummy implementation.
 
 ## The ports
 
+The shipped [file intake](source-intake.md) accepts one explicit snapshot and
+local draft. It needs no network adapter. Refresh records a source-change
+notice; local revisions remain separately authored.
+
 ```
 WorkSourceAdapter {
   capabilities()                    // what this backend supports
@@ -92,8 +96,10 @@ lifecycle, and in-flight work privacy are different concerns.
 Engram owns the host-local work item after import. The source snapshot records
 what was injected and why; it does not grant the external system live write
 authority over local priority, dependency, claim, evidence, or completion.
-A refresh is an explicit new snapshot and proposed local revision, never a
-polling mirror or last-writer-wins update.
+A refresh is an explicit new snapshot and immutable source-change notice
+that applies nothing, never a polling mirror or last-writer-wins update.
+[First intake](source-intake.md) requires an authored local draft; external
+fields do not become a pending local patch.
 
 Outbound publication has its own target, authority check, frozen payload,
 idempotency key, and receipt. Intake and publication are independent: local

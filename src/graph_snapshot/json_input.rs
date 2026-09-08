@@ -10,7 +10,7 @@ use serde_json::{Map, Number, Value};
 
 use crate::storage::StoreError;
 
-pub(super) fn parse(bytes: &[u8]) -> Result<Value, StoreError> {
+pub(crate) fn parse(bytes: &[u8]) -> Result<Value, StoreError> {
     serde_json::from_slice::<UniqueValue>(bytes)
         .map(|value| value.0)
         .map_err(|error| StoreError::InvalidGraphSnapshot(error.to_string()))

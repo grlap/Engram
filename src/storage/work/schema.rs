@@ -12,6 +12,9 @@ const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
     "work_catalog_fts",
     "objects_work_evidence_gate_name",
     "objects_work_event_work_id",
+    "objects_work_source_proposal_work",
+    "objects_work_source_key",
+    "work_items_source_snapshot",
     "work_feed_entries_work_event_item",
     "work_feed_entries_environment_cut",
     "work_blockers_active",
@@ -91,6 +94,22 @@ pub(in crate::storage) fn preflight_schema(
     super::super::require_current_schema_marker(version, CURRENT_WORK_SCHEMA_VERSION)
 }
 
+// Only explicit schema initialization/repair scans before writes. Ordinary
+// opens do not inspect history; typed reads classify the failing row instead.
+fn require_current_restored_history_shape(connection: &Connection) -> Result<(), StoreError> {
+    let incompatible_history = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM objects WHERE object_kind = 'work_restored_record'
+         AND json_type(canonical_json, '$.history') = 'object'
+         AND json_type(canonical_json, '$.history.source_notices') IS NULL)",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if incompatible_history {
+        return Err(super::super::different_build_store_error());
+    }
+    Ok(())
+}
+
 pub(super) fn current_work_durable_schema_issue(
     connection: &Connection,
 ) -> Result<Option<String>, StoreError> {
@@ -157,6 +176,7 @@ pub(in crate::storage) fn initialize_schema(
     }
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     preflight_schema(&transaction, allow_initialization)?;
+    require_current_restored_history_shape(&transaction)?;
     transaction.execute_batch(
         "CREATE TABLE IF NOT EXISTS work_schema_metadata (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
@@ -391,6 +411,14 @@ pub(in crate::storage) fn initialize_schema(
              FOREIGN KEY(feed_kind, feed_id)
                  REFERENCES work_feed_heads(feed_kind, feed_id)
          ) STRICT;
+         CREATE INDEX IF NOT EXISTS objects_work_source_proposal_work
+             ON objects(json_extract(canonical_json, '$.work_id'))
+             WHERE object_kind = 'work_source_proposal';
+         CREATE INDEX IF NOT EXISTS objects_work_source_key
+             ON objects(json_extract(canonical_json, '$.adapter_kind'), json_extract(canonical_json, '$.canonical_ref'))
+             WHERE object_kind = 'work_source_snapshot';
+         CREATE INDEX IF NOT EXISTS work_items_source_snapshot
+             ON work_items(source_snapshot_hash, project_id);
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
@@ -473,6 +501,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
     connection: &Connection,
 ) -> Result<bool, StoreError> {
     preflight_schema(connection, false)?;
+    require_current_restored_history_shape(connection)?;
     for object in REBUILDABLE_WORK_SCHEMA_OBJECTS {
         super::super::drop_schema_object(connection, object)?;
     }
@@ -540,6 +569,14 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_run_evidence(work_id, evidence_hash);
          CREATE INDEX IF NOT EXISTS work_run_obligations_run
              ON work_run_obligations(run_id, state, trigger_position, obligation_id);
+         CREATE INDEX IF NOT EXISTS objects_work_source_proposal_work
+             ON objects(json_extract(canonical_json, '$.work_id'))
+             WHERE object_kind = 'work_source_proposal';
+         CREATE INDEX IF NOT EXISTS objects_work_source_key
+             ON objects(json_extract(canonical_json, '$.adapter_kind'), json_extract(canonical_json, '$.canonical_ref'))
+             WHERE object_kind = 'work_source_snapshot';
+         CREATE INDEX IF NOT EXISTS work_items_source_snapshot
+             ON work_items(source_snapshot_hash, project_id);
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
@@ -609,7 +646,10 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
     for (stored_hash, bytes) in restored_records {
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-        let record: RestoredRecord = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        let record: RestoredRecord = super::feeds::decode_work_object(
+            "work_restored_record",
+            &CanonicalObject::verify(&hash, bytes)?,
+        )?;
         connection.execute(
             "INSERT INTO work_restored_records (work_id, generation_index, record_hash)
              VALUES (?1, ?2, ?3)",

@@ -533,11 +533,22 @@ fn seed_restored_projection_expectations(
             invalid.push(label);
             continue;
         };
-        let record = hash.as_ref().ok().and_then(|hash| {
-            CanonicalObject::verify(hash, bytes)
-                .and_then(|object| object.decode::<RestoredRecord>())
-                .ok()
-        });
+        let record = if let Ok(hash) = &hash {
+            match CanonicalObject::verify(hash, bytes).and_then(|object| {
+                crate::storage::work::decode_work_object::<RestoredRecord>(
+                    object_kind.as_deref().unwrap_or(""),
+                    &object,
+                )
+            }) {
+                Ok(record) => Some(record),
+                Err(error) if crate::storage::is_different_build_store_error(&error) => {
+                    return Err(error);
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
         let (Ok(work_id), Ok(hash), Some(record)) = (parsed, hash, record) else {
             invalid.push(label);
             continue;
@@ -554,6 +565,14 @@ fn seed_restored_projection_expectations(
             continue;
         }
         *expected_generation += 1;
+        // Audit every inherited notice, including captures omitted by bounded
+        // reads. No native proposal objects are created when history is restored.
+        let source_audit = load_work_item(connection, work_id).and_then(|item| {
+            crate::storage::work::validate_restored_source_notices_on(connection, &item, &record)
+        });
+        if let Err(error) = source_audit {
+            invalid.push(format!("{label}:source_notice:{error}"));
+        }
         latest.insert(work_id, (generation, hash, record));
     }
 
