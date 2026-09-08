@@ -6,8 +6,11 @@
 > [security & trust](features/security-and-trust.md), and
 > [external adapters](features/tracker-adapter.md).
 >
-> Everything on this page is installed behavior; see
-> [shipped today](shipped.md). Planned tiers and sections are marked as such.
+> Engram capabilities below are installed unless marked as planned; see
+> [shipped today](shipped.md). Host setup requirements are not a claim that a
+> particular launcher implements them. MADE is the external planner and
+> coordinator host used for the integration pilot. Its recipe still needs
+> runtime acceptance in that host.
 
 A host is any runtime that starts agent sessions and wants Engram to own
 their work: TermAl today, an external planner and coordinator tomorrow. The
@@ -59,11 +62,12 @@ it requires the host to mediate turns or actions.
 
 ## Claude Code as the host (no TermAl)
 
-An external coordinator that launches `claude` directly gets the whole base
-tier from three pieces, because Claude Code starts one MCP child per session
-and runs hooks whose stdout enters the model's context. The recipe is
-verified by hand against Claude Code's documented hook and `.mcp.json`
-behavior; nothing in this repository exercises it yet.
+MADE can use this advisory recipe when it launches `claude` directly. No
+TermAl process or mailbox is required. This is a host contract, not an
+implemented MADE launcher. The configuration examples were checked against
+Claude Code's official [MCP reference](https://code.claude.com/docs/en/mcp)
+and [SessionStart reference](https://code.claude.com/docs/en/hooks#sessionstart).
+No real MADE session has been tested against this recipe.
 
 1. **Set the identity in the environment of the `claude` process** before
    launching it: an absolute `ENGRAM_HOME`, `ENGRAM_ACTOR_ID`, one opaque
@@ -72,17 +76,51 @@ behavior; nothing in this repository exercises it yet.
    coordinator persists that session id and reuses it when it resumes the
    same conversation in a new process, because claims, focus, delivery
    cursors, and same-holder retake are keyed by it; it mints a fresh id only
-   for a genuinely new or concurrent session. Claude Code exposes no session
-   id of its own to MCP servers, so the coordinator's value is the session id
-   for the whole session; Bash tool calls inherit the same environment, so
-   shell words and MCP words agree.
-2. **Start the MCP child from `.mcp.json`** with environment expansion, which
-   Claude Code supports in `command`, `args`, and `env`. The child reads
-   `.engram-project` from its working directory, which Claude Code sets to
-   the project root; both `--actor-id` and `--session-id` are required, so a
-   `claude` started without the coordinator's environment fails at the
-   host's `${…}` expansion, and one started with them exported empty gets a
-   child whose every word is refused — never one that guesses an identity:
+   for a genuinely new or concurrent session. Use this coordinator-owned
+   value at every injection point; do not derive a second Engram identity in
+   a hook. Stop the old process before resuming the same logical session.
+   Concurrent conversations must not share a session id. Bash tool calls
+   inherit the launch environment, so shell words and MCP words agree.
+2. **Do not give `ENGRAM_HOME` a default.** Keep `${ENGRAM_HOME}` below;
+   never replace it with `${ENGRAM_HOME:-some-path}`. A valid fallback path
+   can select a different store without telling the caller it is the wrong
+   one. This default-path risk is inferred, not an observed test result.
+   Fix the launch configuration instead of hiding a missing value. Do not
+   give required actor or session ids implicit defaults either.
+
+   Before launching `claude`, the coordinator must check that `ENGRAM_HOME`
+   is the intended absolute store home, actor and session ids are nonblank,
+   and none of these values is an unexpanded placeholder. Set the working
+   directory to the project checkout containing `.engram-project`. The MCP
+   child, hooks and shell words must use the same project and identity.
+   These are launcher requirements, not checks performed by `.mcp.json`.
+
+   Start the child from `.mcp.json`. Claude Code supports expansion in
+   `command`, `args`, and `env`, but missing variables do not prevent the
+   configuration from loading. With no default, it passes `${VAR}` literally
+   and reports a warning in `claude mcp list`. See the official
+   [environment expansion reference](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json).
+
+   In a Windows check with a real project marker and a literal
+   `${ENGRAM_HOME}` home, Engram refused the first store open, showed the
+   unexpanded path in the error, and created no files. This is a visible
+   failure, not a silent write to another store. It is not a general
+   placeholder-validation guarantee: a usable path or nonblank literal
+   actor/session id still needs the launcher's checks. Do not repair this
+   error by adding a home default or initializing an unintended store.
+
+   A separate throwaway-store check used a valid home but literal
+   `${ENGRAM_ACTOR_ID}` and `${ENGRAM_SESSION_ID}` identity values.
+   `engram work add` succeeded without an Engram warning or refusal; the
+   canonical object retained both literals verbatim. The path-open failure
+   above does not protect identity. With the same broken configuration,
+   multiple sessions would share one actor and session id, making their
+   records indistinguishable by identity. Canonical attribution cannot be
+   rewritten later. Engram accepts asserted identity; it does not detect
+   this launcher mistake. Validate before starting the harness.
+
+   Both `--actor-id` and `--session-id` remain explicit. The empty fallback
+   below applies only to optional actor context, never to store or identity:
 
    ```json
    {
@@ -147,6 +185,52 @@ at every injection point, and no claim of gating. The coordinator owns plan
 items as an external source (see the last section); it does not need the
 turn-gated channel for an advisory pilot.
 
+### Deployment on the target computer
+
+The MADE integration will run on another computer. This repository supplies
+the Engram contract and recipe; runtime acceptance belongs to that target
+host. Its operating system and launcher are not assumed here. This is not a
+request to transfer the current database or enable portable or remote sync.
+
+The integrator chooses and verifies:
+
+- Launcher location and entrypoint, including the project working directory,
+  selected Engram executable and intended absolute store home.
+- A durable mapping from MADE conversation identity to Engram session id.
+  Keep the actor principal separate from the session id and optional context.
+- Restart and concurrent-launch rules: when the old process is stopped,
+  when the same id is reused, and when a new id is allocated.
+- A run of the smoke test below through that actual launcher, with the
+  results recorded by the integrator.
+
+These are target-host acceptance steps, not missing local prerequisites for
+the contract or independent plan intake. The contract is delivered; the
+actual deployment has not been tested here.
+
+### MADE smoke test — required before deployment acceptance
+
+Use an isolated test project and store, initialized explicitly as advisory.
+Do not experiment on live work or repair an unexpected store automatically.
+
+1. Start through the MADE launcher. Check its chosen project, absolute home,
+   actor and session against the values used by both MCP and shell words.
+   Check the installed build with `engram --version` and the build shown by
+   `next --peek`. Inspect `/mcp` and `claude mcp list` for startup problems.
+2. Verify that startup, resume, clear and compaction put peek output into
+   the model's context. Confirm that hook-only reads leave focus and staged
+   delivery unchanged. If output is discarded, it must still consume no
+   delivery page. Ordinary `next` is a separate explicit action.
+3. Stop and resume one conversation. Verify it uses the same mapped session.
+   Launch a second concurrent conversation and verify it uses a distinct
+   session while both resolve the same project store.
+4. Test missing, blank and unexpanded required values. The launcher must
+   refuse before starting Claude. Confirm that it does not substitute a
+   home default, initialize another store, or allocate a replacement session
+   silently. Test a failed peek too: the operator must see the error.
+5. Record Claude Code and Engram versions, configuration locations and
+   observed results. Restart old MCP children after an Engram install;
+   replacing the executable does not update a running process.
+
 ## Version story
 
 There is exactly one: a store written by a different build is refused
@@ -154,6 +238,8 @@ generically before mutation, and `session_bind` carries the host's
 `capability_map_revision`. Engram negotiates no protocol features or
 versions; a host pins the build it ships with and re-initializes stores
 through the recreation path in [development](development.md).
+`session_bind` belongs to the optional host-private control channel; the
+advisory MCP-and-hooks recipe does not require that channel.
 
 ## Turn-gated tier — optional
 
@@ -171,6 +257,9 @@ A planner that owns plan items keeps owning them. It admits each item into
 Engram as an immutable `WorkSourceSnapshot` with a stable source key; Engram
 owns the local work item from then on (readiness, claims, evidence,
 completion) and never mirrors planner state back. A changed plan item is a
-new snapshot and a proposed local revision, never a silent update. This
-intake path is designed and tracked; until it ships, a planner creates items
-with the ordinary `add` word and cites its key in the outcome text.
+new snapshot and an immutable notice that applies nothing, never a silent
+update. This file intake uses
+[preview/apply and exact source lookup](features/source-intake.md).
+First intake needs an authored local title and outcome; absent acceptance
+means zero criteria. Refresh has no draft and records a visible notice, never
+an automatic local patch. Integration testing belongs to the target host.
