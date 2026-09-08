@@ -418,33 +418,34 @@ impl SqliteStore {
         context_generation: Option<&str>,
     ) -> Result<ProjectMemoryAdvertisement, StoreError> {
         validate_context_generation(context_generation)?;
-        let transaction = self.connection.unchecked_transaction()?;
-        let (count, change_position) = project_memory_state_on(&transaction, project_id)?;
-        let context_generation_digest =
-            context_generation.map(project_memory_context_generation_digest);
-        let prior = transaction
-            .query_row(
-                "SELECT memory_position, context_generation_digest
+        self.work_read_snapshot(|store| {
+            let connection = &store.connection;
+            let (count, change_position) = project_memory_state_on(connection, project_id)?;
+            let context_generation_digest =
+                context_generation.map(project_memory_context_generation_digest);
+            let prior = connection
+                .query_row(
+                    "SELECT memory_position, context_generation_digest
                  FROM project_memory_advertisements
                  WHERE project_id = ?1 AND session_id = ?2",
-                params![project_id.0, session_id.0],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
-            )
-            .optional()?;
-        transaction.commit()?;
-        let changed = prior
-            .as_ref()
-            .is_none_or(|(prior_position, prior_generation)| {
-                *prior_position != change_position
-                    || context_generation_digest
-                        .as_deref()
-                        .is_some_and(|digest| prior_generation.as_deref() != Some(digest))
-            });
-        Ok(ProjectMemoryAdvertisement {
-            count,
-            changed,
-            change_position,
-            context_generation_digest,
+                    params![project_id.0, session_id.0],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .optional()?;
+            let changed = prior
+                .as_ref()
+                .is_none_or(|(prior_position, prior_generation)| {
+                    *prior_position != change_position
+                        || context_generation_digest
+                            .as_deref()
+                            .is_some_and(|digest| prior_generation.as_deref() != Some(digest))
+                });
+            Ok(ProjectMemoryAdvertisement {
+                count,
+                changed,
+                change_position,
+                context_generation_digest,
+            })
         })
     }
 

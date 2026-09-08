@@ -22,6 +22,7 @@ fn context_receipt() -> CompactNextReceipt {
         note_session_id: None,
     };
     CompactNextReceipt {
+        peek: None,
         read_cut: test_next_cut(),
         context_generation: None,
         discovery: WorkDiscoveryView {
@@ -37,6 +38,41 @@ fn context_receipt() -> CompactNextReceipt {
         omissions: vec![],
         guidance: Guidance::default(),
     }
+}
+
+#[test]
+fn peek_disclosures_survive_even_an_impossible_budget() {
+    let mut compact = context_receipt();
+    compact.peek = Some(crate::work_service::WorkNextPeek {
+        delivery_advanced: false,
+        more_changes_available: true,
+    });
+    compact.memories = Some(ProjectMemorySignal {
+        count: 17,
+        changed: true,
+    });
+    compact.guidance.next = vec!["engram work memories".into(), "engram work next".into()];
+    compact
+        .changes
+        .push(crate::verbs::next_context::CompactChange {
+            line: "A change that cannot fit".into(),
+            attribution: "peer noted".into(),
+            note: None,
+        });
+    let fitted = fit_compact_next_to(compact, 1).unwrap();
+    let value = compact_next_value(&fitted);
+    assert_eq!(value["peek"]["delivery_advanced"], false);
+    assert_eq!(value["memories"], json!({"count": 17, "changed": true}));
+    assert_eq!(value["memories_detail"], "engram work memories");
+    assert_eq!(fitted.guidance.next, ["engram work memories"]);
+    let text = compact_next_lines(&fitted).join("\n");
+    assert!(fitted.changes.is_empty());
+    assert_eq!(text.matches("changes by others (").count(), 1);
+    assert!(text.contains("0 shown since last confirmed delivery"));
+    assert!(text.contains("delivery: not advanced"));
+    assert!(text.contains("memory detail: engram work memories"));
+    assert!(fitted.held.is_empty());
+    assert!(fitted.discovery.assigned.is_empty());
 }
 
 #[test]

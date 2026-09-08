@@ -120,10 +120,11 @@ policy outside the core. Extend ports using neutral request/response records.
 Record changed duties, waits, decisions, and the next permitted action with
 `engram work note REF --status TEXT` (MCP `status: true`), not only in a
 conversation summary; checkpoint each real duty/wait/next-step change before
-going quiet. After compaction or session replacement, explicitly read `next`
+going quiet. After compaction or session replacement, explicitly read `next --peek`
 before acting and follow any clipped status's full-note locator.
 A coordinator without code work keeps one assigned or held coordination
-item; `next` is the resume read. Current status is the
+item; `next --peek` (MCP `next` with `peek: true`) is the non-advancing resume
+read. Current status is the
 newest status qualified by storage at capture for the currently accountable
 actor (live holder, otherwise assignee); peer status notes remain observations,
 and ordinary notes/gates do not replace the commitment. `show --notes` retains
@@ -155,7 +156,8 @@ sessions; a `local-process-v1-*` id may be reused for seven days, after which
 the caller must omit `--session-id` to receive a fresh process default.
 
 ```bash
-engram work next [--verbose]      # what is ready, what you hold, what others changed
+engram work next --peek [--verbose]  # orientation without advancing delivery
+engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
@@ -179,6 +181,17 @@ the full structured list projection for a human or host that explicitly needs
 it. Host-only `work core` reads remain full.
 
 Rules that matter:
+
+- Resume with `next --peek`: held/ready/changed context comes from one read
+  snapshot without staging or acknowledging a page, changing focus, or
+  registering a process-default session. It needs an established store and
+  never creates or repairs one. The bounded preview starts at confirmed
+  delivery, including any pending interval; repeating it does not paginate.
+  It does not promise the exact page a later advancing `next` will return.
+  Its retained-memory count, `changed` signal and `engram work memories`
+  navigation are never shed. `changed` compares the recorded advertisement,
+  not whether notes were read or applied. Pure reads do not acknowledge it;
+  it repeats until an ordinary `next` renders and acknowledges that signal.
 
 - Reading never steers a later write: `show REF`, including notes, history,
   continuations and detail, preserves focus and staged delivery. Follow its

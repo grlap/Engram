@@ -11,11 +11,16 @@ use super::{
 };
 
 /// Bounded `work_next` response using an ambient per-session project cursor.
-/// `changes` is one exact dense staged range. The refreshed focus, readiness,
-/// catalog, and discovery sections share an advisory read snapshot afterward
-/// and may observe newer commits; every mutation revalidates its canonical basis.
+/// Normally `changes` is one exact dense staged range. With `peek`, it is an
+/// unstaged preview from the confirmed cursor, reprojected at `read_cut`;
+/// there is no delivery token or acknowledgement. For normal delivery the
+/// refreshed focus, readiness, catalog, and discovery share a later advisory
+/// snapshot and may observe newer commits. Peek puts every section in one read
+/// snapshot. Every mutation revalidates its canonical basis.
 #[derive(Clone, Debug, Serialize)]
 pub struct WorkNextView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peek: Option<WorkNextPeek>,
     pub build_fingerprint: Option<ObjectHash>,
     pub read_cut: WorkNextReadCut,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -48,6 +53,15 @@ pub struct WorkNextView {
     /// confirms that the signal survived its tighter byte budget.
     #[serde(skip)]
     pub(crate) memory_advertisement: Option<ProjectMemoryAdvertisement>,
+}
+
+/// Disclosure for a non-advancing orientation read, never a delivery capability.
+#[derive(Clone, Debug, Serialize)]
+pub struct WorkNextPeek {
+    pub delivery_advanced: bool,
+    /// There are feed entries beyond this bounded preview, not necessarily
+    /// visible peer changes. Repeating peek does not paginate them.
+    pub more_changes_available: bool,
 }
 
 /// Diagnostic basis of the advisory snapshot, not the staged delivery range,

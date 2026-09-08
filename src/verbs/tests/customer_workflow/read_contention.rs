@@ -146,7 +146,7 @@ fn assert_writer_outlives_busy_timeout(connection: &rusqlite::Connection) {
     assert!(started.elapsed() >= std::time::Duration::from_millis(u64::from(timeout)));
 }
 
-fn writer_is_unlocked(connection: &rusqlite::Connection) -> bool {
+pub(super) fn writer_is_unlocked(connection: &rusqlite::Connection) -> bool {
     connection.busy_timeout(std::time::Duration::ZERO).unwrap();
     match connection.execute_batch("BEGIN IMMEDIATE") {
         Ok(()) => {

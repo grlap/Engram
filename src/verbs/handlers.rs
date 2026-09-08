@@ -11,10 +11,7 @@ use super::{
     WorkObligationState, WorkPrerequisiteState, WorkProposeInput, WorkProposeResult,
     WorkRevisionPatch, WorkUpdateInput, changes_not_delivered, held_suffix, item_line, json,
     lifecycle_word, nonempty,
-    receipts::{
-        append_changes_lines, compact_next_lines, compact_next_receipt, compact_next_value,
-        ready_line,
-    },
+    receipts::{compact_next_lines, compact_next_receipt, compact_next_value, ready_line},
     section_word, short,
     show::{fit_show_receipt, live, show_lines, show_receipt_value},
     slug, terminal_safe_actor_label, terminal_safe_multiline, trimmed, validate_priority,
@@ -33,6 +30,9 @@ pub struct AgentVerbs {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct NextInput {
     pub limit: Option<u32>,
+    /// Read orientation without advancing delivery, focus, or memory advertisement.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub peek: bool,
     /// Return the full host-oriented projection instead of compact rows.
     #[serde(default)]
     pub verbose: bool,
@@ -341,14 +341,24 @@ impl AgentVerbs {
             context_generation: input.context_generation.clone(),
             ..WorkNextQuery::default()
         };
-        let mut view =
+        let mut view = if input.peek {
+            self.service.work_next_peek_for_agent(
+                change_limit,
+                limit,
+                input.verbose,
+                query,
+                now,
+                |changes| !super::collapsed_changes(changes).is_empty(),
+            )?
+        } else {
             self.service
-                .work_next_for_agent(change_limit, limit, input.verbose, query, now)?;
+                .work_next_for_agent(change_limit, limit, input.verbose, query, now)?
+        };
         let lists = view.agent_lists.take().ok_or_else(|| {
             StoreError::InvalidWorkProjection("agent next has no advisory list snapshot".into())
         })?;
         let mut held = lists.held;
-        let ready = lists.ready;
+        let mut ready = lists.ready;
         let mut compact_changes =
             super::collapsed_changes(view.changes.as_deref().unwrap_or_default());
         let mut not_delivered = changes_not_delivered(&view);
@@ -357,6 +367,7 @@ impl AgentVerbs {
         // it must not acknowledge additional pages behind that receipt.
         let mut pages = 1;
         while !input.verbose
+            && !input.peek
             && compact_changes.is_empty()
             && not_delivered > 0
             && pages < MAX_NEXT_PAGES
@@ -416,18 +427,28 @@ impl AgentVerbs {
         if guidance.next.is_empty() {
             guidance.next.push("engram work add \"…\"".into());
         }
+        if input.peek {
+            guidance.next.insert(0, "engram work memories".into());
+        }
         let (lines, value, guidance) = if input.verbose {
-            let changes = compact_changes
-                .iter()
-                .map(|change| change.line.clone())
-                .collect::<Vec<_>>();
+            let mut peek_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             loop {
+                let changes = compact_changes
+                    .iter()
+                    .map(|change| change.line.clone())
+                    .collect::<Vec<_>>();
                 let mut lines = Vec::new();
                 match &view.focus {
                     Some(focus) => lines.push(format!(
                         "focus: {}",
                         item_line(&focus.status, self.holder(focus, now), now)
                     )),
+                    None if peek_omissions
+                        .iter()
+                        .any(|omission| omission.section == "focus") =>
+                    {
+                        lines.push("focus: omitted (byte budget)".into());
+                    }
                     None => lines.push("focus: none".into()),
                 }
                 lines.push(format!("held by you ({}):", held.len()));
@@ -442,13 +463,21 @@ impl AgentVerbs {
                 for item in &ready {
                     lines.push(format!("  {}", ready_line(item)));
                 }
-                append_changes_lines(&mut lines, &changes, not_delivered);
+                super::receipts::append_next_changes_lines(
+                    &mut lines,
+                    &changes,
+                    not_delivered,
+                    view.peek.as_ref(),
+                );
                 if let Some(memories) = &view.memories {
                     lines.push(format!(
                         "memories: {} retained{}",
                         memories.count,
                         if memories.changed { " (changed)" } else { "" }
                     ));
+                }
+                if input.peek {
+                    super::receipts::append_peek_disclosure(&mut lines);
                 }
                 for omission in view
                     .omissions
@@ -462,6 +491,16 @@ impl AgentVerbs {
                     ));
                 }
                 let mut value = serde_json::to_value(&view)?;
+                if input.peek {
+                    value["memories_detail"] = json!("engram work memories");
+                    value["preview_omissions"] = json!(peek_omissions);
+                    for omission in &peek_omissions {
+                        lines.push(format!(
+                            "  ({} {} rows omitted from this preview)",
+                            omission.omitted_count, omission.section
+                        ));
+                    }
+                }
                 value["ready"] = serde_json::to_value(&ready)?;
                 value["changes_by_others"] = json!(changes);
                 value["held"] = serde_json::to_value(
@@ -487,17 +526,54 @@ impl AgentVerbs {
                 {
                     break (lines, value, guidance.clone());
                 }
-                if !(view.discovery.shorten_status_previews()
+                if view.discovery.shorten_status_previews()
                     || held.iter_mut().rev().any(|(item, _)| {
                         crate::work_service::shorten_status_previews(
                             &mut item.work.current_status,
                             &mut item.work.status_observation,
                         )
                     })
-                    || crate::work_service::shed_work_next_focus(&mut view))
+                    || crate::work_service::shed_work_next_focus(&mut view)
                 {
-                    break (lines, value, guidance.clone());
+                    continue;
                 }
+                if input.peek {
+                    // These are local preview omissions, never acknowledgement
+                    // of the raw records. Preserve both pinned disclosures.
+                    // Progress is monotone in remaining raw row count, not
+                    // rendered bytes: removing completion can reveal its longer
+                    // checkpoint. Re-collapse and keep shedding until it fits.
+                    let section = if view.discovery.shed_one() {
+                        continue;
+                    } else if view
+                        .changes
+                        .as_mut()
+                        .is_some_and(|rows| rows.pop().is_some())
+                    {
+                        compact_changes =
+                            super::collapsed_changes(view.changes.as_deref().unwrap_or_default());
+                        if let Some(peek) = &mut view.peek {
+                            peek.more_changes_available = true;
+                        }
+                        "changes"
+                    } else if ready.pop().is_some() {
+                        "ready"
+                    } else if held.pop().is_some() {
+                        "held"
+                    } else if guidance.reminders.pop().is_some() {
+                        "reminders"
+                    } else if guidance.next.len() > 1 {
+                        guidance.next.pop();
+                        "next"
+                    } else if view.focus.take().is_some() {
+                        "focus"
+                    } else {
+                        break (lines, value, guidance.clone());
+                    };
+                    super::receipts::record_compact_omission(&mut peek_omissions, section, 1);
+                    continue;
+                }
+                break (lines, value, guidance.clone());
             }
         } else {
             let claims = lists
@@ -511,9 +587,10 @@ impl AgentVerbs {
             let value = compact_next_value(&compact);
             (lines, value, compact.guidance)
         };
-        if value
-            .get("memories")
-            .is_some_and(|memories| !memories.is_null())
+        if !input.peek
+            && value
+                .get("memories")
+                .is_some_and(|memories| !memories.is_null())
         {
             self.service.acknowledge_work_next_memories(&view, now);
         }

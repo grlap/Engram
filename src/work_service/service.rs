@@ -160,6 +160,12 @@ impl LocalWorkService {
     }
 
     fn lock_store_at(&self, now: DateTime<Utc>) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
+        self.validate_read_attribution(now)?;
+        self.lock_validated_store()
+    }
+
+    /// Shared admission for both cached work calls and non-registering peek.
+    pub(super) fn validate_read_attribution(&self, now: DateTime<Utc>) -> Result<(), StoreError> {
         if self.actor_id.trim().is_empty() || self.session_id.0.trim().is_empty() {
             return Err(StoreError::InvalidWork(
                 "local work requires a non-empty asserted actor and session binding".into(),
@@ -169,7 +175,10 @@ impl LocalWorkService {
             &self.session_id,
             self.attribution_defaults.session,
             now,
-        )?;
+        )
+    }
+
+    fn lock_validated_store(&self) -> Result<MutexGuard<'_, SqliteStore>, StoreError> {
         if self.cached_store.get().is_none() {
             let opened = SqliteStore::open_unresolved(&self.database)?;
             // A simultaneous first call may win initialization. Dropping this

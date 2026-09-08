@@ -642,6 +642,8 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("project store is not initialized; run `engram init` explicitly before reading it")]
+    StoreNotInitialized,
     #[error("object {0} is not RFC 8785 canonical JSON")]
     NonCanonicalObject(ObjectHash),
     #[error("object hash mismatch: expected {expected}, got {actual}")]

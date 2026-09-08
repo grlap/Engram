@@ -3,6 +3,69 @@ use super::super::*;
 use crate::domain::SCHEMA_VERSION;
 
 #[test]
+fn peek_uses_one_snapshot_for_advisory_memories_and_change_page() {
+    use std::sync::{Arc, Barrier};
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("work.db");
+    let project = ProjectId("project".into());
+    let creator = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "creator".into(),
+        SessionId("creator".into()),
+        None,
+    );
+    creator
+        .work_propose(root_input("Before snapshot", "before"), at(0))
+        .unwrap();
+    let reader = LocalWorkService::new(
+        database.clone(),
+        project.clone(),
+        "reader".into(),
+        SessionId("reader".into()),
+        None,
+    );
+    let query = WorkNextQuery::default();
+    let before = reader
+        .work_next_peek_for_agent(20, 20, true, query.clone(), at(1), |_| true)
+        .unwrap();
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let mut concurrent = reader.clone();
+    concurrent.advisory_read_hook = Some(DeliveryStageTestHook {
+        entered: entered.clone(),
+        release: release.clone(),
+    });
+    let call = std::thread::spawn(move || {
+        concurrent.work_next_peek_for_agent(20, 20, true, query, at(1), |_| true)
+    });
+    entered.wait();
+    creator
+        .work_propose(root_input("After snapshot", "after"), at(2))
+        .unwrap();
+    creator
+        .remember_project_memory(
+            "Later rule".into(),
+            Some("later".into()),
+            false,
+            None,
+            at(2),
+        )
+        .unwrap();
+    release.wait();
+    let captured = call.join().unwrap().unwrap();
+    assert_eq!(
+        serde_json::to_value(&captured).unwrap(),
+        serde_json::to_value(&before).unwrap()
+    );
+    let later = reader
+        .work_next_peek_for_agent(20, 20, true, WorkNextQuery::default(), at(3), |_| true)
+        .unwrap();
+    assert_eq!(later.memories.unwrap().count, 1);
+    assert!(later.read_cut.project_position > captured.read_cut.project_position);
+}
+
+#[test]
 fn preview_correction_invalid_generation_precedes_store_and_delivery_effects() {
     let directory = crate::test_support::temp_home().unwrap();
     let database = directory.path().join("work.db");

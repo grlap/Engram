@@ -508,8 +508,24 @@ canonical-decode budget.
 
 ## Agent-native protocol
 
+`next --peek` (MCP `peek: true`) is the non-advancing orientation read; see
+the [surface contract](cli-and-mcp.md#using-engram-as-an-agent). One read-only
+snapshot binds held/ready/discovery, confirmed-cursor change previews and
+memory advertisement comparison. Pending delivery is not acknowledged or
+replaced, and process-default registration is deferred. It requires an
+established store and works under a held WAL writer. The bounded preview is
+not a promise of the exact page a later advancing `next` returns. Peek never
+writes the persistent database or WAL or falls back to a writable connection;
+SQLite may recreate its shared-memory coordination sidecar. An absent or
+schemaless store refuses with explicit `engram init` guidance. Other read
+refusals remain visible for operator investigation, not implicit repair.
+It repeats without pagination or advancement until an explicit stateful call
+changes the relevant state. Both text and JSON retain the no-advancement disclosure,
+memory signal and runnable `engram work memories` navigation under fitting.
+
 Use `note REF --status TEXT` whenever duties, waits, decisions, or the next
-permitted action change, and resume with `next`; a no-code coordinator keeps
+permitted action change, and resume with `next --peek` (MCP `peek: true`);
+a no-code coordinator keeps
 one assigned or held coordination item. For waits that must survive claim
 expiry or session replacement, use `add --assignee ACTOR` or
 `update REF --assignee ACTOR`: a held-only unassigned status is current only
@@ -1298,11 +1314,16 @@ Neither returns bodies; `memories KEY --full` resolves exactly one key —
 typed `memory_not_found`, `memory_binding_invalid`, or `memory_retired` for
 a tombstoned key — and returns the full body as a dedicated response, at most
 8 KiB only when both its structured and terminal-safe envelopes remain under
-the 12 KiB ceiling, never inlined into `next`. The `next.memories` signal is content-free: a
-count of retained project notes and a changed-since-last-call flag, read in
+the 12 KiB ceiling, never inlined into `next`. The `next.memories` signal is
+content-free: a count of retained project notes and a changed-since-recorded-
+advertisement flag, read in
 O(1) from a rebuildable per-project count and change position — no
-keys, no first lines, no body-derived text. When even that does not fit, the
-signal is omitted without acknowledgement and reannounces later. Delivery is
+keys, no first lines, no body-derived text. In ordinary advancing `next`, when
+even that does not fit, the signal is omitted without acknowledgement and
+reannounces later. Peek never sheds this signal or its memory navigation.
+`changed` is not evidence that notes are unread or unapplied. `memories` and
+other pure reads do not acknowledge it; repeated peeks can repeat `changed`
+until ordinary `next` renders and records the advertisement. Delivery is
 advisory: no
 per-session authoritative delivery stream, no dedicated acknowledgement
 token, no exactly-once guarantee; a host-passed `context_generation` marks

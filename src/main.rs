@@ -406,8 +406,11 @@ enum GraphCommand {
 
 #[derive(Debug, Subcommand)]
 enum WorkCommand {
-    /// What is ready, what you hold, and what changed since your last call.
+    /// What is ready, what you hold, and what changed; --peek does not advance delivery.
     Next {
+        /// Read orientation without staging or advancing delivery, focus or memory advertisement.
+        #[arg(long)]
+        peek: bool,
         #[arg(long, default_value_t = 20)]
         limit: u32,
         /// Return the full structured projection instead of compact rows.
@@ -808,7 +811,15 @@ async fn run_cli() -> Result<ExitCode> {
             return Err(error);
         }
     };
-    let identity = resolve_host_path_identity(&root, cli.host_path_policy);
+    // A peek must not create a filesystem-probe marker merely to read
+    // orientation. Other command startup behavior is unchanged here.
+    let identity = if matches!(&cli.command, Command::Work { operation, .. }
+            if matches!(operation.as_ref(), WorkCommand::Next { peek: true, .. }))
+    {
+        None
+    } else {
+        resolve_host_path_identity(&root, cli.host_path_policy)
+    };
     match cli.command {
         Command::Init {
             required_assurance,
@@ -1092,12 +1103,14 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     let now = chrono::Utc::now();
     let outcome = match operation {
         WorkCommand::Next {
+            peek,
             limit,
             verbose,
             context_generation,
         } => verbs.next(
             &NextInput {
                 limit: Some(limit),
+                peek,
                 verbose,
                 context_generation,
             },

@@ -119,6 +119,7 @@ pub(super) struct CompactSectionOmission {
 
 #[derive(Clone)]
 pub(super) struct CompactNextReceipt {
+    pub(super) peek: Option<crate::work_service::WorkNextPeek>,
     pub(super) read_cut: crate::work_service::WorkNextReadCut,
     pub(super) context_generation: Option<String>,
     pub(super) discovery: crate::work_service::WorkDiscoveryView,
@@ -349,6 +350,10 @@ impl VerbError {
         }
         let message = self.error.to_string();
         let (reminders, next): (Vec<String>, Vec<String>) = match &self.error {
+            StoreError::StoreNotInitialized => (
+                vec![message.clone()],
+                vec!["engram init".into()],
+            ),
             StoreError::WorkDecompositionRetryConflict { parent_ref, .. } => (
                 vec![crate::storage::DECOMPOSITION_RETRY_REMEDY.into()],
                 vec![format!("engram work show {parent_ref}")],
@@ -564,6 +569,31 @@ pub(super) fn append_changes_lines(
     lines.extend(changes.iter().map(|change| format!("  {change}")));
 }
 
+pub(super) fn append_next_changes_lines(
+    lines: &mut Vec<String>,
+    changes: &[String],
+    not_delivered: usize,
+    peek: Option<&crate::work_service::WorkNextPeek>,
+) {
+    let Some(peek) = peek else {
+        append_changes_lines(lines, changes, not_delivered);
+        return;
+    };
+    lines.push(format!(
+        "changes by others ({} shown since last confirmed delivery):",
+        changes.len()
+    ));
+    lines.extend(changes.iter().map(|change| format!("  {change}")));
+    if peek.more_changes_available {
+        lines.push("  (more feed entries outside this bounded preview; engram work next advances delivery)".into());
+    }
+}
+
+pub(super) fn append_peek_disclosure(lines: &mut Vec<String>) {
+    lines.push("delivery: not advanced (peek; focus and cursors unchanged)".into());
+    lines.push("memory detail: engram work memories; changed compares the recorded advertisement, not whether notes were read or applied".into());
+}
+
 pub(super) fn ambiguous_reference_guidance(
     candidates: &[crate::WorkReferenceCandidate],
     more: usize,
@@ -651,6 +681,7 @@ pub(super) fn compact_next_receipt(
     guidance: &Guidance,
 ) -> Result<CompactNextReceipt, VerbError> {
     let mut compact = CompactNextReceipt {
+        peek: view.peek.clone(),
         read_cut: view.read_cut.clone(),
         context_generation: view.context_generation.clone(),
         discovery: view.discovery.clone(),
@@ -748,13 +779,16 @@ pub(super) fn fit_compact_next_to(
         if compact.discovery.shed_one() {
             continue;
         }
-        if compact.memories.take().is_some() {
+        if compact.peek.is_none() && compact.memories.take().is_some() {
             // Keep this fixed-size advisory omission silent: the signal stays
             // unacknowledged and reannounces, while an omission row would be
             // larger than the value being removed.
             continue;
         }
         if compact.changes.pop().is_some() {
+            if let Some(peek) = &mut compact.peek {
+                peek.more_changes_available = true;
+            }
             record_compact_omission(&mut compact.omissions, "changes", 1);
             continue;
         }
@@ -783,8 +817,8 @@ pub(super) fn fit_compact_next_to(
             continue;
         }
         // Every remaining string is fixed or explicitly byte-bounded. This
-        // final value is therefore below the budget without making a valid
-        // `next` call fail merely because advisory sections were large.
+        // final value fits the production budget. An artificially smaller
+        // budget still cannot shed peek's non-advancement/memory disclosures.
         return Ok(compact);
     }
 }
@@ -863,6 +897,10 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
     if let Some(generation) = &compact.context_generation {
         value["context_generation"] = json!(generation);
     }
+    if let Some(peek) = &compact.peek {
+        value["peek"] = json!(peek);
+        value["memories_detail"] = json!("engram work memories");
+    }
     if let (Value::Object(discovery), Value::Object(receipt)) =
         (json!(compact.discovery), &mut value)
     {
@@ -932,9 +970,14 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
         compact_omitted_for_reason(compact, "changes", WorkSectionOmissionReason::Staged);
     let byte_budget_changes =
         compact_omitted_for_reason(compact, "changes", WorkSectionOmissionReason::ByteBudget);
-    append_changes_lines(&mut lines, &context.changes, staged_changes);
+    append_next_changes_lines(
+        &mut lines,
+        &context.changes,
+        staged_changes,
+        compact.peek.as_ref(),
+    );
     if byte_budget_changes > 0 {
-        if compact.changes.is_empty() && staged_changes == 0 {
+        if compact.peek.is_none() && compact.changes.is_empty() && staged_changes == 0 {
             lines.push("changes by others (none shown):".into());
         }
         lines.push(format!(
@@ -947,6 +990,9 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
             memories.count,
             if memories.changed { " (changed)" } else { "" }
         ));
+    }
+    if compact.peek.is_some() {
+        append_peek_disclosure(&mut lines);
     }
     let mut omitted_sections = HashSet::new();
     for omission in compact.omissions.iter().filter(|omission| {

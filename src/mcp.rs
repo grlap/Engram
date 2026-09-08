@@ -73,6 +73,9 @@ impl McpServer {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct NextArgs {
+    /// Read-only orientation: no staging, acknowledgement, focus or cursor changes.
+    /// Repeated peeks repeat unacknowledged signals; use memories to read the notes.
+    peek: Option<bool>,
     /// Maximum ready items and changes to return (default 20).
     limit: Option<u32>,
     /// Return the full structured projection instead of compact rows.
@@ -325,12 +328,13 @@ impl McpServer {
     /// What is ready, what this session holds, and what changed.
     #[tool(
         name = "next",
-        description = "What is ready, what you hold, and what changed since your last call"
+        description = "What is ready, what you hold, and what changed; peek=true reads orientation without staging or advancing delivery, focus or memory advertisement"
     )]
     fn next(&self, Parameters(args): Parameters<NextArgs>) -> CallToolResult {
         verb(self.verbs().next(
             &NextInput {
                 limit: args.limit,
+                peek: args.peek.unwrap_or(false),
                 verbose: args.verbose.unwrap_or(false),
                 context_generation: args.context_generation,
             },
@@ -925,6 +929,7 @@ fn ambiguous_work_reference_details(
 
 fn error_code(error: &StoreError) -> &'static str {
     match error {
+        StoreError::StoreNotInitialized => "store_not_initialized",
         StoreError::TaskClaimHeld { .. } => "task_claim_held",
         StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
         StoreError::ClaimIdempotencyConflict(_) => "claim_idempotency_conflict",
@@ -1126,6 +1131,7 @@ mod tests {
             .next(
                 &NextInput {
                     limit: Some(5),
+                    peek: false,
                     verbose: false,
                     context_generation: None,
                 },
@@ -1148,6 +1154,7 @@ mod tests {
             .next(
                 &NextInput {
                     limit: Some(5),
+                    peek: false,
                     verbose: false,
                     context_generation: None,
                 },

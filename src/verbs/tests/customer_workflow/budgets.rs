@@ -2,7 +2,7 @@ use super::*;
 
 mod omissions;
 
-fn rich_focus(
+pub(super) fn rich_focus(
     participating: i64,
 ) -> (
     crate::test_support::TempHome,

@@ -49,6 +49,26 @@ impl SqliteStore {
         Self::open_with_host_path_identity(path, None)
     }
 
+    /// Opens an existing current store for advisory reads only. The ordinary
+    /// complete schema/policy preflight still applies; initialization and repair
+    /// are impossible on this connection. Never cache it as a writable service.
+    /// Never retry a refusal with a writable connection. SQLite may recreate
+    /// a shared-memory coordination sidecar, but not write database/WAL bytes.
+    pub(crate) fn open_existing_read_only(path: &Path) -> Result<Self, StoreError> {
+        let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| {
+                // Only a proved absent path is initialization, not permissions,
+                // recovery, or another CANTOPEN cause. Never create a directory.
+                if matches!(std::fs::metadata(path), Err(ref io) if io.kind() == std::io::ErrorKind::NotFound) {
+                    StoreError::StoreNotInitialized
+                } else {
+                    StoreError::Sqlite(error)
+                }
+            })?;
+        connection.pragma_update(None, "query_only", true)?;
+        Self::from_connection(connection, None, None)
+    }
+
     /// Inspects only the control-policy family through a read-only connection.
     ///
     /// This entry point intentionally returns a report rather than a
@@ -456,7 +476,11 @@ impl SqliteStore {
         busy_timeout: Duration,
     ) -> Result<Self, StoreError> {
         connection.busy_timeout(busy_timeout)?;
+        let read_only = connection.is_readonly("main")?;
         let store_has_schema = Self::sqlite_user_schema_exists(&connection)?;
+        if read_only && !store_has_schema {
+            return Err(StoreError::StoreNotInitialized);
+        }
         let core_store_exists = Self::sqlite_table_exists(&connection, "objects")?;
         if store_has_schema && !core_store_exists {
             return Err(different_build_store_error());
@@ -494,10 +518,10 @@ impl SqliteStore {
         )?;
         let journal_mode =
             connection.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))?;
-        if !matches!(journal_mode.as_str(), "wal" | "memory") {
+        if !read_only && !matches!(journal_mode.as_str(), "wal" | "memory") {
             connection.execute_batch("PRAGMA journal_mode = WAL;")?;
         }
-        if !core_schema_complete {
+        if !read_only && !core_schema_complete {
             connection.execute_batch("BEGIN IMMEDIATE;")?;
             connection.execute_batch(
                 "CREATE TABLE IF NOT EXISTS objects (

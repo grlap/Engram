@@ -11,6 +11,7 @@ mod discovery;
 mod listing;
 mod output_economy;
 mod parent_context;
+mod peek;
 mod read_contention;
 mod record_windows;
 mod rejection;

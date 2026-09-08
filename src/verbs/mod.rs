@@ -63,7 +63,7 @@ const MAX_COMPACT_HOLDER_BYTES: usize = 48;
 const MAX_COMPACT_REMINDER_ITEMS: usize = 4;
 /// How many change pages one `next` reads past pages that held only the
 /// actor's own actions.
-const MAX_NEXT_PAGES: usize = 8;
+pub(crate) const MAX_NEXT_PAGES: usize = 8;
 
 /// Changes the core could not fit on the delivered page.
 fn changes_not_delivered(view: &WorkNextView) -> usize {

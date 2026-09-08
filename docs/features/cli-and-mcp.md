@@ -17,10 +17,10 @@ agent sees thirteen words; every host and operator control lives under
 Record changed duties, waits, decisions, and the next permitted action with
 `note REF --status TEXT` (MCP `note` with `status: true`), not only in a
 conversation summary; record each real duty/wait/next-step change before going
-quiet. After compaction or replacement, explicitly read `next` before acting
-and follow clipped status locators; a conversation summary may predate a
+quiet. After compaction or replacement, explicitly read `next --peek` before
+acting and follow clipped status locators; a conversation summary may predate a
 decision. A coordinator with no code work keeps an assigned or held
-coordination item; `next` is the resume read across fresh processes and
+coordination item; `next --peek` is the resume read across fresh processes and
 replacement sessions, never a transfer of execution authority. Storage marks
 status at capture as owner-qualified only for the live holder session or the
 assigned actor when unclaimed; other status notes remain peer observations.
@@ -47,7 +47,8 @@ fitting may shorten either preview further before shedding resume rows,
 setting `complete: false` with explicit omission and a note-detail command.
 Compact `next` renders each identified status capture and latest note head
 once, with `context_ref` on repeated discovery rows and references in change
-summaries; verbose retains the exact staged page and full change summaries.
+summaries; ordinary verbose `next` retains the exact staged page and full
+change summaries. Verbose peek instead carries a bounded unstaged preview.
 References require the same immutable capture, never text similarity; absent
 capture identity keeps the body. References retain change kind and actor
 attribution, and note session markers precede untrusted note text.
@@ -116,7 +117,8 @@ keeps its existing target, not the item just read. These reads do not register
 a fresh process-default session; registration waits for a stateful operation.
 
 ```bash
-engram work next [--verbose]      # what is ready, what you hold, what others changed
+engram work next --peek [--verbose]  # orientation without advancing delivery
+engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
@@ -214,6 +216,33 @@ successful process-defaulted shell mutations still add `effective_session_id`.
 The rich six-operation core and host-private protocol do not change.
 
 Rules that matter:
+
+- `next --peek` (MCP `next` with `peek: true`) answers what you hold, what is
+  ready and what changed in one read snapshot. It opens only an established
+  store, read-only, and never initializes or repairs one. It does not stage,
+  acknowledge, move a cursor, change focus/claims or register a default
+  process session. Text says `delivery: not advanced`; JSON carries
+  `peek.delivery_advanced: false`, no delivery token and no delivered-through
+  position. An existing pending page stays byte-identical. The preview starts
+  at the confirmed cursor, using current read authorization rather than
+  treating a tentative page as delivered. Compact mode scans at most eight
+  bounded pages locally to find visible changes; verbose reads one page.
+  Repeating peek does not paginate. `peek.more_changes_available` means more
+  feed entries outside the retained preview, not an exact peer-change count.
+  This orientation question is shared with ordinary `next`; the preview does
+  not promise the exact page a later advancing `next` will return.
+  It never writes the persistent database or WAL and never retries through a
+  writable connection; SQLite may recreate a shared-memory coordination
+  sidecar. Missing or schemaless stores refuse with `store_not_initialized`
+  and explicit `engram init` guidance, not a different-build diagnosis. Other
+  access/recovery refusals must be surfaced and investigated before using
+  ordinary `next` when writes and delivery advancement are permitted.
+  Text/JSON fitting may omit rows with explicit counts, but never the
+  non-advancement disclosure, memory signal or `memories_detail` command
+  (`engram work memories`). That command also remains in `next`. Memory
+  `changed` compares the recorded advertisement, not whether notes were read
+  or applied. Pure reads, including `memories`, do not acknowledge it;
+  ordinary `next` retains its existing rendered-signal acknowledgement.
 
 - `show PARENT`, including first `--notes` pages and MCP, carries
   `child_obligations.required_owed` and `child_obligations.open_optional`
@@ -651,8 +680,10 @@ SCHEMA12)`. Agent `next` ends its terminal text with one diagnostic line:
 `context_generation GENERATION` when supplied. Its structured CLI/MCP receipt
 and core `work_next` carry one `build_fingerprint`, `read_cut` containing
 `project_position` and `observed_at`, and optional `context_generation`.
-The cut is the shared advisory snapshot for focus, lists and discovery, not the
-separately staged change-delivery cursor or the project-memory signal's basis.
+For ordinary `next`, the cut is the shared advisory snapshot for focus, lists
+and discovery, not the separately staged change-delivery cursor or the
+project-memory signal's basis. For peek, all sections including changes and
+the memory signal share this read snapshot; it still is not a delivery cursor.
 `observed_at` is the call's supplied read instant; the feed position orders
 committed state, not the timestamp. Retaining an older block retains its cut;
 compare with a new read to see which committed state the block could reflect.

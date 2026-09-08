@@ -6,6 +6,17 @@ struct AgentNextOptions {
     verbose: bool,
 }
 
+struct NextAdvisory {
+    read_cut: WorkNextReadCut,
+    focus: Option<WorkFocusView>,
+    ready: Option<Vec<ReadyWorkSummary>>,
+    catalog: Option<WorkCatalogSummaryPage>,
+    discovery: WorkDiscoveryView,
+    agent_lists: Option<WorkAgentNextLists>,
+}
+
+mod peek;
+
 impl LocalWorkService {
     /// Returns current focus, ready candidates, and the next bounded project delta.
     ///
@@ -100,9 +111,6 @@ impl LocalWorkService {
             ));
         }
         let sections = selected_work_next_sections(&query.sections);
-        let wants_focus = sections.contains(&WorkNextSection::Focus);
-        let wants_ready = sections.contains(&WorkNextSection::Ready);
-        let wants_catalog = sections.contains(&WorkNextSection::Catalog);
         let wants_changes = sections.contains(&WorkNextSection::Changes);
         let wants_memories = sections.contains(&WorkNextSection::Memories);
         // Validate and read the advisory memory signal before changing the
@@ -247,145 +255,16 @@ impl LocalWorkService {
             hook.entered.wait();
             hook.release.wait();
         }
-        let (read_cut, focus, ready, catalog, discovery, agent_lists) =
-            store.work_read_snapshot(|store| {
-                // This first read pins the same snapshot as the advisory
-                // sections below, independently of the earlier staged page.
-                let read_cut = WorkNextReadCut {
-                    project_position: store.work_feed_head(&project_feed)?,
-                    observed_at: now,
-                };
-                let focus = if wants_focus {
-                    // The staged session remains the delivery basis; advisory
-                    // focus must bind the session visible inside this read cut.
-                    store
-                        .work_session_state(&self.project_id, &self.session_id, now)?
-                        .focused_work_id
-                        .map(|work_id| {
-                            if fit_core {
-                                self.focus_view(store, work_id, true, false, now)
-                            } else {
-                                self.focus_view_for_projection(
-                                    store,
-                                    work_id,
-                                    true,
-                                    false,
-                                    super::service::FocusText::Summary,
-                                    now,
-                                )
-                            }
-                        })
-                        .transpose()?
-                } else {
-                    None
-                };
-                let ready = if wants_ready {
-                    let source = store.ready_work(&self.project_id, now, limit)?;
-                    let source_count = source.len();
-                    let bounded = bounded_ready_prefix(
-                        source.into_iter().map(ready_work_summary).collect(),
-                        MAX_READY_SECTION_BYTES,
-                    )?;
-                    if source_count > bounded.len() {
-                        omissions.push(WorkSectionOmission {
-                            section: WorkNextSection::Ready,
-                            reason: WorkSectionOmissionReason::ByteBudget,
-                            omitted_count: source_count - bounded.len(),
-                        });
-                    }
-                    Some(bounded)
-                } else {
-                    None
-                };
-                let after = query
-                    .after
-                    .as_deref()
-                    .map(|work_ref| store.resolve_work_ref(&self.project_id, work_ref))
-                    .transpose()?
-                    .map(|work| work.work_id);
-                let catalog = if wants_catalog {
-                    let source = store.query_work_catalog(
-                        &self.project_id,
-                        now,
-                        &WorkCatalogQuery {
-                            search: query.search,
-                            lifecycles: query.lifecycles,
-                            availabilities: query.availabilities,
-                            blocked_only: query.blocked_only,
-                            assigned_to: query.assigned_to,
-                            held_by: None,
-                            label: query.label,
-                            parent_id: None,
-                            child_requirement: None,
-                            after,
-                            limit,
-                        },
-                    )?;
-                    let source_count = source.items.len();
-                    let source_next_after = source.next_after;
-                    let items = bounded_ready_prefix(
-                        source.items.into_iter().map(ready_work_summary).collect(),
-                        MAX_CATALOG_SECTION_BYTES,
-                    )?;
-                    if source_count > items.len() {
-                        omissions.push(WorkSectionOmission {
-                            section: WorkNextSection::Catalog,
-                            reason: WorkSectionOmissionReason::ByteBudget,
-                            omitted_count: source_count - items.len(),
-                        });
-                    }
-                    let next_after = if source_count > items.len() {
-                        items.last().map(|item| item.work.work_id)
-                    } else {
-                        source_next_after
-                    };
-                    Some(WorkCatalogSummaryPage { items, next_after })
-                } else {
-                    None
-                };
-                let mut discovery = WorkDiscoveryView::default();
-                for (section, assigned) in [
-                    (WorkNextSection::Assigned, true),
-                    (WorkNextSection::Participated, false),
-                ] {
-                    if sections.contains(&section) {
-                        let page = store.work_discovery(
-                            &self.project_id,
-                            &self.session_id,
-                            &self.actor_id,
-                            assigned,
-                            now,
-                        )?;
-                        let rows = page
-                            .items
-                            .into_iter()
-                            .map(|row| {
-                                let statuses = if assigned {
-                                    self.status_for_item(store, row.work.work_id, now)?
-                                } else {
-                                    (None, None)
-                                };
-                                let mut summary =
-                                    discovery_summary(row, &self.session_id, &self.actor_id, now);
-                                summary.current_status = statuses.0;
-                                summary.status_observation = statuses.1;
-                                Ok(summary)
-                            })
-                            .collect::<Result<Vec<_>, StoreError>>()?;
-                        if assigned {
-                            discovery.assigned = rows;
-                            discovery.assigned_omitted = page.omitted;
-                        } else {
-                            discovery.participated = rows;
-                            discovery.participated_omitted = page.omitted;
-                        }
-                    }
-                }
-                let agent_lists = agent_options
-                    .map(|options| self.agent_next_lists(store, options.list_limit, now))
-                    .transpose()?;
-                Ok((read_cut, focus, ready, catalog, discovery, agent_lists))
-            })?;
+        let NextAdvisory {
+            read_cut,
+            focus,
+            ready,
+            catalog,
+            discovery,
+            agent_lists,
+        } = store.work_read_snapshot(|store| {
+            self.next_advisory(store, limit, &query, now, agent_options, &mut omissions)
+        })?;
         let memories = memory_advertisement
             .as_ref()
             .map(|advertisement| ProjectMemorySignal {
@@ -410,6 +289,7 @@ impl LocalWorkService {
                 .flatten(),
             omissions,
             memory_advertisement: None,
+            peek: None,
         };
         if fit_core {
             fit_work_next_response(&mut response)?;
@@ -431,6 +311,172 @@ impl LocalWorkService {
             }
         }
         Ok(response)
+    }
+
+    /// Reads projections only; the caller owns the advisory snapshot.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "selected advisory sections share one read cut"
+    )]
+    fn next_advisory(
+        &self,
+        store: &SqliteStore,
+        limit: u32,
+        query: &WorkNextQuery,
+        now: DateTime<Utc>,
+        agent_options: Option<AgentNextOptions>,
+        omissions: &mut Vec<WorkSectionOmission>,
+    ) -> Result<NextAdvisory, StoreError> {
+        let sections = selected_work_next_sections(&query.sections);
+        let wants_focus = sections.contains(&WorkNextSection::Focus);
+        let wants_ready = sections.contains(&WorkNextSection::Ready);
+        let wants_catalog = sections.contains(&WorkNextSection::Catalog);
+        let fit_core = agent_options.is_none_or(|options| options.verbose);
+        let project_feed = FeedId::Project(self.project_id.clone());
+        // This first read pins the same snapshot as the advisory
+        // sections below, independently of the earlier staged page.
+        let read_cut = WorkNextReadCut {
+            project_position: store.work_feed_head(&project_feed)?,
+            observed_at: now,
+        };
+        let focus = if wants_focus {
+            // The staged session remains the delivery basis; advisory
+            // focus must bind the session visible inside this read cut.
+            store
+                .work_session_state(&self.project_id, &self.session_id, now)?
+                .focused_work_id
+                .map(|work_id| {
+                    if fit_core {
+                        self.focus_view(store, work_id, true, false, now)
+                    } else {
+                        self.focus_view_for_projection(
+                            store,
+                            work_id,
+                            true,
+                            false,
+                            super::service::FocusText::Summary,
+                            now,
+                        )
+                    }
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let ready = if wants_ready {
+            let source = store.ready_work(&self.project_id, now, limit)?;
+            let source_count = source.len();
+            let bounded = bounded_ready_prefix(
+                source.into_iter().map(ready_work_summary).collect(),
+                MAX_READY_SECTION_BYTES,
+            )?;
+            if source_count > bounded.len() {
+                omissions.push(WorkSectionOmission {
+                    section: WorkNextSection::Ready,
+                    reason: WorkSectionOmissionReason::ByteBudget,
+                    omitted_count: source_count - bounded.len(),
+                });
+            }
+            Some(bounded)
+        } else {
+            None
+        };
+        let after = query
+            .after
+            .as_deref()
+            .map(|work_ref| store.resolve_work_ref(&self.project_id, work_ref))
+            .transpose()?
+            .map(|work| work.work_id);
+        let catalog = if wants_catalog {
+            let source = store.query_work_catalog(
+                &self.project_id,
+                now,
+                &WorkCatalogQuery {
+                    search: query.search.clone(),
+                    lifecycles: query.lifecycles.clone(),
+                    availabilities: query.availabilities.clone(),
+                    blocked_only: query.blocked_only,
+                    assigned_to: query.assigned_to.clone(),
+                    held_by: None,
+                    label: query.label.clone(),
+                    parent_id: None,
+                    child_requirement: None,
+                    after,
+                    limit,
+                },
+            )?;
+            let source_count = source.items.len();
+            let source_next_after = source.next_after;
+            let items = bounded_ready_prefix(
+                source.items.into_iter().map(ready_work_summary).collect(),
+                MAX_CATALOG_SECTION_BYTES,
+            )?;
+            if source_count > items.len() {
+                omissions.push(WorkSectionOmission {
+                    section: WorkNextSection::Catalog,
+                    reason: WorkSectionOmissionReason::ByteBudget,
+                    omitted_count: source_count - items.len(),
+                });
+            }
+            let next_after = if source_count > items.len() {
+                items.last().map(|item| item.work.work_id)
+            } else {
+                source_next_after
+            };
+            Some(WorkCatalogSummaryPage { items, next_after })
+        } else {
+            None
+        };
+        let mut discovery = WorkDiscoveryView::default();
+        for (section, assigned) in [
+            (WorkNextSection::Assigned, true),
+            (WorkNextSection::Participated, false),
+        ] {
+            if sections.contains(&section) {
+                let page = store.work_discovery(
+                    &self.project_id,
+                    &self.session_id,
+                    &self.actor_id,
+                    assigned,
+                    now,
+                )?;
+                let rows = page
+                    .items
+                    .into_iter()
+                    .map(|row| {
+                        let statuses = if assigned {
+                            self.status_for_item(store, row.work.work_id, now)?
+                        } else {
+                            (None, None)
+                        };
+                        let mut summary =
+                            discovery_summary(row, &self.session_id, &self.actor_id, now);
+                        summary.current_status = statuses.0;
+                        summary.status_observation = statuses.1;
+                        Ok(summary)
+                    })
+                    .collect::<Result<Vec<_>, StoreError>>()?;
+                if assigned {
+                    discovery.assigned = rows;
+                    discovery.assigned_omitted = page.omitted;
+                } else {
+                    discovery.participated = rows;
+                    discovery.participated_omitted = page.omitted;
+                }
+            }
+        }
+        let agent_lists = agent_options
+            .map(|options| self.agent_next_lists(store, options.list_limit, now))
+            .transpose()?;
+
+        Ok(NextAdvisory {
+            read_cut,
+            focus,
+            ready,
+            catalog,
+            discovery,
+            agent_lists,
+        })
     }
 
     fn agent_next_lists(

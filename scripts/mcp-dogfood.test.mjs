@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 
 import { fixtureHome as ownedFixtureHome, removeFixtureHomes as cleanupFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import nodeTest, { after } from "node:test";
@@ -1197,6 +1197,91 @@ test("criterion links reuse existing records and fence the authors read on CLI M
   }
 });
 
+test("peek orientation preserves pending context and memory signals on CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-peek-", t);
+  const session = "peek-reader";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const held = cliJson(engramHome, session, "add", "Keep held work").work.short_ref;
+    cliJson(engramHome, session, "claim", held);
+    const peer = cliJson(engramHome, "peek-peer", "add", "Visible peer change").work.short_ref;
+    // Establish an ordinary pending page before the non-advancing reads.
+    cliJson(engramHome, session, "next");
+    cliJson(engramHome, "peek-peer", "remember", "Read this retained observation", "--key", "orientation");
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const nextTool = (await client.tools()).find(({ name }) => name === "next");
+    assert.match(nextTool.description, /peek=true.*without staging or advancing/);
+    assert.match(nextTool.inputSchema.properties.peek.description, /no staging, acknowledgement, focus or cursor changes/);
+    const help = cliWord(engramHome, session, "next", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout.replace(/\s+/g, " "), /--peek.*without staging or advancing delivery/);
+    const before = cliJson(engramHome, session, "show", held);
+    const assertPeek = (value, changed) => {
+      assert.equal(value.peek.delivery_advanced, false);
+      assert.equal(value.memories.count, 1);
+      assert.equal(value.memories.changed, changed);
+      assert.equal(value.memories_detail, "engram work memories");
+      assert.ok(value.next.includes("engram work memories"));
+      assert.equal(value.delivery_token, undefined);
+      assert.equal(value.delivered_through, undefined);
+      assert.ok(Buffer.byteLength(JSON.stringify(value, null, 2)) < 12 * 1024);
+    };
+    for (const verbose of [false, true, false]) {
+      const flags = ["--peek", ...(verbose ? ["--verbose"] : [])];
+      assertPeek(cliJson(engramHome, session, "next", ...flags), true);
+      assertPeek(receipt(await client.call("next", { peek: true, verbose })), true);
+      const text = cliWord(engramHome, session, "next", ...flags);
+      assert.equal(text.status, 0, text.stderr);
+      assert.match(text.stdout, /delivery: not advanced/);
+      assert.match(text.stdout, /memory detail: engram work memories/);
+      assert.match(text.stdout, /not whether notes were read or applied/);
+      assert.ok(text.stdout.includes(peer));
+      assert.doesNotMatch(text.stdout, /more arrive with your next call/);
+      assert.ok(Buffer.byteLength(text.stdout) < 12 * 1024);
+      assert.deepEqual(cliJson(engramHome, session, "show", held), before);
+    }
+    receipt(await client.call("memories", { query: "orientation", full: true }));
+    assertPeek(receipt(await client.call("next", { peek: true })), true);
+    receipt(await client.call("next", {}));
+    assertPeek(cliJson(engramHome, session, "next", "--peek"), false);
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
+test("peek cold CLI and MCP refuse a missing store without creating it", async (t) => {
+  const engramHome = fixtureHome("engram-peek-cold-", t);
+  const missingHome = join(engramHome, "missing-store");
+  let client;
+  try {
+    // Each selected process test builds its own prerequisite binary.
+    buildAndInit(engramHome);
+    const cli = cliWord(missingHome, "cold-reader", "next", "--peek", "--json");
+    assert.notEqual(cli.status, 0);
+    const cliError = JSON.parse(cli.stderr).error;
+    assert.equal(cliError.code, "store_not_initialized");
+    assert.match(cliError.message, /project store is not initialized/);
+    assert.match(cliError.message, /engram init/);
+    assert.deepEqual(cliError.next, ["engram init"]);
+    assert.equal(existsSync(missingHome), false);
+    client = new McpClient(missingHome, "cold-reader");
+    await client.initialize();
+    const result = await client.call("next", { peek: true });
+    assert.equal(result.isError, true);
+    const mcpError = structuredError(result, "store_not_initialized");
+    assert.equal(mcpError.code, cliError.code);
+    assert.equal(mcpError.message, cliError.message);
+    assert.deepEqual(mcpError.next, cliError.next);
+    assert.equal(existsSync(missingHome), false);
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("MCP show descriptions teach read-only targeting", async (t) => {
   const engramHome = fixtureHome("engram-show-contract-", t);
   let client;
@@ -2292,7 +2377,13 @@ test("CLI words translate the same ambient lifecycle service", (t) => {
     assert.match(nothingMine, /^showing 0 of 0 item\(s\):/u);
 
     const claimed = cliText(engramHome, actor, "claim", workRef, "--ttl", "300");
-    assert.match(claimed, /^claimed w-[0-9a-f]{12} "Dogfood work CLI" \(held by you until \d{2}:\d{2} UTC\)/u);
+    // Derive both dates from the recorded first claim, not the wall clock
+    // after the subprocess. A five-minute lease can cross midnight UTC.
+    const expiry = new Date(cliJson(engramHome, actor, "show", workRef).held_until);
+    const claimInstant = new Date(expiry.getTime() - 300_000).toISOString();
+    const expires = expiry.toISOString();
+    const expiryClock = `${expires.slice(0, 10) === claimInstant.slice(0, 10) ? "" : `${expires.slice(0, 10)} `}${expires.slice(11, 16)} UTC`;
+    assert.equal(claimed.split("\n")[0], `claimed ${workRef} "Dogfood work CLI" (held by you until ${expiryClock}) [open; revision 1]`);
     const coreRefusal = spawnSync(
       binary,
       [

@@ -40,15 +40,15 @@ it requires the host to mediate turns or actions.
    context, not authentication.
 3. **One MCP child per session.** Start
    `engram mcp --actor-id … --session-id … [--actor-context …]` on stdio; it
-   exposes the thirteen words plus `search`. The child keeps one store
-   connection for its lifetime; a failed operation rolls back before the next
-   call.
-4. **Show the agent what is ready.** Run `engram work next` at session start
-   and after every context compaction, and inject its text at the next
+   exposes the thirteen words plus `search`. Ordinary calls reuse a cached
+   store connection; each peek opens a separate transient read-only connection.
+   A failed operation rolls back before the next call.
+4. **Show the agent what is ready.** Run `engram work next --peek` at session
+   start and after every context compaction, and inject its text at the next
    dispatched prompt, not an immediate runtime-authored continuation; agents
-   explicitly read `next` before resuming action and follow clipped-status
-   locators. Receipts end with `reminders` and `next` commands; agents follow
-   them.
+   explicitly read `next --peek` before resuming action and follow
+   clipped-status locators. Receipts end with `reminders` and `next` commands;
+   agents follow them.
 5. **State the assurance honestly.** Without turn mediation the deployment is
    `advisory`: the agent can bypass Engram. `engram doctor` prints the
    required assurance and supported effects in its `--json` report and the
@@ -106,7 +106,7 @@ behavior; nothing in this repository exercises it yet.
 
 3. **Inject orientation with a `SessionStart` hook** in `.claude/settings.json`
    for the `startup`, `resume`, `clear`, and `compact` sources; the hook's stdout is
-   added to the model's context, which is exactly what `engram work next`
+   added to the model's context, which is exactly what `engram work next --peek`
    prints:
 
    ```json
@@ -115,16 +115,31 @@ behavior; nothing in this repository exercises it yet.
        "SessionStart": [
          {
            "matcher": "startup|resume|clear|compact",
-           "hooks": [{ "type": "command", "command": "engram work next" }]
+           "hooks": [{ "type": "command", "command": "engram work next --peek" }]
          }
        ]
      }
    }
    ```
 
-`engram work next` stages a delivery page that the following `next` call
-acknowledges, so a hook whose stdout never reaches the model still consumes
-that page: surface a failing `SessionStart` hook instead of swallowing it.
+`engram work next --peek` does not stage or acknowledge delivery, so a hook
+whose stdout never reaches the model consumes no page. It is suitable for
+orientation on a quiesced or verified established store, not initialization
+or repair. Surface a failing `SessionStart` hook instead of swallowing it.
+Ordinary `next` remains the explicit advancing call; peek is not a promise of
+its exact later page. An ordinary `next` hook stages a page even if its stdout
+never reaches the model; a following ordinary `next` can implicitly acknowledge
+that unseen page. Do not substitute it for a resume peek.
+Peek never writes the persistent database or WAL and never falls back to a
+writable connection. SQLite may recreate its shared-memory coordination
+sidecar. Surface any read refusal: initialize an absent store explicitly with
+`engram init`; for quiesced verification compare database and WAL bytes,
+not the directory inventory, because the coordination sidecar may appear.
+Surface access/recovery errors to the operator before using ordinary `next`
+when writes and delivery advancement are permitted. Peek retains memory
+navigation: its `changed` compares the recorded advertisement, not whether notes
+were read or applied,
+and repeating pure reads never acknowledges it. MCP hosts use `peek: true`.
 
 Everything else on this page applies unchanged: one store per project on
 each host initialized with an explicit `advisory` assurance, the same values

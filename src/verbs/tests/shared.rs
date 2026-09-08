@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn claim_clock_discloses_date_only_when_expiry_crosses_utc_day() {
+    let instant = |text| {
+        DateTime::parse_from_rfc3339(text)
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    let before_midnight = instant("2026-09-07T23:59:00Z");
+    let next_day = instant("2026-09-08T00:04:00Z");
+    assert_eq!(clock(next_day, before_midnight), "2026-09-08 00:04 UTC");
+    assert_eq!(
+        clock(next_day, instant("2026-09-08T00:00:00Z")),
+        "00:04 UTC"
+    );
+}
+
+#[test]
 fn checkpoint_before_completion_collapses_by_work_identity() {
     let change = |position, kind: &str, summary: &str| WorkChange {
         from_current_session: false,
@@ -37,6 +53,30 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
             .collect::<Vec<_>>(),
         vec!["w-000000000001 completed by peer (model=peer;reasoning=high): \"Delivered title\""]
     );
+
+    // Peek's raw-row shedding must not require rendered bytes to decrease:
+    // popping completion reveals the previously collapsed, longer checkpoint.
+    let mut remaining = vec![
+        change(
+            1,
+            "checkpoint",
+            &format!("checkpoint: {}", "long evidence ".repeat(20)),
+        ),
+        change(2, "completed", "completed: done"),
+    ];
+    let collapsed_bytes: usize = collapsed_changes(&remaining)
+        .iter()
+        .map(|row| row.line.len())
+        .sum();
+    assert_eq!(remaining.len(), 2);
+    remaining.pop();
+    let revealed = collapsed_changes(&remaining);
+    assert_eq!(remaining.len(), 1);
+    assert!(revealed.iter().map(|row| row.line.len()).sum::<usize>() > collapsed_bytes);
+    assert!(revealed[0].line.contains("checkpoint"));
+    remaining.pop();
+    assert!(remaining.is_empty());
+    assert!(collapsed_changes(&remaining).is_empty());
 }
 
 #[test]

@@ -162,7 +162,8 @@ sessions; a `local-process-v1-*` id may be reused for seven days, after which
 the caller must omit `--session-id` to receive a fresh process default.
 
 ```bash
-engram work next                  # what you hold, what is ready, what changed
+engram work next --peek           # recover context without advancing delivery
+engram work next                  # explicitly advance ordinary delivery
 engram work ls | show REF
 engram work add "Title" [--under REF [--optional]] [--kind KIND] [--label L]
 engram work claim REF
@@ -178,6 +179,8 @@ engram work forget KEY
 - Claim before implementation; note decisions and evidence once;
   `done` tells you what is still owed. Receipts carry `next:` commands —
   follow them.
+- After compaction or replacement, read `next --peek` before acting. It does
+  not stage or acknowledge delivery; follow clipped status detail locators.
 - `claim REF --ttl SECONDS` renews your live claim without changing its
   identity/fence or shortening expiry. A non-holder may `note` open or blocked
   work, including a child of a completed parent, as a marked observation only;

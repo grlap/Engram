@@ -202,7 +202,8 @@ sessions; a `local-process-v1-*` id may be reused for seven days, after which
 the caller must omit `--session-id` to receive a fresh process default.
 
 ```bash
-engram work next                  # what you hold, what is ready, what changed
+engram work next --peek           # resume orientation without advancing delivery
+engram work next                  # explicitly advance ordinary delivery
 engram work ls | show REF
 engram work add "Title" [--under REF [--optional]] [--kind KIND] [--label L]
 engram work claim REF
