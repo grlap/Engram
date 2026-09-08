@@ -386,7 +386,7 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
             view.clone(),
             &page,
             |view| verbs.render_show(view, at(60)),
-            "agent",
+            verbs.service.display_identity(),
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
         .unwrap();
@@ -394,7 +394,7 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
             view,
             &page,
             |view| Ok(continuation_header(view)),
-            "agent",
+            verbs.service.display_identity(),
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
         .unwrap();
@@ -438,7 +438,7 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
                             verbs.render_show(view, at(60))
                         }
                     },
-                    "agent",
+                    verbs.service.display_identity(),
                     MAX_AGENT_WORK_RESPONSE_BYTES,
                 )
                 .unwrap();

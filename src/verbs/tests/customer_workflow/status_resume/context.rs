@@ -149,7 +149,9 @@ fn pilot_correction_held_note_preserves_trusted_session_marker() {
     let receipt = verbs.next(&NextInput::default(), at(3)).unwrap();
     let row = &receipt.value["held"][0];
     assert_eq!(row["note"], body);
-    let session = row["note_session_id"].as_str().unwrap();
+    assert!(row.get("note_session_id").is_none());
+    let session = row["note_by"].as_str().unwrap();
+    assert_eq!(session, "you");
     let line = receipt
         .lines
         .iter()
@@ -193,8 +195,20 @@ fn pilot_correction_distinct_actor_captures_keep_attribution() {
             2,
             "{output}"
         );
-        assert!(output.contains("noted by first-peer"));
-        assert!(output.contains("noted by second-peer"));
+        assert!(output.contains(&format!(
+                "noted by {}",
+                reader
+                    .service
+                    .display_identity()
+                    .session(&SessionId("first-peer".into()))
+            )));
+        assert!(output.contains(&format!(
+                "noted by {}",
+                reader
+                    .service
+                    .display_identity()
+                    .session(&SessionId("second-peer".into()))
+            )));
     }
 }
 
@@ -338,7 +352,14 @@ fn pilot_compact_latest_note_once_across_discovery_and_changes() {
             .iter()
             .any(|change| {
                 let line = change.as_str().unwrap();
-                line.contains("see assigned") && line.contains("noted by agent")
+                line.contains("see assigned")
+                    && line.contains(&format!(
+                        "noted by {}",
+                        verbs
+                            .service
+                            .display_identity()
+                            .session(&SessionId("replacement-writer".into()))
+                    ))
             })
     );
 }

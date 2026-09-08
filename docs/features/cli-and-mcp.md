@@ -37,9 +37,9 @@ edit, including assignment, does renew its existing live claim.
 accountable actor, using project-feed order, unaffected by ordinary notes or
 gates; former-owner notes remain history. It appears at top level on `show`
 and per held/assigned `next` row as `{body_or_first_line, complete, recorded_at,
-locator, by}`; `by` is `you` for the same actor and session,
-`you (another session)` for the same actor in a different session, or
-`another session` for a different actor. No actor principal is exposed.
+locator, by}`. `by` is `you` for this actor and session, or a stable
+project-scoped `peer-…` display label for another session, including a session
+of the same actor. Actor-only records use a distinct `peer-actor-…` label.
 Text follows the parent line
 on `show` and is indented beneath `next` rows. Bodies start with a 768-byte
 UTF-8 cap; larger bodies show a bounded first nonblank line. Final text/JSON
@@ -128,7 +128,7 @@ engram work update REF [--release | --blocked "why" | --unblock | --cancel "why"
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
-engram work handoff REF --to ACTOR | --accept | --cancel "why"
+engram work handoff REF --to SESSION | --accept | --cancel "why"
 engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
@@ -162,13 +162,23 @@ precede terminal children inside the bounded relation page,
 so terminal history cannot hide unfinished work while page capacity remains.
 Text prints `(+N more)` and structured output carries the exact
 `children_omitted` total; typed count omissions distinguish unfinished from
-terminal children that did not fit. Actor and session references are relative
-words such as `you`, `another actor`, and `another session`; when present,
-bounded actor context is shown parenthetically
-(`you (model=opus-4.1;reasoning=high)`) on note and
-history attribution. In contrast, `current_status.by` deliberately labels a
-different actor `another session`, as described above; that label does not imply
-the same actor. Raw actor/session identifiers are not part of this view.
+terminal children that did not fit. Show, note/history windows and detail,
+compact holders, statuses, reminders and changes use the same display labels.
+`you` identifies this session, not every session using its actor. Another
+session has a deterministic project-scoped `peer-…` pseudonym; actor-only
+attribution uses `peer-actor-…`. Labels do not depend on row order or the reader.
+Bounded host-asserted context may follow the label in parentheses.
+
+These are display pseudonyms, not anonymization. Low-entropy actor/session
+inputs are dictionary-guessable. No command resolves a label as an alias for
+a real identity. Other identity arguments remain literal asserted strings,
+not aliases. Handoff is a usability exception: `--to` refuses generated
+`peer-` and `peer-actor-` label shapes before any write, so copying a display
+label cannot create an offer the intended recipient cannot accept. Ask the
+host or coordinator for the recipient's real session id. This refusal does
+not authenticate the target or resolve aliases. Stored audit attribution is
+unchanged. Arbitrary bodies and host context may themselves identify people.
+Raw actor/session metadata is not part of the terse show projection.
 It otherwise omits canonical UUIDs and hashes, revision and fence counters,
 and host-only run, claim, control-binding, obligation-page, and memory-version
 fields. The scoped exceptions are note/detail locators, sealed evidence links,
@@ -176,7 +186,17 @@ and an open item's `acceptance_basis` when it has criteria to link; the basis
 is a read-concurrency token, not execution authority. Humans and hosts that
 need the rich projection use
 host-only `work core focus`; full list projections remain available through
-`next --verbose` and `ls --verbose` (or the equivalent MCP arguments). Compact
+`next --verbose` and `ls --verbose` (or the equivalent MCP arguments).
+Verbose JSON/MCP retains rich raw identity and integrity fields. It is an
+explicit diagnostic option, not a safe variant of terse show. This optional
+presentation policy is not a global confidentiality or authorization boundary.
+The agent `work_claim_held` error uses `details.work_ref` and the display
+`details.holder`, not `work_id` or `holder_session_id`. It retains `expires_at`,
+`expires_at_ms` and `remedy`; its message and reminder use a human-readable
+expiry. CLI JSON and MCP carry the same envelope. Host-core errors keep their
+raw identifiers. Other work-error variants are not covered by this conversion.
+Project-memory attribution, caller-owned process-default session notices and
+encoded continuation context also retain their documented contracts. Compact
 rows retain up to 80 UTF-8 bytes of title, omit redundant lifecycle and blocked
 fields, cap labels, and report `labels_omitted`. When fitting an oversized
 advisory response, `next` sheds discovery rows before any existing section,
@@ -267,8 +287,9 @@ Rules that matter:
 - Claimless `next` includes nonempty `assigned` and `participated` sections
   between held and ready work, at most five rows each with exact omitted counts.
   Full rows name the work, title, holder word, and first line of this session's
-  latest own note when present, with `note_session_id` identifying the session
-  that preview reflects (also named in text), only for the reader's own actor.
+  latest own note when present. For the reader's actor, compact rows use
+  `note_by: "you"` and text prints `[note session you]` before the body.
+  Rich verbose JSON retains the original `note_session_id` instead.
   Compact repeated rows instead contain only `{ref, context_ref}`; the
   presence of `context_ref` is the discriminator. It names the retained
   `held REF`, `assigned REF`, or `participated REF` primary row containing
@@ -352,12 +373,10 @@ Rules that matter:
   that combined stream; ordinary show's total counts only native changes.
   Window rows carry `locator`, `kind`, `summary`, `by`, `created_at`, and
   `body_bytes`, rather than ordinary show's compact change-row shape.
-  Note-family rows in explicit window/detail JSON additionally carry the
-  recorded `actor_session_id` only for the reader's own actor (null if absent
-  on that record; omitted for another actor), and native project
-  `feed_position`. Inherited members omit the position rather than substituting
-  their member ordinal. These are diagnostic attribution/order fields, not
-  authority, and do not change rendered note text or ordinary terse show.
+  Note-family rows in explicit window/detail JSON carry the native project
+  `feed_position`. Attribution uses `by`, never a raw `actor_session_id`.
+  Inherited members omit the feed position rather than substituting their
+  member ordinal. Positions and display labels grant no authority.
   Consumers distinguish these shapes by the presence of `history.window`.
   An inherited note summarized in history retains its exact original body
   size and adds `summary_truncated: true` plus a `detail` command when

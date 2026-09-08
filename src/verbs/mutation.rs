@@ -27,7 +27,7 @@ impl<'a> From<&'a WorkItemSummary> for MutationWork<'a> {
 
 #[derive(Serialize)]
 struct ClaimAuthority {
-    holder: &'static str,
+    holder: String,
     held_until: DateTime<Utc>,
 }
 
@@ -97,11 +97,11 @@ pub(super) fn receipt(
     lines.push(format!("full detail: {}", super::terminal_command(&detail)));
     let claim = match holder {
         Holder::You(held_until) => Some(ClaimAuthority {
-            holder: "you",
+            holder: "you".into(),
             held_until,
         }),
-        Holder::Other(_, held_until) => Some(ClaimAuthority {
-            holder: "another session",
+        Holder::Other(session, held_until, identity) => Some(ClaimAuthority {
+            holder: identity.session(session),
             held_until,
         }),
         Holder::Nobody => None,

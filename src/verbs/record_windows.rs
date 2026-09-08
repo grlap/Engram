@@ -6,6 +6,7 @@ use super::{
     StoreError, Utc, Value, VerbError, WorkFocusView, WorkSectionOmissionReason, json,
 };
 use crate::storage::{WorkRecordFamily, WorkRecordKind};
+use crate::work_service::identity::DisplayIdentity;
 use crate::work_service::{WorkRecordRow, WorkRecordWindow};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -50,7 +51,7 @@ impl AgentVerbs {
                 .service
                 .work_note_detail(work_ref, locator, now)
                 .map_err(|error| VerbError::at(error, work_ref))?;
-            let value = row_value(&row, false, &work_ref, &self.actor_id);
+            let value = row_value(&row, false, &work_ref, self.service.display_identity());
             let mut lines = vec![format!(
                 "note {}: {} UTF-8 body bytes (complete detail)",
                 row.locator, row.body_bytes
@@ -97,7 +98,7 @@ impl AgentVerbs {
                     self.render_show(view, now)
                 }
             },
-            &self.actor_id,
+            self.service.display_identity(),
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
         .map_err(|error| VerbError::for_listing(error.error, &command))
@@ -146,7 +147,7 @@ pub(super) fn fit_window(
     mut view: WorkFocusView,
     page: &WorkRecordWindow,
     render: impl Fn(&WorkFocusView) -> Result<Receipt, VerbError>,
-    actor: &str,
+    identity: DisplayIdentity<'_>,
     budget: usize,
 ) -> Result<Receipt, VerbError> {
     let work_ref = view.status.work.short_ref.clone();
@@ -171,7 +172,7 @@ pub(super) fn fit_window(
             first,
             placeholder,
             &work_ref,
-            actor,
+            identity,
             budget,
         )
     };
@@ -203,7 +204,7 @@ pub(super) fn fit_window(
             visible,
             placeholder,
             &work_ref,
-            actor,
+            identity,
             budget,
         )?;
         if candidate.text().len() < budget
@@ -224,7 +225,7 @@ fn append_window(
     visible: usize,
     placeholder: bool,
     work_ref: &str,
-    actor: &str,
+    identity: DisplayIdentity<'_>,
     budget: usize,
 ) -> Result<Receipt, VerbError> {
     let word = page.kind.word();
@@ -271,7 +272,7 @@ fn append_window(
         .iter()
         .enumerate()
         .rev()
-        .map(|(index, row)| row_value(row, placeholder && index == 0, work_ref, actor))
+        .map(|(index, row)| row_value(row, placeholder && index == 0, work_ref, identity))
         .collect::<Vec<_>>();
     let families = [
         WorkRecordFamily::Notes,
@@ -361,18 +362,20 @@ fn append_window(
     Ok(receipt)
 }
 
-fn row_value(row: &WorkRecordRow, placeholder: bool, work_ref: &str, actor: &str) -> Value {
+fn row_value(
+    row: &WorkRecordRow,
+    placeholder: bool,
+    work_ref: &str,
+    identity: DisplayIdentity<'_>,
+) -> Value {
     let omitted = row.body_omitted || placeholder;
     let mut value = json!({ "locator": row.locator, "kind": row.kind, "family": row.family, "body_bytes": row.body_bytes,
-        "by": super::show::relative_actor_label(&row.actor.actor_id, row.actor.attribution_context(), actor),
+        "by": super::actor_label(&identity.author(&row.actor.actor_id, row.actor.session_id.as_ref()), row.actor.attribution_context()),
         "created_at": row.recorded_at,
         "non_holder": row.actor.provenance_chain.iter().any(crate::domain::is_non_holder_note_marker) });
     if row.family != WorkRecordFamily::History {
         if let Some(role) = crate::domain::status_note_role(&row.actor) {
             value["status_owner"] = json!(role == crate::domain::StatusNoteRole::Owner);
-        }
-        if row.actor.actor_id == actor {
-            value["actor_session_id"] = json!(row.actor.session_id);
         }
         if let Some(position) = row.project_position() {
             value["feed_position"] = json!(position);

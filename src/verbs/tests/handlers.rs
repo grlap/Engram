@@ -561,6 +561,13 @@ fn completion_recovery_reminder_names_each_disposed_child_lifecycle() {
 #[test]
 fn readiness_reasons_become_words() {
     let session = SessionId("peer".into());
+    let project = ProjectId("reminder-test".into());
+    let reader = SessionId("reader".into());
+    let identity = crate::work_service::identity::DisplayIdentity {
+        project: &project,
+        actor: "reader",
+        session: &reader,
+    };
     let now = Utc::now();
     assert_eq!(
         reminder_for_reason(
@@ -575,12 +582,18 @@ fn readiness_reasons_become_words() {
     assert_eq!(
         reminder_for_reason(
             "live claim has not checkpointed progress",
-            Holder::Other(&session, now),
+            Holder::Other(&session, now, identity),
             &[],
             false,
         )
         .as_deref(),
-        Some("held by another session; no progress noted yet")
+        Some(
+            format!(
+                "held by {}; no progress noted yet",
+                identity.session(&session)
+            )
+            .as_str()
+        )
     );
     assert_eq!(
         reminder_for_reason(

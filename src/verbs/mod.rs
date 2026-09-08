@@ -32,6 +32,7 @@ use crate::{
 };
 
 mod acceptance;
+mod attribution;
 mod child_obligations;
 mod handlers;
 mod listing;
@@ -77,7 +78,11 @@ fn changes_not_delivered(view: &WorkNextView) -> usize {
 #[derive(Clone, Copy)]
 enum Holder<'a> {
     You(DateTime<Utc>),
-    Other(&'a SessionId, DateTime<Utc>),
+    Other(
+        &'a SessionId,
+        DateTime<Utc>,
+        crate::work_service::identity::DisplayIdentity<'a>,
+    ),
     Nobody,
 }
 
@@ -87,10 +92,10 @@ fn item_line(status: &ReadyWorkSummary, holder: Holder<'_>, now: DateTime<Utc>) 
     let work = &status.work;
     let state = match holder {
         Holder::You(expires_at) => format!("held by you until {}", clock(expires_at, now)),
-        Holder::Other(session, expires_at) => {
+        Holder::Other(session, expires_at, identity) => {
             format!(
                 "held by {} until {}",
-                terminal_safe_line(&session.0),
+                identity.session(session),
                 clock(expires_at, now)
             )
         }
@@ -164,7 +169,10 @@ fn append_status_text(
 /// evidence object, an evidence-added event, and a checkpoint; they collapse
 /// into one `noted` line. Summaries that repeat their change kind as a prefix
 /// lose the prefix.
-fn collapsed_changes(changes: &[WorkChange]) -> Vec<next_context::CompactChange> {
+fn collapsed_changes(
+    changes: &[WorkChange],
+    identity: crate::work_service::identity::DisplayIdentity<'_>,
+) -> Vec<next_context::CompactChange> {
     let visible = changes
         .iter()
         .map(|change| match &change.delivery {
@@ -225,7 +233,13 @@ fn collapsed_changes(changes: &[WorkChange]) -> Vec<next_context::CompactChange>
             .map(|actor| {
                 format!(
                     " by {}",
-                    terminal_safe_actor_label(actor, actor_context.as_deref())
+                    terminal_safe_actor_label(
+                        &change.display_producer.as_ref().map_or_else(
+                            || identity.actor(actor),
+                            |(actor, session)| identity.author(actor, session.as_ref())
+                        ),
+                        actor_context.as_deref()
+                    )
                 )
             })
             .unwrap_or_default();
@@ -347,9 +361,10 @@ fn section_word(section: WorkNextSection) -> &'static str {
 fn held_suffix(holder: Holder<'_>, now: DateTime<Utc>) -> String {
     match holder {
         Holder::You(expires_at) => format!(" (held by you until {})", clock(expires_at, now)),
-        Holder::Other(_, expires_at) => {
+        Holder::Other(session, expires_at, identity) => {
             format!(
-                " (held by another session until {})",
+                " (held by {} until {})",
+                identity.session(session),
                 clock(expires_at, now)
             )
         }

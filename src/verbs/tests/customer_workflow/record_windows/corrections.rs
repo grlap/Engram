@@ -127,10 +127,16 @@ fn record_windows_keep_relative_actor_labels_in_all_modes() {
             receipt.value["history"]["items"].as_array().unwrap()
         };
         assert!(rows.iter().any(|row| row["by"] == "you (host-context-0)"));
-        assert!(
-            rows.iter()
-                .any(|row| row["by"] == "another actor (host-context-1)")
-        );
+        assert!(rows.iter().any(|row| {
+            row["by"]
+                == format!(
+                    "{} (host-context-1)",
+                    readers[0]
+                        .service
+                        .display_identity()
+                        .session(&SessionId(authors[1].into()))
+                )
+        }));
         assert!(!receipt.text().contains(authors[1]));
         assert!(
             !serde_json::to_string(&receipt.value)
@@ -139,11 +145,7 @@ fn record_windows_keep_relative_actor_labels_in_all_modes() {
         );
     }
     for (index, row) in notes.value["notes"].as_array().unwrap().iter().enumerate() {
-        if index == 0 {
-            assert_eq!(row["actor_session_id"], authors[0]);
-        } else {
-            assert!(row.get("actor_session_id").is_none());
-        }
+        assert!(row.get("actor_session_id").is_none());
         let detail = readers[0]
             .show_records(
                 &work,

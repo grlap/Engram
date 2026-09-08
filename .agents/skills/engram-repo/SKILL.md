@@ -142,8 +142,13 @@ acceptance and context in notes, since the reference alone is not immutable
 intake and local completion does not close external work. Clear obsolete linkage
 with `update REF --clear-external` (MCP revise `clear_external: true`), an ordinary
 audited revision. Blank `--external` and simultaneous set/clear are refused.
-Status labels distinguish `you`, `you (another session)`, and `another session`
-without exposing actor principals.
+Display labels use `you` for this session, stable project-scoped `peer-…` for
+other sessions (even under the same actor), and `peer-actor-…` for actor-only
+attribution. These deterministic pseudonyms are dictionary-guessable for
+low-entropy inputs. No command resolves them as identity aliases.
+Ask the host or coordinator for a real recipient session id before a handoff.
+`handoff --to SESSION` refuses generated peer display labels before any write;
+this prevents unusable offers, not identity spoofing.
 
 Engram tracks the work of this repository. You use thirteen words; everything
 else is the host's business. The host sets `ENGRAM_HOME` and normally injects
@@ -167,7 +172,7 @@ engram work update REF [--release | --blocked "why" | --unblock | --cancel "why"
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
-engram work handoff REF --to ACTOR | --accept | --cancel "why"
+engram work handoff REF --to SESSION | --accept | --cancel "why"
 engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
@@ -178,7 +183,11 @@ short in text, JSON, and MCP; use `show REF` for safe agent detail. Apart from
 note/detail locators, sealed links and the scoped `acceptance_basis` read token,
 it hides canonical ids, hashes, fences, and host-control fields. `--verbose` restores
 the full structured list projection for a human or host that explicitly needs
-it. Host-only `work core` reads remain full.
+it, including raw identity and integrity metadata. The MCP `verbose` options
+have the same rich contract. This is optional presentation, not a global
+confidentiality or authorization boundary. Bodies and asserted host context
+may identify their source. Host-only `work core` reads and canonical audit
+attribution remain full.
 
 Rules that matter:
 

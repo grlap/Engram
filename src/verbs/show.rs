@@ -1,15 +1,16 @@
+use crate::work_service::identity::DisplayIdentity;
 use std::fmt::Write as _;
 
 use super::child_obligations::ShowChildObligations;
 use crate::work_service::{WorkNextSection, WorkSectionOmissionReason};
 
 use super::{
-    ChildRequirement, DateTime, Holder, ReadyWorkSummary, Serialize, SessionId, Utc,
-    WorkAvailability, WorkBlockerKind, WorkChangeProjection, WorkClaim, WorkClaimState,
-    WorkEvidenceKind, WorkFocusView, WorkHandoffState, WorkItemKind, WorkItemSummary,
-    WorkLifecycle, WorkPrerequisiteState, WorkSectionOmission, actor_label, availability_words,
-    blocker_word, child_summary_line, clock, evidence_kind_word, kind_word, lifecycle_word, short,
-    short_ref_for_work_id, strip_kind_prefix, terminal_safe_actor_label,
+    ChildRequirement, DateTime, Holder, ReadyWorkSummary, Serialize, Utc, WorkAvailability,
+    WorkBlockerKind, WorkChangeProjection, WorkClaim, WorkClaimState, WorkEvidenceKind,
+    WorkFocusView, WorkHandoffState, WorkItemKind, WorkItemSummary, WorkLifecycle,
+    WorkPrerequisiteState, WorkSectionOmission, actor_label, availability_words, blocker_word,
+    child_summary_line, clock, evidence_kind_word, kind_word, lifecycle_word, short,
+    short_ref_for_work_id, strip_kind_prefix,
 };
 
 /// Measure the actual safe projection, including guidance, before shedding.
@@ -339,30 +340,6 @@ pub(super) fn optional_child_requirement(
     (requirement == ChildRequirement::Optional).then_some(requirement)
 }
 
-pub(super) fn actor_word(actor: &str, current_actor: &str) -> &'static str {
-    if actor == current_actor {
-        "you"
-    } else {
-        "another actor"
-    }
-}
-
-pub(super) fn relative_actor_label(
-    actor: &str,
-    context: Option<&str>,
-    current_actor: &str,
-) -> String {
-    actor_label(actor_word(actor, current_actor), context)
-}
-
-pub(super) fn session_word(session: &SessionId, current_session: &SessionId) -> &'static str {
-    if session == current_session {
-        "you"
-    } else {
-        "another session"
-    }
-}
-
 pub(super) fn show_relation(item: &WorkItemSummary) -> ShowRelation {
     ShowRelation {
         short_ref: item.short_ref.clone(),
@@ -392,8 +369,7 @@ fn acceptance_unavailable(view: &WorkFocusView) -> Option<&'static str> {
 pub(super) fn show_lines(
     view: &WorkFocusView,
     holder: Holder<'_>,
-    current_actor: &str,
-    current_session: &SessionId,
+    identity: DisplayIdentity<'_>,
     now: DateTime<Utc>,
 ) -> Vec<String> {
     let work = &view.status.work;
@@ -401,6 +377,7 @@ pub(super) fn show_lines(
         &view.status,
         holder,
         view.completed_by_record,
+        identity,
         now,
     )];
     lines.push(view.parent.as_ref().map_or_else(
@@ -454,7 +431,7 @@ pub(super) fn show_lines(
         ));
     }
     if let Some(assignee) = &work.assigned_to {
-        facts.push(format!("assignee: {}", actor_word(assignee, current_actor)));
+        facts.push(format!("assignee: {}", identity.actor(assignee)));
     }
     lines.push(facts.join("  "));
     if let Some(replacement) = work.superseded_by {
@@ -569,18 +546,22 @@ pub(super) fn show_lines(
     {
         lines.push(format!(
             "handoff: offered by {} to {} until {}",
-            session_word(&offer.from, current_session),
-            session_word(&offer.to, current_session),
+            identity.session(&offer.from),
+            identity.session(&offer.to),
             clock(offer.expires_at, now)
         ));
     }
     if let Some(last) = view.latest_evidence_item.as_ref() {
-        let by = last.actor_id.as_deref().map(|actor| {
-            terminal_safe_actor_label(
-                actor_word(actor, current_actor),
-                last.actor_context.as_deref(),
-            )
-        });
+        let by = last
+            .display_actor_id
+            .as_deref()
+            .or(last.actor_id.as_deref())
+            .map(|actor| {
+                super::terminal_safe_line(&actor_label(
+                    &identity.author(actor, last.display_actor_session_id.as_ref()),
+                    last.actor_context.as_deref(),
+                ))
+            });
         lines.push(format!(
             "notes: {} recorded; latest {}{}{}: \"{}\"",
             view.evidence_count,
@@ -598,8 +579,8 @@ pub(super) fn show_lines(
             view.restored_history.total
         ));
         for entry in &view.restored_history.items {
-            let actor = terminal_safe_actor_label(
-                actor_word(&entry.actor.actor_id, current_actor),
+            let actor = actor_label(
+                &identity.author(&entry.actor.actor_id, entry.actor.session_id.as_ref()),
                 entry.actor.attribution_context(),
             );
             lines.push(format!(
@@ -627,14 +608,15 @@ pub(super) fn show_lines(
 pub(super) fn show_receipt_value(
     view: &WorkFocusView,
     holder: Holder<'_>,
-    current_actor: &str,
-    current_session: &SessionId,
+    identity: DisplayIdentity<'_>,
     now: DateTime<Utc>,
 ) -> ShowReceiptValue {
     let work = &view.status.work;
     let (holder, held_until) = match holder {
         Holder::You(expires_at) => (Some("you".into()), Some(expires_at)),
-        Holder::Other(_, expires_at) => (Some("another session".into()), Some(expires_at)),
+        Holder::Other(session, expires_at, _) => {
+            (Some(identity.session(session)), Some(expires_at))
+        }
         Holder::Nobody => (None, None),
     };
     let history: Vec<ShowHistoryItem> = view
@@ -647,7 +629,13 @@ pub(super) fn show_receipt_value(
                 kind: summary.change_kind.clone(),
                 summary: strip_kind_prefix(&summary.summary, &summary.change_kind),
                 by: summary.actor_id.as_deref().map(|actor| {
-                    relative_actor_label(actor, summary.actor_context.as_deref(), current_actor)
+                    actor_label(
+                        &change.display_producer.as_ref().map_or_else(
+                            || identity.actor(actor),
+                            |(actor, session)| identity.author(actor, session.as_ref()),
+                        ),
+                        summary.actor_context.as_deref(),
+                    )
                 }),
                 created_at: summary.created_at,
             }),
@@ -666,16 +654,15 @@ pub(super) fn show_receipt_value(
                 generation: Some(entry.generation_index),
                 kind: entry.kind.clone(),
                 summary: entry.summary.clone(),
-                by: Some(relative_actor_label(
-                    &entry.actor.actor_id,
+                by: Some(actor_label(
+                    &identity.author(&entry.actor.actor_id, entry.actor.session_id.as_ref()),
                     entry.actor.attribution_context(),
-                    current_actor,
                 )),
                 created_at: entry.created_at,
             })
             .collect(),
     });
-    let notes = show_notes(view, current_actor);
+    let notes = show_notes(view, identity);
     ShowReceiptValue {
         acceptance_basis: (work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0)
             .then_some(work.revision),
@@ -712,7 +699,7 @@ pub(super) fn show_receipt_value(
                 assigned_to: work
                     .assigned_to
                     .as_deref()
-                    .map(|actor| actor_word(actor, current_actor).to_owned()),
+                    .map(|actor| identity.actor(actor)),
                 lifecycle: work.lifecycle,
                 restored: work.restored,
                 superseded_by: work.superseded_by.map(short_ref_for_work_id),
@@ -736,8 +723,8 @@ pub(super) fn show_receipt_value(
             .iter()
             .filter(|offer| offer.state == WorkHandoffState::Offered && offer.expires_at > now)
             .map(|offer| ShowHandoff {
-                from: session_word(&offer.from, current_session).to_owned(),
-                to: session_word(&offer.to, current_session).to_owned(),
+                from: identity.session(&offer.from),
+                to: identity.session(&offer.to),
                 expires_at: offer.expires_at,
             })
             .collect(),
@@ -779,7 +766,7 @@ fn show_evidence(view: &WorkFocusView) -> Vec<crate::work_service::WorkEvidenceS
     notes
 }
 
-pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowNote> {
+pub(super) fn show_notes(view: &WorkFocusView, identity: DisplayIdentity<'_>) -> Vec<ShowNote> {
     show_evidence(view)
         .into_iter()
         .map(|note| ShowNote {
@@ -787,9 +774,16 @@ pub(super) fn show_notes(view: &WorkFocusView, current_actor: &str) -> Vec<ShowN
             non_holder: note.non_holder,
             summary: note.summary,
             refs: Vec::new(),
-            by: note.actor_id.as_deref().map(|actor| {
-                relative_actor_label(actor, note.actor_context.as_deref(), current_actor)
-            }),
+            by: note
+                .display_actor_id
+                .as_deref()
+                .or(note.actor_id.as_deref())
+                .map(|actor| {
+                    actor_label(
+                        &identity.author(actor, note.display_actor_session_id.as_ref()),
+                        note.actor_context.as_deref(),
+                    )
+                }),
             created_at: note.created_at,
         })
         .collect()
@@ -799,6 +793,7 @@ pub(super) fn show_item_line(
     status: &ReadyWorkSummary,
     holder: Holder<'_>,
     completed_by_record: bool,
+    identity: DisplayIdentity<'_>,
     now: DateTime<Utc>,
 ) -> String {
     // Unlike the shared item_line used by lists, terse show deliberately
@@ -806,8 +801,12 @@ pub(super) fn show_item_line(
     let work = &status.work;
     let state = match holder {
         Holder::You(expires_at) => format!("held by you until {}", clock(expires_at, now)),
-        Holder::Other(_, expires_at) => {
-            format!("held by another session until {}", clock(expires_at, now))
+        Holder::Other(session, expires_at, _) => {
+            format!(
+                "held by {} until {}",
+                identity.session(session),
+                clock(expires_at, now)
+            )
         }
         Holder::Nobody if completed_by_record => "completed (restored)".into(),
         Holder::Nobody => availability_words(status).to_owned(),

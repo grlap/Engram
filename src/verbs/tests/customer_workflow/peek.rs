@@ -185,7 +185,10 @@ fn peek_local_scan_is_bounded_and_repeats_without_false_backlog_counts() {
                     ..Default::default()
                 },
                 at(21),
-                |changes| !crate::verbs::collapsed_changes(changes).is_empty(),
+                |changes| {
+                    !crate::verbs::collapsed_changes(changes, reader.service.display_identity())
+                        .is_empty()
+                },
             )
             .unwrap();
         assert!(view.peek.unwrap().more_changes_available);

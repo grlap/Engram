@@ -125,12 +125,18 @@ pub(super) fn shell_quote(value: &str) -> String {
 pub(super) fn fit_list_receipt(
     input: &LsInput,
     page: &WorkListingPage,
+    identity: crate::work_service::identity::DisplayIdentity<'_>,
     budget: usize,
 ) -> Result<Receipt, VerbError> {
     let claims = page
         .claims
         .iter()
-        .map(|claim| (claim.work_id, (claim.holder.clone(), claim.expires_at)))
+        .map(|claim| {
+            (
+                claim.work_id,
+                (identity.session(&claim.holder), claim.expires_at),
+            )
+        })
         .collect::<HashMap<_, _>>();
     let command = input.list_command();
     let first_ref = page.items.first().map(|item| item.work.short_ref.clone());

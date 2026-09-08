@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 
 import { fixtureHome as ownedFixtureHome, removeFixtureHomes as cleanupFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { existsSync, readdirSync, statSync } from "node:fs";
@@ -482,7 +483,9 @@ test("mutation and continuation titles are terminal-safe while MCP JSON retains 
     }
     const peerNote = cliText(engramHome, "observer", "note", work_ref, "Peer observation");
     checkText(peerNote);
-    assert.ok(peerNote.includes("held by another session until "));
+    const peerHolder = cliJson(engramHome, "observer", "show", work_ref).holder;
+    assert.match(peerHolder, /^peer-[0-9a-f]{24}$/u);
+    assert.ok(peerNote.includes(`held by ${peerHolder} until `));
     assert.ok(!peerNote.includes(`held by ${session}`));
     for (let index = 0; index < 8; index += 1) {
       checkJson(await client.call("note", { work_ref, text: `Record ${index}: ${"body ".repeat(550)}` }));
@@ -839,15 +842,16 @@ test("compact next shares clipped status context and requires the full STOP tail
         assert.equal(row.current_status.complete, true);
         assert.equal(row.current_status.body_or_first_line, "Ready...");
         assert.equal(row.note, distinct);
-        assert.equal(row.note_session_id, "pilot-reader");
+        assert.equal(row.note_session_id, undefined);
+        assert.equal(row.note_by, "you");
         assert.equal(row.note_detail, `engram work show ${reference} --notes`);
         assert.equal(row.note_identity, undefined);
         assert.ok(!value.reminders.some(line => line.includes("read full status")));
       }
       const correctedText = cli("next");
       const noteLine = correctedText.split("\n").find(line => line.includes(distinct));
-      assert.ok(noteLine.indexOf("[note session pilot-reader]") >= 0);
-      assert.ok(noteLine.indexOf("[note session pilot-reader]") < noteLine.indexOf(distinct));
+      assert.ok(noteLine.indexOf("[note session you]") >= 0);
+      assert.ok(noteLine.indexOf("[note session you]") < noteLine.indexOf(distinct));
       assert.ok(correctedText.includes(`engram work show ${reference} --notes`));
     }
   } finally {
@@ -911,7 +915,8 @@ test("status resume recovers both roles across CLI and MCP process replacement w
         const resumed = receipt(await client.call("next"));
         const row = statusRow(resumed, reference);
         assert.deepEqual(row.current_status, shellRow.current_status);
-        assert.equal(row.current_status.by, replacement ? "you (another session)" : "you");
+        if (replacement) assert.match(row.current_status.by, /^peer-[0-9a-f]{24}$/u);
+        else assert.equal(row.current_status.by, "you");
         assert.ok(Number.isFinite(Date.parse(row.current_status.recorded_at)));
         const text = cli(actor, session, "next");
         assert.equal(text.status, 0, text.stderr);
@@ -1053,6 +1058,109 @@ test("hygiene correction pending rejection gives conditional recovery on CLI and
     } finally {
       removeFixtureHomes(engramHome);
     }
+  }
+});
+
+test("attribution labels distinguish shared-actor peers on CLI MCP and expose the verbose contract", async (t) => {
+  const engramHome = fixtureHome("engram-attribution-", t);
+  const actor = "shared-private-principal";
+  const readerSession = "attribution-reader";
+  const peerSessions = [randomUUID(), randomUUID()];
+  const clients = [];
+  const cli = (...args) => spawnSync(binary, ["--home", engramHome, "work",
+    "--actor-id", actor, "--session-id", readerSession, ...args], { cwd: root, encoding: "utf8" });
+  try {
+    buildAndInit(engramHome);
+    for (const session of [readerSession, ...peerSessions]) {
+      const client = new McpClient(engramHome, session, undefined, actor);
+      clients.push(client);
+      await client.initialize();
+    }
+    const [reader, first, second] = clients;
+    const tools = await reader.tools();
+    for (const name of ["next", "ls"]) {
+      const description = tools.find((tool) => tool.name === name).inputSchema.properties.verbose.description;
+      assert.match(description, /raw identity and integrity metadata/u);
+      assert.match(description, /not a global security boundary/u);
+    }
+    assert.match(tools.find(({ name }) => name === "show").description, /display-only peer labels/u);
+    assert.match(tools.find(({ name }) => name === "handoff").inputSchema.properties.to.description, /host or coordinator.*peer display labels are refused/u);
+    const handoffHelp = cli("handoff", "--help");
+    assert.equal(handoffHelp.status, 0, handoffHelp.stderr);
+    assert.match(handoffHelp.stdout.replace(/\s+/gu, " "), /host or coordinator; peer display labels are refused/u);
+    const work = receipt(await reader.call("add", { title: "Attribution parity", assignee: actor })).work.short_ref;
+    receipt(await first.call("claim", { work_ref: work }));
+    receipt(await first.call("note", { work_ref: work, text: "First peer finding" }));
+    receipt(await second.call("note", { work_ref: work, text: "Second peer finding" }));
+    const notes = receipt(await reader.call("show", { work_ref: work, notes: true }));
+    const labels = notes.notes.map(({ by }) => by);
+    assert.equal(labels.length, 2);
+    assert.notEqual(labels[0], labels[1]);
+    for (const label of labels) assert.match(label, /^peer-[0-9a-f]{24}$/u);
+    for (const flags of [[], ["--notes"], ["--history"]]) {
+      const mode = flags[0] === "--notes" ? { notes: true } : flags[0] === "--history" ? { history: true } : {};
+      const value = receipt(await reader.call("show", { work_ref: work, ...mode }));
+      const shell = cli("show", work, ...flags, "--json");
+      const text = cli("show", work, ...flags);
+      assert.equal(shell.status, 0, shell.stderr);
+      assert.equal(text.status, 0, text.stderr);
+      assertRecordParity(JSON.parse(shell.stdout), value);
+      for (const output of [JSON.stringify(value), shell.stdout, text.stdout]) {
+        for (const raw of [actor, ...peerSessions]) assert.ok(!output.includes(raw), output);
+      }
+    }
+    for (const row of notes.notes) {
+      const detail = receipt(await reader.call("show", { work_ref: work, note: row.locator }));
+      assert.equal(detail.note.by, row.by);
+      assert.equal(detail.note.summary, row.summary);
+    }
+    const held = structuredError(await reader.call("claim", { work_ref: work }), "work_claim_held");
+    assert.equal(held.details.holder, labels[0]);
+    assert.equal(held.details.holder_session_id, undefined);
+    assert.equal(held.details.work_ref, work);
+    assert.equal(held.details.work_id, undefined);
+    assert.ok(!held.message.includes(String(held.details.expires_at_ms)));
+    assert.match(held.message, /until (?:\d{4}-\d{2}-\d{2} )?\d{2}:\d{2} UTC$/u);
+    assert.equal(held.reminders[0], `held by ${labels[0]} until ${held.message.split(" until ")[1]}`);
+    const shellError = cli("claim", work, "--json");
+    assert.notEqual(shellError.status, 0);
+    assert.deepEqual(JSON.parse(shellError.stderr).error, held);
+    for (const raw of [actor, ...peerSessions]) assert.ok(!JSON.stringify(held).includes(raw));
+    const compact = receipt(await reader.call("next", { peek: true }));
+    const verbose = receipt(await reader.call("next", { peek: true, verbose: true }));
+    assert.ok(!JSON.stringify(compact).includes(peerSessions[0]));
+    assert.equal(verbose.session.session_id, readerSession);
+    assert.ok(JSON.stringify(verbose).includes(actor));
+    receipt(await first.call("update", { work_ref: work, action: "release" }));
+    const released = receipt(await reader.call("show", { work_ref: work, history: true }));
+    assert.ok(!JSON.stringify(released).includes(actor));
+    receipt(await reader.call("claim", { work_ref: work }));
+    receipt(await reader.call("note", { work_ref: work, text: "Ready for real target" }));
+    const before = receipt(await reader.call("show", { work_ref: work }));
+    const targets = [labels[0], before.status.work.assigned_to];
+    for (const target of targets) {
+      assert.match(target, /^peer-(?:actor-)?[0-9a-f]{24}$/u);
+      for (const surface of ["cli", "mcp"]) {
+        let error;
+        if (surface === "cli") {
+          const result = cli("handoff", work, "--to", target, "--json");
+          assert.notEqual(result.status, 0);
+          error = JSON.parse(result.stderr).error;
+        } else {
+          error = structuredError(await reader.call("handoff", { work_ref: work, action: "offer", to: target }), "work_invalid");
+        }
+        assert.match(error.message, /peer display label is not a handoff target/u);
+        assert.match(error.reminders[0], /host or coordinator/u);
+        assert.deepEqual(error.next, ["engram work next --peek"]);
+        assert.deepEqual(receipt(await reader.call("show", { work_ref: work })), before);
+      }
+    }
+    receipt(await reader.call("handoff", { work_ref: work, action: "offer", to: peerSessions[0] }));
+    receipt(await first.call("handoff", { work_ref: work, action: "accept" }));
+    assert.equal(receipt(await first.call("show", { work_ref: work })).holder, "you");
+  } finally {
+    try { await closeFixtureClients(...clients); }
+    finally { removeFixtureHomes(engramHome); }
   }
 });
 
@@ -1642,14 +1750,15 @@ test("participated preview selects the newer same-session note across shell and 
     const next = cliJson(engramHome, session, "next", "--context-generation", "termal-after");
     const preview = next.participated.find((row) => row.ref === work);
     assert.equal(preview.note, "Newer MCP observation");
-    assert.equal(preview.note_session_id, session);
+    assert.equal(preview.note_session_id, undefined);
+    assert.equal(preview.note_by, "you");
     assert.equal(next.context_generation, "termal-after");
     assert.ok(next.read_cut.project_position > olderCut.project_position);
     assert.ok(Date.parse(next.read_cut.observed_at) >= Date.parse(olderCut.observed_at));
     assert.equal(stale.participated.find((row) => row.ref === work).note, "Earlier shell observation");
     assert.equal(stale.context_generation, "termal-before");
     const text = cliText(engramHome, session, "next", "--context-generation", "termal-after");
-    assert.ok(text.includes(`[note session ${session}] — Newer MCP observation`));
+    assert.ok(text.includes("[note session you] — Newer MCP observation"));
     const footer = text.split("\n").filter((line) => line.startsWith("build: "));
     assert.equal(footer.length, 1);
     assert.ok(footer[0].includes(`read cut: project ${next.read_cut.project_position} observed_at `));
@@ -1666,8 +1775,10 @@ test("participated preview selects the newer same-session note across shell and 
     const [earlier, newer] = notes.notes;
     assert.equal(earlier.summary, "Earlier shell observation");
     assert.equal(newer.summary, "Newer MCP observation");
-    assert.equal(earlier.actor_session_id, session);
-    assert.equal(newer.actor_session_id, session);
+    assert.equal(earlier.actor_session_id, undefined);
+    assert.equal(earlier.by, "you");
+    assert.equal(newer.actor_session_id, undefined);
+    assert.equal(newer.by, "you");
     assert.ok(earlier.feed_position < newer.feed_position);
     assert.equal(earlier.feed_position, olderCut.project_position);
     assert.equal(newer.feed_position, next.read_cut.project_position);
@@ -1684,20 +1795,21 @@ test("participated preview selects the newer same-session note across shell and 
     await ownPeer.initialize();
     receipt(await ownPeer.call("note", { work_ref: work, text: "Own actor on another session" }));
     const ownPeerNote = cliJson(engramHome, session, "show", work, "--notes").notes.at(-1);
-    assert.equal(ownPeerNote.actor_session_id, "other-own-session");
+    assert.equal(ownPeerNote.actor_session_id, undefined);
+    assert.match(ownPeerNote.by, /^peer-[0-9a-f]{24}$/u);
     assert.ok(ownPeerNote.feed_position > newer.feed_position);
     const ownPeerNext = receipt(await ownPeer.call("next"));
-    assert.equal(ownPeerNext.participated.find((row) => row.ref === work).note_session_id, "other-own-session");
+    assert.equal(ownPeerNext.participated.find((row) => row.ref === work).note_by, "you");
     cliJson(engramHome, "peer-session", "note", work, "Still newer peer observation");
     const afterPeer = cliJson(engramHome, session, "next");
     assert.equal(afterPeer.participated.find((row) => row.ref === work).note, "Newer MCP observation");
-    assert.equal(afterPeer.participated.find((row) => row.ref === work).note_session_id, session);
+    assert.equal(afterPeer.participated.find((row) => row.ref === work).note_by, "you");
     const peer = cliJson(engramHome, "peer-session", "next");
-    assert.equal(peer.participated.find((row) => row.ref === work).note_session_id, "peer-session");
+    assert.equal(peer.participated.find((row) => row.ref === work).note_by, "you");
     assert.equal(peer.participated.find((row) => row.ref === work).note, "Still newer peer observation");
     const peerNote = cliJson(engramHome, session, "show", work, "--notes").notes.at(-1);
     assert.equal(Object.hasOwn(peerNote, "actor_session_id"), false);
-    assert.equal(cliJson(engramHome, "peer-session", "show", work, "--notes").notes.at(-1).actor_session_id, "peer-session");
+    assert.equal(cliJson(engramHome, "peer-session", "show", work, "--notes").notes.at(-1).by, "you");
     assert.ok(peerNote.feed_position > newer.feed_position);
     assert.equal(peerNote.feed_position, afterPeer.read_cut.project_position);
   } finally {
@@ -1735,11 +1847,13 @@ test("resume discovery agrees across claimless MCP and CLI sessions", async (t) 
     assert.deepEqual(JSON.parse(result.content[0].text), value);
     assert.equal(value.held.length, 0);
     assert.deepEqual(new Set(value.assigned.map((row) => row.ref)), new Set(assigned));
-    assert.ok(value.assigned.some((row) => row.holder === "another session"));
+    const ownerLabel = cliJson(engramHome, "coordinator", "show", participated[0]).holder;
+    assert.match(ownerLabel, /^peer-[0-9a-f]{24}$/u);
+    assert.ok(value.assigned.some((row) => row.holder === ownerLabel));
     assert.deepEqual(value.participated.map((row) => row.ref), participated.toReversed().slice(0, 5));
     assert.equal(value.participated_omitted, 1);
     assert.equal(value.participated[0].note, "Own finding 5");
-    assert.ok(value.participated.every((row) => row.holder === "another session"));
+    assert.ok(value.participated.every((row) => row.holder === ownerLabel));
     const cli = cliJson(engramHome, "coordinator", "next");
     for (const key of ["assigned", "participated", "participated_omitted"]) assert.deepEqual(cli[key], value[key]);
     const text = cliText(engramHome, "coordinator", "next");
@@ -2008,7 +2122,7 @@ test("explicit records retain relative authors and host context on CLI and MCP",
     const history = await check({ history: true }, ["--history"]);
     for (const rows of [notes.notes, history.history.items]) {
       assert.ok(rows.some(({ by }) => by === "you (host-context-0)"));
-      assert.ok(rows.some(({ by }) => by === "another actor (host-context-1)"));
+      assert.ok(rows.some(({ by }) => /^peer-[0-9a-f]{24} \(host-context-1\)$/u.test(by)));
     }
     for (const row of notes.notes) {
       const detail = await check({ note: row.locator }, ["--note", row.locator]);
@@ -2894,8 +3008,12 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
       await b.call("claim", { work_ref: workRef, ttl_seconds: 300 }),
       "work_claim_held",
     );
-    assert.equal(held.details.holder_session_id, sessionA);
-    assert.match(held.reminders[0], /^held by another session until /u);
+    assert.equal(held.details.holder_session_id, undefined);
+    const holderLabel = receipt(await b.call("show", { work_ref: workRef })).holder;
+    assert.match(holderLabel, /^peer-[0-9a-f]{24}$/u);
+    assert.equal(held.details.holder, holderLabel);
+    assert.ok(held.reminders[0].startsWith(`held by ${holderLabel} until `));
+    assert.ok(!JSON.stringify(held).includes(sessionA));
     assert.deepEqual(held.next, [`engram work show ${workRef}`]);
     const noted = receipt(
       await a.call("note", {

@@ -66,6 +66,7 @@ mod completion;
 mod continuation;
 mod focus;
 mod handoff;
+pub(crate) mod identity;
 mod memories;
 mod next;
 mod operations;
@@ -830,6 +831,7 @@ fn verified_bounded_work_changes(
                 ))
             })?;
         let from_current_session = source_is_from_session(&object, session_id);
+        let display_producer = source_display_producer(&object);
         let delivery = agent_change_object(
             store,
             project_id,
@@ -840,6 +842,7 @@ fn verified_bounded_work_changes(
             Some(&entry.position),
         )?;
         changes.push(WorkChange {
+            display_producer,
             from_current_session: matches!(&delivery, WorkChangeProjection::Visible(_))
                 && from_current_session,
             delivery,
@@ -864,7 +867,7 @@ fn verify_staged_work_change_page(
     feed: &FeedId,
     confirmed_through: i64,
     delivered_through: i64,
-    page: &StagedWorkChangePage,
+    page: &mut StagedWorkChangePage,
 ) -> Result<(), StoreError> {
     if page.schema_version != SCHEMA_VERSION {
         return Err(StoreError::InvalidWorkProjection(format!(
@@ -884,7 +887,7 @@ fn verify_staged_work_change_page(
             "staged work delivery payload does not bind its exact dense source interval".into(),
         ));
     }
-    for (entry, change) in entries.into_iter().zip(&page.changes) {
+    for (entry, change) in entries.into_iter().zip(&mut page.changes) {
         let object = store
             .get::<serde_json::Value>(&entry.object_hash)?
             .ok_or_else(|| {
@@ -900,6 +903,7 @@ fn verify_staged_work_change_page(
                 "staged work attribution differs from the receiving session".into(),
             ));
         }
+        change.display_producer = source_display_producer(&object);
     }
     Ok(())
 }
@@ -910,6 +914,17 @@ fn source_is_from_session(object: &serde_json::Value, session_id: &SessionId) ->
         .and_then(|actor| actor.get("session_id"))
         .and_then(serde_json::Value::as_str)
         == Some(session_id.0.as_str())
+}
+
+fn source_display_producer(object: &serde_json::Value) -> Option<(String, Option<SessionId>)> {
+    let actor = object.get("actor")?;
+    Some((
+        actor.get("actor_id")?.as_str()?.into(),
+        actor
+            .get("session_id")
+            .and_then(serde_json::Value::as_str)
+            .map(|session| SessionId(session.into())),
+    ))
 }
 
 fn ensure_protocol_basis(

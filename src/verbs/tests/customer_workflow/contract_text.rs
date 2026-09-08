@@ -420,7 +420,7 @@ fn show_notes_fits_contract_and_populated_note_envelopes_together() {
         target,
         &target_page,
         |view| verbs.render_show(view, at(3)),
-        "agent",
+        verbs.service.display_identity(),
         MAX_AGENT_WORK_RESPONSE_BYTES,
     )
     .unwrap();
@@ -432,7 +432,7 @@ fn show_notes_fits_contract_and_populated_note_envelopes_together() {
         source,
         &page,
         |view| verbs.render_show(view, at(3)),
-        "agent",
+        verbs.service.display_identity(),
         budget,
     )
     .unwrap();

@@ -66,7 +66,25 @@ fn terminal_handoff_target_is_framed_without_changing_json() {
         receipt.value["receipt"]["result"]["offer_id"]
     );
     assert_eq!(offer["to"], HOSTILE);
-    assert!(receipt.lines[0].contains(&format!(" to {}", terminal_safe_line(HOSTILE))));
+    // Rich structured output still carries the raw target. JSON escapes C0
+    // controls, not all Unicode terminal controls; text rendering handles those.
+    let verbose = verbs
+        .next(
+            &NextInput {
+                verbose: true,
+                ..Default::default()
+            },
+            at(3),
+        )
+        .unwrap();
+    assert_eq!(verbose.value["focus"]["handoffs"][0]["to"], HOSTILE);
+    let wire = serde_json::to_string(&verbose.value).unwrap();
+    assert!(!wire.chars().any(|character| character <= '\u{1f}'));
+    assert_eq!(serde_json::from_str::<Value>(&wire).unwrap(), verbose.value);
+    assert_terminal(&verbose.text());
+    assert!(receipt.lines[0].contains(
+        &format!(" to {}", verbs.service.display_identity().session(&SessionId(HOSTILE.into())))
+    ));
     assert!(
         !receipt.lines[0]
             .chars()
@@ -156,8 +174,7 @@ fn terminal_stored_text_reads_keep_json_and_frame_every_human_line() {
     let lines = show_lines(
         &core,
         Holder::You(at(7200)),
-        "agent",
-        &SessionId("agent".into()),
+        verbs.service.display_identity(),
         at(5),
     );
     assert_terminal(&format!("{}\nnext: none", lines.join("\n")));
@@ -309,12 +326,19 @@ fn terminal_guidance_and_peer_holder_keep_structured_values() {
         .unwrap();
     assert_eq!(
         row["holder"],
-        short_with_limit(HOSTILE, MAX_COMPACT_HOLDER_BYTES)
+        verbs
+            .service
+            .display_identity()
+            .session(&SessionId(HOSTILE.into()))
     );
     let status = verbs.service.inspect_work(&work, at(3)).unwrap().status;
     let line = item_line(
         &status,
-        Holder::Other(&SessionId(HOSTILE.into()), at(7200)),
+        Holder::Other(
+            &SessionId(HOSTILE.into()),
+            at(7200),
+            verbs.service.display_identity(),
+        ),
         at(3),
     );
     assert_eq!(line.lines().count(), 1);

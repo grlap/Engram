@@ -236,6 +236,11 @@ impl FromStr for WorkNextSection {
 /// canonical bytes; it intentionally does not hash the compact `delivery`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChange {
+    /// Transient canonical producer attribution for outer display only. Hydrated
+    /// from verified source bytes on fresh delivery and staged replay; never
+    /// changes the frozen delivery payload or its hash.
+    #[serde(skip)]
+    pub(crate) display_producer: Option<(String, Option<SessionId>)>,
     pub entry: WorkFeedEntry,
     /// Derived from the verified source actor for this receiving session;
     /// persisted in the exact staged page without exposing session identity.
@@ -519,6 +524,16 @@ fn restored_history_is_empty(history: &RestoredHistoryView) -> bool {
 /// Compact agent-facing summary of one canonical run evidence object.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkEvidenceSummary {
+    /// Complete canonical actor for display labels; the bounded rich field
+    /// below must not be mistaken for a distinct producer's identity.
+    #[serde(skip)]
+    pub(crate) display_actor_id: Option<String>,
+    /// Every constructor must copy the recording actor's `actor.session_id`
+    /// (including a genuine absence). Never substitute `producer_session_id`:
+    /// typed verification/environment evidence uses it for the execution
+    /// producer, which is not necessarily the actor recording the evidence.
+    #[serde(skip)]
+    pub(crate) display_actor_session_id: Option<SessionId>,
     pub evidence: ObjectHash,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub non_holder: bool,

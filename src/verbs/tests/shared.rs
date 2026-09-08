@@ -18,7 +18,15 @@ fn claim_clock_discloses_date_only_when_expiry_crosses_utc_day() {
 
 #[test]
 fn checkpoint_before_completion_collapses_by_work_identity() {
+    let project = ProjectId("collapse-project".into());
+    let session = SessionId("reader".into());
+    let identity = crate::work_service::identity::DisplayIdentity {
+        project: &project,
+        actor: "reader",
+        session: &session,
+    };
     let change = |position, kind: &str, summary: &str| WorkChange {
+        display_producer: None,
         from_current_session: false,
         entry: crate::domain::WorkFeedEntry {
             position: crate::domain::FeedPosition {
@@ -47,11 +55,14 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
     ];
 
     assert_eq!(
-        collapsed_changes(&changes)
+        collapsed_changes(&changes, identity)
             .into_iter()
             .map(|change| change.line)
             .collect::<Vec<_>>(),
-        vec!["w-000000000001 completed by peer (model=peer;reasoning=high): \"Delivered title\""]
+        vec![format!(
+            "w-000000000001 completed by {} (model=peer;reasoning=high): \"Delivered title\"",
+            identity.actor("peer")
+        )]
     );
 
     // Peek's raw-row shedding must not require rendered bytes to decrease:
@@ -64,19 +75,19 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
         ),
         change(2, "completed", "completed: done"),
     ];
-    let collapsed_bytes: usize = collapsed_changes(&remaining)
+    let collapsed_bytes: usize = collapsed_changes(&remaining, identity)
         .iter()
         .map(|row| row.line.len())
         .sum();
     assert_eq!(remaining.len(), 2);
     remaining.pop();
-    let revealed = collapsed_changes(&remaining);
+    let revealed = collapsed_changes(&remaining, identity);
     assert_eq!(remaining.len(), 1);
     assert!(revealed.iter().map(|row| row.line.len()).sum::<usize>() > collapsed_bytes);
     assert!(revealed[0].line.contains("checkpoint"));
     remaining.pop();
     assert!(remaining.is_empty());
-    assert!(collapsed_changes(&remaining).is_empty());
+    assert!(collapsed_changes(&remaining, identity).is_empty());
 }
 
 #[test]

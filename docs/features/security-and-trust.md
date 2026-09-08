@@ -11,6 +11,23 @@ Engram is designed for a work deployment, so audit and security properties
 are V1 requirements — but the trust model is deliberately honest about what
 V1 does and does not assure.
 
+## Display labels are not a security boundary
+
+Terse work projections use `you`, stable project-scoped `peer-…` session labels,
+and `peer-actor-…` actor-only labels. These are deterministic display
+pseudonyms, not anonymization. Low-entropy inputs are dictionary-guessable.
+There is no secret, reverse lookup, or alias resolution. A label never selects
+the peer it describes. Handoff refuses generated label shapes before any
+write and asks for a real session id from the host or coordinator. This is
+a usability guard against unusable offers, not an authentication rule. Other
+identity arguments retain their literal asserted-string behavior.
+
+Canonical audit records retain real actor and session values. Rich verbose
+`next`/`ls` JSON, including MCP, retains raw identity and integrity metadata.
+Bodies, host-asserted context and project-memory attribution may identify a
+source. Optional display omission is not a global confidentiality boundary.
+See [CLI/MCP output contracts](cli-and-mcp.md#using-engram-as-an-agent).
+
 ## Asserted identity, stated as such
 
 In V1, actor and authority context arrive from the proprietary runtime: a

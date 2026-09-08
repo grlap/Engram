@@ -639,6 +639,10 @@ impl LocalWorkService {
             }
             let summary = project_work_event(store, &event, &entry.position)?;
             history.push(WorkChange {
+                display_producer: Some((
+                    event.actor.actor_id.clone(),
+                    event.actor.session_id.clone(),
+                )),
                 from_current_session: event.actor.session_id.as_ref() == Some(&self.session_id),
                 entry,
                 delivery: WorkChangeProjection::Visible(summary),

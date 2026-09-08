@@ -156,14 +156,14 @@ impl LocalWorkService {
                                 "pending work delivery has no exact staged payload".into(),
                             )
                         })?;
-                    let page: StagedWorkChangePage = payload.decode()?;
+                    let mut page: StagedWorkChangePage = payload.decode()?;
                     verify_staged_work_change_page(
                         &store,
                         &self.session_id,
                         &project_feed,
                         delivery_session.project_cursor,
                         through,
-                        &page,
+                        &mut page,
                     )?;
                     if page.omitted_count > 0 {
                         omissions.push(WorkSectionOmission {
@@ -449,8 +449,7 @@ impl LocalWorkService {
                         } else {
                             (None, None)
                         };
-                        let mut summary =
-                            discovery_summary(row, &self.session_id, &self.actor_id, now);
+                        let mut summary = discovery_summary(row, self.display_identity(), now);
                         summary.current_status = statuses.0;
                         summary.status_observation = statuses.1;
                         Ok(summary)
@@ -573,21 +572,17 @@ impl LocalWorkService {
 
 fn discovery_summary(
     row: crate::storage::WorkDiscoveryRow,
-    session: &SessionId,
-    actor: &str,
+    identity: super::identity::DisplayIdentity<'_>,
     now: DateTime<Utc>,
 ) -> WorkDiscoverySummary {
     let holder = row
         .claim
         .as_ref()
         .filter(|claim| claim.state == WorkClaimState::Active && claim.expires_at > now)
-        .map_or("unclaimed", |claim| {
-            if claim.holder == *session {
-                "you"
-            } else {
-                "another session"
-            }
-        });
+        .map_or_else(
+            || "unclaimed".into(),
+            |claim| identity.session(&claim.holder),
+        );
     WorkDiscoverySummary {
         note_identity: row.note_identity,
         current_status: None,
@@ -595,10 +590,11 @@ fn discovery_summary(
         external_ref: row.work.external_ref,
         work_ref: row.work.short_ref,
         title: compact_text(&row.work.title),
-        holder: holder.into(),
+        holder,
         // Storage verifies the selected note's session. Raw session detail is
         // own-actor-only; a shared session spelling does not identify an actor.
-        note_session_id: (row.note_actor_id.as_deref() == Some(actor)).then(|| session.clone()),
+        note_session_id: (row.note_actor_id.as_deref() == Some(identity.actor))
+            .then(|| identity.session.clone()),
         note: row.note.map(|note| compact_text(&note)),
     }
 }

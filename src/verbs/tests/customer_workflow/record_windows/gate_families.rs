@@ -249,7 +249,8 @@ fn note_windows_keep_verdict_after_nine_gates_and_page_gate_evidence_explicitly(
                 .unwrap();
             assert_eq!(detail.value["note"]["family"], row["family"]);
             assert_eq!(detail.value["note"]["locator"], row["locator"]);
-            assert_eq!(row["actor_session_id"], "agent");
+            assert!(row.get("actor_session_id").is_none());
+            assert_eq!(row["by"], "you");
             assert!(row["feed_position"].as_i64().unwrap() > 0);
             assert_eq!(detail.value["note"]["feed_position"], row["feed_position"]);
             assert_eq!(
@@ -361,7 +362,12 @@ fn note_window_gate_families_survive_restore_and_late_restored_gates() {
     for row in explicit.value["notes"].as_array().unwrap() {
         let inherited = row["locator"].as_str().unwrap().contains(':');
         assert_eq!(row.get("feed_position").is_none(), inherited);
-        assert!(row["actor_session_id"].is_string());
+        assert!(row.get("actor_session_id").is_none());
+        assert!(
+            row["by"]
+                .as_str()
+                .is_some_and(|label| label == "you" || label.starts_with("peer-"))
+        );
     }
     assert!(!explicit.text().contains("feed_position"));
     assert!(!explicit.text().contains("actor_session_id"));

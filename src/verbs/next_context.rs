@@ -144,8 +144,8 @@ impl Context {
             {
                 if let Value::Object(fields) = &mut row.value {
                     fields.insert("note".into(), json!(note));
-                    if let Some(session) = &discovery.note_session_id {
-                        fields.insert("note_session_id".into(), json!(session));
+                    if discovery.note_session_id.is_some() {
+                        fields.insert("note_by".into(), json!("you"));
                     }
                 }
                 row.lines.push(format!(
@@ -233,7 +233,13 @@ impl Context {
 }
 
 fn discovery_row(row: &WorkDiscoverySummary) -> Row {
-    let value = json!(row);
+    let mut value = json!(row);
+    if let Value::Object(fields) = &mut value {
+        fields.remove("note_session_id");
+        if row.note_session_id.is_some() {
+            fields.insert("note_by".into(), json!("you"));
+        }
+    }
     let mut lines = Vec::new();
     super::receipts::append_discovery_row(&mut lines, row);
     let mut projected = Row { value, lines };

@@ -309,11 +309,15 @@ impl VerbError {
 
     /// Words and commands that resolve the failure, when a fixed table knows.
     #[must_use]
+    pub fn guidance(&self) -> Guidance {
+        self.guidance_with_holder("another session")
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "the fixed refusal-to-guidance table stays contiguous and exhaustively reviewable"
     )]
-    pub fn guidance(&self) -> Guidance {
+    pub(super) fn guidance_with_holder(&self, holder: &str) -> Guidance {
         if let StoreError::WorkCatalogCursorInvalid { reason }
         | StoreError::WorkShowCursorInvalid { reason } = &self.error
         {
@@ -360,11 +364,14 @@ impl VerbError {
             ),
             StoreError::WorkClaimHeld { expires_at, .. } => (
                 vec![format!(
-                    "held by another session until {}",
-                    DateTime::<Utc>::from_timestamp_millis(*expires_at)
-                        .map_or_else(|| "its claim expires".into(), |at| clock(at, Utc::now()))
+                    "held by {holder} until {}",
+                    claim_expiry_text(*expires_at)
                 )],
                 vec![format!("engram work show {target}")],
+            ),
+            StoreError::InvalidWork(reason) if reason == super::attribution::HANDOFF_DISPLAY_TARGET_REFUSAL => (
+                vec![reason.clone()],
+                vec!["engram work next --peek".into()],
             ),
             StoreError::WorkClaimMismatch { .. } => (
                 vec!["this operation needs current claim authority; show the item before retrying".into()],
@@ -518,6 +525,11 @@ impl VerbError {
     }
 }
 
+pub(super) fn claim_expiry_text(expires_at: i64) -> String {
+    DateTime::<Utc>::from_timestamp_millis(expires_at)
+        .map_or_else(|| "its claim expires".into(), |at| clock(at, Utc::now()))
+}
+
 impl fmt::Display for VerbError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.error.fmt(formatter)
@@ -624,7 +636,7 @@ pub(super) fn ambiguous_reference_guidance(
 
 pub(super) fn compact_row(
     status: &ReadyWorkSummary,
-    claims: &HashMap<WorkId, (SessionId, DateTime<Utc>)>,
+    claims: &HashMap<WorkId, (String, DateTime<Utc>)>,
 ) -> CompactWorkRow {
     let work = &status.work;
     let (holder, held_until) =
@@ -632,7 +644,7 @@ pub(super) fn compact_row(
             .get(&work.work_id)
             .map_or((None, None), |(holder, expires_at)| {
                 (
-                    Some(short_with_limit(&holder.0, MAX_COMPACT_HOLDER_BYTES)),
+                    Some(holder.clone()),
                     Some(expires_at.format("%H:%M").to_string()),
                 )
             });
@@ -677,7 +689,7 @@ pub(super) fn compact_next_receipt(
     held: &[(ReadyWorkSummary, DateTime<Utc>)],
     ready: &[ReadyWorkSummary],
     changes: &[super::next_context::CompactChange],
-    claims: &HashMap<WorkId, (SessionId, DateTime<Utc>)>,
+    claims: &HashMap<WorkId, (String, DateTime<Utc>)>,
     guidance: &Guidance,
 ) -> Result<CompactNextReceipt, VerbError> {
     let mut compact = CompactNextReceipt {
@@ -1074,9 +1086,7 @@ pub(super) fn discovery_note_text(row: &crate::work_service::WorkDiscoverySummar
         let session = row
             .note_session_id
             .as_ref()
-            .map_or(String::new(), |session| {
-                format!(" [note session {}]", terminal_safe_line(&session.0))
-            });
+            .map_or(String::new(), |_| " [note session you]".into());
         format!("{session} — {}", super::terminal_safe_line(note))
     })
 }

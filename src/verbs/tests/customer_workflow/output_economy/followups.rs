@@ -160,8 +160,16 @@ fn non_holder_note_uses_the_same_relative_holder_in_text_and_json() {
             at(2),
         )
         .unwrap();
-    assert_eq!(receipt.value["claim"]["holder"], "another session");
-    assert!(receipt.text().contains("(held by another session until "));
+    let holder = observer
+        .service
+        .display_identity()
+        .session(&SessionId("agent".into()));
+    assert_eq!(receipt.value["claim"]["holder"], holder);
+    assert!(
+        receipt
+            .text()
+            .contains(&format!("(held by {holder} until "))
+    );
     assert!(!receipt.text().contains("held by agent"));
     assert_eq!(receipt.value["non_holder"], true);
 }

@@ -133,10 +133,15 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
 
     fitted.children.clear();
     assert_eq!(
-        show_lines(&fitted, Holder::Nobody, "agent", &session, at(50))
-            .into_iter()
-            .find(|line| line.starts_with("children:"))
-            .as_deref(),
+        show_lines(
+            &fitted,
+            Holder::Nobody,
+            verbs.service.display_identity(),
+            at(50)
+        )
+        .into_iter()
+        .find(|line| line.starts_with("children:"))
+        .as_deref(),
         Some("children: 16 not shown")
     );
 }

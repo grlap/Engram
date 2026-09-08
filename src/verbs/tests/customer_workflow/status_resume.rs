@@ -219,11 +219,10 @@ fn status_resume_both_roles_survive_session_replacement_without_authority() {
                 assert_eq!(row["current_status"]["body_or_first_line"], expected);
                 assert_eq!(
                     row["current_status"]["by"],
-                    if replacement {
-                        "you (another session)"
-                    } else {
-                        "you"
-                    }
+                    resumed
+                        .service
+                        .display_identity()
+                        .session(&SessionId(old_session.into()))
                 );
                 assert!(receipt.text().contains(expected));
                 assert!(receipt.text().contains("planner:"));
@@ -389,7 +388,13 @@ fn status_resume_snapshot_roundtrips_linkage_and_status_without_authority() {
         shown.value["current_status"]["body_or_first_line"],
         "Await restored review"
     );
-    assert_eq!(shown.value["current_status"]["by"], "you (another session)");
+    assert_eq!(
+        shown.value["current_status"]["by"],
+        reader
+            .service
+            .display_identity()
+            .session(&SessionId("agent".into()))
+    );
     let window = reader
         .show_records(
             &reference,

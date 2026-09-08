@@ -584,13 +584,13 @@ this actor regardless of readiness. `participated` contains Open work this
 session noted, observed, gated, or received a handoff offer on, excluding its
 current live-held work. These are derived from existing canonical note/evidence
 and handoff records; no role, watch subscription, or participation marker is
-stored. A row contains its ref, bounded title, holder word (`you`, `another
-session`, or `unclaimed`), and the first line of this session's latest own note
+stored. A row contains its ref, bounded title, holder label (`you`, a stable
+`peer-…`, or `unclaimed`), and the first line of this session's latest own note
 when one exists. A gate uses its recorded name and pass/fail result; a handoff
 alone has no note summary. Another session's later note cannot replace that
-summary. A preview with a note also names `note_session_id`, the recorded
-session verified by this own-note read, only if its actor equals the reader's
-actor; text names the same session. Other actors' session fields are omitted.
+summary. For the reader's actor, compact previews use `note_by: "you"` and
+text prints `[note session you]` before the body. Rich verbose JSON retains
+`note_session_id`. Other actors' session fields are omitted.
 This is asserted context, not authenticated identity. Terminal rendering escapes
 controls and collapses whitespace to one line per discovery row; structured
 values retain their bounded content.
@@ -772,11 +772,20 @@ asserted metadata, never ordering authority. The latest note is emitted last
 in `notes`; on a full page, it replaces the least-priority selected note.
 `notes_omitted` is the
 exact remainder after all fitting, while `evidence_count_limit` reports its
-count-limit share. Actor and session references become relative words;
-optional actor context follows the
-relative actor word parenthetically on note and history attribution. Relative
-words hide the principal identifiers, but the parenthetical value remains
-exactly the bounded context asserted by the host and may itself be identifying.
+count-limit share. Display attribution uses `you` only for the reading session,
+project-scoped `peer-…` labels for other sessions, and `peer-actor-…` for
+actor-only records. The same peer has the same label across reads and siblings,
+including fresh and replayed changes. Canonical audit records are unchanged.
+Labels are deterministic pseudonyms; low-entropy inputs are dictionary-guessable.
+No operation resolves them as identity aliases. Host context remains bounded
+asserted text and may itself be identifying. See the
+[terse versus rich output contract](cli-and-mcp.md#using-engram-as-an-agent).
+Verbose JSON/MCP retains raw identity and integrity metadata; presentation
+omission is not a global confidentiality or authorization boundary.
+Handoff targets come from the host or coordinator as real session ids.
+The agent `handoff --to SESSION` refuses generated peer display labels before
+target binding or offer creation. This prevents an unusable pending offer;
+it is a usability check, not authentication or alias resolution.
 The view excludes raw actor/session identifiers, canonical UUIDs and hashes,
 revisions and fences, and host-only run, claim, control, obligation, seal, and
 memory-version fields. Active core
@@ -798,9 +807,8 @@ every native note family in dense project-feed order across run generations.
 Explicit target resolution, advisory item projection, count, members and
 continuation basis share one read snapshot without selecting focus.
 `notes[].summary` is a full body. Explicit note rows in window/detail JSON
-also expose the recorded `actor_session_id` for the reader's own actor
-(null when absent on the record;
-omitted for another actor) and native project `feed_position` for every actor.
+use the same display `by` label, not a raw `actor_session_id`, and expose
+native project `feed_position` for every actor.
 Inherited rows omit `feed_position`: their member order is not a position in
 this host's project feed. These diagnostic detail fields do not change note
 text or confer execution authority. The complete text and JSON window stays

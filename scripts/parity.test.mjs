@@ -824,7 +824,8 @@ test("shell words default missing local attribution without losing explicit targ
     assert.equal(observed.status, 0, observed.stderr);
     const observedView = JSON.parse(observed.stdout);
     assert.equal("effective_session_id" in observedView, false);
-    assert.equal(observedView.holder, "another session");
+    assert.match(observedView.holder, /^peer-[0-9a-f]{24}$/u);
+    assert.ok(!JSON.stringify(observedView).includes(claimedSession));
     assertTerseShow(observedView);
     const observedText = run(
       [
@@ -1151,7 +1152,7 @@ test("list words stay compact while verbose and update metadata remain explicit"
     const heldRow = compactList.items.find(({ ref }) => ref === refs[0]);
     assert.equal(Buffer.byteLength(heldRow.title, "utf8"), 80);
     assert.match(heldRow.title, /…$/u);
-    assert.equal(heldRow.holder, actor);
+    assert.equal(heldRow.holder, "you");
     assert.equal(typeof heldRow.held_until, "string");
     const unicodeRow = compactList.items.find(({ ref }) => ref === refs[1]);
     assert.ok(Buffer.byteLength(unicodeRow.title, "utf8") <= 80);
@@ -1162,7 +1163,7 @@ test("list words stay compact while verbose and update metadata remain explicit"
     const listedText = run([...hostContext, "ls", "--limit", "100"]);
     assert.equal(listedText.status, 0, listedText.stderr);
     assert.ok(listedText.stdout.includes(`${refs[0]} [bug]`));
-    assert.ok(listedText.stdout.includes(`held by ${actor} until`));
+    assert.ok(listedText.stdout.includes("held by you until"));
     const blockedLine = listedText.stdout
       .split(/\r?\n/u)
       .find((line) => line.includes(refs[1]));
@@ -1203,7 +1204,7 @@ test("list words stay compact while verbose and update metadata remain explicit"
       `${Buffer.byteLength(nextText.stdout, "utf8")} byte text next receipt`,
     );
     assert.ok(nextText.stdout.includes(`${refs[0]} [bug]`));
-    assert.ok(nextText.stdout.includes(`held by ${actor} until`));
+    assert.ok(nextText.stdout.includes("held by you until"));
 
     const verboseNext = run([
       ...hostContext,
@@ -1214,7 +1215,7 @@ test("list words stay compact while verbose and update metadata remain explicit"
       "--json",
     ]);
     assert.equal(verboseNext.status, 0, verboseNext.stderr);
-    assert.ok(JSON.parse(verboseNext.stdout).session);
+    assert.equal(JSON.parse(verboseNext.stdout).session.session_id, actor);
   } finally {
     removeFixtureHomes(engramHome);
   }

@@ -348,7 +348,9 @@ impl AgentVerbs {
                 input.verbose,
                 query,
                 now,
-                |changes| !super::collapsed_changes(changes).is_empty(),
+                |changes| {
+                    !super::collapsed_changes(changes, self.service.display_identity()).is_empty()
+                },
             )?
         } else {
             self.service
@@ -359,8 +361,10 @@ impl AgentVerbs {
         })?;
         let mut held = lists.held;
         let mut ready = lists.ready;
-        let mut compact_changes =
-            super::collapsed_changes(view.changes.as_deref().unwrap_or_default());
+        let mut compact_changes = super::collapsed_changes(
+            view.changes.as_deref().unwrap_or_default(),
+            self.service.display_identity(),
+        );
         let mut not_delivered = changes_not_delivered(&view);
         // Compact output may drain own-session-only pages within its bound.
         // Verbose output exposes the original exact page and its cursor, so
@@ -380,7 +384,10 @@ impl AgentVerbs {
                 },
                 now,
             )?;
-            compact_changes = super::collapsed_changes(more.changes.as_deref().unwrap_or_default());
+            compact_changes = super::collapsed_changes(
+                more.changes.as_deref().unwrap_or_default(),
+                self.service.display_identity(),
+            );
             not_delivered = changes_not_delivered(&more);
             pages += 1;
         }
@@ -550,8 +557,10 @@ impl AgentVerbs {
                         .as_mut()
                         .is_some_and(|rows| rows.pop().is_some())
                     {
-                        compact_changes =
-                            super::collapsed_changes(view.changes.as_deref().unwrap_or_default());
+                        compact_changes = super::collapsed_changes(
+                            view.changes.as_deref().unwrap_or_default(),
+                            self.service.display_identity(),
+                        );
                         if let Some(peek) = &mut view.peek {
                             peek.more_changes_available = true;
                         }
@@ -579,7 +588,12 @@ impl AgentVerbs {
             let claims = lists
                 .claims
                 .into_iter()
-                .map(|(id, holder, expiry)| (id, (holder, expiry)))
+                .map(|(id, holder, expiry)| {
+                    (
+                        id,
+                        (self.service.display_identity().session(&holder), expiry),
+                    )
+                })
                 .collect();
             let compact =
                 compact_next_receipt(&view, &held, &ready, &compact_changes, &claims, &guidance)?;
@@ -647,7 +661,7 @@ impl AgentVerbs {
                 now,
             )
             .map_err(|error| VerbError::for_listing(error, &command))?;
-        super::listing::fit_list_receipt(input, &page, budget)
+        super::listing::fit_list_receipt(input, &page, self.service.display_identity(), budget)
             .map_err(|error| VerbError::for_listing(error.error, &command))
     }
 
@@ -682,7 +696,7 @@ impl AgentVerbs {
             .into());
         }
         let holder = self.holder(view, now);
-        let lines = show_lines(view, holder, &self.actor_id, &self.session_id, now);
+        let lines = show_lines(view, holder, self.service.display_identity(), now);
         let mut guidance = self.guidance(view, "show", now);
         if let Some(parent) = &view.parent {
             // Keep actionable recovery first; parent navigation precedes optional history.
@@ -702,8 +716,7 @@ impl AgentVerbs {
             serde_json::to_value(show_receipt_value(
                 view,
                 holder,
-                &self.actor_id,
-                &self.session_id,
+                self.service.display_identity(),
                 now,
             ))?,
             false,
@@ -996,7 +1009,7 @@ impl AgentVerbs {
             }
             _ => None,
         };
-        let (core, line) = self.update_translation(input.action, &work_ref, &title)?;
+        let (core, line) = Self::update_translation(input.action, &work_ref, &title)?;
         let target = view.status.work.work_id.0.to_string();
         let result = self
             .service
@@ -1049,7 +1062,6 @@ impl AgentVerbs {
         reason = "the flat update actions stay together so the agent-to-core mapping remains reviewable"
     )]
     fn update_translation(
-        &self,
         action: UpdateAction,
         work_ref: &str,
         title: &str,
@@ -1060,7 +1072,7 @@ impl AgentVerbs {
                     reason: reason
                         .map(|value| value.trim().to_owned())
                         .filter(|value| !value.is_empty())
-                        .unwrap_or_else(|| format!("released by {}", self.actor_id)),
+                        .unwrap_or_else(|| "released".into()),
                     waiver_reason: None,
                     idempotency_key: String::new(),
                 },
@@ -1731,6 +1743,16 @@ impl AgentVerbs {
     ///
     /// Returns [`VerbError`] when no matching offer or claim exists.
     pub fn handoff(&self, input: HandoffInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        // Refuse display labels before target binding can write focus or an
+        // offer. This is a usability guard, not identity resolution or trust.
+        if let HandoffAction::Offer { to, .. } = &input.action
+            && crate::work_service::identity::is_display_label(to.trim())
+        {
+            return Err(StoreError::InvalidWork(
+                super::attribution::HANDOFF_DISPLAY_TARGET_REFUSAL.into(),
+            )
+            .into());
+        }
         let view = self.target(input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
         let title = short(&view.status.work.title);
@@ -1749,14 +1771,18 @@ impl AgentVerbs {
                 (
                     WorkHandoffInput::Offer {
                         checkpoint_summary: nonempty(summary)
-                            .unwrap_or_else(|| format!("handoff from {} to {to}", self.actor_id)),
+                            .unwrap_or_else(|| "handoff offered".into()),
                         to: to.clone(),
                         ttl_seconds,
                         idempotency_key: String::new(),
                     },
+                    // Raw targets no longer reach this compact surface. The
+                    // hostile-target framing test covers rich verbose output.
                     format!(
                         "offered {work_ref} \"{title}\" to {}",
-                        super::terminal_safe_line(&to)
+                        self.service
+                            .display_identity()
+                            .session(&SessionId(to.clone()))
                     ),
                 )
             }
@@ -1846,13 +1872,17 @@ impl AgentVerbs {
             .map_err(|error| VerbError::at(error, &work_ref))
     }
 
-    fn holder<'a>(&self, view: &'a WorkFocusView, now: DateTime<Utc>) -> Holder<'a> {
+    fn holder<'a>(&'a self, view: &'a WorkFocusView, now: DateTime<Utc>) -> Holder<'a> {
         match &view.claim {
             Some(claim) if live(claim, now) => {
                 if claim.holder == self.session_id {
                     Holder::You(claim.expires_at)
                 } else {
-                    Holder::Other(&claim.holder, claim.expires_at)
+                    Holder::Other(
+                        &claim.holder,
+                        claim.expires_at,
+                        self.service.display_identity(),
+                    )
                 }
             }
             _ => Holder::Nobody,
@@ -1988,12 +2018,17 @@ pub(super) fn reminder_for_reason(
         "prior claim is recoverable" => claim_recovery_required
             .then(|| "a previous holder's claim lapsed; claiming needs a recovery reason".into()),
         "live claim has checkpointed progress" => match holder {
-            Holder::Other(_, _) => Some("held by another session".into()),
+            Holder::Other(session, _, identity) => {
+                Some(format!("held by {}", identity.session(session)))
+            }
             Holder::You(_) | Holder::Nobody => None,
         },
         "live claim has not checkpointed progress" => Some(match holder {
             Holder::You(_) => "you hold this item but have not noted progress yet".into(),
-            Holder::Other(_, _) => "held by another session; no progress noted yet".into(),
+            Holder::Other(session, _, identity) => format!(
+                "held by {}; no progress noted yet",
+                identity.session(session)
+            ),
             Holder::Nobody => "held; no progress noted yet".into(),
         }),
         other => Some(other.to_owned()),

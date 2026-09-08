@@ -55,13 +55,18 @@ fn hygiene_clear_absent_external_reference_is_an_audited_revision() {
 
 #[test]
 fn hygiene_status_labels_distinguish_actor_and_session_on_show_and_next() {
-    for (actor, session, expected) in [
-        ("agent", "agent", "you"),
-        ("agent", "replacement", "you (another session)"),
-        ("private-peer-principal", "peer-session", "another session"),
+    let mut labels = Vec::new();
+    for (actor, session) in [
+        ("agent", "agent"),
+        ("agent", "replacement"),
+        ("private-peer-principal", "peer-session"),
     ] {
         let (_dir, reader, path, project) = fixture();
         let reference = assigned(&reader, "Assigned duty", "agent", 0);
+        let expected = reader
+            .service
+            .display_identity()
+            .author(actor, Some(&SessionId(session.into())));
         let writer = AgentVerbs::new(path, project, actor.into(), SessionId(session.into()), None);
         writer
             .claim(
@@ -76,6 +81,7 @@ fn hygiene_status_labels_distinguish_actor_and_session_on_show_and_next() {
         capture_status(&writer, &reference, "Waiting for review", 2);
         let shown = reader.show(&reference, at(3)).unwrap();
         assert_eq!(shown.value["current_status"]["by"], expected);
+        labels.push(shown.value["current_status"]["by"].clone());
         assert!(shown.text().contains(&format!("; {expected}]")));
         assert!(
             !shown.value["current_status"]
@@ -102,6 +108,12 @@ fn hygiene_status_labels_distinguish_actor_and_session_on_show_and_next() {
             );
         }
     }
+    assert_eq!(labels[0], "you");
+    assert_ne!(labels[1], "you");
+    assert_ne!(labels[2], "you");
+    assert_ne!(labels[0], labels[1]);
+    assert_ne!(labels[0], labels[2]);
+    assert_ne!(labels[1], labels[2]);
 }
 
 #[test]

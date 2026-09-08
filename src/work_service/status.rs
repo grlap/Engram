@@ -105,16 +105,9 @@ impl LocalWorkService {
             complete,
             recorded_at: note.recorded_at,
             locator: selected.locator,
-            by: if note.actor.actor_id == self.actor_id
-                && note.actor.session_id.as_ref() == Some(&self.session_id)
-            {
-                "you"
-            } else if note.actor.actor_id == self.actor_id {
-                "you (another session)"
-            } else {
-                "another session"
-            }
-            .into(),
+            by: self
+                .display_identity()
+                .author(&note.actor.actor_id, note.actor.session_id.as_ref()),
         }
     }
 }

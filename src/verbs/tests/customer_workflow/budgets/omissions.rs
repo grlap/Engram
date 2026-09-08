@@ -212,7 +212,7 @@ fn full_notes_replace_only_the_compact_note_budget_contribution() {
             target,
             &page,
             |view| verbs.render_show(view, at(12)),
-            "agent",
+            verbs.service.display_identity(),
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
         .unwrap();
@@ -222,7 +222,7 @@ fn full_notes_replace_only_the_compact_note_budget_contribution() {
             source,
             &page,
             |view| verbs.render_show(view, at(12)),
-            "agent",
+            verbs.service.display_identity(),
             budget,
         )
         .unwrap();

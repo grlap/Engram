@@ -212,7 +212,7 @@ fn listing_cursor_refuses_fractional_expiry_and_clock_reversal() {
     // SQL expiry columns truncate, but the holder remains live until .123900.
     let observed = at(12) + chrono::Duration::microseconds(123_100);
     let page = verbs.ls(&input, observed).unwrap();
-    assert_eq!(page.value["items"][0]["holder"], "agent");
+    assert_eq!(page.value["items"][0]["holder"], "you");
     let continued = LsInput {
         after: Some(page.value["after"].as_str().unwrap().into()),
         ..input.clone()

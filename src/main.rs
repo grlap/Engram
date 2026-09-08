@@ -603,8 +603,8 @@ enum WorkCommand {
     Handoff {
         /// Item to hand off; defaults to the focus.
         work_ref: Option<String>,
-        /// Session that receives the item.
-        #[arg(long, value_name = "ACTOR")]
+        /// Real recipient session id supplied by the host or coordinator; peer display labels are refused.
+        #[arg(long, value_name = "SESSION")]
         to: Option<String>,
         /// Checkpoint summary recorded with the offer.
         #[arg(long, requires = "to")]
@@ -1440,7 +1440,9 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 },
                 (None, true, None) => HandoffAction::Accept,
                 (None, false, Some(reason)) => HandoffAction::Cancel { reason },
-                _ => bail!("handoff needs exactly one of --to ACTOR, --accept, or --cancel REASON"),
+                _ => {
+                    bail!("handoff needs exactly one of --to SESSION, --accept, or --cancel REASON")
+                }
             };
             verbs.handoff(HandoffInput { work_ref, action }, now)
         }
@@ -1465,19 +1467,20 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             })
         }
         Err(error) => {
-            let guidance = error.guidance();
+            let guidance = verbs.error_guidance(&error);
             if json {
                 eprintln!(
                     "{}",
                     serde_json::to_string_pretty(&{
-                        let mut value = store_error_value(&error.error);
+                        let mut value =
+                            verbs.project_error(&error, store_error_value(&error.error));
                         value["error"]["reminders"] = serde_json::json!(guidance.reminders);
                         value["error"]["next"] = serde_json::json!(guidance.next);
                         value
                     })?
                 );
             } else {
-                eprintln!("error: {error}");
+                eprintln!("error: {}", verbs.error_message(&error));
                 for reminder in &guidance.reminders {
                     eprintln!("  - {reminder}");
                 }

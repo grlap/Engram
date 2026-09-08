@@ -179,7 +179,7 @@ fn phoenix_full_note_omissions_remain_absent_or_array() {
             view,
             &page,
             |view| verbs.render_show(view, at(1)),
-            "agent",
+            verbs.service.display_identity(),
             MAX_AGENT_WORK_RESPONSE_BYTES,
         )
         .expect("fit");

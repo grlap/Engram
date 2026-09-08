@@ -128,8 +128,13 @@ fn preview_correction_session_marker_precedes_untrusted_note_body() {
                 .unwrap();
             assert_eq!(row["note"], body);
             let marker = if actor == "Coordinator" {
-                assert_eq!(row["note_session_id"], "coordinator-session");
-                " [note session coordinator-session]"
+                if verbose {
+                    assert_eq!(row["note_session_id"], "coordinator-session");
+                } else {
+                    assert!(row.get("note_session_id").is_none());
+                    assert_eq!(row["note_by"], "you");
+                }
+                " [note session you]"
             } else {
                 assert!(row.get("note_session_id").is_none());
                 ""
@@ -235,12 +240,16 @@ fn resume_discovery_finds_assignment_and_own_participation_without_a_claim() {
     for work in &assigned {
         assert!(rows.iter().any(|row| row["ref"] == *work));
     }
-    assert!(rows.iter().any(|row| row["holder"] == "another session"));
+    let holder = coordinator
+        .service
+        .display_identity()
+        .session(&SessionId("agent".into()));
+    assert!(rows.iter().any(|row| row["holder"] == holder));
     assert_eq!(
         receipt.value["participated"],
         json!([{
-            "ref": other, "title": "Reviewed elsewhere", "holder": "another session", "note": "My review finding",
-            "note_session_id": "coordinator-session",
+            "ref": other, "title": "Reviewed elsewhere", "holder": holder, "note": "My review finding",
+            "note_by": "you",
             "note_detail": format!("engram work show {other} --notes")
         }])
     );
@@ -275,8 +284,23 @@ fn resume_discovery_finds_assignment_and_own_participation_without_a_claim() {
             .remove("note_detail"),
         Some(json!(format!("engram work show {other} --notes")))
     );
+    let mut verbose_with_only_shared_fields = verbose.value["participated"].clone();
     assert_eq!(
-        verbose.value["participated"],
+        verbose_with_only_shared_fields[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("note_session_id"),
+        Some(json!("coordinator-session"))
+    );
+    assert_eq!(
+        compact_with_only_shared_fields[0]
+            .as_object_mut()
+            .unwrap()
+            .remove("note_by"),
+        Some(json!("you"))
+    );
+    assert_eq!(
+        verbose_with_only_shared_fields,
         compact_with_only_shared_fields
     );
 }
@@ -467,7 +491,7 @@ fn resume_discovery_includes_handoff_recipient_without_an_own_note() {
     assert_eq!(
         receipt.value["participated"],
         json!([{
-            "ref": work, "title": "Offered review", "holder": "another session"
+            "ref": work, "title": "Offered review", "holder": coordinator.service.display_identity().session(&SessionId("agent".into()))
         }])
     );
 }

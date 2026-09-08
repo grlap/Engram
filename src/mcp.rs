@@ -62,6 +62,10 @@ impl McpServer {
         }
     }
 
+    fn verb(&self, outcome: Result<Receipt, VerbError>) -> CallToolResult {
+        verb(outcome, &self.verbs())
+    }
+
     fn verbs(&self) -> AgentVerbs {
         AgentVerbs::with_shared_service(
             Arc::clone(&self.work_service),
@@ -78,7 +82,8 @@ struct NextArgs {
     peek: Option<bool>,
     /// Maximum ready items and changes to return (default 20).
     limit: Option<u32>,
-    /// Return the full structured projection instead of compact rows.
+    /// Return rich structured output, including raw identity and integrity metadata.
+    /// Terse show and compact rows omit selected fields; this is not a global security boundary.
     verbose: Option<bool>,
     /// Asserted host/client context generation; a new value may reannounce project memories.
     #[schemars(length(max = 256))]
@@ -107,7 +112,8 @@ struct LsArgs {
     after: Option<String>,
     /// Maximum items to return (default 20).
     limit: Option<u32>,
-    /// Return the full structured projection instead of compact rows.
+    /// Return rich structured output, including raw identity and integrity metadata.
+    /// Terse show and compact rows omit selected fields; this is not a global security boundary.
     verbose: Option<bool>,
 }
 
@@ -313,7 +319,7 @@ struct HandoffArgs {
     work_ref: Option<String>,
     /// offer (with to), accept, or cancel (with reason).
     action: HandoffActionArg,
-    /// Session that receives the item.
+    /// Real recipient session id supplied by the host or coordinator; peer display labels are refused.
     to: Option<String>,
     /// Checkpoint summary recorded with the offer.
     summary: Option<String>,
@@ -331,7 +337,7 @@ impl McpServer {
         description = "What is ready, what you hold, and what changed; peek=true reads orientation without staging or advancing delivery, focus or memory advertisement"
     )]
     fn next(&self, Parameters(args): Parameters<NextArgs>) -> CallToolResult {
-        verb(self.verbs().next(
+        self.verb(self.verbs().next(
             &NextInput {
                 limit: args.limit,
                 peek: args.peek.unwrap_or(false),
@@ -348,7 +354,7 @@ impl McpServer {
         description = "List open work; search, blocked, mine, all, label, and under with optional/required narrow it; after continues the same listing"
     )]
     fn ls(&self, Parameters(args): Parameters<LsArgs>) -> CallToolResult {
-        verb(self.verbs().ls(
+        self.verb(self.verbs().ls(
             &LsInput {
                 search: args.search,
                 blocked: args.blocked.unwrap_or(false),
@@ -369,10 +375,10 @@ impl McpServer {
     /// Inspect one item without changing focus or claims.
     #[tool(
         name = "show",
-        description = "One item: outcome, acceptance, holder, blockers, reminders; reading changes neither focus nor claims"
+        description = "One item with display-only peer labels: outcome, acceptance, holder, blockers, reminders; reading changes neither focus nor claims. Rich verbose next/ls may expose raw identity and integrity metadata."
     )]
     fn show(&self, Parameters(args): Parameters<ShowArgs>) -> CallToolResult {
-        verb(self.verbs().show_records(
+        self.verb(self.verbs().show_records(
             &args.work_ref,
             &crate::verbs::ShowInput {
                 notes: args.notes.unwrap_or(false),
@@ -391,7 +397,7 @@ impl McpServer {
         description = "Create work from a title; under adds a child and optional makes it non-blocking"
     )]
     fn add(&self, Parameters(args): Parameters<AddArgs>) -> CallToolResult {
-        verb(self.verbs().add(
+        self.verb(self.verbs().add(
             AddInput {
                 external: args.external,
                 notes: args.notes.unwrap_or_default(),
@@ -415,7 +421,7 @@ impl McpServer {
         description = "Hold an item before changing anything; later calls default to it"
     )]
     fn claim(&self, Parameters(args): Parameters<WorkClaimArgs>) -> CallToolResult {
-        verb(self.verbs().claim(
+        self.verb(self.verbs().claim(
             ClaimInput {
                 work_ref: args.work_ref,
                 ttl_seconds: args.ttl_seconds,
@@ -497,7 +503,7 @@ impl McpServer {
                 reason: args.reason.unwrap_or_default(),
             },
         };
-        verb(self.verbs().update(
+        self.verb(self.verbs().update(
             UpdateInput {
                 work_ref: args.work_ref,
                 action,
@@ -512,7 +518,7 @@ impl McpServer {
         description = "Record a gate on held open work or an attributed late finding on completed work; work_ref defaults to focus and evidence_ref is opaque"
     )]
     fn gate(&self, Parameters(args): Parameters<GateArgs>) -> CallToolResult {
-        verb(self.verbs().gate(
+        self.verb(self.verbs().gate(
             GateInput {
                 work_ref: args.work_ref,
                 name: args.name,
@@ -529,7 +535,7 @@ impl McpServer {
         description = "Store an attributed project note; revise an existing key with retained history. Optional expected_revision refuses stale writes; no focus or claim changes"
     )]
     fn remember(&self, Parameters(args): Parameters<RememberArgs>) -> CallToolResult {
-        verb(self.verbs().remember(
+        self.verb(self.verbs().remember(
             RememberInput {
                 text: args.text,
                 key: args.key,
@@ -546,7 +552,7 @@ impl McpServer {
         description = "List or search current project memories; full with an exact key reads one body, with optional revision for attributed history"
     )]
     fn memories(&self, Parameters(args): Parameters<MemoriesArgs>) -> CallToolResult {
-        verb(self.verbs().memories(
+        self.verb(self.verbs().memories(
             &MemoriesInput {
                 query: args.query,
                 after: args.after,
@@ -563,7 +569,7 @@ impl McpServer {
         description = "Append an attributed tombstone for one project-memory key; this is not erasure"
     )]
     fn forget(&self, Parameters(args): Parameters<ForgetArgs>) -> CallToolResult {
-        verb(
+        self.verb(
             self.verbs()
                 .forget(ForgetInput { key: args.key }, Utc::now()),
         )
@@ -575,7 +581,7 @@ impl McpServer {
         description = "Record an attributed note on open or blocked work without claiming, including children of a completed parent; work_ref selects the target. Only a live holder checkpoints; completed notes never change a frozen seal"
     )]
     fn note(&self, Parameters(args): Parameters<NoteArgs>) -> CallToolResult {
-        verb(self.verbs().note(
+        self.verb(self.verbs().note(
             &NoteInput {
                 status: args.status.unwrap_or(false),
                 work_ref: args.work_ref,
@@ -592,7 +598,7 @@ impl McpServer {
         description = "Complete the item you hold; optional links cite existing note/gate evidence with the required link_basis from show, author linkage not verification. Success discloses criteria with no evidence linked to this criterion, without refusing completion for that absence; a refusal says what is still owed and the command that resolves it"
     )]
     fn done(&self, Parameters(args): Parameters<DoneArgs>) -> CallToolResult {
-        verb(self.verbs().done(
+        self.verb(self.verbs().done(
             DoneInput {
                 links: args.links.unwrap_or_default(),
                 link_basis: args.link_basis,
@@ -610,7 +616,7 @@ impl McpServer {
         description = "Search every item, including closed ones, by text"
     )]
     fn search(&self, Parameters(args): Parameters<WorkSearchArgs>) -> CallToolResult {
-        verb(self.verbs().search(&args.query, args.limit, Utc::now()))
+        self.verb(self.verbs().search(&args.query, args.limit, Utc::now()))
     }
 
     /// Offer, accept, or cancel a transfer.
@@ -630,7 +636,7 @@ impl McpServer {
                 reason: args.reason.unwrap_or_default(),
             },
         };
-        verb(self.verbs().handoff(
+        self.verb(self.verbs().handoff(
             HandoffInput {
                 work_ref: args.work_ref,
                 action,
@@ -652,12 +658,12 @@ impl McpServer {
 )]
 impl ServerHandler for McpServer {}
 
-fn verb(outcome: Result<Receipt, VerbError>) -> CallToolResult {
+fn verb(outcome: Result<Receipt, VerbError>, words: &AgentVerbs) -> CallToolResult {
     match outcome {
         Ok(receipt) => CallToolResult::structured(receipt.value),
         Err(error) => {
-            let guidance = error.guidance();
-            let mut value = store_error_value(&error.error);
+            let guidance = words.error_guidance(&error);
+            let mut value = words.project_error(&error, store_error_value(&error.error));
             value["error"]["reminders"] = json!(guidance.reminders);
             value["error"]["next"] = json!(guidance.next);
             CallToolResult::structured_error(value)
