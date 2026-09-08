@@ -401,9 +401,14 @@ fn concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded() {
     service
         .work_gate("bounded-history", &[], None, at(100))
         .expect("bounded gate lookup");
+    eprintln!(
+        "gate lookup canonical decodes: {} (budget 24)",
+        crate::canonical::canonical_decode_count()
+    );
     assert!(
         crate::canonical::canonical_decode_count() <= 24,
-        "gate lookup decoded an unbounded evidence history"
+        "gate lookup decoded {} canonical objects; budget is 24",
+        crate::canonical::canonical_decode_count()
     );
     let lapsed_replay = service
         .work_gate("bounded-history", &[], None, at(4_000))

@@ -150,23 +150,7 @@ pub(super) fn create_root_on<R: Redactor>(
         ],
     )?;
     refresh_work_catalog_projection(transaction, &item)?;
-    transaction.execute(
-        "INSERT INTO work_root_executions (
-             root_execution_id, project_id, root_id, generation, state,
-             revision, created_at_ms, updated_at_ms, execution_json
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        params![
-            root_execution.root_execution_id.0.to_string(),
-            root_execution.project_id.0,
-            root_execution.root_id.0.to_string(),
-            root_execution.generation,
-            encode_state(root_execution.state)?,
-            root_execution.revision,
-            root_execution.created_at.timestamp_millis(),
-            root_execution.updated_at.timestamp_millis(),
-            serde_json::to_vec(&root_execution)?
-        ],
-    )?;
+    super::root_state::initialize(transaction, &root_execution)?;
     let run = WorkRun {
         schema_version: SCHEMA_VERSION,
         run_id,
@@ -539,7 +523,9 @@ impl SqliteStore {
         root_execution
             .run_ids
             .extend(runs.values().map(|run| run.run_id));
-        root_execution.run_ids.sort_by_key(|run_id| run_id.0);
+        root_execution
+            .run_ids
+            .sort_by(super::root_state::compare_runs);
         root_execution.run_ids.dedup();
         root_execution.revision += 1;
         root_execution.updated_at = request.created_at;
@@ -1848,19 +1834,7 @@ pub(super) fn persist_root_execution(
     transaction: &Transaction<'_>,
     execution: &RootExecution,
 ) -> Result<(), StoreError> {
-    transaction.execute(
-        "UPDATE work_root_executions SET
-             state = ?2, revision = ?3, updated_at_ms = ?4, execution_json = ?5
-         WHERE root_execution_id = ?1",
-        params![
-            execution.root_execution_id.0.to_string(),
-            encode_state(execution.state)?,
-            execution.revision,
-            execution.updated_at.timestamp_millis(),
-            serde_json::to_vec(execution)?
-        ],
-    )?;
-    Ok(())
+    super::root_state::persist(transaction, execution)
 }
 
 #[allow(
@@ -2055,7 +2029,7 @@ pub(super) fn expect_root_contributor(
     execution.expected_contributors.push(participant.clone());
     execution
         .expected_contributors
-        .sort_by(|left, right| left.0.cmp(&right.0));
+        .sort_by(super::root_state::compare_contributors);
     true
 }
 
@@ -2072,12 +2046,9 @@ pub(super) fn add_root_contribution(
         return false;
     }
     execution.contributions.push(contribution);
-    execution.contributions.sort_by(|left, right| {
-        left.participant
-            .0
-            .cmp(&right.participant.0)
-            .then_with(|| left.object.as_str().cmp(right.object.as_str()))
-    });
+    execution
+        .contributions
+        .sort_by(super::root_state::compare_contributions);
     true
 }
 
@@ -2105,7 +2076,7 @@ pub(super) fn waive_root_contributor(
     });
     execution
         .waivers
-        .sort_by(|left, right| left.participant.0.cmp(&right.participant.0));
+        .sort_by(super::root_state::compare_waivers);
     true
 }
 

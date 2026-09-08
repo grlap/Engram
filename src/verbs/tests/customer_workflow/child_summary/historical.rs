@@ -104,7 +104,7 @@ fn assert_historical_binding_refuses_corruption(
 ) {
     let original: Vec<u8> = connection
         .query_row(
-            "SELECT execution_json FROM work_root_executions
+            "SELECT header_json FROM work_root_executions
          WHERE root_execution_id = (
              SELECT root_execution_id FROM work_runs WHERE work_id = ?1
              ORDER BY generation DESC LIMIT 1
@@ -113,8 +113,15 @@ fn assert_historical_binding_refuses_corruption(
             |row| row.get(0),
         )
         .unwrap();
-    let execution: crate::RootExecution = serde_json::from_slice(&original).unwrap();
-    assert!(!execution.required_child_waivers.is_empty());
+    let execution: crate::domain::RootExecutionHeader = serde_json::from_slice(&original).unwrap();
+    let original_waivers = connection.prepare(
+        "SELECT member_hash, member_json FROM work_root_members WHERE root_execution_id = ?1 AND json_extract(member_json, '$.collection') = 'child_waiver'"
+    ).unwrap().query_map([execution.root_execution_id.0.to_string()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)))
+        .unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+    let waiver_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM work_root_members WHERE root_execution_id = ?1 AND json_extract(member_json, '$.collection') = 'child_waiver'",
+        [execution.root_execution_id.0.to_string()], |row| row.get(0)).unwrap();
+    assert!(waiver_count > 0);
     let current: i64 = connection
         .query_row(
             "SELECT generation FROM work_root_executions WHERE root_id = ?1 AND state = 'active'",
@@ -124,11 +131,18 @@ fn assert_historical_binding_refuses_corruption(
         .unwrap();
     assert!(current > execution.generation);
     for fault in ["scalar", "canonical_waivers", "generation"] {
+        // The reader owns another connection: the deliberate corruption must
+        // be committed before that reader can observe it under WAL.
         let mut damaged = execution.clone();
         let mut generation = execution.generation;
         match fault {
             "scalar" => generation += 10,
-            "canonical_waivers" => damaged.required_child_waivers.clear(),
+            "canonical_waivers" => {
+                let changed = connection.execute(
+                    "DELETE FROM work_root_members WHERE root_execution_id = ?1 AND json_extract(member_json, '$.collection') = 'child_waiver'",
+                    [execution.root_execution_id.0.to_string()]).unwrap();
+                assert_eq!(i64::try_from(changed).unwrap(), waiver_count);
+            }
             "generation" => {
                 generation += 10;
                 damaged.generation = generation;
@@ -137,7 +151,7 @@ fn assert_historical_binding_refuses_corruption(
         }
         connection
             .execute(
-                "UPDATE work_root_executions SET generation = ?1, execution_json = ?2
+                "UPDATE work_root_executions SET generation = ?1, header_json = ?2
              WHERE root_execution_id = ?3",
                 rusqlite::params![
                     generation,
@@ -151,17 +165,18 @@ fn assert_historical_binding_refuses_corruption(
             matches!(error.error, StoreError::InvalidWorkProjection(_)),
             "{fault}: {error:?}"
         );
-        connection
-            .execute(
-                "UPDATE work_root_executions SET generation = ?1, execution_json = ?2
-             WHERE root_execution_id = ?3",
-                rusqlite::params![
-                    execution.generation,
-                    original,
-                    execution.root_execution_id.0.to_string()
-                ],
-            )
-            .unwrap();
+        connection.execute("UPDATE work_root_executions SET generation = ?1, header_json = ?2 WHERE root_execution_id = ?3",
+            rusqlite::params![execution.generation, original, execution.root_execution_id.0.to_string()]).unwrap();
+        if fault == "canonical_waivers" {
+            for (hash, bytes) in &original_waivers {
+                connection
+                    .execute(
+                        "INSERT INTO work_root_members VALUES (?1, ?2, ?3)",
+                        rusqlite::params![execution.root_execution_id.0.to_string(), hash, bytes],
+                    )
+                    .unwrap();
+            }
+        }
         let receipt = verbs.show(parent, at(15)).unwrap();
         assert_eq!(
             receipt.value["child_obligations"]["required_owed"]["count"],

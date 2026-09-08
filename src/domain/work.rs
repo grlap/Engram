@@ -336,6 +336,58 @@ pub struct RootExecution {
     pub updated_at: DateTime<Utc>,
 }
 
+/// An immutable, resolvable root-state cut. `head` names stored canonical bytes,
+/// not the checksum of a state that has never been stored as an object.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RootExecutionRef {
+    pub root_execution_id: RootExecutionId,
+    pub project_id: ProjectId,
+    pub root_id: WorkId,
+    pub generation: i64,
+    pub head: ObjectHash,
+}
+
+/// Fixed-size metadata; growing collections are separate facts.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RootExecutionHeader {
+    pub schema_version: u16,
+    pub root_execution_id: RootExecutionId,
+    pub project_id: ProjectId,
+    pub root_id: WorkId,
+    pub generation: i64,
+    pub state: RootExecutionState,
+    pub revision: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// One typed collection member. Removal records the exact prior fact.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "collection", content = "value", rename_all = "snake_case")]
+pub enum RootExecutionMember {
+    Run(WorkRunId),
+    ChildSeal(ObjectHash),
+    ChildWaiver(RequiredChildWaiver),
+    Contributor(SessionId),
+    Contribution(RootContribution),
+    Waiver(CompletionWaiver),
+}
+
+/// A generation origin or incremental state head. Sequence orders root changes
+/// only; it is not a work revision or a delivery/feed cursor. A missing predecessor
+/// is valid only for sequence zero, whose collections must be empty.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RootExecutionDelta {
+    pub header: RootExecutionHeader,
+    pub sequence: u64,
+    pub predecessor: Option<ObjectHash>,
+    pub previous_revision: Option<i64>,
+    pub removed: Vec<RootExecutionMember>,
+    pub added: Vec<RootExecutionMember>,
+    /// Checksum of the complete assembled state, never an object reference.
+    pub state_checksum: ObjectHash,
+}
+
 /// One ordinary-executor generation for a work item.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkRun {
@@ -771,6 +823,10 @@ pub struct CompletionSeal {
     pub work_id: WorkId,
     pub root_id: WorkId,
     pub root_execution_id: RootExecutionId,
+    /// Exact root state before this completion delta. Root contributor,
+    /// contribution and participant-waiver accounting lives at this address,
+    /// not in copied lists or the root's later current projection.
+    pub root_execution: RootExecutionRef,
     pub run_id: WorkRunId,
     pub run_generation: i64,
     pub accepted_work_revision: i64,
@@ -803,9 +859,6 @@ pub struct CompletionSeal {
     #[serde(default)]
     pub restored: bool,
     pub unfinished_optional_children: Vec<WorkId>,
-    pub expected_contributors: Vec<SessionId>,
-    pub contributions: Vec<RootContribution>,
-    pub waivers: Vec<CompletionWaiver>,
     pub drain: CompletionDrainAttestation,
     pub actor: ActorContext,
     pub completed_at: DateTime<Utc>,
@@ -869,7 +922,7 @@ pub struct WorkEvent {
     pub revision: i64,
     pub work: WorkItem,
     pub run: Option<WorkRun>,
-    pub root_execution: Option<RootExecution>,
+    pub root_execution: Option<RootExecutionRef>,
     pub claim: Option<WorkClaim>,
     pub handoff_offer: Option<WorkHandoffOffer>,
     pub blocker: Option<WorkBlocker>,

@@ -600,16 +600,16 @@ fn restored_origin_required_child_reopen_removes_the_native_parent_barrier_credi
     let store = SqliteStore::open(directory.path().join("destination.sqlite3")).expect("store");
     let connection = rusqlite::Connection::open(directory.path().join("destination.sqlite3"))
         .expect("connection");
-    let root_execution_bytes: Vec<u8> = connection
+    let child_seals: i64 = connection
         .query_row(
-            "SELECT execution_json FROM work_root_executions WHERE root_id = ?1",
+            "SELECT COUNT(*) FROM work_root_members member
+             JOIN work_root_executions root USING(root_execution_id)
+             WHERE root.root_id = ?1 AND json_extract(member.member_json, '$.collection') = 'child_seal'",
             [parent.work_id.0.to_string()],
             |row| row.get(0),
         )
         .expect("root execution projection");
-    let root_execution: crate::RootExecution =
-        serde_json::from_slice(&root_execution_bytes).expect("root execution");
-    assert!(root_execution.required_child_seals.is_empty());
+    assert_eq!(child_seals, 0);
     assert!(
         store
             .verify_all()

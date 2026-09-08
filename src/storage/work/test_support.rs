@@ -124,6 +124,8 @@ pub(super) fn child(key: &str, requirement: ChildRequirement, title: &str) -> Ch
     }
 }
 
+// Preserve the caller's revision and run basis: silently refreshing either
+// would hide stale fixture state instead of exercising admission's refusal.
 pub(super) fn claim(
     store: &mut SqliteStore,
     work: &WorkItem,

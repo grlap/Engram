@@ -234,8 +234,15 @@ pub(in crate::storage) fn initialize_schema(
              revision INTEGER NOT NULL,
              created_at_ms INTEGER NOT NULL,
              updated_at_ms INTEGER NOT NULL,
-             execution_json BLOB NOT NULL,
+             header_json BLOB NOT NULL,
+             head_hash TEXT NOT NULL REFERENCES objects(object_hash),
              UNIQUE(root_id, generation)
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS work_root_members (
+             root_execution_id TEXT NOT NULL REFERENCES work_root_executions(root_execution_id),
+             member_hash TEXT NOT NULL,
+             member_json BLOB NOT NULL,
+             PRIMARY KEY(root_execution_id, member_hash)
          ) STRICT;
          CREATE UNIQUE INDEX IF NOT EXISTS work_root_execution_active
              ON work_root_executions(root_id) WHERE state = 'active';

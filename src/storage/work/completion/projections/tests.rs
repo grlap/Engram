@@ -330,7 +330,7 @@ fn typed_projection_checks_reject_drift_in_every_work_snapshot_family() {
         ),
         (
             "work_root_executions",
-            "execution_json",
+            "header_json",
             "revision",
             serde_json::json!(9999),
         ),
@@ -487,7 +487,7 @@ fn typed_projection_checks_reject_unknown_fields() {
     for (table, column, path) in [
         ("work_items", "item_json", "$.injected"),
         ("work_runs", "run_json", "$.injected"),
-        ("work_root_executions", "execution_json", "$.injected"),
+        ("work_root_executions", "header_json", "$.injected"),
         ("work_claims", "claim_json", "$.injected"),
         ("work_handoff_offers", "offer_json", "$.injected"),
         ("work_blockers", "blocker_json", "$.injected"),
@@ -525,7 +525,7 @@ fn typed_projection_checks_reject_duplicate_known_fields() {
         ("work_completion_seals", "seal_json", "", "claim_fence"),
         ("work_items", "item_json", "", "title"),
         ("work_runs", "run_json", "", "generation"),
-        ("work_root_executions", "execution_json", "", "generation"),
+        ("work_root_executions", "header_json", "", "generation"),
         ("work_claims", "claim_json", "", "fence"),
         ("work_handoff_offers", "offer_json", "", "state"),
         ("work_blockers", "blocker_json", "", "detail"),

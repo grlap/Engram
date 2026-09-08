@@ -39,7 +39,7 @@ use crate::{
 #[cfg(test)]
 use super::feeds::append_work_event;
 #[cfg(test)]
-use super::planning::{expect_root_contributor, persist_root_execution};
+use super::planning::expect_root_contributor;
 #[cfg(test)]
 use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEventDraft};
 
@@ -112,16 +112,17 @@ impl SqliteStore {
         let run = active_run_snapshot(&transaction, &item)?.ok_or_else(|| {
             StoreError::InvalidWorkProjection("fixture work has no active run".into())
         })?;
-        let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
-        if expect_root_contributor(&mut root_execution, participant) {
-            root_execution.revision += 1;
-            root_execution.updated_at = now;
-            persist_root_execution(&transaction, &root_execution)?;
-        }
+        let root_execution =
+            super::root_state::update(&transaction, run.root_execution_id, |root| {
+                if expect_root_contributor(root, participant) {
+                    root.revision += 1;
+                    root.updated_at = now;
+                }
+            })?;
         let mut event = latest_canonical_work_event_for_item(&transaction, work_id)?;
-        event.root_execution = Some(root_execution);
         event.created_at = now;
-        append_work_event(&transaction, &WorkEventDraft::from(&event))?;
+        let draft = WorkEventDraft::with_root_state(&event, Some(root_execution.value().clone()));
+        super::feeds::append_work_event_with_root(&transaction, &draft, &root_execution)?;
         transaction.commit()?;
         Ok(())
     }
@@ -705,7 +706,12 @@ impl SqliteStore {
     #[cfg(test)]
     pub(crate) fn append_test_work_event(&mut self, event: &WorkEvent) -> Result<(), StoreError> {
         let transaction = self.begin_work_mutation()?;
-        append_work_event(&transaction, &WorkEventDraft::from(event))?;
+        let root = event
+            .root_execution
+            .as_ref()
+            .map(|address| super::root_state::resolve(&transaction, address))
+            .transpose()?;
+        append_work_event(&transaction, &WorkEventDraft::with_root_state(event, root))?;
         transaction.commit()?;
         Ok(())
     }
@@ -717,7 +723,12 @@ impl SqliteStore {
     ) -> Result<(), StoreError> {
         let transaction = self.begin_work_mutation()?;
         for event in events {
-            append_work_event(&transaction, &WorkEventDraft::from(event))?;
+            let root = event
+                .root_execution
+                .as_ref()
+                .map(|address| super::root_state::resolve(&transaction, address))
+                .transpose()?;
+            append_work_event(&transaction, &WorkEventDraft::with_root_state(event, root))?;
         }
         transaction.commit()?;
         Ok(())
@@ -1852,14 +1863,34 @@ pub(super) fn load_root_execution(
     connection: &Connection,
     root_execution_id: RootExecutionId,
 ) -> Result<RootExecution, StoreError> {
-    let execution = load_root_execution_projection(connection, root_execution_id)?;
+    load_root_execution_with_ref(connection, root_execution_id).map(|(execution, _)| execution)
+}
+
+pub(super) fn load_root_execution_with_ref(
+    connection: &Connection,
+    root_execution_id: RootExecutionId,
+) -> Result<(RootExecution, crate::domain::RootExecutionRef), StoreError> {
+    let (execution, address) = super::root_state::projected(connection, root_execution_id)?;
+    verify_root_execution_reference_on(connection, &address)?;
+    Ok((execution, address))
+}
+
+pub(super) fn verify_root_execution_reference_on(
+    connection: &Connection,
+    address: &crate::domain::RootExecutionRef,
+) -> Result<(), StoreError> {
     let event = latest_canonical_work_event_on_feed(
         connection,
         "root_work",
-        &execution.root_id.0.to_string(),
+        &address.root_id.0.to_string(),
         "$.root_execution",
     )?;
-    bind_root_execution_event(execution, &event)
+    if event.root_execution.as_ref() != Some(address) {
+        return Err(StoreError::InvalidWorkProjection(
+            "root execution differs from its canonical event binding".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Advisory inspection of a retained generation, not selection of live authority.
@@ -1869,7 +1900,7 @@ pub(super) fn load_retained_root_execution(
     connection: &Connection,
     root_execution_id: RootExecutionId,
 ) -> Result<RootExecution, StoreError> {
-    let execution = load_root_execution_projection(connection, root_execution_id)?;
+    let (execution, address) = super::root_state::projected(connection, root_execution_id)?;
     let stored = connection
         .query_row(
             "SELECT object.object_hash, object.canonical_json
@@ -1894,49 +1925,18 @@ pub(super) fn load_retained_root_execution(
                 "retained root execution has no generation-bound canonical event".into(),
             )
         })?;
-    bind_root_execution_event(execution, &decode_canonical_work_event(stored)?)
+    bind_root_execution_event(execution, &address, &decode_canonical_work_event(stored)?)
 }
 
 fn bind_root_execution_event(
     execution: RootExecution,
+    address: &crate::domain::RootExecutionRef,
     event: &WorkEvent,
 ) -> Result<RootExecution, StoreError> {
-    if event.root_execution.as_ref() != Some(&execution) {
+    if event.root_execution.as_ref() != Some(address) {
         return Err(StoreError::InvalidWorkProjection(format!(
             "root execution {:?} differs from its scalar or canonical event binding",
             execution.root_execution_id
-        )));
-    }
-    Ok(execution)
-}
-
-fn load_root_execution_projection(
-    connection: &Connection,
-    root_execution_id: RootExecutionId,
-) -> Result<RootExecution, StoreError> {
-    let row: Option<(Vec<u8>, bool)> = connection
-        .query_row(
-            "SELECT execution_json,
-                    root_execution_id = json_extract(execution_json, '$.root_execution_id') AND
-                    project_id = json_extract(execution_json, '$.project_id') AND
-                    root_id = json_extract(execution_json, '$.root_id') AND
-                    generation = json_extract(execution_json, '$.generation') AND
-                    state = json_extract(execution_json, '$.state') AND
-                    revision = json_extract(execution_json, '$.revision')
-             FROM work_root_executions WHERE root_execution_id = ?1",
-            [root_execution_id.0.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    let (bytes, scalar_bound) = row.ok_or_else(|| {
-        StoreError::InvalidWorkProjection(format!(
-            "root execution {root_execution_id:?} is missing"
-        ))
-    })?;
-    let execution: RootExecution = serde_json::from_slice(&bytes)?;
-    if !scalar_bound || execution.root_execution_id != root_execution_id {
-        return Err(StoreError::InvalidWorkProjection(format!(
-            "root execution {root_execution_id:?} differs from its scalar or canonical event binding"
         )));
     }
     Ok(execution)
@@ -1955,40 +1955,34 @@ pub(super) fn active_root_execution_optional(
     connection: &Connection,
     root_id: WorkId,
 ) -> Result<Option<RootExecution>, StoreError> {
-    let row: Option<(Vec<u8>, bool)> = connection
+    let row: Option<String> = connection
         .query_row(
-            "SELECT execution_json,
-                    root_execution_id = json_extract(execution_json, '$.root_execution_id') AND
-                    project_id = json_extract(execution_json, '$.project_id') AND
-                    root_id = json_extract(execution_json, '$.root_id') AND
-                    generation = json_extract(execution_json, '$.generation') AND
-                    state = json_extract(execution_json, '$.state') AND
-                    revision = json_extract(execution_json, '$.revision')
+            "SELECT root_execution_id
              FROM work_root_executions
              WHERE root_id = ?1 AND state = 'active'",
             [root_id.0.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
         .optional()?;
-    let Some((bytes, scalar_bound)) = row else {
+    let Some(id) = row else {
         return Ok(None);
     };
-    let execution: RootExecution = serde_json::from_slice(&bytes)?;
+    let (execution, address) =
+        super::root_state::projected(connection, parse_root_execution_id(&id)?)?;
     let event = latest_canonical_work_event_on_feed(
         connection,
         "root_work",
         &root_id.0.to_string(),
         "$.root_execution",
     )?;
-    if !scalar_bound
-        || execution.root_id != root_id
-        || event.root_execution.as_ref() != Some(&execution)
-    {
+    if execution.root_id != root_id {
         return Err(StoreError::InvalidWorkProjection(format!(
             "active root execution for {root_id:?} differs from canonical history"
         )));
     }
-    Ok(Some(execution))
+    Ok(Some(bind_root_execution_event(
+        execution, &address, &event,
+    )?))
 }
 
 pub(super) fn load_work_claim_optional(
@@ -2338,6 +2332,16 @@ pub(super) fn parse_work_run_id(value: &str) -> Result<WorkRunId, StoreError> {
         .map(WorkRunId)
         .map_err(|error| {
             StoreError::InvalidWorkProjection(format!("invalid work run id {value:?}: {error}"))
+        })
+}
+
+pub(super) fn parse_root_execution_id(value: &str) -> Result<RootExecutionId, StoreError> {
+    uuid::Uuid::parse_str(value)
+        .map(RootExecutionId)
+        .map_err(|error| {
+            StoreError::InvalidWorkProjection(format!(
+                "invalid root execution id {value:?}: {error}"
+            ))
         })
 }
 

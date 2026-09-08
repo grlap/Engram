@@ -18,10 +18,9 @@ use crate::{
     CanonicalObject, ObjectHash, RestoredWorkEvidence,
     domain::{
         CompletionSeal, EnvironmentEvidence, ExecutionObservation, MemoryAssertionEvent,
-        MemoryVersion, RootExecution, SCHEMA_VERSION, VerificationEvidence, WorkCheckpoint,
-        WorkClaim, WorkEvent, WorkEvidence, WorkHandoffOffer, WorkId, WorkItem, WorkObligation,
-        WorkObligationId, WorkObligationResolutionEvent, WorkRun, WorkRunId,
-        normalize_gate_evidence_input,
+        MemoryVersion, SCHEMA_VERSION, VerificationEvidence, WorkCheckpoint, WorkClaim, WorkEvent,
+        WorkEvidence, WorkHandoffOffer, WorkId, WorkItem, WorkObligation, WorkObligationId,
+        WorkObligationResolutionEvent, WorkRun, WorkRunId, normalize_gate_evidence_input,
     },
 };
 
@@ -1452,12 +1451,12 @@ pub(super) fn verify_work_scalar_bindings(
         (
             "work_root_execution",
             "SELECT root_execution_id FROM work_root_executions WHERE
-             root_execution_id != json_extract(execution_json, '$.root_execution_id') OR
-             project_id != json_extract(execution_json, '$.project_id') OR
-             root_id != json_extract(execution_json, '$.root_id') OR
-             generation != json_extract(execution_json, '$.generation') OR
-             state != json_extract(execution_json, '$.state') OR
-             revision != json_extract(execution_json, '$.revision')",
+             root_execution_id != json_extract(header_json, '$.root_execution_id') OR
+             project_id != json_extract(header_json, '$.project_id') OR
+             root_id != json_extract(header_json, '$.root_id') OR
+             generation != json_extract(header_json, '$.generation') OR
+             state != json_extract(header_json, '$.state') OR
+             revision != json_extract(header_json, '$.revision')",
         ),
         (
             "work_claim",
@@ -1573,7 +1572,7 @@ pub(super) fn verify_work_scalar_bindings(
     drop(statement);
 
     let mut statement = connection.prepare(
-        "SELECT root_execution_id, created_at_ms, updated_at_ms, execution_json
+        "SELECT root_execution_id, created_at_ms, updated_at_ms, header_json
          FROM work_root_executions ORDER BY root_execution_id",
     )?;
     let rows = statement.query_map([], |row| {
@@ -1587,10 +1586,12 @@ pub(super) fn verify_work_scalar_bindings(
     for row in rows {
         let (id, created_at, updated_at, bytes) = row?;
         *checked += 1;
-        let valid = serde_json::from_slice::<RootExecution>(&bytes).is_ok_and(|execution| {
-            created_at == execution.created_at.timestamp_millis()
-                && updated_at == execution.updated_at.timestamp_millis()
-        });
+        let valid = serde_json::from_slice::<crate::domain::RootExecutionHeader>(&bytes).is_ok_and(
+            |execution| {
+                created_at == execution.created_at.timestamp_millis()
+                    && updated_at == execution.updated_at.timestamp_millis()
+            },
+        );
         if !valid {
             invalid.push(format!("work_root_execution:{id}:extended_scalar_binding"));
         }

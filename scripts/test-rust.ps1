@@ -38,6 +38,12 @@ try {
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }
+        Write-Output "Rust scale gate: root delta write bounds and historical cost measurements"
+        # Intentionally include future ignored tests in the root_delta_scale_ family (substring filter).
+        & node scripts/test-temp.mjs -- cargo test root_delta_scale_ -- --ignored --nocapture
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
     }
 } finally {
     $env:RUST_TEST_THREADS = $previousTestThreads

@@ -260,21 +260,7 @@ impl SqliteStore {
                 created_at: request.reopened_at,
                 updated_at: request.reopened_at,
             };
-            transaction.execute(
-                "INSERT INTO work_root_executions (
-                     root_execution_id, project_id, root_id, generation, state,
-                     revision, created_at_ms, updated_at_ms, execution_json
-                 ) VALUES (?1, ?2, ?3, ?4, 'active', 1, ?5, ?6, ?7)",
-                params![
-                    execution.root_execution_id.0.to_string(),
-                    execution.project_id.0,
-                    execution.root_id.0.to_string(),
-                    execution.generation,
-                    execution.created_at.timestamp_millis(),
-                    execution.updated_at.timestamp_millis(),
-                    serde_json::to_vec(&execution)?
-                ],
-            )?;
+            super::super::root_state::initialize(&transaction, &execution)?;
             execution
         } else {
             let mut execution = active_root_execution(&transaction, item.root_id)?;
@@ -315,7 +301,9 @@ impl SqliteStore {
         let mut root_execution = root_execution;
         if !root_execution.run_ids.contains(&run.run_id) {
             root_execution.run_ids.push(run.run_id);
-            root_execution.run_ids.sort_by_key(|run_id| run_id.0);
+            root_execution
+                .run_ids
+                .sort_by(super::super::root_state::compare_runs);
             root_execution.revision += 1;
             root_execution.updated_at = request.reopened_at;
             persist_root_execution(&transaction, &root_execution)?;
@@ -694,7 +682,7 @@ fn waive_required_child_on(
     root_execution.required_child_waivers.push(waiver.clone());
     root_execution
         .required_child_waivers
-        .sort_by(|left, right| left.work_id.0.as_bytes().cmp(right.work_id.0.as_bytes()));
+        .sort_by(super::super::root_state::compare_child_waivers);
     root_execution.revision += 1;
     root_execution.updated_at = request.waived_at;
     persist_root_execution(transaction, &root_execution)?;

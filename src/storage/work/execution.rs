@@ -190,27 +190,11 @@ pub(super) fn ensure_restored_execution_state(
         updated_at: now,
     };
     execution.run_ids.push(run.run_id);
-    execution.run_ids.sort_by_key(|run_id| run_id.0);
+    execution.run_ids.sort_by(super::root_state::compare_runs);
     execution.run_ids.dedup();
     execution.updated_at = now;
     if created_execution {
-        transaction.execute(
-            "INSERT INTO work_root_executions (
-                 root_execution_id, project_id, root_id, generation, state,
-                 revision, created_at_ms, updated_at_ms, execution_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                execution.root_execution_id.0.to_string(),
-                execution.project_id.0,
-                execution.root_id.0.to_string(),
-                execution.generation,
-                "active",
-                execution.revision,
-                execution.created_at.timestamp_millis(),
-                execution.updated_at.timestamp_millis(),
-                serde_json::to_vec(&execution)?
-            ],
-        )?;
+        super::root_state::initialize(transaction, &execution)?;
     } else {
         execution.revision += 1;
         persist_root_execution(transaction, &execution)?;
@@ -1366,15 +1350,15 @@ fn persist_work_checkpoint_on(
     run.revision += 1;
     run.updated_at = checkpointed_at;
     persist_work_run(transaction, &run, claim.fence)?;
-    let mut root_execution = load_root_execution(transaction, run.root_execution_id)?;
-    let root_changed = expect_root_contributor(&mut root_execution, &claim.holder)
-        | add_root_contribution(&mut root_execution, &claim.holder, object.hash());
-    if root_changed {
-        root_execution.revision += 1;
-        root_execution.updated_at = checkpointed_at;
-        persist_root_execution(transaction, &root_execution)?;
-    }
-    append_work_event(
+    let root_execution = super::root_state::update(transaction, run.root_execution_id, |root| {
+        let changed = expect_root_contributor(root, &claim.holder)
+            | add_root_contribution(root, &claim.holder, object.hash());
+        if changed {
+            root.revision += 1;
+            root.updated_at = checkpointed_at;
+        }
+    })?;
+    super::feeds::append_work_event_with_root(
         transaction,
         &WorkEventDraft {
             schema_version: SCHEMA_VERSION,
@@ -1385,7 +1369,7 @@ fn persist_work_checkpoint_on(
             revision: item.revision,
             work: item.clone(),
             run: Some(run),
-            root_execution: Some(root_execution),
+            root_execution: Some(root_execution.value().clone()),
             claim: Some(claim),
             handoff_offer: None,
             blocker: None,
@@ -1395,6 +1379,7 @@ fn persist_work_checkpoint_on(
             actor: actor.clone(),
             created_at: checkpointed_at,
         },
+        &root_execution,
     )?;
     Ok(object.hash().clone())
 }
@@ -1427,15 +1412,15 @@ fn persist_work_evidence_on(
         "work_evidence",
         &object,
     )?;
-    let mut root_execution = load_root_execution(transaction, run.root_execution_id)?;
-    let root_changed = expect_root_contributor(&mut root_execution, &claim.holder)
-        | add_root_contribution(&mut root_execution, &claim.holder, object.hash());
-    if root_changed {
-        root_execution.revision += 1;
-        root_execution.updated_at = evidence.created_at;
-        persist_root_execution(transaction, &root_execution)?;
-    }
-    append_work_event(
+    let root_execution = super::root_state::update(transaction, run.root_execution_id, |root| {
+        let changed = expect_root_contributor(root, &claim.holder)
+            | add_root_contribution(root, &claim.holder, object.hash());
+        if changed {
+            root.revision += 1;
+            root.updated_at = evidence.created_at;
+        }
+    })?;
+    super::feeds::append_work_event_with_root(
         transaction,
         &WorkEventDraft {
             schema_version: SCHEMA_VERSION,
@@ -1446,7 +1431,7 @@ fn persist_work_evidence_on(
             revision: item.revision,
             work: item.clone(),
             run: Some(run.clone()),
-            root_execution: Some(root_execution),
+            root_execution: Some(root_execution.value().clone()),
             claim: Some(claim),
             handoff_offer: None,
             blocker: None,
@@ -1456,6 +1441,7 @@ fn persist_work_evidence_on(
             actor: evidence.actor.clone(),
             created_at: evidence.created_at,
         },
+        &root_execution,
     )?;
     Ok(object.hash().clone())
 }

@@ -31,8 +31,8 @@ use super::planning::{
 use super::query::{
     active_root_execution, active_root_execution_optional, completion_recovery_snapshot_on,
     feed_parts, incomplete_prerequisite_projections, latest_canonical_work_event_for_item_optional,
-    load_root_execution, load_work_claim_optional, load_work_item, load_work_run, parse_work_id,
-    parse_work_run_id, work_completed_by_restored_record_on,
+    load_root_execution, load_root_execution_with_ref, load_work_claim_optional, load_work_item,
+    load_work_run, parse_work_id, parse_work_run_id, work_completed_by_restored_record_on,
 };
 use super::{
     CompleteWorkStorageResult, ControlWorkObligationWaiverFingerprint, EvidenceProjectionRow,
@@ -63,6 +63,9 @@ use crate::{
 mod child_resolutions;
 mod lifecycle;
 mod projections;
+mod root_binding;
+
+pub(super) use root_binding::{validate_seal_root_event, validate_stored_seal_root};
 
 #[cfg(test)]
 mod tests;
@@ -217,7 +220,8 @@ impl SqliteStore {
                 reason: format!("prerequisites remain incomplete: {incomplete:?}"),
             });
         }
-        let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
+        let (mut root_execution, pre_seal_root) =
+            load_root_execution_with_ref(&transaction, run.root_execution_id)?;
         let required_child_seals =
             required_child_seals(&transaction, item.work_id, run.root_execution_id)?;
         let restored_child_completions =
@@ -377,8 +381,17 @@ impl SqliteStore {
         }
         let accepted_work_revision = CanonicalObject::freeze(&item)?;
         SqliteStore::insert_object(&transaction, "work_item_revision", &accepted_work_revision)?;
-        expect_root_contributor(&mut root_execution, &claim.holder);
-        add_root_contribution(&mut root_execution, &claim.holder, &checkpoint);
+        // The checkpoint commits both facts atomically. Completion must not
+        // heal missing canonical accounting or seal a state at another address.
+        if !root_execution.expected_contributors.contains(&claim.holder)
+            || !root_execution.contributions.iter().any(|contribution| {
+                contribution.participant == claim.holder && contribution.object == checkpoint
+            })
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "completion root accounting is missing the holder or current checkpoint; run `engram doctor` and inspect the recorded history before restoring a verified store; completion does not repair canonical accounting".into(),
+            ));
+        }
         if item.work_id == item.root_id
             && let Some(participant) = first_unaccounted_root_contributor(&root_execution)
         {
@@ -408,6 +421,7 @@ impl SqliteStore {
             work_id: item.work_id,
             root_id: item.root_id,
             root_execution_id: run.root_execution_id,
+            root_execution: pre_seal_root.clone(),
             run_id: run.run_id,
             run_generation: run.generation,
             accepted_work_revision: item.revision,
@@ -428,9 +442,6 @@ impl SqliteStore {
             restored: child_seal_is_restored || !restored_child_completions.is_empty(),
             restored_child_completions,
             unfinished_optional_children,
-            expected_contributors: root_execution.expected_contributors.clone(),
-            contributions: root_execution.contributions.clone(),
-            waivers: root_execution.waivers.clone(),
             drain,
             actor: request.actor.clone(),
             completed_at: request.completed_at,
@@ -474,18 +485,23 @@ impl SqliteStore {
             root_execution
                 .required_child_seals
                 .clone_from(&seal.required_child_seals);
+            // Root membership is a set in canonical member order. The seal
+            // retains its separate child-proof order.
+            root_execution
+                .required_child_seals
+                .sort_by(super::root_state::compare_seals);
         } else if item.child_requirement == ChildRequirement::Required {
             root_execution
                 .required_child_seals
                 .push(seal_object.hash().clone());
             root_execution
                 .required_child_seals
-                .sort_by(|left, right| left.as_str().cmp(right.as_str()));
+                .sort_by(super::root_state::compare_seals);
             root_execution.required_child_seals.dedup();
         }
         root_execution.revision += 1;
         root_execution.updated_at = request.completed_at;
-        persist_root_execution(&transaction, &root_execution)?;
+        super::root_state::persist_completion(&transaction, &root_execution, &pre_seal_root)?;
 
         let event = WorkEventDraft {
             schema_version: SCHEMA_VERSION,
@@ -1913,6 +1929,7 @@ pub(super) fn validate_completion_seal_children_on(
         }
         let child_seal: CompletionSeal =
             load_typed_work_object(connection, child_hash, "completion_seal")?;
+        validate_stored_seal_root(connection, &child_seal, child_hash)?;
         let child = load_work_item(connection, child_seal.work_id)?;
         if !seen_children.insert(child.work_id) {
             return Err(StoreError::InvalidWorkProjection(format!(
@@ -2047,6 +2064,7 @@ pub(super) fn required_child_seals(
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
         let seal: CompletionSeal = load_typed_work_object(connection, &hash, "completion_seal")?;
+        validate_stored_seal_root(connection, &seal, &hash)?;
         if seal.work_id.0.to_string() != child_work
             || seal.run_id.0.to_string() != child_run
             || seal.root_execution_id != root_execution_id
@@ -2067,6 +2085,21 @@ pub(super) fn validated_required_child_waivers(
     connection: &Connection,
     parent_id: WorkId,
     execution: &RootExecution,
+) -> Result<Vec<RequiredChildWaiver>, StoreError> {
+    required_child_waivers_on(connection, parent_id, execution, WaiverValidation::Live)
+}
+
+#[derive(Clone, Copy)]
+enum WaiverValidation {
+    Live,
+    Audit,
+}
+
+fn required_child_waivers_on(
+    connection: &Connection,
+    parent_id: WorkId,
+    execution: &RootExecution,
+    validation: WaiverValidation,
 ) -> Result<Vec<RequiredChildWaiver>, StoreError> {
     // The root-execution projection is already bound to the latest canonical
     // event. An empty projected waiver set cannot authorize completion, so it
@@ -2089,6 +2122,7 @@ pub(super) fn validated_required_child_waivers(
     drop(statement);
 
     let mut events = HashMap::new();
+    let mut witnesses = Vec::new();
     for stored_hash in hashes {
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
@@ -2097,6 +2131,11 @@ pub(super) fn validated_required_child_waivers(
             continue;
         };
         if event_execution.root_execution_id != execution.root_execution_id {
+            continue;
+        }
+        // Live completion needs only this parent's barriers. Exhaustive audit
+        // still checks the complete generation, including other parents.
+        if matches!(validation, WaiverValidation::Live) && event.work_id != parent_id {
             continue;
         }
         let WorkTransition::RequiredChildWaived {
@@ -2114,12 +2153,20 @@ pub(super) fn validated_required_child_waivers(
             waived_by: event.actor.actor_id.clone(),
             reason: reason.clone(),
         };
-        let event_contains_exact_waiver = event_execution
-            .required_child_waivers
-            .iter()
-            .filter(|candidate| *candidate == &waiver)
-            .count()
-            == 1;
+        let event_contains_exact_waiver = match validation {
+            WaiverValidation::Audit => {
+                super::root_state::resolve(connection, event_execution)?
+                    .required_child_waivers
+                    .iter()
+                    .filter(|candidate| *candidate == &waiver)
+                    .count()
+                    == 1
+            }
+            WaiverValidation::Live => {
+                witnesses.push((event_execution.clone(), waiver.clone()));
+                true // The shared fact/ancestry proof below must succeed.
+            }
+        };
         let valid = event.schema_version == SCHEMA_VERSION
             && event.project_id == execution.project_id
             && event.root_id == execution.root_id
@@ -2142,6 +2189,11 @@ pub(super) fn validated_required_child_waivers(
 
     let mut projected = HashMap::new();
     for waiver in &execution.required_child_waivers {
+        if matches!(validation, WaiverValidation::Live)
+            && load_work_item(connection, waiver.work_id)?.parent_id != Some(parent_id)
+        {
+            continue;
+        }
         if projected.insert(waiver.work_id, waiver.clone()).is_some() {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "root execution {:?} duplicates a required-child waiver for {:?}",
@@ -2155,6 +2207,9 @@ pub(super) fn validated_required_child_waivers(
             execution.root_execution_id
         )));
     }
+    if matches!(validation, WaiverValidation::Live) {
+        super::root_state::verify_waiver_witnesses(connection, execution, &witnesses)?;
+    }
 
     let mut direct = Vec::new();
     for waiver in projected.into_values() {
@@ -2163,7 +2218,7 @@ pub(super) fn validated_required_child_waivers(
             direct.push(waiver);
         }
     }
-    direct.sort_by(|left, right| left.work_id.0.as_bytes().cmp(right.work_id.0.as_bytes()));
+    direct.sort_by(super::root_state::compare_child_waivers);
     Ok(direct)
 }
 
@@ -2173,20 +2228,26 @@ fn verify_required_child_waiver_bindings(
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
     let mut statement = connection.prepare(
-        "SELECT root_execution_id, execution_json
+        "SELECT root_execution_id
          FROM work_root_executions ORDER BY root_execution_id",
     )?;
     let rows = statement
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-        })?
+        .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
-    for (root_execution_id, bytes) in rows {
+    for root_execution_id in rows {
         *checked += 1;
-        let valid = serde_json::from_slice::<RootExecution>(&bytes).is_ok_and(|execution| {
-            validated_required_child_waivers(connection, execution.root_id, &execution).is_ok()
-        });
+        let valid = super::query::parse_root_execution_id(&root_execution_id)
+            .and_then(|id| super::root_state::projected(connection, id))
+            .is_ok_and(|(execution, _)| {
+                required_child_waivers_on(
+                    connection,
+                    execution.root_id,
+                    &execution,
+                    WaiverValidation::Audit,
+                )
+                .is_ok()
+            });
         if !valid {
             invalid.push(format!(
                 "work_root_execution:{root_execution_id}:invalid_required_child_waivers"

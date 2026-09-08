@@ -123,7 +123,10 @@ fn disposing_claimed_child_records_an_attributed_participant_waiver() {
         8,
     )
     .expect("root completes with child participant accounted");
-    assert!(seal.waivers.iter().any(|waiver| {
+    let accounting = store
+        .completion_root_execution(CanonicalObject::freeze(&seal).unwrap().hash())
+        .unwrap();
+    assert!(accounting.waivers.iter().any(|waiver| {
         waiver.participant == child_claim.holder && waiver.reason == "optional path was abandoned"
     }));
 }
@@ -245,28 +248,21 @@ fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
         .get_work_run(root.active_run_id.expect("root run"))
         .expect("root run projection")
         .root_execution_id;
-    let original_execution_json: Vec<u8> = store
+    store
         .connection
-        .query_row(
-            "SELECT execution_json FROM work_root_executions
-             WHERE root_execution_id = ?1",
-            [root_execution_id.0.to_string()],
-            |row| row.get(0),
-        )
-        .expect("root execution bytes");
-    let mut corrupted_execution: RootExecution =
-        serde_json::from_slice(&original_execution_json).expect("root execution");
-    corrupted_execution
-        .required_child_waivers
-        .push(waiver.clone());
+        .execute_batch("SAVEPOINT corrupt")
+        .expect("savepoint");
     store
         .connection
         .execute(
-            "UPDATE work_root_executions SET execution_json = ?2
-             WHERE root_execution_id = ?1",
+            "INSERT INTO work_root_members (root_execution_id, member_hash, member_json)
+             VALUES (?1, 'duplicate-member', ?2)",
             params![
                 root_execution_id.0.to_string(),
-                serde_json::to_vec(&corrupted_execution).expect("corrupt execution JSON")
+                serde_json::to_vec(&crate::domain::RootExecutionMember::ChildWaiver(
+                    waiver.clone()
+                ))
+                .expect("duplicate waiver JSON")
             ],
         )
         .expect("inject duplicate waiver");
@@ -281,14 +277,7 @@ fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
         store.work_completion_readiness(root.work_id, &root_claim.holder, at(8)),
         Err(StoreError::InvalidWorkProjection(_))
     ));
-    store
-        .connection
-        .execute(
-            "UPDATE work_root_executions SET execution_json = ?2
-             WHERE root_execution_id = ?1",
-            params![root_execution_id.0.to_string(), original_execution_json],
-        )
-        .expect("restore root execution");
+    restore_savepoint(&store);
     checkpoint(
         &mut store,
         &root,

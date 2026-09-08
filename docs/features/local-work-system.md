@@ -135,6 +135,118 @@ unfinished optional descendants even when their item lifecycle remains open.
 This separates durable planning identity from live execution authority.
 Protocol records bind both `work_id` and `run_id`.
 
+Root state has one immutable empty origin per execution generation. Each
+change adds an immutable `work_root_delta` object with a predecessor address,
+consecutive root-state sequence, previous revision, fixed metadata, exact
+member additions/removals, and a checksum of the complete resulting state.
+The delta is the head object; its checksum is not an object address. Events
+refer to this head instead of embedding all root collections. An unchanged
+root reuses its head. Runs, child seals, child waivers, contributors,
+contributions, and participant waivers all support both addition and removal.
+The root's `updated_at` is a recorded caller-supplied timestamp, not a clock
+for ordering or authority. It is bound by canonical equality and the checksum,
+but need not increase. Predecessor addresses, root-state sequences, revisions,
+and dense feed positions carry the relevant order; claim expiry is separate.
+
+Current storage keeps a fixed header/head row and separate member rows.
+Readers assemble these rows and check the complete state checksum, including
+missing or extra members. Historical reads follow the addressed generation
+back to its origin, check consecutive deltas and every intermediate result,
+and never substitute the current head. Doctor also checks historical event
+references in feed order and rejects unbound delta objects. These checks do
+not authorize repair of runtime state. See [SQLite storage](sqlite-store.md).
+
+This bounds the bytes written for a fixed-size new root fact, not the CPU
+cost of reading or hashing the aggregate. Current validation remains linear
+in current membership. Evidence and checkpoint writers reuse the validated
+member map and pass a transaction-bound head proof to event append. A stale
+proof refuses; it never reloads a different state as a fallback.
+Live completion now uses a narrower validation contract for required-child
+waivers. It fully checks the current root state, then follows that head's
+predecessors to the empty origin. Each cited waiver must be an exact addition
+on this chain and must never have been removed after that addition. Removal
+followed by an identical re-addition also refuses. The read reverses all exact
+member changes; it does not assume that ordinary writers are the only possible
+source of canonical history. Other parents' waivers do not require a separate
+historical-state read for this completion.
+
+This live proof does not check historical full-state checksums. A re-canonicalized
+historical head with a false checksum can pass the fact proof if the required
+facts, chain, and current full checksum are valid. Doctor and graph export
+retain exhaustive historical checksum verification and detect that fault.
+This is an explicit narrowing of live validation, not an unchanged integrity
+contract. Checksum representation and meaning have not changed.
+
+For a fresh completion, the remaining checks have a specific scope:
+
+- Admission, reads, proof, seal, and event share one writer transaction.
+  Refusal commits no partial completion.
+- The current item, run, claim, fence, holder, expiry, and active generation
+  must agree with their canonical bindings. A projection is not new authority.
+- The current root's complete state and every member hash are checked.
+  Each used waiver must match its direct child and canonical event exactly.
+- The proof checks ancestry, exact additions and removals, revision continuity,
+  and reversal of the complete chain to its empty origin. It does not merely
+  test whether a cited object exists.
+- Checkpoint, run evidence, feed cut, acceptance, required children,
+  obligations, and completion drain retain their separate admission checks.
+
+These checks do not authenticate actors or prove that the whole store has
+never been rewritten. Acceptance and evidence relevance remain author
+assertions. A successful completion is not a full-store health report.
+
+Full historical checksum validation is on demand, not periodic. An explicit
+`engram doctor` or `engram graph save` checks this history. Projection repair
+also calls `verify_all` before commit, including full historical root replay;
+backup and restore verify their copies. An operator can include an audit in
+installation procedures, but installing a binary alone does not schedule one.
+Ordinary open and `done` do not schedule that audit, and fixture checks
+in CI do not audit the active store. A false historical checksum can therefore
+remain undetected until an operator or host requests a full check. Engram does
+not guarantee a maximum detection delay.
+
+The fact proof loads each delta once and hashes the current state once. Its
+member work depends on the current members, requested waivers, and actual
+addition/removal payloads, with map lookup costs. There is no fixed waiver
+count: terminal children can accumulate while the open-child count stays low.
+Tests therefore vary waiver count as well as other history. The proof does not
+multiply the current-state checksum bytes by the waiver count.
+The chain length is the entire current generation, not just the distance to
+the oldest cited waiver. Generations do not rotate automatically; only an
+explicit root reopen starts a new native generation. A root kept open can
+therefore accumulate an unbounded history. This proof removes repeated
+full-state hashing, not dependence on history length.
+
+Stopping at the oldest requested waiver was considered and rejected. It would
+retain a proof of the suffix implied by the current state, but would no longer
+check the prefix or empty origin during live completion. The chosen contract
+keeps those checks. In the same 1,000-checkpoint fixture, the implemented proof
+reduced full-state checksum input for root completion from 103,248,645 bytes
+to 613,338 bytes; the full audit remained at 257,098,620 bytes. These are
+checksum-input counts, not elapsed time or the cost of scanning the suffix.
+The additional loss of prefix validation was not accepted for an unmeasured
+further saving. This is a rejected design option, not unfinished work. A future
+measurement of traversal cost can justify reconsidering that trade-off.
+
+Full historical replay keeps predecessor addresses, then reloads each delta
+in forward order and hashes every intermediate state. Doctor and export can
+still incur quadratic checksum bytes when history and membership grow together.
+Each native completion seal names the exact pre-completion `RootExecutionRef`
+instead of copying root contributors, contributions, and participant waivers.
+The completion delta must directly extend that head. A different head in the
+same generation is not a substitute. Per-item required-child seals, waivers,
+and resolutions remain in the seal because they describe that item's barrier,
+not the entire root's accounting. Historical accounting reads follow the sealed
+address and verify the whole history, even after a later root reopen.
+
+The current-fence checkpoint already commits its holder and contribution to
+root accounting atomically. If either fact is missing at completion, `done`
+refuses with `InvalidWorkProjection` and diagnostic guidance. It does not add
+the missing facts silently. This is a stricter admission check, separate from
+the narrower live historical-checksum contract above. `engram doctor` is the
+diagnostic entry point; projection repair cannot invent missing canonical
+accounting. Any restoration requires a verified source, not a repeated `done`.
+
 Memory scope does not recursively walk arbitrary ancestors. A shared
 `Scope::Work` records the focused work id for provenance and feed routing, but
 its read applicability is the verified root id. Private `Scope::Agent { work

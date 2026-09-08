@@ -22,6 +22,7 @@ engram.db
   objects      # content-addressed rows — write-once
   work_items / work_prerequisites / work_blockers # shipped work graph projections
   work_root_executions / work_runs / work_claims  # shipped execution projections
+  work_root_members # element rows for current root collections
   work_handoff_offers / work_run_evidence / work_completion_seals
   work_feed_heads / work_feed_entries # shipped typed dense project/root/run feeds
   work_operation_results # local-work idempotency receipts
@@ -42,6 +43,54 @@ engram.db
   projections  # exact-current heads/status plus rebuildable indexes and FTS5
   meta         # current-build marker; refuses stores created by another build
 ```
+
+Root execution persistence uses canonical `work_root_delta` origins and
+incremental heads. A `WorkEvent` carries the root identity, generation and
+head address, not a copy of every root collection. `work_root_executions`
+stores fixed metadata and that address; `work_root_members` stores individual
+typed facts. A mutation inserts/deletes only changed members and updates the
+fixed header. The complete assembled state must match the head's checksum.
+The checksum is not a stored-object address. Live completion uses a narrower
+waiver fact proof: one fully checked current state, exact ancestor additions,
+and no later removal, including remove/re-add. It checks the canonical delta
+chain but not its historical full-state checksums. Doctor and graph export
+retain those exhaustive checks, including detection of a re-canonicalized
+historical head with a false checksum. They do not repair runtime rows. See the
+[root-state contract](local-work-system.md#root-execution-and-work-run).
+These full-history checks are requested explicitly, not scheduled by ordinary
+open or completion. Projection repair calls `verify_all`, including full root
+history replay, before commit; backup and restore check their copies. Installing
+a binary alone does not schedule an audit. Without an explicit full check, a
+false historical checksum may remain undetected for an unbounded time.
+CI fixture audits do not check the
+active store.
+
+A native completion seal carries the exact pre-completion root head instead
+of copied root accounting lists. Its canonical completion event must bind the
+direct successor delta, not merely another head of the same generation.
+Historical accounting is resolved from that sealed address. Missing current
+holder/checkpoint accounting refuses completion; `done` does not repair it.
+
+Tests measure canonical event/delta bytes and bound SQL payload bytes for
+root projection writes. These measurements exclude SQLite record/page/index
+encoding, WAL frames and disk I/O; they are not a disk-traffic guarantee.
+The reopen test checks that payload size does not depend on unchanged history,
+except for named, bounded metadata. It compares the same changed-member payload
+at two history depths, both within a generation and when starting a new one.
+Before measurement, the test names the allowed decimal-width fields: event and
+work revision, delta sequence and previous/current revision, and the written
+projection header revision. It subtracts their actual encoded widths and then
+requires exact equality, not a tolerance equal to their maximum widths. Thus
+even one unexplained byte fails; small regressions are not hidden by metadata
+slack. These checks do not promise constant size for a larger actual change.
+The ordinary Rust gate also writes a counterfactual full-copy payload and
+requires it to exceed the same budgets as the positive tests. Both Rust gate
+launchers run the thousand-delta fixture in a separate ignored-test scale
+phase. That phase also measures real completion and audit calls; flat replay
+call counts do not imply bounded hashing work.
+No old database bytes are rewritten or reclaimed by this format change.
+Existing different-build stores still refuse ordinary open; cutover and any
+live-store operation need a separate operator decision.
 
 `control_observations` is the first observe/replay implementation slice. It
 stores canonical input and decision bytes plus their hashes, binds an

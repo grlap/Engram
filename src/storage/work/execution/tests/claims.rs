@@ -339,8 +339,11 @@ fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
         20,
     )
     .expect("complete after current-fence checkpoint");
-    assert_eq!(seal.waivers.len(), 1);
-    assert_eq!(seal.expected_contributors.len(), 3);
+    let accounting = first
+        .completion_root_execution(CanonicalObject::freeze(&seal).unwrap().hash())
+        .unwrap();
+    assert_eq!(accounting.waivers.len(), 1);
+    assert_eq!(accounting.expected_contributors.len(), 3);
     let run = second.get_work_run(accepted.run_id).expect("persisted run");
     assert_eq!(run.executor, Some(SessionId("agent-c".into())));
 }
@@ -1079,10 +1082,12 @@ fn release_requires_nonempty_waiver_reason_and_persists_audit_reasons() {
         WorkTransition::Released { reason, .. } if reason == "planned pause"
     ));
     assert_eq!(
-        event
-            .root_execution
-            .expect("release root execution")
-            .waivers[0]
+        crate::storage::work::root_state::resolve(
+            &store.connection,
+            event.root_execution.as_ref().expect("release head")
+        )
+        .expect("release root execution")
+        .waivers[0]
             .reason,
         "holder left before contributing"
     );

@@ -5,7 +5,7 @@ use crate::storage::work::observation;
 use super::{
     CanonicalObject, ChildRequirement, CompletionSeal, Connection, EvidenceProjectionRow, FeedId,
     HashMap, HashSet, MemoryAssertionEvent, MemoryVersion, ObjectHash, OptionalExtension,
-    RestoredRecord, RootExecution, SCHEMA_VERSION, SqliteStore, StoreError, WorkBlocker, WorkClaim,
+    RestoredRecord, SCHEMA_VERSION, SqliteStore, StoreError, WorkBlocker, WorkClaim,
     WorkClaimState, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkId, WorkItem,
     WorkLifecycle, WorkRelationBasis, WorkRelationBlockerBasis, WorkRun, WorkRunState,
     WorkTransition, apply_work_relation_transition, empty_work_relation_basis,
@@ -54,6 +54,7 @@ impl SqliteStore {
         let mut work_items = HashMap::new();
         let mut runs = HashMap::new();
         let mut root_executions = HashMap::new();
+        let mut root_event_heads = Vec::new();
         let mut claims = HashMap::new();
         let mut handoffs = HashMap::new();
         let mut blockers = HashMap::new();
@@ -198,10 +199,14 @@ impl SqliteStore {
                             )
                             && child.revision == *child_revision
                             && event.root_execution.as_ref().is_some_and(|execution| {
-                                execution.required_child_waivers.iter().any(|waiver| {
-                                    waiver.work_id == *child_id
-                                        && waiver.work_revision == *child_revision
-                                })
+                                super::super::root_state::resolve(connection, execution).is_ok_and(
+                                    |state| {
+                                        state.required_child_waivers.iter().any(|waiver| {
+                                            waiver.work_id == *child_id
+                                                && waiver.work_revision == *child_revision
+                                        })
+                                    },
+                                )
                             })
                     });
                     if !transition_is_bound {
@@ -373,7 +378,11 @@ impl SqliteStore {
                                 && event.run.as_ref().is_some_and(|run| {
                                     run.state == WorkRunState::Completed
                                         && run.completion_seal.as_ref() == Some(seal)
-                                }) =>
+                                })
+                                && super::validate_seal_root_event(
+                                    connection, &value, seal, &event,
+                                )
+                                .is_ok() =>
                         {
                             completion_rows.insert(
                                 seal.as_str().to_owned(),
@@ -398,10 +407,8 @@ impl SqliteStore {
                 runs.insert(run.run_id.0.to_string(), event_json["run"].take());
             }
             if let Some(execution) = event.root_execution {
-                root_executions.insert(
-                    execution.root_execution_id.0.to_string(),
-                    event_json["root_execution"].take(),
-                );
+                root_event_heads.push(execution.clone());
+                root_executions.insert(execution.root_execution_id.0.to_string(), execution);
             }
             if let Some(claim) = event.claim {
                 claims.insert(claim.run_id.0.to_string(), event_json["claim"].take());
@@ -439,11 +446,10 @@ impl SqliteStore {
             &mut checked,
             &mut invalid,
         )?;
-        verify_json_projection::<RootExecution>(
+        super::super::root_state::verify_projections(
             connection,
-            "work_root_execution",
-            "SELECT root_execution_id, execution_json FROM work_root_executions ORDER BY root_execution_id",
             &root_executions,
+            &root_event_heads,
             &mut checked,
             &mut invalid,
         )?;

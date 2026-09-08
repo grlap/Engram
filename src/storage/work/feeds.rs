@@ -476,6 +476,22 @@ pub(super) fn append_work_event(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
 ) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+    append_work_event_on(transaction, event, None)
+}
+
+pub(super) fn append_work_event_with_root(
+    transaction: &Transaction<'_>,
+    event: &WorkEventDraft,
+    root: &super::root_state::WrittenRoot<'_>,
+) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+    append_work_event_on(transaction, event, Some(root))
+}
+
+fn append_work_event_on(
+    transaction: &Transaction<'_>,
+    event: &WorkEventDraft,
+    written_root: Option<&super::root_state::WrittenRoot<'_>>,
+) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
     if event.actor.actor_id.trim().is_empty()
         || event
             .actor
@@ -498,9 +514,17 @@ pub(super) fn append_work_event(
         &event.transition,
         event.blocker.as_ref(),
     )?;
+    let root = match written_root {
+        Some(root) => Some(root.event_ref(transaction, event.root_execution.as_ref())?),
+        None => event
+            .root_execution
+            .as_ref()
+            .map(|value| super::root_state::current_ref(transaction, value))
+            .transpose()?,
+    };
     let event = event
         .clone()
-        .finalize(work_relation_fingerprint(&relation_basis)?);
+        .finalize(work_relation_fingerprint(&relation_basis)?, root);
     let object = CanonicalObject::freeze(&event)?;
     SqliteStore::insert_object(transaction, "work_event", &object)?;
     let positions = append_to_work_feeds(

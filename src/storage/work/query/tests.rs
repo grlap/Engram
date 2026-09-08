@@ -51,7 +51,10 @@ fn resolver_sql_bounds_collisions_and_recovers_an_omitted_target_by_full_id() {
         event.revision = item.revision;
         event.work.clone_from(item);
         event.created_at = item.updated_at;
-        append_work_event(&transaction, &WorkEventDraft::from(&event))
+        let root = event.root_execution.as_ref().map(|address| {
+            super::super::root_state::resolve(&transaction, address).expect("fixture root state")
+        });
+        append_work_event(&transaction, &WorkEventDraft::with_root_state(&event, root))
             .expect("append colliding candidate event");
     }
     transaction.commit().expect("commit collision fixture");

@@ -3,8 +3,9 @@ use crate::storage::work::canonical_work_events_for_item;
 use crate::storage::work::query::{inspect_work_on, load_root_execution};
 use crate::storage::work::test_support::*;
 use crate::{
-    AddWorkBlockerRequest, ChangeWorkPrerequisiteRequest, ClaimWorkRequest, DecomposeWorkRequest,
-    ReviseWorkRequest, SessionId, WorkAvailability, WorkBlockerKind, WorkReadinessReason,
+    AddWorkBlockerRequest, CanonicalObject, ChangeWorkPrerequisiteRequest, ClaimWorkRequest,
+    DecomposeWorkRequest, ReviseWorkRequest, SessionId, WorkAvailability, WorkBlockerKind,
+    WorkReadinessReason,
 };
 
 fn fixture(claim_child: bool) -> (SqliteStore, WorkItem, WorkItem) {
@@ -418,8 +419,12 @@ fn detach_admission_is_leaf_first_and_does_not_take_over_live_claims() {
         5008,
     )
     .expect("root completes without hidden barrier");
+    let accounting = store
+        .completion_root_execution(CanonicalObject::freeze(&seal).unwrap().hash())
+        .unwrap();
     assert!(
-        seal.waivers
+        accounting
+            .waivers
             .iter()
             .any(|waiver| waiver.participant == held.holder)
     );

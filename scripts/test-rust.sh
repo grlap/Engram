@@ -59,4 +59,7 @@ if [ "$#" -eq 0 ]; then
     echo "Rust scale gate: claim-validated mutation decode budgets"
     node scripts/test-temp.mjs -- cargo test claim_validated_mutations_are_bounded_at_project_scale -- \
         --ignored --nocapture
+    echo "Rust scale gate: root delta write bounds and historical cost measurements"
+    # Intentionally include future ignored tests in the root_delta_scale_ family (substring filter).
+    node scripts/test-temp.mjs -- cargo test root_delta_scale_ -- --ignored --nocapture
 fi

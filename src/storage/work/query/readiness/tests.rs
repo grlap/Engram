@@ -442,7 +442,7 @@ fn current_waiver_guards_reject_invalid_execution_bindings() {
         .len(),
         1
     );
-    // Exercise this helper directly: corrupting only execution_json would
+    // Exercise this helper directly: corrupting only current rows would
     // stop at the caller's canonical-binding guard before reaching it.
     for altered in [
         altered_execution(&execution, |value| {
@@ -561,11 +561,8 @@ fn advisory_entrypoints_refuse_projection_only_waiver_drift() {
     // The two current_waiver_guards_* tests exercise the new helper branches.
     let fixture = Fixture::new();
     for (path, value) in [
-        (
-            "$.required_child_waivers[0].work_revision",
-            serde_json::json!(0),
-        ),
-        ("$.required_child_waivers[0].reason", serde_json::json!("")),
+        ("$.value.work_revision", serde_json::json!(0)),
+        ("$.value.reason", serde_json::json!("")),
         ("$.project_id", serde_json::json!("other-project")),
     ] {
         fixture
@@ -573,11 +570,26 @@ fn advisory_entrypoints_refuse_projection_only_waiver_drift() {
             .connection
             .execute_batch("SAVEPOINT corrupt")
             .expect("savepoint");
-        fixture.store.connection.execute(
-            "UPDATE work_root_executions SET execution_json = CAST(json_set(execution_json, ?2, json(?3)) AS BLOB)
-             WHERE root_execution_id = ?1",
-            params![fixture.sealed_child.root_execution_id.0.to_string(), path, value.to_string()],
-        ).expect("projection-only drift");
+        let sql = if path == "$.project_id" {
+            "UPDATE work_root_executions SET header_json = CAST(json_set(header_json, ?2, json(?3)) AS BLOB) WHERE root_execution_id = ?1"
+        } else {
+            "UPDATE work_root_members SET member_json = CAST(json_set(member_json, ?2, json(?3)) AS BLOB) WHERE root_execution_id = ?1 AND json_extract(member_json, '$.collection') = 'child_waiver'"
+        };
+        assert_eq!(
+            fixture
+                .store
+                .connection
+                .execute(
+                    sql,
+                    params![
+                        fixture.sealed_child.root_execution_id.0.to_string(),
+                        path,
+                        value.to_string()
+                    ],
+                )
+                .expect("projection-only drift"),
+            1
+        );
         let readiness_error = fixture
             .store
             .work_completion_readiness(fixture.root.work_id, &fixture.claim.holder, at(32))

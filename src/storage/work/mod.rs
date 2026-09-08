@@ -22,6 +22,7 @@ mod observation;
 mod planning;
 mod query;
 mod record_windows;
+mod root_state;
 mod schema;
 mod session;
 mod status;
@@ -220,7 +221,11 @@ struct WorkEventDraft {
 }
 
 impl WorkEventDraft {
-    fn finalize(self, relation_fingerprint: ObjectHash) -> WorkEvent {
+    fn finalize(
+        self,
+        relation_fingerprint: ObjectHash,
+        root_execution: Option<crate::domain::RootExecutionRef>,
+    ) -> WorkEvent {
         WorkEvent {
             schema_version: self.schema_version,
             project_id: self.project_id,
@@ -230,7 +235,7 @@ impl WorkEventDraft {
             revision: self.revision,
             work: self.work,
             run: self.run,
-            root_execution: self.root_execution,
+            root_execution,
             claim: self.claim,
             handoff_offer: self.handoff_offer,
             blocker: self.blocker,
@@ -243,8 +248,8 @@ impl WorkEventDraft {
 }
 
 #[cfg(test)]
-impl From<&WorkEvent> for WorkEventDraft {
-    fn from(event: &WorkEvent) -> Self {
+impl WorkEventDraft {
+    fn with_root_state(event: &WorkEvent, root_execution: Option<RootExecution>) -> Self {
         Self {
             schema_version: event.schema_version,
             project_id: event.project_id.clone(),
@@ -254,7 +259,7 @@ impl From<&WorkEvent> for WorkEventDraft {
             revision: event.revision,
             work: event.work.clone(),
             run: event.run.clone(),
-            root_execution: event.root_execution.clone(),
+            root_execution,
             claim: event.claim.clone(),
             handoff_offer: event.handoff_offer.clone(),
             blocker: event.blocker.clone(),

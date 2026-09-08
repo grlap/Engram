@@ -31,12 +31,13 @@ fn execution_inventory(database: &std::path::Path) -> Vec<(String, String, Strin
     let connection = rusqlite::Connection::open(database).unwrap();
     connection.prepare("SELECT 'item', work_id, hex(item_json) FROM work_items
         UNION ALL SELECT 'run', run_id, hex(run_json) FROM work_runs
-        UNION ALL SELECT 'root', root_execution_id, hex(execution_json) FROM work_root_executions
+        UNION ALL SELECT 'root', root_execution_id, hex(header_json) || head_hash FROM work_root_executions
+        UNION ALL SELECT 'root_member', root_execution_id || member_hash, hex(member_json) FROM work_root_members
         UNION ALL SELECT 'claim', run_id, hex(claim_json) FROM work_claims
         UNION ALL SELECT 'evidence', evidence_hash, run_id FROM work_run_evidence
         UNION ALL SELECT 'run_feed', feed_id, CAST(position AS TEXT) FROM work_feed_heads WHERE feed_kind = 'run_execution'
         UNION ALL SELECT object_kind, object_hash, '' FROM objects
-            WHERE object_kind IN ('work_event', 'work_checkpoint', 'work_evidence', 'completion_seal')
+            WHERE object_kind IN ('work_event', 'work_root_delta', 'work_checkpoint', 'work_evidence', 'completion_seal')
         ORDER BY 1, 2, 3").unwrap()
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap()
         .collect::<Result<Vec<_>, _>>().unwrap()

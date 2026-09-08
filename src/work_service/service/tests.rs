@@ -697,14 +697,13 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         panic!("handoff completion must seal work");
     };
     assert_eq!(seal.work_id, root.work_id);
-    let stored_seal = SqliteStore::open(&database)
+    let accounting = SqliteStore::open(&database)
         .expect("store")
-        .get::<CompletionSeal>(&seal.seal)
-        .expect("read seal")
-        .expect("canonical completion seal");
-    assert_eq!(stored_seal.expected_contributors.len(), 2);
+        .completion_root_execution(&seal.seal)
+        .expect("read exact sealed root accounting");
+    assert_eq!(accounting.expected_contributors.len(), 2);
     assert_eq!(
-        stored_seal
+        accounting
             .contributions
             .iter()
             .map(|contribution| &contribution.participant)
