@@ -156,14 +156,13 @@ impl LocalWorkService {
                                 "pending work delivery has no exact staged payload".into(),
                             )
                         })?;
-                    let mut page: StagedWorkChangePage = payload.decode()?;
-                    verify_staged_work_change_page(
+                    let page = decode_staged_work_change_page(
                         &store,
                         &self.session_id,
-                        &project_feed,
+                        &self.project_id,
                         delivery_session.project_cursor,
                         through,
-                        &mut page,
+                        &payload,
                     )?;
                     if page.omitted_count > 0 {
                         omissions.push(WorkSectionOmission {

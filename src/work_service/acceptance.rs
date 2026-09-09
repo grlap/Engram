@@ -108,7 +108,8 @@ pub(super) fn for_seal(
     work: WorkId,
     run: WorkRunId,
 ) -> Result<WorkAcceptanceEvidence, StoreError> {
-    let seal: CompletionSeal = store.get(hash)?.ok_or_else(|| {
+    let resolved = store.resolve_migrated_reference(hash)?;
+    let seal: CompletionSeal = store.get(&resolved)?.ok_or_else(|| {
         StoreError::InvalidWorkProjection("acceptance disclosure has no canonical seal".into())
     })?;
     if seal.work_id != work || seal.run_id != run {

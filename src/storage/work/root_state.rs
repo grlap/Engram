@@ -17,7 +17,7 @@ use crate::domain::{
 };
 use std::cmp::Ordering;
 
-const KIND: &str = "work_root_delta";
+pub(in crate::storage) const KIND: &str = "work_root_delta";
 
 #[cfg(test)]
 mod tests;

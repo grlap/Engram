@@ -23,6 +23,7 @@ mod planning;
 mod query;
 mod record_windows;
 mod root_state;
+pub(in crate::storage) use root_state::KIND as ROOT_DELTA_KIND;
 mod schema;
 mod session;
 mod status;

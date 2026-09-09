@@ -863,6 +863,41 @@ fn verified_bounded_work_changes(
     Ok(changes)
 }
 
+pub(crate) fn validate_migration_delivery(
+    store: &SqliteStore,
+    session: &SessionId,
+    project: &ProjectId,
+    confirmed: i64,
+    through: i64,
+    payload: &crate::CanonicalObject,
+) -> Result<(), StoreError> {
+    decode_staged_work_change_page(store, session, project, confirmed, through, payload)?;
+    Ok(())
+}
+
+fn decode_staged_work_change_page(
+    store: &SqliteStore,
+    session: &SessionId,
+    project: &ProjectId,
+    confirmed: i64,
+    through: i64,
+    payload: &crate::CanonicalObject,
+) -> Result<StagedWorkChangePage, StoreError> {
+    let mut page: StagedWorkChangePage = payload.decode()?;
+    let derived =
+        store.migrated_delivery_attribution(project, session, confirmed, through, payload)?;
+    verify_staged_work_change_page(
+        store,
+        session,
+        &FeedId::Project(project.clone()),
+        confirmed,
+        through,
+        &mut page,
+        &derived,
+    )?;
+    Ok(page)
+}
+
 fn verify_staged_work_change_page(
     store: &SqliteStore,
     session_id: &SessionId,
@@ -870,6 +905,7 @@ fn verify_staged_work_change_page(
     confirmed_through: i64,
     delivered_through: i64,
     page: &mut StagedWorkChangePage,
+    derived_positions: &[i64],
 ) -> Result<(), StoreError> {
     if page.schema_version != SCHEMA_VERSION {
         return Err(StoreError::InvalidWorkProjection(format!(
@@ -878,16 +914,21 @@ fn verify_staged_work_change_page(
         )));
     }
     let entries = store.work_feed_between(feed, confirmed_through, delivered_through)?;
-    if entries.len() != page.changes.len()
-        || entries.iter().zip(&page.changes).any(|(entry, change)| {
-            entry.position != change.entry.position
-                || entry.object_kind != change.entry.object_kind
-                || entry.object_hash != change.entry.object_hash
-        })
-    {
+    if entries.len() != page.changes.len() {
         return Err(StoreError::InvalidWorkProjection(
             "staged work delivery payload does not bind its exact dense source interval".into(),
         ));
+    }
+    for (entry, change) in entries.iter().zip(&page.changes) {
+        let resolved = store.resolve_migrated_reference(&change.entry.object_hash)?;
+        if entry.position != change.entry.position
+            || entry.object_kind != change.entry.object_kind
+            || entry.object_hash != resolved
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "staged work delivery payload does not bind its exact dense source interval".into(),
+            ));
+        }
     }
     for (entry, change) in entries.into_iter().zip(&mut page.changes) {
         let object = store
@@ -901,9 +942,15 @@ fn verify_staged_work_change_page(
         let expected = matches!(&change.delivery, WorkChangeProjection::Visible(_))
             && source_is_from_session(&entry.object_kind, &object, session_id);
         if change.from_current_session != expected {
-            return Err(StoreError::InvalidWorkProjection(
-                "staged work attribution differs from the receiving session".into(),
-            ));
+            if expected && derived_positions.contains(&entry.position.position) {
+                // Only this exact imported page has a verified per-page audit.
+                // Hydration never writes its frozen payload or changes its token.
+                change.from_current_session = true;
+            } else {
+                return Err(StoreError::InvalidWorkProjection(
+                    "staged work attribution differs from the receiving session".into(),
+                ));
+            }
         }
         change.display_producer = source_display_producer(&entry.object_kind, &object);
     }
@@ -918,7 +965,11 @@ fn source_actor<'a>(kind: &str, object: &'a serde_json::Value) -> Option<&'a ser
     })
 }
 
-fn source_is_from_session(kind: &str, object: &serde_json::Value, session_id: &SessionId) -> bool {
+pub(crate) fn source_is_from_session(
+    kind: &str,
+    object: &serde_json::Value,
+    session_id: &SessionId,
+) -> bool {
     source_actor(kind, object)
         .and_then(|actor| actor.get("session_id"))
         .and_then(serde_json::Value::as_str)

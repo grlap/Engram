@@ -313,6 +313,7 @@ impl SqliteStore {
             super::graph_snapshot::verify_work_graph_snapshot_saved_events_on(&self.connection)?;
         report.checked_graph_snapshot_audits = checked_graph_snapshot_audits;
         report.invalid_graph_snapshot_audits = invalid_graph_snapshot_audits;
+        super::migration::verify_provenance_on(&self.connection)?;
         Ok(report)
     }
 

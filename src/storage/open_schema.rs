@@ -847,6 +847,7 @@ impl SqliteStore {
                  UNIQUE(session_id, operation, idempotency_key)
              ) STRICT;",
             )?;
+            connection.execute_batch(super::migration::MIGRATION_SCHEMA)?;
             #[cfg(test)]
             if fail_cold_schema_after_ddl() && !building_schema_reference() {
                 return Err(StoreError::InvalidControlProjection(

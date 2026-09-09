@@ -141,9 +141,11 @@ impl LocalWorkService {
                         "show read cut changed or expired; start a fresh window",
                     ));
                 }
+                let mut address = cursor.address.clone();
+                address.hash = store.resolve_migrated_reference(&address.hash)?;
                 index
                     .iter()
-                    .position(|row| row.address == cursor.address && row.order == cursor.order)
+                    .position(|row| row.address == address && row.order == cursor.order)
                     .ok_or_else(|| invalid("continuation boundary no longer matches this window"))?
             } else {
                 index.len()
@@ -218,10 +220,16 @@ impl LocalWorkService {
                 WorkRecordKind::NotesWithGates,
             )?;
             let prefix = prefix.to_ascii_lowercase();
+            let migrated = if member.is_none() {
+                store.migrated_note_prefix(&self.project_id, item.work_id, &prefix)?
+            } else {
+                Vec::new()
+            };
             let matches = index
                 .iter()
                 .filter(|row| {
-                    row.address.hash.as_str().starts_with(&prefix)
+                    (row.address.hash.as_str().starts_with(&prefix)
+                        || (row.address.member.is_none() && migrated.contains(&row.address.hash)))
                         && member.is_none_or(|member| {
                             row.locator
                                 .split_once(':')

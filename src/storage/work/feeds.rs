@@ -902,6 +902,7 @@ pub(super) fn replay_operation<T: DeserializeOwned>(
             key: key.into(),
         });
     }
+    super::super::migration::validate_reexpressed_result_on(transaction, operation, key, &result)?;
     serde_json::from_slice(&result)
         .map(Some)
         .map_err(StoreError::from)

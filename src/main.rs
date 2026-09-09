@@ -89,6 +89,11 @@ fn resolve_host_path_identity(
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Export all SQLite data for controlled, same-host format migration.
+    Migration {
+        #[command(subcommand)]
+        operation: bin_support::migration::MigrationCommand,
+    },
     /// Preview or apply explicit source snapshots; refresh never revises local work.
     Import {
         #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
@@ -821,6 +826,11 @@ async fn run_cli() -> Result<ExitCode> {
         }
         Err(error) => error.exit(),
     };
+    // Migration operates on an explicit file, including stores that ordinary
+    // current-build open refuses. It must not resolve or probe the active home.
+    if let Command::Migration { operation } = &cli.command {
+        return bin_support::migration::run(operation);
+    }
     let (project_id, database, root) = match resolve_project(&cli.project_file, cli.home) {
         Ok(project) => project,
         Err(error) => {
@@ -848,6 +858,7 @@ async fn run_cli() -> Result<ExitCode> {
         resolve_host_path_identity(&root, cli.host_path_policy)
     };
     match cli.command {
+        Command::Migration { operation } => return bin_support::migration::run(&operation),
         Command::Import {
             actor_id,
             session_id,

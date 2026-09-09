@@ -4,6 +4,7 @@ mod control_runtime;
 mod control_support;
 mod doctor;
 mod graph_snapshot;
+pub mod migration;
 mod objects_tasks;
 mod open_schema;
 mod policy_admin;

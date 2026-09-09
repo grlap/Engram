@@ -253,9 +253,9 @@ pub struct WorkChange {
 /// Replays decode these bytes instead of rebuilding against mutable focus or
 /// task bindings.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct StagedWorkChangePage {
+pub(crate) struct StagedWorkChangePage {
     pub(super) schema_version: u16,
-    pub(super) changes: Vec<WorkChange>,
+    pub(crate) changes: Vec<WorkChange>,
     pub(super) omitted_count: usize,
 }
 
