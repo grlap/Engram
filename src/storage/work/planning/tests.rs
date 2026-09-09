@@ -870,13 +870,19 @@ fn decomposition_enforces_default_fanout_and_open_descendant_budget() {
     assert!(matches!(too_many, Err(StoreError::InvalidWork(_))));
 
     let mut parent = root;
-    for batch in 0..8 {
+    let limit = usize::try_from(MAX_OPEN_WORK_DESCENDANTS).expect("limit");
+    for (batch, start) in (0..limit)
+        .step_by(MAX_CHILDREN_PER_DECOMPOSITION)
+        .enumerate()
+    {
+        take_descendant_scan_count();
+        take_descendant_scan_vm_steps();
         parent = store
             .decompose_work(
                 &DecomposeWorkRequest {
                     parent_id: parent.work_id,
                     expected_parent_revision: parent.revision,
-                    children: (0..16)
+                    children: (start..limit.min(start + MAX_CHILDREN_PER_DECOMPOSITION))
                         .map(|index| {
                             child(
                                 &format!("batch-{batch}-{index}"),
@@ -889,13 +895,23 @@ fn decomposition_enforces_default_fanout_and_open_descendant_budget() {
                     authority: WorkPlanningAuthority::Project,
                     actor: actor("planner"),
                     idempotency_key: format!("budget-batch-{batch}"),
-                    created_at: at(3 + batch),
+                    created_at: at(3 + i64::try_from(batch).expect("batch")),
                 },
                 &DevelopmentNoopRedactor,
             )
             .expect("fill the default root-wide open-descendant budget")
             .parent;
+        assert_eq!(take_descendant_scan_count(), 1);
+        let steps = take_descendant_scan_vm_steps();
+        // Set before measuring: the indexed recursive count must stay linear
+        // in this all-open fixture, not re-scan the subtree for every child.
+        assert!(
+            steps > 0 && steps <= 100 * i32::try_from(start + 1).expect("size") + 256,
+            "descendants={start}, SQLite VM steps={steps}"
+        );
+        eprintln!("ordinary descendant count: prior={start} scans=1 sqlite_vm_steps={steps}");
     }
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
     let over_budget = store.decompose_work(
         &DecomposeWorkRequest {
             parent_id: parent.work_id,
@@ -913,7 +929,12 @@ fn decomposition_enforces_default_fanout_and_open_descendant_budget() {
         },
         &DevelopmentNoopRedactor,
     );
-    assert!(matches!(over_budget, Err(StoreError::InvalidWork(_))));
+    assert!(matches!(over_budget, Err(StoreError::InvalidWork(reason))
+        if reason == format!("decomposition exceeds the root open-descendant budget: at most {MAX_OPEN_WORK_DESCENDANTS} open descendants per root ({} tasks including the root)", MAX_OPEN_WORK_DESCENDANTS + 1)));
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
 }
 
 #[test]

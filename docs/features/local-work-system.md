@@ -1090,6 +1090,15 @@ full child details are obtained by focusing a returned short ref. This keeps
 even the maximum 16-child admitted plan below the agent response ceiling and
 makes the exact durable replay returnable after restart.
 
+The host/operator `kind: "plan"` variant has separate
+[atomic-plan limits](atomic-work-plan.md#bounds-and-retries): up to 256 new
+tasks across a forest and a complete 64 KiB compact JSON mapping. Each root
+admits at most 255 open descendants, so a single new tree can contain all
+256 tasks. This shared limit also applies to ordinary planning and graph
+restoration. It does not increase the ordinary agent per-call decomposition or
+response budgets. A plan commits all tasks and prerequisites together, after
+one final full-project cycle check; several calls never form one transaction.
+
 Administrative CLI/query views additionally expose search, history, stats,
 stale/orphan/preflight checks, approval decisions, import/export, and cursor
 changes. They are indexes over the same core, not extra lifecycle verbs in the
@@ -1468,7 +1477,7 @@ non-empty asserted actor/session context, the current lifecycle, and fenced
 claim/handoff state determine whether a word can run. Actor text remains
 asserted context unless a stronger host mechanism verifies it.
 
-The default local planning envelope is bounded in code: depth 4, 128 open
+The default local planning envelope is bounded in code: depth 4, 255 open
 descendants per root, and 16 children per decomposition. Agents may create and
 revise work, claim/recover, cancel/reopen, complete, and record explicit
 waivers within those lifecycle rules. Recovery, cancellation, reopen, and

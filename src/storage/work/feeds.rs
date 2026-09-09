@@ -478,7 +478,7 @@ pub(super) fn append_work_event(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
 ) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
-    append_work_event_on(transaction, event, None)
+    append_work_event_on(transaction, event, None, None)
 }
 
 pub(super) fn append_work_event_with_root(
@@ -486,13 +486,32 @@ pub(super) fn append_work_event_with_root(
     event: &WorkEventDraft,
     root: &super::root_state::WrittenRoot<'_>,
 ) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
-    append_work_event_on(transaction, event, Some(root))
+    append_work_event_on(transaction, event, Some(root), None)
+}
+
+/// Only the atomic-plan writer supplies this transaction-local relation basis.
+/// It must verify all resulting edge bindings before committing the plan.
+pub(super) fn append_planned_prerequisite_event(
+    transaction: &Transaction<'_>,
+    event: &WorkEventDraft,
+    basis: &super::WorkRelationBasis,
+) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+    if !matches!(
+        event.transition,
+        crate::domain::WorkTransition::PrerequisiteAdded { .. }
+    ) {
+        return Err(StoreError::InvalidWorkProjection(
+            "planned relation basis requires a prerequisite addition".into(),
+        ));
+    }
+    append_work_event_on(transaction, event, None, Some(basis))
 }
 
 fn append_work_event_on(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
     written_root: Option<&super::root_state::WrittenRoot<'_>>,
+    planned_relations: Option<&super::WorkRelationBasis>,
 ) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
     if event.actor.actor_id.trim().is_empty()
         || event
@@ -505,12 +524,13 @@ fn append_work_event_on(
             "local work requires a non-empty asserted actor and session binding".into(),
         ));
     }
-    let mut relation_basis =
-        if latest_canonical_work_event_for_item_optional(transaction, event.work_id)?.is_some() {
-            validated_current_work_relation_basis(transaction, event.work_id)?
-        } else {
-            projected_work_relation_basis(transaction, event.work_id)?
-        };
+    let mut relation_basis = if let Some(basis) = planned_relations {
+        basis.clone()
+    } else if latest_canonical_work_event_for_item_optional(transaction, event.work_id)?.is_some() {
+        validated_current_work_relation_basis(transaction, event.work_id)?
+    } else {
+        projected_work_relation_basis(transaction, event.work_id)?
+    };
     apply_work_relation_transition(
         &mut relation_basis,
         &event.transition,

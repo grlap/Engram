@@ -49,6 +49,55 @@ mod detach;
 mod plan;
 pub(crate) use plan::validate_work_plan;
 
+/// Atomic plans defer whole-project cycle and root-size scans to their final
+/// commit checks and use their own child-count bound. Every other check stays
+/// in the shared transitions. Never commit an `AtomicPlan` transition alone.
+#[derive(Clone, Copy)]
+enum PlanningValidation {
+    Immediate,
+    AtomicPlan,
+}
+
+/// Ephemeral proof for one new item, scoped to a single atomic-plan transaction.
+/// Every appended event advances this basis. A final canonical edge audit is
+/// mandatory before the owning plan can commit; ordinary mutations never use it.
+struct PlanRelationBasis {
+    work_id: WorkId,
+    basis: WorkRelationBasis,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DESCENDANT_SCAN_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static DESCENDANT_SCAN_VM_STEPS: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn take_descendant_scan_count() -> usize {
+    DESCENDANT_SCAN_COUNT.with(|count| count.replace(0))
+}
+
+#[cfg(test)]
+fn take_descendant_scan_vm_steps() -> i32 {
+    DESCENDANT_SCAN_VM_STEPS.with(|steps| steps.replace(0))
+}
+
+impl PlanningValidation {
+    fn check_graph(self, transaction: &Transaction<'_>, project: &str) -> Result<(), StoreError> {
+        if matches!(self, Self::Immediate) && !combined_graph_is_acyclic(transaction, project)? {
+            return Err(StoreError::WorkDependencyCycle);
+        }
+        Ok(())
+    }
+
+    fn child_budget(self) -> usize {
+        match self {
+            Self::Immediate => MAX_CHILDREN_PER_DECOMPOSITION,
+            Self::AtomicPlan => crate::domain::MAX_WORK_PLAN_TASKS,
+        }
+    }
+}
+
 /// Creates a root within the caller's write transaction after request validation.
 /// The caller owns operation replay and commit, including coupled graph changes.
 pub(super) fn create_root_on<R: Redactor>(
@@ -56,6 +105,22 @@ pub(super) fn create_root_on<R: Redactor>(
     request: &CreateWorkRequest,
     initial_notes: &[String],
     redactor: &R,
+) -> Result<WorkItem, StoreError> {
+    create_root_with_validation_on(
+        transaction,
+        request,
+        initial_notes,
+        redactor,
+        PlanningValidation::Immediate,
+    )
+}
+
+fn create_root_with_validation_on<R: Redactor>(
+    transaction: &Transaction<'_>,
+    request: &CreateWorkRequest,
+    initial_notes: &[String],
+    redactor: &R,
+    validation: PlanningValidation,
 ) -> Result<WorkItem, StoreError> {
     if let Some(snapshot) = request.source_snapshot_id.as_ref() {
         let source = load_typed_work_object::<WorkSourceSnapshot>(
@@ -186,9 +251,7 @@ pub(super) fn create_root_on<R: Redactor>(
             serde_json::to_vec(&run)?
         ],
     )?;
-    if !combined_graph_is_acyclic(transaction, &item.project_id.0)? {
-        return Err(StoreError::WorkDependencyCycle);
-    }
+    validation.check_graph(transaction, &item.project_id.0)?;
     let event = WorkEventDraft {
         schema_version: SCHEMA_VERSION,
         project_id: item.project_id.clone(),
@@ -800,15 +863,28 @@ impl SqliteStore {
 }
 
 /// Reuses ordinary decomposition admission inside a caller-owned plan transaction.
-#[allow(
-    clippy::too_many_lines,
-    reason = "one atomic decomposition retains its existing admission and event ordering"
-)]
 fn decompose_work_on<R: Redactor>(
     transaction: &Transaction<'_>,
     request: &DecomposeWorkRequest,
     initial_notes: &[Vec<String>],
     redactor: &R,
+) -> Result<WorkDecomposition, StoreError> {
+    decompose_work_with_validation_on(
+        transaction,
+        request,
+        initial_notes,
+        redactor,
+        PlanningValidation::Immediate,
+    )
+}
+
+#[allow(clippy::too_many_lines, reason = "one atomic decomposition transition")]
+fn decompose_work_with_validation_on<R: Redactor>(
+    transaction: &Transaction<'_>,
+    request: &DecomposeWorkRequest,
+    initial_notes: &[Vec<String>],
+    redactor: &R,
+    validation: PlanningValidation,
 ) -> Result<WorkDecomposition, StoreError> {
     let mut parent = load_work_item(transaction, request.parent_id)?;
     assert_revision(&parent, request.expected_parent_revision)?;
@@ -833,7 +909,7 @@ fn decompose_work_on<R: Redactor>(
     } else {
         request.actor.clone()
     };
-    validate_decomposition_budget(transaction, &parent, request.children.len())?;
+    validate_decomposition_budget(transaction, &parent, request.children.len(), validation)?;
     let restored_execution = if parent.active_run_id.is_none() {
         Some(ensure_restored_execution_state(
             transaction,
@@ -1049,9 +1125,7 @@ fn decompose_work_on<R: Redactor>(
         }
         append_initial_notes_on(transaction, item, notes, redactor)?;
     }
-    if !combined_graph_is_acyclic(transaction, &parent.project_id.0)? {
-        return Err(StoreError::WorkDependencyCycle);
-    }
+    validation.check_graph(transaction, &parent.project_id.0)?;
     // A peer proposal creates optional child runs, not a mutation of the
     // holder's planning revision, run feed, or fenced authority.
     if !peer_proposal {
@@ -1101,9 +1175,35 @@ fn change_work_prerequisite_on(
     request: &ChangeWorkPrerequisiteRequest,
     add: bool,
 ) -> Result<WorkItem, StoreError> {
+    change_work_prerequisite_with_validation_on(
+        transaction,
+        request,
+        add,
+        PlanningValidation::Immediate,
+        None,
+    )
+}
+
+fn change_work_prerequisite_with_validation_on(
+    transaction: &Transaction<'_>,
+    request: &ChangeWorkPrerequisiteRequest,
+    add: bool,
+    validation: PlanningValidation,
+    planned_relations: Option<&mut PlanRelationBasis>,
+) -> Result<WorkItem, StoreError> {
     let mut item = load_work_item(transaction, request.work_id)?;
     let prerequisite = load_work_item(transaction, request.prerequisite_id)?;
-    require_work_item_relation_integrity(transaction, item.work_id)?;
+    if let Some(relations) = planned_relations.as_ref() {
+        if !matches!(validation, PlanningValidation::AtomicPlan)
+            || relations.work_id != item.work_id
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                "planned relation basis has the wrong owner".into(),
+            ));
+        }
+    } else {
+        require_work_item_relation_integrity(transaction, item.work_id)?;
+    }
     assert_revision(&item, request.expected_revision)?;
     validate_planning_authority(
         transaction,
@@ -1181,7 +1281,18 @@ fn change_work_prerequisite_on(
         actor: request.actor.clone(),
         created_at: request.changed_at,
     };
-    let (event_hash, _) = append_work_event(transaction, &event)?;
+    let (event_hash, _) = if let Some(relations) = planned_relations {
+        let appended =
+            super::feeds::append_planned_prerequisite_event(transaction, &event, &relations.basis)?;
+        apply_work_relation_transition(
+            &mut relations.basis,
+            &event.transition,
+            event.blocker.as_ref(),
+        )?;
+        appended
+    } else {
+        append_work_event(transaction, &event)?
+    };
     if add {
         transaction.execute(
             "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
@@ -1192,9 +1303,7 @@ fn change_work_prerequisite_on(
                 event_hash.as_str()
             ],
         )?;
-        if !combined_graph_is_acyclic(transaction, &item.project_id.0)? {
-            return Err(StoreError::WorkDependencyCycle);
-        }
+        validation.check_graph(transaction, &item.project_id.0)?;
     } else {
         transaction.execute(
             "DELETE FROM work_prerequisites
@@ -1602,21 +1711,46 @@ fn validate_decomposition_budget(
     connection: &Connection,
     parent: &WorkItem,
     proposed_children: usize,
+    validation: PlanningValidation,
 ) -> Result<(), StoreError> {
-    if proposed_children > MAX_CHILDREN_PER_DECOMPOSITION {
+    if proposed_children > validation.child_budget() {
         return Err(StoreError::InvalidWork(
             "decomposition exceeds the project per-operation child budget".into(),
         ));
     }
-    let proposed = i64::try_from(proposed_children)
-        .map_err(|_| StoreError::InvalidWork("decomposition size overflow".into()))?;
     let depth = work_depth(connection, parent.work_id)? + 1;
     if depth > i64::from(MAX_WORK_DEPTH) {
         return Err(StoreError::InvalidWork(
             "decomposition exceeds the project hierarchy depth".into(),
         ));
     }
-    let open_descendants = connection.query_row(
+    if matches!(validation, PlanningValidation::Immediate) {
+        validate_root_descendant_budget(connection, parent.root_id, proposed_children)?;
+    }
+    Ok(())
+}
+
+fn validate_root_descendant_budget(
+    connection: &Connection,
+    root_id: WorkId,
+    proposed_children: usize,
+) -> Result<(), StoreError> {
+    let proposed = i64::try_from(proposed_children)
+        .map_err(|_| StoreError::InvalidWork("decomposition size overflow".into()))?;
+    let open_descendants = root_open_descendant_count(connection, root_id)?;
+    if open_descendants + proposed > i64::from(MAX_OPEN_WORK_DESCENDANTS) {
+        return Err(StoreError::InvalidWork(format!(
+            "decomposition exceeds the root open-descendant budget: at most {MAX_OPEN_WORK_DESCENDANTS} open descendants per root ({} tasks including the root)",
+            MAX_OPEN_WORK_DESCENDANTS + 1
+        )));
+    }
+    Ok(())
+}
+
+fn root_open_descendant_count(connection: &Connection, root_id: WorkId) -> Result<i64, StoreError> {
+    #[cfg(test)]
+    DESCENDANT_SCAN_COUNT.with(|count| count.set(count.get() + 1));
+    let mut statement = connection.prepare(
         "WITH RECURSIVE descendants(work_id) AS (
              SELECT work_id FROM work_items WHERE parent_id = ?1
              UNION
@@ -1626,15 +1760,13 @@ fn validate_decomposition_budget(
          SELECT COUNT(*) FROM descendants
          JOIN work_items item USING(work_id)
          WHERE item.lifecycle IN ('proposed', 'open')",
-        [parent.root_id.0.to_string()],
-        |row| row.get::<_, i64>(0),
     )?;
-    if open_descendants + proposed > i64::from(MAX_OPEN_WORK_DESCENDANTS) {
-        return Err(StoreError::InvalidWork(
-            "decomposition exceeds the root open-descendant budget".into(),
-        ));
-    }
-    Ok(())
+    let count = statement.query_row([root_id.0.to_string()], |row| row.get::<_, i64>(0))?;
+    #[cfg(test)]
+    DESCENDANT_SCAN_VM_STEPS.with(|steps| {
+        steps.set(steps.get() + statement.get_status(rusqlite::StatementStatus::VmStep));
+    });
+    Ok(count)
 }
 
 fn work_depth(connection: &Connection, work_id: WorkId) -> Result<i64, StoreError> {

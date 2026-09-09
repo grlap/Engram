@@ -27,6 +27,17 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+thread_local! {
+    static GRAPH_SCAN_METRICS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// (Full-project scans, item/prerequisite rows visited), local to this test thread.
+#[cfg(test)]
+pub(super) fn take_graph_scan_metrics() -> (usize, usize) {
+    GRAPH_SCAN_METRICS.replace((0, 0))
+}
+
 pub(super) fn combined_graph_is_acyclic(
     connection: &Connection,
     project_id: &str,
@@ -39,6 +50,11 @@ pub(super) fn combined_graph_is_acyclic_with_dependency(
     project_id: &str,
     proposed_supersession: Option<(WorkId, WorkId)>,
 ) -> Result<bool, StoreError> {
+    #[cfg(test)]
+    GRAPH_SCAN_METRICS.with(|metrics| {
+        let (scans, rows) = metrics.get();
+        metrics.set((scans + 1, rows));
+    });
     let mut graph: HashMap<WorkId, Vec<WorkId>> = HashMap::new();
     let mut statement = connection.prepare(
         "SELECT work_id, parent_id, child_requirement, superseded_by
@@ -54,6 +70,11 @@ pub(super) fn combined_graph_is_acyclic_with_dependency(
     })?;
     for row in rows {
         let (child, parent, requirement, superseded_by) = row?;
+        #[cfg(test)]
+        GRAPH_SCAN_METRICS.with(|metrics| {
+            let (scans, rows) = metrics.get();
+            metrics.set((scans, rows + 1));
+        });
         let child = parse_work_id(&child)?;
         graph.entry(child).or_default();
         if requirement == "required"
@@ -82,6 +103,11 @@ pub(super) fn combined_graph_is_acyclic_with_dependency(
     })?;
     for row in rows {
         let (work, prerequisite) = row?;
+        #[cfg(test)]
+        GRAPH_SCAN_METRICS.with(|metrics| {
+            let (scans, rows) = metrics.get();
+            metrics.set((scans, rows + 1));
+        });
         graph
             .entry(parse_work_id(&work)?)
             .or_default()

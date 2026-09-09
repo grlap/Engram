@@ -1,9 +1,12 @@
 use super::super::{
-    BeginWorkProtocolAttempt, DateTime, DevelopmentNoopRedactor, LocalWorkService,
-    MAX_AGENT_WORK_RESPONSE_BYTES, StoreError, Utc, WorkId, WorkProposeInput, WorkProposeResult,
-    ensure_agent_response_budget,
+    BeginWorkProtocolAttempt, DateTime, DevelopmentNoopRedactor, LocalWorkService, StoreError, Utc,
+    WorkId, WorkProposeInput, WorkProposeResult,
 };
 use crate::domain::{ProposeWorkPlanRequest, WorkPlanInput, WorkPlanMapping, WorkPlanReceipt};
+
+/// Complete host/operator mapping, never injected as a compact agent receipt.
+/// Checked before any graph commit, including recovery of an existing receipt.
+const MAX_WORK_PLAN_RESPONSE_BYTES: usize = 64 * 1024;
 
 impl LocalWorkService {
     pub(super) fn work_propose_plan(
@@ -12,7 +15,7 @@ impl LocalWorkService {
         plan: &WorkPlanInput,
         now: DateTime<Utc>,
     ) -> Result<WorkProposeResult, StoreError> {
-        self.work_propose_plan_with_budget(work_ref, plan, now, MAX_AGENT_WORK_RESPONSE_BYTES)
+        self.work_propose_plan_with_budget(work_ref, plan, now, MAX_WORK_PLAN_RESPONSE_BYTES)
     }
 
     fn work_propose_plan_with_budget(
@@ -43,7 +46,10 @@ impl LocalWorkService {
                 })
                 .collect(),
         };
-        ensure_agent_response_budget(&WorkProposeResult::Plan(bound), "work_propose")?;
+        admit_plan_response(
+            &WorkProposeResult::Plan(bound),
+            MAX_WORK_PLAN_RESPONSE_BYTES,
+        )?;
         let mut store = self.store_at(now)?;
         let input = WorkProposeInput::Plan { plan: plan.clone() };
         let basis = (); // New roots have no ambient target or claim basis.

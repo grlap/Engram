@@ -80,7 +80,7 @@ pub(crate) use record_windows::*;
 const MAX_WORK_TTL_SECONDS: i64 = 86_400;
 const MAX_WORK_SOURCE_SNAPSHOT_BYTES: usize = 128 * 1_024;
 pub(in crate::storage) const MAX_WORK_DEPTH: u32 = 4;
-pub(in crate::storage) const MAX_OPEN_WORK_DESCENDANTS: u32 = 128;
+pub(in crate::storage) const MAX_OPEN_WORK_DESCENDANTS: u32 = 255;
 pub(in crate::storage) const MAX_CHILDREN_PER_DECOMPOSITION: usize = 16;
 
 // A checkpoint acknowledges the run feed immediately before its own object and

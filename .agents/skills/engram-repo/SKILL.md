@@ -160,8 +160,11 @@ For a complete authored local plan, a host or operator can use
 It creates a bounded new forest and its prerequisites in one graph transaction,
 returns every payload key with its generated ref, and recovers the original
 mapping on an exact retry. It cannot attach to an existing parent, select focus,
-or grant a claim. It adds no agent word or MCP tool. The 64 KiB typed-plan limit
-does not bound the CLI's raw-file read.
+or grant a claim. It adds no agent word or MCP tool. Host plans use independent
+limits: 256 tasks across the forest, 255 open descendants per root, 1 MiB typed
+input and a complete 64 KiB compact JSON result. The raw `core propose` input
+is separately bounded to 2 MiB before decoding; ordinary decomposition and
+agent-response limits are unchanged. Multiple calls are not one transaction.
 Ask the host or coordinator for a real recipient session id before a handoff.
 `handoff --to SESSION` refuses generated peer display labels before any write;
 this prevents unusable offers, not identity spoofing.

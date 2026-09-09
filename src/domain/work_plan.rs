@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use super::{ActorContext, ChildRequirement, ProjectId, WorkId, WorkItemKind};
 
-/// Whole-plan limit, not per level. With 64-byte keys the complete mapping
-/// remains below the existing 12 KiB protocol response ceiling.
-pub const MAX_WORK_PLAN_TASKS: usize = 16;
-pub const MAX_WORK_PLAN_EDGES: usize = 128;
-pub const MAX_WORK_PLAN_BYTES: usize = 64 * 1024;
+/// Operator admission bounds, independent of compact agent response budgets.
+/// Root open-descendant and hierarchy-depth limits still apply to each tree.
+pub const MAX_WORK_PLAN_TASKS: usize = 256;
+pub const MAX_WORK_PLAN_EDGES: usize = 1024;
+pub const MAX_WORK_PLAN_BYTES: usize = 1024 * 1024;
 pub const MAX_WORK_PLAN_KEY_BYTES: usize = 64;
 
 /// One complete plan. Parent keys name only newly supplied tasks.

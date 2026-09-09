@@ -9,7 +9,7 @@ fn plan(count: usize) -> WorkPlanInput {
         idempotency_key: "atomic-plan".into(),
         tasks: (0..count)
             .map(|index| WorkPlanTask {
-                key: format!("k{index:02}{}", "x".repeat(61)),
+                key: format!("k{index:03}{}", "x".repeat(60)),
                 parent_key: None,
                 title: format!("Task {index}"),
                 outcome: format!("Outcome {index}"),
@@ -178,14 +178,23 @@ fn atomic_plan_maximum_response_and_restart_replay_preserve_every_key() {
         .expect("store")
         .work_session_state(&service.project_id, &service.session_id, at(0))
         .expect("session");
-    let input = WorkProposeInput::Plan { plan: plan(16) };
+    let mut full_tree = plan(crate::domain::MAX_WORK_PLAN_TASKS);
+    let root_key = full_tree.tasks[0].key.clone();
+    for task in &mut full_tree.tasks[1..] {
+        task.parent_key = Some(root_key.clone());
+    }
+    let input = WorkProposeInput::Plan { plan: full_tree };
     let receipt = service.work_propose(input.clone(), at(1)).expect("plan");
     let WorkProposeResult::Plan(result) = &receipt else {
         panic!("plan");
     };
-    assert_eq!(result.tasks.len(), 16);
+    assert_eq!(result.tasks.len(), 256);
     assert!(result.tasks.iter().all(|mapping| mapping.key.len() == 64));
-    assert!(serde_json::to_vec(&receipt).expect("json").len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
+    let bytes = serde_json::to_vec(&receipt).expect("json").len();
+    assert!(bytes > crate::work_service::MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(bytes <= MAX_WORK_PLAN_RESPONSE_BYTES);
+    assert!(crate::work_service::ensure_agent_response_budget(&receipt, "agent").is_err());
+    eprintln!("atomic plan 256-task receipt: {bytes} compact JSON bytes");
     assert_eq!(
         service
             .store()
@@ -279,7 +288,7 @@ fn atomic_plan_recovers_map_when_core_committed_before_protocol_receipt() {
     let temp = crate::test_support::temp_home().expect("temp");
     let db = temp.path().join("plan.db");
     let service = service(db.clone());
-    let mut input = plan(3);
+    let mut input = plan(80);
     input.prerequisites.push(WorkPlanPrerequisite {
         work_key: input.tasks[0].key.clone(),
         prerequisite: WorkPlanDependency::Local(input.tasks[1].key.clone()),
@@ -364,7 +373,7 @@ fn atomic_plan_recovers_map_when_core_committed_before_protocol_receipt() {
             .query_row("SELECT COUNT(*) FROM work_items", [], |row| row
                 .get::<_, i64>(0))
             .expect("count"),
-        3
+        80
     );
     let before = test_database_shape_snapshot(
         &rusqlite::Connection::open(&restarted.database).expect("inspection"),

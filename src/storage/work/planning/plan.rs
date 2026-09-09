@@ -2,11 +2,14 @@
 
 use super::{
     CanonicalObject, ChangeWorkPrerequisiteRequest, CreateWorkRequest, DecomposeWorkRequest,
-    HashMap, HashSet, MAX_WORK_DEPTH, Redactor, SessionId, SqliteStore, StoreError, Transaction,
-    WorkId, WorkItem, WorkLifecycle, WorkOrigin, WorkPlanningAuthority,
-    change_work_prerequisite_on, combined_graph_is_acyclic, create_root_on, decompose_work_on,
-    inspect_work_request, normalize_optional, normalize_strings, normalize_text,
-    persist_operation_result, replay_operation, require_work_item_relation_integrity,
+    HashMap, HashSet, MAX_OPEN_WORK_DESCENDANTS, MAX_WORK_DEPTH, PlanRelationBasis,
+    PlanningValidation, Redactor, SessionId, SqliteStore, StoreError, Transaction, WorkId,
+    WorkItem, WorkLifecycle, WorkOrigin, WorkPlanningAuthority,
+    change_work_prerequisite_with_validation_on, combined_graph_is_acyclic,
+    create_root_with_validation_on, decompose_work_with_validation_on, inspect_work_request,
+    normalize_optional, normalize_strings, normalize_text, persist_operation_result,
+    replay_operation, require_work_item_relation_integrity, root_open_descendant_count,
+    validated_current_work_relation_basis,
 };
 use crate::domain::{
     ChildRequirement, ChildWorkDraft, MAX_WORK_PLAN_BYTES, MAX_WORK_PLAN_EDGES,
@@ -78,6 +81,20 @@ impl SqliteStore {
         }
         let existing = validate_existing_on(&transaction, request)?;
         let receipt = admit_plan_on(&transaction, request, &plan, &existing, redactor)?;
+        for (index, parent) in plan.parents.iter().enumerate() {
+            if parent.is_none() {
+                let root = receipt.tasks.get(index).ok_or_else(|| {
+                    StoreError::InvalidWorkProjection("validated plan lost a created task".into())
+                })?;
+                validate_plan_root_budget(&transaction, root)?;
+            }
+        }
+        // Shared transitions deferred their full-project scan. Verify the
+        // complete old/new union exactly once under this same writer lock,
+        // including unrelated pre-existing cycles, before any commit/receipt.
+        if !combined_graph_is_acyclic(&transaction, &request.project_id.0)? {
+            return Err(StoreError::WorkDependencyCycle);
+        }
         admit(&receipt)?;
         persist_operation_result(
             &transaction,
@@ -89,6 +106,21 @@ impl SqliteStore {
         transaction.commit()?;
         Ok(receipt)
     }
+}
+
+fn validate_plan_root_budget(
+    connection: &super::Connection,
+    root: &WorkPlanMapping,
+) -> Result<(), StoreError> {
+    let descendants = root_open_descendant_count(connection, root.work_id)?;
+    if descendants > i64::from(MAX_OPEN_WORK_DESCENDANTS) {
+        return Err(StoreError::InvalidWork(format!(
+            "plan: root '{}' has {descendants} open descendants; at most {MAX_OPEN_WORK_DESCENDANTS} are allowed ({} tasks including the root)",
+            root.key,
+            MAX_OPEN_WORK_DESCENDANTS + 1
+        )));
+    }
+    Ok(())
 }
 
 fn plan_operation_key(
@@ -138,9 +170,6 @@ fn validate_existing_on(
         }
         existing.insert(reference.clone(), item.work_id);
     }
-    if !combined_graph_is_acyclic(transaction, &request.project_id.0)? {
-        return Err(StoreError::WorkDependencyCycle);
-    }
     Ok(existing)
 }
 
@@ -160,16 +189,22 @@ fn valid_key(value: &str) -> bool {
 fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
     let invalid = |message: &str| StoreError::InvalidWork(format!("plan: {message}"));
     if input.tasks.is_empty() || input.tasks.len() > MAX_WORK_PLAN_TASKS {
-        return Err(invalid("expected 1 through 16 tasks"));
+        return Err(invalid(&format!(
+            "expected 1 through {MAX_WORK_PLAN_TASKS} tasks"
+        )));
     }
     if input.prerequisites.len() > MAX_WORK_PLAN_EDGES {
-        return Err(invalid("at most 128 prerequisite edges are allowed"));
+        return Err(invalid(&format!(
+            "at most {MAX_WORK_PLAN_EDGES} prerequisite edges are allowed"
+        )));
     }
     if !valid_key(&input.idempotency_key) {
         return Err(invalid("idempotency key must be a 1..64 byte ASCII token"));
     }
     if serde_json::to_vec(input)?.len() > MAX_WORK_PLAN_BYTES {
-        return Err(invalid("serialized plan exceeds 65536 bytes"));
+        return Err(invalid(&format!(
+            "serialized plan exceeds {MAX_WORK_PLAN_BYTES} bytes"
+        )));
     }
     let mut keys = HashMap::new();
     let mut drafts = Vec::new();
@@ -242,18 +277,20 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
             parent = parents[ancestor];
         }
         if depth > MAX_WORK_DEPTH {
-            return Err(invalid("hierarchy depth exceeds 4 (root depth is zero)"));
+            return Err(invalid(&format!(
+                "hierarchy depth exceeds {MAX_WORK_DEPTH} (root depth is zero)"
+            )));
         }
         depths.push(depth);
     }
     let mut order = (0..input.tasks.len()).collect::<Vec<_>>();
     order.sort_by_key(|index| depths[*index]);
-    let mut reach = vec![vec![false; input.tasks.len()]; input.tasks.len()];
+    let mut adjacency = vec![Vec::new(); input.tasks.len()];
     for (index, parent) in parents.iter().enumerate() {
         if let Some(parent) = parent
             && drafts[index].child_requirement == ChildRequirement::Required
         {
-            reach[*parent][index] = true;
+            adjacency[*parent].push(index);
         }
     }
     let mut edges = Vec::new();
@@ -284,17 +321,9 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
             }
             parent = parents[ancestor];
         }
-        reach[work][prerequisite] = true;
+        adjacency[work].push(prerequisite);
     }
-    // Bounded transitive closure includes implicit required-child edges.
-    for via in 0..reach.len() {
-        for from in 0..reach.len() {
-            for to in 0..reach.len() {
-                reach[from][to] |= reach[from][via] && reach[via][to];
-            }
-        }
-    }
-    if (0..reach.len()).any(|index| reach[index][index]) {
+    if !plan_graph_is_acyclic(&adjacency) {
         return Err(StoreError::WorkDependencyCycle);
     }
     Ok(ValidatedPlan {
@@ -304,6 +333,34 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
         order,
         edges,
     })
+}
+
+// Kahn's algorithm visits every vertex and edge once. Parallel explicit and
+// implicit edges are counted and removed equally; no reachability matrix or
+// recursion grows with plan size.
+fn plan_graph_is_acyclic(adjacency: &[Vec<usize>]) -> bool {
+    let mut incoming = vec![0_usize; adjacency.len()];
+    for targets in adjacency {
+        for &target in targets {
+            incoming[target] += 1;
+        }
+    }
+    let mut ready = incoming
+        .iter()
+        .enumerate()
+        .filter_map(|(index, count)| (*count == 0).then_some(index))
+        .collect::<Vec<_>>();
+    let mut visited = 0;
+    while let Some(index) = ready.pop() {
+        visited += 1;
+        for &target in &adjacency[index] {
+            incoming[target] -= 1;
+            if incoming[target] == 0 {
+                ready.push(target);
+            }
+        }
+    }
+    visited == adjacency.len()
 }
 
 fn item_at(items: &[Option<WorkItem>], index: usize) -> Result<&WorkItem, StoreError> {
@@ -327,7 +384,7 @@ fn admit_plan_on<R: Redactor>(
     for &index in &plan.order {
         if plan.parents[index].is_none() {
             let draft = &plan.drafts[index];
-            items[index] = Some(create_root_on(
+            items[index] = Some(create_root_with_validation_on(
                 transaction,
                 &CreateWorkRequest {
                     project_id: request.project_id.clone(),
@@ -351,6 +408,7 @@ fn admit_plan_on<R: Redactor>(
                 },
                 &plan.notes[index],
                 redactor,
+                PlanningValidation::AtomicPlan,
             )?);
         }
         let child_indices = plan
@@ -377,7 +435,7 @@ fn admit_plan_on<R: Redactor>(
             .iter()
             .map(|child| plan.notes[*child].clone())
             .collect::<Vec<_>>();
-        let decomposition = decompose_work_on(
+        let decomposition = decompose_work_with_validation_on(
             transaction,
             &DecomposeWorkRequest {
                 parent_id: parent.work_id,
@@ -391,12 +449,14 @@ fn admit_plan_on<R: Redactor>(
             },
             &initial_notes,
             redactor,
+            PlanningValidation::AtomicPlan,
         )?;
         items[index] = Some(decomposition.parent);
         for (child, item) in child_indices.into_iter().zip(decomposition.children) {
             items[child] = Some(item);
         }
     }
+    let mut relations = HashMap::new();
     for (work, prerequisite) in &plan.edges {
         let prerequisite_id = match prerequisite {
             WorkPlanDependency::Existing(reference) => {
@@ -420,7 +480,14 @@ fn admit_plan_on<R: Redactor>(
             }
         };
         let item = item_at(&items, *work)?;
-        let changed = change_work_prerequisite_on(
+        let basis = match relations.entry(item.work_id) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(PlanRelationBasis {
+                work_id: item.work_id,
+                basis: validated_current_work_relation_basis(transaction, item.work_id)?,
+            }),
+        };
+        let changed = change_work_prerequisite_with_validation_on(
             transaction,
             &ChangeWorkPrerequisiteRequest {
                 work_id: item.work_id,
@@ -432,8 +499,16 @@ fn admit_plan_on<R: Redactor>(
                 changed_at: request.created_at,
             },
             true,
+            PlanningValidation::AtomicPlan,
+            Some(basis),
         )?;
         items[*work] = Some(changed);
+    }
+    // Validate every final edge's canonical proof and the complete relation
+    // fingerprint once per touched item. The transaction-local bases above
+    // cannot escape this call or substitute for the final stored-state audit.
+    for work_id in relations.keys() {
+        require_work_item_relation_integrity(transaction, *work_id)?;
     }
     let tasks = plan
         .drafts

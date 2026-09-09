@@ -1983,7 +1983,7 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         "terminal-replacement",
     );
     let mut child_count = 0_usize;
-    for batch in 0..9 {
+    for batch in 0..=super::super::work::MAX_OPEN_WORK_DESCENDANTS / 16 {
         let parent = source.get_work_item(root.work_id).expect("current parent");
         let children = (0..16)
             .map(|index| ChildWorkDraft {
@@ -2047,7 +2047,7 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
             &actor("save-session"),
             None,
             WorkGraphSnapshotDestinationKind::Stdout,
-            at(40),
+            at(100),
             &DevelopmentNoopRedactor,
         )
         .expect("save terminal fanout");
@@ -2060,7 +2060,7 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
             &actor("load-session"),
             &bytes,
             false,
-            at(41),
+            at(101),
             &DevelopmentNoopRedactor,
         )
         .expect("load terminal fanout");

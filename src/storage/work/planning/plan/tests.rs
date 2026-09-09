@@ -3,6 +3,10 @@ use crate::domain::{DisposeWorkRequest, WorkDisposition, WorkPlanPrerequisite, W
 use crate::storage::work::query::{load_prerequisite_projection_ids, load_work_item};
 use crate::storage::work::test_support::*;
 
+mod guards;
+mod large;
+mod single_root;
+
 fn task(key: &str, parent: Option<&str>) -> WorkPlanTask {
     WorkPlanTask {
         key: key.into(),
@@ -120,9 +124,11 @@ fn atomic_plan_invalid_graphs_and_limits_leave_store_unchanged() {
             6 => request
                 .plan
                 .tasks
-                .extend((0..16).map(|n| task(&format!("extra{n}"), None))),
+                .extend((0..MAX_WORK_PLAN_TASKS).map(|n| task(&format!("extra{n}"), None))),
             7 => request.plan.tasks[0].title = "x".repeat(MAX_WORK_PLAN_BYTES),
-            8 => request.plan.prerequisites = vec![request.plan.prerequisites[0].clone(); 129],
+            8 => {
+                request = large::forest_with_edges(MAX_WORK_PLAN_EDGES + 1);
+            }
             9 => request.plan.tasks[0].acceptance = vec![" ".into()],
             10 => request
                 .plan
@@ -146,9 +152,14 @@ fn atomic_plan_invalid_graphs_and_limits_leave_store_unchanged() {
             }
             _ => unreachable!(),
         }
+        let result = store.propose_work_plan(&request, &DevelopmentNoopRedactor);
+        if case == 8 {
+            assert!(matches!(&result, Err(StoreError::InvalidWork(reason))
+                if reason == &format!("plan: at most {MAX_WORK_PLAN_EDGES} prerequisite edges are allowed")));
+        }
         assert!(
             matches!(
-                store.propose_work_plan(&request, &DevelopmentNoopRedactor),
+                result,
                 Err(StoreError::InvalidWork(_) | StoreError::WorkDependencyCycle)
             ),
             "case {case}"

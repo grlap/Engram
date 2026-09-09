@@ -744,7 +744,7 @@ enum CoreWorkCommand {
         /// Parent to decompose; selects focus first. Omit for a new plan.
         #[arg(long)]
         work_ref: Option<String>,
-        /// JSON object or @path to a JSON file.
+        /// JSON object or @path to a JSON file; at most 2 MiB before decoding.
         #[arg(long)]
         input: String,
     },
@@ -1607,7 +1607,13 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
             .work_focus(&work_ref, now)
             .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
         CoreWorkCommand::Propose { work_ref, input } => {
-            let input = parse_json_input::<WorkProposeInput>(&input)?;
+            // Bound raw files (including whitespace) before decoding the kind.
+            // The plan variant also enforces its independent typed-input bound.
+            let input = parse_bounded_json_input::<WorkProposeInput>(
+                &input,
+                "work propose",
+                2 * 1024 * 1024,
+            )?;
             service
                 .work_propose_on(work_ref.as_deref(), input, now)
                 .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))

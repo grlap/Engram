@@ -92,23 +92,67 @@ implicit required-child relationships.
 
 | Input | Limit |
 | --- | --- |
-| Tasks | 16 across the whole plan, not per level |
-| Explicit prerequisite edges | 128 across the whole plan |
+| Tasks | 256 across the whole forest, including roots |
+| Open descendants | 255 per root, across all levels (at most 256 tasks in a single new tree) |
+| Explicit prerequisite edges | 1024 across the whole plan |
 | Hierarchy depth | 4, with roots at depth 0 |
 | Task keys and idempotency key | 1–64 ASCII bytes; start with a letter or digit, then use letters, digits, `.`, `_`, or `-` |
-| Serialized typed `plan` | 64 KiB, including default/optional fields and JSON escaping |
+| Serialized typed `plan` | 1 MiB, including default/optional fields and JSON escaping |
+| Raw CLI `core propose --input` | 2 MiB for the entire JSON input, including whitespace and the outer envelope; checked before decoding |
 | Acceptance entries and labels | 64 each per task |
 | Initial notes | 16 across the whole plan; existing note-body bounds also apply |
-| Protocol result | 12 KiB; no partial mapping |
+| Compact JSON plan result | 64 KiB; no partial mapping (CLI pretty-print whitespace is additional) |
 
-The size limit applies after decoding to the typed plan, not to the raw file
-or its whitespace. The existing CLI JSON reader is unchanged; it does not
-provide a bounded raw-file read for this command.
+These are host/operator admission limits, not compact agent-response limits.
+Ordinary agent responses retain their 12 KiB ceiling, and ordinary decomposition
+retains its 16-child per-call limit. A complete `plan` can create more than 16
+direct children, but never exceeds the shared per-root descendant or depth
+limits. All 256 tasks can belong to one root, either as direct children or
+across several levels. The 255-open-descendant limit also applies to ordinary
+planning and graph restoration; completed, cancelled and superseded descendants
+do not consume it. Choose separate roots for genuinely separate outcomes.
+
+The limits bound input memory, generated work, and the complete result. They
+are not transaction timeouts. The 256-task limit leaves room for maximum-width
+keys and identities within the separate 64 KiB result budget. The 1024-edge
+limit caps canonical edge writes and their feed entries. A regression fixture
+checks a two-tree envelope against a pre-set limit of 20,000 canonical decodes.
+Flat and nested single-root fixtures use a tighter limit of 7,000, calibrated
+after measuring 6,430 and 6,861 decodes. That guard rejects an additional decode
+for each of the 1,024 edges even in the cheaper fixture. Time is diagnostic, not a
+pass condition or a latency promise for every host and payload. A large plan
+holds SQLite's writer lock until admission finishes, so other writes can wait.
+
+The typed-input bound and raw CLI bound are separate checks. The raw bound also
+applies to the `root` and `decompose` variants of `core propose`. File reads stop
+after the limit plus one byte; whitespace cannot force an unbounded read. The
+plan-result bound covers the serialized `kind` and complete task mapping.
+Both the conservative preflight result and the actual in-transaction result
+are checked against this same operator budget. An exact retry uses it too.
+
+Payload cycle validation visits tasks and edges without a transitive-closure
+matrix. Admission runs one full-project cycle check over the final old/new
+graph before committing, rather than scanning the project after each task or
+edge. It still detects unrelated existing cycles and rolls back the whole
+plan on failure. Refusing an unrelated existing cycle pays the full plan
+admission cost under the writer lock before the final scan rolls back its writes.
+This removes repeated project scans; it does not make total
+admission cost independent of project size. The final root-size check runs
+once per new root, not once per decomposed parent. Depth and canonical
+transition checks still run within the writer transaction. For new dependants,
+the writer carries a transaction-local relation basis through each edge
+addition, then verifies every final edge against canonical history before
+commit. It does not re-decode every growing prefix of the same edge set.
+Existing prerequisites retain their admission checks. Ordinary single-item
+updates do not use this plan-local state.
+
+There is no multi-call atomic mode. A refused plan leaves no partial graph.
+Splitting a plan into multiple calls does not extend its transaction or allow
+later `plan` calls to attach to a previously created root.
 
 After an uncertain response, retry the same input with the same project,
 actor, session, source skill, and idempotency key. Engram returns the original
-mapping,
-including after a restart between the graph commit and protocol receipt.
+mapping, including after a restart between the graph commit and protocol receipt.
 Changing the input under that key refuses. A different key or session is a
 new admission, not recovery. Inspect existing work before starting a new one.
 Retry time and changed host actor context do not change intent or rewrite the

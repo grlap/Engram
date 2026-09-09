@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { fixtureHome, removeFixtureHomes, tempSnapshot, assertTempClean } from "./test-temp.mjs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import test, { after } from "node:test";
 
 const tempBefore = tempSnapshot();
@@ -59,6 +60,63 @@ function withoutInjectedWorkAttribution(engramHome) {
   delete environment.ENGRAM_ACTOR_CONTEXT;
   return environment;
 }
+
+test("host atomic plans exceed the agent receipt budget and retry across CLI processes", (t) => {
+  const engramHome = fixtureHome("engram-large-plan-", t);
+  try {
+    hostSetup(engramHome);
+    const context = ["--home", engramHome, "work", "--actor-id", "planner", "--session-id", "large-plan"];
+    const key = (index) => `k${String(index).padStart(3, "0")}${"x".repeat(60)}`;
+    const input = { kind: "plan", plan: {
+      idempotency_key: "large-plan",
+      tasks: Array.from({ length: 256 }, (_, index) => ({
+        key: key(index), title: `Task ${index}`, outcome: `Deliver ${index}`,
+        acceptance: [`Delivered ${index}`],
+        ...(index ? { parent_key: key(0) } : {}),
+      })),
+      prerequisites: [{ work_key: key(1), prerequisite: { kind: "local", value: key(79) } }],
+    } };
+    const path = join(engramHome, "plan.json");
+    const propose = (value) => {
+      writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value));
+      return run([...context, "core", "propose", "--input", `@${path}`]);
+    };
+    const first = propose(input);
+    assert.equal(first.status, 0, first.stderr);
+    const receipt = JSON.parse(first.stdout);
+    assert.equal(receipt.kind, "plan");
+    assert.deepEqual(receipt.tasks.map(row => row.key), input.plan.tasks.map(row => row.key));
+    assert.ok(Buffer.byteLength(JSON.stringify(receipt)) > 12 * 1024);
+    assert.ok(Buffer.byteLength(JSON.stringify(receipt)) <= 64 * 1024);
+    const retry = propose(input);
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.deepEqual(JSON.parse(retry.stdout), receipt);
+    const total = () => {
+      const result = run([...context, "ls", "--all", "--json"]);
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout).total;
+    };
+    assert.equal(total(), 256);
+    const view = run([...context, "show", receipt.tasks[0].short_ref, "--json"]);
+    assert.equal(view.status, 0, view.stderr);
+    assert.ok(Buffer.byteLength(view.stdout) <= 12 * 1024);
+    const cycle = structuredClone(input);
+    cycle.plan.idempotency_key = "cycle";
+    cycle.plan.prerequisites.push({ work_key: key(79), prerequisite: { kind: "local", value: key(1) } });
+    const refused = propose(cycle);
+    assert.equal(refused.status, 1);
+    assert.equal(refused.stdout, "");
+    assert.match(refused.stderr, /cycle/iu);
+    assert.equal(total(), 256);
+    const oversized = propose(`${JSON.stringify(input)}${" ".repeat(2 * 1024 * 1024)}`);
+    assert.equal(oversized.status, 1);
+    assert.equal(oversized.stdout, "");
+    assert.match(oversized.stderr, /work propose JSON input exceeds the 2097152-byte limit/u);
+    assert.equal(total(), 256);
+  } finally {
+    removeFixtureHomes(engramHome);
+  }
+});
 test("detach makes a stranded child independently executable through one CLI update", (t) => {
   const engramHome = fixtureHome("engram-parity-detach-", t);
   try {
