@@ -66,9 +66,20 @@ semantics are preserved.
 
 On Windows, run `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 `scripts/test-rust.sh`. Both entry points run the ordinary Rust suite with
-bounded test concurrency and then the ignored claim-mutation scale test with
-one thread. The shell entry point also raises the Unix file-descriptor soft
-limit when the host permits it; that step is not applicable on Windows.
+bounded test concurrency, then separate ignored claim-mutation and
+`root_delta_scale_` phases. The shell entry point also raises the Unix
+file-descriptor soft limit when the host permits it; that step is not
+applicable on Windows.
+
+The root-delta phase includes 1,000-step history fixtures and can take several
+minutes. Recent Windows debug runs took about 6–9 minutes for that phase;
+this is an observation, not a timeout or a performance limit. The test harness
+can print "running for over 60 seconds" while a fixture is still working.
+Measurements appear when each fixture reaches its reporting point, not as a
+periodic heartbeat. Do not stop the gate just because it is quiet or passes
+that warning threshold. Check process activity and possible lock contention
+when investigating a suspected hang. The root-delta checks assert byte and
+operation bounds; elapsed time is diagnostic only.
 
 ### Test temporary files
 

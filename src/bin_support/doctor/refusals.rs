@@ -53,7 +53,7 @@ pub(super) fn refusal(
             }
             value["running"] = json!(build_identity::current().build);
             value["remedy"] = json!(
-                "Use the Engram build that created this store, or perform a compatible portable handoff; do not repair a different durable schema"
+                "Use the Engram build that created this store. This build has no in-place store upgrade; projection repair cannot convert a different durable schema."
             );
         }
         StoreOpenRefusalKind::CorruptStore => {

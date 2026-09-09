@@ -556,8 +556,8 @@ fn advisory_child_readiness_requires_execution_seal_membership() {
 
 #[test]
 fn advisory_entrypoints_refuse_projection_only_waiver_drift() {
-    // Expect load_root_execution/active_root_execution_optional's existing
-    // canonical-binding refusals, so only the error variant matters here.
+    // Expect load_root_execution/active_root_execution_optional's exact
+    // canonical-binding refusals, after each member's own hash is valid.
     // The two current_waiver_guards_* tests exercise the new helper branches.
     let fixture = Fixture::new();
     for (path, value) in [
@@ -590,6 +590,38 @@ fn advisory_entrypoints_refuse_projection_only_waiver_drift() {
                 .expect("projection-only drift"),
             1
         );
+        if path != "$.project_id" {
+            let bytes: Vec<u8> = fixture
+                .store
+                .connection
+                .query_row(
+                    "SELECT member_json FROM work_root_members WHERE root_execution_id = ?1
+                 AND json_extract(member_json, '$.collection') = 'child_waiver'",
+                    [fixture.sealed_child.root_execution_id.0.to_string()],
+                    |row| row.get(0),
+                )
+                .expect("altered waiver member");
+            let member: crate::domain::RootExecutionMember =
+                serde_json::from_slice(&bytes).expect("typed altered member");
+            let object = CanonicalObject::freeze(&member).expect("canonical altered member");
+            assert_eq!(
+                fixture
+                    .store
+                    .connection
+                    .execute(
+                        "UPDATE work_root_members SET member_hash = ?2, member_json = ?3
+                 WHERE root_execution_id = ?1
+                 AND json_extract(member_json, '$.collection') = 'child_waiver'",
+                        params![
+                            fixture.sealed_child.root_execution_id.0.to_string(),
+                            object.hash().as_str(),
+                            object.bytes()
+                        ],
+                    )
+                    .expect("bind valid member hash without changing the canonical head"),
+                1
+            );
+        }
         let readiness_error = fixture
             .store
             .work_completion_readiness(fixture.root.work_id, &fixture.claim.holder, at(32))
@@ -599,8 +631,13 @@ fn advisory_entrypoints_refuse_projection_only_waiver_drift() {
             .waivable_required_children(&fixture.root, 8)
             .expect_err("waiver listing refuses unbound execution");
         for error in [readiness_error, waiver_error] {
+            let expected = if path == "$.project_id" {
+                "root state: head identity or generation mismatch"
+            } else {
+                "root state: current members differ from full-state checksum"
+            };
             assert!(
-                matches!(error, StoreError::InvalidWorkProjection(_)),
+                matches!(&error, StoreError::InvalidWorkProjection(reason) if reason == expected),
                 "{error:?}"
             );
         }

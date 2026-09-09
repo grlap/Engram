@@ -316,9 +316,10 @@ struct LoadedRoot {
     members: BTreeMap<ObjectHash, RootExecutionMember>,
 }
 
-/// A head validated and persisted within the borrowed writer transaction.
-/// Fields are private; event append rechecks the head so another typed root
-/// mutation cannot turn this proof into a stale event. This is not a cache.
+/// A validated, persisted head borrowed from its writer connection.
+/// Event append checks the same connection and event state, then queries the
+/// stored head again to reject a stale proof. Connection pointer equality does
+/// not establish transaction identity. Fields are private; this is not a cache.
 pub(super) struct WrittenRoot<'a> {
     connection: &'a Connection,
     value: RootExecution,

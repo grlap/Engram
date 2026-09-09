@@ -252,17 +252,22 @@ fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
         .connection
         .execute_batch("SAVEPOINT corrupt")
         .expect("savepoint");
+    // A distinct, correctly addressed member repeats the same child identity.
+    // An identical member would collide with the projection's primary key.
+    let mut duplicate = waiver.clone();
+    duplicate.reason = "another waiver for the same child".into();
+    let duplicate =
+        CanonicalObject::freeze(&crate::domain::RootExecutionMember::ChildWaiver(duplicate))
+            .expect("canonical duplicate-child member");
     store
         .connection
         .execute(
             "INSERT INTO work_root_members (root_execution_id, member_hash, member_json)
-             VALUES (?1, 'duplicate-member', ?2)",
+             VALUES (?1, ?2, ?3)",
             params![
                 root_execution_id.0.to_string(),
-                serde_json::to_vec(&crate::domain::RootExecutionMember::ChildWaiver(
-                    waiver.clone()
-                ))
-                .expect("duplicate waiver JSON")
+                duplicate.hash().as_str(),
+                duplicate.bytes(),
             ],
         )
         .expect("inject duplicate waiver");
@@ -273,10 +278,14 @@ fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
             .iter()
             .any(|record| { record.ends_with(":invalid_required_child_waivers") })
     );
-    assert!(matches!(
-        store.work_completion_readiness(root.work_id, &root_claim.holder, at(8)),
-        Err(StoreError::InvalidWorkProjection(_))
-    ));
+    let error = store
+        .work_completion_readiness(root.work_id, &root_claim.holder, at(8))
+        .expect_err("duplicate child identities must refuse readiness");
+    assert!(
+        matches!(&error, StoreError::InvalidWorkProjection(reason)
+            if reason == "root state: conflicting member identities"),
+        "{error:?}"
+    );
     restore_savepoint(&store);
     checkpoint(
         &mut store,

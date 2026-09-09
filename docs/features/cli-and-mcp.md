@@ -753,8 +753,9 @@ The codes are:
   `["indexes", "triggers", "fts"]`; reporting performs no DDL.
 - `different_build_schema`: `store_schema_reference`, read from the existing
   file using the same normalization, plus `running` build components. Use the
-  build that created the store or a compatible portable handoff, not projection
-  repair. The schema digest is not a claim to know the original executable;
+  build that created the store. There is no in-place store upgrade, and
+  projection repair cannot convert a different durable schema.
+  The schema digest is not a claim to know the original executable;
   a schema-marker-only mismatch can have equal definition digests. If the
   refused file cannot be read, the digest is null with
   `store_schema: "unavailable"`; reporting never creates a missing file.

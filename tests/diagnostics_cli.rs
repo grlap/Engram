@@ -227,6 +227,10 @@ fn doctor_cli_refusals_are_json_and_leave_the_store_unchanged() {
             }
             "different_build_schema" => {
                 assert_eq!(
+                    report["remedy"],
+                    "Use the Engram build that created this store. This build has no in-place store upgrade; projection repair cannot convert a different durable schema."
+                );
+                assert_eq!(
                     report["store_schema_reference"],
                     json!(store_schema_reference(database).unwrap())
                 );
