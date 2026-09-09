@@ -19,7 +19,7 @@ fn core_committed_handoff_recovery_uses_the_durable_focus_basis() {
         .expect("first root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -79,7 +79,7 @@ fn core_committed_handoff_recovery_uses_the_durable_focus_basis() {
         .expect("second root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let recovered = service
         .work_handoff(input.clone(), at(4))
@@ -120,7 +120,7 @@ fn outgoing_handoff_expires_no_later_than_its_source_claim() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(

@@ -3,6 +3,7 @@
 > Normative reference: [spec §8](../spec.md#8-interfaces). Related briefs:
 > [context packets](context-packets.md),
 > [local work system](local-work-system.md),
+> [atomic work plans](atomic-work-plan.md),
 > [local tasks & reports](local-tasks-and-reports.md), and
 > [behavioral control plane](behavioral-control-plane.md).
 

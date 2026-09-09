@@ -46,6 +46,8 @@ use crate::{
 mod tests;
 
 mod detach;
+mod plan;
+pub(crate) use plan::validate_work_plan;
 
 /// Creates a root within the caller's write transaction after request validation.
 /// The caller owns operation replay and commit, including coupled graph changes.
@@ -329,291 +331,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(decomposition);
         }
-        let mut parent = load_work_item(&transaction, request.parent_id)?;
-        assert_revision(&parent, request.expected_parent_revision)?;
-        if parent.lifecycle != WorkLifecycle::Open {
-            return Err(StoreError::WorkParentNotOpen {
-                parent: parent.work_id,
-                lifecycle: parent.lifecycle,
-            });
-        }
-        let peer_proposal = peer_decomposition_admitted(&transaction, &parent, request)?;
-        if !peer_proposal {
-            validate_planning_authority(
-                &transaction,
-                &parent,
-                &request.authority,
-                &request.actor,
-                request.created_at,
-            )?;
-        }
-        let child_actor = if peer_proposal {
-            crate::domain::peer_child_proposal_actor(request.actor.clone())
-        } else {
-            request.actor.clone()
-        };
-        validate_decomposition_budget(&transaction, &parent, request.children.len())?;
-        let restored_execution = if parent.active_run_id.is_none() {
-            Some(ensure_restored_execution_state(
-                &transaction,
-                &mut parent,
-                request.created_at,
-            )?)
-        } else {
-            None
-        };
-        let (mut root_execution, restored_run) = match restored_execution {
-            Some((execution, run, _)) => (execution, Some(run)),
-            None => (active_root_execution(&transaction, parent.root_id)?, None),
-        };
-        let mut ids = HashMap::new();
-        for child in &request.children {
-            ids.insert(child.local_key.trim().to_owned(), WorkId::new());
-        }
-        let mut prerequisites: HashMap<String, Vec<WorkId>> = HashMap::new();
-        for edge in &request.prerequisites {
-            let work_key = edge.work_key.trim();
-            if !ids.contains_key(work_key) {
-                return Err(StoreError::InvalidWork(format!(
-                    "prerequisite edge references unknown child {work_key:?}"
-                )));
-            }
-            let prerequisite = match &edge.prerequisite {
-                WorkDependencyRef::Existing(work_id) => {
-                    if *work_id == parent.work_id {
-                        return Err(StoreError::WorkDependencyCycle);
-                    }
-                    let existing = load_work_item(&transaction, *work_id)?;
-                    if existing.project_id != parent.project_id {
-                        return Err(StoreError::InvalidWork(
-                            "prerequisite edges cannot cross projects".into(),
-                        ));
-                    }
-                    if existing.lifecycle == WorkLifecycle::Completed {
-                        return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
-                            existing.work_id,
-                        ));
-                    }
-                    if existing.lifecycle != WorkLifecycle::Open {
-                        return Err(StoreError::WorkNotOpen(existing.work_id));
-                    }
-                    if work_is_ancestor_of(&transaction, existing.work_id, &parent)? {
-                        return Err(StoreError::WorkDependencyCycle);
-                    }
-                    *work_id
-                }
-                WorkDependencyRef::Proposed(key) => {
-                    ids.get(key.trim()).copied().ok_or_else(|| {
-                        StoreError::InvalidWork(format!(
-                            "prerequisite edge references unknown proposed child {key:?}"
-                        ))
-                    })?
-                }
-            };
-            if ids[work_key] == prerequisite {
-                return Err(StoreError::WorkDependencyCycle);
-            }
-            prerequisites
-                .entry(work_key.to_owned())
-                .or_default()
-                .push(prerequisite);
-        }
-        for values in prerequisites.values_mut() {
-            values.sort_by_key(|value| value.0);
-            values.dedup();
-        }
-
-        let mut children = Vec::with_capacity(request.children.len());
-        let mut runs = HashMap::new();
-        for draft in &request.children {
-            let key = draft.local_key.trim();
-            let work_id = ids[key];
-            let run_id = WorkRunId::new();
-            let mut labels = parent.labels.clone();
-            labels.extend(draft.labels.clone());
-            let item = WorkItem {
-                external_ref: crate::domain::normalize_external_reference(
-                    draft.external_ref.as_deref(),
-                )
-                .map_err(StoreError::InvalidWork)?,
-                schema_version: SCHEMA_VERSION,
-                project_id: parent.project_id.clone(),
-                work_id,
-                short_ref: short_ref(work_id),
-                root_id: parent.root_id,
-                parent_id: Some(parent.work_id),
-                child_requirement: draft.child_requirement,
-                title: normalize_text(&draft.title, "child title")?,
-                outcome: normalize_text(&draft.outcome, "child outcome")?,
-                acceptance: normalize_strings(&draft.acceptance),
-                kind: draft.kind,
-                priority: draft.priority,
-                labels: normalize_strings(&labels),
-                assigned_to: normalize_optional(draft.assigned_to.clone()),
-                deferred_until: draft.deferred_until,
-                origin: WorkOrigin::Local,
-                source_snapshot_id: None,
-                lifecycle: WorkLifecycle::Open,
-                revision: 1,
-                active_run_id: Some(run_id),
-                restored: false,
-                superseded_by: None,
-                created_by: child_actor.clone(),
-                created_at: request.created_at,
-                updated_at: request.created_at,
-            };
-            transaction.execute(
-                "INSERT INTO work_items (
-                     work_id, project_id, short_ref, root_id, parent_id,
-                     child_requirement, lifecycle, priority, assigned_to,
-                     deferred_until_ms, revision, active_run_id, source_snapshot_hash,
-                     created_at_ms, updated_at_ms, item_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, 1, ?10,
-                           NULL, ?11, ?12, ?13)",
-                params![
-                    item.work_id.0.to_string(),
-                    item.project_id.0,
-                    item.short_ref,
-                    item.root_id.0.to_string(),
-                    parent.work_id.0.to_string(),
-                    encode_state(item.child_requirement)?,
-                    item.priority,
-                    item.assigned_to,
-                    item.deferred_until.map(|value| value.timestamp_millis()),
-                    run_id.0.to_string(),
-                    item.created_at.timestamp_millis(),
-                    item.updated_at.timestamp_millis(),
-                    serde_json::to_vec(&item)?
-                ],
-            )?;
-            refresh_work_catalog_projection(&transaction, &item)?;
-            let run = WorkRun {
-                schema_version: SCHEMA_VERSION,
-                run_id,
-                root_execution_id: root_execution.root_execution_id,
-                work_id,
-                generation: 1,
-                executor: None,
-                state: WorkRunState::Open,
-                revision: 1,
-                last_checkpoint: None,
-                completion_seal: None,
-                created_at: request.created_at,
-                updated_at: request.created_at,
-            };
-            transaction.execute(
-                "INSERT INTO work_runs (
-                     run_id, root_execution_id, work_id, generation,
-                     executor_session_id, state, revision, claim_fence_head,
-                     last_checkpoint_hash, completion_seal_hash,
-                     created_at_ms, updated_at_ms, run_json
-                 ) VALUES (?1, ?2, ?3, 1, NULL, 'open', 1, 0, NULL, NULL, ?4, ?5, ?6)",
-                params![
-                    run.run_id.0.to_string(),
-                    run.root_execution_id.0.to_string(),
-                    run.work_id.0.to_string(),
-                    run.created_at.timestamp_millis(),
-                    run.updated_at.timestamp_millis(),
-                    serde_json::to_vec(&run)?
-                ],
-            )?;
-            runs.insert(key.to_owned(), run);
-            children.push(item);
-        }
-        root_execution
-            .run_ids
-            .extend(runs.values().map(|run| run.run_id));
-        root_execution
-            .run_ids
-            .sort_by(super::root_state::compare_runs);
-        root_execution.run_ids.dedup();
-        root_execution.revision += 1;
-        root_execution.updated_at = request.created_at;
-        persist_root_execution(&transaction, &root_execution)?;
-        for ((draft, item), notes) in request.children.iter().zip(&children).zip(&initial_notes) {
-            let item_prerequisites = prerequisites
-                .get(draft.local_key.trim())
-                .cloned()
-                .unwrap_or_default();
-            let run = &runs[draft.local_key.trim()];
-            let run_id = run.run_id;
-            let event = WorkEventDraft {
-                schema_version: SCHEMA_VERSION,
-                project_id: item.project_id.clone(),
-                root_id: item.root_id,
-                work_id: item.work_id,
-                run_id: Some(run_id),
-                revision: item.revision,
-                work: item.clone(),
-                run: Some(run.clone()),
-                root_execution: Some(root_execution.clone()),
-                claim: None,
-                handoff_offer: None,
-                blocker: None,
-                transition: WorkTransition::Created {
-                    prerequisites: item_prerequisites.clone(),
-                },
-                actor: child_actor.clone(),
-                created_at: request.created_at,
-            };
-            let (event_hash, _) = append_work_event(&transaction, &event)?;
-            for prerequisite in item_prerequisites {
-                transaction.execute(
-                    "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
-                     VALUES (?1, ?2, ?3)",
-                    params![
-                        item.work_id.0.to_string(),
-                        prerequisite.0.to_string(),
-                        event_hash.as_str()
-                    ],
-                )?;
-            }
-            append_initial_notes_on(&transaction, item, notes, redactor)?;
-        }
-        if !combined_graph_is_acyclic(&transaction, &parent.project_id.0)? {
-            return Err(StoreError::WorkDependencyCycle);
-        }
-        // A peer proposal creates optional child runs, not a mutation of the
-        // holder's planning revision, run feed, or fenced authority.
-        if !peer_proposal {
-            parent.revision += 1;
-            parent.updated_at = request.created_at;
-            persist_work_item(&transaction, &parent)?;
-            let (claim_snapshot, rebased_run) = rebase_planning_claim(
-                &transaction,
-                &parent,
-                &request.authority,
-                request.created_at,
-            )?;
-            let event = WorkEventDraft {
-                schema_version: SCHEMA_VERSION,
-                project_id: parent.project_id.clone(),
-                root_id: parent.root_id,
-                work_id: parent.work_id,
-                run_id: parent.active_run_id,
-                revision: parent.revision,
-                work: parent.clone(),
-                run: match rebased_run {
-                    Some(run) => Some(run),
-                    None => match restored_run {
-                        Some(run) => Some(run),
-                        None => active_run_snapshot(&transaction, &parent)?,
-                    },
-                },
-                root_execution: Some(root_execution.clone()),
-                claim: claim_snapshot,
-                handoff_offer: None,
-                blocker: None,
-                transition: WorkTransition::Decomposed {
-                    children: children.iter().map(|child| child.work_id).collect(),
-                    authority: request.authority.clone(),
-                },
-                actor: request.actor.clone(),
-                created_at: request.created_at,
-            };
-            append_work_event(&transaction, &event)?;
-        }
-        let decomposition = WorkDecomposition { parent, children };
+        let decomposition = decompose_work_on(&transaction, request, &initial_notes, redactor)?;
         persist_operation_result(
             &transaction,
             "decompose_work",
@@ -876,119 +594,7 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(item);
         }
-        let mut item = load_work_item(&transaction, request.work_id)?;
-        let prerequisite = load_work_item(&transaction, request.prerequisite_id)?;
-        require_work_item_relation_integrity(&transaction, item.work_id)?;
-        assert_revision(&item, request.expected_revision)?;
-        validate_planning_authority(
-            &transaction,
-            &item,
-            &request.authority,
-            &request.actor,
-            request.changed_at,
-        )?;
-        if item.project_id != prerequisite.project_id {
-            return Err(StoreError::InvalidWork(
-                "prerequisite edges cannot cross projects".into(),
-            ));
-        }
-        if item.lifecycle != WorkLifecycle::Open {
-            return Err(StoreError::WorkNotOpen(item.work_id));
-        }
-        if add {
-            if prerequisite.lifecycle == WorkLifecycle::Completed {
-                return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
-                    prerequisite.work_id,
-                ));
-            }
-            if prerequisite.lifecycle != WorkLifecycle::Open {
-                return Err(StoreError::WorkNotOpen(prerequisite.work_id));
-            }
-            if work_is_ancestor_of(&transaction, prerequisite.work_id, &item)? {
-                return Err(StoreError::WorkDependencyCycle);
-            }
-        }
-        let exists: Option<String> = transaction
-            .query_row(
-                "SELECT event_hash FROM work_prerequisites
-                 WHERE work_id = ?1 AND prerequisite_id = ?2",
-                params![
-                    item.work_id.0.to_string(),
-                    prerequisite.work_id.0.to_string()
-                ],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if add == exists.is_some() {
-            persist_operation_result(
-                &transaction,
-                operation,
-                &request.idempotency_key,
-                request_object.hash(),
-                &item,
-            )?;
-            transaction.commit()?;
-            return Ok(item);
-        }
-        item.revision += 1;
-        item.updated_at = request.changed_at;
-        let (claim_snapshot, rebased_run) =
-            rebase_planning_claim(&transaction, &item, &request.authority, request.changed_at)?;
-        let event = WorkEventDraft {
-            schema_version: SCHEMA_VERSION,
-            project_id: item.project_id.clone(),
-            root_id: item.root_id,
-            work_id: item.work_id,
-            run_id: item.active_run_id,
-            revision: item.revision,
-            work: item.clone(),
-            run: match rebased_run {
-                Some(run) => Some(run),
-                None => active_run_snapshot(&transaction, &item)?,
-            },
-            root_execution: None,
-            claim: claim_snapshot,
-            handoff_offer: None,
-            blocker: None,
-            transition: if add {
-                WorkTransition::PrerequisiteAdded {
-                    prerequisite_id: prerequisite.work_id,
-                    authority: request.authority.clone(),
-                }
-            } else {
-                WorkTransition::PrerequisiteRemoved {
-                    prerequisite_id: prerequisite.work_id,
-                    authority: request.authority.clone(),
-                }
-            },
-            actor: request.actor.clone(),
-            created_at: request.changed_at,
-        };
-        let (event_hash, _) = append_work_event(&transaction, &event)?;
-        if add {
-            transaction.execute(
-                "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
-                 VALUES (?1, ?2, ?3)",
-                params![
-                    item.work_id.0.to_string(),
-                    prerequisite.work_id.0.to_string(),
-                    event_hash.as_str()
-                ],
-            )?;
-            if !combined_graph_is_acyclic(&transaction, &item.project_id.0)? {
-                return Err(StoreError::WorkDependencyCycle);
-            }
-        } else {
-            transaction.execute(
-                "DELETE FROM work_prerequisites
-                 WHERE work_id = ?1 AND prerequisite_id = ?2",
-                params![
-                    item.work_id.0.to_string(),
-                    prerequisite.work_id.0.to_string()
-                ],
-            )?;
-        }
-        persist_work_item(&transaction, &item)?;
+        let item = change_work_prerequisite_on(&transaction, request, add)?;
         persist_operation_result(
             &transaction,
             operation,
@@ -1191,6 +797,416 @@ impl SqliteStore {
         transaction.commit()?;
         Ok(item)
     }
+}
+
+/// Reuses ordinary decomposition admission inside a caller-owned plan transaction.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one atomic decomposition retains its existing admission and event ordering"
+)]
+fn decompose_work_on<R: Redactor>(
+    transaction: &Transaction<'_>,
+    request: &DecomposeWorkRequest,
+    initial_notes: &[Vec<String>],
+    redactor: &R,
+) -> Result<WorkDecomposition, StoreError> {
+    let mut parent = load_work_item(transaction, request.parent_id)?;
+    assert_revision(&parent, request.expected_parent_revision)?;
+    if parent.lifecycle != WorkLifecycle::Open {
+        return Err(StoreError::WorkParentNotOpen {
+            parent: parent.work_id,
+            lifecycle: parent.lifecycle,
+        });
+    }
+    let peer_proposal = peer_decomposition_admitted(transaction, &parent, request)?;
+    if !peer_proposal {
+        validate_planning_authority(
+            transaction,
+            &parent,
+            &request.authority,
+            &request.actor,
+            request.created_at,
+        )?;
+    }
+    let child_actor = if peer_proposal {
+        crate::domain::peer_child_proposal_actor(request.actor.clone())
+    } else {
+        request.actor.clone()
+    };
+    validate_decomposition_budget(transaction, &parent, request.children.len())?;
+    let restored_execution = if parent.active_run_id.is_none() {
+        Some(ensure_restored_execution_state(
+            transaction,
+            &mut parent,
+            request.created_at,
+        )?)
+    } else {
+        None
+    };
+    let (mut root_execution, restored_run) = match restored_execution {
+        Some((execution, run, _)) => (execution, Some(run)),
+        None => (active_root_execution(transaction, parent.root_id)?, None),
+    };
+    let mut ids = HashMap::new();
+    for child in &request.children {
+        ids.insert(child.local_key.trim().to_owned(), WorkId::new());
+    }
+    let mut prerequisites: HashMap<String, Vec<WorkId>> = HashMap::new();
+    for edge in &request.prerequisites {
+        let work_key = edge.work_key.trim();
+        if !ids.contains_key(work_key) {
+            return Err(StoreError::InvalidWork(format!(
+                "prerequisite edge references unknown child {work_key:?}"
+            )));
+        }
+        let prerequisite = match &edge.prerequisite {
+            WorkDependencyRef::Existing(work_id) => {
+                if *work_id == parent.work_id {
+                    return Err(StoreError::WorkDependencyCycle);
+                }
+                let existing = load_work_item(transaction, *work_id)?;
+                if existing.project_id != parent.project_id {
+                    return Err(StoreError::InvalidWork(
+                        "prerequisite edges cannot cross projects".into(),
+                    ));
+                }
+                if existing.lifecycle == WorkLifecycle::Completed {
+                    return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
+                        existing.work_id,
+                    ));
+                }
+                if existing.lifecycle != WorkLifecycle::Open {
+                    return Err(StoreError::WorkNotOpen(existing.work_id));
+                }
+                if work_is_ancestor_of(transaction, existing.work_id, &parent)? {
+                    return Err(StoreError::WorkDependencyCycle);
+                }
+                *work_id
+            }
+            WorkDependencyRef::Proposed(key) => ids.get(key.trim()).copied().ok_or_else(|| {
+                StoreError::InvalidWork(format!(
+                    "prerequisite edge references unknown proposed child {key:?}"
+                ))
+            })?,
+        };
+        if ids[work_key] == prerequisite {
+            return Err(StoreError::WorkDependencyCycle);
+        }
+        prerequisites
+            .entry(work_key.to_owned())
+            .or_default()
+            .push(prerequisite);
+    }
+    for values in prerequisites.values_mut() {
+        values.sort_by_key(|value| value.0);
+        values.dedup();
+    }
+
+    let mut children = Vec::with_capacity(request.children.len());
+    let mut runs = HashMap::new();
+    for draft in &request.children {
+        let key = draft.local_key.trim();
+        let work_id = ids[key];
+        let run_id = WorkRunId::new();
+        let mut labels = parent.labels.clone();
+        labels.extend(draft.labels.clone());
+        let item = WorkItem {
+            external_ref: crate::domain::normalize_external_reference(
+                draft.external_ref.as_deref(),
+            )
+            .map_err(StoreError::InvalidWork)?,
+            schema_version: SCHEMA_VERSION,
+            project_id: parent.project_id.clone(),
+            work_id,
+            short_ref: short_ref(work_id),
+            root_id: parent.root_id,
+            parent_id: Some(parent.work_id),
+            child_requirement: draft.child_requirement,
+            title: normalize_text(&draft.title, "child title")?,
+            outcome: normalize_text(&draft.outcome, "child outcome")?,
+            acceptance: normalize_strings(&draft.acceptance),
+            kind: draft.kind,
+            priority: draft.priority,
+            labels: normalize_strings(&labels),
+            assigned_to: normalize_optional(draft.assigned_to.clone()),
+            deferred_until: draft.deferred_until,
+            origin: WorkOrigin::Local,
+            source_snapshot_id: None,
+            lifecycle: WorkLifecycle::Open,
+            revision: 1,
+            active_run_id: Some(run_id),
+            restored: false,
+            superseded_by: None,
+            created_by: child_actor.clone(),
+            created_at: request.created_at,
+            updated_at: request.created_at,
+        };
+        transaction.execute(
+            "INSERT INTO work_items (
+                 work_id, project_id, short_ref, root_id, parent_id,
+                 child_requirement, lifecycle, priority, assigned_to,
+                 deferred_until_ms, revision, active_run_id, source_snapshot_hash,
+                 created_at_ms, updated_at_ms, item_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, 1, ?10,
+                       NULL, ?11, ?12, ?13)",
+            params![
+                item.work_id.0.to_string(),
+                item.project_id.0,
+                item.short_ref,
+                item.root_id.0.to_string(),
+                parent.work_id.0.to_string(),
+                encode_state(item.child_requirement)?,
+                item.priority,
+                item.assigned_to,
+                item.deferred_until.map(|value| value.timestamp_millis()),
+                run_id.0.to_string(),
+                item.created_at.timestamp_millis(),
+                item.updated_at.timestamp_millis(),
+                serde_json::to_vec(&item)?
+            ],
+        )?;
+        refresh_work_catalog_projection(transaction, &item)?;
+        let run = WorkRun {
+            schema_version: SCHEMA_VERSION,
+            run_id,
+            root_execution_id: root_execution.root_execution_id,
+            work_id,
+            generation: 1,
+            executor: None,
+            state: WorkRunState::Open,
+            revision: 1,
+            last_checkpoint: None,
+            completion_seal: None,
+            created_at: request.created_at,
+            updated_at: request.created_at,
+        };
+        transaction.execute(
+            "INSERT INTO work_runs (
+                 run_id, root_execution_id, work_id, generation,
+                 executor_session_id, state, revision, claim_fence_head,
+                 last_checkpoint_hash, completion_seal_hash,
+                 created_at_ms, updated_at_ms, run_json
+             ) VALUES (?1, ?2, ?3, 1, NULL, 'open', 1, 0, NULL, NULL, ?4, ?5, ?6)",
+            params![
+                run.run_id.0.to_string(),
+                run.root_execution_id.0.to_string(),
+                run.work_id.0.to_string(),
+                run.created_at.timestamp_millis(),
+                run.updated_at.timestamp_millis(),
+                serde_json::to_vec(&run)?
+            ],
+        )?;
+        runs.insert(key.to_owned(), run);
+        children.push(item);
+    }
+    root_execution
+        .run_ids
+        .extend(runs.values().map(|run| run.run_id));
+    root_execution
+        .run_ids
+        .sort_by(super::root_state::compare_runs);
+    root_execution.run_ids.dedup();
+    root_execution.revision += 1;
+    root_execution.updated_at = request.created_at;
+    persist_root_execution(transaction, &root_execution)?;
+    for ((draft, item), notes) in request.children.iter().zip(&children).zip(initial_notes) {
+        let item_prerequisites = prerequisites
+            .get(draft.local_key.trim())
+            .cloned()
+            .unwrap_or_default();
+        let run = &runs[draft.local_key.trim()];
+        let run_id = run.run_id;
+        let event = WorkEventDraft {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: Some(run_id),
+            revision: item.revision,
+            work: item.clone(),
+            run: Some(run.clone()),
+            root_execution: Some(root_execution.clone()),
+            claim: None,
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::Created {
+                prerequisites: item_prerequisites.clone(),
+            },
+            actor: child_actor.clone(),
+            created_at: request.created_at,
+        };
+        let (event_hash, _) = append_work_event(transaction, &event)?;
+        for prerequisite in item_prerequisites {
+            transaction.execute(
+                "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    item.work_id.0.to_string(),
+                    prerequisite.0.to_string(),
+                    event_hash.as_str()
+                ],
+            )?;
+        }
+        append_initial_notes_on(transaction, item, notes, redactor)?;
+    }
+    if !combined_graph_is_acyclic(transaction, &parent.project_id.0)? {
+        return Err(StoreError::WorkDependencyCycle);
+    }
+    // A peer proposal creates optional child runs, not a mutation of the
+    // holder's planning revision, run feed, or fenced authority.
+    if !peer_proposal {
+        parent.revision += 1;
+        parent.updated_at = request.created_at;
+        persist_work_item(transaction, &parent)?;
+        let (claim_snapshot, rebased_run) =
+            rebase_planning_claim(transaction, &parent, &request.authority, request.created_at)?;
+        let event = WorkEventDraft {
+            schema_version: SCHEMA_VERSION,
+            project_id: parent.project_id.clone(),
+            root_id: parent.root_id,
+            work_id: parent.work_id,
+            run_id: parent.active_run_id,
+            revision: parent.revision,
+            work: parent.clone(),
+            run: match rebased_run {
+                Some(run) => Some(run),
+                None => match restored_run {
+                    Some(run) => Some(run),
+                    None => active_run_snapshot(transaction, &parent)?,
+                },
+            },
+            root_execution: Some(root_execution.clone()),
+            claim: claim_snapshot,
+            handoff_offer: None,
+            blocker: None,
+            transition: WorkTransition::Decomposed {
+                children: children.iter().map(|child| child.work_id).collect(),
+                authority: request.authority.clone(),
+            },
+            actor: request.actor.clone(),
+            created_at: request.created_at,
+        };
+        append_work_event(transaction, &event)?;
+    }
+    Ok(WorkDecomposition { parent, children })
+}
+
+/// Changes one edge using the ordinary checks within a caller-owned transaction.
+#[allow(
+    clippy::too_many_lines,
+    reason = "shared prerequisite transition keeps admission and projection writes together"
+)]
+fn change_work_prerequisite_on(
+    transaction: &Transaction<'_>,
+    request: &ChangeWorkPrerequisiteRequest,
+    add: bool,
+) -> Result<WorkItem, StoreError> {
+    let mut item = load_work_item(transaction, request.work_id)?;
+    let prerequisite = load_work_item(transaction, request.prerequisite_id)?;
+    require_work_item_relation_integrity(transaction, item.work_id)?;
+    assert_revision(&item, request.expected_revision)?;
+    validate_planning_authority(
+        transaction,
+        &item,
+        &request.authority,
+        &request.actor,
+        request.changed_at,
+    )?;
+    if item.project_id != prerequisite.project_id {
+        return Err(StoreError::InvalidWork(
+            "prerequisite edges cannot cross projects".into(),
+        ));
+    }
+    if item.lifecycle != WorkLifecycle::Open {
+        return Err(StoreError::WorkNotOpen(item.work_id));
+    }
+    if add {
+        if prerequisite.lifecycle == WorkLifecycle::Completed {
+            return Err(StoreError::WorkPrerequisiteAlreadySatisfied(
+                prerequisite.work_id,
+            ));
+        }
+        if prerequisite.lifecycle != WorkLifecycle::Open {
+            return Err(StoreError::WorkNotOpen(prerequisite.work_id));
+        }
+        if work_is_ancestor_of(transaction, prerequisite.work_id, &item)? {
+            return Err(StoreError::WorkDependencyCycle);
+        }
+    }
+    let exists: Option<String> = transaction
+        .query_row(
+            "SELECT event_hash FROM work_prerequisites
+             WHERE work_id = ?1 AND prerequisite_id = ?2",
+            params![
+                item.work_id.0.to_string(),
+                prerequisite.work_id.0.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if add == exists.is_some() {
+        return Ok(item);
+    }
+    item.revision += 1;
+    item.updated_at = request.changed_at;
+    let (claim_snapshot, rebased_run) =
+        rebase_planning_claim(transaction, &item, &request.authority, request.changed_at)?;
+    let event = WorkEventDraft {
+        schema_version: SCHEMA_VERSION,
+        project_id: item.project_id.clone(),
+        root_id: item.root_id,
+        work_id: item.work_id,
+        run_id: item.active_run_id,
+        revision: item.revision,
+        work: item.clone(),
+        run: match rebased_run {
+            Some(run) => Some(run),
+            None => active_run_snapshot(transaction, &item)?,
+        },
+        root_execution: None,
+        claim: claim_snapshot,
+        handoff_offer: None,
+        blocker: None,
+        transition: if add {
+            WorkTransition::PrerequisiteAdded {
+                prerequisite_id: prerequisite.work_id,
+                authority: request.authority.clone(),
+            }
+        } else {
+            WorkTransition::PrerequisiteRemoved {
+                prerequisite_id: prerequisite.work_id,
+                authority: request.authority.clone(),
+            }
+        },
+        actor: request.actor.clone(),
+        created_at: request.changed_at,
+    };
+    let (event_hash, _) = append_work_event(transaction, &event)?;
+    if add {
+        transaction.execute(
+            "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
+             VALUES (?1, ?2, ?3)",
+            params![
+                item.work_id.0.to_string(),
+                prerequisite.work_id.0.to_string(),
+                event_hash.as_str()
+            ],
+        )?;
+        if !combined_graph_is_acyclic(transaction, &item.project_id.0)? {
+            return Err(StoreError::WorkDependencyCycle);
+        }
+    } else {
+        transaction.execute(
+            "DELETE FROM work_prerequisites
+             WHERE work_id = ?1 AND prerequisite_id = ?2",
+            params![
+                item.work_id.0.to_string(),
+                prerequisite.work_id.0.to_string()
+            ],
+        )?;
+    }
+    persist_work_item(transaction, &item)?;
+    Ok(item)
 }
 
 pub(super) fn projected_work_relation_basis(

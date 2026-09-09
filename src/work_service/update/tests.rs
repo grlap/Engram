@@ -36,7 +36,7 @@ fn core_committed_update_recovery_uses_the_durable_focus_basis() {
         .expect("first root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let input = WorkUpdateInput::Revise {
         patch: WorkRevisionPatch {
@@ -90,7 +90,7 @@ fn core_committed_update_recovery_uses_the_durable_focus_basis() {
         .expect("second root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let recovered = service
         .work_update(input.clone(), at(3))
@@ -129,7 +129,7 @@ fn omitted_idempotency_key_replays_identical_calls_and_separates_different_ones(
     );
     let root_of = |result: WorkProposeResult| match result {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let first = root_of(
         service
@@ -228,7 +228,7 @@ fn completed_explicit_update_replays_after_expiry_without_retaking() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -307,7 +307,7 @@ fn concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -433,7 +433,7 @@ fn explicit_update_target_wins_after_same_session_focus_change() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let target = create("Explicit target", "explicit-target");
     let other = create("Concurrent focus", "concurrent-focus");
@@ -495,7 +495,7 @@ fn pending_note_attempt_recovers_the_atomic_evidence_checkpoint_pair() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -613,7 +613,7 @@ fn pending_gate_attempt_recovers_without_appending_again() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -1018,7 +1018,7 @@ fn identical_gate_after_handoff_or_reclaim_is_a_new_claim_observation() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     first
         .work_update(
@@ -1159,7 +1159,7 @@ fn explicit_gate_target_wins_after_same_session_focus_change() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let target = create("Explicit gate target", "explicit-gate-target");
     let other = create("Concurrent gate focus", "concurrent-gate-focus");
@@ -1219,7 +1219,7 @@ fn gate_storage_owns_normalization_and_bounds() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -1503,7 +1503,9 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
             .expect("create scale root")
         {
             WorkProposeResult::Root { work, .. } => work,
-            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+            WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+                panic!("expected root")
+            }
         };
         work_items.push(work);
     }

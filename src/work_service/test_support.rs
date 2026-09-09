@@ -93,7 +93,7 @@ pub(super) fn root_input(title: &str, key: &str) -> WorkProposeInput {
 pub(super) fn proposed_root(result: WorkProposeResult) -> WorkItemSummary {
     match result {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     }
 }
 

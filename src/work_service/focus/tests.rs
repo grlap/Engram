@@ -573,7 +573,7 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let run_id = work.active_run_id.expect("active run");
     let observation = ExecutionObservation {
@@ -853,7 +853,7 @@ fn focus_exposes_blocker_ids_and_single_blocker_unblock_is_ambient() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     for (key, detail) in [
         ("block-a", "first ".repeat(200)),
@@ -936,7 +936,7 @@ fn select_work_sets_focus_for_the_next_mutation() {
         .expect("first root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_propose(root_input("Select second", "select-second"), at(1))
@@ -988,7 +988,7 @@ fn allowed_next_distinguishes_ordinary_claim_from_attributed_recovery() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     first
         .work_update(
@@ -1053,7 +1053,7 @@ fn allowed_next_advertises_plain_claim_without_recovery_for_a_ready_lapsed_holde
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -1146,7 +1146,7 @@ fn required_child_waiver_guidance_is_exact_and_carries_an_actionable_child() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, focus } => (work, focus),
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     assert!(
         !fresh_focus

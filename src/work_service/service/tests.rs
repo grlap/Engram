@@ -447,7 +447,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let first = a
         .work_next(20, WorkNextQuery::default(), at(1))
@@ -478,7 +478,9 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .expect("append after another session staged a page")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected concurrent root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+            panic!("expected concurrent root")
+        }
     };
     // A staged page never blocks a focus change.
     let switched = a
@@ -834,7 +836,9 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .expect("replacement root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected replacement root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+            panic!("expected replacement root")
+        }
     };
     let obsolete = match b
         .work_propose(
@@ -856,7 +860,9 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .expect("obsolete root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected obsolete root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+            panic!("expected obsolete root")
+        }
     };
     let superseded = b
         .work_update(

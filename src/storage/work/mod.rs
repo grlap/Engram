@@ -20,6 +20,7 @@ pub(in crate::storage) use import::{
 mod notes;
 mod observation;
 mod planning;
+pub(crate) use planning::validate_work_plan;
 mod query;
 mod record_windows;
 mod root_state;

@@ -25,7 +25,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
         .expect("parent")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let decomposition = service
         .work_propose(
@@ -179,7 +179,7 @@ fn show_claim_guidance_uses_the_allowed_operation_as_its_source() {
         .expect("released root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     first_verbs
         .claim(
@@ -227,7 +227,7 @@ fn show_claim_guidance_uses_the_allowed_operation_as_its_source() {
         .expect("lapsed root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     first_verbs
         .claim(
@@ -267,7 +267,7 @@ fn holder_note_never_shortens_an_explicit_long_claim() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let verbs = AgentVerbs::with_shared_service(service, "agent".into(), session);
     let claimed = verbs
@@ -330,7 +330,7 @@ fn show_reports_the_true_note_total_and_latest_feed_entry() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update_on(

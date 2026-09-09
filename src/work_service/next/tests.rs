@@ -346,7 +346,7 @@ fn interrupted_attempt_cannot_follow_changed_focus() {
         .expect("first root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let revise = WorkUpdateInput::Revise {
         patch: WorkRevisionPatch {
@@ -381,7 +381,7 @@ fn interrupted_attempt_cannot_follow_changed_focus() {
         .expect("second root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     assert!(matches!(
         focus_service.work_update(revise, at(6)),
@@ -427,7 +427,7 @@ fn staged_page_never_blocks_focus_and_is_delivered_by_the_next_call() {
         .expect("second root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let changes_only = || WorkNextQuery {
         sections: vec![WorkNextSection::Changes],
@@ -651,7 +651,7 @@ fn focus_winning_before_delivery_stage_forces_reprojection() {
         .expect("original root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let replacement = match peer
         .work_propose(
@@ -661,7 +661,7 @@ fn focus_winning_before_delivery_stage_forces_reprojection() {
         .expect("replacement root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -816,7 +816,7 @@ fn work_scoped_contradiction_drains_through_work_next_and_doctor() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -1055,14 +1055,18 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
         .expect("focused root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected focused root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+            panic!("expected focused root")
+        }
     };
     let peer_root = match peer
         .work_propose(root_input("Peer root", "peer-root"), at(1))
         .expect("peer root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected peer root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+            panic!("expected peer root")
+        }
     };
     focused
         .work_update(
@@ -1366,7 +1370,7 @@ fn rejected_memory_advisory_cannot_consume_an_unseen_work_change_page() {
         .expect("create peer change")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
 
     assert!(matches!(
@@ -1441,7 +1445,9 @@ fn work_next_is_byte_bounded_dense_and_section_selective_at_project_scale() {
             .expect("create bounded root")
         {
             WorkProposeResult::Root { work, .. } => work,
-            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+            WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+                panic!("expected root")
+            }
         };
         work_ids.push(work.work_id);
     }

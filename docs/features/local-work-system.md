@@ -6,6 +6,7 @@
 > [local tasks & reports](local-tasks-and-reports.md),
 > [tracker adapter](tracker-adapter.md),
 > [CLI & MCP](cli-and-mcp.md),
+> [atomic work plans](atomic-work-plan.md),
 > [write policy & review](write-policy-and-review.md),
 > [security & trust](security-and-trust.md), and
 > [execution pipeline](execution-pipeline.md).

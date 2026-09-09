@@ -12,6 +12,7 @@ mod project_memory;
 mod schema_diagnostics;
 mod task_memory;
 mod work;
+pub(crate) use work::validate_work_plan;
 
 pub(crate) use project_memory::validate_context_generation;
 

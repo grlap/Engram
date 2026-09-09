@@ -22,7 +22,7 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let target = create("Exact target", "exact-target");
     let other = create("Concurrent focus", "concurrent-focus");
@@ -667,7 +667,7 @@ fn catalog_claim_guidance_routes_through_exact_show() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     first_verbs
         .claim(
@@ -1088,7 +1088,7 @@ fn invalid_waiver_child_reference_is_attributed_to_the_child() {
         .expect("create parent")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let verbs = AgentVerbs::new(
         database,

@@ -6,10 +6,12 @@ use super::{
     WorkItemSummary, WorkObligationPage, WorkRevisionPatch,
 };
 
-/// Low-ceremony root creation or atomic focused-work decomposition.
+/// Root creation, focused-work decomposition, or a complete atomic new plan.
 #[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkProposeInput {
+    /// A complete new forest; never uses or changes ambient focus.
+    Plan { plan: crate::domain::WorkPlanInput },
     Root {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         external_ref: Option<String>,
@@ -65,10 +67,11 @@ pub struct WorkPrerequisiteInput {
     pub prerequisite: String,
 }
 
-/// Result of a root or decomposition proposal.
+/// Result of a root, decomposition, or complete-plan proposal.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkProposeResult {
+    Plan(crate::domain::WorkPlanReceipt),
     Root {
         work: WorkItemSummary,
         focus: Box<WorkFocusView>,

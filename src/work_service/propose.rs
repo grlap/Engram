@@ -1,9 +1,10 @@
 use super::*;
 
+mod plan;
 mod replay;
 
 impl LocalWorkService {
-    /// Creates a root or atomically decomposes ambient focused work.
+    /// Creates a root, decomposes focused work, or atomically admits a new plan.
     ///
     /// # Errors
     ///
@@ -18,7 +19,8 @@ impl LocalWorkService {
     }
 
     /// Like [`Self::work_propose`], but first binds `work_ref` as the ambient
-    /// focus and the decomposition target inside the same call.
+    /// focus and the decomposition target inside the same call. A complete new
+    /// plan refuses `work_ref` and preserves the existing focus.
     ///
     /// # Errors
     ///
@@ -34,6 +36,9 @@ impl LocalWorkService {
         input: WorkProposeInput,
         now: DateTime<Utc>,
     ) -> Result<WorkProposeResult, StoreError> {
+        if let WorkProposeInput::Plan { plan } = input {
+            return self.work_propose_plan(work_ref, &plan, now);
+        }
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(
@@ -120,6 +125,7 @@ impl LocalWorkService {
             });
         }
         let result = match input {
+            WorkProposeInput::Plan { plan } => return self.work_propose_plan(work_ref, &plan, now),
             WorkProposeInput::Root {
                 external_ref,
                 notes,

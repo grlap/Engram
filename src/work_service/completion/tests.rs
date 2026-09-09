@@ -264,7 +264,7 @@ fn completion_on_a_lapsed_claim_refuses_without_retaking() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -346,7 +346,9 @@ fn lapsed_completion_refuses_before_capture_for_explicit_and_derived_keys() {
             .expect("root")
         {
             WorkProposeResult::Root { work, .. } => work,
-            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+            WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+                panic!("expected root")
+            }
         };
         service
             .work_update(
@@ -422,7 +424,7 @@ fn missing_contribution_recovery_names_the_participant_and_root() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let participant = SessionId("missing-participant".into());
     service
@@ -519,7 +521,7 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
         .expect("root")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     let decomposition = service
         .work_propose(
@@ -1038,7 +1040,7 @@ fn capture_completion_rejects_bad_acceptance_without_substeps() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -1195,7 +1197,9 @@ fn capture_completion_replays_after_evidence_or_checkpoint_commit() {
             .expect("root proposal")
         {
             WorkProposeResult::Root { work, .. } => work,
-            WorkProposeResult::Decomposition(_) => panic!("expected root"),
+            WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+                panic!("expected root")
+            }
         };
         service
             .work_update(
@@ -1515,7 +1519,7 @@ fn pending_completion_resumes_after_holder_evidence_and_seals_the_current_set() 
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(
@@ -1681,7 +1685,7 @@ fn pending_completion_conflicts_after_foreign_claim_fence_change() {
         .expect("root proposal")
     {
         WorkProposeResult::Root { work, .. } => work,
-        WorkProposeResult::Decomposition(_) => panic!("expected root"),
+        WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => panic!("expected root"),
     };
     service
         .work_update(

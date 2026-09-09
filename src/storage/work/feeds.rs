@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Serialize, de::DeserializeOwned};
@@ -657,6 +659,33 @@ pub(super) fn validate_work_protocol_result_binding(
 ) -> Result<(), StoreError> {
     let mut bound_items = Vec::new();
     match operation {
+        "work_propose:plan" => {
+            let receipt: crate::domain::WorkPlanReceipt = serde_json::from_value(result.clone())?;
+            if result.get("kind").and_then(serde_json::Value::as_str) != Some("plan")
+                || receipt.tasks.is_empty()
+                || receipt.tasks.len() > crate::domain::MAX_WORK_PLAN_TASKS
+            {
+                return Err(StoreError::InvalidWorkProjection(
+                    "invalid plan replay mapping".into(),
+                ));
+            }
+            let mut keys = HashSet::new();
+            let mut ids = HashSet::new();
+            for mapping in receipt.tasks {
+                let item = load_work_item(connection, mapping.work_id)?;
+                if !keys.insert(mapping.key)
+                    || !ids.insert(mapping.work_id)
+                    || mapping.short_ref != item.short_ref
+                    || mapping.revision < 1
+                    || mapping.revision > item.revision
+                {
+                    return Err(StoreError::InvalidWorkProjection(
+                        "invalid plan replay identity".into(),
+                    ));
+                }
+                bound_items.push(item);
+            }
+        }
         "work_propose:root" => {
             let work_id = result
                 .pointer("/work/work_id")

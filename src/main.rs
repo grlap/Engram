@@ -739,9 +739,9 @@ enum CoreWorkCommand {
         /// Short work ref or full UUID.
         work_ref: String,
     },
-    /// Create a root or atomically decompose ambient work.
+    /// Create a root, decompose ambient work, or admit a complete new plan.
     Propose {
-        /// Short ref or UUID of the parent to decompose; selects focus first.
+        /// Parent to decompose; selects focus first. Omit for a new plan.
         #[arg(long)]
         work_ref: Option<String>,
         /// JSON object or @path to a JSON file.
