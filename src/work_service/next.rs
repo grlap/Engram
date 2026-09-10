@@ -464,7 +464,7 @@ impl LocalWorkService {
             }
         }
         let agent_lists = agent_options
-            .map(|options| self.agent_next_lists(store, options.list_limit, now))
+            .map(|options| self.agent_next_lists(store, options.list_limit, options.verbose, now))
             .transpose()?;
 
         Ok(NextAdvisory {
@@ -481,6 +481,7 @@ impl LocalWorkService {
         &self,
         store: &SqliteStore,
         limit: u32,
+        verbose: bool,
         now: DateTime<Utc>,
     ) -> Result<WorkAgentNextLists, StoreError> {
         let claims = store.live_work_claims(&self.project_id, now)?;
@@ -513,10 +514,53 @@ impl LocalWorkService {
             (item.work.current_status, item.work.status_observation) =
                 self.status_for_item(store, item.work.work_id, now)?;
         }
-        let ready = self.agent_catalog(store, limit, vec![WorkAvailability::Ready], now)?;
+        let mut ready = self.agent_catalog(
+            store,
+            if verbose {
+                limit
+            } else {
+                limit.saturating_add(1)
+            },
+            vec![WorkAvailability::Ready],
+            now,
+        )?;
+        let ready_navigation = if verbose {
+            None
+        } else {
+            let more = ready.len() > limit as usize;
+            ready.truncate(limit as usize);
+            let cut = store.work_read_cut(&self.project_id, now)?;
+            let mut filters = WorkCatalogQuery {
+                lifecycles: vec![WorkLifecycle::Open],
+                availabilities: vec![WorkAvailability::Ready],
+                ..WorkCatalogQuery::default()
+            };
+            SqliteStore::normalize_catalog_filters(&mut filters);
+            let mut continuations =
+                vec![(more || !ready.is_empty()).then_some(WorkReadyContinuation::Fresh)];
+            for (index, row) in ready.iter().enumerate() {
+                continuations.push(if more || index + 1 < ready.len() {
+                    Some(WorkReadyContinuation::After(
+                        super::catalog::listing_continuation(
+                            &self.project_id,
+                            &filters,
+                            &cut,
+                            row.work.work_id,
+                        )?,
+                    ))
+                } else {
+                    None
+                });
+            }
+            Some(WorkReadyNavigation {
+                limit,
+                continuations,
+            })
+        };
         Ok(WorkAgentNextLists {
             held,
             ready,
+            ready_navigation,
             claims,
         })
     }

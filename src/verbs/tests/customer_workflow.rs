@@ -10,6 +10,7 @@ mod criterion_links;
 mod detach;
 mod discovery;
 mod listing;
+mod orientation;
 mod output_economy;
 mod parent_context;
 mod peek;

@@ -54,6 +54,8 @@ pub use receipts::{Guidance, Receipt, VerbError};
 pub use record_windows::ShowInput;
 
 const DEFAULT_LIMIT: u32 = 20;
+/// Maximum ready candidates in compact orientation; use `ls --ready` for more.
+pub const MAX_NEXT_READY_CANDIDATES: u32 = 5;
 const MAX_TEXT_LINE_BYTES: usize = 96;
 const MAX_COMPACT_NEXT_JSON_BYTES: usize = MAX_AGENT_WORK_RESPONSE_BYTES;
 const MAX_COMPACT_CHANGE_ITEMS: u32 = 8;

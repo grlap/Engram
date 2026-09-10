@@ -442,6 +442,7 @@ enum WorkCommand {
         /// Read orientation without staging or advancing delivery, focus or memory advertisement.
         #[arg(long)]
         peek: bool,
+        /// Maximum changes (default 20); compact ready candidates are capped at five.
         #[arg(long, default_value_t = 20)]
         limit: u32,
         /// Return the full structured projection instead of compact rows.
@@ -459,6 +460,9 @@ enum WorkCommand {
         /// Only items with an active blocker or incomplete prerequisite.
         #[arg(long)]
         blocked: bool,
+        /// Only ready candidates; inspect an item before claiming it.
+        #[arg(long, conflicts_with = "blocked")]
+        ready: bool,
         /// Only items assigned to you or held by this session.
         #[arg(long)]
         mine: bool,
@@ -1172,6 +1176,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         WorkCommand::Ls {
             search,
             blocked,
+            ready,
             mine,
             all,
             label,
@@ -1185,6 +1190,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             &LsInput {
                 search,
                 blocked,
+                ready,
                 mine,
                 all,
                 label,

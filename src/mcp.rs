@@ -80,7 +80,7 @@ struct NextArgs {
     /// Read-only orientation: no staging, acknowledgement, focus or cursor changes.
     /// Repeated peeks repeat unacknowledged signals; use memories to read the notes.
     peek: Option<bool>,
-    /// Maximum ready items and changes to return (default 20).
+    /// Maximum changes (default 20); compact ready candidates are capped at five.
     limit: Option<u32>,
     /// Return rich structured output, including raw identity and integrity metadata.
     /// Terse show and compact rows omit selected fields; this is not a global security boundary.
@@ -96,6 +96,8 @@ struct LsArgs {
     search: Option<String>,
     /// Only items with an active blocker or incomplete prerequisite.
     blocked: Option<bool>,
+    /// Only ready candidates; excludes blocked. Inspect an item before claiming it.
+    ready: Option<bool>,
     /// Only items assigned to this actor or held by this session.
     mine: Option<bool>,
     /// Include completed, cancelled, and superseded items.
@@ -351,13 +353,14 @@ impl McpServer {
     /// List open work with flat filters.
     #[tool(
         name = "ls",
-        description = "List open work; search, blocked, mine, all, label, and under with optional/required narrow it; after continues the same listing"
+        description = "List open work; search, ready, blocked, mine, all, label, and under with optional/required narrow it; after continues the same listing"
     )]
     fn ls(&self, Parameters(args): Parameters<LsArgs>) -> CallToolResult {
         self.verb(self.verbs().ls(
             &LsInput {
                 search: args.search,
                 blocked: args.blocked.unwrap_or(false),
+                ready: args.ready.unwrap_or(false),
                 mine: args.mine.unwrap_or(false),
                 all: args.all.unwrap_or(false),
                 label: args.label,

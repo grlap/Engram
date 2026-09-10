@@ -127,6 +127,7 @@ fn compact_guidance_count_caps_are_not_byte_omissions() {
         &[],
         &std::collections::HashMap::new(),
         &guidance,
+        None,
     )
     .unwrap();
     for section in ["reminders", "next"] {

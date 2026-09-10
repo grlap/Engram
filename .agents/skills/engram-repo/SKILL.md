@@ -182,7 +182,7 @@ the caller must omit `--session-id` to receive a fresh process default.
 ```bash
 engram work next --peek [--verbose]  # orientation without advancing delivery
 engram work next [--verbose]         # explicitly advance ordinary delivery
-engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--verbose]
+engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
@@ -209,6 +209,17 @@ may identify their source. Host-only `work core` reads and canonical audit
 attribution remain full.
 
 Rules that matter:
+
+- Compact `next` and `next --peek` show held and assigned before at most five
+  ready candidates in catalog id order, not priority ranking; a smaller
+  `--limit` reduces that prefix. `ready_limit` reports the effective limit,
+  even if fewer rows fit. Read
+  `ready_reason` as advisory readiness, not claim permission. Follow
+  `ready_next` (`ls --ready`) for the remaining candidates; it starts after
+  the last retained row, even after byte fitting. `ready_more` is not a count.
+  A changed or expired listing cursor refuses with fresh same-filter
+  navigation. Execute that command to recover the current set. Verbose and
+  core limits, delivery and memory recovery are unchanged.
 
 - Resume with `next --peek`: held/ready/changed context comes from one read
   snapshot without staging or acknowledging a page, changing focus, or

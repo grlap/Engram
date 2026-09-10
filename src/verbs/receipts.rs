@@ -43,6 +43,8 @@ pub(super) struct CompactWorkRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) blocked_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) ready_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) remedy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) child_resolution: Option<super::child_obligations::ShowChildSuccessor>,
@@ -79,6 +81,9 @@ pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
         let _ = write!(line, " ← {parent_ref}");
     }
     if let Some(reason) = &item.blocked_reason {
+        let _ = write!(line, " — {}", terminal_safe_line(reason));
+    }
+    if let Some(reason) = &item.ready_reason {
         let _ = write!(line, " — {}", terminal_safe_line(reason));
     }
     if let Some(remedy) = &item.remedy {
@@ -119,6 +124,7 @@ pub(super) struct CompactSectionOmission {
 
 #[derive(Clone)]
 pub(super) struct CompactNextReceipt {
+    pub(super) ready_navigation: Option<crate::work_service::WorkReadyNavigation>,
     pub(super) peek: Option<crate::work_service::WorkNextPeek>,
     pub(super) read_cut: crate::work_service::WorkNextReadCut,
     pub(super) context_generation: Option<String>,
@@ -667,6 +673,8 @@ pub(super) fn compact_row(
         blocked_reason: status
             .blocking_parent
             .map(|lifecycle| format!("parent {}", super::lifecycle_word(lifecycle))),
+        ready_reason: (status.availability == super::WorkAvailability::Ready)
+            .then(|| status.why.join("; ")),
         remedy: status
             .reason_codes
             .contains(&crate::WorkReadinessReason::DetachAvailable)
@@ -691,8 +699,10 @@ pub(super) fn compact_next_receipt(
     changes: &[super::next_context::CompactChange],
     claims: &HashMap<WorkId, (String, DateTime<Utc>)>,
     guidance: &Guidance,
+    ready_navigation: Option<crate::work_service::WorkReadyNavigation>,
 ) -> Result<CompactNextReceipt, VerbError> {
     let mut compact = CompactNextReceipt {
+        ready_navigation,
         peek: view.peek.clone(),
         read_cut: view.read_cut.clone(),
         context_generation: view.context_generation.clone(),
@@ -906,6 +916,16 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
         "reminders": compact.guidance.reminders,
         "next": compact.guidance.next,
     });
+    if let Some(navigation) = &compact.ready_navigation {
+        let command = navigation
+            .after_prefix(compact.ready.len())
+            .map(super::listing::ready_navigation_command);
+        value["ready_more"] = json!(command.is_some());
+        value["ready_limit"] = json!(navigation.limit);
+        if let Some(command) = command {
+            value["ready_next"] = json!(command);
+        }
+    }
     if let Some(generation) = &compact.context_generation {
         value["context_generation"] = json!(generation);
     }
@@ -975,8 +995,27 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
     }
     context.append_discovery_lines(&mut lines, &compact.discovery);
     lines.push(format!("ready ({} shown):", compact.ready.len()));
+    if let Some(navigation) = &compact.ready_navigation
+        && navigation.after_prefix(compact.ready.len()).is_some()
+    {
+        lines.push(format!(
+            "  compact cap: {}; inspect candidates before claiming",
+            navigation.limit
+        ));
+    }
     for ready in &compact.ready {
         lines.push(format!("  {}", compact_row_line(ready)));
+    }
+    if let Some(command) = compact
+        .ready_navigation
+        .as_ref()
+        .and_then(|navigation| navigation.after_prefix(compact.ready.len()))
+        .map(super::listing::ready_navigation_command)
+    {
+        lines.push(format!(
+            "  more ready candidates: {}",
+            super::terminal_command(&command)
+        ));
     }
     let staged_changes =
         compact_omitted_for_reason(compact, "changes", WorkSectionOmissionReason::Staged);

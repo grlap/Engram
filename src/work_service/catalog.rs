@@ -3,7 +3,7 @@ use crate::domain::WorkCatalogReadCut;
 
 /// Self-describing navigation: encoded filters/identity are not confidential.
 /// No authorization, signature, or server-side state.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ListingCursor {
     project: ProjectId,
@@ -25,18 +25,26 @@ pub(crate) struct WorkListingPage {
 impl WorkListingPage {
     /// The renderer supplies the final emitted key, never the fetched sentinel.
     pub(crate) fn continuation(&self, after: WorkId) -> Result<String, StoreError> {
-        let cursor = ListingCursor {
-            project: self.project.clone(),
-            filters: self.filters.clone(),
-            cut: self.cut.clone(),
-            after,
-        };
-        super::continuation::encode("c1-", &cursor).ok_or_else(|| {
-            invalid(
-                "listing continuation metadata is too large; shorten search, label or parent scope",
-            )
-        })
+        listing_continuation(&self.project, &self.filters, &self.cut, after)
     }
+}
+
+/// Filters must already be normalized by the query's owner.
+pub(super) fn listing_continuation(
+    project: &ProjectId,
+    filters: &WorkCatalogQuery,
+    cut: &WorkCatalogReadCut,
+    after: WorkId,
+) -> Result<String, StoreError> {
+    let cursor = ListingCursor {
+        project: project.clone(),
+        filters: filters.clone(),
+        cut: cut.clone(),
+        after,
+    };
+    super::continuation::encode("c1-", &cursor).ok_or_else(|| {
+        invalid("listing continuation metadata is too large; shorten search, label or parent scope")
+    })
 }
 
 impl LocalWorkService {

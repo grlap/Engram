@@ -22,6 +22,7 @@ fn context_receipt() -> CompactNextReceipt {
         note_session_id: None,
     };
     CompactNextReceipt {
+        ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
         context_generation: None,

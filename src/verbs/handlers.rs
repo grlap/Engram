@@ -48,6 +48,9 @@ pub struct NextInput {
 pub struct LsInput {
     pub search: Option<String>,
     pub blocked: bool,
+    /// Only ready candidates; inspect an item before claiming it.
+    #[serde(default)]
+    pub ready: bool,
     /// Assigned to this actor, or held by this session.
     pub mine: bool,
     /// Include completed, cancelled, and superseded items.
@@ -325,6 +328,11 @@ impl AgentVerbs {
     )]
     pub fn next(&self, input: &NextInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
+        let ready_limit = if input.verbose {
+            limit
+        } else {
+            limit.clamp(1, super::MAX_NEXT_READY_CANDIDATES)
+        };
         let change_limit = if input.verbose {
             limit
         } else {
@@ -344,7 +352,7 @@ impl AgentVerbs {
         let mut view = if input.peek {
             self.service.work_next_peek_for_agent(
                 change_limit,
-                limit,
+                ready_limit,
                 input.verbose,
                 query,
                 now,
@@ -353,8 +361,13 @@ impl AgentVerbs {
                 },
             )?
         } else {
-            self.service
-                .work_next_for_agent(change_limit, limit, input.verbose, query, now)?
+            self.service.work_next_for_agent(
+                change_limit,
+                ready_limit,
+                input.verbose,
+                query,
+                now,
+            )?
         };
         let lists = view.agent_lists.take().ok_or_else(|| {
             StoreError::InvalidWorkProjection("agent next has no advisory list snapshot".into())
@@ -595,8 +608,15 @@ impl AgentVerbs {
                     )
                 })
                 .collect();
-            let compact =
-                compact_next_receipt(&view, &held, &ready, &compact_changes, &claims, &guidance)?;
+            let compact = compact_next_receipt(
+                &view,
+                &held,
+                &ready,
+                &compact_changes,
+                &claims,
+                &guidance,
+                lists.ready_navigation,
+            )?;
             let lines = compact_next_lines(&compact);
             let value = compact_next_value(&compact);
             (lines, value, compact.guidance)
@@ -643,6 +663,11 @@ impl AgentVerbs {
                         vec![WorkLifecycle::Open]
                     },
                     blocked_only: input.blocked,
+                    availabilities: if input.ready {
+                        vec![WorkAvailability::Ready]
+                    } else {
+                        Vec::new()
+                    },
                     assigned_to: input.mine.then(|| self.actor_id.clone()),
                     held_by: input.mine.then(|| self.session_id.clone()),
                     label: input.label.clone(),

@@ -112,6 +112,7 @@ fn compact_omission_reasons_share_one_terminal_total() {
         &[],
         &std::collections::HashMap::new(),
         &guidance,
+        None,
     )
     .unwrap();
     compact.memories = None;

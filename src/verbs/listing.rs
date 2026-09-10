@@ -45,7 +45,20 @@ impl<'a> From<&'a super::ReadyWorkSummary> for VerboseRow<'a> {
 }
 
 impl LsInput {
+    pub(super) fn navigation_command(&self, after: Option<&str>) -> String {
+        let command = self.list_command();
+        match after {
+            Some(after) => format!("{command} --after {after}"),
+            None => command,
+        }
+    }
+
     pub(super) fn validate_listing(&self) -> Result<(), VerbError> {
+        if self.ready && self.blocked {
+            return Err(
+                StoreError::InvalidWork("choose --ready or --blocked, not both".into()).into(),
+            );
+        }
         if (self.optional || self.required) && self.under.is_none()
             || self.optional && self.required
         {
@@ -85,6 +98,7 @@ impl LsInput {
         }
         for (name, enabled) in [
             ("blocked", self.blocked),
+            ("ready", self.ready),
             ("mine", self.mine),
             ("all", self.all),
             ("optional", self.optional),
@@ -101,6 +115,20 @@ impl LsInput {
         ));
         parts.join(" ")
     }
+}
+
+pub(super) fn ready_navigation_command(
+    continuation: &crate::work_service::WorkReadyContinuation,
+) -> String {
+    use crate::work_service::WorkReadyContinuation;
+    LsInput {
+        ready: true,
+        ..LsInput::default()
+    }
+    .navigation_command(match continuation {
+        WorkReadyContinuation::Fresh => None,
+        WorkReadyContinuation::After(cursor) => Some(cursor),
+    })
 }
 
 pub(super) fn shell_quote(value: &str) -> String {
@@ -138,7 +166,6 @@ pub(super) fn fit_list_receipt(
             )
         })
         .collect::<HashMap<_, _>>();
-    let command = input.list_command();
     let first_ref = page.items.first().map(|item| item.work.short_ref.clone());
     let mut byte_limited = false;
     let (mut lower, mut upper) = (0, page.items.len());
@@ -161,7 +188,7 @@ pub(super) fn fit_list_receipt(
         };
         let continuation = after
             .as_ref()
-            .map(|after| format!("{command} --after {after}"));
+            .map(|after| input.navigation_command(Some(after)));
         let hint = if omitted == 0 {
             None
         } else if visible == 0 {

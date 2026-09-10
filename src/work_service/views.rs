@@ -79,7 +79,29 @@ pub struct WorkNextReadCut {
 pub(crate) struct WorkAgentNextLists {
     pub held: Vec<(ReadyWorkSummary, DateTime<Utc>)>,
     pub ready: Vec<ReadyWorkSummary>,
+    pub ready_navigation: Option<WorkReadyNavigation>,
     pub claims: Vec<(WorkId, SessionId, DateTime<Utc>)>,
+}
+
+/// Navigation for each retained prefix, including zero. Generated in the
+/// advisory snapshot; the renderer selects after byte fitting, never refetches.
+#[derive(Clone, Debug)]
+pub(crate) struct WorkReadyNavigation {
+    pub limit: u32,
+    pub continuations: Vec<Option<WorkReadyContinuation>>,
+}
+
+/// Listing intent only; shell commands belong to the outer verb renderer.
+#[derive(Clone, Debug)]
+pub(crate) enum WorkReadyContinuation {
+    Fresh,
+    After(String),
+}
+
+impl WorkReadyNavigation {
+    pub(crate) fn after_prefix(&self, shown: usize) -> Option<&WorkReadyContinuation> {
+        self.continuations.get(shown).and_then(Option::as_ref)
+    }
 }
 
 /// Recent participation is navigation, never a recorded obligation or authority.

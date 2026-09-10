@@ -731,6 +731,18 @@ before inferring a selection error. See [build and read diagnostics](cli-and-mcp
 Recent participation is navigation, not an obligation: keep outstanding review
 decisions and waiting conditions on a claimed coordination item.
 
+Compact orientation retains at most five ready candidates (or a smaller
+requested limit), after held and assigned work. It keeps catalog id order,
+not priority ranking, and the selected readiness projection's reasons;
+readiness is not claim permission. `ready_limit` reports the effective requested
+limit even if fewer rows fit; text prints the cap only when candidates remain.
+The count-free query fetches one extra candidate to determine `ready_more`.
+`ready_next` continues with `ls --ready` after the last row actually rendered,
+including after byte fitting; zero retained rows offer a fresh ready listing.
+The continuation uses the same advisory cut. A stale cut refuses with runnable
+fresh ready navigation, without changing focus or delivery. Verbose and core
+ready limits are unchanged. See the [compact contract](cli-and-mcp.md#using-engram-as-an-agent).
+
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for
 the process lifetime and shares it across the fourteen MCP tools. That instance

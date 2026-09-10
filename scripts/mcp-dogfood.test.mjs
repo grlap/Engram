@@ -2363,6 +2363,75 @@ test("Phoenix full notes, defaulted acceptance and terminal-parent remedy throug
   }
 });
 
+test("short orientation continues the complete ready set through real CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-orientation-", t);
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const actor = "orientation-reader";
+    client = new McpClient(engramHome, actor);
+    await client.initialize();
+    const tools = await client.tools();
+    assert.match(tools.find(({ name }) => name === "ls").inputSchema.properties.ready.description, /ready candidates/u);
+    assert.match(tools.find(({ name }) => name === "next").inputSchema.properties.limit.description, /compact ready candidates are capped/u);
+    const help = cliWord(engramHome, actor, "ls", "--help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /--ready/u);
+    const initial = receipt(await client.call("next", { peek: true }));
+    const cap = initial.ready_limit;
+    assert.ok(Number.isInteger(cap) && cap > 0);
+    assert.equal(initial.ready_more, false);
+    const emptyText = cliWord(engramHome, actor, "next", "--peek");
+    assert.equal(emptyText.status, 0, emptyText.stderr);
+    assert.doesNotMatch(emptyText.stdout, /compact cap:/u);
+    const expected = [];
+    for (let i = 0; i < cap * 5; i++) {
+      expected.push(receipt(await client.call("add", { title: `Candidate ${i}`, assignee: i === 0 ? actor : undefined })).work.short_ref);
+    }
+    const blocked = receipt(await client.call("add", { title: "Blocked exclusion" })).work.short_ref;
+    receipt(await client.call("update", { work_ref: blocked, action: "blocked", text: "waiting" }));
+    const smaller = receipt(await client.call("next", { peek: true, limit: 2 }));
+    assert.equal(smaller.ready_limit, 2);
+    assert.equal(smaller.ready.length, 2);
+    const smallerText = cliWord(engramHome, actor, "next", "--peek", "--limit", "2");
+    assert.equal(smallerText.status, 0, smallerText.stderr);
+    assert.match(smallerText.stdout, /compact cap: 2;/u);
+    for (const peek of [true, false]) {
+      const first = receipt(await client.call("next", { peek }));
+      assert.equal(first.ready.length, cap);
+      assert.equal(first.held.length, 0);
+      assert.equal(first.assigned[0].ref, expected[0]);
+      assert.ok(first.ready.every(({ ready_reason }) => ready_reason.includes("unblocked")));
+      let command = first.ready_next;
+      const collected = first.ready.map(({ ref }) => ref);
+      let pages = 0;
+      while (command) {
+        const [engram, work, word, ...args] = command.split(" ");
+        assert.equal(engram, "engram");
+        assert.equal(work, "work");
+        assert.equal(word, "ls");
+        const page = cliJson(engramHome, actor, word, ...args);
+        const input = { ready: true, limit: Number(args[args.indexOf("--limit") + 1]), after: args.includes("--after") ? args[args.indexOf("--after") + 1] : undefined };
+        assert.deepEqual(receipt(await client.call("ls", input)).items, page.items);
+        assert.ok(page.items.length > 0);
+        collected.push(...page.items.map(({ ref }) => ref));
+        assert.ok(++pages <= expected.length);
+        command = page.more ? page.next[0] : undefined;
+      }
+      assert.deepEqual(collected, expected);
+    }
+    const text = cliWord(engramHome, actor, "next", "--peek");
+    assert.equal(text.status, 0, text.stderr);
+    assert.ok(text.stdout.indexOf("held by you") < text.stdout.indexOf("assigned ("));
+    assert.ok(text.stdout.indexOf("assigned (") < text.stdout.indexOf("ready ("));
+    assert.match(text.stdout, /more ready candidates: engram work ls --ready/u);
+    structuredError(await client.call("ls", { ready: true, blocked: true }), "work_invalid");
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("Phoenix planning revisions and exact list counts through MCP", async (t) => {
   const engramHome = fixtureHome("engram-phoenix-planning-", t);
   let client;

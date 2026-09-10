@@ -1251,7 +1251,9 @@ test("list words stay compact while verbose and update metadata remain explicit"
       `${Buffer.byteLength(next.stdout, "utf8")} byte next receipt`,
     );
     const compactNext = JSON.parse(next.stdout);
-    assert.equal(compactNext.ready.length, 20);
+    assert.equal(compactNext.ready.length, compactNext.ready_limit);
+    assert.equal(compactNext.ready_more, true);
+    assert.match(compactNext.ready_next, /^engram work ls --ready /u);
     assert.equal("session" in compactNext, false);
     assert.equal("delivery_token" in compactNext, false);
     assert.ok(Array.isArray(compactNext.changes));

@@ -126,7 +126,7 @@ a fresh process-default session; registration waits for a stateful operation.
 ```bash
 engram work next --peek [--verbose]  # orientation without advancing delivery
 engram work next [--verbose]         # explicitly advance ordinary delivery
-engram work ls [--search TEXT] [--blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
+engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
@@ -243,6 +243,27 @@ successful process-defaulted shell mutations still add `effective_session_id`.
 The rich six-operation core and host-private protocol do not change.
 
 Rules that matter:
+
+- Compact `next`, including `--peek`, shows held and assigned work before
+  at most five ready candidates. A smaller `--limit` reduces this prefix;
+  a larger limit does not raise the compact cap. `ready_limit` states the
+  effective requested limit, clamped to 1..5, even if fewer rows fit. Text
+  prints the cap only when candidates remain. Each ready row carries
+  `ready_reason` from the same readiness
+  projection that selected it, including prior-claim recovery when present.
+  This is not claim permission: inspect the item before claiming it.
+  `ready_more` is a boolean, not an exact backlog count. When true,
+  `ready_next` and the text's `more ready candidates` command lead to
+  `ls --ready`, after the last row retained by byte fitting. If no row fits,
+  the command starts a fresh ready listing. These fields participate in
+  fitting and navigation is retained even when all candidates are shed.
+  Ready candidates keep catalog id order, not priority ranking. The existing
+  listing cursor binds the advisory snapshot; a changed or expired cut
+  refuses with a fresh `ls --ready` command. Listing continuations then reach
+  the current ready set. `ls --ready` (MCP `ready: true`) is a filter on the
+  existing word and cannot be combined with `--blocked`. Verbose `next`
+  retains its requested richer list limit. Delivery and memory advertisement
+  behavior are unchanged.
 
 - `next --peek` (MCP `next` with `peek: true`) answers what you hold, what is
   ready and what changed in one read snapshot. It opens only an established
@@ -1016,7 +1037,7 @@ operation enforces the live control-session/run binding described above.
 | Tool | Purpose |
 | --- | --- |
 | `next` | What is ready, what this session holds, and the changes since its previous call |
-| `ls` | Open items with `search`, `blocked`, `mine`, `all`, `label`, direct-parent `under` and `optional`/`required` filters, plus non-confidential `after` continuation |
+| `ls` | Open items with `search`, `ready` or `blocked`, `mine`, `all`, `label`, direct-parent `under` and `optional`/`required` filters, plus non-confidential `after` continuation |
 | `show` | One item in safe agent detail; changes neither focus nor claims |
 | `add` | A root from a title, or one child with `under`; `optional` permits a peer proposal beneath a foreign-held parent; `notes` records ordered initial observations atomically; outcome and acceptance default from the title |
 | `claim` | Hold an item; later calls default to it |
