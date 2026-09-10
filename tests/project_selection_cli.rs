@@ -9,6 +9,21 @@ use std::{
 
 use serde_json::Value;
 
+fn child_visible_canonical_path(path: &Path) -> std::path::PathBuf {
+    let canonical = path.canonicalize().unwrap();
+    #[cfg(windows)]
+    {
+        let path = canonical.to_string_lossy();
+        if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{rest}").into();
+        }
+        if let Some(rest) = path.strip_prefix(r"\\?\") {
+            return rest.into();
+        }
+    }
+    canonical
+}
+
 fn run(cwd: &Path, home: &Path, project_file: Option<&Path>, args: &[&str], json: bool) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_engram"));
     command.current_dir(cwd).arg("--home").arg(home);
@@ -65,6 +80,7 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
     .unwrap();
     let cwd = directory.path().join("wrong-cwd");
     fs::create_dir(&cwd).unwrap();
+    let resolved_cwd = child_visible_canonical_path(&cwd);
     let home = directory.path().join("uncreated-store");
     let words: &[&[&str]] = &[
         &["next"],
@@ -86,15 +102,18 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
         assert_eq!(value["error"]["details"]["kind"], "unreadable");
         assert_eq!(
             value["error"]["details"]["cwd"],
-            cwd.to_string_lossy().as_ref()
+            resolved_cwd.to_string_lossy().as_ref()
         );
         assert_eq!(
             value["error"]["details"]["searched_directory"],
-            cwd.to_string_lossy().as_ref()
+            resolved_cwd.to_string_lossy().as_ref()
         );
         assert_eq!(
             value["error"]["details"]["project_file"],
-            cwd.join(".engram-project").to_string_lossy().as_ref()
+            resolved_cwd
+                .join(".engram-project")
+                .to_string_lossy()
+                .as_ref()
         );
         let text = run(&cwd, &home, None, args, false);
         assert_eq!(text.status.code(), Some(1));
@@ -135,6 +154,7 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
         "missing\nnext:\n  injected\u{1b}[31m\u{009b}\u{202e}\u{2028}\u{2029}\u{2066}\u{e000}\u{fe0f}\u{e0100}",
     );
     let value = refused(&run(directory.path(), &home, Some(hostile), &["ls"], true));
+    let resolved_directory = child_visible_canonical_path(directory.path());
     assert!(
         value["error"]["details"]["project_file"]
             .as_str()
@@ -143,7 +163,7 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
     );
     assert_eq!(
         value["error"]["details"]["project_file"],
-        directory.path().join(hostile).to_string_lossy().as_ref()
+        resolved_directory.join(hostile).to_string_lossy().as_ref()
     );
     let text = run(directory.path(), &home, Some(hostile), &["ls"], false);
     let text = String::from_utf8(text.stderr).unwrap();
