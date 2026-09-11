@@ -98,7 +98,7 @@ implicit required-child relationships.
 | Hierarchy depth | 4, with roots at depth 0 |
 | Task keys and idempotency key | 1–64 ASCII bytes; start with a letter or digit, then use letters, digits, `.`, `_`, or `-` |
 | Serialized typed `plan` | 1 MiB, including default/optional fields and JSON escaping |
-| Raw CLI `core propose --input` | 2 MiB for the entire JSON input, including whitespace and the outer envelope; checked before decoding |
+| Raw CLI `core propose --input` | 2 MiB for the entire JSON input, including whitespace, any file BOM, and the outer envelope; checked before decoding. One leading UTF-8 BOM is accepted only for `@file`. |
 | Acceptance entries and labels | 64 each per task |
 | Initial notes | 16 across the whole plan; existing note-body bounds also apply |
 | Compact JSON plan result | 64 KiB; no partial mapping (CLI pretty-print whitespace is additional) |

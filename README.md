@@ -161,9 +161,10 @@ engram work remember "Configuration files use UTF-8 without a BOM." \
 engram work memories config-format --full --revision 1
 ```
 
-Revisions preserve earlier versions under the same key. The optional
-expected revision prevents a stale update. `forget KEY` permanently retires
-the key and stops current and historical reads; it does not erase the stored
+Revisions preserve earlier versions under the same key. Use positional text
+or `--text "Project note"`, not both. The optional expected revision prevents
+a stale update. `forget KEY` permanently retires the key and stops current
+and historical reads; it does not erase the stored
 history. Do not put secrets in project notes.
 
 ## Connect an agent host

@@ -136,7 +136,7 @@ engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-refer
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
-engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
+engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
 ```
@@ -649,6 +649,9 @@ Rules that matter:
   observation, never a rule or a decision record, kept in full until an
   explicit `forget`. `next` only signals how many notes exist and whether
   any changed; `memories` is the source of truth.
+  CLI `remember` requires exactly one body: positional `TEXT` or `--text TEXT`.
+  Both together are refused. The `--key`, `--revise` and `--expected-revision`
+  options work with either form; MCP keeps its existing `text` field.
   `remember TEXT --key KEY --revise` retains earlier attributed versions under
   that key. Optional `--expected-revision N` refuses a stale basis with the
   current revision; without it, the receipt names the replaced and new
@@ -967,9 +970,11 @@ the key for another intent is a typed conflict.
 The sibling operator-only `set-obligation-rule-set` command selects a
 validated canonical rule set with the same atomic policy successor,
 compare-and-swap, attribution, and replay contract; it is not an MCP tool or
-host turn-protocol operation. Its `--input <JSON|@file>` is limited to 64 KiB,
-must be UTF-8, rejects unknown fields at every nested V1 object, and passes
-through the same typed validator used by storage. `check_fingerprint` and
+host turn-protocol operation. Its `--input <JSON|@file>` is limited to 64 KiB
+of raw input, including any UTF-8 BOM. For files, one leading BOM is removed
+after the limit check. The input must be UTF-8. Unknown fields are rejected
+at every nested V1 object. The input passes through the same typed validator
+that storage uses. `check_fingerprint` and
 `required_environment` are exact canonical object hashes, not shell commands
 or environment descriptions. Re-supplying the active set under a fresh key
 records an exactly replayable `changed=false` receipt. Rollback likewise
@@ -992,9 +997,14 @@ adds top-level `effective_session_id`. `done` exits with status 2 when the typed
 `open_work_obligations` refusal says something is still owed. The
 six-operation JSON protocol stays reachable for hosts and operators as
 `engram work core {next,focus,propose,update,complete,handoff}`, whose
-mutation payloads accept an inline JSON object or `@path`; that host/operator
-surface retains the core-only explicit delivery acknowledgement, typed evidence
-attach, and reopen operations alongside typed forms of the ordinary lifecycle
+mutation payloads accept an inline JSON object or `@path`. The `@path` inputs
+of `propose`, `update`, `complete` and `handoff` accept one leading UTF-8 BOM.
+Of these four operations, only `propose` has a raw input limit: 2 MiB,
+including the BOM, checked before removing it. Inline JSON and string
+contents are unchanged. A second leading BOM or
+otherwise invalid JSON is still refused. That host/operator surface retains
+the core-only explicit delivery acknowledgement, typed evidence attach, and
+reopen operations alongside typed forms of the ordinary lifecycle
 words. Typed `gate` and atomic `note` are word-only `work_update:gate` and
 `work_update:note` suboperations, not variants callers can reach directly
 through `work core update`; they still use the same service and storage core as

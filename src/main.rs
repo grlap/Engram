@@ -575,8 +575,14 @@ enum WorkCommand {
         evidence_ref: Option<String>,
     },
     /// Store one attributed project memory.
+    #[command(group(clap::ArgGroup::new("memory_text").required(true).args(["text", "text_flag"])))]
     Remember {
-        text: String,
+        /// Memory body; use either positional TEXT or --text TEXT, not both.
+        #[arg(value_name = "TEXT")]
+        text: Option<String>,
+        /// Memory body as an alternative to positional TEXT.
+        #[arg(long = "text", value_name = "TEXT")]
+        text_flag: Option<String>,
         /// Safe permanent project-memory key.
         #[arg(long)]
         key: Option<String>,
@@ -1384,12 +1390,15 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         ),
         WorkCommand::Remember {
             text,
+            text_flag,
             key,
             revise,
             expected_revision,
         } => verbs.remember(
             RememberInput {
-                text,
+                text: text
+                    .or(text_flag)
+                    .context("remember requires TEXT or --text TEXT")?,
                 key,
                 revise,
                 expected_revision,
@@ -1679,12 +1688,20 @@ where
 }
 
 fn parse_json_input<T: serde::de::DeserializeOwned>(input: &str) -> Result<T> {
+    let file_json;
     let json = if let Some(path) = input.strip_prefix('@') {
-        fs::read_to_string(path).with_context(|| format!("failed to read JSON input {path}"))?
+        file_json = fs::read_to_string(path)
+            .with_context(|| format!("failed to read JSON input {path}"))?;
+        strip_json_file_bom(&file_json)
     } else {
-        input.to_owned()
+        input
     };
-    serde_json::from_str(&json).context("invalid work operation JSON")
+    serde_json::from_str(json).context("invalid work operation JSON")
+}
+
+/// File transport marker only: remove one prefix, never inline or body content.
+fn strip_json_file_bom(json: &str) -> &str {
+    json.strip_prefix('\u{feff}').unwrap_or(json)
 }
 
 fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
@@ -1692,6 +1709,7 @@ fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
     label: &str,
     max_bytes: u64,
 ) -> Result<T> {
+    let file_json;
     let json = if let Some(path) = input.strip_prefix('@') {
         let file = fs::File::open(path)
             .with_context(|| format!("failed to open {label} JSON input {path}"))?;
@@ -1702,15 +1720,16 @@ fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
         if bytes.len() as u64 > max_bytes {
             bail!("{label} JSON input exceeds the {max_bytes}-byte limit");
         }
-        String::from_utf8(bytes)
-            .with_context(|| format!("{label} JSON input {path} is not UTF-8"))?
+        file_json = String::from_utf8(bytes)
+            .with_context(|| format!("{label} JSON input {path} is not UTF-8"))?;
+        strip_json_file_bom(&file_json)
     } else {
         if input.len() as u64 > max_bytes {
             bail!("{label} JSON input exceeds the {max_bytes}-byte limit");
         }
-        input.to_owned()
+        input
     };
-    serde_json::from_str(&json).with_context(|| format!("invalid {label} JSON"))
+    serde_json::from_str(json).with_context(|| format!("invalid {label} JSON"))
 }
 
 fn serve_control(
@@ -1837,6 +1856,10 @@ struct WorkUpdateArgs {
     #[arg(long)]
     detach: Option<String>,
 }
+
+#[cfg(test)]
+#[path = "bin_support/input_tests.rs"]
+mod input_tests;
 
 #[cfg(test)]
 mod tests {

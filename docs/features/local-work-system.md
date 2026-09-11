@@ -1366,11 +1366,13 @@ successor.
 The origin is omitted when the native source history is not present locally.
 
 **Project memories.** `remember "text" [--key KEY]` stores one attributed,
-retrievable project note — an ordinary Episode in the existing memory
-model: soft authority, `internal` sensitivity, on-demand delivery, no
-automatic decay in V1 (episodic compaction stays a V1.x roadmap item),
-never a rule or a fact authority, active through the
-existing episode exception (see
+retrievable project note. The CLI also accepts `remember --text "text"`;
+exactly one text source is required, and both together are refused. The same
+key and revision options apply to either form. It is an ordinary Episode in
+the existing memory model: soft authority, `internal` sensitivity, on-demand
+delivery, no automatic decay in V1 (episodic compaction stays a V1.x roadmap
+item), never a rule or a fact authority, active through the existing episode
+exception (see
 [write policy & review](write-policy-and-review.md)). There is no Proposed
 slot, no review queue, and no host review operation: what you write is
 what project peers can list, attributed to your session. Optional actor context

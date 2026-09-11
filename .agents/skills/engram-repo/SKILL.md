@@ -192,7 +192,7 @@ engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-refer
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
-engram work remember "Project note" [--key KEY [--revise [--expected-revision N]]]
+engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
 engram work forget KEY
 ```
@@ -318,6 +318,9 @@ Rules that matter:
 - `remember` is for attributed project notes and observations, never rules or
   secrets. `memories` is the source of truth; `forget` tombstones rather than
   erases and permanently retires the safe key.
+  The CLI accepts either positional text or `--text TEXT`, never both or
+  neither. Both forms use the same key and revision options. MCP already
+  supplies its body through the `text` field.
   Correct an existing note with `remember TEXT --key KEY --revise`, not a
   companion key. Prior attributed versions stay reachable through `memories
   KEY --full --revision N`; ordinary reads return the current version. An

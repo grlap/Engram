@@ -1434,6 +1434,8 @@ test("project memory revisions agree on CLI MCP history conflicts and terminal r
     assert.match(help.stdout, /--revise/);
     assert.match(help.stdout, /--expected-revision/);
     assert.match(help.stdout, /retaining its history/);
+    assert.match(help.stdout, /--text <TEXT>/);
+    assert.match(help.stdout, /either positional TEXT or --text TEXT, not both/);
     const readHelp = cliWord(engramHome, "memory-help", "memories", "--help");
     assert.equal(readHelp.status, 0, readHelp.stderr);
     assert.match(readHelp.stdout, /--revision/);
