@@ -82,11 +82,33 @@ through native writes and snapshots; terminal rendering frames those bytes.
 An assignee's late status on completed work may update this advisory display;
 it remains outside the frozen completion seal and grants no execution credit.
 
-Engram tracks the work of this repository. You use thirteen words; everything
-else is the host's business. The host sets `ENGRAM_HOME` and normally injects
-`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; it may also set the optional
-`ENGRAM_ACTOR_CONTEXT` to bounded free text such as
-`model=opus-4.1;reasoning=high`. You type only the word. Actor context is
+Engram tracks the work of this repository.
+
+Engram MCP tools and host-provided `ENGRAM_*` configuration are injected into
+TermAl sessions only when the project's Engram integration is enabled and
+supported by the runtime. Hosting alone does not guarantee either. When the
+injected `engram` tools are available, use them directly as the agent words.
+Without that integration, a session may have neither the MCP words nor the
+configuration variables.
+
+Without injected tools, the CLI route requires an available `engram` executable
+and an explicit home. Use an absolute path that the host or operator has
+confirmed as the project's store home. Before any Engram store read or write,
+including startup recovery, supply that confirmed home with `--home` or
+`ENGRAM_HOME`. If it is missing or unverified, report the access/recovery gap
+and ask the host or operator for it; do not guess a path, initialize a store,
+or enable the integration yourself. `ENGRAM_HOME` has no default; without
+`--home` or `ENGRAM_HOME`, the CLI refuses with `pass --home or set ENGRAM_HOME`.
+The shell examples below assume this home configuration is already supplied.
+
+With the integration enabled and supported, hosts normally supply
+`ENGRAM_ACTOR_ID` and `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT`
+adds attribution without changing the actor principal. Unlike home, either
+actor or session may be omitted by a local CLI caller: Engram uses explicitly
+audited OS-user-environment or synthetic-actor and process-session defaults.
+
+Actor context may contain bounded free text such as
+`model=opus-4.1;reasoning=high`. Actor context is
 attribution, not a principal: assignment, `--mine`, handoff, and claim/session
 authority continue to use the unchanged actor and session ids. Context never
 refuses the session: Engram replaces each unsafe-control run with one space,
@@ -699,11 +721,12 @@ recipe, including the Claude Code hooks form; this section keeps the
 two-tier contract and the control-plane details. Integration has two tiers,
 and a host picks per project:
 
-- **Base** — the tracker for agents: the `engram mcp` server injected into
-  every session of a declared project (the repository declares with its
+- **Base** — the tracker for agents: when the project's integration is enabled
+  and supported by the runtime, the `engram mcp` server is injected into its
+  supported sessions (the repository declares with its
   tracked `.engram-project`; the host supplies the stable project identity
   and asserted actor/session binding to the MCP child), plus a
-  start-of-session nudge that runs `engram work next` on session start and
+  start-of-session nudge that runs `engram work next --peek` on session start and
   after compaction and injects its text as context at the next dispatched
   prompt, not an immediate runtime-authored continuation. Any host that can register
   an MCP server and run a hook can do this. It carried every benefit measured

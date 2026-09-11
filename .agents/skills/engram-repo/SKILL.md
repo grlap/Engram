@@ -120,7 +120,8 @@ policy outside the core. Extend ports using neutral request/response records.
 Record changed duties, waits, decisions, and the next permitted action with
 `engram work note REF --status TEXT` (MCP `status: true`), not only in a
 conversation summary; checkpoint each real duty/wait/next-step change before
-going quiet. After compaction or session replacement, explicitly read `next --peek`
+going quiet. Confirm the access route described below before recovery. After
+compaction or session replacement, explicitly read `next --peek`
 before acting and follow any clipped status's full-note locator.
 A coordinator without code work keeps one assigned or held coordination
 item; `next --peek` (MCP `next` with `peek: true`) is the non-advancing resume
@@ -169,13 +170,31 @@ Ask the host or coordinator for a real recipient session id before a handoff.
 `handoff --to SESSION` refuses generated peer display labels before any write;
 this prevents unusable offers, not identity spoofing.
 
-Engram tracks the work of this repository. You use thirteen words; everything
-else is the host's business. The host sets `ENGRAM_HOME` and normally injects
-`ENGRAM_ACTOR_ID` plus `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT`
-adds attribution without changing the actor principal. You type only the word.
-A local shell may omit either attribution value and receives explicitly audited
-OS-user-environment or synthetic-actor and process-session defaults. The
-`local-process-` prefix is reserved for generated process-default work
+Engram tracks the work of this repository.
+
+Engram MCP tools and host-provided `ENGRAM_*` configuration are injected into
+TermAl sessions only when the project's Engram integration is enabled and
+supported by the runtime. Hosting alone does not guarantee either. When the
+injected `engram` tools are available, use them directly as the agent words.
+Without that integration, a session may have neither the MCP words nor the
+configuration variables.
+
+Without injected tools, the CLI route requires an available `engram` executable
+and an explicit home. Use an absolute path that the host or operator has
+confirmed as the project's store home. Before any Engram store read or write,
+including startup recovery, supply that confirmed home with `--home` or
+`ENGRAM_HOME`. If it is missing or unverified, report the access/recovery gap
+and ask the host or operator for it; do not guess a path, initialize a store,
+or enable the integration yourself. `ENGRAM_HOME` has no default; without
+`--home` or `ENGRAM_HOME`, the CLI refuses with `pass --home or set ENGRAM_HOME`.
+The shell examples below assume this home configuration is already supplied.
+
+With the integration enabled and supported, hosts normally supply
+`ENGRAM_ACTOR_ID` and `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT`
+adds attribution without changing the actor principal. Unlike home, either
+actor or session may be omitted by a local CLI caller: Engram uses explicitly
+audited OS-user-environment or synthetic-actor and process-session defaults.
+The `local-process-` prefix is reserved for generated process-default work
 sessions; a `local-process-v1-*` id may be reused for seven days, after which
 the caller must omit `--session-id` to receive a fresh process default.
 
@@ -399,8 +418,8 @@ Rules that matter:
   lost the entire notice too, inspect with `ls`/`show` before repeating a
   mutation; exact replay cannot cross processes without the printed session.
 
-The same thirteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`,
+When injected, the same thirteen words are MCP tools (`next`, `ls`, `show`,
+`add`, `claim`, `update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`,
 `forget`) with the same flat arguments, plus `search`.
 
 ## Verification

@@ -10,7 +10,8 @@ backup/portable/sync, and publication are independent optional capabilities.
 ### Start and resume
 
 At session start and after context compaction or replacement, recover context
-before substantive work. Call `next` with `peek: true`, then `memories` without
+before substantive work. First confirm an access route under Work Tracking
+below. Call `next` with `peek: true`, then `memories` without
 a query. Follow its continuation commands to discover keys; read relevant
 entries with `memories` using the returned key and `full: true`. The CLI forms
 are `engram work next --peek`, `engram work memories`, and
@@ -207,13 +208,29 @@ cp -rf source dest          # NOT: cp -r source dest
 
 ## Work Tracking
 
-This repository tracks its work in Engram. In a TermAl-hosted session the
-injected `engram` MCP tools (next, ls, show, add, claim, update, gate, note,
-done, handoff, remember, memories, forget, search) ARE the words — use them
-directly. The shell form below serves humans and hosts; it needs `engram` on
-PATH and `ENGRAM_HOME`. Hosts normally inject `ENGRAM_ACTOR_ID` and
-`ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT` adds attribution without
-changing the actor principal. A local shell may omit them and receives explicitly
+Engram tracks the work of this repository.
+
+Engram MCP tools and host-provided `ENGRAM_*` configuration are injected into
+TermAl sessions only when the project's Engram integration is enabled and
+supported by the runtime. Hosting alone does not guarantee either. When the
+injected `engram` tools are available, use them directly as the agent words.
+Without that integration, a session may have neither the MCP words nor the
+configuration variables.
+
+Without injected tools, the CLI route requires an available `engram` executable
+and an explicit home. Use an absolute path that the host or operator has
+confirmed as the project's store home. Before any Engram store read or write,
+including startup recovery, supply that confirmed home with `--home` or
+`ENGRAM_HOME`. If it is missing or unverified, report the access/recovery gap
+and ask the host or operator for it; do not guess a path, initialize a store,
+or enable the integration yourself. `ENGRAM_HOME` has no default; without
+`--home` or `ENGRAM_HOME`, the CLI refuses with `pass --home or set ENGRAM_HOME`.
+The shell examples below assume this home configuration is already supplied.
+
+With the integration enabled and supported, hosts normally supply
+`ENGRAM_ACTOR_ID` and `ENGRAM_SESSION_ID`; optional `ENGRAM_ACTOR_CONTEXT`
+adds attribution without changing the actor principal. Unlike home, either
+actor or session may be omitted by a local CLI caller: Engram uses explicitly
 audited OS-user-environment or synthetic-actor and process-session defaults.
 The `local-process-` prefix is reserved for generated process-default work
 sessions; a `local-process-v1-*` id may be reused for seven days, after which
