@@ -284,6 +284,151 @@ fn migration_delivery_omitted_attribution_replays_without_rewriting_pending() {
 }
 
 #[test]
+fn migration_delivery_derivation_uses_exported_column_positions() {
+    let (_dir, _service, store, _payload, manifest, source) = fixture(None, true);
+    let table = session_table(&manifest).expect("session table");
+    let (row_number, encoded): (i64, Vec<u8>) = store.connection.query_row(
+        "SELECT row_number,cells FROM migration_original_rows WHERE source_id=?1 AND table_name='work_session_state'",
+        [&source], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).expect("retained session row");
+    let expected = derive(&store.connection, table, &source, row_number, &encoded)
+        .expect("ordinary columns")
+        .expect("derived attribution");
+    let mut with_control = table.clone();
+    let mut control = with_control.columns[0].clone();
+    control.name = "virtual_control".into();
+    control.hidden = 1;
+    with_control.columns.insert(0, control);
+    // Generated columns are encoded too; only virtual control columns disappear.
+    with_control.columns[1].hidden = 2;
+    with_control.columns[2].hidden = 3;
+    for (position, column) in with_control.columns.iter_mut().enumerate() {
+        column.position = i64::try_from(position).expect("position");
+    }
+    assert_eq!(
+        derive(
+            &store.connection,
+            &with_control,
+            &source,
+            row_number,
+            &encoded
+        )
+        .expect("same exported cells despite the control column")
+        .as_ref(),
+        Some(&expected)
+    );
+    assert!(
+        table.rowid_alias.is_some(),
+        "fixture exercises the rowid offset"
+    );
+    let cells = rows::decode(&encoded, table.columns.len() + 1).expect("source cells");
+    let without_rowid = encode_cells(&store.connection, &cells[1..]);
+    with_control.rowid_alias = None;
+    assert_eq!(
+        derive(
+            &store.connection,
+            &with_control,
+            &source,
+            row_number,
+            &without_rowid
+        )
+        .expect("same attribution without a rowid cell"),
+        Some(expected)
+    );
+}
+
+fn encode_cells(connection: &Connection, cells: &[rows::Cell<'_>]) -> Vec<u8> {
+    let sql = format!("SELECT {}", vec!["?"; cells.len()].join(","));
+    let mut query = connection.prepare(&sql).expect("cell encoder");
+    let mut selected = query
+        .query(rusqlite::params_from_iter(cells.iter()))
+        .expect("cells");
+    rows::encode(
+        selected.next().expect("row").expect("selected"),
+        cells.len(),
+    )
+    .expect("encoded cells")
+}
+
+#[test]
+fn migration_delivery_mutated_retained_row_refuses_rederivation() {
+    let (_dir, _service, store, payload, manifest, source) = fixture(None, true);
+    record_attribution(&store.connection, &manifest, &source).expect("record audit");
+    verify_attribution(&store.connection, &manifest, &source).expect("valid audit");
+    let project = ProjectId("p".into());
+    let session = SessionId("s".into());
+    let state = store
+        .work_session_state(&project, &session, chrono::Utc::now())
+        .expect("state");
+    let validate = || {
+        store.migrated_delivery_attribution(
+            &project,
+            &session,
+            state.project_cursor,
+            state.tentative_project_cursor.expect("through"),
+            &payload,
+        )
+    };
+    assert!(!validate().expect("valid replay").is_empty());
+    let audit = lookup(&store.connection, &project, &session, payload.hash()).expect("audit");
+    let table = session_table(&manifest).expect("table");
+    let (row_number, encoded): (i64, Vec<u8>) = store.connection.query_row(
+        "SELECT row_number,cells FROM migration_original_rows WHERE source_id=?1 AND table_name='work_session_state'",
+        [&source], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).expect("retained session row");
+    let count = table
+        .columns
+        .iter()
+        .filter(|column| column.hidden != 1)
+        .count()
+        + usize::from(table.rowid_alias.is_some());
+    let token_index = table
+        .columns
+        .iter()
+        .filter(|column| column.hidden != 1)
+        .position(|column| column.name == "tentative_delivery_token")
+        .expect("token")
+        + usize::from(table.rowid_alias.is_some());
+    let mut cells = rows::decode(&encoded, count).expect("original cells");
+    cells[token_index] = rows::Cell(ValueRef::Text(b"changed-retained-token"));
+    let changed = encode_cells(&store.connection, &cells);
+    assert_ne!(changed, encoded);
+    assert_eq!(store.connection.execute(
+        "UPDATE migration_original_rows SET cells=?1 WHERE source_id=?2 AND table_name='work_session_state' AND row_number=?3",
+        params![changed, source, row_number],
+    ).expect("mutate, do not delete, retained row"), 1);
+    assert_ne!(
+        derive(&store.connection, table, &source, row_number, &changed).expect("still decodable"),
+        audit
+    );
+    assert_eq!(
+        lookup(&store.connection, &project, &session, payload.hash()).expect("unchanged audit"),
+        audit
+    );
+    let before =
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("fault state");
+    for result in [
+        verify_attribution(&store.connection, &manifest, &source),
+        validate().map(|_| ()),
+    ] {
+        assert!(
+            matches!(result, Err(StoreError::InvalidWorkProjection(reason))
+            if reason == "migration delivery attribution: audit differs from original page and canonical source")
+        );
+    }
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("read only"),
+        before
+    );
+    store.connection.execute(
+        "UPDATE migration_original_rows SET cells=?1 WHERE source_id=?2 AND table_name='work_session_state' AND row_number=?3",
+        params![encoded, source, row_number],
+    ).expect("restore original row");
+    verify_attribution(&store.connection, &manifest, &source).expect("restored audit");
+    assert!(!validate().expect("restored replay").is_empty());
+}
+
+#[test]
 fn migration_delivery_explicit_false_is_not_reinterpreted_and_true_needs_no_audit() {
     let (_dir, _service, store, _payload, manifest, source) = fixture(Some(false), true);
     let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");

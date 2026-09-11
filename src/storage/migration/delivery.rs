@@ -46,12 +46,18 @@ fn derive(
     row_number: i64,
     encoded: &[u8],
 ) -> Result<Option<Attribution>, StoreError> {
-    let count = table.columns.len() + usize::from(table.rowid_alias.is_some());
+    let count = table
+        .columns
+        .iter()
+        .filter(|column| column.hidden != 1)
+        .count()
+        + usize::from(table.rowid_alias.is_some());
     let cells = rows::decode(encoded, count).map_err(|e| invalid(&e.to_string()))?;
     let cell = |name: &str| -> Result<ValueRef<'_>, StoreError> {
         let index = table
             .columns
             .iter()
+            .filter(|column| column.hidden != 1)
             .position(|c| c.name == name)
             .ok_or_else(|| invalid("source session column is missing"))?
             + usize::from(table.rowid_alias.is_some());
