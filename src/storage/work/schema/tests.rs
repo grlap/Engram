@@ -2,6 +2,19 @@ use super::super::test_support::*;
 use super::super::*;
 
 #[test]
+fn declared_work_rebuildable_schema_pairs_match_runtime_reference() {
+    let reference = crate::storage::current_schema_reference().unwrap();
+    for &(object_type, name) in super::REBUILDABLE_WORK_SCHEMA_OBJECTS {
+        assert!(
+            reference.iter().any(|definition| {
+                definition.object_type == object_type && definition.name == name
+            }),
+            "declared rebuildable {object_type} {name} must exist in the compiled schema",
+        );
+    }
+}
+
+#[test]
 fn current_work_schema_has_no_agent_grant_tables() {
     let store = SqliteStore::open_in_memory().expect("current work schema");
     for name in ["work_authority_grants", "work_authority_revocations"] {
@@ -138,8 +151,7 @@ fn current_schema_missing_state_tables_is_refused_before_repair_ddl() {
             panic!("damaged current schema was accepted");
         };
         assert!(
-            matches!(&error, StoreError::InvalidControlProjection(message)
-                if message == crate::storage::DIFFERENT_BUILD_STORE_MESSAGE),
+            matches!(&error, StoreError::DifferentBuildSchema),
             "unexpected error for {table}: {error}"
         );
         let connection = Connection::open(&database).expect("inspect refused schema");
@@ -328,7 +340,7 @@ fn same_name_wrong_work_table_definition_is_refused_without_mutation() {
     ] {
         let error = operation.expect_err("wrong durable work definition must be refused");
         assert!(
-            matches!(&error, StoreError::InvalidControlProjection(_)),
+            matches!(&error, StoreError::DifferentBuildSchema),
             "unexpected exact work-schema diagnostic: {error}"
         );
     }

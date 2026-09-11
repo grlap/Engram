@@ -258,27 +258,26 @@ struct SchemaDefinition {
 // than canonical state: explicit projection repair may drop it and cause one
 // harmless reannouncement. `project_memory_state` is reconstructed from
 // verified project-memory versions and assertion events.
-const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[&str] = &[
-    "object_fts",
-    "objects_memory_assertion_version",
-    "objects_project_memory_key",
-    "objects_project_memory_root",
-    "objects_graph_snapshot_audit",
-    "objects_graph_snapshot_load_audit",
-    "memory_heads_scope",
-    "memory_heads_work_scope",
-    "project_memory_state",
-    "project_memory_advertisements",
-    "memory_contradictions_versions",
-    "memory_contradiction_edges_context",
-    "task_changes_task_cursor",
-    "control_observations_session_sequence",
-    "control_sessions_work_run",
-    "control_work_leases_task_state",
+const CORE_REBUILDABLE_SCHEMA_OBJECTS: &[(&str, &str)] = &[
+    ("table", "object_fts"),
+    ("index", "objects_memory_assertion_version"),
+    ("index", "objects_project_memory_key"),
+    ("index", "objects_project_memory_root"),
+    ("index", "objects_graph_snapshot_audit"),
+    ("index", "objects_graph_snapshot_load_audit"),
+    ("index", "memory_heads_scope"),
+    ("index", "memory_heads_work_scope"),
+    ("table", "project_memory_state"),
+    ("table", "project_memory_advertisements"),
+    ("index", "memory_contradictions_versions"),
+    ("index", "memory_contradiction_edges_context"),
+    ("index", "task_changes_task_cursor"),
+    ("index", "control_observations_session_sequence"),
+    ("index", "control_sessions_work_run"),
+    ("index", "control_work_leases_task_state"),
 ];
 
-const DIFFERENT_BUILD_STORE_MESSAGE: &str =
-    "the store was created by a different Engram build; restore a current backup or re-initialize";
+const DIFFERENT_BUILD_STORE_MESSAGE: &str = "the store schema is not recognized by this Engram build; use the Engram build that owns this store; this build cannot convert its schema";
 
 static CURRENT_SCHEMA_REFERENCE: std::sync::OnceLock<Vec<SchemaDefinition>> =
     std::sync::OnceLock::new();
@@ -317,11 +316,11 @@ fn normalized_schema_definition(sql: &str) -> String {
 }
 
 pub(super) fn different_build_store_error() -> StoreError {
-    StoreError::InvalidControlProjection(DIFFERENT_BUILD_STORE_MESSAGE.into())
+    StoreError::DifferentBuildSchema
 }
 
 pub(crate) fn is_different_build_store_error(error: &StoreError) -> bool {
-    matches!(error, StoreError::InvalidControlProjection(message) if message == DIFFERENT_BUILD_STORE_MESSAGE)
+    matches!(error, StoreError::DifferentBuildSchema)
 }
 
 pub(super) fn require_current_schema_marker(stored: i64, current: i64) -> Result<(), StoreError> {
@@ -336,7 +335,7 @@ fn stored_schema_definitions(connection: &Connection) -> Result<Vec<SchemaDefini
     let mut statement = connection.prepare(
         "SELECT type, name, sql
          FROM sqlite_schema
-         WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
+         WHERE substr(name, 1, 7) COLLATE NOCASE != 'sqlite_' AND sql IS NOT NULL
          ORDER BY type, name",
     )?;
     let rows = statement.query_map([], |row| {
@@ -382,11 +381,11 @@ fn schema_object_matches_durability(
     durability: SchemaDurability,
 ) -> bool {
     let rebuildable = if work::owns_schema_object(&definition.name) {
-        work::is_rebuildable_schema_object(&definition.name)
+        work::is_rebuildable_schema_object(&definition.object_type, &definition.name)
     } else {
-        definition.name == "object_fts"
-            || definition.name.starts_with("object_fts_")
-            || CORE_REBUILDABLE_SCHEMA_OBJECTS.contains(&definition.name.as_str())
+        (definition.object_type == "table" && is_fts_schema_object(&definition.name, "object_fts"))
+            || CORE_REBUILDABLE_SCHEMA_OBJECTS
+                .contains(&(definition.object_type.as_str(), definition.name.as_str()))
     };
     matches!(
         (durability, rebuildable),
@@ -394,18 +393,63 @@ fn schema_object_matches_durability(
     )
 }
 
+fn is_fts_schema_object(name: &str, table: &str) -> bool {
+    name == table
+        || name.strip_prefix(table).is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "_data" | "_idx" | "_content" | "_docsize" | "_config"
+            )
+        })
+}
+
+fn orphan_fts_schema_issue(
+    reference: &[SchemaDefinition],
+    actual: &[SchemaDefinition],
+    owner: SchemaOwner,
+) -> Option<String> {
+    let table = match owner {
+        SchemaOwner::Core => "object_fts",
+        SchemaOwner::Work => "work_catalog_fts",
+    };
+    let shadow = actual.iter().find(|definition| {
+        definition.object_type == "table"
+            && definition.name != table
+            && is_fts_schema_object(&definition.name, table)
+    })?;
+    let recognized_parent = reference
+        .iter()
+        .find(|definition| definition.object_type == "table" && definition.name == table)
+        .is_some_and(|definition| actual.contains(definition));
+    if recognized_parent {
+        None
+    } else {
+        Some(format!(
+            "shadow table {} has no recognized FTS owner {table}",
+            shadow.name
+        ))
+    }
+}
+
 pub(super) fn current_schema_definition_issue(
     connection: &Connection,
     owner: SchemaOwner,
     durability: SchemaDurability,
 ) -> Result<Option<String>, StoreError> {
-    let expected = current_schema_reference()?
+    let reference = current_schema_reference()?;
+    let actual = stored_schema_definitions(connection)?;
+    if durability == SchemaDurability::Durable
+        && let Some(issue) = orphan_fts_schema_issue(reference, &actual, owner)
+    {
+        return Ok(Some(issue));
+    }
+    let expected = reference
         .iter()
         .filter(|definition| schema_object_matches_owner(definition, owner))
         .filter(|definition| schema_object_matches_durability(definition, durability))
         .cloned()
         .collect::<Vec<_>>();
-    let actual = stored_schema_definitions(connection)?
+    let actual = actual
         .into_iter()
         .filter(|definition| schema_object_matches_owner(definition, owner))
         .filter(|definition| schema_object_matches_durability(definition, durability))
@@ -650,6 +694,8 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("project store is not initialized; run `engram init` explicitly before reading it")]
     StoreNotInitialized,
+    #[error("{DIFFERENT_BUILD_STORE_MESSAGE}")]
+    DifferentBuildSchema,
     #[error("object {0} is not RFC 8785 canonical JSON")]
     NonCanonicalObject(ObjectHash),
     #[error("object hash mismatch: expected {expected}, got {actual}")]

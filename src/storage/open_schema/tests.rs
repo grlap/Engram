@@ -2,8 +2,8 @@ use chrono::{TimeDelta, TimeZone};
 
 use super::*;
 use crate::storage::{
-    DIFFERENT_BUILD_STORE_MESSAGE, normalized_schema_definition, schema_object_matches_owner,
-    stored_schema_definitions, test_database_shape_snapshot, test_support::*,
+    normalized_schema_definition, schema_object_matches_owner, stored_schema_definitions,
+    test_database_shape_snapshot, test_support::*,
 };
 use crate::*;
 
@@ -123,6 +123,440 @@ fn centralized_schema_versions_match_fresh_store_projections_and_policy_objects(
 }
 
 #[test]
+fn unrecognized_schema_and_corrupt_records_remain_distinct_on_open_and_repair() {
+    use crate::storage::StoreOpenRefusalKind;
+
+    for (fixture_sql, expected_kind) in [
+        (
+            "CREATE INDEX extra_objects_index ON objects(object_kind)",
+            StoreOpenRefusalKind::DifferentBuildSchema,
+        ),
+        (
+            "CREATE INDEX work_extra_index ON work_items(priority)",
+            StoreOpenRefusalKind::DifferentBuildSchema,
+        ),
+        (
+            "CREATE INDEX object_fts_extra ON objects(object_kind)",
+            StoreOpenRefusalKind::DifferentBuildSchema,
+        ),
+        (
+            "CREATE INDEX work_catalog_fts_extra ON work_items(priority)",
+            StoreOpenRefusalKind::DifferentBuildSchema,
+        ),
+        (
+            "CREATE TRIGGER object_fts_extra_trigger AFTER INSERT ON objects BEGIN SELECT 1; END",
+            StoreOpenRefusalKind::DifferentBuildSchema,
+        ),
+        (
+            "CREATE TABLE work_catalog_fts_extra_table(value TEXT)",
+            StoreOpenRefusalKind::DifferentBuildSchema,
+        ),
+        (
+            "UPDATE control_policy_versions SET policy_json = X'7B7D'",
+            StoreOpenRefusalKind::CorruptStore,
+        ),
+    ] {
+        assert_open_schema_refusal_without_mutation(fixture_sql, &expected_kind);
+    }
+}
+
+fn assert_open_schema_refusal_without_mutation(
+    fixture_sql: &str,
+    expected_kind: &crate::storage::StoreOpenRefusalKind,
+) {
+    use crate::storage::{StoreOpenRefusalKind, store_open_refusal_kind};
+
+    let directory = crate::test_support::temp_home().unwrap();
+    let database = directory.path().join("refusal.db");
+    drop(SqliteStore::open(&database).unwrap());
+    let connection = Connection::open(&database).unwrap();
+    connection.execute_batch(fixture_sql).unwrap();
+    let before_shape = test_database_shape_snapshot(&connection).unwrap();
+    drop(connection);
+    let before_bytes = std::fs::read(&database).unwrap();
+
+    for mode in ["open", "unresolved", "read_only", "repair"] {
+        let result = match mode {
+            "open" => SqliteStore::open(&database).map(|_| ()),
+            "unresolved" => SqliteStore::open_unresolved(&database).map(|_| ()),
+            "read_only" => SqliteStore::open_existing_read_only(&database).map(|_| ()),
+            "repair" => SqliteStore::repair_rebuildable_projections(&database).map(|_| ()),
+            _ => unreachable!(),
+        };
+        let error = result.expect_err("the fixture must remain refused");
+        assert_eq!(
+            &store_open_refusal_kind(&error),
+            expected_kind,
+            "{mode}: {error}"
+        );
+        if expected_kind == &StoreOpenRefusalKind::DifferentBuildSchema {
+            let message = error.to_string();
+            assert!(
+                message.contains("use the Engram build that owns this store"),
+                "{message}"
+            );
+            for unsafe_advice in [
+                "restore",
+                "re-initialize",
+                "durable state is invalid",
+                "invalid data",
+            ] {
+                assert!(!message.contains(unsafe_advice), "{mode}: {message}");
+            }
+        }
+        assert_eq!(std::fs::read(&database).unwrap(), before_bytes, "{mode}");
+        let connection = Connection::open(&database).unwrap();
+        assert_eq!(
+            test_database_shape_snapshot(&connection).unwrap(),
+            before_shape,
+            "{mode}"
+        );
+    }
+}
+
+fn schema_object_namespace_collision_fixtures() -> [&'static str; 6] {
+    [
+        "CREATE TRIGGER object_fts_data AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE TRIGGER work_catalog_fts_data AFTER INSERT ON work_items BEGIN SELECT 1; END",
+        "CREATE TRIGGER objects_memory_assertion_version AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE TRIGGER objects_work_event_work_id AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE TRIGGER project_memory_state AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE INDEX work_feed_entries_require_work_id ON work_items(priority)",
+    ]
+}
+
+#[test]
+fn schema_object_namespace_collisions_refuse_on_open_and_repair() {
+    for sql in schema_object_namespace_collision_fixtures() {
+        assert_open_schema_refusal_without_mutation(
+            sql,
+            &crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
+        );
+    }
+}
+
+#[test]
+fn migration_schema_namespace_collisions_refuse_restore_without_output() {
+    use crate::storage::migration::{MigrationError, export_store, restore_source_layout};
+
+    for sql in schema_object_namespace_collision_fixtures() {
+        let directory = crate::test_support::temp_home().unwrap();
+        let source = directory.path().join("source.db");
+        drop(SqliteStore::open_unresolved(&source).unwrap());
+        let connection = Connection::open(&source).unwrap();
+        connection.execute_batch(sql).unwrap();
+        let before_shape = test_database_shape_snapshot(&connection).unwrap();
+        drop(connection);
+        let before = std::fs::read(&source).unwrap();
+        let archive = directory.path().join("archive.db");
+        export_store(&source, &archive).unwrap();
+        let archive_before = std::fs::read(&archive).unwrap();
+        let output = directory.path().join("restored.db");
+        let error = restore_source_layout(&archive, &output).unwrap_err();
+        assert!(
+            matches!(&error, MigrationError::Refused(reason)
+                if reason.starts_with("source schema is not an explicitly supported migration profile")),
+            "{sql}: {error}",
+        );
+        assert!(!output.exists());
+        assert_eq!(std::fs::read(&source).unwrap(), before);
+        assert_eq!(std::fs::read(&archive).unwrap(), archive_before);
+        let connection = Connection::open(&source).unwrap();
+        assert_eq!(
+            test_database_shape_snapshot(&connection).unwrap(),
+            before_shape
+        );
+    }
+}
+
+#[test]
+fn missing_work_schema_metadata_refuses_on_open_and_repair() {
+    assert_open_schema_refusal_without_mutation(
+        "DROP TABLE work_schema_metadata",
+        &crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
+    );
+}
+
+#[test]
+fn orphan_fts_schema_shadows_refuse_on_open_and_repair() {
+    for table in ["object_fts", "work_catalog_fts"] {
+        for suffix in ["_data", "_idx", "_content", "_docsize", "_config"] {
+            for parent in [
+                String::new(),
+                format!("CREATE TABLE {table}(value TEXT);"),
+                format!("CREATE VIEW {table} AS SELECT 'preserved' AS value;"),
+            ] {
+                let sql = format!(
+                    "DROP TABLE {table}; {parent}
+                     CREATE TABLE {table}{suffix}(value TEXT);
+                     INSERT INTO {table}{suffix} VALUES ('preserved');"
+                );
+                assert_open_schema_refusal_without_mutation(
+                    &sql,
+                    &crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
+                );
+            }
+        }
+        assert_open_schema_refusal_without_mutation(
+            &format!("DROP TABLE {table}; CREATE VIRTUAL TABLE {table} USING fts5(value);"),
+            &crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
+        );
+    }
+}
+
+#[test]
+fn non_table_fts_schema_shadows_refuse_on_open_and_repair() {
+    for table in ["object_fts", "work_catalog_fts"] {
+        for object in [
+            format!("CREATE INDEX {table}_data ON objects(object_kind);"),
+            format!("CREATE TRIGGER {table}_data AFTER INSERT ON objects BEGIN SELECT 1; END;"),
+            format!("CREATE VIEW {table}_data AS SELECT 'preserved' AS value;"),
+        ] {
+            assert_open_schema_refusal_without_mutation(
+                &format!("DROP TABLE {table}; {object}"),
+                &crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
+            );
+        }
+    }
+}
+
+#[test]
+fn fts_schema_repair_preserves_owned_rebuild_paths() {
+    use crate::storage::{StoreOpenRefusalKind, store_open_refusal_kind};
+
+    for table in ["object_fts", "work_catalog_fts"] {
+        for sql in [
+            format!("DROP TABLE {table};"),
+            format!("DROP TABLE {table}; CREATE TABLE {table}(value TEXT);"),
+            format!("ALTER TABLE {table}_content ADD COLUMN unexpected TEXT;"),
+        ] {
+            let directory = crate::test_support::temp_home().unwrap();
+            let database = directory.path().join("repair.db");
+            drop(SqliteStore::open(&database).unwrap());
+            let connection = Connection::open(&database).unwrap();
+            connection.execute_batch(&sql).unwrap();
+            let before_shape = test_database_shape_snapshot(&connection).unwrap();
+            drop(connection);
+            let before_bytes = std::fs::read(&database).unwrap();
+            let error = SqliteStore::open(&database)
+                .err()
+                .expect("explicit repair required");
+            assert_eq!(
+                store_open_refusal_kind(&error),
+                StoreOpenRefusalKind::ProjectionRepairRequired,
+                "{sql}: {error}",
+            );
+            assert_eq!(std::fs::read(&database).unwrap(), before_bytes);
+            let connection = Connection::open(&database).unwrap();
+            assert_eq!(
+                test_database_shape_snapshot(&connection).unwrap(),
+                before_shape
+            );
+            drop(connection);
+            let report = SqliteStore::repair_rebuildable_projections(&database).unwrap();
+            assert!(report.is_healthy(), "{sql}: {report:?}");
+            let store = SqliteStore::open(&database).unwrap();
+            assert!(store.verify_all().unwrap().is_healthy());
+        }
+    }
+}
+
+#[test]
+fn migration_orphan_fts_schema_shadows_refuse_without_output() {
+    use crate::storage::migration::{MigrationError, export_store, restore_source_layout};
+
+    for table in ["object_fts", "work_catalog_fts"] {
+        for plain_parent in [false, true] {
+            let directory = crate::test_support::temp_home().unwrap();
+            let source = directory.path().join("source.db");
+            drop(SqliteStore::open_unresolved(&source).unwrap());
+            let connection = Connection::open(&source).unwrap();
+            connection
+                .execute_batch(&format!("DROP TABLE {table};"))
+                .unwrap();
+            if plain_parent {
+                connection
+                    .execute_batch(&format!("CREATE TABLE {table}(value TEXT);"))
+                    .unwrap();
+            }
+            connection
+                .execute_batch(&format!(
+                    "CREATE TABLE {table}_data(value TEXT);
+                 INSERT INTO {table}_data VALUES ('preserved');"
+                ))
+                .unwrap();
+            let before_shape = test_database_shape_snapshot(&connection).unwrap();
+            drop(connection);
+            let before = std::fs::read(&source).unwrap();
+            let archive = directory.path().join("archive.db");
+            export_store(&source, &archive).unwrap();
+            let archive_before = std::fs::read(&archive).unwrap();
+            let output = directory.path().join("restored.db");
+            let error = restore_source_layout(&archive, &output).unwrap_err();
+            assert!(
+                matches!(&error, MigrationError::Refused(_)),
+                "{table}: {error}"
+            );
+            assert!(!output.exists());
+            assert_eq!(std::fs::read(&source).unwrap(), before);
+            assert_eq!(std::fs::read(&archive).unwrap(), archive_before);
+            let connection = Connection::open(&source).unwrap();
+            assert_eq!(
+                test_database_shape_snapshot(&connection).unwrap(),
+                before_shape
+            );
+        }
+    }
+}
+
+#[test]
+fn declared_core_rebuildable_schema_pairs_match_runtime_reference() {
+    let reference = crate::storage::current_schema_reference().unwrap();
+    for &(object_type, name) in crate::storage::CORE_REBUILDABLE_SCHEMA_OBJECTS {
+        assert!(
+            reference.iter().any(|definition| {
+                definition.object_type == object_type && definition.name == name
+            }),
+            "declared rebuildable {object_type} {name} must exist in the compiled schema",
+        );
+    }
+}
+
+#[test]
+fn rebuildable_schema_classification_requires_the_declared_object_type() {
+    use crate::storage::{
+        SchemaDurability, current_schema_reference, schema_object_matches_durability,
+    };
+
+    for definition in current_schema_reference().unwrap() {
+        if !schema_object_matches_durability(definition, SchemaDurability::Rebuildable) {
+            continue;
+        }
+        for other_type in ["table", "index", "trigger", "view"] {
+            if other_type == definition.object_type {
+                continue;
+            }
+            let mut collision = definition.clone();
+            collision.object_type = other_type.into();
+            assert!(
+                schema_object_matches_durability(&collision, SchemaDurability::Durable),
+                "{} {} must not inherit {} repair eligibility",
+                other_type,
+                definition.name,
+                definition.object_type,
+            );
+        }
+    }
+}
+
+#[test]
+fn prefixed_unknown_schema_objects_refuse_before_projection_repair() {
+    for sql in [
+        "CREATE INDEX object_fts_datax ON objects(object_kind)",
+        "CREATE INDEX object_ftsx_data ON objects(object_kind)",
+        "CREATE INDEX object_fts__data ON objects(object_kind)",
+        "CREATE INDEX work_catalog_fts_datax ON work_items(priority)",
+        "CREATE INDEX work_catalog_ftsx_data ON work_items(priority)",
+        "CREATE INDEX work_catalog_fts__data ON work_items(priority)",
+    ] {
+        let directory = crate::test_support::temp_home().unwrap();
+        let path = directory.path().join("prefixed.db");
+        drop(SqliteStore::open(&path).unwrap());
+        let connection = Connection::open(&path).unwrap();
+        connection.execute_batch(sql).unwrap();
+        drop(connection);
+        let before = std::fs::read(&path).unwrap();
+        let error = SqliteStore::repair_rebuildable_projections(&path).unwrap_err();
+        assert_eq!(
+            crate::storage::store_open_refusal_kind(&error),
+            crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
+            "{sql}: {error}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+
+#[test]
+fn fts_schema_object_matching_accepts_only_declared_shadow_names() {
+    for table in ["object_fts", "work_catalog_fts"] {
+        for suffix in ["", "_data", "_idx", "_content", "_docsize", "_config"] {
+            let name = format!("{table}{suffix}");
+            assert!(crate::storage::is_fts_schema_object(&name, table), "{name}");
+        }
+        for suffix in ["_datax", "x_data", "__data", "_", "_extra"] {
+            let name = format!("{table}{suffix}");
+            assert!(
+                !crate::storage::is_fts_schema_object(&name, table),
+                "{name}"
+            );
+        }
+        assert!(!crate::storage::is_fts_schema_object("unrelated", table));
+    }
+}
+
+#[test]
+fn sqlite_name_lookalikes_remain_user_schema_on_open_and_repair() {
+    for name in ["sqliteX_extra", "SQLITEX_extra", "sqlite"] {
+        for foreign_only in [true, false] {
+            let directory = crate::test_support::temp_home().unwrap();
+            let path = directory.path().join("lookalike.db");
+            if !foreign_only {
+                drop(SqliteStore::open(&path).unwrap());
+            }
+            let connection = Connection::open(&path).unwrap();
+            let sql = if foreign_only {
+                format!("CREATE TABLE {name}(value TEXT); INSERT INTO {name} VALUES ('preserved')")
+            } else {
+                format!("CREATE INDEX {name} ON objects(object_kind)")
+            };
+            connection.execute_batch(&sql).unwrap();
+            let before_shape = test_database_shape_snapshot(&connection).unwrap();
+            drop(connection);
+            let before = std::fs::read(&path).unwrap();
+            for mode in ["repair", "read_only", "unresolved", "open"] {
+                let result = match mode {
+                    "repair" => SqliteStore::repair_rebuildable_projections(&path).map(|_| ()),
+                    "read_only" => SqliteStore::open_existing_read_only(&path).map(|_| ()),
+                    "unresolved" => SqliteStore::open_unresolved(&path).map(|_| ()),
+                    "open" => SqliteStore::open(&path).map(|_| ()),
+                    _ => unreachable!(),
+                };
+                let error = result.expect_err("a user schema name must not be hidden");
+                assert!(
+                    matches!(error, StoreError::DifferentBuildSchema),
+                    "{name}, {mode}, foreign_only={foreign_only}: {error}"
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), before);
+                let connection = Connection::open(&path).unwrap();
+                assert_eq!(
+                    test_database_shape_snapshot(&connection).unwrap(),
+                    before_shape
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn empty_schema_repair_refuses_without_initialization() {
+    for empty_sqlite in [false, true] {
+        let directory = crate::test_support::temp_home().unwrap();
+        let path = directory.path().join("empty.db");
+        std::fs::write(&path, []).unwrap();
+        if empty_sqlite {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch("CREATE TABLE transient(value TEXT); DROP TABLE transient;")
+                .unwrap();
+        }
+        let before = std::fs::read(&path).unwrap();
+        let error = SqliteStore::repair_rebuildable_projections(&path).unwrap_err();
+        assert!(matches!(error, StoreError::StoreNotInitialized), "{error}");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+
+#[test]
 fn different_build_marker_refuses_without_mutation() {
     let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("different-build.db");
@@ -150,11 +584,7 @@ fn different_build_marker_refuses_without_mutation() {
     let Err(error) = SqliteStore::open(&database) else {
         panic!("different-build marker must refuse");
     };
-    assert!(matches!(
-        error,
-        StoreError::InvalidControlProjection(message)
-            if message == DIFFERENT_BUILD_STORE_MESSAGE
-    ));
+    assert!(matches!(error, StoreError::DifferentBuildSchema));
 
     let after = Connection::open(&database).expect("inspect refused fixture");
     let after_shape = test_database_shape_snapshot(&after).expect("capture refused database shape");
@@ -681,7 +1111,7 @@ fn missing_core_durable_table_is_named_and_never_recreated() {
     ] {
         let error = operation.expect_err("durable corruption must be refused");
         assert!(
-            matches!(&error, StoreError::InvalidControlProjection(_)),
+            matches!(&error, StoreError::DifferentBuildSchema),
             "unexpected durable-schema diagnostic: {error}"
         );
     }
@@ -713,7 +1143,7 @@ fn complete_schema_family_loss_is_refused_without_mutation() {
         ] {
             let error = operation.expect_err("complete schema-family loss must be refused");
             assert!(
-                matches!(&error, StoreError::InvalidControlProjection(_)),
+                matches!(&error, StoreError::DifferentBuildSchema),
                 "unexpected family-loss diagnostic: {error}"
             );
         }
@@ -758,7 +1188,7 @@ fn same_name_wrong_core_table_definition_is_refused_without_mutation() {
     ] {
         let error = operation.expect_err("wrong durable definition must be refused");
         assert!(
-            matches!(&error, StoreError::InvalidControlProjection(_)),
+            matches!(&error, StoreError::DifferentBuildSchema),
             "unexpected exact-schema diagnostic: {error}"
         );
     }

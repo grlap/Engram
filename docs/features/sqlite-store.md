@@ -157,9 +157,25 @@ work safety cursor.
 The runtime [build diagnostics](cli-and-mcp.md#build-identity-and-doctor-refusals)
 hash the same normalized definitions as the admission reference and combine
 that digest with the package version and executable digest. They add no stored
-identity or second admission rule. Doctor open refusals are machine-readable:
-`projection_repair_required`, `different_build_schema`, or `corrupt_store`.
+identity or second admission rule. Doctor refusals have machine-readable codes,
+including `projection_repair_required`, `different_build_schema`, and
+`corrupt_store`; see the [full code list](cli-and-mcp.md#build-identity-and-doctor-refusals).
 Reporting a refusal never performs projection DDL; repair remains explicit.
+An unrecognized schema, including an extra index this build does not own,
+is not proof of corrupt data. Ordinary open and projection repair both refuse
+it and direct the operator to the Engram build that owns the store. Projection
+repair reports `different_build_schema` too; it does not convert that schema
+or recommend restoring or re-initializing the store. Invalid records under
+the recognized schema still report `corrupt_store`.
+FTS prefixes alone do not mark an object as rebuildable: only declared objects
+and known shadow tables of declared FTS tables qualify. When shadow tables
+exist, their FTS owner must match the runtime reference by type, name, and
+normalized SQL; orphan shadows or an unrecognized owner refuse before repair.
+A missing or plain-table FTS owner without shadows remains eligible for
+explicit projection repair, as do changed shadows of a recognized FTS owner.
+Repair refuses a
+zero-byte or empty SQLite file with `store_not_initialized`, without creating
+a schema; initialization remains an explicit `engram init` operation.
 
 Objects serialize as RFC 8785 (JCS) canonical JSON, UTF-8. An object's id is
 the SHA-256 of its canonical bytes (hash field excluded); the storage key is

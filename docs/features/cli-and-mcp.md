@@ -773,6 +773,9 @@ Refusals carry `phase`: `open`, `verification`, `control_diagnostics`,
 the error arose even when a diagnostic read failed after a successful open.
 The codes are:
 
+- `store_not_initialized`: an empty file has no user schema. Projection repair
+  refuses it without initializing it. Run `engram init` explicitly when you
+  intend to initialize that empty store.
 - `projection_repair_required`: exact remedy
   `engram doctor --repair-projections` and safe scope
   `["indexes", "triggers", "fts"]`; reporting performs no DDL.
@@ -780,6 +783,11 @@ The codes are:
   file using the same normalization, plus `running` build components. Use the
   build that created the store. There is no in-place store upgrade, and
   projection repair cannot convert a different durable schema.
+  An extra index this build does not own also receives this refusal, including
+  from `doctor --repair-projections`. Ordinary open gives the same safe advice
+  to use the owning build, not to restore or re-initialize the store.
+  FTS naming prefixes do not make undeclared objects repairable. Only declared
+  objects and the declared FTS tables' known shadow tables are rebuildable.
   The schema digest is not a claim to know the original executable;
   a schema-marker-only mismatch can have equal definition digests. If the
   refused file cannot be read, the digest is null with

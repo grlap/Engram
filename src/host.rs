@@ -541,9 +541,9 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkLeaseNotFound(_) => "work_lease_not_found",
         StoreError::WorkLeaseNotHeld { .. } => "work_lease_not_held",
         StoreError::WorkLeaseExpired { .. } => "work_lease_expired",
-        StoreError::InvalidControlProjection(_) | StoreError::InvalidControlObservation(_) => {
-            "control_projection_invalid"
-        }
+        StoreError::DifferentBuildSchema
+        | StoreError::InvalidControlProjection(_)
+        | StoreError::InvalidControlObservation(_) => "control_projection_invalid",
         StoreError::PinnedContradiction { .. } => "pinned_contradiction",
         StoreError::PinnedBudgetExceeded { .. } => "pinned_budget_exceeded",
         StoreError::TaskAccessDenied { .. } => "task_access_denied",
@@ -617,6 +617,13 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
+
+    #[test]
+    fn different_build_refusal_preserves_host_wire_code() {
+        let error = StoreError::DifferentBuildSchema;
+        assert_eq!(store_error_code(&error), "control_projection_invalid");
+        assert!(!error.to_string().contains("invalid data"));
+    }
 
     #[test]
     fn oversized_control_frame_is_rejected_and_drained() {

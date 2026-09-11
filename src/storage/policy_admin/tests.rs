@@ -3,8 +3,7 @@ use rusqlite::Connection;
 
 use super::*;
 use crate::storage::{
-    DIFFERENT_BUILD_STORE_MESSAGE, FAIL_COLD_SCHEMA_AFTER_DDL, MAX_CONTROL_POLICY_PROVENANCE_LINKS,
-    test_support::*,
+    FAIL_COLD_SCHEMA_AFTER_DDL, MAX_CONTROL_POLICY_PROVENANCE_LINKS, test_support::*,
 };
 use crate::*;
 
@@ -579,8 +578,7 @@ fn established_store_missing_policy_state_refuses_without_bootstrap() {
     drop(missing_table);
     assert!(matches!(
         SqliteStore::open(&missing_table_database),
-        Err(StoreError::InvalidControlProjection(reason))
-            if reason == DIFFERENT_BUILD_STORE_MESSAGE
+        Err(StoreError::DifferentBuildSchema)
     ));
     let missing_table_raw =
         Connection::open(&missing_table_database).expect("inspect missing-table refusal");
@@ -653,8 +651,7 @@ fn partial_control_table_family_prevents_policy_rebootstrap() {
 
     assert!(matches!(
         SqliteStore::open(&database),
-        Err(StoreError::InvalidControlProjection(reason))
-            if reason == DIFFERENT_BUILD_STORE_MESSAGE
+        Err(StoreError::DifferentBuildSchema)
     ));
     let raw = Connection::open(&database).expect("inspect refused established store");
     assert_eq!(

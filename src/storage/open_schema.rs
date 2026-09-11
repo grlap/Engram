@@ -122,10 +122,11 @@ impl SqliteStore {
             "PRAGMA foreign_keys = ON;
              PRAGMA synchronous = NORMAL;",
         )?;
-        if let Some(issue) = Self::current_core_durable_schema_issue(&connection)? {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "projection repair refused because durable state is invalid: {issue}"
-            )));
+        if !Self::sqlite_user_schema_exists(&connection)? {
+            return Err(StoreError::StoreNotInitialized);
+        }
+        if Self::current_core_durable_schema_issue(&connection)?.is_some() {
+            return Err(different_build_store_error());
         }
         work::preflight_schema(&connection, false)?;
         Self::require_task_local_cursor_schema(&connection)?;
@@ -950,7 +951,7 @@ impl SqliteStore {
             .query_row(
                 "SELECT EXISTS(
                      SELECT 1 FROM sqlite_schema
-                     WHERE name NOT LIKE 'sqlite_%'
+                     WHERE substr(name, 1, 7) COLLATE NOCASE != 'sqlite_'
                  )",
                 [],
                 |row| row.get::<_, bool>(0),
@@ -1400,7 +1401,7 @@ impl SqliteStore {
         // The caller owns one repair transaction. Restore disposable indexes
         // before validation uses INDEXED BY; invalid durable heads still roll
         // back all schema changes, and are never rewritten by this repair.
-        for object in CORE_REBUILDABLE_SCHEMA_OBJECTS {
+        for (_, object) in CORE_REBUILDABLE_SCHEMA_OBJECTS {
             drop_schema_object(connection, object)?;
         }
         connection.execute_batch(

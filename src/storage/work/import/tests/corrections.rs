@@ -273,10 +273,7 @@ fn import_restored_required_shape_refuses_at_use_and_before_repair_writes() {
             .and_then(|store| store.verify_all())
             .map(|_| ()),
     ] {
-        assert!(
-            matches!(result, Err(StoreError::InvalidControlProjection(message))
-            if message == crate::storage::DIFFERENT_BUILD_STORE_MESSAGE)
-        );
+        assert!(matches!(result, Err(StoreError::DifferentBuildSchema)));
     }
 }
 

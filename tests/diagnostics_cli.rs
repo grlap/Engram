@@ -179,6 +179,302 @@ fn version_next_and_doctor_share_runtime_identity_across_processes() {
     }
 }
 
+fn assert_unknown_schema_refusal(
+    report: &Value,
+    database: &Path,
+    text_result: &Output,
+    json_result: &Output,
+) {
+    assert!(
+        report["remedy"]
+            .as_str()
+            .unwrap()
+            .contains("Use the Engram build that created this store")
+    );
+    assert!(report.get("findings").is_none());
+    let product_text = format!(
+        "{}{}{}{}",
+        report["remedy"].as_str().unwrap_or_default(),
+        report["reason"].as_str().unwrap_or_default(),
+        String::from_utf8_lossy(&text_result.stderr),
+        String::from_utf8_lossy(&json_result.stderr)
+    );
+    for forbidden in [
+        "corrupt_store",
+        "durable state is invalid",
+        "invalid data",
+        "restore",
+        "re-initialize",
+    ] {
+        assert!(!product_text.contains(forbidden), "{product_text}");
+    }
+    assert_eq!(
+        report["store_schema_reference"],
+        json!(store_schema_reference(database).unwrap())
+    );
+}
+
+fn schema_refusal_fixtures() -> [(&'static str, &'static str); 8] {
+    [
+        (
+            "CREATE INDEX extra_objects_index ON objects(object_kind)",
+            "different_build_schema",
+        ),
+        (
+            "CREATE INDEX work_extra_index ON work_items(priority)",
+            "different_build_schema",
+        ),
+        (
+            "CREATE INDEX object_fts_extra ON objects(object_kind)",
+            "different_build_schema",
+        ),
+        (
+            "CREATE INDEX work_catalog_fts_extra ON work_items(priority)",
+            "different_build_schema",
+        ),
+        (
+            "CREATE TRIGGER object_fts_extra_trigger AFTER INSERT ON objects BEGIN SELECT 1; END",
+            "different_build_schema",
+        ),
+        (
+            "CREATE TABLE work_catalog_fts_extra_table(value TEXT)",
+            "different_build_schema",
+        ),
+        (
+            "CREATE INDEX sqliteX_extra ON objects(object_kind)",
+            "different_build_schema",
+        ),
+        (
+            "UPDATE control_policy_versions SET policy_json = X'7B7D'",
+            "corrupt_store",
+        ),
+    ]
+}
+
+#[test]
+fn schema_refusal_cli_keeps_unknown_indexes_distinct_from_corruption() {
+    for (fixture_sql, expected_code) in schema_refusal_fixtures() {
+        assert_schema_refusal_cli_without_mutation(fixture_sql, expected_code);
+    }
+}
+
+fn assert_schema_refusal_cli_without_mutation(fixture_sql: &str, expected_code: &str) {
+    let directory = crate::test_support::temp_home().unwrap();
+    let home_path = directory.path().join("restore-invalid data-corrupt_store");
+    fs::create_dir(&home_path).unwrap();
+    let home = home_path.as_path();
+    success(home, &["init"]);
+    success(
+        home,
+        &[
+            "work",
+            "--actor-id",
+            "schema-refusal",
+            "--session-id",
+            "schema-refusal",
+            "add",
+            "Preserved work",
+        ],
+    );
+    let healthy = diagnosis(home);
+    let database = Path::new(healthy["database"].as_str().unwrap());
+    let connection = rusqlite::Connection::open(database).unwrap();
+    connection.execute_batch(fixture_sql).unwrap();
+    drop(connection);
+    let before = fs::read(database).unwrap();
+
+    let next = run(
+        home,
+        &[
+            "work",
+            "--actor-id",
+            "schema-refusal",
+            "--session-id",
+            "schema-refusal",
+            "next",
+            "--peek",
+        ],
+    );
+    assert!(!next.status.success());
+    assert_eq!(fs::read(database).unwrap(), before);
+    if expected_code == "different_build_schema" {
+        let text = String::from_utf8(next.stderr).unwrap();
+        assert!(
+            text.contains("use the Engram build that owns this store"),
+            "{text}"
+        );
+        assert!(!text.contains("restore"), "{text}");
+        assert!(!text.contains("re-initialize"), "{text}");
+        assert!(!text.contains("invalid data"), "{text}");
+    }
+
+    for repair in [false, true] {
+        let mut args = vec!["doctor"];
+        if repair {
+            args.push("--repair-projections");
+        }
+        let text_result = run(home, &args);
+        assert!(!text_result.status.success());
+        assert_eq!(fs::read(database).unwrap(), before);
+        args.push("--json");
+        let json_result = run(home, &args);
+        assert!(!json_result.status.success());
+        assert_eq!(fs::read(database).unwrap(), before);
+        let report: Value = serde_json::from_slice(&json_result.stdout).unwrap();
+        assert_eq!(report["code"], expected_code);
+        assert_eq!(
+            report["phase"],
+            if repair { "projection_repair" } else { "open" }
+        );
+        assert_eq!(report["healthy"], false);
+        assert_eq!(report["mutation_enabled"], false);
+        assert_eq!(report["database"], healthy["database"]);
+        if expected_code == "different_build_schema" {
+            assert_unknown_schema_refusal(&report, database, &text_result, &json_result);
+        } else {
+            assert!(!report["findings"].as_array().unwrap().is_empty());
+        }
+        let text = String::from_utf8(text_result.stdout).unwrap();
+        for (key, value) in report.as_object().unwrap() {
+            assert!(
+                text.lines().any(|line| line == format!("{key}: {value}")),
+                "missing {key}"
+            );
+        }
+    }
+}
+
+#[test]
+fn schema_object_namespace_collisions_refuse_through_cli() {
+    for sql in [
+        "CREATE TRIGGER object_fts_data AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE TRIGGER work_catalog_fts_data AFTER INSERT ON work_items BEGIN SELECT 1; END",
+        "CREATE TRIGGER objects_memory_assertion_version AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE TRIGGER objects_work_event_work_id AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE TRIGGER project_memory_state AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE INDEX work_feed_entries_require_work_id ON work_items(priority)",
+    ] {
+        assert_schema_refusal_cli_without_mutation(sql, "different_build_schema");
+    }
+}
+
+#[test]
+fn missing_work_schema_metadata_refuses_through_cli() {
+    assert_schema_refusal_cli_without_mutation(
+        "DROP TABLE work_schema_metadata",
+        "different_build_schema",
+    );
+}
+
+#[test]
+fn orphan_fts_schema_shadows_refuse_through_cli() {
+    for table in ["object_fts", "work_catalog_fts"] {
+        for parent in [
+            String::new(),
+            format!("CREATE TABLE {table}(value TEXT);"),
+            format!("CREATE VIEW {table} AS SELECT 'preserved' AS value;"),
+        ] {
+            let sql = format!(
+                "DROP TABLE {table}; {parent}
+                 CREATE TABLE {table}_data(value TEXT);
+                 INSERT INTO {table}_data VALUES ('preserved');"
+            );
+            assert_schema_refusal_cli_without_mutation(&sql, "different_build_schema");
+        }
+        assert_schema_refusal_cli_without_mutation(
+            &format!("DROP TABLE {table}; CREATE VIRTUAL TABLE {table} USING fts5(value);"),
+            "different_build_schema",
+        );
+    }
+}
+
+#[test]
+fn non_table_fts_schema_shadows_refuse_through_cli() {
+    for table in ["object_fts", "work_catalog_fts"] {
+        for object in [
+            format!("CREATE INDEX {table}_data ON objects(object_kind);"),
+            format!("CREATE TRIGGER {table}_data AFTER INSERT ON objects BEGIN SELECT 1; END;"),
+            format!("CREATE VIEW {table}_data AS SELECT 'preserved' AS value;"),
+        ] {
+            assert_schema_refusal_cli_without_mutation(
+                &format!("DROP TABLE {table}; {object}"),
+                "different_build_schema",
+            );
+        }
+    }
+}
+
+#[test]
+fn sqlite_name_lookalike_cli_refuses_foreign_schema_without_mutation() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let home = directory.path();
+    success(home, &["init"]);
+    let healthy = diagnosis(home);
+    let database = Path::new(healthy["database"].as_str().unwrap());
+    fs::write(database, []).unwrap();
+    let connection = rusqlite::Connection::open(database).unwrap();
+    connection
+        .execute_batch("CREATE TABLE sqliteX_extra(value TEXT); INSERT INTO sqliteX_extra VALUES ('preserved')")
+        .unwrap();
+    drop(connection);
+    let before = fs::read(database).unwrap();
+    for repair in [true, false] {
+        let mut args = vec!["doctor"];
+        if repair {
+            args.push("--repair-projections");
+        }
+        let text_result = run(home, &args);
+        assert!(!text_result.status.success());
+        assert_eq!(fs::read(database).unwrap(), before);
+        args.push("--json");
+        let json_result = run(home, &args);
+        assert!(!json_result.status.success());
+        assert_eq!(fs::read(database).unwrap(), before);
+        let report: Value = serde_json::from_slice(&json_result.stdout).unwrap();
+        assert_eq!(report["code"], "different_build_schema");
+        assert_eq!(report["healthy"], false);
+        assert_eq!(report["mutation_enabled"], false);
+        assert_unknown_schema_refusal(&report, database, &text_result, &json_result);
+    }
+}
+
+#[test]
+fn empty_schema_doctor_repair_refuses_without_initialization() {
+    for empty_sqlite in [false, true] {
+        let directory = crate::test_support::temp_home().unwrap();
+        let home = directory.path();
+        success(home, &["init"]);
+        let healthy = diagnosis(home);
+        let database = Path::new(healthy["database"].as_str().unwrap());
+        fs::write(database, []).unwrap();
+        if empty_sqlite {
+            let connection = rusqlite::Connection::open(database).unwrap();
+            connection
+                .execute_batch("CREATE TABLE transient(value TEXT); DROP TABLE transient;")
+                .unwrap();
+        }
+        let before = fs::read(database).unwrap();
+        assert_eq!(before.is_empty(), !empty_sqlite);
+        let text = run(home, &["doctor", "--repair-projections"]);
+        assert!(!text.status.success());
+        assert_eq!(fs::read(database).unwrap(), before);
+        let json = run(home, &["doctor", "--repair-projections", "--json"]);
+        assert!(!json.status.success());
+        assert_eq!(fs::read(database).unwrap(), before);
+        let report: Value = serde_json::from_slice(&json.stdout).unwrap();
+        assert_eq!(report["code"], "store_not_initialized");
+        assert_eq!(report["phase"], "projection_repair");
+        assert_eq!(report["healthy"], false);
+        assert_eq!(report["mutation_enabled"], false);
+        assert!(report.get("findings").is_none());
+        assert!(report["remedy"].as_str().unwrap().contains("engram init"));
+        let text = String::from_utf8(text.stdout).unwrap();
+        for (key, value) in report.as_object().unwrap() {
+            assert!(text.lines().any(|line| line == format!("{key}: {value}")));
+        }
+    }
+}
+
 #[test]
 fn doctor_cli_refusals_are_json_and_leave_the_store_unchanged() {
     for (damage, code) in [

@@ -13,6 +13,7 @@ pub(super) const WORK_PROJECTION_REFUSAL: &str = "current local-work schema is m
 /// Diagnostic category of an ordinary store-open refusal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StoreOpenRefusalKind {
+    NotInitialized,
     ProjectionRepairRequired,
     DifferentBuildSchema,
     CorruptStore,
@@ -26,11 +27,8 @@ pub enum StoreOpenRefusalKind {
 #[must_use]
 pub fn store_open_refusal_kind(error: &StoreError) -> StoreOpenRefusalKind {
     match error {
-        StoreError::InvalidControlProjection(message)
-            if message == super::DIFFERENT_BUILD_STORE_MESSAGE =>
-        {
-            StoreOpenRefusalKind::DifferentBuildSchema
-        }
+        StoreError::StoreNotInitialized => StoreOpenRefusalKind::NotInitialized,
+        StoreError::DifferentBuildSchema => StoreOpenRefusalKind::DifferentBuildSchema,
         StoreError::InvalidControlProjection(message)
             if message.starts_with(CORE_PROJECTION_REFUSAL_PREFIX) =>
         {

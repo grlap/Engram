@@ -1021,6 +1021,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::WorkLeaseNotFound(_)
         | StoreError::WorkLeaseNotHeld { .. }
         | StoreError::WorkLeaseExpired { .. }
+        | StoreError::DifferentBuildSchema
         | StoreError::InvalidControlProjection(_)
         | StoreError::ControlPolicyConflict { .. }
         | StoreError::OpenWorkObligations { .. } => "engram_store_error",
@@ -1040,6 +1041,15 @@ fn invalid_argument(field: &str, message: &str) -> CallToolResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn different_build_refusal_preserves_mcp_wire_code_and_neutral_message() {
+        let value = store_error_value(&StoreError::DifferentBuildSchema);
+        assert_eq!(value["error"]["code"], "engram_store_error");
+        let message = value["error"]["message"].as_str().unwrap();
+        assert!(message.contains("use the Engram build that owns this store"));
+        assert!(!message.contains("invalid data"));
+    }
 
     #[test]
     fn ambiguous_work_reference_has_a_stable_mcp_error_code() {

@@ -39,6 +39,13 @@ pub(super) fn refusal(
             .unwrap_or_else(|_| super::path_without_windows_verbatim_prefix(database)),
     }));
     match store_open_refusal_kind(error) {
+        StoreOpenRefusalKind::NotInitialized => {
+            value["code"] = json!("store_not_initialized");
+            value["reason"] = json!(error.to_string());
+            value["remedy"] = json!(
+                "Run `engram init` explicitly to initialize the empty store; projection repair does not initialize stores."
+            );
+        }
         StoreOpenRefusalKind::ProjectionRepairRequired => {
             value["code"] = json!("projection_repair_required");
             value["remedy"] = json!("engram doctor --repair-projections");

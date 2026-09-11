@@ -344,8 +344,9 @@ fn prerelease_agent_grant_schema_is_refused_as_a_different_build() {
     let Err(error) = SqliteStore::open(&database) else {
         panic!("obsolete grant schema must refuse");
     };
-    assert!(
-        error.to_string().contains("different Engram build"),
+    assert_eq!(
+        crate::storage::store_open_refusal_kind(&error),
+        crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
         "unexpected refusal: {error}"
     );
 }

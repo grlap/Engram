@@ -8,50 +8,49 @@ use crate::{CanonicalObject, ObjectHash, RestoredRecord, RestoredWorkEvidence};
 #[cfg(test)]
 mod tests;
 
-const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[&str] = &[
-    "work_catalog_fts",
-    "objects_work_evidence_gate_name",
-    "objects_work_event_work_id",
-    "objects_work_source_proposal_work",
-    "objects_work_source_key",
-    "work_items_source_snapshot",
-    "work_feed_entries_work_event_item",
-    "work_feed_entries_environment_cut",
-    "work_blockers_active",
-    "work_claims_holder_live",
-    "work_claims_live",
-    "work_handoff_offer_active",
-    "work_handoff_offer_from_live",
-    "work_handoff_offer_to_live",
-    "work_items_parent",
-    "work_items_assigned",
-    "work_items_catalog_after",
-    "work_items_ready",
-    "work_items_root",
-    "work_item_labels_lookup",
-    "work_prerequisites_reverse",
-    "work_root_execution_active",
-    "work_run_active",
-    "work_run_evidence_run",
-    "work_run_evidence_work",
-    "work_run_obligations_run",
-    "work_restored_records",
-    "work_observations",
-    "work_restored_evidence",
-    "work_restored_evidence_work",
-    "work_restored_evidence_gate",
-    "work_session_state_retention",
-    "work_feed_entries_require_work_id",
+const REBUILDABLE_WORK_SCHEMA_OBJECTS: &[(&str, &str)] = &[
+    ("table", "work_catalog_fts"),
+    ("index", "objects_work_evidence_gate_name"),
+    ("index", "objects_work_event_work_id"),
+    ("index", "objects_work_source_proposal_work"),
+    ("index", "objects_work_source_key"),
+    ("index", "work_items_source_snapshot"),
+    ("index", "work_feed_entries_work_event_item"),
+    ("index", "work_feed_entries_environment_cut"),
+    ("index", "work_blockers_active"),
+    ("index", "work_claims_holder_live"),
+    ("index", "work_claims_live"),
+    ("index", "work_handoff_offer_active"),
+    ("index", "work_handoff_offer_from_live"),
+    ("index", "work_handoff_offer_to_live"),
+    ("index", "work_items_parent"),
+    ("index", "work_items_assigned"),
+    ("index", "work_items_catalog_after"),
+    ("index", "work_items_ready"),
+    ("index", "work_items_root"),
+    ("index", "work_item_labels_lookup"),
+    ("index", "work_prerequisites_reverse"),
+    ("index", "work_root_execution_active"),
+    ("index", "work_run_active"),
+    ("index", "work_run_evidence_run"),
+    ("index", "work_run_evidence_work"),
+    ("index", "work_run_obligations_run"),
+    ("table", "work_restored_records"),
+    ("table", "work_observations"),
+    ("table", "work_restored_evidence"),
+    ("index", "work_restored_evidence_work"),
+    ("index", "work_restored_evidence_gate"),
+    ("index", "work_session_state_retention"),
+    ("trigger", "work_feed_entries_require_work_id"),
 ];
 
 pub(in crate::storage) fn owns_schema_object(name: &str) -> bool {
     name.starts_with("work_") || name.starts_with("objects_work_")
 }
 
-pub(in crate::storage) fn is_rebuildable_schema_object(name: &str) -> bool {
-    name == "work_catalog_fts"
-        || name.starts_with("work_catalog_fts_")
-        || REBUILDABLE_WORK_SCHEMA_OBJECTS.contains(&name)
+pub(in crate::storage) fn is_rebuildable_schema_object(object_type: &str, name: &str) -> bool {
+    (object_type == "table" && super::super::is_fts_schema_object(name, "work_catalog_fts"))
+        || REBUILDABLE_WORK_SCHEMA_OBJECTS.contains(&(object_type, name))
 }
 
 pub(in crate::storage) fn preflight_schema(
@@ -76,12 +75,7 @@ pub(in crate::storage) fn preflight_schema(
         if existing_work_tables == 0 && allow_initialization {
             return Ok(());
         }
-        if existing_work_tables == 0 {
-            return Err(super::super::different_build_store_error());
-        }
-        return Err(StoreError::InvalidWorkProjection(
-            "local-work tables exist without schema metadata".into(),
-        ));
+        return Err(super::super::different_build_store_error());
     }
     if current_work_durable_schema_issue(connection)?.is_some() {
         return Err(super::super::different_build_store_error());
@@ -509,7 +503,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
 ) -> Result<bool, StoreError> {
     preflight_schema(connection, false)?;
     require_current_restored_history_shape(connection)?;
-    for object in REBUILDABLE_WORK_SCHEMA_OBJECTS {
+    for (_, object) in REBUILDABLE_WORK_SCHEMA_OBJECTS {
         super::super::drop_schema_object(connection, object)?;
     }
     connection.execute_batch(
