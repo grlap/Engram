@@ -23,8 +23,10 @@ Fix the Engram work item whose ref is supplied in `$ARGUMENTS`.
    lease/cursor semantics, finalization barriers, and storage integrity.
 6. Add or update behavioral tests that would fail without the fix.
 7. Run the required gates from `AGENTS.md`, then invoke `/review-changes`.
-8. Resolve Critical/High review findings and repeat gates/review. Present lower
-   severities for user judgment.
+8. Fix every justified review finding about the scope this change modifies,
+   Low included, and repeat gates/review, as the engram-repo skill requires.
+   Leave only an existing problem unrelated to that scope for later, as an
+   independent root with a provenance note.
 9. `engram work note` the validation evidence, then `engram work done` with
    what was delivered; it tells you if anything is still owed. Never commit,
    push, or sync without explicit authority.

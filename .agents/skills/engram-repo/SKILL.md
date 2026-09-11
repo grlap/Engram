@@ -255,7 +255,9 @@ Rules that matter:
   for an attributed peer proposal. It is Open and unclaimed; the holder sees
   it in `next`, with their item/run/claim/checkpoint untouched. Required
   children or prerequisite changes need the holder. There is no separate
-  approval or activation word.
+  approval or activation word. An in-scope review finding is not such a
+  proposal: note it on the held item for the holder, as the standing rule for
+  review findings below requires.
 
 - `show REF --notes` selects newest notes/observations, excluding structured
   gate evidence by default, and renders them chronologically within a 12 KiB
@@ -421,17 +423,26 @@ On Windows, use `pwsh -NoProfile -File scripts/test-rust.ps1` instead of
 `scripts/test-rust.sh`.
 
 Use `/review-changes` for the two-agent read-only review after the gates pass.
-After consolidating review findings, deduplicate them in Engram. Only fixes
-whose delivery gates landing belong as required children of its open item.
-An optional child is only for work intentionally finished within the parent's
-execution window whose delivery does not gate landing; nonblocking is not a
-blanket instruction to make findings optional children.
-Findings deferred beyond that slice are independent roots,
-never optional or required children, even if the reviewed item is still open.
+After consolidating review findings, deduplicate them in Engram. This is the
+standing rule for review findings: every justified finding about the scope a
+change modifies, Low included, is fixed before that change closes; it is not
+parked as a new low-priority follow-up. Record such a fix with a note on the
+reviewed item, or as a required child of its open item when a separate item
+helps track it. While another session holds the reviewed item, only that holder
+can add the required child, so a session that does not hold it notes the finding
+on the item for the holder to fix. Never file an in-scope finding as an optional
+child, even when a refused required child suggests one, because optional
+children do not block completion; an optional child is only for work
+intentionally finished within the parent's execution window that is not a
+review finding. Only an existing problem unrelated to that scope is left for
+later, as an independent root, never an optional or required child, even if
+the reviewed item is still open.
 Add a provenance note on each new follow-up naming the reviewed item's reference
-and title, the finding evidence, and the reason for deferral; do not substitute
-a parent or prerequisite edge for provenance. Note matching existing follow-ups
-instead of duplicating them. Informational observations need no work item.
+and title, the finding evidence, and why it lies outside the changed scope; do
+not substitute a parent or prerequisite edge for provenance. Note matching
+existing follow-ups instead of duplicating them; a match records provenance
+only, and an in-scope finding is still fixed before the change closes.
+Informational observations need no work item.
 In pair work, the implementer continues after review consolidation without
 waiting for another prompt: fix in-scope actionable findings, rerun the gates,
 and freeze the corrected input for review. After clean acceptance, record the

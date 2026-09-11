@@ -1,8 +1,9 @@
 # Proposal: Fable and Codex working as a pair
 
 Status: proposal for discussion and a pilot on an existing project. This document
-does not change standing instructions, grant Git or publication authority, or
-claim that the proposed Engram improvements are shipped.
+does not change standing instructions or grant Git or publication authority. Its
+proposals are not claims of shipped behavior; [Shipped Today](shipped.md) remains
+the inventory of installed behavior.
 
 The proposed default is a persistent pair: Fable coordinates the work and
 evaluates its acceptance; Codex implements and validates it. Either can request
@@ -178,11 +179,17 @@ the agreed outcome and records the reasoning for any disagreement or deferral.
 Independent findings are evidence; responsibility for the disposition remains
 visible.
 
-Project policy determines what blocks completion or check-in. Where the user
-has already authorized deferring eligible Medium/Low findings, record each
-follow-up durably and cite its disposition. Severity alone does not waive a
-failed required gate or an unmet acceptance criterion. Ask the user only when a
-decision exceeds the pair's existing authority.
+Project policy determines what blocks completion or check-in. The standing rule
+for review findings lives in the engram-repo skill
+(`.agents/skills/engram-repo/SKILL.md`), not in this proposal: every justified
+finding about the scope a change modifies, Low included, is fixed before that
+change closes, while problems that already existed and are unrelated to that
+scope are identified, deduplicated against existing work, and recorded with
+their provenance without widening the change. Each frozen input is reviewed by
+an independent review pair, and fixes address that round's actual findings; a
+fix that changes the reviewed input is handled as described below. Severity
+alone does not waive a failed required gate or an unmet acceptance criterion.
+Ask the user only when a decision exceeds the pair's existing authority.
 
 An acceptance record identifies the packet or source state, the criteria
 evaluated, the review outcome, and any accepted limitations. Distinguish the
@@ -287,16 +294,16 @@ packet identity, and child dependencies should not exist solely in that summary.
 ## Engram improvements exposed by the workflow
 
 These findings are grounded in the supplied pilot report and inspection of the
-current interfaces. The first row records a shipped response since that report;
-the other rows propose further improvements. This document implements none of
-the product changes. Track
-implementation and deduplicate existing findings in Engram; this table is design
-rationale, not a parallel backlog.
+current interfaces. A row that begins "Shipped since the report" records a
+response shipped after that report; the other rows state the improvement
+proposed at the time. This document implements none of the product changes.
+Track implementation and deduplicate existing findings in Engram; this table is
+design rationale, not a parallel backlog.
 
 | Observed friction | Proposed improvement | Observable acceptance |
 | --- | --- | --- |
 | A reviewer could not attach a ruling to an active item held by its implementer | Shipped since the report: project-bound non-holders can append attributed observations on open work; scope changes and completion retain separate authority | The ruling is visible on the item and project/root feeds with its actual author, while the claim and acceptance stay unchanged; the observation has no checkpoint or completion-seal credit |
-| Filing beneath a claimed item was refused, so the finding went elsewhere and needed a correction message | Make a nonblocking follow-up relationship usable for active claimed work; evaluate the existing optional-child representation, which already adds no completion requirement | A participant records the finding and its subject without a claim transfer or a new completion barrier |
+| Filing beneath a claimed item was refused, so the finding went elsewhere and needed a correction message | Shipped since the report: a peer may add an optional child beneath another session's live-held item as an attributed proposal. That route is for proposals that are not review findings; under the standing rule, a peer notes an in-scope review finding on the held item for its holder to fix | A participant records a proposal or a finding on its subject without a claim transfer; the holder sees a proposal as an optional child in `next` and an in-scope finding as a note on the item, never as an optional child |
 | After compaction, a reviewer had no held implementation items and could not see what it owed | Make durable coordination/review responsibilities discoverable through the normal resume view; evaluate the coordination-item approach before adding a new role system | With no implementation claim, the participant can recover its recorded pending decision, packet reference, waiting condition, and next action |
 | Text `show` exposed only a shortened latest note; JSON was discovered through trial and error | Provide an obvious bounded history/full-detail path in the normal receipt | An agent follows the receipt to the needed note without guessing commands; any remaining omissions are explicit |
 | A bounded list produced an incorrect bug total | Distinguish displayed rows, matching totals when available, and unknown remainder; provide usable continuation or filtering | A partial page cannot reasonably be read as a complete count; exact counting has an explicit path |

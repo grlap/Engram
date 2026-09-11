@@ -155,25 +155,36 @@ Deduplicate overlapping findings and tracker suggestions.
 ## 7. Record findings in Engram from the parent
 
 Only after consolidation, search Engram for each actionable finding
-(`engram work ls --search "<phrase>" --all`) and decide whether the implementer
-will fix it in this slice before completion.
+(`engram work ls --search "<phrase>" --all`). A justified finding about the
+scope this change modifies, Low included, is fixed in this slice before
+completion, as the engram-repo skill (`.agents/skills/engram-repo/SKILL.md`)
+requires. Only a problem that already existed and is unrelated to that scope
+may be left for later.
 
-- A fix is a required child of the open item only when landing depends on it:
-  `engram work add "<finding>" --kind bug --label review --priority
-  <0 for Critical … 3 for Low> --under <item under review>`.
-- An optional child is only for work intentionally completed inside the
-  parent's execution window without gating landing. Do not classify every
-  nonblocking finding as an optional child.
-- A finding the implementer will not fix in this slice is an independent
-  root, even while the reviewed item is open. Use `engram work add
-  "<finding>" --kind bug --label review --priority <0 for Critical … 3 for Low>`
-  without `--under` or `--optional`, then `note` the new root with the reviewed
-  item's reference and title, the review evidence, and why the fix is deferred.
-  Provenance belongs in that note, not in a parent or prerequisite edge.
+- Fix an in-scope finding in this slice. Record the fix with a note on the
+  reviewed item, or file it as a required child when a separate item helps track
+  it: `engram work add "<finding>" --kind bug --label review --priority
+  <0 for Critical … 3 for Low> --under <item under review>`. While another
+  session holds the reviewed item, only that holder can add the required child,
+  so a parent that does not hold it notes the finding on the item for the holder
+  to fix.
+- Never file an in-scope finding as an optional child, even when a refused
+  required child suggests one: optional children do not block completion, so
+  the item could close with the fix still open. An optional child is only for
+  work intentionally completed inside the parent's execution window that is not
+  a review finding.
+- An existing problem unrelated to the changed scope, which this slice does
+  not fix, is an independent root, even while the reviewed item is open. Use
+  `engram work add "<finding>" --kind bug --label review --priority <0 for
+  Critical … 3 for Low>` without `--under` or `--optional`, then `note` the new
+  root with the reviewed item's reference and title, the review evidence, and
+  why it lies outside the changed scope. Provenance belongs in that note, not in
+  a parent or prerequisite edge.
 - If a matching follow-up exists, note the new evidence and provenance on it
-  instead of duplicating it. Do not turn an existing child into an independent
-  root by editing its history; use the explicit detach workflow separately
-  when admitted.
+  instead of duplicating it. A match records provenance only; an in-scope
+  finding is still fixed in this slice. Do not turn an existing child into an
+  independent root by editing its history; use the explicit detach workflow
+  separately when admitted.
 
 Never add children to completed work or reopen it merely to record a finding.
 When evidence rejects a filed finding, note that evidence and cancel with a
@@ -182,8 +193,10 @@ Use `update CHILD --reject "why"` when admitted to compose those two effects
 atomically; otherwise follow the conditional cancel/parent-waive remedy.
 `done` is reserved for satisfied current acceptance, with the successful
 receipt's visible criterion-count assertion and no-criterion-change disclosure.
-An actionable deferred finding needs its independent work item before closure;
-an informational observation that requests no action needs no tracker mutation.
+An actionable finding left for later, which this step allows only for an
+existing problem outside the changed scope, needs its independent work item
+before closure; an informational observation that requests no action needs no
+tracker mutation.
 
 Consolidation itself records evidence, not source changes or implementation
 completion. In pair work, when this writable parent is also the implementer,
