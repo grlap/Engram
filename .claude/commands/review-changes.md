@@ -89,9 +89,32 @@ Run:
 node scripts/review-freeze-fingerprint.mjs --write .git/engram-review-freeze.json
 ```
 
-The snapshot covers HEAD, the index, tracked worktree changes, untracked file
-contents, symlink targets, and executable modes. The file is kept under `.git`
-so it never becomes review input.
+Keep the fingerprint printed by this successful `--write` in the parent's
+review record, independently of the manifest file. Pass that exact value and
+the manifest's absolute path to both reviewers as review context. Retain the
+value until fan-in: a later run or another session can overwrite the manifest.
+Do not replace this saved value with a fingerprint read back from that file.
+
+The snapshot records the canonical Git worktree root and covers HEAD, the
+index, tracked worktree changes, and untracked file contents. A check from
+another worktree or repository refuses with both roots before comparing
+content fingerprints. Running from a subdirectory still checks the whole
+worktree. A manifest without a root is refused; create a new freeze.
+
+Git index executable modes and symlink targets are covered on Windows too.
+Untracked executable-mode changes and filesystem symlink properties remain
+unverified on Windows; the checker reports that limitation on stderr, separate
+from its fingerprint on stdout. Their filesystem tests run on other platforms.
+The newline-filename test is also skipped on Windows because those names are
+not valid there. These skips are not evidence of full Windows coverage.
+
+Keep the manifest outside review input. The relative `.git` path above must
+be used from the main worktree root, not a subdirectory. In a linked worktree,
+`.git` is a file. From any worktree or subdirectory, resolve the manifest with
+`git rev-parse --path-format=absolute --git-path engram-review-freeze.json` and
+pass that absolute path to both `--write` and `--check`. Use an absolute path
+to this script too when invoking it from a subdirectory. The invocation's
+working directory still selects which worktree is checked.
 
 ## 4. Spawn exactly two reviewers
 
@@ -119,8 +142,18 @@ Before accepting reviewer output, run:
 node scripts/review-freeze-fingerprint.mjs --check .git/engram-review-freeze.json
 ```
 
-If it reports drift, stop: the reviewers did not inspect the current input and
-the review must be restarted from the gates.
+Accept the check only when it exits zero and stdout is exactly the fingerprint
+saved from this parent's own `--write`, followed by one newline. Never obtain
+the comparison value from the manifest at check time. If the independently
+saved value is lost, restart from the gates and create a new freeze and review.
+A limitation notice on stderr is separate from that success output. On any
+nonzero exit or unexpected stdout, do not
+accept reviewer output. For a worktree mismatch, rerun the check from the
+frozen worktree with its saved manifest. For an invalid or missing manifest,
+create a new freeze through this workflow, restarting from the gates. If it
+reports content drift, restart from the gates too: the reviewers did not
+inspect the current input. Do not overwrite a failed check's manifest merely
+to accept an earlier review.
 
 Fetch both structured result packets using `termal_get_session_result`.
 Validated structured submissions are authoritative. If a submission is

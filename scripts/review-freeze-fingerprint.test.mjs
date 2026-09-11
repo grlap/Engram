@@ -5,12 +5,13 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { fixtureHome, removeFixtureHomes, closeFixtureClients, tempSnapshot, assertTempClean } from "./test-temp.mjs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test, { after } from "node:test";
 
 const tempBefore = tempSnapshot();
@@ -27,18 +28,29 @@ function repository(root) {
   run("git", ["init", "--quiet"], root);
   run("git", ["config", "user.name", "Engram Test"], root);
   run("git", ["config", "user.email", "engram-test@example.invalid"], root);
+  run("git", ["config", "core.autocrlf", "false"], root);
   writeFileSync(join(root, "tracked.txt"), "baseline\n");
   run("git", ["add", "tracked.txt"], root);
   run("git", ["commit", "--quiet", "-m", "baseline"], root);
 }
 
 function withRepository(callback) {
-  const root = fixtureHome("engram-review-freeze-");
+  // A Unicode parent catches accidental full-path case expansion on Windows.
+  const home = fixtureHome("engram-review-unicode-");
+  const root = join(home, "straße", "engram-review-freeze");
   try {
+    mkdirSync(root, { recursive: true });
     repository(root);
-    callback(root);
+    // Vary only the owned ASCII leaf; Unicode parents are not case aliases.
+    const alias = process.platform === "win32"
+      ? join(dirname(root), basename(root).replace(/[a-z]/gu, (letter) => letter.toUpperCase()))
+      : root;
+    assert.ok(existsSync(alias), "fixture case alias must exist on this filesystem");
+    assert.equal(realpathSync.native(alias), realpathSync.native(root),
+      "fixture case alias must resolve to the same native directory");
+    callback(alias);
   } finally {
-    removeFixtureHomes(root);
+    removeFixtureHomes(home);
   }
 }
 
@@ -83,6 +95,9 @@ test("fixture shutdown attempts every client and retains shutdown failures", asy
 test("fingerprint is stable for unchanged review input", () => {
   withRepository((root) => {
     assert.deepEqual(captureFingerprint(root), captureFingerprint(root));
+    const canonical = realpathSync.native(root);
+    if (process.platform === "win32") assert.notEqual(root, canonical);
+    assert.deepEqual(captureFingerprint(root), captureFingerprint(canonical));
   });
 });
 
@@ -189,5 +204,158 @@ test("CLI exits nonzero when review input drifted", () => {
     );
     assert.equal(result.status, 1);
     assert.match(result.stderr, /review input drifted/u);
+  });
+});
+
+test("a linked worktree freeze refuses another root before comparing identical input", () => {
+  withRepository((root) => {
+    const linked = fixtureHome("engram-review-linked-");
+    try {
+      run("git", ["worktree", "add", "--quiet", "--detach", linked, "HEAD"], root);
+      const snapshot = run("git", ["rev-parse", "--path-format=absolute", "--git-path", "engram-review-freeze.json"], linked).trim();
+      runCli(["--write", snapshot], linked);
+      const frozen = JSON.parse(readFileSync(snapshot, "utf8"));
+      assert.equal(frozen.root, realpathSync.native(linked));
+      assert.equal(frozen.head, captureFingerprint(root).head);
+      assert.equal(frozen.fingerprint, captureFingerprint(root).fingerprint);
+      runCli(["--check", snapshot], linked);
+      assert.throws(() => runCli(["--check", snapshot], root), (error) => {
+        assert.match(error.message, /review worktree mismatch/u);
+        assert.ok(error.message.includes(JSON.stringify(realpathSync.native(linked))));
+        assert.ok(error.message.includes(JSON.stringify(realpathSync.native(root))));
+        assert.doesNotMatch(error.message, /review input drifted/u);
+        return true;
+      });
+      // If capture ran first, a broken index would mask the root refusal.
+      writeFileSync(join(root, ".git", "index"), "invalid fixture index");
+      assert.throws(() => captureFingerprint(root), /git diff/u);
+      const script = fileURLToPath(new URL("./review-freeze-fingerprint.mjs", import.meta.url));
+      const result = spawnSync(process.execPath, [script, "--check", snapshot], {
+        cwd: root, encoding: "utf8",
+      });
+      assert.equal(result.status, 1);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /review worktree mismatch/u);
+      assert.doesNotMatch(result.stderr, /review input drifted|git diff/u);
+    } finally {
+      removeFixtureHomes(linked);
+    }
+  });
+});
+
+test("a freeze refuses an unrelated repository even when content fingerprints match", () => {
+  withRepository((root) => {
+    withRepository((other) => {
+      const snapshot = join(root, ".git", "engram-review-freeze.json");
+      runCli(["--write", snapshot], root);
+      // A matching digest must never override the manifest's worktree identity.
+      const frozen = JSON.parse(readFileSync(snapshot, "utf8"));
+      frozen.fingerprint = captureFingerprint(other).fingerprint;
+      writeFileSync(snapshot, JSON.stringify(frozen));
+      assert.throws(() => runCli(["--check", snapshot], other), (error) => {
+        assert.match(error.message, /review worktree mismatch/u);
+        assert.ok(error.message.includes(JSON.stringify(realpathSync.native(root))));
+        assert.ok(error.message.includes(JSON.stringify(realpathSync.native(other))));
+        return true;
+      });
+    });
+  });
+});
+
+test("subdirectory checks preserve the entire worktree scope", () => {
+  withRepository((root) => {
+    const nested = join(root, "nested");
+    mkdirSync(nested);
+    writeFileSync(join(nested, "inside.txt"), "inside\n");
+    const outside = join(root, "outside.txt");
+    writeFileSync(outside, "outside\n");
+    const snapshot = run("git", ["rev-parse", "--path-format=absolute", "--git-path", "engram-review-freeze.json"], nested).trim();
+    runCli(["--write", snapshot], nested);
+    assert.deepEqual(captureFingerprint(nested), captureFingerprint(root));
+    assert.equal(JSON.parse(readFileSync(snapshot, "utf8")).root, realpathSync.native(root));
+    runCli(["--check", snapshot], root);
+    runCli(["--check", snapshot], nested);
+    writeFileSync(outside, "changed outside the invocation directory\n");
+    assert.throws(() => runCli(["--check", snapshot], nested), /review input drifted/u);
+  });
+});
+
+test("invalid manifests refuse before trying to capture a worktree", () => {
+  withRepository((root) => {
+    const snapshot = join(root, ".git", "engram-review-freeze.json");
+    const frozen = captureFingerprint(root);
+    const invalid = [null, [], {}, { ...frozen, root: undefined },
+      { ...frozen, root: "relative" }, { ...frozen, fingerprint: "bad" },
+      { ...frozen, schemaVersion: 0 }];
+    for (const value of invalid) {
+      writeFileSync(snapshot, JSON.stringify(value));
+      assert.throws(
+        () => runCli(["--check", snapshot], join(root, "absent")),
+        /invalid review freeze manifest:.*create a new freeze/u,
+      );
+    }
+    writeFileSync(snapshot, JSON.stringify({ ...frozen, root: undefined }));
+    const script = fileURLToPath(new URL("./review-freeze-fingerprint.mjs", import.meta.url));
+    const result = spawnSync(process.execPath, [script, "--check", snapshot], {
+      cwd: root, encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /invalid review freeze manifest:.*create a new freeze/u);
+  });
+});
+
+test("index executable mode changes are detected even with core.filemode false", () => {
+  withRepository((root) => {
+    run("git", ["config", "core.filemode", "false"], root);
+    const original = captureFingerprint(root).fingerprint;
+    run("git", ["update-index", "--chmod=+x", "tracked.txt"], root);
+    assert.match(run("git", ["ls-files", "--stage"], root), /^100755 /u);
+    assert.notEqual(captureFingerprint(root).fingerprint, original);
+    run("git", ["update-index", "--chmod=-x", "tracked.txt"], root);
+    assert.equal(captureFingerprint(root).fingerprint, original);
+  });
+});
+
+test("index symlink targets and type changes are detected without filesystem symlinks", () => {
+  withRepository((root) => {
+    run("git", ["config", "core.symlinks", "false"], root);
+    const blob = (target) => execFileSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd: root, encoding: "utf8", input: target,
+    }).trim();
+    const first = blob("tracked.txt");
+    const second = blob("missing.txt");
+    const stage = (mode, hash) => run("git", [
+      "update-index", "--add", "--cacheinfo", mode, hash, "link",
+    ], root);
+    stage("120000", first);
+    assert.match(run("git", ["ls-files", "--stage", "link"], root), /^120000 /u);
+    const original = captureFingerprint(root).fingerprint;
+    stage("120000", second);
+    const changedTarget = captureFingerprint(root).fingerprint;
+    assert.notEqual(changedTarget, original);
+    stage("100644", second);
+    assert.notEqual(captureFingerprint(root).fingerprint, changedTarget);
+    stage("120000", first);
+    assert.equal(captureFingerprint(root).fingerprint, original);
+  });
+});
+
+test("CLI discloses unverified Windows filesystem properties separately from stdout", () => {
+  withRepository((root) => {
+    const script = fileURLToPath(new URL("./review-freeze-fingerprint.mjs", import.meta.url));
+    const snapshot = join(root, ".git", "engram-review-freeze.json");
+    for (const args of [[], ["--write", snapshot], ["--check", snapshot]]) {
+      const result = spawnSync(process.execPath, [script, ...args], {
+        cwd: root, encoding: "utf8",
+      });
+      assert.equal(result.status, 0, result.stderr);
+      if (args.length === 0) assert.equal(JSON.parse(result.stdout).root, realpathSync.native(root));
+      else assert.equal(result.stdout, `${JSON.parse(readFileSync(snapshot, "utf8")).fingerprint}\n`);
+      if (process.platform === "win32") {
+        assert.match(result.stderr, /untracked executable-mode and filesystem symlink properties are unverified on Windows/u);
+        assert.match(result.stderr, /Git index modes and symlink targets are covered separately/u);
+      } else assert.equal(result.stderr, "");
+    }
   });
 });

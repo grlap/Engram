@@ -92,9 +92,16 @@ function hashUntracked(root, hash, path) {
   return { path: normalized, kind: "file", executable };
 }
 
-export function captureFingerprint(startDirectory = process.cwd()) {
+function worktreeRoot(startDirectory) {
   const topLevelResult = git(startDirectory, ["rev-parse", "--show-toplevel"]);
-  const root = realpathSync(topLevelResult.stdout.toString("utf8").trim());
+  return realpathSync.native(topLevelResult.stdout.toString("utf8").trim());
+}
+
+export function captureFingerprint(startDirectory = process.cwd()) {
+  return captureWorktree(worktreeRoot(startDirectory));
+}
+
+function captureWorktree(root) {
   const headResult = git(root, ["rev-parse", "--verify", "HEAD"], {
     allowFailure: true,
   });
@@ -111,6 +118,7 @@ export function captureFingerprint(startDirectory = process.cwd()) {
   const untracked = untrackedEntries(root).map((path) => hashUntracked(root, hash, path));
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    root,
     fingerprint: hash.digest("hex"),
     head,
     untracked,
@@ -130,6 +138,40 @@ function parseArguments(arguments_) {
 
 export function runCli(arguments_, startDirectory = process.cwd()) {
   const options = parseArguments(arguments_);
+  if (process.platform === "win32") {
+    process.stderr.write(
+      "Review freeze limitation: untracked executable-mode and filesystem symlink properties are unverified on Windows; Git index modes and symlink targets are covered separately.\n",
+    );
+  }
+  if (options.mode === "check") {
+    const snapshotPath = resolve(startDirectory, options.path);
+    const expected = JSON.parse(readFileSync(snapshotPath, "utf8"));
+    if (
+      expected === null || typeof expected !== "object" || Array.isArray(expected) ||
+      expected.schemaVersion !== SNAPSHOT_SCHEMA_VERSION ||
+      typeof expected.root !== "string" || !isAbsolute(expected.root) ||
+      typeof expected.fingerprint !== "string" || !/^[a-f0-9]{64}$/u.test(expected.fingerprint)
+    ) {
+      throw new Error("invalid review freeze manifest: expected current schema, absolute root, and SHA-256 fingerprint; create a new freeze");
+    }
+    const root = worktreeRoot(startDirectory);
+    // Root identity is an admission check, not content drift. Do not inspect a
+    // different tree's index or files just because its bytes might match.
+    if (expected.root !== root) {
+      throw new Error(
+        `review worktree mismatch: expected root ${JSON.stringify(expected.root)}, current root ${JSON.stringify(root)}`,
+      );
+    }
+    const actual = captureWorktree(root);
+    if (expected.fingerprint !== actual.fingerprint) {
+      throw new Error(
+        `review input drifted: expected ${expected.fingerprint}, got ${actual.fingerprint}`,
+      );
+    }
+    process.stdout.write(`${actual.fingerprint}\n`);
+    return;
+  }
+
   const actual = captureFingerprint(startDirectory);
   if (options.mode === "print") {
     process.stdout.write(`${JSON.stringify(actual, null, 2)}\n`);
@@ -137,25 +179,11 @@ export function runCli(arguments_, startDirectory = process.cwd()) {
   }
 
   const snapshotPath = resolve(startDirectory, options.path);
-  if (options.mode === "write") {
-    mkdirSync(dirname(snapshotPath), { recursive: true });
-    writeFileSync(snapshotPath, `${JSON.stringify(actual, null, 2)}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    process.stdout.write(`${actual.fingerprint}\n`);
-    return;
-  }
-
-  const expected = JSON.parse(readFileSync(snapshotPath, "utf8"));
-  if (
-    expected.schemaVersion !== SNAPSHOT_SCHEMA_VERSION ||
-    expected.fingerprint !== actual.fingerprint
-  ) {
-    throw new Error(
-      `review input drifted: expected ${expected.fingerprint ?? "<missing>"}, got ${actual.fingerprint}`,
-    );
-  }
+  mkdirSync(dirname(snapshotPath), { recursive: true });
+  writeFileSync(snapshotPath, `${JSON.stringify(actual, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
   process.stdout.write(`${actual.fingerprint}\n`);
 }
 
