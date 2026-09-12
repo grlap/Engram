@@ -666,6 +666,118 @@ fn store_persists_and_enforces_one_host_path_identity_policy() {
 }
 
 #[test]
+fn host_path_policy_open_refusal_never_advises_reinitializing_in_place() {
+    use crate::storage::{StoreOpenRefusalKind, store_open_refusal_kind};
+
+    let directory = crate::test_support::temp_home().expect("temp directory");
+
+    for recorded_case_fold in [false, true] {
+        let recorded = HostPathPolicy {
+            case_fold_paths: recorded_case_fold,
+            windows_alias_rules: false,
+        };
+        let requested = HostPathPolicy {
+            case_fold_paths: !recorded_case_fold,
+            windows_alias_rules: false,
+        };
+        let stored_flag = if recorded_case_fold {
+            "case_fold"
+        } else {
+            "case_sensitive"
+        };
+        let case_database = directory
+            .path()
+            .join(format!("case-mismatch-{stored_flag}.sqlite3"));
+        drop(
+            SqliteStore::open_with_host_path_policy(&case_database, recorded)
+                .expect("bind recorded case policy"),
+        );
+        let case_before = std::fs::read(&case_database).expect("case bytes before");
+        let case_error = SqliteStore::open_with_host_path_policy(&case_database, requested)
+            .err()
+            .expect("case-only mismatch");
+        let case_message = case_error.to_string();
+        assert_eq!(
+            store_open_refusal_kind(&case_error),
+            StoreOpenRefusalKind::PathPolicy {
+                recorded: describe_host_path_policy(recorded),
+                requested: describe_host_path_policy(requested),
+            }
+        );
+        assert!(
+            case_message.contains("); if the project moved "),
+            "{stored_flag}: {case_message}"
+        );
+        assert!(
+            case_message.contains(&format!("use --host-path-policy {stored_flag}")),
+            "{stored_flag}: {case_message}"
+        );
+        assert!(
+            !case_message.contains("re-initialize") && !case_message.contains("reinitialize"),
+            "{stored_flag}: {case_message}"
+        );
+        assert!(
+            !case_message.contains("new location"),
+            "{stored_flag}: {case_message}"
+        );
+        assert_eq!(
+            std::fs::read(&case_database).expect("case bytes after"),
+            case_before
+        );
+    }
+
+    let recorded = HostPathPolicy {
+        case_fold_paths: false,
+        windows_alias_rules: false,
+    };
+    let alias_database = directory.path().join("alias-mismatch.sqlite3");
+    drop(
+        SqliteStore::open_with_host_path_policy(&alias_database, recorded)
+            .expect("bind recorded alias policy"),
+    );
+    let alias_before = std::fs::read(&alias_database).expect("alias bytes before");
+    let alias_requested = HostPathPolicy {
+        case_fold_paths: false,
+        windows_alias_rules: true,
+    };
+    let alias_error = SqliteStore::open_with_host_path_policy(&alias_database, alias_requested)
+        .err()
+        .expect("alias mismatch");
+    let alias_message = alias_error.to_string();
+    assert_eq!(
+        store_open_refusal_kind(&alias_error),
+        StoreOpenRefusalKind::PathPolicy {
+            recorded: describe_host_path_policy(recorded),
+            requested: describe_host_path_policy(alias_requested),
+        }
+    );
+    assert!(
+        alias_message.contains("); if the project moved "),
+        "{alias_message}"
+    );
+    assert!(
+        alias_message.contains("host compatible with the recorded alias rules"),
+        "{alias_message}"
+    );
+    assert!(
+        alias_message.contains("fresh store at a new location"),
+        "{alias_message}"
+    );
+    assert!(
+        !alias_message.contains("--host-path-policy"),
+        "{alias_message}"
+    );
+    assert!(
+        !alias_message.contains("re-initialize") && !alias_message.contains("reinitialize"),
+        "{alias_message}"
+    );
+    assert_eq!(
+        std::fs::read(&alias_database).expect("alias bytes after"),
+        alias_before
+    );
+}
+
+#[test]
 fn backup_copies_a_live_store_and_verifies_the_copy() {
     let directory = crate::test_support::temp_home().expect("temp directory");
     let database = directory.path().join("live.sqlite3");

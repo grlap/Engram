@@ -193,3 +193,94 @@ fn json_file_bom_reaches_all_core_mutation_readers_and_bounded_policy_reader() {
         &json!({"schema_version":1,"rules":[]}),
     );
 }
+
+const CORE_RAW_INPUT_LIMIT: usize = 2 * 1024 * 1024;
+
+fn core_args(operation: &str, work_ref: &str, input_arg: &str) -> Vec<String> {
+    vec![
+        "work".into(),
+        "--actor-id".into(),
+        "input-author".into(),
+        "--session-id".into(),
+        "input-session".into(),
+        "core".into(),
+        operation.into(),
+        "--work-ref".into(),
+        work_ref.into(),
+        "--input".into(),
+        input_arg.into(),
+    ]
+}
+
+fn fixture_open_work(home: &Path) -> String {
+    let plan = success(&run(
+        home,
+        &[
+            "work",
+            "--actor-id",
+            "input-author",
+            "--session-id",
+            "input-session",
+            "core",
+            "propose",
+            "--input",
+            r#"{"kind":"plan","plan":{"idempotency_key":"limit-plan","tasks":[{"key":"root","title":"Limit root","outcome":"Delivered","acceptance":["Delivered"]}],"prerequisites":[]}}"#,
+        ],
+    ));
+    plan["tasks"][0]["short_ref"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn core_update_complete_handoff_refuse_oversized_raw_input() {
+    let temp = test_support::temp_home().unwrap();
+    let home = temp.path();
+    assert!(run(home, &["init"]).status.success());
+    let reference = fixture_open_work(home);
+    let path = home.join("oversized.json");
+    fs::write(&path, vec![b'x'; CORE_RAW_INPUT_LIMIT + 1]).unwrap();
+    let argument = format!("@{}", path.display());
+    for operation in ["update", "complete", "handoff"] {
+        let output = run(
+            home,
+            &core_args(operation, &reference, &argument)
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
+        assert!(
+            !output.status.success(),
+            "{operation} must refuse oversized raw input"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("exceeds") && stderr.contains(&CORE_RAW_INPUT_LIMIT.to_string()),
+            "{operation}: {stderr}"
+        );
+        assert!(
+            !stderr.contains(&format!("invalid work {operation} JSON")),
+            "{operation} must refuse before decode: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn core_update_accepts_exact_raw_input_limit() {
+    let temp = test_support::temp_home().unwrap();
+    let home = temp.path();
+    assert!(run(home, &["init"]).status.success());
+    let reference = fixture_open_work(home);
+    let mut body = json!({"kind":"claim","idempotency_key":"exact-claim"}).to_string();
+    assert!(body.len() < CORE_RAW_INPUT_LIMIT);
+    body = format!("{body}{}", " ".repeat(CORE_RAW_INPUT_LIMIT - body.len()));
+    assert_eq!(body.len(), CORE_RAW_INPUT_LIMIT);
+    let path = home.join("exact.json");
+    fs::write(&path, &body).unwrap();
+    let argument = format!("@{}", path.display());
+    let args: Vec<String> = core_args("update", &reference, &argument);
+    let output = run(home, &args.iter().map(String::as_str).collect::<Vec<_>>());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

@@ -197,11 +197,88 @@ mod tests {
                 Phase::Open,
             );
             assert_eq!(value["kind"], "path_policy");
-            assert_eq!(value["reason"], error.to_string());
+            let message = error.to_string();
+            assert_eq!(value["reason"], message);
             let remedy = value["remedy"].as_str().unwrap();
+            assert!(
+                message.contains("host compatible with the recorded alias rules"),
+                "{message}"
+            );
+            assert!(
+                message.contains("fresh store at a new location"),
+                "{message}"
+            );
+            assert!(!message.contains("--host-path-policy"), "{message}");
+            assert!(
+                !message.contains("re-initialize") && !message.contains("reinitialize"),
+                "{message}"
+            );
             assert!(remedy.contains("host compatible with the recorded alias rules"));
             assert!(remedy.contains("fresh store at a new location"));
             assert!(!remedy.contains("--host-path-policy"));
+            assert!(
+                !remedy.contains("re-initialize") && !remedy.contains("reinitialize"),
+                "{remedy}"
+            );
+            assert_eq!(std::fs::read(&database).unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn path_policy_case_mismatch_names_the_stored_flag_on_store_and_doctor() {
+        let directory = crate::test_support::temp_home().unwrap();
+        for recorded_case_fold in [false, true] {
+            let recorded = engram::HostPathPolicy {
+                case_fold_paths: recorded_case_fold,
+                windows_alias_rules: false,
+            };
+            let requested = engram::HostPathPolicy {
+                case_fold_paths: !recorded_case_fold,
+                windows_alias_rules: false,
+            };
+            let stored_flag = if recorded_case_fold {
+                "case_fold"
+            } else {
+                "case_sensitive"
+            };
+            let database = directory
+                .path()
+                .join(format!("case-policy-{stored_flag}.db"));
+            drop(
+                engram::SqliteStore::open_with_host_path_identity(&database, Some(recorded))
+                    .unwrap(),
+            );
+            let error =
+                engram::SqliteStore::open_with_host_path_identity(&database, Some(requested))
+                    .err()
+                    .unwrap();
+            let before = std::fs::read(&database).unwrap();
+            let value = refusal(
+                &database,
+                &ProjectId("diagnostics".into()),
+                &error,
+                Phase::Open,
+            );
+            let message = error.to_string();
+            let remedy = value["remedy"].as_str().unwrap();
+            let expected = format!("use --host-path-policy {stored_flag}");
+            assert_eq!(value["kind"], "path_policy");
+            assert_eq!(value["reason"], message);
+            assert!(message.contains(&expected), "{stored_flag}: {message}");
+            assert!(remedy.contains(&expected), "{stored_flag}: {remedy}");
+            assert!(
+                !message.contains("re-initialize") && !message.contains("reinitialize"),
+                "{stored_flag}: {message}"
+            );
+            assert!(
+                !remedy.contains("re-initialize") && !remedy.contains("reinitialize"),
+                "{stored_flag}: {remedy}"
+            );
+            assert!(
+                !message.contains("new location"),
+                "{stored_flag}: {message}"
+            );
+            assert!(!remedy.contains("new location"), "{stored_flag}: {remedy}");
             assert_eq!(std::fs::read(&database).unwrap(), before);
         }
     }

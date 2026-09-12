@@ -49,30 +49,24 @@ fn json_file_bom_is_stripped_once_without_changing_inline_or_body_bytes() {
     let plain = body.to_string();
     for source in [&plain, &format!("\u{feff}{plain}")] {
         fs::write(&path, source).unwrap();
-        let unbounded: Value = parse_json_input(&argument).unwrap();
         let bounded: Value = parse_bounded_json_input(&argument, "test", 1024).unwrap();
-        assert_eq!(unbounded, body);
         assert_eq!(bounded, body);
         assert_eq!(
             engram::CanonicalObject::freeze(&bounded).unwrap().bytes(),
             engram::CanonicalObject::freeze(&body).unwrap().bytes()
         );
     }
-    assert_eq!(parse_json_input::<Value>(&plain).unwrap(), body);
     assert_eq!(
         parse_bounded_json_input::<Value>(&plain, "test", 1024).unwrap(),
         body
     );
     let marked = format!("\u{feff}{plain}");
-    assert!(parse_json_input::<Value>(&marked).is_err());
     assert!(parse_bounded_json_input::<Value>(&marked, "test", 1024).is_err());
     for invalid in ["\u{feff}\u{feff}{}", " \u{feff}{}", "\u{feff}{", "\u{feff}"] {
         fs::write(&path, invalid).unwrap();
-        assert!(parse_json_input::<Value>(&argument).is_err());
         assert!(parse_bounded_json_input::<Value>(&argument, "test", 1024).is_err());
     }
     fs::write(&path, [0xef, 0xbb, 0xbf, 0xff]).unwrap();
-    assert!(parse_json_input::<Value>(&argument).is_err());
     assert!(parse_bounded_json_input::<Value>(&argument, "test", 1024).is_err());
 }
 
@@ -89,5 +83,81 @@ fn json_file_bom_counts_toward_the_raw_limit() {
         );
         let error = parse_bounded_json_input::<Value>(&argument, "test", limit - 1).unwrap_err();
         assert!(error.to_string().contains("exceeds"), "{error}");
+    }
+}
+
+struct CountingReader<R> {
+    inner: R,
+    consumed: u64,
+}
+
+impl<R: Read> Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.consumed += n as u64;
+        Ok(n)
+    }
+}
+
+#[test]
+fn bounded_inline_json_refuses_raw_overflow_including_whitespace_and_utf8() {
+    assert_eq!(
+        parse_bounded_json_input::<Value>("0", "test", 1).unwrap(),
+        json!(0)
+    );
+    let whitespace = parse_bounded_json_input::<Value>("0 ", "test", 1).unwrap_err();
+    let whitespace_text = whitespace.to_string();
+    assert!(whitespace_text.contains("exceeds"), "{whitespace_text}");
+    assert!(
+        !whitespace_text.contains("invalid test JSON"),
+        "whitespace overflow must refuse before decode: {whitespace_text}"
+    );
+    assert_eq!(
+        parse_bounded_json_input::<Value>("0 ", "test", 2).unwrap(),
+        json!(0)
+    );
+
+    let ascii = "\"e\"";
+    let utf8 = "\"é\"";
+    assert_eq!(ascii.len(), 3);
+    assert_eq!(utf8.chars().count(), 3);
+    assert_eq!(utf8.len(), 4);
+    assert_eq!(
+        parse_bounded_json_input::<Value>(ascii, "test", 3).unwrap(),
+        json!("e")
+    );
+    let utf8_overflow = parse_bounded_json_input::<Value>(utf8, "test", 3).unwrap_err();
+    let utf8_text = utf8_overflow.to_string();
+    assert!(utf8_text.contains("exceeds"), "{utf8_text}");
+    assert!(
+        !utf8_text.contains("invalid test JSON"),
+        "UTF-8 overflow must refuse before decode: {utf8_text}"
+    );
+    assert_eq!(
+        parse_bounded_json_input::<Value>(utf8, "test", 4).unwrap(),
+        json!("é")
+    );
+}
+
+#[test]
+fn bounded_read_refuses_before_consuming_more_than_cap_plus_one() {
+    let max: u64 = 32;
+    let extra = 64;
+    let source = vec![b'a'; 32 + extra];
+    let mut reader = CountingReader {
+        inner: io::Cursor::new(source),
+        consumed: 0,
+    };
+    let result = read_bounded_bytes(&mut reader, max);
+    assert_eq!(
+        reader.consumed,
+        max + 1,
+        "independent I/O counter: consumed == cap+1 distinguishes take(max+1) from whole-read-then-len"
+    );
+    match result {
+        Err(BoundedReadError::Overflow { consumed }) => {
+            assert_eq!(consumed, max + 1);
+        }
+        other => panic!("expected overflow, got {other:?}"),
     }
 }

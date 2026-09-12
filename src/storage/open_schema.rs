@@ -1882,8 +1882,19 @@ impl SqliteStore {
         if let Some(expected) = expected
             && stored != expected
         {
+            let advice = if stored.windows_alias_rules == expected.windows_alias_rules {
+                let flag = if stored.case_fold_paths {
+                    "case_fold"
+                } else {
+                    "case_sensitive"
+                };
+                format!("use --host-path-policy {flag}")
+            } else {
+                "use a host compatible with the recorded alias rules, or initialize a fresh store at a new location"
+                    .to_owned()
+            };
             return Err(StoreError::InvalidControlSession(format!(
-                "the store's persisted host path policy ({}) differs from this opener's ({}); if the project moved to a different filesystem, supply --host-path-policy matching the store or re-initialize a fresh store",
+                "the store's persisted host path policy ({}) differs from this opener's ({}); if the project moved to a different filesystem, {advice}",
                 describe_host_path_policy(stored),
                 describe_host_path_policy(expected)
             )));

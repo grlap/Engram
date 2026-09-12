@@ -829,6 +829,8 @@ The codes are:
   policies and the flag that selects the recorded case policy for a mismatch.
   An incompatible host alias-rule setting cannot be changed by that flag;
   its remedy points to a compatible host or a fresh store at a new location.
+  Ordinary open's reason uses the same two-branch advice and never tells the
+  operator to re-initialize the existing store in place.
   Operational failures retain this category after open; they never become a
   corruption claim just because a later control diagnostic failed.
 
@@ -1035,10 +1037,12 @@ six-operation JSON protocol stays reachable for hosts and operators as
 `engram work core {next,focus,propose,update,complete,handoff}`, whose
 mutation payloads accept an inline JSON object or `@path`. The `@path` inputs
 of `propose`, `update`, `complete` and `handoff` accept one leading UTF-8 BOM.
-Of these four operations, only `propose` has a raw input limit: 2 MiB,
-including the BOM, checked before removing it. Inline JSON and string
-contents are unchanged. A second leading BOM or
-otherwise invalid JSON is still refused. That host/operator surface retains
+Each of these four operations has the same raw input limit: 2 MiB,
+including whitespace, any file BOM, and the outer envelope, checked before
+decoding. Inline JSON is counted the same way. This is a transport ceiling,
+not a promise that every semantically valid payload fits; oversized JSON is
+refused even when a typed field would otherwise be admissible. A second
+leading BOM or otherwise invalid JSON is still refused. That host/operator surface retains
 the core-only explicit delivery acknowledgement, typed evidence attach, and
 reopen operations alongside typed forms of the ordinary lifecycle
 words. Typed `gate` and atomic `note` are word-only `work_update:gate` and

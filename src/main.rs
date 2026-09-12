@@ -334,6 +334,7 @@ enum ControlPolicyCommand {
 }
 
 const MAX_CONTROL_POLICY_CLI_INPUT_BYTES: u64 = 64 * 1024;
+const MAX_CORE_WORK_JSON_INPUT_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -754,7 +755,7 @@ enum CoreWorkCommand {
         /// Parent to decompose; selects focus first. Omit for a new plan.
         #[arg(long)]
         work_ref: Option<String>,
-        /// JSON object or @path to a JSON file; at most 2 MiB before decoding.
+        /// JSON object or @path to a JSON file; at most 2 MiB raw before decoding.
         #[arg(long)]
         input: String,
     },
@@ -763,7 +764,7 @@ enum CoreWorkCommand {
         /// Short ref or UUID to act on; selects focus first.
         #[arg(long)]
         work_ref: Option<String>,
-        /// JSON object or @path to a JSON file.
+        /// JSON object or @path to a JSON file; at most 2 MiB raw before decoding.
         #[arg(long)]
         input: String,
     },
@@ -772,7 +773,7 @@ enum CoreWorkCommand {
         /// Short ref or UUID to complete; selects focus first.
         #[arg(long)]
         work_ref: Option<String>,
-        /// JSON object or @path to a JSON file.
+        /// JSON object or @path to a JSON file; at most 2 MiB raw before decoding.
         #[arg(long)]
         input: String,
     },
@@ -781,7 +782,7 @@ enum CoreWorkCommand {
         /// Short ref or UUID to hand off; selects focus first.
         #[arg(long)]
         work_ref: Option<String>,
-        /// JSON object or @path to a JSON file.
+        /// JSON object or @path to a JSON file; at most 2 MiB raw before decoding.
         #[arg(long)]
         input: String,
     },
@@ -1627,20 +1628,28 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
             let input = parse_bounded_json_input::<WorkProposeInput>(
                 &input,
                 "work propose",
-                2 * 1024 * 1024,
+                MAX_CORE_WORK_JSON_INPUT_BYTES,
             )?;
             service
                 .work_propose_on(work_ref.as_deref(), input, now)
                 .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
         }
         CoreWorkCommand::Update { work_ref, input } => {
-            let input = parse_json_input::<WorkUpdateInput>(&input)?;
+            let input = parse_bounded_json_input::<WorkUpdateInput>(
+                &input,
+                "work update",
+                MAX_CORE_WORK_JSON_INPUT_BYTES,
+            )?;
             service
                 .work_update_on(work_ref.as_deref(), input, now)
                 .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
         }
         CoreWorkCommand::Complete { work_ref, input } => {
-            let input = parse_json_input::<WorkCompleteInput>(&input)?;
+            let input = parse_bounded_json_input::<WorkCompleteInput>(
+                &input,
+                "work complete",
+                MAX_CORE_WORK_JSON_INPUT_BYTES,
+            )?;
             service
                 .work_complete_on(work_ref.as_deref(), input, now)
                 .and_then(|value| {
@@ -1649,7 +1658,11 @@ fn run_core_work(context: WorkContext, operation: CoreWorkCommand) -> Result<Exi
                 })
         }
         CoreWorkCommand::Handoff { work_ref, input } => {
-            let input = parse_json_input::<WorkHandoffInput>(&input)?;
+            let input = parse_bounded_json_input::<WorkHandoffInput>(
+                &input,
+                "work handoff",
+                MAX_CORE_WORK_JSON_INPUT_BYTES,
+            )?;
             service
                 .work_handoff_on(work_ref.as_deref(), input, now)
                 .and_then(|value| serde_json::to_value(value).map_err(StoreError::from))
@@ -1687,21 +1700,32 @@ where
         .collect()
 }
 
-fn parse_json_input<T: serde::de::DeserializeOwned>(input: &str) -> Result<T> {
-    let file_json;
-    let json = if let Some(path) = input.strip_prefix('@') {
-        file_json = fs::read_to_string(path)
-            .with_context(|| format!("failed to read JSON input {path}"))?;
-        strip_json_file_bom(&file_json)
-    } else {
-        input
-    };
-    serde_json::from_str(json).context("invalid work operation JSON")
-}
-
 /// File transport marker only: remove one prefix, never inline or body content.
 fn strip_json_file_bom(json: &str) -> &str {
     json.strip_prefix('\u{feff}').unwrap_or(json)
+}
+
+#[derive(Debug)]
+enum BoundedReadError {
+    Io(io::Error),
+    Overflow { consumed: u64 },
+}
+
+fn read_bounded_bytes(
+    reader: impl Read,
+    max_bytes: u64,
+) -> std::result::Result<Vec<u8>, BoundedReadError> {
+    let mut bytes = Vec::new();
+    reader
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(BoundedReadError::Io)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(BoundedReadError::Overflow {
+            consumed: bytes.len() as u64,
+        });
+    }
+    Ok(bytes)
 }
 
 fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
@@ -1713,13 +1737,17 @@ fn parse_bounded_json_input<T: serde::de::DeserializeOwned>(
     let json = if let Some(path) = input.strip_prefix('@') {
         let file = fs::File::open(path)
             .with_context(|| format!("failed to open {label} JSON input {path}"))?;
-        let mut bytes = Vec::new();
-        file.take(max_bytes + 1)
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("failed to read {label} JSON input {path}"))?;
-        if bytes.len() as u64 > max_bytes {
-            bail!("{label} JSON input exceeds the {max_bytes}-byte limit");
-        }
+        let bytes = match read_bounded_bytes(file, max_bytes) {
+            Ok(bytes) => bytes,
+            Err(BoundedReadError::Overflow { consumed }) => {
+                debug_assert!(consumed > max_bytes);
+                bail!("{label} JSON input exceeds the {max_bytes}-byte limit");
+            }
+            Err(BoundedReadError::Io(error)) => {
+                return Err(error)
+                    .with_context(|| format!("failed to read {label} JSON input {path}"));
+            }
+        };
         file_json = String::from_utf8(bytes)
             .with_context(|| format!("{label} JSON input {path} is not UTF-8"))?;
         strip_json_file_bom(&file_json)
@@ -1895,6 +1923,20 @@ mod tests {
         assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
         let help = error.to_string();
         assert!(help.contains("assigned,participated"), "{help}");
+    }
+
+    #[test]
+    fn core_mutation_help_teaches_the_shared_raw_input_ceiling() {
+        for operation in ["propose", "update", "complete", "handoff"] {
+            let error =
+                Cli::try_parse_from(["engram", "work", "core", operation, "--help"]).unwrap_err();
+            assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
+            let help = error.to_string();
+            assert!(
+                help.contains("2 MiB raw before decoding"),
+                "{operation}: {help}"
+            );
+        }
     }
 
     #[test]
