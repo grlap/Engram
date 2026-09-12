@@ -220,6 +220,39 @@ at every injection point, and no claim of gating. The coordinator owns plan
 items as an external source (see the last section); it does not need the
 turn-gated channel for an advisory pilot.
 
+### Recover a host delivery after an invalid ACK
+
+This recipe is for a host using explicit acknowledgements through `work core
+next`, not the agent's advisory `next` or startup `next --peek`. Preserve the
+same project, store home and session identity. Serialize the entire sequence
+against other advancing calls and focus changes for that session.
+
+1. Run `engram work core next --sections focus` with neither ACK flag. Read
+   `session.confirmed_project_cursor` as `C` and `session.pending_delivery`.
+   Without `changes` or ACK fields, this does not stage or acknowledge a page;
+   do not infer that it performs no session writes.
+2. Run `engram work core next --sections changes --acknowledge-through C`,
+   substituting that cursor and omitting `--acknowledge-token`. An ACK of the
+   already-confirmed cursor is a no-op. If a pending page exists, its retained
+   change payload, `delivered_through` and `delivery_token` are replayed exactly,
+   even if new feed data has arrived. If none exists, this call stages the next
+   page from `C`. Dynamic advisory response fields need not be identical.
+3. Deliver the returned page before acknowledging it. Pass its exact
+   `delivered_through` and `delivery_token` as `--acknowledge-through` and
+   `--acknowledge-token` on the next core call. Include `--sections changes`
+   to stage the following page, or `--sections focus` to ACK without staging.
+   Repeating the old ACK is idempotent and does not acknowledge a following
+   pending page; that page needs its own returned pair.
+
+A wrong token for an unconfirmed pending page still refuses. Never recover by
+omitting `--acknowledge-through` on a changes call: that implicitly acknowledges
+the pending page, even if its earlier response was lost. If another caller
+advances the session, a stale recovery cursor may refuse; restore serialization
+and re-read it. This procedure does not promise exact replay across concurrent
+advancement or a focus change discarding the staged page, and does not repair
+data that was already acknowledged without delivery. For agent startup
+orientation, retain the non-advancing peek recipe above.
+
 ### Deployment on the target computer
 
 The MADE integration will run on another computer. This repository supplies

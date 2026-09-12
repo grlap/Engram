@@ -224,7 +224,11 @@ byte-consistent database-plus-sidecar copy before retrying inspection.
 
 Pending project-feed cursors and opaque acknowledgement tokens bind the exact
 canonical agent change page that was delivered. Replay returns those stored
-bytes even if work focus or task binding changes. Fresh staging is an exact
+bytes while the page remains pending, including after a task-binding change.
+Changing work focus to a different item discards the pending page without
+advancing the confirmed cursor; the next changes call restages from that cursor.
+See the [serialized host recovery recipe](../host-checklist.md#recover-a-host-delivery-after-an-invalid-ack)
+for the exact-replay boundary. Fresh staging is an exact
 compare-and-swap over the confirmed cursor, absence of another pending page,
 focused work id, and bound task. The current schema also requires verified
 work-id and relation-fingerprint bindings on every work-event feed entry,

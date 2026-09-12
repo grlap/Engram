@@ -1178,9 +1178,29 @@ canonical state stays readable through focus and catalog views. A host that
 needs exact delivery acknowledges explicitly by returning the exact
 `delivered_through` value and opaque `delivery_token` as `acknowledge_through`
 and `acknowledge_token`; both fields are absent when changes were not
-delivered, and a guessed pair is refused without disclosure. Concurrent
-appends wait for the next page. Every successful work response is at most
-12,288 serialized JSON bytes; typed `omissions` report advisory sections
+delivered. A pair matching neither the pending page and token nor the already
+confirmed cursor is refused. To recover after an invalid ACK or lost response,
+serialize this session's delivery and focus-changing calls, then run
+`engram work core next --sections focus` without ACK fields. It reports
+`session.confirmed_project_cursor` and `session.pending_delivery` without
+staging or acknowledging a page (not necessarily without session writes).
+Run `engram work core next --sections changes --acknowledge-through
+<confirmed_project_cursor>` with that cursor and no token: acknowledging the
+confirmed cursor is a no-op, so any retained page is returned with the same
+change payload, `delivered_through` and `delivery_token`, even if later data
+exists. Dynamic advisory fields are not part of that exact replay. After
+delivering the page, acknowledge its returned pair. This may stage the next
+page; repeating the previous ACK does not acknowledge that next page.
+
+Do not drop ACK fields on a changes call to recover: that implicitly
+acknowledges the pending page. The whole recovery sequence requires host-side
+serialization for the same session; a stale cursor may refuse and require a
+fresh cursor read. No exact-replay guarantee covers concurrent advancement or
+a focus change discarding the page. Agent `peek` is a different interface,
+not the host cursor read. See the complete
+[host recovery recipe](../host-checklist.md#recover-a-host-delivery-after-an-invalid-ack).
+Concurrent appends wait for the next page. Every successful work response is at
+most 12,288 serialized JSON bytes; typed `omissions` report advisory sections
 shortened by count or byte budget. A `staged` changes omission instead means
 those dense entries remain unconsumed for the next page; it is not a
 byte-budget discard. `work_focus` is navigation only and never claims/releases

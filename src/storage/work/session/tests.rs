@@ -64,7 +64,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
         .tentative_delivery_token
         .clone()
         .expect("staged delivery token");
-    let expected_refusal = "work delivery acknowledgement does not match the pending page; replay it with work_next (changes selected, no acknowledgement) and acknowledge the delivered_through and delivery_token you receive";
+    let expected_refusal = "work delivery acknowledgement does not match the pending page; for ordinary agent next, retry the next tool or engram work next; explicit-ACK hosts: serialize this session's recovery against other advancing calls and focus changes: run engram work core next --sections focus without acknowledgement, read session.confirmed_project_cursor, then run engram work core next --sections changes --acknowledge-through <confirmed_project_cursor> without a token (a no-op ACK of the confirmed cursor) to replay pending changes; acknowledge the returned delivered_through and delivery_token after delivering that page. Warning: changes without acknowledge_through implicitly acknowledge the pending page";
     for (through, token) in [(head + 1_000, "wrong-token"), (head, "wrong-token")] {
         match store.acknowledge_work_session_delivery(
             &first.project_id,

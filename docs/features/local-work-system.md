@@ -781,11 +781,34 @@ is advisory, canonical state is always readable through focus and catalog
 views, and a response lost between Engram and the agent is not redelivered.
 Concurrent calls from one session return the same staged page rather than
 skipping one. A host that needs exact delivery acknowledges explicitly by
-returning the `delivered_through` value with the opaque `delivery_token`; a
-guessed cursor or token is refused without disclosing either. The tentative
-cursor and token are host-internal until a page is actually returned; a
-response with no change section has neither field. Every successful agent work
-response is at most 12,288 serialized JSON bytes. Advisory truncation is
+returning the `delivered_through` value with the opaque `delivery_token`.
+An ACK that matches neither the pending page and token nor the already
+confirmed cursor is refused. An ACK of the confirmed cursor is idempotent;
+without a token it leaves the pending page untouched and returns it when
+`changes` is selected. Thus, after an invalid ACK or a lost response, the host
+can recover the cursor with `engram work core next --sections focus` (no ACK
+fields), then replay using `engram work core next --sections changes
+--acknowledge-through <confirmed_project_cursor>` without a token. The cursor
+comes from `session.confirmed_project_cursor`; `session.pending_delivery`
+indicates whether a page is retained. The focus-only call does not stage or
+acknowledge delivery, but is not a promise of no session writes. Agent `peek`
+is not this host cursor-recovery interface.
+
+Serialize that whole read/replay/ACK sequence against other advancing calls
+and focus changes for the same session. Replay preserves the retained change
+payload, `delivered_through` and `delivery_token`, not the dynamic advisory
+sections of the response, even when later feed data exists. Only after
+delivering that page should the host acknowledge its returned pair. That ACK
+may stage the following page; repeating the old ACK does not confirm the new
+page. A changes call without `acknowledge_through` instead implicitly confirms
+the pending page: it is advancement, not lost-response recovery. A stale
+cursor may refuse if another caller advanced it; re-read the cursor after
+restoring serialization. Exact replay is not guaranteed outside this boundary
+or after a focus change discards the page. See the
+[host recovery recipe](../host-checklist.md#recover-a-host-delivery-after-an-invalid-ack).
+The tentative cursor and token are host-internal until a page is actually
+returned; a response with no change section has neither field. Every successful
+agent work response is at most 12,288 serialized JSON bytes. Advisory truncation is
 declared through a typed omission manifest, and catalog continuation points at
 the last item actually emitted.
 

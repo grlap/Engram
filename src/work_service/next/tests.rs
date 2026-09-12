@@ -2,6 +2,8 @@ use super::super::test_support::*;
 use super::super::*;
 use crate::domain::SCHEMA_VERSION;
 
+mod recovery;
+
 #[test]
 fn source_notice_actor_fallback_requires_proposal_kind() {
     let nested = serde_json::json!({"notice": {"actor": {
