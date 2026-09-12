@@ -247,14 +247,24 @@ fn fixture_removal_retries_transient_errors_and_returns_persistent_failure() {
         [Duration::from_millis(10), Duration::from_millis(25)]
     );
     let mut failures = 0;
+    let mut persistent_pauses = Vec::new();
     let error = remove_with_retry(
         || {
             failures += 1;
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         },
-        |_| {},
+        |delay| persistent_pauses.push(delay),
     )
     .unwrap_err();
     assert_eq!(failures, 5);
+    assert_eq!(
+        persistent_pauses,
+        [
+            Duration::from_millis(10),
+            Duration::from_millis(25),
+            Duration::from_millis(50),
+            Duration::from_millis(100)
+        ]
+    );
     assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
 }

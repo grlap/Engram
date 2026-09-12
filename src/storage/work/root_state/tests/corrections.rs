@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::{ChildRequirement, DecomposeWorkRequest};
 
 #[test]
 fn root_delta_transition_errors_name_the_broken_invariant_without_writes() {
@@ -150,4 +151,112 @@ fn root_delta_identifier_parser_names_root_execution() {
     let error = super::super::super::query::parse_root_execution_id("not-a-uuid").unwrap_err();
     assert!(error.to_string().contains("invalid root execution id"));
     assert!(!error.to_string().contains("invalid work id"));
+}
+
+fn refuse_header_equality(store: &SqliteStore, id: RootExecutionId, label: &str) {
+    let before = test_database_shape_snapshot(&store.connection).unwrap();
+    let error = projected(&store.connection, id).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            StoreError::InvalidWorkProjection(ref reason)
+                if reason == "root state: header differs from canonical head"
+        ),
+        "{label}: {error}"
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        before,
+        "{label}"
+    );
+}
+
+#[test]
+fn root_projection_scalar_column_drift_refuses_header_equality() {
+    // root_execution_id is the lookup key, so it is not mutated here.
+    // created_at_ms/updated_at_ms are compared by doctor, not this read-time guard.
+    for sql in [
+        "UPDATE work_root_executions SET revision = revision + 1 WHERE root_execution_id = ?1",
+        "UPDATE work_root_executions SET generation = generation + 1 WHERE root_execution_id = ?1",
+        "UPDATE work_root_executions SET project_id = 'drifted-project' WHERE root_execution_id = ?1",
+        "UPDATE work_root_executions SET state = 'completed' WHERE root_execution_id = ?1",
+    ] {
+        let (store, _, id) = fixture();
+        store.connection.execute(sql, [id.0.to_string()]).unwrap();
+        refuse_header_equality(&store, id, sql);
+    }
+
+    // Active root_id is unique, so the FK-valid drift target is a child item
+    // rather than a second root.
+    let (mut store, root, id) = fixture();
+    let other = store
+        .decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: root.work_id,
+                expected_parent_revision: root.revision,
+                children: vec![child(
+                    "drift-target",
+                    ChildRequirement::Optional,
+                    "Drift target",
+                )],
+                prerequisites: Vec::new(),
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "root-id-drift".into(),
+                created_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap()
+        .children
+        .into_iter()
+        .next()
+        .expect("child");
+    store
+        .connection
+        .execute(
+            "UPDATE work_root_executions SET root_id = ?1 WHERE root_execution_id = ?2",
+            rusqlite::params![other.work_id.0.to_string(), id.0.to_string()],
+        )
+        .unwrap();
+    refuse_header_equality(&store, id, "root_id");
+}
+
+#[test]
+fn root_projection_extra_header_field_refuses_unknown_fields() {
+    let (store, _, id) = fixture();
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT header_json FROM work_root_executions WHERE root_execution_id = ?1",
+            [id.0.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut header: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    header
+        .as_object_mut()
+        .expect("header object")
+        .insert("unexpected".into(), serde_json::json!(true));
+    store
+        .connection
+        .execute(
+            "UPDATE work_root_executions SET header_json = ?1 WHERE root_execution_id = ?2",
+            rusqlite::params![serde_json::to_vec(&header).unwrap(), id.0.to_string()],
+        )
+        .unwrap();
+    let before = test_database_shape_snapshot(&store.connection).unwrap();
+    let error = projected(&store.connection, id).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            StoreError::InvalidWorkProjection(ref reason)
+                if reason == "root state: unexpected header fields"
+        ),
+        "{error}"
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).unwrap(),
+        before
+    );
 }

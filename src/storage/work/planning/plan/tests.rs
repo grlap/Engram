@@ -1,5 +1,7 @@
 use super::*;
-use crate::domain::{DisposeWorkRequest, WorkDisposition, WorkPlanPrerequisite, WorkPlanTask};
+use crate::domain::{
+    DisposeWorkRequest, WorkDisposition, WorkItemKind, WorkPlanPrerequisite, WorkPlanTask,
+};
 use crate::storage::work::query::{load_prerequisite_projection_ids, load_work_item};
 use crate::storage::work::test_support::*;
 
@@ -435,5 +437,108 @@ fn atomic_plan_resolved_prerequisite_aliases_refuse_without_writes() {
     store
         .propose_work_plan(&request, &DevelopmentNoopRedactor)
         .expect("one edge");
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn atomic_plan_stores_inherited_and_explicit_child_options() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let mut request = request();
+    request.plan.idempotency_key = "plan-child-options".into();
+    request.plan.prerequisites.clear();
+    request.plan.tasks = vec![
+        {
+            let mut root = task("root", None);
+            root.kind = Some(WorkItemKind::Bug);
+            root.priority = Some(3);
+            root.labels = vec!["Parent".into(), "shared".into()];
+            root.external_ref = Some("ext-root".into());
+            root
+        },
+        {
+            let mut inherited = task("inherited", Some("root"));
+            inherited.labels = vec!["child-a".into(), "shared".into()];
+            inherited
+        },
+        {
+            let mut explicit = task("explicit", Some("root"));
+            explicit.kind = Some(WorkItemKind::Feature);
+            explicit.priority = Some(0);
+            explicit.labels = vec!["child-b".into()];
+            explicit.external_ref = Some("ext-child".into());
+            explicit.requirement = Some(ChildRequirement::Optional);
+            explicit.assigned_to = Some("assignee-a".into());
+            explicit.deferred_until = Some(at(99));
+            explicit
+        },
+        {
+            let mut grandchild = task("grandchild", Some("inherited"));
+            grandchild.labels = vec!["leaf".into()];
+            grandchild
+        },
+        task("from-explicit", Some("explicit")),
+    ];
+    let receipt = store
+        .propose_work_plan(&request, &DevelopmentNoopRedactor)
+        .expect("plan");
+    let item = |key: &str| {
+        let mapping = receipt
+            .tasks
+            .iter()
+            .find(|row| row.key == key)
+            .unwrap_or_else(|| panic!("{key}"));
+        load_work_item(&store.connection, mapping.work_id).expect("stored")
+    };
+    let root = item("root");
+    let inherited = item("inherited");
+    let explicit = item("explicit");
+    let grandchild = item("grandchild");
+    let from_explicit = item("from-explicit");
+
+    assert_eq!(root.kind, WorkItemKind::Bug);
+    assert_eq!(root.priority, 3);
+    assert_eq!(root.labels, vec!["Parent", "shared"]);
+    assert_eq!(root.external_ref.as_deref(), Some("ext-root"));
+
+    assert_eq!(inherited.parent_id, Some(root.work_id));
+    assert_eq!(inherited.kind, WorkItemKind::Task);
+    assert_eq!(inherited.priority, 3);
+    assert_eq!(inherited.child_requirement, ChildRequirement::Required);
+    assert_eq!(inherited.assigned_to, None);
+    assert_eq!(inherited.deferred_until, None);
+    assert_eq!(inherited.labels, vec!["Parent", "child-a", "shared"]);
+    assert_eq!(inherited.external_ref, None);
+
+    assert_eq!(explicit.parent_id, Some(root.work_id));
+    assert_eq!(explicit.kind, WorkItemKind::Feature);
+    assert_eq!(explicit.priority, 0);
+    assert_eq!(explicit.child_requirement, ChildRequirement::Optional);
+    assert_eq!(explicit.assigned_to.as_deref(), Some("assignee-a"));
+    assert_eq!(explicit.deferred_until, Some(at(99)));
+    assert_eq!(explicit.labels, vec!["Parent", "child-b", "shared"]);
+    assert_eq!(explicit.external_ref.as_deref(), Some("ext-child"));
+
+    assert_eq!(grandchild.parent_id, Some(inherited.work_id));
+    assert_eq!(grandchild.kind, WorkItemKind::Task);
+    assert_eq!(grandchild.priority, 3);
+    assert_eq!(grandchild.child_requirement, ChildRequirement::Required);
+    assert_eq!(grandchild.assigned_to, None);
+    assert_eq!(grandchild.deferred_until, None);
+    assert_eq!(
+        grandchild.labels,
+        vec!["Parent", "child-a", "leaf", "shared"]
+    );
+    assert_eq!(grandchild.external_ref, None);
+    assert_eq!(grandchild.root_id, root.work_id);
+
+    assert_eq!(from_explicit.parent_id, Some(explicit.work_id));
+    assert_eq!(from_explicit.kind, WorkItemKind::Task);
+    assert_eq!(from_explicit.priority, 0);
+    assert_eq!(from_explicit.child_requirement, ChildRequirement::Required);
+    assert_eq!(from_explicit.assigned_to, None);
+    assert_eq!(from_explicit.deferred_until, None);
+    assert_eq!(from_explicit.labels, vec!["Parent", "child-b", "shared"]);
+    assert_eq!(from_explicit.external_ref, None);
+    assert_eq!(from_explicit.root_id, root.work_id);
     assert!(store.verify_all().expect("doctor").is_healthy());
 }

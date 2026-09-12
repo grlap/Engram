@@ -484,3 +484,103 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
     assert_eq!(with.ready.len(), without.ready.len());
     assert!(bytes(&with) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
+
+#[test]
+fn verbose_next_keeps_requested_ready_limit_and_omits_compact_navigation() {
+    let (_directory, writer, path, project) = fixture();
+    let requested = MAX_NEXT_READY_CANDIDATES + 2;
+    let mut expected = Vec::new();
+    for index in 0..=requested {
+        let row = writer
+            .add(
+                AddInput {
+                    title: format!("R{index}"),
+                    ..AddInput::default()
+                },
+                at(i64::from(index)),
+            )
+            .unwrap();
+        expected.push(row.value["work"]["short_ref"].as_str().unwrap().to_owned());
+    }
+
+    let compact = AgentVerbs::new(
+        path.clone(),
+        project.clone(),
+        "reader".into(),
+        SessionId("reader-compact".into()),
+        None,
+    )
+    .next(
+        &NextInput {
+            peek: true,
+            verbose: false,
+            limit: Some(requested),
+            ..NextInput::default()
+        },
+        at(100),
+    )
+    .unwrap();
+    let compact_ready = compact.value["ready"].as_array().unwrap();
+    assert_eq!(compact_ready.len(), MAX_NEXT_READY_CANDIDATES as usize);
+    assert_eq!(compact.value["ready_limit"], MAX_NEXT_READY_CANDIDATES);
+    assert_eq!(compact.value["ready_more"], true);
+    assert!(
+        compact
+            .value
+            .get("ready_next")
+            .and_then(Value::as_str)
+            .is_some()
+    );
+    for (row, identity) in compact_ready.iter().zip(expected.iter()) {
+        assert_eq!(row["ref"], *identity);
+        assert!(row.get("work").is_none());
+        assert!(row.get("availability").is_none());
+        assert!(row.get("reason_codes").is_none());
+    }
+
+    for (label, peek) in [("next", false), ("peek", true)] {
+        let receipt = AgentVerbs::new(
+            path.clone(),
+            project.clone(),
+            "reader".into(),
+            SessionId(format!("reader-verbose-{label}")),
+            None,
+        )
+        .next(
+            &NextInput {
+                peek,
+                verbose: true,
+                limit: Some(requested),
+                ..NextInput::default()
+            },
+            at(100),
+        )
+        .unwrap();
+        let ready = receipt.value["ready"].as_array().unwrap();
+        assert_eq!(
+            ready.len(),
+            requested as usize,
+            "{label} verbose ready count"
+        );
+        for (row, identity) in ready.iter().zip(expected.iter()) {
+            assert_eq!(row["work"]["short_ref"], *identity, "{label}");
+            assert_eq!(row["availability"], "ready", "{label}");
+            assert!(row.get("reason_codes").and_then(Value::as_array).is_some());
+            assert!(row.get("why").and_then(Value::as_array).is_some());
+            assert!(row.get("blocker_count").is_some(), "{label}");
+            assert!(row.get("ref").is_none(), "{label}");
+        }
+        assert!(
+            receipt.value.get("ready_limit").is_none(),
+            "{label} must omit ready_limit"
+        );
+        assert!(
+            receipt.value.get("ready_more").is_none(),
+            "{label} must omit ready_more"
+        );
+        assert!(
+            receipt.value.get("ready_next").is_none(),
+            "{label} must omit ready_next"
+        );
+    }
+}
