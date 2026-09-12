@@ -396,6 +396,13 @@ struct WorkProtocolBasis {
 }
 
 impl WorkProtocolBasis {
+    fn completion_run_id(&self) -> Option<WorkRunId> {
+        self.focused_work
+            .as_ref()
+            .and_then(|work| work.active_run_id)
+            .or_else(|| self.claim.as_ref().map(|claim| claim.run_id))
+    }
+
     fn retry_stable(&self) -> Self {
         let mut stable = self.clone();
         if let Some(claim) = stable.claim.as_mut() {
@@ -1031,7 +1038,33 @@ fn completion_basis_refresh_is_safe(
     stored: &WorkProtocolBasis,
     current: &WorkProtocolBasis,
     session_id: &SessionId,
+    unlinked_keyless: bool,
 ) -> bool {
+    if unlinked_keyless {
+        let (Some(stored_work), Some(current_work), Some(current_claim)) = (
+            stored.focused_work.as_ref(),
+            current.focused_work.as_ref(),
+            current.claim.as_ref(),
+        ) else {
+            return false;
+        };
+        // No authority is inferred from this key. Refresh only onto this
+        // session's active claim in the same open run; the mutation still
+        // validates the live fence, evidence, and current acceptance.
+        // An earlier foreign or released claim could only have refused before
+        // core execution. It must not poison this session's later valid retry.
+        return stored_work.work_id == current_work.work_id
+            && stored_work.lifecycle == WorkLifecycle::Open
+            && current_work.lifecycle == WorkLifecycle::Open
+            && stored.completion_run_id() == Some(current_claim.run_id)
+            && current_work.active_run_id == Some(current_claim.run_id)
+            && current_claim.work_id == current_work.work_id
+            && current_claim.holder == *session_id
+            && current_claim.state == WorkClaimState::Active
+            && stored.claim.as_ref().is_none_or(|claim| {
+                claim.work_id == stored_work.work_id && claim.run_id == current_claim.run_id
+            });
+    }
     let (Some(stored_work), Some(current_work), Some(stored_claim), Some(current_claim)) = (
         stored.focused_work.as_ref(),
         current.focused_work.as_ref(),

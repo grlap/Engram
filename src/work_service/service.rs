@@ -278,6 +278,20 @@ impl LocalWorkService {
         if protocol_operation == REJECT_PROTOCOL_OPERATION {
             return self.rejection_idempotency_key(basis, intent.hash());
         }
+        if protocol_operation == "work_complete" {
+            // Unlinked keyless completion belongs to one run: sealing keeps
+            // its identity, while reopen/new run makes the same intent fresh.
+            // A runless restored item uses None until a claim bootstraps it.
+            let identity = CanonicalObject::freeze(&serde_json::json!({
+                "project": self.project_id,
+                "session": self.session_id,
+                "operation": protocol_operation,
+                "work": basis.focused_work.as_ref().map(|work| work.work_id),
+                "run": basis.completion_run_id(),
+                "intent": intent.hash(),
+            }))?;
+            return Ok(format!("completion:{}", identity.hash()));
+        }
         let basis_object = CanonicalObject::freeze(&basis.retry_stable())?;
         let object = CanonicalObject::freeze(&WorkDerivedKey {
             project_id: &self.project_id,

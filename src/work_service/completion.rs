@@ -38,7 +38,10 @@ impl LocalWorkService {
         links::validate_shape(&input)?;
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
-        let basis = self.protocol_basis(&store, true, false, target, now)?;
+        // The work and retained claim jointly identify the run, including
+        // after sealing. Do not combine two cuts across a concurrent reopen.
+        let basis = store
+            .work_read_snapshot(|store| self.protocol_basis(store, true, false, target, now))?;
         let intent = self.protocol_intent(&input);
         let raw_key = if !input.links.is_empty() && input.idempotency_key.trim().is_empty() {
             // A positional link already carries an explicit read basis. Its
@@ -196,7 +199,12 @@ impl LocalWorkService {
             retry_stable_basis_matches(attempt.basis_matches, attempt.basis.as_ref(), &basis)?;
         if !basis_matches
             && stored_basis.as_ref().is_some_and(|stored| {
-                completion_basis_refresh_is_safe(stored, &basis, &self.session_id)
+                completion_basis_refresh_is_safe(
+                    stored,
+                    &basis,
+                    &self.session_id,
+                    input.links.is_empty() && input.idempotency_key.trim().is_empty(),
+                )
             })
         {
             let expected_basis = attempt.basis.as_ref().ok_or_else(|| {
@@ -245,6 +253,16 @@ impl LocalWorkService {
                 criterion: None,
                 reason: "the pending completion basis changed; read show and reconcile the links before a new intent",
             });
+        }
+        if !basis_matches
+            && input.links.is_empty()
+            && input.idempotency_key.trim().is_empty()
+            && let Some(work) = basis.focused_work.as_ref()
+        {
+            // A refused refresh grants no authority and changes no pending row.
+            // Preserve the claim guidance a fresh keyless attempt would return,
+            // rather than asking its caller to supply a different derived key.
+            self.live_protocol_claim(&basis, work, now)?;
         }
         ensure_protocol_basis(basis_matches, "work_complete", &raw_key, false)?;
         let work = basis.focused_work.clone().ok_or_else(|| {

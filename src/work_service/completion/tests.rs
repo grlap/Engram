@@ -4,6 +4,7 @@ use crate::WorkGraphSnapshotRecordPayload;
 use crate::verbs::{AgentVerbs, DoneInput, UpdateAction, UpdateInput};
 use chrono::Duration;
 
+mod identity;
 mod restored;
 
 #[test]

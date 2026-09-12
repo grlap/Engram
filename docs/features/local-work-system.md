@@ -848,6 +848,21 @@ If that CAS loses to a concurrent refresh or finisher after the strict basis
 comparison passed, the same `work_decomposition_retry_conflict` names the parent.
 Inspect the parent and its existing children; reuse the already-created child
 when present, and add new work only for a genuinely different child intent.
+Unlinked keyless completion instead binds project, session, work, run, and
+canonical intent: sealing retains that identity, while reopen/new run makes
+the same intent a new attempt under current authority, never replay of the old
+completion. The run comes from the active run or retained historical claim;
+without either it is absent until claiming bootstraps a run and a new key.
+A pending unlinked attempt in the same open run may refresh onto this session's
+active claim and current work revision, including after a refusal with no
+claim, a released claim, an expired own claim, or a foreign-held claim followed
+by legitimate same-run recovery. Refresh onto a currently foreign-held claim
+still refuses; live authority, evidence, and acceptance are rechecked.
+When refresh is refused, current claim-authority refusals take precedence over
+a basis conflict, just as for a fresh intent; the pending row and its basis stay
+unchanged. Explicit-key and linked-completion conflicts are unaffected.
+Explicit keys and linked completion retain their
+existing retry and read-basis rules.
 Keyless claim is an explicit
 exception: each call renews the same live claim, or claims again after expiry
 under the ordinary readiness and recovery checks. A fresh completion call against work that is already sealed
