@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import test, { after } from "node:test";
+import { registerRootProbeTests } from "./root-probe-harness.mjs";
 
 const tempBefore = tempSnapshot();
 after(() => assertTempClean(tempBefore));
@@ -1733,3 +1734,5 @@ test("blank asserted work identities are refused at the shared service boundary"
     removeFixtureHomes(engramHome);
   }
 });
+
+registerRootProbeTests(test);

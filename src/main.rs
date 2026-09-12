@@ -47,9 +47,11 @@ struct Cli {
     /// Host-local Engram data directory (or set `ENGRAM_HOME`).
     #[arg(long)]
     home: Option<PathBuf>,
-    /// Filesystem identity of the project root. Omit to probe the root's real
-    /// filesystem; supply it when probing is impossible or the host knows
-    /// better. Unresolved identity refuses path leases instead of guessing.
+    /// Filesystem identity of the project root for host path-bearing commands
+    /// (init, doctor, control, authority, control-policy). Omit to probe the
+    /// root's real filesystem; supply it when probing is impossible or the
+    /// host knows better. Agent work, MCP, graph, backup, restore and import
+    /// do not probe. Unresolved identity refuses path leases instead of guessing.
     #[arg(long, env = "ENGRAM_HOST_PATH_POLICY", value_enum)]
     host_path_policy: Option<HostPathPolicyArg>,
     #[command(subcommand)]
@@ -823,6 +825,23 @@ fn main() -> Result<ExitCode> {
     }
 }
 
+fn command_resolves_host_path_identity(command: &Command) -> bool {
+    match command {
+        Command::Init { .. }
+        | Command::Doctor { .. }
+        | Command::Control { .. }
+        | Command::Authority { .. }
+        | Command::ControlPolicy { .. } => true,
+        Command::Migration { .. }
+        | Command::Import { .. }
+        | Command::Work { .. }
+        | Command::Mcp { .. }
+        | Command::Graph { .. }
+        | Command::Backup { .. }
+        | Command::Restore { .. } => false,
+    }
+}
+
 #[tokio::main]
 #[allow(
     clippy::too_many_lines,
@@ -858,15 +877,12 @@ async fn run_cli() -> Result<ExitCode> {
             return Err(error);
         }
     };
-    // Peek and intake reads must not create a filesystem-probe marker.
-    // Intake never consumes host-control path identity, including on apply.
-    let identity = if matches!(&cli.command, Command::Import { .. })
-        || matches!(&cli.command, Command::Work { operation, .. }
-            if matches!(operation.as_ref(), WorkCommand::Next { peek: true, .. }))
-    {
-        None
-    } else {
+    // Only commands that open with host-path identity may probe the project
+    // root. Agent work, MCP, graph, backup, restore and import discard it.
+    let identity = if command_resolves_host_path_identity(&cli.command) {
         resolve_host_path_identity(&root, cli.host_path_policy)
+    } else {
+        None
     };
     match cli.command {
         Command::Migration { operation } => return bin_support::migration::run(&operation),
@@ -1888,6 +1904,10 @@ struct WorkUpdateArgs {
 #[cfg(test)]
 #[path = "bin_support/input_tests.rs"]
 mod input_tests;
+
+#[cfg(test)]
+#[path = "bin_support/host_path_routing_tests.rs"]
+mod host_path_routing_tests;
 
 #[cfg(test)]
 mod tests {

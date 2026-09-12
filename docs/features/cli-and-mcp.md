@@ -1543,11 +1543,14 @@ segments, for example:
 
 The matching `turn_evaluate` supplies exact or tree `resource_intents` beneath
 that subject. The core rejects a different embedded project id and
-NFC-normalizes every segment. The CLI resolves the project root's filesystem
-identity before opening the store: `--host-path-policy case_fold|case_sensitive`
+NFC-normalizes every segment. Path-bearing host commands (`init`, `doctor`, `control`, `authority`,
+`control-policy`) resolve the project root's filesystem identity before
+opening the store: `--host-path-policy case_fold|case_sensitive`
 (or `ENGRAM_HOST_PATH_POLICY`) when the host knows it, otherwise a probe that
 writes one uniquely named file into the project root and looks it up under
-the opposite case. The first resolved opener persists that policy; later
+the opposite case. Agent work words, MCP startup, graph, backup, restore and
+import do not run that probe; they still perform their ordinary store and
+file I/O. The first resolved opener persists that policy; later
 resolved openers must present the same one, and a mismatch names both. An
 opener that could not resolve the identity (unwritable or missing root) still
 reads and tracks work, but every path lease is refused with
