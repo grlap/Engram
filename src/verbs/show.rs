@@ -319,6 +319,8 @@ pub(super) struct ShowReceiptValue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) children_omitted: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) children_navigation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) child_obligations: Option<ShowChildObligations>,
     pub(super) prerequisites: Vec<ShowRelation>,
     pub(super) handoffs: Vec<ShowHandoff>,
@@ -341,6 +343,10 @@ pub(super) struct ShowSource {
     notices_omitted: usize,
     latest_notice_at: Option<DateTime<Utc>>,
     detail: String,
+}
+
+fn children_all_navigation(parent_ref: &str) -> String {
+    format!("engram work ls --under {parent_ref} --all")
 }
 
 fn source_detail(source: &crate::domain::WorkSourceKey) -> String {
@@ -556,8 +562,13 @@ pub(super) fn show_lines(
     }
     let children_omitted = view.child_count.saturating_sub(view.children.len());
     if !view.children.is_empty() || children_omitted > 0 {
+        let navigation = (children_omitted > 0).then(|| children_all_navigation(&work.short_ref));
         if view.children.is_empty() {
-            lines.push(format!("children: {children_omitted} not shown"));
+            let mut line = format!("children: {children_omitted} not shown");
+            if let Some(command) = &navigation {
+                let _ = write!(line, "; {command}");
+            }
+            lines.push(line);
         } else {
             let mut children = view
                 .children
@@ -567,6 +578,9 @@ pub(super) fn show_lines(
                 .join(", ");
             if children_omitted > 0 {
                 let _ = write!(children, " (+{children_omitted} more)");
+                if let Some(command) = &navigation {
+                    let _ = write!(children, "; {command}");
+                }
             }
             lines.push(format!("children: {children}"));
         }
@@ -774,6 +788,8 @@ pub(super) fn show_receipt_value(
         children: view.children.iter().map(show_relation).collect(),
         children_omitted: (view.child_count > view.children.len())
             .then(|| view.child_count - view.children.len()),
+        children_navigation: (view.child_count > view.children.len())
+            .then(|| children_all_navigation(&work.short_ref)),
         child_obligations: view
             .child_obligations
             .as_ref()

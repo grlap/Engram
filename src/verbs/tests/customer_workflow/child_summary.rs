@@ -102,6 +102,72 @@ fn finish(verbs: &AgentVerbs, work: &str, now: i64) {
 }
 
 #[test]
+fn show_omitted_generic_children_name_the_all_children_listing() {
+    let (_directory, verbs, _, _) = fixture();
+    let parent = add(&verbs, "Parent with omitted children", None, false, 0);
+    for index in 1..=8 {
+        add(
+            &verbs,
+            &format!("Open optional {index}"),
+            Some(&parent),
+            true,
+            index,
+        );
+    }
+    let terminal = add(&verbs, "Terminal optional", Some(&parent), true, 9);
+    finish(&verbs, &terminal, 10);
+    let receipt = verbs.show(&parent, at(12)).unwrap();
+    let navigation = format!("engram work ls --under {parent} --all");
+    assert_eq!(receipt.value["children"].as_array().unwrap().len(), 8);
+    assert_eq!(receipt.value["children_omitted"], 1);
+    assert_eq!(receipt.value["children_navigation"], navigation);
+    let text = receipt.text();
+    let children_line = text
+        .lines()
+        .find(|line| line.starts_with("children:"))
+        .expect("children line");
+    assert!(children_line.contains(&navigation), "{children_line}");
+    assert!(
+        receipt.value["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["short_ref"] != terminal)
+    );
+    for key in ["required_owed", "open_optional"] {
+        let items = receipt.value["child_obligations"][key]["items"]
+            .as_array()
+            .unwrap();
+        assert!(
+            items.iter().all(|row| row["ref"] != terminal),
+            "{key} must not reveal the terminal optional"
+        );
+    }
+    let mut input = LsInput {
+        under: Some(parent),
+        all: true,
+        ..LsInput::default()
+    };
+    let mut found = false;
+    for _ in 0..8 {
+        let listed = verbs.ls(&input, at(13)).unwrap();
+        found |= listed.value["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["ref"] == terminal);
+        match listed.value["after"].as_str() {
+            Some(after) => input.after = Some(after.to_owned()),
+            None => break,
+        }
+    }
+    assert!(
+        found,
+        "equivalent native ls --under PARENT --all must reach the omitted terminal optional"
+    );
+}
+
+#[test]
 fn show_child_summary_counts_the_complete_set_not_the_visible_child_prefix() {
     let (_directory, verbs, path, project) = fixture();
     let parent = add(&verbs, "Parent", None, false, 0);
@@ -132,6 +198,10 @@ fn show_child_summary_counts_the_complete_set_not_the_visible_child_prefix() {
         let receipt = verbs.show_with_notes(&parent, notes, at(20)).unwrap();
         assert_eq!(receipt.value["children"].as_array().unwrap().len(), 8);
         assert_eq!(receipt.value["children_omitted"], 10);
+        assert_eq!(
+            receipt.value["children_navigation"],
+            format!("engram work ls --under {parent} --all")
+        );
         assert!(
             receipt.value["children"]
                 .as_array()

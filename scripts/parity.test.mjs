@@ -26,6 +26,71 @@ const MAX_COMMANDS = 3;
 const MAX_FIELDS = 3;
 const HASH = /\b[0-9a-f]{64}\b/u;
 
+/**
+ * Test oracle for the claim clock the receipts render. Same UTC day as `now`
+ * prints `HH:MM UTC`; a different day prints `YYYY-MM-DD HH:MM UTC`.
+ * Inputs are ISO-8601 instants. The renderer stays in Rust; `now` is the
+ * rendering instant (the note), never a claim-start reconstructed from TTL.
+ */
+function claimExpiryClock(heldUntil, now) {
+  const expiry = new Date(heldUntil);
+  const current = new Date(now);
+  if (Number.isNaN(expiry.getTime()) || Number.isNaN(current.getTime())) {
+    throw new Error(`invalid claim clock inputs: ${heldUntil} / ${now}`);
+  }
+  const expiryIso = expiry.toISOString();
+  const clock = `${expiryIso.slice(11, 16)} UTC`;
+  if (expiryIso.slice(0, 10) === current.toISOString().slice(0, 10)) {
+    return clock;
+  }
+  return `${expiryIso.slice(0, 10)} ${clock}`;
+}
+
+function utcDay(instant) {
+  return new Date(instant).toISOString().slice(0, 10);
+}
+
+function daysCoveredByBracket(earliestNow, latestNow) {
+  const earliest = new Date(earliestNow);
+  const latest = new Date(latestNow);
+  if (
+    Number.isNaN(earliest.getTime()) ||
+    Number.isNaN(latest.getTime()) ||
+    latest < earliest
+  ) {
+    throw new Error(`invalid note bracket: ${earliestNow} / ${latestNow}`);
+  }
+  const days = [];
+  const cursor = new Date(`${utcDay(earliestNow)}T00:00:00.000Z`);
+  const end = utcDay(latestNow);
+  while (utcDay(cursor) <= end) {
+    days.push(utcDay(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return days;
+}
+
+/** Clocks the renderer may emit if `now` falls anywhere in [earliest, latest]. */
+function noteClockCandidates(heldUntil, earliestNow, latestNow) {
+  return daysCoveredByBracket(earliestNow, latestNow).map((day) =>
+    claimExpiryClock(heldUntil, `${day}T12:00:00.000Z`),
+  );
+}
+
+function assertHeldUntilClock(text, heldUntil, earliestNow, latestNow) {
+  const line = text.split(/\r?\n/u)[0];
+  const matched = line.match(/\(held by you until ([^)]+)\)/u);
+  assert.ok(matched, text);
+  const actual = matched[1];
+  const allowed = noteClockCandidates(heldUntil, earliestNow, latestNow);
+  assert.ok(
+    allowed.includes(actual),
+    `${actual} not in ${JSON.stringify(allowed)} for ${heldUntil} [${earliestNow}, ${latestNow}]\n${text}`,
+  );
+  const hhmm = new Date(heldUntil).toISOString().slice(11, 16);
+  assert.ok(actual.endsWith(`${hhmm} UTC`), actual);
+}
+
 function shortRef(workId) {
   assert.match(workId, UUID);
   return `w-${workId.replaceAll("-", "").slice(20)}`;
@@ -1281,6 +1346,63 @@ test("list words stay compact while verbose and update metadata remain explicit"
   }
 });
 
+test("claim expiry clock oracle rejects the wrong date shape and time", () => {
+  const sameDayHeld = "2026-01-15T16:45:00.000Z";
+  const sameDayNow = "2026-01-15T15:00:00.000Z";
+  assert.equal(claimExpiryClock(sameDayHeld, sameDayNow), "16:45 UTC");
+  assert.notEqual(claimExpiryClock(sameDayHeld, sameDayNow), "16:46 UTC");
+  assert.notEqual(
+    claimExpiryClock(sameDayHeld, sameDayNow),
+    "2026-01-15 16:45 UTC",
+  );
+
+  const crossHeld = "2026-01-16T00:10:00.000Z";
+  const crossNow = "2026-01-15T23:50:00.000Z";
+  assert.equal(claimExpiryClock(crossHeld, crossNow), "2026-01-16 00:10 UTC");
+  assert.notEqual(claimExpiryClock(crossHeld, crossNow), "00:10 UTC");
+  assert.notEqual(
+    claimExpiryClock(crossHeld, crossNow),
+    "2026-01-15 00:10 UTC",
+  );
+  assert.notEqual(
+    claimExpiryClock(crossHeld, crossNow),
+    "2026-01-16 00:11 UTC",
+  );
+
+  // Claim 23:59:59, note 00:00:01, expiry 00:59:59: the note instant, not a
+  // claim-start reconstructed from the default TTL, selects the date.
+  const midnightExpiry = "2026-01-16T00:59:59.000Z";
+  const claimAt = "2026-01-15T23:59:59.000Z";
+  const noteAt = "2026-01-16T00:00:01.000Z";
+  assert.equal(claimExpiryClock(midnightExpiry, noteAt), "00:59 UTC");
+  assert.equal(claimExpiryClock(midnightExpiry, claimAt), "2026-01-16 00:59 UTC");
+  assert.notEqual(
+    claimExpiryClock(midnightExpiry, claimAt),
+    claimExpiryClock(midnightExpiry, noteAt),
+  );
+  const reconstructedClaim = new Date(
+    new Date(midnightExpiry).getTime() - 3_600_000,
+  ).toISOString();
+  assert.equal(reconstructedClaim.slice(0, 19), "2026-01-15T23:59:59");
+  assert.notEqual(
+    claimExpiryClock(midnightExpiry, reconstructedClaim),
+    "00:59 UTC",
+  );
+  assert.deepEqual(noteClockCandidates(midnightExpiry, noteAt, noteAt), [
+    "00:59 UTC",
+  ]);
+  assert.deepEqual(noteClockCandidates(midnightExpiry, claimAt, noteAt), [
+    "2026-01-16 00:59 UTC",
+    "00:59 UTC",
+  ]);
+  assert.equal(
+    noteClockCandidates(sameDayHeld, sameDayNow, sameDayNow).includes(
+      "2026-01-15 16:45 UTC",
+    ),
+    false,
+  );
+});
+
 test("done says what is owed and exits 2 when the item cannot seal yet", (t) => {
   const engramHome = fixtureHome("engram-parity-owed-", t);
   const actor = "parity-agent";
@@ -1315,19 +1437,30 @@ test("done says what is owed and exits 2 when the item cannot seal yet", (t) => 
     const observed = run([...hostContext, "show", ref, "--json"]);
     assert.equal(observed.status, 0, observed.stderr);
     assert.equal(JSON.parse(observed.stdout).notes.at(-1).non_holder, true);
-    assert.equal(run([...hostContext, "claim", ref]).status, 0);
+    const claimed = run([...hostContext, "claim", ref, "--json"]);
+    assert.equal(claimed.status, 0, claimed.stderr);
+    assert.equal(typeof JSON.parse(claimed.stdout).claim.held_until, "string");
     // No execution evidence or summary: the observation supplies no run credit.
     const bare = run([...hostContext, "done"]);
     assert.notEqual(bare.status, 0);
     assert.match(bare.stderr, /nothing has been noted for this execution yet/u);
     assert.match(bare.stderr, new RegExp(`engram work done ${ref} "…"`, "u"));
     assert.doesNotMatch(bare.stdout + bare.stderr, HASH);
+    const beforeNote = new Date().toISOString();
     const noted = run([...hostContext, "note", "found the missing piece", "--ref", "src/lib.rs"]);
+    const afterNote = new Date().toISOString();
     assert.equal(noted.status, 0, noted.stderr);
-    assert.match(
+    const shown = run([...hostContext, "show", ref, "--json"]);
+    assert.equal(shown.status, 0, shown.stderr);
+    const heldUntil = JSON.parse(shown.stdout).held_until;
+    assert.equal(typeof heldUntil, "string");
+    assert.ok(
+      noted.stdout.startsWith(
+        `noted on ${ref} "Needs a note first": found the missing piece (held by you until `,
+      ),
       noted.stdout,
-      /^noted on w-[0-9a-f]{12} "Needs a note first": found the missing piece \(held by you until (?:\d{4}-\d{2}-\d{2} )?\d{2}:\d{2} UTC\)/u,
     );
+    assertHeldUntilClock(noted.stdout, heldUntil, beforeNote, afterNote);
     assert.doesNotMatch(noted.stdout, HASH);
     const done = run([...hostContext, "done"]);
     assert.equal(done.status, 0, done.stderr);

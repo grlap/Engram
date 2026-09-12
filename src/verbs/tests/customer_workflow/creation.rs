@@ -225,6 +225,141 @@ fn phoenix_add_initial_notes_cover_roots_children_and_peer_proposals() {
     assert!(store.verify_all().expect("integrity").is_healthy());
 }
 
+#[test]
+fn peer_proposal_add_receipt_offers_show_child_and_show_parent() {
+    let (_directory, owner, database, project) = fixture();
+    let peer = AgentVerbs::new(
+        database.clone(),
+        project,
+        "peer".into(),
+        SessionId("peer".into()),
+        None,
+    );
+    let parent = add(&owner, "Held parent", None, false, 0);
+    owner
+        .claim(
+            ClaimInput {
+                work_ref: parent.clone(),
+                ttl_seconds: None,
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("hold parent");
+
+    let root = owner
+        .add(
+            AddInput {
+                title: "Own root".into(),
+                ..AddInput::default()
+            },
+            at(2),
+        )
+        .expect("own root");
+    let root_ref = root.value["work"]["short_ref"].as_str().unwrap();
+    assert!(
+        root.next
+            .iter()
+            .any(|command| command == &format!("engram work claim {root_ref}")),
+        "root add keeps claim: {:?}",
+        root.next
+    );
+
+    let own_child = owner
+        .add(
+            AddInput {
+                title: "Own optional".into(),
+                under: Some(parent.clone()),
+                optional: true,
+                ..AddInput::default()
+            },
+            at(3),
+        )
+        .expect("own optional");
+    let own_ref = own_child.value["work"]["short_ref"].as_str().unwrap();
+    assert!(
+        own_child
+            .next
+            .iter()
+            .any(|command| command == &format!("engram work claim {own_ref}")),
+        "own-parent add keeps claim: {:?}",
+        own_child.next
+    );
+    assert!(
+        own_child
+            .reminders
+            .iter()
+            .any(|reminder| reminder == "unclaimed: claim it before execution"),
+        "own-parent add keeps claim reminder: {:?}",
+        own_child.reminders
+    );
+
+    let proposal = peer
+        .add(
+            AddInput {
+                title: "Peer proposal".into(),
+                under: Some(parent.clone()),
+                optional: true,
+                ..AddInput::default()
+            },
+            at(4),
+        )
+        .expect("peer proposal");
+    let child = proposal.value["work"]["short_ref"].as_str().unwrap();
+    let show_child = format!("engram work show {child}");
+    let show_parent = format!("engram work show {parent}");
+    assert_eq!(
+        proposal.next,
+        vec![show_child.clone(), show_parent.clone()],
+        "{:?}",
+        proposal.next
+    );
+    assert_eq!(
+        proposal.value["next"],
+        serde_json::json!([show_child.clone(), show_parent.clone()])
+    );
+    assert!(proposal.text().contains(&show_child));
+    assert!(proposal.text().contains(&show_parent));
+    assert!(
+        proposal
+            .next
+            .iter()
+            .all(|command| !command.contains("claim")
+                && !command.contains("done")
+                && !command.contains("update")
+                && !command.contains("handoff")),
+        "peer proposal does not suggest execution: {:?}",
+        proposal.next
+    );
+    let inspect = "inspect child and parent";
+    assert!(
+        proposal
+            .reminders
+            .iter()
+            .any(|reminder| reminder == inspect),
+        "{:?}",
+        proposal.reminders
+    );
+    assert!(
+        !proposal
+            .reminders
+            .iter()
+            .any(|reminder| reminder.contains("claim it before execution")),
+        "{:?}",
+        proposal.reminders
+    );
+    assert_eq!(
+        proposal.value["reminders"],
+        serde_json::json!(proposal.reminders)
+    );
+    assert!(proposal.text().contains(inspect));
+    assert!(
+        !proposal
+            .text()
+            .contains("unclaimed: claim it before execution")
+    );
+}
+
 fn drain_fixture(owner: &AgentVerbs, database: &std::path::Path, project: &ProjectId) {
     let store = SqliteStore::open(database).expect("store");
     let head = store

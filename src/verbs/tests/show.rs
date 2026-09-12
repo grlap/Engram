@@ -123,15 +123,19 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
     assert_eq!(children[0]["short_ref"], open_children[0].short_ref);
     assert_eq!(children[0]["lifecycle"], "open");
     assert_eq!(receipt.value["children_omitted"], 8);
+    let navigation = format!("engram work ls --under {} --all", parent.short_ref);
+    assert_eq!(receipt.value["children_navigation"], navigation);
     let text = receipt.text();
     let children_line = text
         .lines()
         .find(|line| line.starts_with("children:"))
         .expect("children line");
     assert!(children_line.contains(&open_children[0].short_ref));
-    assert!(children_line.ends_with("(+8 more)"));
+    assert!(children_line.contains("(+8 more)"));
+    assert!(children_line.ends_with(&navigation));
 
     fitted.children.clear();
+    let hidden = format!("children: 16 not shown; {navigation}");
     assert_eq!(
         show_lines(
             &fitted,
@@ -142,7 +146,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
         .into_iter()
         .find(|line| line.starts_with("children:"))
         .as_deref(),
-        Some("children: 16 not shown")
+        Some(hidden.as_str())
     );
 }
 
@@ -305,6 +309,111 @@ fn holder_note_never_shortens_an_explicit_long_claim() {
         .expect("RFC 3339 shown expiry");
 
     assert!(shown_expires_at >= claimed_expires_at);
+}
+
+#[test]
+fn holder_note_renews_default_claim_across_minute_and_utc_day() {
+    let instant = |text| {
+        DateTime::parse_from_rfc3339(text)
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    let cases = [
+        (
+            "minute-boundary",
+            "2026-01-15T12:00:00Z",
+            "2026-01-15T12:34:59Z",
+            "2026-01-15T12:35:00Z",
+            "2026-01-15T13:34:59.000000Z",
+            "2026-01-15T13:35:00.000000Z",
+            "13:35 UTC",
+            "13:34 UTC",
+        ),
+        (
+            "utc-day-boundary",
+            "2026-01-15T22:00:00Z",
+            "2026-01-15T22:59:59Z",
+            "2026-01-15T23:00:00Z",
+            "2026-01-15T23:59:59.000000Z",
+            "2026-01-16T00:00:00.000000Z",
+            "2026-01-16 00:00 UTC",
+            "23:59 UTC",
+        ),
+    ];
+    for (label, created, claim_at, note_at, expected_pre, expected_post, clock, stale) in cases {
+        let directory = crate::test_support::temp_home().expect("temporary directory");
+        let database = directory.path().join("engram.sqlite3");
+        let project = ProjectId(format!("note-renew-{label}"));
+        let session = SessionId(format!("note-renew-{label}-session"));
+        let service = Arc::new(LocalWorkService::new(
+            database,
+            project,
+            "agent".into(),
+            session.clone(),
+            Some("protocol-test".into()),
+        ));
+        let work = match service
+            .work_propose(root_input(label, label), instant(created))
+            .expect("root")
+        {
+            WorkProposeResult::Root { work, .. } => work,
+            WorkProposeResult::Decomposition(_) | WorkProposeResult::Plan(_) => {
+                panic!("expected root")
+            }
+        };
+        let verbs = AgentVerbs::with_shared_service(service, "agent".into(), session);
+        let claimed = verbs
+            .claim(
+                ClaimInput {
+                    work_ref: work.short_ref.clone(),
+                    ttl_seconds: None,
+                    recover: None,
+                },
+                instant(claim_at),
+            )
+            .expect("default claim");
+        let pre = claimed.value["claim"]["held_until"]
+            .as_str()
+            .expect("pre expiry")
+            .parse::<DateTime<Utc>>()
+            .expect("RFC 3339 pre expiry");
+        assert_eq!(pre, instant(expected_pre), "{label} pre");
+        let noted = verbs
+            .note(
+                &NoteInput {
+                    status: false,
+                    work_ref: Some(work.short_ref.clone()),
+                    text: "holder note renews the default lease".into(),
+                    refs: Vec::new(),
+                },
+                instant(note_at),
+            )
+            .expect("holder note");
+        assert!(
+            noted
+                .text()
+                .contains(&format!("(held by you until {clock})")),
+            "{label} note text: {}",
+            noted.text()
+        );
+        assert!(
+            !noted
+                .text()
+                .contains(&format!("(held by you until {stale})")),
+            "{label} stale clock still in note: {}",
+            noted.text()
+        );
+        let shown = verbs
+            .show(&work.short_ref, instant(note_at))
+            .expect("show after note");
+        let post = shown.value["held_until"]
+            .as_str()
+            .expect("post expiry")
+            .parse::<DateTime<Utc>>()
+            .expect("RFC 3339 post expiry");
+        assert_eq!(post, instant(expected_post), "{label} post");
+        assert_ne!(post, pre, "{label} must renew");
+    }
 }
 
 #[test]

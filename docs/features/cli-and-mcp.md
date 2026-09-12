@@ -190,7 +190,10 @@ least-priority selected note.
 precede terminal children inside the bounded relation page,
 so terminal history cannot hide unfinished work while page capacity remains.
 Text prints `(+N more)` and structured output carries the exact
-`children_omitted` total; typed count omissions distinguish unfinished from
+`children_omitted` total; when any child is omitted, both the children line and
+`children_navigation` name `engram work ls --under PARENT --all` so terminal
+optional members remain reachable even when neither obligation group links them.
+Typed count omissions distinguish unfinished from
 terminal children that did not fit. Show, note/history windows and detail,
 compact holders, statuses, reminders and changes use the same display labels.
 `you` identifies this session, not every session using its actor. Another
@@ -321,7 +324,9 @@ Rules that matter:
   remedy, an exact `omitted` count, and scoped `navigation`; byte fitting may
   omit more whole refs but preserves both counts and commands. These totals
   use the complete child set in the same read snapshot as the show projection,
-  not its bounded `children` rows. Required owed means unfinished required
+  not its bounded `children` rows. When the generic `children` line omits
+  rows, it and `children_navigation` name `engram work ls --under PARENT --all`.
+  Required owed means unfinished required
   children or disposed required children without a current revision-bound
   waiver; completed native or restored children are not owed. Open optional
   follow-ups never block completion. Traversal uses
@@ -1103,7 +1108,10 @@ one trailing `show REF`, so no receipt lists more than four. Other planning
 edits (`--blocked`, `--release`, `handoff --to`, `add --under`, `--title`,
 `--cancel`, `--after`, `--waive`, `--supersede-with`) are not synthesized as
 general next commands; their tags stay in `allowed_next` on the structured
-receipt. A required-child completion refusal supplies the exact waiver command.
+receipt. A successful `add --under PARENT --optional` beneath a foreign-held
+parent lists `show CHILD` and `show PARENT` as inspection guidance and does
+not suggest execution; own-parent and root `add` receipts keep the
+ordinary claim guidance. A required-child completion refusal supplies the exact waiver command.
 The host-only reopen operation remains structured-only. A holder-only mutation
 against completed work instead names `note` as the late-finding path and never
 suggests reopening merely to record evidence.

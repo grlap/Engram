@@ -449,7 +449,8 @@ narrow that scope and require the parent. Both switches together are refused.
 Ambient catalogs remain count-free and keep their existing keyset contract.
 
 Parent `show` receipts summarize the complete direct-child set in that read's
-snapshot, before the ordinary child list is limited. The reusable
+snapshot, before the ordinary child list is limited. When that generic children
+line omits rows, text and JSON name `engram work ls --under PARENT --all`. The reusable
 `child_obligations` groups distinguish `required_owed` (unfinished required
 children and disposed required children without current revision-bound waivers
 or qualifying successor resolution)

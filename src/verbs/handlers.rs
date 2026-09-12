@@ -939,7 +939,22 @@ impl AgentVerbs {
             .service
             .work_focus(&child_ref, now)
             .map_err(|error| VerbError::at(error, &child_ref))?;
-        let guidance = self.guidance(&focus, "add", now);
+        let peer_proposal = focus.status.work.child_requirement == ChildRequirement::Optional
+            && matches!(self.holder(&parent, now), Holder::Other(..));
+        let mut guidance = self.guidance(&focus, "add", now);
+        if peer_proposal {
+            guidance.next = vec![
+                format!("engram work show {child_ref}"),
+                format!("engram work show {parent_ref}"),
+            ];
+            guidance
+                .reminders
+                .retain(|reminder| reminder != "unclaimed: claim it before execution");
+            let inspect = "inspect child and parent".to_owned();
+            if !guidance.reminders.contains(&inspect) {
+                guidance.reminders.push(inspect);
+            }
+        }
         let value = json!({"kind": "child", "parent_ref": parent_ref,
             "child_requirement": focus.status.work.child_requirement,
             "details_omitted": summary.details_omitted});
@@ -953,7 +968,7 @@ impl AgentVerbs {
             short(&focus.status.work.title),
             short(&parent.status.work.title)
         )];
-        super::mutation::receipt(
+        let mut receipt = super::mutation::receipt(
             &focus,
             "add",
             value,
@@ -961,7 +976,18 @@ impl AgentVerbs {
             guidance,
             self.holder(&focus, now),
             false,
-        )
+        )?;
+        if peer_proposal {
+            // `mutation::receipt` drops `show CHILD` in favor of full_detail;
+            // a peer proposal still needs both inspect commands in `next`.
+            let next = vec![
+                format!("engram work show {child_ref}"),
+                format!("engram work show {parent_ref}"),
+            ];
+            receipt.next.clone_from(&next);
+            receipt.value["next"] = json!(next);
+        }
+        Ok(receipt)
     }
 
     /// `claim`: hold the item; later words default to it.
