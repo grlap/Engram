@@ -405,6 +405,156 @@ fn catalog_uses_unicode_keys_and_ready_ranking_is_deterministic() {
 }
 
 #[test]
+fn ready_catalog_orders_by_priority_then_work_id_and_continues_exactly_once() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = crate::domain::ProjectId("ready-priority-order".into());
+    let mut low = Vec::new();
+    for index in 0..4 {
+        let mut request = root_request(&project.0, &format!("low-{index}"), index);
+        request.priority = 3;
+        low.push(
+            store
+                .create_work(&request, &DevelopmentNoopRedactor)
+                .expect("low")
+                .work_id,
+        );
+    }
+    let mut high = root_request(&project.0, "high-later", 4);
+    high.priority = 1;
+    let high = store
+        .create_work(&high, &DevelopmentNoopRedactor)
+        .expect("high")
+        .work_id;
+    let query = WorkCatalogQuery {
+        lifecycles: vec![WorkLifecycle::Open],
+        availabilities: vec![WorkAvailability::Ready],
+        ready_priority_order: true,
+        limit: 3,
+        ..WorkCatalogQuery::default()
+    };
+    let mut ranked = low
+        .iter()
+        .copied()
+        .map(|work_id| (3, work_id))
+        .chain(std::iter::once((1, high)))
+        .collect::<Vec<_>>();
+    ranked.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.0.cmp(&right.1.0)));
+    let ranked: Vec<_> = ranked.into_iter().map(|(_, work_id)| work_id).collect();
+    let first = store
+        .query_work_catalog(&project, at(10), &query)
+        .expect("first");
+    assert_eq!(
+        first
+            .items
+            .iter()
+            .map(|item| item.work.work_id)
+            .collect::<Vec<_>>(),
+        ranked[..3]
+    );
+    let second = store
+        .query_work_catalog(
+            &project,
+            at(10),
+            &WorkCatalogQuery {
+                after: first.next_after,
+                after_priority: first.items.last().map(|item| item.work.priority),
+                ..query
+            },
+        )
+        .expect("second");
+    assert_eq!(
+        second
+            .items
+            .iter()
+            .map(|item| item.work.work_id)
+            .collect::<Vec<_>>(),
+        ranked[3..]
+    );
+    assert!(second.next_after.is_none());
+}
+
+#[test]
+fn ready_catalog_continuation_without_after_priority_is_refused() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = crate::domain::ProjectId("ready-missing-after-priority".into());
+    let mut query = WorkCatalogQuery {
+        lifecycles: vec![WorkLifecycle::Open],
+        availabilities: vec![WorkAvailability::Ready],
+        ready_priority_order: true,
+        limit: 1,
+        ..WorkCatalogQuery::default()
+    };
+    for index in 0..2 {
+        let mut request = root_request(&project.0, &format!("ready-{index}"), index);
+        request.priority = 3;
+        store
+            .create_work(&request, &DevelopmentNoopRedactor)
+            .expect("ready");
+    }
+    let first = store
+        .query_work_catalog(&project, at(10), &query)
+        .expect("first");
+    query.after = first.next_after;
+    let error = store
+        .query_work_catalog(&project, at(10), &query)
+        .expect_err("missing after_priority");
+    assert!(matches!(
+        error,
+        StoreError::WorkCatalogCursorInvalid { reason }
+            if reason.contains("after_priority")
+    ));
+    query.after_priority = first.items.last().map(|item| item.work.priority);
+    let second = store
+        .query_work_catalog(&project, at(10), &query)
+        .expect("supplied after_priority");
+    assert_eq!(second.items.len(), 1);
+    assert_ne!(second.items[0].work.work_id, first.items[0].work.work_id);
+}
+
+#[test]
+fn ready_catalog_without_priority_flag_stays_work_id_order() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = crate::domain::ProjectId("ready-id-order".into());
+    let mut older = Vec::new();
+    for index in 0..3 {
+        let mut request = root_request(&project.0, &format!("older-{index}"), index);
+        request.priority = 4;
+        older.push(
+            store
+                .create_work(&request, &DevelopmentNoopRedactor)
+                .expect("older")
+                .work_id,
+        );
+    }
+    let mut later_high = root_request(&project.0, "later-high", 4);
+    later_high.priority = 0;
+    let later_high = store
+        .create_work(&later_high, &DevelopmentNoopRedactor)
+        .expect("high")
+        .work_id;
+    let query = WorkCatalogQuery {
+        lifecycles: vec![WorkLifecycle::Open],
+        availabilities: vec![WorkAvailability::Ready],
+        ready_priority_order: false,
+        limit: 4,
+        ..WorkCatalogQuery::default()
+    };
+    let page = store
+        .query_work_catalog(&project, at(10), &query)
+        .expect("page");
+    let mut expected = older;
+    expected.push(later_high);
+    expected.sort_by_key(|work_id| work_id.0);
+    assert_eq!(
+        page.items
+            .iter()
+            .map(|item| item.work.work_id)
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
 fn doctor_exercises_work_catalog_fts_index() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let item = store

@@ -401,6 +401,8 @@ impl LocalWorkService {
                     parent_id: None,
                     child_requirement: None,
                     after,
+                    after_priority: None,
+                    ready_priority_order: false,
                     limit,
                 },
             )?;
@@ -522,6 +524,7 @@ impl LocalWorkService {
                 limit.saturating_add(1)
             },
             vec![WorkAvailability::Ready],
+            !verbose,
             now,
         )?;
         let ready_navigation = if verbose {
@@ -533,6 +536,7 @@ impl LocalWorkService {
             let mut filters = WorkCatalogQuery {
                 lifecycles: vec![WorkLifecycle::Open],
                 availabilities: vec![WorkAvailability::Ready],
+                ready_priority_order: true,
                 ..WorkCatalogQuery::default()
             };
             SqliteStore::normalize_catalog_filters(&mut filters);
@@ -546,6 +550,7 @@ impl LocalWorkService {
                             &filters,
                             &cut,
                             row.work.work_id,
+                            row.work.priority,
                         )?,
                     ))
                 } else {
@@ -570,6 +575,7 @@ impl LocalWorkService {
         store: &SqliteStore,
         limit: u32,
         availabilities: Vec<WorkAvailability>,
+        ready_priority_order: bool,
         now: DateTime<Utc>,
     ) -> Result<Vec<ReadyWorkSummary>, StoreError> {
         let wanted = usize::try_from(limit).unwrap_or(usize::MAX).max(1);
@@ -577,6 +583,7 @@ impl LocalWorkService {
         let mut query = WorkCatalogQuery {
             lifecycles: vec![WorkLifecycle::Open],
             availabilities,
+            ready_priority_order,
             ..WorkCatalogQuery::default()
         };
         loop {
@@ -587,6 +594,7 @@ impl LocalWorkService {
             match page.next_after {
                 Some(next) if page_len > 0 && items.len() < wanted => {
                     query.after = Some(next);
+                    query.after_priority = items.last().map(|item| item.work.priority);
                 }
                 _ => break,
             }

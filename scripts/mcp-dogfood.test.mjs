@@ -2403,7 +2403,10 @@ test("short orientation continues the complete ready set through real CLI and MC
       assert.equal(first.ready.length, cap);
       assert.equal(first.held.length, 0);
       assert.equal(first.assigned[0].ref, expected[0]);
-      assert.ok(first.ready.every(({ ready_reason }) => ready_reason.includes("unblocked")));
+      assert.ok(
+        first.ready.every((row) => row.ready_reason == null),
+        "compact plain-ready rows omit the constant restatement",
+      );
       let command = first.ready_next;
       const collected = first.ready.map(({ ref }) => ref);
       let pages = 0;

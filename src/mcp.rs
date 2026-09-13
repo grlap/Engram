@@ -96,7 +96,7 @@ struct LsArgs {
     search: Option<String>,
     /// Only items with an active blocker or incomplete prerequisite.
     blocked: Option<bool>,
-    /// Only ready candidates; excludes blocked. Inspect an item before claiming it.
+    /// Only ready candidates in priority then work-id order; excludes blocked. Inspect an item before claiming it.
     ready: Option<bool>,
     /// Only items assigned to this actor or held by this session.
     mine: Option<bool>,

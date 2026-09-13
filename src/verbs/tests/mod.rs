@@ -10,8 +10,8 @@ use super::{
     receipts::{
         CompactNextReceipt, CompactSectionOmission, CompactWorkRow, append_changes_lines,
         compact_next_lines, compact_next_value, compact_omitted, compact_omitted_for_reason,
-        compact_row_line, fit_compact_next, fit_compact_next_to, record_compact_omission,
-        shed_compact_labels,
+        compact_ready_reason, compact_row_line, fit_compact_next, fit_compact_next_to,
+        record_compact_omission, shed_compact_labels,
     },
     show::show_lines,
     *,

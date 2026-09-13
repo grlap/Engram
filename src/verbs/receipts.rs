@@ -51,7 +51,7 @@ pub(super) struct CompactWorkRow {
 }
 
 pub(super) fn ready_line(item: &ReadyWorkSummary) -> String {
-    compact_row_line(&compact_row(item, &HashMap::new()))
+    compact_row_line(&compact_row_for_display(item, &HashMap::new(), true))
 }
 
 pub(super) fn compact_row_line(item: &CompactWorkRow) -> String {
@@ -640,6 +640,21 @@ pub(super) fn ambiguous_reference_guidance(
     (reminders, next)
 }
 
+pub(super) fn compact_ready_reason(
+    availability: super::WorkAvailability,
+    why: &[String],
+) -> Option<String> {
+    if availability != super::WorkAvailability::Ready {
+        return None;
+    }
+    let reasons = why
+        .iter()
+        .filter(|reason| reason.as_str() != crate::PLAIN_READY_REASON)
+        .cloned()
+        .collect::<Vec<_>>();
+    (!reasons.is_empty()).then(|| reasons.join("; "))
+}
+
 pub(super) fn compact_row(
     status: &ReadyWorkSummary,
     claims: &HashMap<WorkId, (String, DateTime<Utc>)>,
@@ -673,13 +688,27 @@ pub(super) fn compact_row(
         blocked_reason: status
             .blocking_parent
             .map(|lifecycle| format!("parent {}", super::lifecycle_word(lifecycle))),
-        ready_reason: (status.availability == super::WorkAvailability::Ready)
-            .then(|| status.why.join("; ")),
+        ready_reason: compact_ready_reason(status.availability, &status.why),
         remedy: status
             .reason_codes
             .contains(&crate::WorkReadinessReason::DetachAvailable)
             .then(|| super::handlers::detach_command(&work.short_ref)),
     }
+}
+
+pub(super) fn compact_row_for_display(
+    status: &ReadyWorkSummary,
+    claims: &HashMap<WorkId, (String, DateTime<Utc>)>,
+    full_ready_why: bool,
+) -> CompactWorkRow {
+    let mut row = compact_row(status, claims);
+    if full_ready_why
+        && status.availability == super::WorkAvailability::Ready
+        && !status.why.is_empty()
+    {
+        row.ready_reason = Some(status.why.join("; "));
+    }
+    row
 }
 
 pub(super) fn compact_labels(labels: &[String]) -> (Vec<String>, Option<usize>) {

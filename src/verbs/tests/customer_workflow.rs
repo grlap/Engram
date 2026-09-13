@@ -71,6 +71,62 @@ fn add(verbs: &AgentVerbs, title: &str, under: Option<&str>, optional: bool, now
         .to_owned()
 }
 
+fn add_ready(verbs: &AgentVerbs, title: &str, priority: i32, now: i64) -> String {
+    verbs
+        .add(
+            AddInput {
+                title: title.into(),
+                priority: Some(priority),
+                ..AddInput::default()
+            },
+            at(now),
+        )
+        .expect("add ready")
+        .value["work"]["short_ref"]
+        .as_str()
+        .expect("ref")
+        .to_owned()
+}
+
+fn ready_rank_tuples(
+    path: &std::path::Path,
+    project: &ProjectId,
+    created: &[(i32, String)],
+) -> Vec<(i32, String, String)> {
+    let store = SqliteStore::open(path).expect("store");
+    let mut ranks: Vec<(i32, String, String)> = created
+        .iter()
+        .map(|(priority, short_ref)| {
+            (
+                *priority,
+                store
+                    .resolve_work_ref(project, short_ref)
+                    .expect("work")
+                    .work_id
+                    .0
+                    .to_string(),
+                short_ref.clone(),
+            )
+        })
+        .collect();
+    ranks.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    ranks
+}
+
+fn ranked_ready_refs(
+    path: &std::path::Path,
+    project: &ProjectId,
+    created: &[(i32, String)],
+) -> (Vec<String>, String) {
+    let ranks = ready_rank_tuples(path, project, created);
+    let mut by_id = ranks.clone();
+    by_id.sort_by(|left, right| left.1.cmp(&right.1));
+    (
+        ranks.into_iter().map(|rank| rank.2).collect(),
+        by_id[0].2.clone(),
+    )
+}
+
 fn note(verbs: &AgentVerbs, work: &str, text: &str, now: i64) {
     verbs
         .note(

@@ -230,10 +230,12 @@ attribution remain full.
 Rules that matter:
 
 - Compact `next` and `next --peek` show held and assigned before at most five
-  ready candidates in catalog id order, not priority ranking; a smaller
-  `--limit` reduces that prefix. `ready_limit` reports the effective limit,
+  ready candidates in priority then work-id order; a smaller
+  `--limit` reduces that prefix. `ls --ready` uses the same order; ordinary
+  `ls` does not. `ready_limit` reports the effective limit,
   even if fewer rows fit. Read
-  `ready_reason` as advisory readiness, not claim permission. Follow
+  `ready_reason` as advisory readiness, not claim permission; the constant
+  plain-ready sentence is omitted from compact rows. Follow
   `ready_next` (`ls --ready`) for the remaining candidates; it starts after
   the last retained row, even after byte fitting. `ready_more` is not a count.
   A changed or expired listing cursor refuses with fresh same-filter

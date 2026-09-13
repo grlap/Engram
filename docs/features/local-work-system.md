@@ -429,9 +429,10 @@ is independent of the limit; `omitted` is total minus emitted rows after
 final byte fitting on the first page. Later pages also report `shown_before`;
 `omitted` is the exact remainder after that prior prefix and the current rows.
 The footer includes the active limit and byte ceiling. Continuation is a
-`ls --after CURSOR` token bound to the last emitted work id, normalized
-filters, project, and a project-feed read cut. Catalog ordering remains
-ascending work id; it is not a dense feed ordering or an execution cursor.
+`ls --after CURSOR` token bound to the last emitted key, normalized
+filters, project, and a project-feed read cut. Ordinary catalog ordering
+remains ascending work id; `ls --ready` uses priority then work id. Neither
+is a dense feed ordering or an execution cursor.
 The token is opaque to the caller but not confidential: it encodes readable
 filters, project and session context, without encryption. It is navigation,
 not authentication, and creates no server-side state or canonical object.
@@ -733,16 +734,20 @@ Recent participation is navigation, not an obligation: keep outstanding review
 decisions and waiting conditions on a claimed coordination item.
 
 Compact orientation retains at most five ready candidates (or a smaller
-requested limit), after held and assigned work. It keeps catalog id order,
-not priority ranking, and the selected readiness projection's reasons;
-readiness is not claim permission. `ready_limit` reports the effective requested
-limit even if fewer rows fit; text prints the cap only when candidates remain.
-The count-free query fetches one extra candidate to determine `ready_more`.
+requested limit), after held and assigned work. Compact `next`,
+`next --peek`, and `ls --ready` use priority then work id; ordinary `ls`,
+verbose `next`, and host-core catalog queries keep catalog id order. Compact
+rows carry a readiness reason only when it distinguishes beyond the plain
+ready case; readiness is not claim permission. `ready_limit` reports the
+effective requested limit even if fewer rows fit; text prints the cap only
+when candidates remain. The count-free query fetches one extra candidate to
+determine `ready_more`.
 `ready_next` continues with `ls --ready` after the last row actually rendered,
 including after byte fitting; zero retained rows offer a fresh ready listing.
-The continuation uses the same advisory cut. A stale cut refuses with runnable
-fresh ready navigation, without changing focus or delivery. Verbose and core
-ready limits are unchanged. See the [compact contract](cli-and-mcp.md#using-engram-as-an-agent).
+The continuation uses the same advisory cut and the emitted key. A stale cut
+refuses with runnable fresh ready navigation, without changing focus or
+delivery. Verbose and core ready limits, and host-core `ready_work` ranking,
+are unchanged. See the [compact contract](cli-and-mcp.md#using-engram-as-an-agent).
 
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for

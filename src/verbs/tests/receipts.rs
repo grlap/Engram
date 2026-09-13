@@ -462,6 +462,28 @@ fn text_receipts_disclose_capped_next_commands_without_truncating_json() {
 }
 
 #[test]
+fn compact_ready_reason_omits_only_the_plain_sentence() {
+    assert_eq!(
+        compact_ready_reason(WorkAvailability::Ready, &[crate::PLAIN_READY_REASON.into()]),
+        None
+    );
+    assert_eq!(
+        compact_ready_reason(
+            WorkAvailability::Ready,
+            &[crate::PLAIN_READY_REASON.into(), "unknown extra".into(),],
+        ),
+        Some("unknown extra".into())
+    );
+    assert_eq!(
+        compact_ready_reason(
+            WorkAvailability::Blocked,
+            &[crate::PLAIN_READY_REASON.into(), "unknown extra".into(),],
+        ),
+        None
+    );
+}
+
+#[test]
 fn empty_changes_section_is_omitted_from_text() {
     let mut lines = vec!["ready w-0123456789ab".into()];
     append_changes_lines(&mut lines, &[], 0);

@@ -275,8 +275,8 @@ Rules that matter:
   at most five ready candidates. A smaller `--limit` reduces this prefix;
   a larger limit does not raise the compact cap. `ready_limit` states the
   effective requested limit, clamped to 1..5, even if fewer rows fit. Text
-  prints the cap only when candidates remain. Each ready row carries
-  `ready_reason` from the same readiness
+  prints the cap only when candidates remain. A ready row carries an
+  optional distinguishing `ready_reason` from the same readiness
   projection that selected it, including prior-claim recovery when present.
   This is not claim permission: inspect the item before claiming it.
   `ready_more` is a boolean, not an exact backlog count. When true,
@@ -284,13 +284,20 @@ Rules that matter:
   `ls --ready`, after the last row retained by byte fitting. If no row fits,
   the command starts a fresh ready listing. These fields participate in
   fitting and navigation is retained even when all candidates are shed.
-  Ready candidates keep catalog id order, not priority ranking. The existing
-  listing cursor binds the advisory snapshot; a changed or expired cut
-  refuses with a fresh `ls --ready` command. Listing continuations then reach
-  the current ready set. `ls --ready` (MCP `ready: true`) is a filter on the
-  existing word and cannot be combined with `--blocked`. Verbose `next`
-  retains its requested richer list limit. Delivery and memory advertisement
-  behavior are unchanged.
+  Compact ready candidates and `ls --ready` (compact and verbose) use priority
+  ascending, then work id ascending. Work id is a deterministic tie-break,
+  not a chronological guarantee. Ordinary `ls` without `--ready`, verbose
+  `next`, and host-core catalog queries keep catalog id order. The listing
+  cursor binds the advisory snapshot and the
+  last emitted `(priority, work_id)` key after byte fitting; a changed or
+  expired cut, including feed, priority, or time changes, refuses with a
+  fresh same-filter `ls --ready` command. Exactly-once concatenation holds
+  only while that cut remains valid. `ls --ready` cannot be combined with
+  `--blocked`. Compact rows omit the constant plain-ready sentence and keep
+  additional reasons such as prior-claim recovery. Show claim reminders and
+  verbose/core reason codes are unchanged. Verbose `next` retains its
+  requested richer list limit. Delivery and memory advertisement behavior
+  are unchanged. Host-core `ready_work` ranking is a separate path.
 
 - `next --peek` (MCP `next` with `peek: true`) answers what you hold, what is
   ready and what changed in one read snapshot. It opens only an established
@@ -481,7 +488,8 @@ Rules that matter:
   The cursor names the last row actually emitted, including after byte fitting.
   `shown_before` counts the prior prefix; `omitted` is the remaining total after
   that prefix plus this page, and `more` is true exactly when some remain.
-  Ordering stays ascending work id. A changed project feed, expired time basis,
+  Ordinary listings stay ascending work id. `ls --ready` uses priority then
+  work id, matching compact `next`. A changed project feed, expired time basis,
   reversed clock, malformed cursor, or different filters/project returns
   `work_catalog_cursor_invalid` with a fresh same-filter command, never a silent
   restart. Unrelated project notes also advance the feed; focus-only reads do

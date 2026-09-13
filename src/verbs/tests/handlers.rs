@@ -620,13 +620,7 @@ fn readiness_reasons_become_words() {
         None
     );
     assert_eq!(
-        reminder_for_reason(
-            "open, admitted, unblocked, and unclaimed",
-            Holder::Nobody,
-            &[],
-            false,
-        )
-        .as_deref(),
+        reminder_for_reason(crate::PLAIN_READY_REASON, Holder::Nobody, &[], false,).as_deref(),
         Some("unclaimed: claim it before execution")
     );
     assert_eq!(

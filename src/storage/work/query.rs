@@ -991,7 +991,7 @@ fn derive_projected_work_availability(
     };
     if availability == WorkAvailability::Ready {
         reason_codes.push(WorkReadinessReason::ReadyUnclaimed);
-        why.push("open, admitted, unblocked, and unclaimed".into());
+        why.push(crate::PLAIN_READY_REASON.into());
     }
     Ok(ReadyWork {
         work,
@@ -1068,7 +1068,7 @@ fn derive_work_availability(
     };
     if availability == WorkAvailability::Ready {
         reason_codes.push(WorkReadinessReason::ReadyUnclaimed);
-        why.push("open, admitted, unblocked, and unclaimed".into());
+        why.push(crate::PLAIN_READY_REASON.into());
     }
     Ok(ReadyWork {
         work,

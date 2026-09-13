@@ -213,6 +213,9 @@ pub enum WorkReadinessReason {
     ReadyUnclaimed,
 }
 
+/// Compact ready rows omit this restatement of the `ready` state word.
+pub const PLAIN_READY_REASON: &str = "open, admitted, unblocked, and unclaimed";
+
 /// Keep an opaque reference complete in bounded agent JSON, including escapes.
 pub(crate) fn normalize_external_reference(value: Option<&str>) -> Result<Option<String>, String> {
     value
@@ -892,6 +895,12 @@ pub struct WorkCatalogQuery {
     pub parent_id: Option<WorkId>,
     pub child_requirement: Option<ChildRequirement>,
     pub after: Option<WorkId>,
+    /// Seek key companion for ready-only listings; not part of filter identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_priority: Option<i32>,
+    /// Compact `next` and `ls --ready` only; host-core catalog and verbose `next` stay false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ready_priority_order: bool,
     pub limit: u32,
 }
 

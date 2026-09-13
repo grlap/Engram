@@ -462,7 +462,7 @@ enum WorkCommand {
         /// Only items with an active blocker or incomplete prerequisite.
         #[arg(long)]
         blocked: bool,
-        /// Only ready candidates; inspect an item before claiming it.
+        /// Only ready candidates, in priority then work-id order; inspect an item before claiming it.
         #[arg(long, conflicts_with = "blocked")]
         ready: bool,
         /// Only items assigned to you or held by this session.

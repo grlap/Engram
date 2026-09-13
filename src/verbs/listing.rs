@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::receipts::{compact_row, compact_row_line};
+use super::receipts::{compact_row_for_display, compact_row_line};
 use super::{DEFAULT_LIMIT, Guidance, LsInput, Receipt, StoreError, VerbError, json};
 use crate::work_service::WorkListingPage;
 
@@ -175,13 +175,13 @@ pub(super) fn fit_list_receipt(
         let items = &page.items[..visible];
         let compact = items
             .iter()
-            .map(|item| compact_row(item, &claims))
+            .map(|item| compact_row_for_display(item, &claims, input.verbose))
             .collect::<Vec<_>>();
         let omitted = page.total.saturating_sub(page.preceding + visible);
         let after = if omitted > 0 {
             items
                 .last()
-                .map(|item| page.continuation(item.work.work_id))
+                .map(|item| page.continuation(item.work.work_id, item.work.priority))
                 .transpose()?
         } else {
             None

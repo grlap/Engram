@@ -5,6 +5,7 @@ use super::{
     load_work_claim_optional, load_work_item_projection, normalize_work_catalog_key, params,
     parse_work_id, projected_prerequisite_state,
 };
+use rusqlite::OptionalExtension;
 
 #[cfg(test)]
 mod tests;
@@ -222,6 +223,46 @@ pub(in crate::storage::work) fn catalog_literal_fts_query(value: &str) -> String
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
+pub(super) fn ready_listing_order(query: &WorkCatalogQuery) -> bool {
+    query.ready_priority_order
+}
+
+pub(super) fn current_work_priority(
+    connection: &Connection,
+    work_id: WorkId,
+) -> Result<Option<i32>, StoreError> {
+    let Some(priority) = connection
+        .query_row(
+            "SELECT priority FROM work_items WHERE work_id = ?1",
+            params![work_id.0.to_string()],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    i32::try_from(priority).map(Some).map_err(|_| {
+        StoreError::InvalidWorkProjection("work priority is outside the supported range".into())
+    })
+}
+
+pub(super) fn ready_seek_key(
+    query: &WorkCatalogQuery,
+) -> Result<Option<(i32, WorkId)>, StoreError> {
+    if !ready_listing_order(query) {
+        return Ok(None);
+    }
+    let Some(after) = query.after else {
+        return Ok(None);
+    };
+    let priority = query
+        .after_priority
+        .ok_or_else(|| StoreError::WorkCatalogCursorInvalid {
+            reason: "ready listing continuation requires after_priority".into(),
+        })?;
+    Ok(Some((priority, after)))
+}
+
 fn work_catalog_page_on(
     connection: &Connection,
     project_id: &crate::domain::ProjectId,
@@ -252,6 +293,7 @@ fn work_catalog_sql(
     query: &WorkCatalogQuery,
     page: bool,
 ) -> Result<(String, Vec<Value>), StoreError> {
+    let ready_seek = ready_seek_key(query)?;
     let mut parameters = vec![
         Value::Text(project_id.0.clone()),
         Value::Integer(now.timestamp_millis()),
@@ -375,24 +417,38 @@ fn work_catalog_sql(
         classified_filters.push("(has_blocker OR availability = 'blocked')".into());
     }
     if page && let Some(after) = query.after {
-        let parameter = push_catalog_parameter(&mut parameters, Value::Text(after.0.to_string()));
-        candidate_filters.push(format!("candidate.work_id > {parameter}"));
+        let after_id = push_catalog_parameter(&mut parameters, Value::Text(after.0.to_string()));
+        if let Some((priority, _)) = ready_seek {
+            let after_priority =
+                push_catalog_parameter(&mut parameters, Value::Integer(i64::from(priority)));
+            candidate_filters.push(format!(
+                "(candidate.priority > {after_priority} OR (candidate.priority = {after_priority} AND candidate.work_id > {after_id}))"
+            ));
+        } else {
+            candidate_filters.push(format!("candidate.work_id > {after_id}"));
+        }
     }
     let classified_where = if classified_filters.is_empty() {
         String::new()
     } else {
         format!("WHERE {}", classified_filters.join(" AND "))
     };
+    let order = if ready_listing_order(query) {
+        "priority, work_id"
+    } else {
+        "work_id"
+    };
     let selection = if page {
         let limit = i64::from(query.limit.clamp(1, 1_000)).saturating_add(1);
         let parameter = push_catalog_parameter(&mut parameters, Value::Integer(limit));
-        format!("work_id FROM classified {classified_where} ORDER BY work_id LIMIT {parameter}")
+        format!("work_id FROM classified {classified_where} ORDER BY {order} LIMIT {parameter}")
     } else {
         format!("COUNT(*) FROM classified {classified_where}")
     };
     let sql = format!(
         "WITH classified AS (
              SELECT candidate.work_id,
+                    candidate.priority,
                     ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability,
                     ({PROJECTED_WORK_HAS_BLOCKER_SQL}) AS has_blocker
              FROM work_items candidate

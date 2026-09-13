@@ -668,6 +668,7 @@ impl AgentVerbs {
                     } else {
                         Vec::new()
                     },
+                    ready_priority_order: input.ready,
                     assigned_to: input.mine.then(|| self.actor_id.clone()),
                     held_by: input.mine.then(|| self.session_id.clone()),
                     label: input.label.clone(),
@@ -2063,9 +2064,7 @@ pub(super) fn reminder_for_reason(
         } else {
             format!("blocked: {}", blockers.join("; "))
         }),
-        "open, admitted, unblocked, and unclaimed" => {
-            Some("unclaimed: claim it before execution".into())
-        }
+        crate::PLAIN_READY_REASON => Some("unclaimed: claim it before execution".into()),
         "prior claim is recoverable" => claim_recovery_required
             .then(|| "a previous holder's claim lapsed; claiming needs a recovery reason".into()),
         "live claim has checkpointed progress" => match holder {

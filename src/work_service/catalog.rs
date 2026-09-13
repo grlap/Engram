@@ -10,6 +10,8 @@ struct ListingCursor {
     filters: WorkCatalogQuery,
     cut: WorkCatalogReadCut,
     after: WorkId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    after_priority: Option<i32>,
 }
 
 pub(crate) struct WorkListingPage {
@@ -24,8 +26,18 @@ pub(crate) struct WorkListingPage {
 
 impl WorkListingPage {
     /// The renderer supplies the final emitted key, never the fetched sentinel.
-    pub(crate) fn continuation(&self, after: WorkId) -> Result<String, StoreError> {
-        listing_continuation(&self.project, &self.filters, &self.cut, after)
+    pub(crate) fn continuation(
+        &self,
+        after: WorkId,
+        after_priority: i32,
+    ) -> Result<String, StoreError> {
+        listing_continuation(
+            &self.project,
+            &self.filters,
+            &self.cut,
+            after,
+            after_priority,
+        )
     }
 }
 
@@ -35,12 +47,14 @@ pub(super) fn listing_continuation(
     filters: &WorkCatalogQuery,
     cut: &WorkCatalogReadCut,
     after: WorkId,
+    after_priority: i32,
 ) -> Result<String, StoreError> {
     let cursor = ListingCursor {
         project: project.clone(),
         filters: filters.clone(),
         cut: cut.clone(),
         after,
+        after_priority: filters.ready_priority_order.then_some(after_priority),
     };
     super::continuation::encode("c1-", &cursor).ok_or_else(|| {
         invalid("listing continuation metadata is too large; shorten search, label or parent scope")
@@ -78,7 +92,11 @@ impl LocalWorkService {
                         "continuation belongs to different filters or project",
                     ));
                 }
+                if cursor.filters.ready_priority_order != cursor.after_priority.is_some() {
+                    return Err(invalid("continuation item no longer matches this listing"));
+                }
                 query.after = Some(cursor.after);
+                query.after_priority = cursor.after_priority;
             }
             let (page, total, preceding, claims, cut) = store.query_work_catalog_continuation(
                 &self.project_id,

@@ -52,7 +52,7 @@ pub use domain::{
     MemoryContradictionReceipt, MemoryId, MemoryKind, MemoryRecord, MemoryStatus, MemorySummary,
     MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION,
     ObligationRuleDefinition, ObligationRuleSet, ObservedActionBeginDecision, ObservedTurnDecision,
-    OfferWorkHandoffRequest, OpenWorkObligation, PacketSafety, ParentTurnState,
+    OfferWorkHandoffRequest, OpenWorkObligation, PLAIN_READY_REASON, PacketSafety, ParentTurnState,
     ParticipantMembership, ParticipantReadiness, ProjectId, ProjectMemoryFull, ProjectMemoryList,
     ProjectMemoryListRow, ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision,
     ProjectPolicyEpoch, ProjectPolicyOperation, ReadyWork, RecordWorkEvidenceRequest,

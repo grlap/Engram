@@ -122,8 +122,10 @@ fn orientation_bounds_ready_and_executes_continuation_without_losing_candidates(
         assert_eq!(receipt.value["ready_limit"], MAX_NEXT_READY_CANDIDATES);
         assert!(text.contains(&format!("compact cap: {MAX_NEXT_READY_CANDIDATES};")));
         for row in rows {
-            assert!(row["ready_reason"].as_str().unwrap().contains("unblocked"));
-            assert!(text.contains(row["ready_reason"].as_str().unwrap()));
+            assert!(
+                row.get("ready_reason").is_none(),
+                "plain ready rows omit the constant restatement"
+            );
         }
         assert!(text.contains(receipt.value["ready_next"].as_str().unwrap()));
         traverse(&reader, &receipt.value, &expected);
@@ -256,7 +258,7 @@ fn orientation_expired_cursor_offers_executable_fresh_ready_listing() {
         })
         .collect();
     // A live claim is a time boundary even when the project feed stays still.
-    let held = add(&verbs, "Held until boundary", None, false, 20);
+    let held = add_ready(&verbs, "Held until boundary", 0, 20);
     verbs
         .claim(
             ClaimInput {
@@ -297,7 +299,7 @@ fn orientation_expired_cursor_offers_executable_fresh_ready_listing() {
         "continuation and stale-cursor recovery share the exact command builder"
     );
     let fresh = verbs.ls(&recovery, at(111)).unwrap();
-    expected.push(held.clone());
+    expected.insert(0, held.clone());
     assert_eq!(
         fresh.value["items"]
             .as_array()
@@ -309,12 +311,37 @@ fn orientation_expired_cursor_offers_executable_fresh_ready_listing() {
     );
     let rows = fresh.value["items"].as_array().unwrap();
     let recovered = rows.iter().find(|row| row["ref"] == held).unwrap();
-    assert_ne!(recovered["ready_reason"], rows[0]["ready_reason"]);
+    assert_eq!(
+        recovered["ready_reason"].as_str().unwrap(),
+        "prior claim is recoverable"
+    );
     assert!(
-        recovered["ready_reason"]
+        !recovered["ready_reason"]
             .as_str()
             .unwrap()
-            .contains("recoverable")
+            .contains(crate::PLAIN_READY_REASON)
+    );
+    let peek = verbs
+        .next(
+            &NextInput {
+                peek: true,
+                ..NextInput::default()
+            },
+            at(111),
+        )
+        .unwrap();
+    let peek_ready = peek.value["ready"].as_array().unwrap();
+    assert_eq!(peek_ready.len(), MAX_NEXT_READY_CANDIDATES as usize);
+    let peek_recovered = peek_ready.iter().find(|row| row["ref"] == held).unwrap();
+    assert_eq!(
+        peek_recovered["ready_reason"].as_str().unwrap(),
+        "prior claim is recoverable"
+    );
+    assert!(
+        !peek_recovered["ready_reason"]
+            .as_str()
+            .unwrap()
+            .contains(crate::PLAIN_READY_REASON)
     );
     assert!(
         verbs
@@ -462,11 +489,15 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
             next: vec!["engram work memories".into()],
         },
     };
+    let mut with_cost = with.clone();
+    for row in &mut with_cost.ready {
+        row.ready_reason = Some("prior claim is recoverable".into());
+    }
     let mut without = with.clone();
     for row in &mut without.ready {
         row.ready_reason = None;
     }
-    let with = fit_compact_next(with).unwrap();
+    let with = fit_compact_next(with_cost).unwrap();
     let without = fit_compact_next(without).unwrap();
     let bytes = |receipt: &CompactNextReceipt| {
         serde_json::to_vec_pretty(&compact_next_value(receipt))
@@ -479,6 +510,11 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
         bytes(&with),
         without.ready.len(),
         bytes(&without)
+    );
+    assert_ne!(
+        bytes(&with),
+        bytes(&without),
+        "injected distinguishing reasons must change fitted bytes"
     );
     assert_eq!(with.ready.len(), MAX_NEXT_READY_CANDIDATES as usize);
     assert_eq!(with.ready.len(), without.ready.len());
@@ -571,6 +607,10 @@ fn verbose_next_keeps_requested_ready_limit_and_omits_compact_navigation() {
             assert!(row.get("ref").is_none(), "{label}");
         }
         assert!(
+            receipt.text().contains(crate::PLAIN_READY_REASON),
+            "{label} verbose ready text keeps the full why"
+        );
+        assert!(
             receipt.value.get("ready_limit").is_none(),
             "{label} must omit ready_limit"
         );
@@ -583,4 +623,266 @@ fn verbose_next_keeps_requested_ready_limit_and_omits_compact_navigation() {
             "{label} must omit ready_next"
         );
     }
+}
+
+fn collect_ready_listing(verbs: &AgentVerbs, verbose: bool) -> Vec<String> {
+    let mut collected = Vec::new();
+    let mut after = None;
+    loop {
+        let page = verbs
+            .ls(
+                &LsInput {
+                    ready: true,
+                    verbose,
+                    limit: Some(3),
+                    after,
+                    ..LsInput::default()
+                },
+                at(101),
+            )
+            .unwrap();
+        collected.extend(page.value["items"].as_array().unwrap().iter().map(|row| {
+            if verbose {
+                row["work"]["short_ref"].as_str().unwrap().to_owned()
+            } else {
+                row["ref"].as_str().unwrap().to_owned()
+            }
+        }));
+        after = page.value["after"].as_str().map(str::to_owned);
+        if after.is_none() {
+            break;
+        }
+    }
+    collected
+}
+
+#[test]
+fn orientation_ready_prefix_ranks_later_high_priority_ahead_of_older_low() {
+    let (_directory, writer, path, project) = fixture();
+    let mut created = Vec::new();
+    for index in 0..MAX_NEXT_READY_CANDIDATES + 2 {
+        let priority = if index < 3 { 3 } else { 4 };
+        created.push((
+            priority,
+            add_ready(
+                &writer,
+                &format!("Older low {index}"),
+                priority,
+                i64::from(index),
+            ),
+        ));
+    }
+    let later_p0 = add_ready(&writer, "Later P0", 0, 40);
+    created.push((0, later_p0.clone()));
+    created.push((1, add_ready(&writer, "Later high", 1, 41)));
+    created.push((1, add_ready(&writer, "Same-priority newer", 1, 42)));
+    let (expected, catalog_id_first) = ranked_ready_refs(&path, &project, &created);
+    let receipt = writer
+        .next(
+            &NextInput {
+                peek: true,
+                ..NextInput::default()
+            },
+            at(100),
+        )
+        .unwrap();
+    let rows = receipt.value["ready"].as_array().unwrap();
+    assert_eq!(rows.len(), MAX_NEXT_READY_CANDIDATES as usize);
+    assert_eq!(rows[0]["ref"], later_p0);
+    assert_eq!(rows[0]["priority"], 0);
+    assert_eq!(rows[1]["ref"], expected[1]);
+    assert_eq!(rows[2]["ref"], expected[2]);
+    assert_eq!(rows[3]["ref"], expected[3]);
+    assert_eq!(rows[3]["priority"], 3);
+    traverse(&writer, &receipt.value, &expected);
+    let verbose = writer
+        .next(
+            &NextInput {
+                peek: true,
+                verbose: true,
+                limit: Some(MAX_NEXT_READY_CANDIDATES),
+                ..NextInput::default()
+            },
+            at(100),
+        )
+        .unwrap();
+    assert_eq!(
+        verbose.value["ready"][0]["work"]["short_ref"], catalog_id_first,
+        "verbose next keeps catalog id order"
+    );
+    let advanced = writer
+        .next(
+            &NextInput {
+                peek: false,
+                ..NextInput::default()
+            },
+            at(100),
+        )
+        .unwrap();
+    assert_eq!(advanced.value["ready"][0]["ref"], later_p0);
+    traverse(&writer, &advanced.value, &expected);
+    for verbose_list in [false, true] {
+        assert_eq!(
+            collect_ready_listing(&writer, verbose_list),
+            expected,
+            "verbose={verbose_list}"
+        );
+    }
+    let first_page = writer
+        .ls(
+            &LsInput {
+                ready: true,
+                limit: Some(1),
+                ..LsInput::default()
+            },
+            at(102),
+        )
+        .unwrap();
+    let token = first_page.value["after"].as_str().unwrap().to_owned();
+    writer
+        .update(
+            UpdateInput {
+                work_ref: Some(
+                    first_page.value["items"][0]["ref"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned(),
+                ),
+                action: UpdateAction::Revise {
+                    clear_external: false,
+                    external: None,
+                    title: None,
+                    outcome: None,
+                    acceptance: None,
+                    assignee: None,
+                    priority: Some(4),
+                    defer: None,
+                    kind: None,
+                    labels: Vec::new(),
+                    unlabels: Vec::new(),
+                },
+            },
+            at(103),
+        )
+        .unwrap();
+    let stale = writer
+        .ls(
+            &LsInput {
+                ready: true,
+                after: Some(token),
+                limit: Some(1),
+                ..LsInput::default()
+            },
+            at(104),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        stale.error,
+        StoreError::WorkCatalogCursorInvalid { .. }
+    ));
+    let fresh = navigation_input(&stale.guidance().next[0]);
+    assert!(fresh.after.is_none() && fresh.ready);
+    assert_eq!(
+        writer.ls(&fresh, at(104)).unwrap().value["items"][0]["ref"],
+        expected[1]
+    );
+}
+
+#[test]
+fn orientation_mixed_priority_byte_fit_and_smaller_limit_traverse() {
+    let (_directory, writer, path, project) = fixture();
+    let mut created = Vec::new();
+    for index in 0..MAX_NEXT_READY_CANDIDATES {
+        created.push((
+            3,
+            writer
+                .add(
+                    AddInput {
+                        title: format!("Older low {index}"),
+                        priority: Some(3),
+                        external: Some("x".repeat(700)),
+                        ..AddInput::default()
+                    },
+                    at(i64::from(index)),
+                )
+                .unwrap()
+                .value["work"]["short_ref"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        ));
+    }
+    created.push((
+        0,
+        writer
+            .add(
+                AddInput {
+                    title: "Later high".into(),
+                    priority: Some(0),
+                    external: Some("x".repeat(700)),
+                    ..AddInput::default()
+                },
+                at(40),
+            )
+            .unwrap()
+            .value["work"]["short_ref"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    ));
+    let (expected, _) = ranked_ready_refs(&path, &project, &created);
+    let mut view = writer
+        .service
+        .work_next_for_agent(
+            1,
+            MAX_NEXT_READY_CANDIDATES,
+            false,
+            WorkNextQuery {
+                sections: vec![WorkNextSection::Assigned],
+                ..WorkNextQuery::default()
+            },
+            at(100),
+        )
+        .unwrap();
+    let lists = view.agent_lists.take().unwrap();
+    let compact = crate::verbs::receipts::compact_next_receipt(
+        &view,
+        &lists.held,
+        &lists.ready,
+        &[],
+        &std::collections::HashMap::new(),
+        &Guidance::default(),
+        lists.ready_navigation,
+    )
+    .unwrap();
+    let original_ready = compact.ready.len();
+    assert!(original_ready > 0);
+    let mut saw_partial = false;
+    let mut saw_zero = false;
+    for budget in [4096, 2048, 512] {
+        let fitted = fit_compact_next_to(compact.clone(), budget).unwrap();
+        assert!(
+            fitted.ready.len() < original_ready,
+            "budget {budget} must shed from the original compact ready prefix"
+        );
+        saw_partial |= !fitted.ready.is_empty();
+        saw_zero |= fitted.ready.is_empty();
+        let value = compact_next_value(&fitted);
+        assert_eq!(value["ready_more"], true);
+        traverse(&writer, &value, &expected);
+    }
+    assert!(saw_partial && saw_zero);
+    let smaller = writer
+        .next(
+            &NextInput {
+                peek: true,
+                limit: Some(2),
+                ..NextInput::default()
+            },
+            at(100),
+        )
+        .unwrap();
+    assert_eq!(smaller.value["ready"].as_array().unwrap().len(), 2);
+    assert_eq!(smaller.value["ready"][0]["priority"], 0);
+    traverse(&writer, &smaller.value, &expected);
 }

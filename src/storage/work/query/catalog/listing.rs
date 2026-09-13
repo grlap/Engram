@@ -1,7 +1,8 @@
 use super::{
     Connection, DateTime, SqliteStore, StoreError, Utc, Value, WorkCatalogPage, WorkCatalogQuery,
-    WorkClaim, WorkClaimState, load_work_claim_optional, normalize_work_catalog_key, params,
-    push_catalog_parameter, work_catalog_page_on, work_catalog_sql,
+    WorkClaim, WorkClaimState, current_work_priority, load_work_claim_optional,
+    normalize_work_catalog_key, params, push_catalog_parameter, ready_listing_order,
+    ready_seek_key, work_catalog_page_on, work_catalog_sql,
 };
 use crate::domain::{FeedId, ProjectId, WorkCatalogReadCut};
 
@@ -25,6 +26,7 @@ impl SqliteStore {
                 .map(normalize_work_catalog_key);
         }
         query.after = None;
+        query.after_priority = None;
         query.limit = 0;
     }
 
@@ -60,6 +62,13 @@ impl SqliteStore {
                         .is_some_and(|until| now.timestamp_millis() >= until))
             {
                 return Err(cursor_invalid("catalog changed; start a fresh listing"));
+            }
+            if let Some((encoded, after)) = ready_seek_key(query)?
+                && current_work_priority(&store.connection, after)? != Some(encoded)
+            {
+                return Err(cursor_invalid(
+                    "continuation item no longer matches this listing",
+                ));
             }
             let (total, preceding, anchor) =
                 catalog_counts(&store.connection, project, now, query)?;
@@ -127,14 +136,34 @@ fn catalog_counts(
     query: &WorkCatalogQuery,
 ) -> Result<(usize, usize, bool), StoreError> {
     let (mut sql, mut parameters) = work_catalog_sql(project, now, query, false)?;
-    let boundary = push_catalog_parameter(
-        &mut parameters,
-        query
-            .after
-            .map_or(Value::Null, |id| Value::Text(id.0.to_string())),
-    );
-    sql = sql.replace("SELECT COUNT(*) FROM classified", &format!(
-        "SELECT COUNT(*), COALESCE(SUM(work_id <= {boundary}), 0), COALESCE(MAX(work_id = {boundary}), 0) FROM classified"));
+    let counts = if ready_listing_order(query) {
+        let after_id = push_catalog_parameter(
+            &mut parameters,
+            query
+                .after
+                .map_or(Value::Null, |id| Value::Text(id.0.to_string())),
+        );
+        let after_priority = push_catalog_parameter(
+            &mut parameters,
+            query
+                .after_priority
+                .map_or(Value::Null, |priority| Value::Integer(i64::from(priority))),
+        );
+        format!(
+            "SELECT COUNT(*), COALESCE(SUM(priority < {after_priority} OR (priority = {after_priority} AND work_id <= {after_id})), 0), COALESCE(MAX(work_id = {after_id}), 0) FROM classified"
+        )
+    } else {
+        let boundary = push_catalog_parameter(
+            &mut parameters,
+            query
+                .after
+                .map_or(Value::Null, |id| Value::Text(id.0.to_string())),
+        );
+        format!(
+            "SELECT COUNT(*), COALESCE(SUM(work_id <= {boundary}), 0), COALESCE(MAX(work_id = {boundary}), 0) FROM classified"
+        )
+    };
+    sql = sql.replace("SELECT COUNT(*) FROM classified", &counts);
     #[cfg(test)]
     crate::storage::work::WORK_CATALOG_COUNT_QUERIES.with(|count| count.set(count.get() + 1));
     let (total, preceding, anchor): (i64, i64, bool) =
