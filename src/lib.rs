@@ -118,5 +118,6 @@ pub use work_service::{
     WorkEvidenceSummary, WorkFocusView, WorkHandoffInput, WorkHandoffResult, WorkNextQuery,
     WorkNextSection, WorkNextView, WorkObligationGuidance, WorkObligationPage,
     WorkObligationSummary, WorkPrerequisiteInput, WorkProposeInput, WorkProposeResult,
-    WorkUpdateInput, WorkUpdateResult, new_process_default_work_session_id,
+    WorkUpdateInput, WorkUpdateResult, new_process_default_work_session_id, terminal_error_command,
+    terminal_error_line,
 };

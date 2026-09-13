@@ -240,6 +240,31 @@ pub(crate) fn terminal_safe_multiline(text: &str) -> String {
     safe
 }
 
+/// Prefix-free single-line framing for success receipts, MCP text, and CLI
+/// error, refusal, reminder, or warning lines.
+///
+/// Escapes unsafe controls and collapses whitespace so LF/TAB in data cannot
+/// inject a renderer-owned line. This is not a store or JSON sanitizer.
+#[must_use]
+pub fn terminal_error_line(text: &str) -> String {
+    terminal_safe_multiline(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Prefix-free command framing for success-receipt / MCP next commands and
+/// CLI error-receipt commands.
+///
+/// Escapes unsafe controls, including LF/TAB, and keeps every safe literal
+/// byte (repeated spaces inside quoted arguments). Not a store or JSON sanitizer.
+#[must_use]
+pub fn terminal_error_command(text: &str) -> String {
+    terminal_safe_multiline(text)
+        .replace('\n', "\\n")
+        .replace('\t', "\\t")
+}
+
 fn terminal_safe_data_block(text: &str) -> String {
     terminal_safe_multiline(text)
         .split('\n')

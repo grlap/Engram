@@ -168,6 +168,8 @@ bounding, including compact next/list titles, labels, holders, show outcomes
 and blockers, child rows, and guidance. Single-line prose fields flatten whitespace;
 multiline acceptance and note bodies keep indented newlines and fold tabs to spaces.
 Printed commands escape unsafe characters but preserve every safe literal byte, including repeated spaces inside quoted arguments.
+The same prefix-free `terminal_error_line` / `terminal_error_command` helpers serve those receipt fields and CLI error lines; they are not a store or JSON sanitizer.
+Every `anyhow` `Err` returned from `run_cli` prints one framed `error: <cause>` line per cause on stderr (Display order, exit 1), in any output mode, including `--json` and core input or argument errors. Work-word text refusals frame the message and reminder lines the same way. `next` commands keep safe quoted spacing. The host-path probe `WARNING` uses the same line policy. Clap help and parser diagnostics stay on clap's writer. `--version` is a custom `DisplayVersion` branch that prints build identity, not clap's version writer and not this error renderer. Panics still unwind. Structured JSON success receipts and structured JSON refusal envelopes keep source projections without terminal sanitization; this includes `--json` work-word envelopes, core `StoreError` envelopes, import, and doctor. Project-file `terminal_detail` is a separate refusal framer and is unchanged. This is not a blanket stdout/stderr sanitizer and does not rewrite the store.
 Structured JSON retains its existing source projections, not terminal escapes;
 this includes both MCP structured content and its equivalent JSON text content.
 See [text framing](local-work-system.md#agent-native-protocol).

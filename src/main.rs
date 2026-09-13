@@ -35,6 +35,7 @@ use bin_support::{
     doctor::doctor,
     graph::run_graph_from_cli,
     store_lifecycle::{backup, initialize, restore},
+    terminal_errors::{emit_anyhow_error, emit_host_path_probe_warning, emit_work_text_refusal},
 };
 
 #[derive(Debug, Parser)]
@@ -81,9 +82,7 @@ fn resolve_host_path_identity(
     match probe_host_path_policy(root) {
         Ok(policy) => Some(policy),
         Err(error) => {
-            eprintln!(
-                "WARNING: {error}; path leases are refused until --host-path-policy case_fold|case_sensitive (or ENGRAM_HOST_PATH_POLICY) is supplied"
-            );
+            emit_host_path_probe_warning(&error);
             None
         }
     }
@@ -809,19 +808,33 @@ enum AuthorityCommand {
 
 const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
 
-fn main() -> Result<ExitCode> {
+fn main() -> ExitCode {
     // The combined clap command graph is parsed and driven on this named
     // thread because Windows' default main-thread stack is too small for the
     // full CLI enum. Tokio worker futures are not affected; only parse and
     // `block_on` stay on the enlarged stack.
+    //
+    // Generic `Err` values become `error: <Display cause>` lines. Clap
+    // help/parser diagnostics call `error.exit()` before this. `--version` is
+    // a custom DisplayVersion branch that prints build identity. A panic still
+    // unwinds.
     match std::thread::Builder::new()
         .name("engram-cli".into())
         .stack_size(CLI_STACK_BYTES)
-        .spawn(run_cli)?
-        .join()
+        .spawn(run_cli)
     {
-        Ok(result) => result,
-        Err(payload) => std::panic::resume_unwind(payload),
+        Ok(handle) => match handle.join() {
+            Ok(Ok(code)) => code,
+            Ok(Err(error)) => {
+                emit_anyhow_error(&error);
+                ExitCode::FAILURE
+            }
+            Err(payload) => std::panic::resume_unwind(payload),
+        },
+        Err(error) => {
+            emit_anyhow_error(&anyhow::Error::from(error));
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -1565,16 +1578,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                     })?
                 );
             } else {
-                eprintln!("error: {}", verbs.error_message(&error));
-                for reminder in &guidance.reminders {
-                    eprintln!("  - {reminder}");
-                }
-                if !guidance.next.is_empty() {
-                    eprintln!("next:");
-                    for command in &guidance.next {
-                        eprintln!("  {command}");
-                    }
-                }
+                emit_work_text_refusal(&verbs.error_message(&error), &guidance);
             }
             Ok(ExitCode::FAILURE)
         }

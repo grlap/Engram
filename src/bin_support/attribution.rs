@@ -24,6 +24,7 @@ impl ShellWorkAttribution {
     pub(crate) fn print_notices(&self) {
         match self.defaults.actor {
             Some(WorkActorDefaultSource::OsUserEnvironment) => eprintln!(
+                // Static copy; not caller/store hostile text. See session notice.
                 "NOTICE: ENGRAM_ACTOR_ID was absent; attribution uses the asserted OS-user environment and is marked defaulted."
             ),
             Some(WorkActorDefaultSource::ProcessFallback) => eprintln!(
@@ -32,6 +33,10 @@ impl ShellWorkAttribution {
             None => {}
         }
         if self.defaults.session {
+            // Process-default session ids are `local-process-v1-*`. This is
+            // session identity, not the OS-user/synthetic actor notice above.
+            // Generated ids are not caller/store hostile text, so the notice
+            // stays outside the error/refusal renderer.
             eprintln!(
                 "NOTICE: ENGRAM_SESSION_ID was absent; this command uses {}. Reuse it within seven days with --session-id {} for a follow-up that must retain focus, claim authority, or exact retry identity.",
                 self.session_id, self.session_id

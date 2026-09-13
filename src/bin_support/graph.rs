@@ -106,6 +106,9 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
                         )
                     })
                     .count();
+                // Widening reasons are store-validated (no control/format
+                // characters) before this notice. This is not the error/refusal
+                // renderer and is not a second character table.
                 eprintln!(
                     "WARNING: --include-restricted widened {widened_memories} restricted project-memory bod{} into this disclosure because: {}",
                     if widened_memories == 1 { "y" } else { "ies" },

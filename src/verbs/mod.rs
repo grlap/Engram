@@ -400,13 +400,11 @@ fn terminal_data_block(text: &str) -> String {
     terminal_safe_multiline(text).replace('\t', " ")
 }
 
-/// Command quoting is already owned by its builder. Preserve every safe
-/// literal byte, including whitespace inside quoted arguments; only escape
+/// Shared prefix-free command framing for success receipts, MCP text, and CLI
+/// error next-commands. Quoting stays with the builder; this only escapes
 /// terminal controls, including the shared multiline policy's LF/tab exceptions.
 fn terminal_command(text: &str) -> String {
-    terminal_safe_multiline(text)
-        .replace('\n', "\\n")
-        .replace('\t', "\\t")
+    crate::work_service::terminal_error_command(text)
 }
 
 fn short_ref_for_work_id(work_id: WorkId) -> String {
@@ -426,11 +424,10 @@ fn short_with_limit(text: &str, max_bytes: usize) -> String {
     format!("{}…", text[..end].trim_end())
 }
 
+/// Shared prefix-free single-line framing for success receipts, MCP text, and
+/// CLI error lines. Not a store or JSON sanitizer.
 fn terminal_safe_line(text: &str) -> String {
-    terminal_safe_multiline(text)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    crate::work_service::terminal_error_line(text)
 }
 
 fn nonempty(value: Option<String>) -> Option<String> {
