@@ -28,10 +28,7 @@ fn finish(verbs: &AgentVerbs, work_ref: &str, now: i64) -> Receipt {
         .unwrap();
     assert!(!receipt.owed);
     assert!(receipt.text().starts_with("done "));
-    assert!(receipt.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&receipt.value).unwrap().len() <= MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
     receipt
 }
 
@@ -358,14 +355,10 @@ fn remaining_child_summary_fits_final_bytes_and_keeps_exact_remainders() {
         .unwrap()
     };
     let full = render(MAX_AGENT_WORK_RESPONSE_BYTES);
-    let budget = full
-        .text()
-        .len()
-        .max(serde_json::to_vec_pretty(&full.value).unwrap().len())
-        - 1;
+    let budget = emitted_receipt_bytes(&full) - 1;
     let fitted = render(budget);
-    assert!(fitted.text().len() <= budget);
-    assert!(serde_json::to_vec_pretty(&fitted.value).unwrap().len() <= budget);
+    assert!(emitted_receipt_bytes(&fitted) <= budget);
+    assert!(serde_json::to_vec(&fitted.value).unwrap().len() <= budget);
     let group = &fitted.value["child_obligations"]["open_optional"];
     let shown = group["items"].as_array().unwrap().len();
     assert!(shown < 5);
@@ -484,11 +477,7 @@ fn criterion_disclosure_composes_child_diagnostic_failure_with_available_or_unav
             );
             assert!(receipt.value.get("acceptance_evidence").is_none());
         }
-        assert!(text.len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
     }
 }
 

@@ -457,7 +457,7 @@ test("mutation and continuation titles are terminal-safe while MCP JSON retains 
       assert.doesNotMatch(text, /\r/u);
       for (const line of text.split("\n")) assert.doesNotMatch(line, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}]/u);
       assert.equal(text.split(/\r?\n/u).filter((line) => line === "next:" || line === "next: none").length, 1);
-      assert.ok(Buffer.byteLength(text) <= 12288);
+      assert.ok(Buffer.byteLength(text) < 12288);
     };
     const checkJson = (response) => {
       const value = receipt(response);
@@ -546,7 +546,7 @@ test("stored text is framed on every CLI read line while MCP JSON stays exact", 
       for (const line of lines) assert.doesNotMatch(line, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}]/u);
       assert.equal(lines.filter((line) => line === "next:" || line === "next: none").length, 1);
       assert.ok(output.stdout.includes(String.raw`\u{1b}[2J`), output.stdout);
-      assert.ok(Buffer.byteLength(output.stdout) <= 12288);
+      assert.ok(Buffer.byteLength(output.stdout) < 12288);
       const response = await client.call(word, args);
       const value = receipt(response);
       const jsonText = response.content.filter(({ type }) => type === "text");
@@ -649,7 +649,7 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
         const text = spawnSync(binary, ["--home", engramHome, "work", "--actor-id", "successor-reader", "--session-id", "successor-reader", ...flags], { cwd: root, encoding: "utf8" });
         assert.equal(text.status, 0, text.stderr);
         assert.ok(text.stdout.includes(resolved ? `resolved by successor ${successor} (completed)` : `successor ${successor} (open)`));
-        assert.ok(Buffer.byteLength(text.stdout) <= 12288);
+        assert.ok(Buffer.byteLength(text.stdout) < 12288);
         assert.doesNotMatch(JSON.stringify(value), HASH);
       }
       for (const verbose of [false, true]) {
@@ -681,7 +681,12 @@ test("required successor resolution agrees across CLI, MCP, listing and done", a
       phase = `CLI parent refusal json=${json}`;
       const refused = cliWord(engramHome, "successor-reader", "done", parent, "Still owed", ...(json ? ["--json"] : []));
       assert.equal(refused.status, 2, refused.stderr);
-      assert.ok(Buffer.byteLength(refused.stdout) <= 12288);
+      const refusedBytes = Buffer.byteLength(refused.stdout);
+      if (json) {
+        assert.ok(refusedBytes <= 12288);
+      } else {
+        assert.ok(refusedBytes < 12288);
+      }
       if (json) {
         const cliRefusal = JSON.parse(refused.stdout);
         // Repeating completion capture renews the held claim. Check its
@@ -815,7 +820,7 @@ test("compact next shares clipped status context and requires the full STOP tail
         const row = value[held ? "held" : "assigned"].find(row => row.ref === reference);
         assert.equal(row.current_status.complete, false);
         assert.equal(JSON.stringify(value).split(prefix).length - 1, 1);
-        assert.ok(Buffer.byteLength(JSON.stringify(value, null, 2)) < 12 * 1024);
+        assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12288);
         assert.ok(value.reminders.some(reminder => reminder.includes("read full status")
           && reminder.includes("approval") && reminder.includes("STOP") && reminder.includes("no permission")));
         if (held) {
@@ -830,7 +835,7 @@ test("compact next shares clipped status context and requires the full STOP tail
       }
       assert.equal(text.split(prefix).length - 1, 1);
       assert.ok(text.includes("status body omitted"));
-      assert.ok(Buffer.byteLength(text) < 12 * 1024);
+      assert.ok(Buffer.byteLength(text) < 12288);
       assert.ok(!text.includes("STOP: publication requires explicit human approval"));
       // A distinct capture may start with the complete status's literal dots.
       // The genuine session marker must precede any marker-shaped body text.
@@ -1334,7 +1339,7 @@ test("peek orientation preserves pending context and memory signals on CLI and M
       assert.ok(value.next.includes("engram work memories"));
       assert.equal(value.delivery_token, undefined);
       assert.equal(value.delivered_through, undefined);
-      assert.ok(Buffer.byteLength(JSON.stringify(value, null, 2)) < 12 * 1024);
+      assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12288);
     };
     for (const verbose of [false, true, false]) {
       const flags = ["--peek", ...(verbose ? ["--verbose"] : [])];
@@ -1347,7 +1352,7 @@ test("peek orientation preserves pending context and memory signals on CLI and M
       assert.match(text.stdout, /not whether notes were read or applied/);
       assert.ok(text.stdout.includes(peer));
       assert.doesNotMatch(text.stdout, /more arrive with your next call/);
-      assert.ok(Buffer.byteLength(text.stdout) < 12 * 1024);
+      assert.ok(Buffer.byteLength(text.stdout) < 12288);
       assert.deepEqual(cliJson(engramHome, session, "show", held), before);
     }
     receipt(await client.call("memories", { query: "orientation", full: true }));
@@ -1863,8 +1868,8 @@ test("resume discovery agrees across claimless MCP and CLI sessions", async (t) 
     const positions = headings.map((heading) => text.indexOf(heading));
     assert.ok(positions.every((position) => position >= 0), text);
     assert.deepEqual(positions, positions.toSorted((a, b) => a - b));
-    assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12 * 1024);
-    assert.ok(Buffer.byteLength(text) < 12 * 1024);
+    assert.ok(Buffer.byteLength(JSON.stringify(value)) < 12288);
+    assert.ok(Buffer.byteLength(text) < 12288);
   } finally {
     try {
       if (coordinator) await coordinator.close();
@@ -1909,10 +1914,10 @@ test("parent child summaries agree across CLI and MCP including omitted disposed
       const cli = spawnSync(binary, [...context, ...args, "--json"], { cwd: root, encoding: "utf8" });
       assert.equal(cli.status, 0, cli.stderr);
       assert.deepEqual(JSON.parse(cli.stdout).child_obligations, value.child_obligations);
-      assert.ok(Buffer.byteLength(cli.stdout) <= 12 * 1024);
+      assert.ok(Buffer.byteLength(cli.stdout) <= 12288);
       const text = spawnSync(binary, [...context, ...args], { cwd: root, encoding: "utf8" });
       assert.equal(text.status, 0, text.stderr);
-      assert.ok(Buffer.byteLength(text.stdout) <= 12 * 1024);
+      assert.ok(Buffer.byteLength(text.stdout) < 12288);
       assert.match(text.stdout, /required children still owed \(5 of 6 shown\):/u);
       assert.match(text.stdout, /open optional follow-ups \(5 of 6 shown\):/u);
       assert.match(text.stdout, /optional children do not block completion/u);
@@ -1965,7 +1970,7 @@ test("note and history windows continue through CLI and MCP with complete detail
       assert.equal(shell.status, 0, shell.stderr);
       assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
       assertRecordParity(JSON.parse(shell.stdout), page);
-      assert.ok(Buffer.byteLength(JSON.stringify(page, null, 2)) < 12288);
+      assert.ok(Buffer.byteLength(JSON.stringify(page)) < 12288);
       assert.equal(page.notes_window.newer, seen.length);
       assert.equal(page.notes_omitted, bodies.length - page.notes.length);
       seen.push(...page.notes.toReversed().map(({ summary }) => summary));
@@ -2044,7 +2049,7 @@ test("notes keep a verdict visible after nine gates with explicit CLI and MCP ga
       const shellValue = JSON.parse(shell.stdout);
       assertRecordParity(shellValue, value);
       assert.ok(Buffer.byteLength(shell.stdout) <= 12288);
-      assert.ok(Buffer.byteLength(text.stdout) <= 12288);
+      assert.ok(Buffer.byteLength(text.stdout) < 12288);
       assert.equal(text.stdout.match(/gate evidence:/gu).length, 1);
       for (const [family, total] of Object.entries({ notes: 1, observations: 1, gates: 9 })) {
         const shown = value.notes.filter((row) => row.family === family).length;
@@ -2157,7 +2162,12 @@ test("full contract text round-trips through CLI and MCP show", async (t) => {
     const cli = (args) => {
       const result = spawnSync(binary, [...context, ...args], { cwd: root, encoding: "utf8" });
       assert.equal(result.status, 0, result.stderr);
-      assert.ok(Buffer.byteLength(result.stdout) <= 12 * 1024);
+      const stdout = Buffer.byteLength(result.stdout);
+      if (args.includes("--json")) {
+        assert.ok(stdout <= 12288);
+      } else {
+        assert.ok(stdout < 12288);
+      }
       return result.stdout;
     };
     assert.equal(JSON.parse(cli(["show", work, "--json"])).status.work.acceptance[0], criterion);
@@ -2262,7 +2272,7 @@ test("running build identity agrees across version, CLI next, doctor and retaine
       const next = receipt(await client.call("next", { verbose }));
       assert.equal(next.build_fingerprint, identity.build_fingerprint);
       assert.equal(JSON.stringify(next).match(/"build_fingerprint"/gu).length, 1);
-      assert.ok(Buffer.byteLength(JSON.stringify(next, null, 2)) <= 12288);
+      assert.ok(Buffer.byteLength(JSON.stringify(next)) < 12288);
       const cli = cliJson(engramHome, "build-cli", "next", ...(verbose ? ["--verbose"] : []));
       assert.equal(cli.build_fingerprint, next.build_fingerprint);
     }
@@ -2334,9 +2344,9 @@ test("Phoenix full notes, defaulted acceptance and terminal-parent remedy throug
       const reminder = bounded.reminders.find((line) => line.startsWith("acceptance defaulted"));
       assert.ok(reminder && Buffer.byteLength(reminder) < 160);
       assert.doesNotMatch(reminder, /[\u0000-\u001f\u007f]/u);
-      assert.ok(Buffer.byteLength(JSON.stringify(bounded, null, 2)) <= 12288);
+      assert.ok(Buffer.byteLength(JSON.stringify(bounded)) < 12288);
       for (const content of result.content.filter(({ type }) => type === "text")) {
-        assert.ok(Buffer.byteLength(content.text) <= 12288);
+        assert.ok(Buffer.byteLength(content.text) < 12288);
       }
     }
     const work_ref = added.work.short_ref;
@@ -2348,7 +2358,7 @@ test("Phoenix full notes, defaulted acceptance and terminal-parent remedy throug
     assert.equal(full.notes_omitted, 0);
     assert.equal("omissions" in full, false);
     assert.deepEqual(full.notes.map(({ refs }) => refs), bodies.map(() => [reference]));
-    assert.ok(Buffer.byteLength(JSON.stringify(full, null, 2)) <= 12288);
+    assert.ok(Buffer.byteLength(JSON.stringify(full)) < 12288);
     const normal = receipt(await client.call("show", { work_ref }));
     const normalFlag = receipt(await client.call("show", { work_ref, notes: false }));
     assert.deepEqual(normalFlag, normal);
@@ -2566,7 +2576,7 @@ test("file intake notifies ordinary CLI and MCP reads without steering local wor
     assert.match(text, /latest source notice: \d{2}:\d{2} UTC/u);
     assert.doesNotMatch(text, /latest source notice: .*\.\d/u);
     assert.ok(Buffer.byteLength(text) < 12288);
-    assert.ok(Buffer.byteLength(JSON.stringify(after, null, 2)) < 12288);
+    assert.ok(Buffer.byteLength(JSON.stringify(after)) < 12288);
     for (const hidden of [imported.snapshot, "outside-owner", "Outside changed context", session]) {
       assert.ok(!JSON.stringify(after).includes(hidden));
       assert.ok(!text.includes(hidden));

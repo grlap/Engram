@@ -75,10 +75,7 @@ fn next_does_not_shed_discovery_for_hidden_core_metadata() {
     verbs.show(&root, at(100)).expect("read root");
     let receipt = verbs.next(&NextInput::default(), at(101)).expect("next");
     assert_eq!(receipt.value["focus"]["ref"], root);
-    assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&receipt.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
     for section in ["assigned", "participated"] {
         assert_eq!(
             receipt.value[section].as_array().map(Vec::len),
@@ -148,10 +145,7 @@ fn show_sheds_only_under_final_representation_pressure() {
     let view = service.work_focus_for_agent(&root, at(100)).unwrap();
     let original = verbs.render_show(&view, at(100)).unwrap();
     let render = |view: &WorkFocusView| verbs.render_show(view, at(100));
-    let original_size = original
-        .text()
-        .len()
-        .max(serde_json::to_vec_pretty(&original.value).unwrap().len());
+    let original_size = emitted_receipt_bytes(&original);
     // Strict fitting at the exact full-output size must shed something; one
     // extra byte must retain every projected row and the exact guidance.
     let retained =
@@ -159,8 +153,8 @@ fn show_sheds_only_under_final_representation_pressure() {
     assert_eq!(retained.value, original.value);
     assert_eq!(retained.text(), original.text());
     let fitted = crate::verbs::show::fit_show_receipt(view, render, original_size).unwrap();
-    assert!(fitted.text().len() < original_size);
-    assert!(serde_json::to_vec_pretty(&fitted.value).unwrap().len() < original_size);
+    assert!(emitted_receipt_bytes(&fitted) < original_size);
+    assert!(serde_json::to_vec(&fitted.value).unwrap().len() < original_size);
     assert_eq!(fitted.value["children"], original.value["children"]);
     assert_eq!(fitted.value["next"], original.value["next"]);
     let removed = original.value["history"]["items"].as_array().unwrap().len()
@@ -216,15 +210,12 @@ fn show_note_budget_counts_only_visible_rows() {
     let original = verbs.render_show(&view, at(11)).unwrap();
     assert_eq!(original.value["notes"].as_array().unwrap().len(), 8);
     assert_eq!(original.value["notes_omitted"], 1);
-    let budget = original
-        .text()
-        .len()
-        .max(serde_json::to_vec_pretty(&original.value).unwrap().len());
+    let budget = emitted_receipt_bytes(&original);
     let fitted =
         crate::verbs::show::fit_show_receipt(view, |view| verbs.render_show(view, at(11)), budget)
             .unwrap();
-    assert!(fitted.text().len() < budget);
-    assert!(serde_json::to_vec_pretty(&fitted.value).unwrap().len() < budget);
+    assert!(emitted_receipt_bytes(&fitted) < budget);
+    assert!(serde_json::to_vec(&fitted.value).unwrap().len() < budget);
     let rows = fitted.value["notes"].as_array().unwrap();
     assert_eq!(rows.len(), 7);
     assert_eq!(
@@ -266,10 +257,7 @@ fn core_focus_and_verbose_next_keep_the_rich_response_budget() {
 fn show_does_not_shed_relations_for_hidden_core_metadata() {
     let (_directory, verbs, _service, root) = rich_focus(8);
     let receipt = verbs.show(&root, at(100)).expect("show");
-    assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&receipt.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
     assert_eq!(receipt.value["children"].as_array().unwrap().len(), 8);
     assert_eq!(receipt.value["children_omitted"], 4);
     assert!(
@@ -299,10 +287,7 @@ fn a_fourth_coordination_note_does_not_erase_resume_discovery() {
         let shown = verbs.show(&root, at(now + 2)).unwrap();
         assert_eq!(shown.value["children"].as_array().unwrap().len(), 8);
         assert_eq!(shown.value["children_omitted"], 4);
-        assert!(shown.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&shown.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&shown) < MAX_AGENT_WORK_RESPONSE_BYTES);
         let next = verbs.next(&NextInput::default(), at(now + 3)).unwrap();
         assert_eq!(next.value["focus"]["ref"], root);
         assert_eq!(
@@ -356,9 +341,6 @@ fn a_fourth_coordination_note_does_not_erase_resume_discovery() {
                 1
             );
         }
-        assert!(next.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&next.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&next) < MAX_AGENT_WORK_RESPONSE_BYTES);
     }
 }

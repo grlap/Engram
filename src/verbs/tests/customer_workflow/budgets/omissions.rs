@@ -1,10 +1,7 @@
 use super::*;
 
 fn receipt_size(receipt: &Receipt) -> usize {
-    receipt
-        .text()
-        .len()
-        .max(serde_json::to_vec_pretty(&receipt.value).unwrap().len())
+    emitted_receipt_bytes(receipt)
 }
 
 fn focus_byte_omitted(receipt: &Receipt) -> usize {

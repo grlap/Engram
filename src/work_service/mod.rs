@@ -87,6 +87,8 @@ mod views;
 mod test_support;
 
 pub(crate) use catalog::WorkListingPage;
+#[cfg(test)]
+pub(crate) use catalog::{encode_listing_cursor_json, listing_cursor_json};
 pub use operations::*;
 pub(crate) use projection::*;
 pub(crate) use record_windows::{WorkRecordRow, WorkRecordWindow};

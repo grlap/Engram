@@ -57,6 +57,7 @@ impl SqliteStore {
         R: Redactor,
         A: Fn(&ProjectMemoryFull) -> Result<(), StoreError>,
     {
+        admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
         validate_project_memory_authorization(&request.session_id, &request.actor)?;
         let actor = validated_project_memory_actor(&request.actor, redactor)?;
         validate_project_memory_authorization(&request.session_id, &actor)?;
@@ -214,6 +215,7 @@ impl SqliteStore {
         request: &ForgetProjectMemoryRequest,
         redactor: &R,
     ) -> Result<ProjectMemoryMutationReceipt, StoreError> {
+        admit_live_project_memory_sessions(&request.session_id, &request.actor)?;
         validate_project_memory_authorization(&request.session_id, &request.actor)?;
         let actor = validated_project_memory_actor(&request.actor, redactor)?;
         validate_project_memory_authorization(&request.session_id, &actor)?;
@@ -294,13 +296,14 @@ impl SqliteStore {
         key: &str,
         revision: Option<u64>,
     ) -> Result<ProjectMemoryFull, StoreError> {
+        admit_live_project_memory_sessions(session_id, actor)?;
+        validate_project_memory_authorization(session_id, actor)?;
         if self.connection.is_autocommit() {
             let snapshot = self.connection.unchecked_transaction()?;
             let full = self.project_memory_full(project_id, session_id, actor, key, revision)?;
             snapshot.commit()?;
             return Ok(full);
         }
-        validate_project_memory_authorization(session_id, actor)?;
         let key = validate_project_memory_key(key)?;
         let history = lookup_project_memory_history_on(&self.connection, project_id, &key)?;
         let existing = history
@@ -343,6 +346,7 @@ impl SqliteStore {
         query: Option<&str>,
         after: Option<&str>,
     ) -> Result<ProjectMemoryList, StoreError> {
+        admit_live_project_memory_sessions(session_id, actor)?;
         validate_project_memory_authorization(session_id, actor)?;
         let normalized_query = normalize_project_memory_query(query)?;
         if normalized_query.is_some() && after.is_some() {
@@ -455,6 +459,7 @@ impl SqliteStore {
         session_id: &SessionId,
         advertisement: &ProjectMemoryAdvertisement,
     ) -> Result<(), StoreError> {
+        crate::storage::admit_session_id(session_id)?;
         if !advertisement.changed {
             return Ok(());
         }
@@ -609,6 +614,17 @@ fn validate_project_memory_actor_shape(actor: &ActorContext) -> Result<(), Store
         return Err(StoreError::InvalidProjectMemory(format!(
             "project-memory attribution exceeds the {MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES}-byte canonical limit"
         )));
+    }
+    Ok(())
+}
+
+fn admit_live_project_memory_sessions(
+    session_id: &SessionId,
+    actor: &ActorContext,
+) -> Result<(), StoreError> {
+    crate::storage::admit_session_id(session_id)?;
+    if let Some(session) = actor.session_id.as_ref() {
+        crate::storage::admit_session_id(session)?;
     }
     Ok(())
 }

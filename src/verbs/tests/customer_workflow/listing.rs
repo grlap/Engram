@@ -1,5 +1,3 @@
-use std::fmt::Write as _;
-
 use super::*;
 
 mod corrections;
@@ -58,11 +56,7 @@ fn listing_continuation_enumerates_the_exact_byte_bounded_direct_child_set() {
             assert_eq!(receipt.value["limit"], 1000);
             assert_eq!(receipt.value["byte_budget"], MAX_AGENT_WORK_RESPONSE_BYTES);
             assert!(receipt.text().contains("--limit 1000; byte budget 12288"));
-            assert!(receipt.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
-            assert!(
-                serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                    <= MAX_AGENT_WORK_RESPONSE_BYTES
-            );
+            assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
             for row in rows {
                 collected.push(
                     if verbose {
@@ -509,20 +503,11 @@ fn listing_ready_cursor_rejects_wrong_after_priority_for_same_work_id() {
 }
 
 fn listing_token_value(token: &str) -> Value {
-    let encoded = token.strip_prefix("c1-").expect("c1 prefix");
-    let bytes = (0..encoded.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(&encoded[index..index + 2], 16).unwrap())
-        .collect::<Vec<_>>();
-    serde_json::from_slice(&bytes).unwrap()
+    crate::work_service::listing_cursor_json(token).expect("listing cursor JSON")
 }
 
 fn encode_listing_token(value: &Value) -> String {
-    let mut token = String::from("c1-");
-    for byte in serde_json::to_vec(value).unwrap() {
-        write!(token, "{byte:02x}").unwrap();
-    }
-    token
+    crate::work_service::encode_listing_cursor_json(value).expect("listing cursor token")
 }
 
 #[test]

@@ -321,7 +321,7 @@ struct HandoffArgs {
     work_ref: Option<String>,
     /// offer (with to), accept, or cancel (with reason).
     action: HandoffActionArg,
-    /// Real recipient session id supplied by the host or coordinator; peer display labels are refused.
+    /// Real recipient session id supplied by the host or coordinator; at most 64 UTF-8 bytes; peer display labels are refused.
     to: Option<String>,
     /// Checkpoint summary recorded with the offer.
     summary: Option<String>,
@@ -1185,5 +1185,36 @@ mod tests {
             &server.work_service,
             &cloned_handler.work_service
         ));
+    }
+
+    #[test]
+    fn oversized_mcp_session_refuses_the_first_tool_without_opening_the_store() {
+        let directory = crate::test_support::temp_home().expect("temporary MCP home");
+        let giant = "m".repeat(65);
+        let server = McpServer::new_with_actor_context(
+            directory.path().join("engram.sqlite3"),
+            ProjectId("mcp-oversized-session".into()),
+            "agent".into(),
+            SessionId(giant.clone()),
+            Some("mcp-test".into()),
+            None,
+        );
+        let refused = server.verbs().next(
+            &NextInput {
+                limit: Some(5),
+                peek: true,
+                verbose: false,
+                context_generation: None,
+            },
+            Utc::now(),
+        );
+        let error = refused.expect_err("oversized MCP session");
+        let message = error.to_string();
+        assert!(
+            message.contains(crate::SessionIdAdmissionError::TooLong.as_str()),
+            "{message}"
+        );
+        assert!(!message.contains(&giant));
+        assert!(format!("{:?}", server.work_service).contains("store_initialized: false"));
     }
 }

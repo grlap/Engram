@@ -32,6 +32,7 @@ impl SqliteStore {
         request: &NoteRequest,
         redactor: &R,
     ) -> Result<NoteReceipt, StoreError> {
+        crate::storage::admit_live_actor_session(&request.actor)?;
         Self::validate_note_content(request, redactor)?;
 
         let request_object = note_fingerprint(request)?;
@@ -362,6 +363,8 @@ impl SqliteStore {
         now: DateTime<Utc>,
         redactor: &R,
     ) -> Result<MemoryContradictionReceipt, StoreError> {
+        crate::storage::admit_session_id(session_id)?;
+        crate::storage::admit_live_actor_session(&actor)?;
         inspect_generic_memory_actor_context(&actor, redactor)?;
         redactor
             .inspect(reason)

@@ -36,9 +36,7 @@ pub(super) fn fit_show_receipt(
 }
 
 fn show_fits(receipt: &super::Receipt, max_bytes: usize) -> Result<bool, super::VerbError> {
-    // Match compact next's conservative strict ceiling for both formats.
-    Ok(receipt.text().len() < max_bytes
-        && serde_json::to_vec_pretty(&receipt.value)?.len() < max_bytes)
+    super::receipts::agent_receipt_fits(receipt, max_bytes)
 }
 
 fn record_show_omission(view: &mut WorkFocusView, count: usize) {

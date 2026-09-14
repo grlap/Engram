@@ -22,6 +22,7 @@ use engram::{
     WorkHandoffInput, WorkItemKind, WorkLifecycle, WorkNextQuery, WorkNextSection,
     WorkObligationId, WorkProposeInput, WorkUpdateInput, looks_like_work_ref, parse_defer_date,
     parse_host_path_policy, probe_host_path_policy, project_database_path, store_error_value,
+    validate_session_id_length,
 };
 use rmcp::{ServiceExt, transport::stdio};
 
@@ -99,6 +100,7 @@ enum Command {
     Import {
         #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
         actor_id: Option<String>,
+        /// Live session identity; at most 64 UTF-8 bytes.
         #[arg(long, env = "ENGRAM_SESSION_ID", global = true)]
         session_id: Option<String>,
         #[arg(long, env = "ENGRAM_ACTOR_CONTEXT", global = true)]
@@ -163,7 +165,8 @@ enum Command {
         /// Actor identity asserted by the invoking host or operator wrapper.
         #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
         actor_id: Option<String>,
-        /// Session identity retained only as asserted audit attribution.
+        /// Session identity retained only as asserted audit attribution;
+        /// live ids are at most 64 UTF-8 bytes.
         #[arg(long, env = "ENGRAM_SESSION_ID", global = true)]
         session_id: Option<String>,
         /// Optional free-form execution context attributed to this actor.
@@ -180,7 +183,8 @@ enum Command {
         /// Actor identity asserted by the host integration.
         #[arg(long)]
         actor_id: String,
-        /// Durable runtime session identity used for task binding and privacy.
+        /// Durable runtime session identity used for task binding and privacy;
+        /// live ids are at most 64 UTF-8 bytes.
         #[arg(long)]
         session_id: String,
         /// Optional free-form execution context attributed to this actor.
@@ -195,7 +199,8 @@ enum Command {
         /// Actor identity asserted by the host integration.
         #[arg(long)]
         actor_id: String,
-        /// Durable runtime session identity fixed for this connection.
+        /// Durable runtime session identity fixed for this connection;
+        /// live ids are at most 64 UTF-8 bytes.
         #[arg(long)]
         session_id: String,
         /// Skill instruction that supplied this actor context, when available.
@@ -214,7 +219,8 @@ enum Command {
         #[arg(long, env = "ENGRAM_ACTOR_ID", global = true)]
         actor_id: Option<String>,
         /// Durable session identity used for ambient focus and cursors;
-        /// defaults to one stable id for this process.
+        /// defaults to one stable id for this process. Live ids are at most
+        /// 64 UTF-8 bytes.
         #[arg(long, env = "ENGRAM_SESSION_ID", global = true)]
         session_id: Option<String>,
         /// Optional free-form execution context attributed to this actor;
@@ -646,7 +652,8 @@ enum WorkCommand {
     Handoff {
         /// Item to hand off; defaults to the focus.
         work_ref: Option<String>,
-        /// Real recipient session id supplied by the host or coordinator; peer display labels are refused.
+        /// Real recipient session id supplied by the host or coordinator; peer
+        /// display labels are refused. Live ids are at most 64 UTF-8 bytes.
         #[arg(long, value_name = "SESSION")]
         to: Option<String>,
         /// Checkpoint summary recorded with the offer.
@@ -960,6 +967,7 @@ async fn run_cli() -> Result<ExitCode> {
             actor_context,
             source_skill,
         } => {
+            validate_session_id_length(&session_id)?;
             serve_mcp(McpServer::new_with_actor_context(
                 database,
                 project_id,
@@ -990,7 +998,7 @@ async fn run_cli() -> Result<ExitCode> {
             json,
             operation,
         } => {
-            let attribution = resolve_shell_work_attribution(actor_id, session_id);
+            let attribution = resolve_shell_work_attribution(actor_id, session_id)?;
             attribution.print_notices();
             let context = WorkContext {
                 database,
@@ -1181,10 +1189,10 @@ fn run_authority(
     reason = "each word's flag translation stays beside the others so the thirteen-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
-    let effective_session_id =
+    let fit_effective_session =
         (json && context.attribution_defaults.session && operation.returns_mutation_receipt())
             .then(|| context.session_id.clone());
-    let verbs = AgentVerbs::new_with_attribution(
+    let mut verbs = AgentVerbs::new_with_attribution(
         context.database,
         context.project_id,
         context.actor_id,
@@ -1193,6 +1201,9 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         context.actor_context,
         context.attribution_defaults,
     );
+    if let Some(session_id) = fit_effective_session {
+        verbs = verbs.with_fitted_effective_session(session_id);
+    }
     let now = chrono::Utc::now();
     let outcome = match operation {
         WorkCommand::Next {
@@ -1548,11 +1559,6 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
     };
     match outcome {
         Ok(receipt) => {
-            let receipt = if let Some(effective_session_id) = &effective_session_id {
-                receipt.with_effective_session_id(effective_session_id)
-            } else {
-                receipt
-            };
             if json {
                 println!("{}", serialize_agent_receipt(&receipt.value)?);
             } else {
@@ -1788,6 +1794,7 @@ fn serve_control(
     session_id: String,
     source_skill: Option<String>,
 ) -> Result<()> {
+    validate_session_id_length(&session_id)?;
     let mut server = HostControlServer::open_with_host_path_identity(
         database,
         identity,

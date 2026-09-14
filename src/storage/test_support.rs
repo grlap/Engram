@@ -318,3 +318,32 @@ pub(super) fn complete_control_turn(
     ));
     *grant
 }
+
+pub(super) fn ascii65_session() -> SessionId {
+    SessionId("a".repeat(65))
+}
+
+pub(super) fn utf8_oversized_session() -> SessionId {
+    SessionId("é".repeat(33))
+}
+
+pub(super) fn exact_64_session(byte: u8) -> String {
+    String::from_utf8(vec![byte; crate::MAX_SESSION_ID_BYTES]).expect("ascii session")
+}
+
+pub(super) fn exact_64_ascii_session() -> String {
+    exact_64_session(b'p')
+}
+
+pub(super) fn exact_64_utf8_session() -> String {
+    "é".repeat(crate::MAX_SESSION_ID_BYTES / 2)
+}
+
+pub(super) fn assert_oversized_session_refusal(error: &StoreError, rejected: &SessionId) {
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(reason)
+            if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    assert!(!error.to_string().contains(&rejected.0));
+}

@@ -1101,3 +1101,270 @@ fn soft_contradictions_are_delivered_and_flagged() {
             && item.retrieval_reason.contains("unresolved contradiction")
     }));
 }
+
+fn standalone_note(session: &str, key: &str) -> NoteRequest {
+    NoteRequest {
+        project_id: ProjectId("project-a".into()),
+        task_id: None,
+        work_id: None,
+        prose: "standalone observation".into(),
+        visibility: NoteVisibility::Shared,
+        kind: None,
+        authority: None,
+        sensitivity: None,
+        title: None,
+        tags: Vec::new(),
+        evidence: Vec::new(),
+        refs: Vec::new(),
+        actor: actor(session),
+        idempotency_key: key.into(),
+        created_at: Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+    }
+}
+
+fn refuse_capture_note_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .capture_note(
+            &standalone_note(&live.0, "should-not-write"),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized note actor");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+}
+
+fn seed_contradiction_pair(store: &mut SqliteStore) -> (crate::TaskId, ObjectHash, ObjectHash) {
+    let project = ProjectId("project-a".into());
+    let session = SessionId("agent-a".into());
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let task = store
+        .start_task(
+            &project,
+            "dummy:ADMIT-CONTRA",
+            "Contradiction admission",
+            &session,
+            actor("agent-a"),
+            now,
+        )
+        .expect("start task");
+    let first = store
+        .capture_note(
+            &note_request(
+                task.task.task_id,
+                "agent-a",
+                "First contested rule.",
+                "contra-first",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("first note");
+    let second = store
+        .capture_note(
+            &note_request(
+                task.task.task_id,
+                "agent-a",
+                "Second contested rule.",
+                "contra-second",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("second note");
+    (task.task.task_id, first.version, second.version)
+}
+
+fn refuse_contradiction_before_effects(session: &SessionId, actor_session: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let (task_id, first, second) = seed_contradiction_pair(&mut store);
+    let before = test_database_shape_snapshot(&store.connection).expect("before");
+    let mut ctx = actor(&actor_session.0);
+    if session != actor_session {
+        ctx.session_id = Some(actor_session.clone());
+    }
+    let error = store
+        .record_memory_contradiction(
+            &ProjectId("project-a".into()),
+            Some(task_id),
+            None,
+            session,
+            "agent-a",
+            &first,
+            &second,
+            "these rules cannot both hold",
+            "should-not-write",
+            ctx,
+            Utc.timestamp_millis_opt(1_700_000_010_000).unwrap(),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized contradiction identity");
+    let rejected = if session.0.len() > crate::MAX_SESSION_ID_BYTES {
+        session
+    } else {
+        actor_session
+    };
+    assert_oversized_session_refusal(&error, rejected);
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+}
+
+#[test]
+fn capture_note_refuses_an_ascii65_actor_session_before_effects() {
+    refuse_capture_note_before_effects(&ascii65_session());
+}
+
+#[test]
+fn capture_note_refuses_a_utf8_oversized_actor_session_before_effects() {
+    refuse_capture_note_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn capture_note_preserves_an_exact_64_byte_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let session = exact_64_ascii_session();
+    store
+        .capture_note(
+            &standalone_note(&session, "exact-session-note"),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted note");
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_kind = 'memory_version'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("stored note");
+    let version: MemoryVersion = serde_json::from_slice(&bytes).expect("decode note");
+    assert_eq!(
+        version.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}
+
+#[test]
+fn capture_note_preserves_an_exact_64_byte_utf8_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let session = exact_64_utf8_session();
+    store
+        .capture_note(
+            &standalone_note(&session, "exact-utf8-session-note"),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted note");
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_kind = 'memory_version'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("stored note");
+    let version: MemoryVersion = serde_json::from_slice(&bytes).expect("decode note");
+    assert_eq!(
+        version.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}
+
+#[test]
+fn record_memory_contradiction_refuses_an_ascii65_session_before_effects() {
+    refuse_contradiction_before_effects(&ascii65_session(), &SessionId("agent-a".into()));
+}
+
+#[test]
+fn record_memory_contradiction_refuses_a_utf8_oversized_session_before_effects() {
+    refuse_contradiction_before_effects(&utf8_oversized_session(), &SessionId("agent-a".into()));
+}
+
+#[test]
+fn record_memory_contradiction_refuses_an_ascii65_actor_session_with_a_short_caller() {
+    refuse_contradiction_before_effects(&SessionId("agent-a".into()), &ascii65_session());
+}
+
+#[test]
+fn record_memory_contradiction_refuses_a_utf8_oversized_actor_session_with_a_short_caller() {
+    refuse_contradiction_before_effects(&SessionId("agent-a".into()), &utf8_oversized_session());
+}
+
+#[test]
+fn record_memory_contradiction_preserves_an_exact_64_byte_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let session = exact_64_ascii_session();
+    let project = ProjectId("project-a".into());
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut ctx = actor("agent-a");
+    ctx.session_id = Some(SessionId(session.clone()));
+    let task = store
+        .start_task(
+            &project,
+            "dummy:ADMIT-CONTRA-64",
+            "Contradiction 64",
+            &SessionId(session.clone()),
+            ctx.clone(),
+            now,
+        )
+        .expect("start task");
+    let first = store
+        .capture_note(
+            &note_request(
+                task.task.task_id,
+                &session,
+                "First contested 64 rule.",
+                "contra-64-first",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("first note");
+    let second = store
+        .capture_note(
+            &note_request(
+                task.task.task_id,
+                &session,
+                "Second contested 64 rule.",
+                "contra-64-second",
+                NoteVisibility::Shared,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("second note");
+    store
+        .record_memory_contradiction(
+            &project,
+            Some(task.task.task_id),
+            None,
+            &SessionId(session.clone()),
+            "agent-a",
+            &first.version,
+            &second.version,
+            "these 64-byte rules cannot both hold",
+            "contra-64",
+            ctx,
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted contradiction");
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects
+             WHERE object_kind = 'memory_contradiction_event'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("stored contradiction");
+    let event: crate::MemoryContradictionEvent = serde_json::from_slice(&bytes).expect("decode");
+    assert_eq!(
+        event.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}

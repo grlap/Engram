@@ -293,6 +293,9 @@ fn work_catalog_sql(
     query: &WorkCatalogQuery,
     page: bool,
 ) -> Result<(String, Vec<Value>), StoreError> {
+    if let Some(session) = &query.held_by {
+        crate::storage::admit_session_id(session)?;
+    }
     let ready_seek = ready_seek_key(query)?;
     let mut parameters = vec![
         Value::Text(project_id.0.clone()),

@@ -845,6 +845,9 @@ pub(super) fn inspect_work_request<R: Redactor, T: Serialize>(
     actor
         .validate_attribution_context()
         .map_err(|detail| StoreError::InvalidWork(format!("invalid actor context: {detail}")))?;
+    if let Some(session) = &actor.session_id {
+        crate::storage::admit_session_id(session)?;
+    }
     let candidate = serde_json::to_string(request)?;
     redactor
         .inspect(&candidate)

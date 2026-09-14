@@ -358,13 +358,7 @@ fn phoenix_list_reports_exact_counts_and_fits_the_complete_envelope() {
                 "page is byte-bounded; continue with the same filters and ordering"
             );
         }
-        assert!(
-            serde_json::to_vec_pretty(&listed.value)
-                .expect("json")
-                .len()
-                <= MAX_AGENT_WORK_RESPONSE_BYTES
-        );
-        assert!(listed.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
+        assert!(emitted_receipt_bytes(&listed) < MAX_AGENT_WORK_RESPONSE_BYTES);
     }
     let empty = verbs
         .ls(
@@ -469,11 +463,6 @@ fn phoenix_only_list_counts_and_zero_row_guidance_names_the_first_match() {
         listed.value["next"],
         json!([format!("engram work show {work_ref}")])
     );
-    assert!(
-        serde_json::to_vec_pretty(&listed.value)
-            .expect("json")
-            .len()
-            <= budget
-    );
+    assert!(serde_json::to_vec(&listed.value).expect("json").len() <= budget);
     assert!(listed.text().len() <= budget);
 }

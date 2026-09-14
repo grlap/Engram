@@ -1021,8 +1021,9 @@ pub(super) fn fit_focus_response(response: &mut WorkFocusView) -> Result<(), Sto
     Ok(())
 }
 
-/// The outer verbose renderer measures its complete text/pretty-JSON receipt;
-/// shed recoverable focus context before its primary held/assigned duties.
+/// The outer verbose renderer measures complete text and compact
+/// application-receipt JSON; shed recoverable focus context before its
+/// primary held/assigned duties.
 pub(crate) fn shed_work_next_focus(response: &mut WorkNextView) -> bool {
     if response.focus.as_mut().is_some_and(trim_focus_once) {
         record_byte_omission(response, WorkNextSection::Focus);

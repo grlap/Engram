@@ -20,7 +20,7 @@ pub(crate) fn run(
     actor_context: Option<String>,
     operation: ImportCommand,
 ) -> Result<ExitCode> {
-    let attribution = resolve_shell_work_attribution(actor, session);
+    let attribution = resolve_shell_work_attribution(actor, session)?;
     attribution.print_notices();
     let service = LocalWorkService::new_with_attribution(
         database,

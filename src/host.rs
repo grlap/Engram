@@ -161,6 +161,7 @@ impl HostControlServer {
         session_id: SessionId,
         source_skill: Option<String>,
     ) -> Result<Self, StoreError> {
+        crate::storage::admit_session_id(&session_id)?;
         let mut store = SqliteStore::open_with_host_path_identity(database, identity)?;
         let connection_token = store.resume_control_connection(&session_id, Utc::now())?;
         Ok(Self {
@@ -775,5 +776,29 @@ mod tests {
         .expect_err("unknown resource-subject field must fail closed");
         assert!(error.contains("lease_acquire"));
         assert!(error.contains("unexpected"));
+    }
+
+    #[test]
+    fn host_control_open_refuses_an_oversized_session_before_store_open() {
+        let directory = crate::test_support::temp_home().expect("temp");
+        let path = directory.path().join("control.sqlite3");
+        let giant = SessionId("h".repeat(65));
+        let Err(error) = HostControlServer::open_with_host_path_identity(
+            &path,
+            None,
+            ProjectId("control-admission".into()),
+            "actor".into(),
+            giant.clone(),
+            None,
+        ) else {
+            panic!("oversized control session must be refused")
+        };
+        assert!(matches!(
+            error,
+            StoreError::InvalidWork(ref reason)
+                if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+        ));
+        assert!(!error.to_string().contains(&giant.0));
+        assert!(!path.exists());
     }
 }

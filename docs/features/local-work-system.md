@@ -820,8 +820,17 @@ the last item actually emitted.
 
 The `local-process-` prefix is reserved for generated process-default work
 sessions; a `local-process-v1-*` id may be reused for seven days, after which
-the caller must omit `--session-id` to receive a fresh process default. The
-transaction that creates a new process-default session row pays for one
+the caller must omit `--session-id` to receive a fresh process default. Live
+caller, planning-actor, handoff-recipient, and control start/join participant
+and actor session ids are at most 64 UTF-8 bytes; longer values refuse before
+store effects. The same live length-only admit applies to generic note capture,
+graph-snapshot save or load operator actors, contradiction request and actor
+sessions, control-policy administrator actor sessions, and project-memory
+remember, forget, full, or list callers. A caller-supplied catalog `held_by` filter is length-admitted
+the same way: that is live filter admission, not validation of a persisted
+claim holder. A persisted claim holder used only for comparison is not
+length-admitted. Historical stored ids are not rewritten.
+The transaction that creates a new process-default session row pays for one
 index-bounded reclamation page of at most 64 older inactive rows and their
 protocol attempts; operations under an existing row take the primary-key path
 and do no retention scan. Recent activity, an explicit task binding, staged
@@ -980,9 +989,10 @@ use the same display `by` label, not a raw `actor_session_id`, and expose
 native project `feed_position` for every actor.
 Inherited rows omit `feed_position`: their member order is not a position in
 this host's project feed. These diagnostic detail fields do not change note
-text or confer execution authority. The complete text and JSON window stays
-within 12 KiB, with exact `notes_omitted` and `notes_window` (`shown`, `total`,
-`newer`, `older`, `after`).
+text or confer execution authority. The complete text and compact
+application-receipt JSON window stays strictly under 12 KiB, with exact
+`notes_omitted` and `notes_window` (`shown`, `total`, `newer`, `older`,
+`after`).
 `show REF --notes --after CURSOR` reaches the next older window; `--history`
 uses the same window metadata in `history.window`. Unlike ordinary show's
 native-change history and separate restored history, this mode combines

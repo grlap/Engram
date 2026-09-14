@@ -1,7 +1,62 @@
-# Proposal: Fable and Codex working as a pair
+# Agent review and coordination workflow
 
-Status: proposal for discussion and a pilot on an existing project. This document
-does not change standing instructions or grant Git or publication authority. Its
+## Adopted coordination rules (2026-09-13, revision 1)
+
+Greg approved these rules for Engram and TermAl on 2026-09-13 and asked Advisor
+to document, distribute, and confirm their durable recovery. This section is
+adopted guidance; the pilot proposal below remains a proposal. Current user
+instructions and each project's applicable quality requirements govern execution.
+This decision does not grant commit, push, installation, or restart authority.
+
+1. **The host owns validation of its safeguards.** TermAl owns tests proving
+   denied writes, interpreter restrictions, and other host security behavior.
+   Give that work a host owner and evidence. Do not add those probes to every
+   Engram packet or to `/review-code`. An outstanding host test blocks an Engram
+   review only when there is a concrete connection to the review's required
+   access or integrity. Required independent freeze and source checks still
+   belong to the review; a parent's result cannot replace a missing reviewer
+   check.
+2. **One parent owns each review input.** For Engram: implement corrections,
+   run required project tests, freeze the current input, obtain exactly one
+   Codex and one Claude read-only review, then consolidate findings. The parent
+   owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
+   Use supported host tools for required checks. Keep host-security acceptance
+   separate from product review, with no competing owners or duplicate proof
+   obligations. Other projects retain their applicable review requirements.
+3. **Repeat verification for a reason.** A changed input or a concrete failure
+   can require renewed validation and review under project policy. Name that
+   reason and the input covered by each result. First recover existing results
+   after interruption; do not commission duplicate reviewers or rerun gates
+   merely to obtain another confirmation. Keep genuine evidence gaps visible;
+   do not silently weaken acceptance or call an unavailable reviewer clean.
+4. **Report outcomes and decisions, not every exchange.** The coordinator
+   collects peer updates and gives Greg the result, a real blocker, or a question
+   requiring his decision. Send meaningful progress during ongoing work without
+   forwarding each internal ACK. Reply to peers when they need an action or
+   answer; do not create ACK-of-ACK loops. A durable mailbox acknowledgement is
+   still required after processing a read page; it is not a reason to send a
+   separate message. ACKs, configuration, and a restart do not prove execution.
+5. **Record once and recover from the source.** Each root agent in these two
+   projects records an attributed note in its supported durable recovery
+   mechanism, with this document, section, revision, date, and project/role
+   scope. Read it back and send one record locator/revision or concrete access
+   gap to the coordinator. A shared project-memory entry may be reused by
+   several agents after each reads it; do not manufacture per-agent copies of
+   the same project rule. Reviewer leaves receive applicable rules in their
+   brief and do not mutate a tracker or memory. Saved notes point to Greg's
+   decision; they are not higher-priority instructions. Advisor records one
+   aggregate adoption result and any missing confirmations.
+
+Coordinate documentation edits with the named review parent. Do not change an
+active frozen input unnoticed. Integrate at an agreed boundary and identify the
+new input covered by subsequent review. The user's decision applies immediately;
+waiting to integrate its documentation does not postpone it.
+
+## Pilot proposal: Fable and Codex working as a pair
+
+Status of the remainder: proposal for discussion and a pilot on an existing
+project. It does not change standing instructions or grant Git or publication
+authority. The adopted section above takes precedence over this proposal. Its
 proposals are not claims of shipped behavior; [Shipped Today](shipped.md) remains
 the inventory of installed behavior.
 
@@ -230,12 +285,14 @@ that another session needs to process. Review artifacts retain detailed packet
 and reviewer output. Source-controlled instructions retain standing project
 rules.
 
-Use the durable mailbox protocol: list to obtain this participant's processed
-cursor, read subsequent bodies, process them, and acknowledge through the last
-processed sequence with compare-and-swap. Reply only when another action or
-answer is needed. Retry an uncertain send with the same intent and idempotency
-key. Acknowledgment records processing of a message; any resulting unfinished
-work must have its own durable obligation.
+Use the current durable mailbox protocol: read from the participant's cursor
+by omitting `afterSequence`, save the receipt, process the whole page including
+own sends, then acknowledge that unchanged receipt. Reading never acknowledges;
+listing mailboxes is discovery only. Follow page continuations without skipping
+unprocessed messages. Reply only when another action or answer is needed; retry
+an uncertain send with the same intent and idempotency key. A receipt proves
+issuance, not comprehension or task execution. Any resulting unfinished work
+must have its own durable obligation.
 
 Project `remember` entries can preserve attributed observations and references
 to decisions. They do not create new binding rules or replace the instruction

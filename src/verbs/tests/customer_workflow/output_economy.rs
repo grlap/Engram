@@ -5,7 +5,7 @@ use crate::verbs::record_windows::{continuation_header, fit_window};
 mod followups;
 
 fn bytes(value: &Value) -> usize {
-    serde_json::to_vec_pretty(value).unwrap().len()
+    compact_json_len(value)
 }
 
 fn assert_compact(receipt: &Receipt, title: &str) {
@@ -32,8 +32,7 @@ fn assert_compact(receipt: &Receipt, title: &str) {
     assert!(detail.starts_with("engram work show '"));
     assert!(receipt.text().contains(detail));
     assert!(!receipt.next.iter().any(|command| command == detail));
-    assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(bytes(&receipt.value) < MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(emitted_receipt_bytes(receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 #[test]
@@ -458,8 +457,7 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
                         .map(|row| row["locator"].clone()),
                 );
                 pages += 1;
-                assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-                assert!(bytes(&receipt.value) < MAX_AGENT_WORK_RESPONSE_BYTES);
+                assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
                 after = meta["after"].as_str().map(str::to_owned);
                 if after.is_none() {
                     break;

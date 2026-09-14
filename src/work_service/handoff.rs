@@ -29,6 +29,9 @@ impl LocalWorkService {
         input: WorkHandoffInput,
         now: DateTime<Utc>,
     ) -> Result<WorkHandoffResult, StoreError> {
+        if let WorkHandoffInput::Offer { to, .. } = &input {
+            crate::storage::admit_session_id_text(to)?;
+        }
         let mut store = self.store_at(now)?;
         let target = self.bind_target(&mut store, work_ref, now)?;
         let basis = self.protocol_basis(&store, true, true, target, now)?;

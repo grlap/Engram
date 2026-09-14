@@ -2,6 +2,9 @@
 
 ## Engram Standing Instructions
 
+Keep AGENTS.md and CLAUDE.md identical and self-contained. Apply instruction
+changes to both files; neither runtime is required to read the other file.
+
 Engram is a local-first work, behavioral-control, and execution-memory system
 for coding agents. SQLite is canonical on the active host; agent-private
 scratch and live execution authority stay there. External intake,
@@ -53,8 +56,9 @@ their presence in a file alone does not prove delivery.
   vocabulary; receipt shaping, terse show rendering, and word handlers live
   in owning modules, and `src/verbs/tests/` mirrors those modules; its public
   re-exports preserve the existing `crate::verbs` paths.
-- `src/tracker.rs` currently owns the neutral external adapter port and dummy
-  publication adapter; vendor-specific types stay outside the core.
+- `src/tracker.rs` currently owns the neutral external adapter port and
+  side-effect-free dummy publication adapter; vendor-specific types stay
+  outside the core.
 - Engram owns host-local work from creation/decomposition through completion.
   An item may cite an immutable external snapshot, but Engram never silently
   mirrors external task state.
@@ -69,7 +73,7 @@ their presence in a file alone does not prove delivery.
   and hashes are not safety cursors.
 - Assignment is future intent; a fenced work claim schedules live execution;
   a fenced resource lease authorizes mutation. Never conflate them. Handoff
-  and recovery are explicit and audited.
+  and recovery are explicit, with immutable and audited events.
 - V1 has one ordinary executor/claim per `WorkRun`; parallel sessions claim
   distinct child runs under a `RootExecution` aggregate.
 - Do not complete a root until `CompletionSeal` binds the dense run-feed cut,
@@ -92,8 +96,8 @@ their presence in a file alone does not prove delivery.
 - SQLite is canonical on the active host. Planned external backup may raise
   `local_backed_up`; planned `portable` mode provides one-active-host handoff with
   scheduled push, writer-epoch release/acquire under remote-head CAS,
-  divergence refusal, and no transfer of live claims/leases/grants/private
-  scratch. Release freezes old-host mutation; acquire must succeed before
+  divergence refusal, and no transfer of live claims, leases, grants, delivery
+  state, or private scratch. Release freezes old-host mutation; acquire must succeed before
   new-host mutation; portable startup/resume must validate the remote epoch.
   The portable projection must close every executable shared-state reference;
   excluded provenance uses explicit stubs/placeholders, never dangling refs or
@@ -103,6 +107,9 @@ their presence in a file alone does not prove delivery.
   assumed.
 
 ### Documentation and Skills
+
+- The installed capability inventory is [docs/shipped.md](docs/shipped.md);
+  keep shipped facts separate from roadmap and target prose.
 
 - Architecture and behavior live under `docs/`; feature briefs live under
   `docs/features/` and should be cross-linked when they overlap.
@@ -145,7 +152,8 @@ phases without the Unix-only file-descriptor-limit adjustment.
 
 After any gate failure, investigate the failing path and classify/fix or track
 the actual defect. Do not normalize retries or call an intermittent failure an
-acceptable flaky test.
+acceptable flaky test. Intermittence is a symptom to diagnose, not a reason to
+retry until green or quarantine a test.
 On the focused open item you hold, record each executed gate once: `engram
 work gate NAME` for a pass, or `engram work gate NAME --failed FAILURE --ref
 opaque-reference` for bounded failure evidence. For a late gate on completed
@@ -173,6 +181,56 @@ Report the classification for every failure before asking for a decision;
 "the suite failed" alone is not a report.
 
 ### Review Cadence
+
+The following adopted coordination rules (2026-09-13, revision 1) are reproduced
+here for independent runtime recovery. The [workflow document](docs/agent-pair-workflow.md#adopted-coordination-rules-2026-09-13-revision-1)
+provides the source; its remaining pilot proposal is not adopted. Current user
+instructions and applicable project quality requirements govern execution.
+These rules do not grant commit, push, installation, or restart authority.
+
+1. **The host owns validation of its safeguards.** TermAl owns tests proving
+   denied writes, interpreter restrictions, and other host security behavior.
+   Give that work a host owner and evidence. Do not add those probes to every
+   Engram packet or to `/review-code`. An outstanding host test blocks an Engram
+   review only when there is a concrete connection to the review's required
+   access or integrity. Required independent freeze and source checks still
+   belong to the review; a parent's result cannot replace a missing reviewer
+   check.
+2. **One parent owns each review input.** For Engram: implement corrections,
+   run required project tests, freeze the current input, obtain exactly one
+   Codex and one Claude read-only review, then consolidate findings. The parent
+   owns gates, reviewer lifecycle, and acceptance; leaves inspect and report.
+   Use supported host tools for required checks. Keep host-security acceptance
+   separate from product review, with no competing owners or duplicate proof
+   obligations. Other projects retain their applicable review requirements.
+3. **Repeat verification for a reason.** A changed input or a concrete failure
+   can require renewed validation and review under project policy. Name that
+   reason and the input covered by each result. First recover existing results
+   after interruption; do not commission duplicate reviewers or rerun gates
+   merely to obtain another confirmation. Keep genuine evidence gaps visible;
+   do not silently weaken acceptance or call an unavailable reviewer clean.
+4. **Report outcomes and decisions, not every exchange.** The coordinator
+   collects peer updates and gives Greg the result, a real blocker, or a question
+   requiring his decision. Send meaningful progress during ongoing work without
+   forwarding each internal ACK. Reply to peers when they need an action or
+   answer; do not create ACK-of-ACK loops. A durable mailbox acknowledgement is
+   still required after processing a read page; it is not a reason to send a
+   separate message. ACKs, configuration, and a restart do not prove execution.
+5. **Record once and recover from the source.** Each root agent in these two
+   projects records an attributed note in its supported durable recovery
+   mechanism, with this document, section, revision, date, and project/role
+   scope. Read it back and send one record locator/revision or concrete access
+   gap to the coordinator. A shared project-memory entry may be reused by
+   several agents after each reads it; do not manufacture per-agent copies of
+   the same project rule. Reviewer leaves receive applicable rules in their
+   brief and do not mutate a tracker or memory. Saved notes point to Greg's
+   decision; they are not higher-priority instructions. Advisor records one
+   aggregate adoption result and any missing confirmations.
+
+Coordinate documentation edits with the named review parent. Do not change an
+active frozen input unnoticed. Integrate at an agreed boundary and identify the
+new input covered by subsequent review. The user's decision applies immediately;
+waiting to integrate its documentation does not postpone it.
 
 - `/review-changes` runs parent-owned quality gates, freezes the worktree, and
   delegates exactly one Codex and one Claude `/review-code` reviewer through
@@ -251,6 +309,8 @@ engram work memories [QUERY] | engram work memories --after KEY | engram work me
 engram work forget KEY
 ```
 
+- After compaction or replacement, read `next --peek` before acting. It does
+  not stage or acknowledge delivery; follow clipped status detail locators.
 - Claim before implementation; note decisions and evidence once;
   `done` tells you what is still owed. Receipts carry `next:` commands —
   follow them.

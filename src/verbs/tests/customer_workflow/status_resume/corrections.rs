@@ -50,7 +50,7 @@ fn status_correction_verbose_guidance_counts_toward_budget() {
         context_generation: Some(String::new()),
         ..NextInput::default()
     };
-    let pretty_len = |value: &serde_json::Value| serde_json::to_vec_pretty(value).unwrap().len();
+    let compact_len = |value: &serde_json::Value| serde_json::to_vec(value).unwrap().len();
     let without_guidance = |mut value: serde_json::Value| {
         let object = value.as_object_mut().unwrap();
         object.remove("reminders");
@@ -70,7 +70,7 @@ fn status_correction_verbose_guidance_counts_toward_budget() {
                 }
             }
             (MAX_AGENT_WORK_RESPONSE_BYTES - 200..MAX_AGENT_WORK_RESPONSE_BYTES - 150)
-                .contains(&pretty_len(&value))
+                .contains(&compact_len(&value))
         })
         .expect("a reducible status candidate near the protocol boundary");
     let body = "\u{1}".repeat(length);
@@ -85,13 +85,13 @@ fn status_correction_verbose_guidance_counts_toward_budget() {
         }
     }
     let unassembled = without_guidance(candidate.value.clone());
-    let padding = MAX_AGENT_WORK_RESPONSE_BYTES - pretty_len(&unassembled) - 1;
+    let padding = MAX_AGENT_WORK_RESPONSE_BYTES - compact_len(&unassembled) - 1;
     assert!(padding <= 256);
     let generation = "x".repeat(padding);
     let mut expected = candidate.value.clone();
     expected["context_generation"] = json!(generation);
-    assert!(pretty_len(&without_guidance(expected.clone())) < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(pretty_len(&expected) > MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(compact_len(&without_guidance(expected.clone())) < MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(compact_len(&expected) > MAX_AGENT_WORK_RESPONSE_BYTES);
     let resumed = reader
         .next(
             &NextInput {
@@ -102,11 +102,11 @@ fn status_correction_verbose_guidance_counts_toward_budget() {
         )
         .unwrap();
     assert!(
-        pretty_len(&resumed.value) < MAX_AGENT_WORK_RESPONSE_BYTES,
+        compact_len(&resumed.value) < MAX_AGENT_WORK_RESPONSE_BYTES,
         "assembled receipt is {} bytes; guidance must count before accepting the fit",
-        pretty_len(&resumed.value)
+        compact_len(&resumed.value)
     );
-    assert!(resumed.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(emitted_receipt_bytes(&resumed) < MAX_AGENT_WORK_RESPONSE_BYTES);
     assert_eq!(resumed.value["assigned"].as_array().unwrap().len(), 3);
     assert_eq!(resumed.next, candidate.next);
     assert_eq!(resumed.reminders, candidate.reminders);
@@ -327,11 +327,7 @@ fn status_correction_escape_heavy_show_and_next_fit() {
             },
         ] {
             let shown = owner.show_records(reference, &options, at(10)).unwrap();
-            assert!(shown.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-            assert!(
-                serde_json::to_vec_pretty(&shown.value).unwrap().len()
-                    < MAX_AGENT_WORK_RESPONSE_BYTES
-            );
+            assert!(emitted_receipt_bytes(&shown) < MAX_AGENT_WORK_RESPONSE_BYTES);
             assert_eq!(shown.value["status"]["work"]["outcome"], "x".repeat(4096));
             assert!(
                 ["current_status", "status_observation"]
@@ -411,12 +407,10 @@ fn status_correction_escape_heavy_show_and_next_fit() {
                 at(18),
             )
             .unwrap();
-        assert!(resumed.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
         assert!(
-            serde_json::to_vec_pretty(&resumed.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES,
+            emitted_receipt_bytes(&resumed) < MAX_AGENT_WORK_RESPONSE_BYTES,
             "verbose={verbose} bytes={}",
-            serde_json::to_vec_pretty(&resumed.value).unwrap().len(),
+            emitted_receipt_bytes(&resumed),
         );
         assert_eq!(resumed.value["assigned"].as_array().unwrap().len(), 3);
         assert_eq!(resumed.value["held"].as_array().unwrap().len(), 1);

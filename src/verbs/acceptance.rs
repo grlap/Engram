@@ -223,8 +223,7 @@ pub(super) fn fit_done(
 ) -> Result<Receipt, VerbError> {
     let mut page = AcceptanceEvidence::new(facts);
     let fits = |receipt: &Receipt| -> Result<bool, VerbError> {
-        Ok(receipt.text().len() < budget
-            && serde_json::to_vec_pretty(&receipt.value)?.len() < budget)
+        super::receipts::agent_receipt_fits(receipt, budget)
     };
     let full = render(&page)?;
     if fits(&full)? {

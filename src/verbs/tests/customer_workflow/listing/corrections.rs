@@ -1,5 +1,12 @@
 use super::*;
 
+/// Test-owned copies of the two listing-continuation refusals. They must stay
+/// distinct so an encode-cap fixture cannot silently cover the receipt-budget
+/// branch.
+const LISTING_CONTINUATION_ENCODE_CAP: &str =
+    "listing continuation metadata is too large; shorten search, label or parent scope";
+const LISTING_CONTINUATION_RECEIPT_BUDGET: &str = "listing continuation metadata exceeds the response budget; shorten search, label or parent scope before listing again";
+
 #[test]
 fn listing_commands_use_the_same_ascii_quote_syntax_on_every_host() {
     let input = LsInput {
@@ -128,16 +135,7 @@ fn listing_cursor_rejects_scoped_cross_project_and_unknown_anchor() {
     assert_eq!(error.guidance().next, vec![input.list_command()]);
     // The existing parent is excluded by the direct-child filter. Alter only
     // the anchor, not the cut or filter identity, to exercise the SQL guard.
-    let bytes = token
-        .strip_prefix("c1-")
-        .unwrap()
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect::<Vec<_>>();
-    let mut cursor: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let mut cursor = super::listing_token_value(token);
     let store = crate::SqliteStore::open(&path).unwrap();
     cursor["after"] = json!(
         store
@@ -145,11 +143,7 @@ fn listing_cursor_rejects_scoped_cross_project_and_unknown_anchor() {
             .unwrap()
             .work_id
     );
-    let mut changed = String::from("c1-");
-    for byte in serde_json::to_vec(&cursor).unwrap() {
-        use std::fmt::Write;
-        write!(&mut changed, "{byte:02x}").unwrap();
-    }
+    let changed = super::encode_listing_token(&cursor);
     let connection = rusqlite::Connection::open(&path).unwrap();
     let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
     let error = verbs
@@ -242,7 +236,7 @@ fn listing_cursor_refuses_fractional_expiry_and_clock_reversal() {
 #[test]
 fn listing_continuation_metadata_overflow_is_an_explicit_refusal() {
     let (_directory, verbs, _, _) = fixture();
-    let search = "x".repeat(MAX_AGENT_WORK_RESPONSE_BYTES / 5);
+    let search = "x".repeat(MAX_AGENT_WORK_RESPONSE_BYTES * 2 / 3);
     add(&verbs, &format!("{search} first"), None, false, 0);
     add(&verbs, &format!("{search} second"), None, false, 1);
     let input = LsInput {
@@ -261,14 +255,56 @@ fn listing_continuation_metadata_overflow_is_an_explicit_refusal() {
         )
         .unwrap();
     assert_eq!(all.value["items"].as_array().unwrap().len(), 2);
-    assert!(serde_json::to_vec_pretty(&all.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(emitted_receipt_bytes(&all) < MAX_AGENT_WORK_RESPONSE_BYTES);
     let error = verbs.ls(&input, at(2)).unwrap_err();
     assert!(
         matches!(&error.error, StoreError::WorkCatalogCursorInvalid { reason }
-        if reason.contains("continuation metadata") && reason.contains("shorten"))
+        if reason == LISTING_CONTINUATION_ENCODE_CAP)
+    );
+    assert_ne!(
+        LISTING_CONTINUATION_ENCODE_CAP,
+        LISTING_CONTINUATION_RECEIPT_BUDGET
     );
     assert_eq!(error.guidance().next, vec![input.list_command()]);
     assert!(!error.to_string().contains("row exceeds"));
+}
+
+#[test]
+fn listing_continuation_receipt_budget_overflow_is_an_explicit_refusal() {
+    let (_directory, verbs, path, _) = fixture();
+    let search = "x".repeat(MAX_AGENT_WORK_RESPONSE_BYTES / 3);
+    add(&verbs, &format!("{search} first"), None, false, 0);
+    add(&verbs, &format!("{search} second"), None, false, 1);
+    let input = LsInput {
+        search: Some(search),
+        limit: Some(1),
+        ..LsInput::default()
+    };
+    let all = verbs
+        .ls(
+            &LsInput {
+                limit: Some(2),
+                ..input.clone()
+            },
+            at(2),
+        )
+        .unwrap();
+    assert_eq!(all.value["items"].as_array().unwrap().len(), 2);
+    assert!(all.value.get("after").is_none());
+    assert!(emitted_receipt_bytes(&all) < MAX_AGENT_WORK_RESPONSE_BYTES);
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
+    let error = verbs.ls(&input, at(2)).unwrap_err();
+    assert!(
+        matches!(&error.error, StoreError::WorkCatalogCursorInvalid { reason }
+        if reason == LISTING_CONTINUATION_RECEIPT_BUDGET)
+    );
+    assert_eq!(error.guidance().next, vec![input.list_command()]);
+    assert!(!error.to_string().contains("row exceeds"));
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&connection).unwrap(),
+        before
+    );
 }
 
 #[test]

@@ -1594,6 +1594,11 @@ pub(super) fn assert_actor_session(
     actor: &crate::domain::ActorContext,
     expected: &SessionId,
 ) -> Result<(), StoreError> {
+    // `expected` is a comparison identity, often a persisted claim holder.
+    // Length-admit only the live actor session; do not retrofit stored ids.
+    if let Some(session) = &actor.session_id {
+        crate::storage::admit_session_id(session)?;
+    }
     if actor.session_id.as_ref() == Some(expected) {
         Ok(())
     } else {

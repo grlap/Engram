@@ -168,7 +168,17 @@ is separately bounded to 2 MiB before decoding; ordinary decomposition and
 agent-response limits are unchanged. Multiple calls are not one transaction.
 Ask the host or coordinator for a real recipient session id before a handoff.
 `handoff --to SESSION` refuses generated peer display labels before any write;
-this prevents unusable offers, not identity spoofing.
+this prevents unusable offers, not identity spoofing. Live caller, planning-actor,
+handoff-recipient, and control start/join participant and actor session ids
+are at most 64 UTF-8 bytes and refuse before store effects; the same live
+length-only admit covers generic note capture, graph-snapshot save or load
+operator actors, contradiction request and actor sessions, control-policy
+administrator actor sessions, and project-memory remember, forget, full, or
+list callers; a caller-supplied
+catalog `held_by` filter is length-admitted the same way (live filter
+admission, not persisted-holder validation); a persisted claim
+holder used only for comparison is not length-admitted. Do not hide metadata
+or cap a stored identity at emit time.
 
 Engram tracks the work of this repository.
 
@@ -239,8 +249,16 @@ Rules that matter:
   `ready_next` (`ls --ready`) for the remaining candidates; it starts after
   the last retained row, even after byte fitting. `ready_more` is not a count.
   A changed or expired listing cursor refuses with fresh same-filter
-  navigation. Execute that command to recover the current set. Verbose and
+  navigation, including a previous hex listing token. Execute that command
+  to recover the current set. Verbose and
   core limits, delivery and memory recovery are unchanged.
+  Budgeted agent receipts and windows fit compact application-receipt JSON
+  (`serde_json::to_vec`) and CLI terminal text including the final `println`
+  LF, each strictly under 12288 bytes. Compact JSON stays payload-only.
+  That measure is the application payload, not a duplicated MCP/JSON-RPC
+  wrapper. The host-core inclusive guard still allows an exact 12288-byte
+  `to_vec` body. `show REF --note LOCATOR` full-note detail is the unchanged
+  exception and may exceed 12288.
 
 - Resume with `next --peek`: held/ready/changed context comes from one read
   snapshot without staging or acknowledging a page, changing focus, or

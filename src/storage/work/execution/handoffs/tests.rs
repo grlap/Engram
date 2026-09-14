@@ -213,3 +213,53 @@ fn foreign_holder_cannot_commit_an_expired_handoff_sweep() {
         events_before
     );
 }
+
+#[test]
+fn offer_work_handoff_refuses_an_oversized_recipient_before_tx() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("project-handoff-admission", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let initial = claim(&mut store, &root, "agent-a", "claim-a", 1, 10);
+    let offers_before: i64 = store
+        .connection
+        .query_row("SELECT COUNT(*) FROM work_handoff_offers", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    let giant = SessionId("r".repeat(65));
+    let error = store
+        .offer_work_handoff(
+            &OfferWorkHandoffRequest {
+                work_id: root.work_id,
+                run_id: initial.run_id,
+                expected_work_revision: root.revision,
+                from: initial.holder.clone(),
+                to: giant.clone(),
+                claim_id: initial.claim_id,
+                claim_fence: initial.fence,
+                ttl_seconds: 10,
+                checkpoint_summary: "should not persist".into(),
+                actor: actor("agent-a"),
+                idempotency_key: "oversized-recipient".into(),
+                offered_at: at(2),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized recipient");
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(ref reason) if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    assert!(!error.to_string().contains(&giant.0));
+    let offers_after: i64 = store
+        .connection
+        .query_row("SELECT COUNT(*) FROM work_handoff_offers", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    assert_eq!(offers_after, offers_before);
+}

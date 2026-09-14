@@ -322,9 +322,8 @@ pub(super) fn done_with_acceptance(
             .len()
             .saturating_sub(base.text().len())
             .max(
-                serde_json::to_vec_pretty(&unavailable_base.value)?
-                    .len()
-                    .saturating_sub(serde_json::to_vec_pretty(&base.value)?.len()),
+                super::receipts::compact_receipt_json_bytes(&unavailable_base.value)?
+                    .saturating_sub(super::receipts::compact_receipt_json_bytes(&base.value)?),
             );
         let mut child_budget = budget.saturating_sub(reserve);
         loop {
@@ -333,9 +332,7 @@ pub(super) fn done_with_acceptance(
                 .as_array()
                 .is_some_and(|rows| !rows.is_empty());
             let composed = super::acceptance::unavailable(child_receipt, error_class)?;
-            if composed.text().len() < budget
-                && serde_json::to_vec_pretty(&composed.value)?.len() < budget
-            {
+            if super::receipts::agent_receipt_fits(&composed, budget)? {
                 return Ok(composed);
             }
             if !has_child_rows {
@@ -365,9 +362,8 @@ pub(super) fn done_with_acceptance(
                 .len()
                 .saturating_sub(base.text().len())
                 .max(
-                    serde_json::to_vec_pretty(&disclosed_base.value)?
-                        .len()
-                        .saturating_sub(serde_json::to_vec_pretty(&base.value)?.len()),
+                    super::receipts::compact_receipt_json_bytes(&disclosed_base.value)?
+                        .saturating_sub(super::receipts::compact_receipt_json_bytes(&base.value)?),
                 );
             page.append(&children_at(budget.saturating_sub(reserve))?)
         },
@@ -432,9 +428,7 @@ pub(super) fn done_with_child_obligations(
         let mut rendered_value = value.clone();
         rendered_value["child_obligations"] = json!({"open_optional": group});
         let receipt = Receipt::assemble(rendered_lines, guidance.clone(), rendered_value, false);
-        if receipt.text().len() < budget
-            && serde_json::to_vec_pretty(&receipt.value)?.len() < budget
-        {
+        if super::receipts::agent_receipt_fits(&receipt, budget)? {
             return Ok(receipt);
         }
         if group.items.pop().is_some() {

@@ -1867,3 +1867,309 @@ fn lease_acquire_replay_is_scoped_to_the_current_bind_generation() {
             if operation == "lease_acquire" && key == "bind-scoped-acquire"
     ));
 }
+
+#[test]
+fn resume_control_connection_refuses_an_oversized_session_before_tx() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let giant = SessionId("c".repeat(65));
+    let error = store
+        .resume_control_connection(&giant, Utc.timestamp_millis_opt(1_700_000_000_000).unwrap())
+        .expect_err("oversized control session");
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(ref reason) if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    assert!(!error.to_string().contains(&giant.0));
+    let connections: i64 = store
+        .connection
+        .query_row("SELECT COUNT(*) FROM control_connections", [], |row| {
+            row.get(0)
+        })
+        .expect("connections");
+    assert_eq!(connections, 0);
+}
+
+#[test]
+fn bind_control_session_refuses_an_oversized_session_before_effects() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let giant = SessionId("b".repeat(65));
+    let sessions_before: i64 = store
+        .connection
+        .query_row("SELECT COUNT(*) FROM control_sessions", [], |row| {
+            row.get(0)
+        })
+        .expect("sessions");
+    let error = store
+        .bind_control_session(
+            &ProjectId("project-a".into()),
+            "dummy:CONTROL-OVERSIZE",
+            "Should not bind",
+            &giant,
+            "token",
+            &actor(&giant.0),
+            ControlAssurance::TurnGated,
+            &[EffectClass::Observe],
+            1,
+            "bind-oversized",
+            now,
+        )
+        .expect_err("oversized bind");
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(ref reason)
+            if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    assert!(!error.to_string().contains(&giant.0));
+    let sessions_after: i64 = store
+        .connection
+        .query_row("SELECT COUNT(*) FROM control_sessions", [], |row| {
+            row.get(0)
+        })
+        .expect("sessions");
+    assert_eq!(sessions_after, sessions_before);
+}
+
+fn bind_now() -> chrono::DateTime<Utc> {
+    Utc.timestamp_millis_opt(1_700_000_000_000).unwrap()
+}
+
+fn refuse_start_or_join_before_effects(
+    join: bool,
+    participant: &SessionId,
+    actor_session: Option<&SessionId>,
+) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let now = bind_now();
+    let project = ProjectId("project-bind-admit".into());
+    if join {
+        store
+            .start_task(
+                &project,
+                "dummy:BIND-ADMIT",
+                "Seed task",
+                &SessionId("starter".into()),
+                actor("starter"),
+                now,
+            )
+            .expect("seed task");
+    }
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let mut ctx = actor("valid-actor");
+    if let Some(session) = actor_session {
+        ctx.session_id = Some(session.clone());
+    }
+    let error = if join {
+        store.join_task(&project, "dummy:BIND-ADMIT", participant, ctx, now)
+    } else {
+        store.start_task(
+            &project,
+            "dummy:BIND-ADMIT",
+            "Should not bind",
+            participant,
+            ctx,
+            now,
+        )
+    }
+    .expect_err("oversized bind identity");
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(ref reason)
+            if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    let echoed = actor_session.unwrap_or(participant);
+    assert!(!error.to_string().contains(&echoed.0));
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before,
+        "oversized start/join must not persist tasks, participants, bindings, or events"
+    );
+}
+
+#[test]
+fn start_task_refuses_an_ascii65_participant_before_effects() {
+    refuse_start_or_join_before_effects(false, &ascii65_session(), None);
+}
+
+#[test]
+fn start_task_refuses_a_utf8_oversized_participant_before_effects() {
+    refuse_start_or_join_before_effects(false, &utf8_oversized_session(), None);
+}
+
+#[test]
+fn start_task_refuses_an_ascii65_actor_session_before_effects() {
+    refuse_start_or_join_before_effects(
+        false,
+        &SessionId("valid-participant".into()),
+        Some(&ascii65_session()),
+    );
+}
+
+#[test]
+fn start_task_refuses_a_utf8_oversized_actor_session_before_effects() {
+    refuse_start_or_join_before_effects(
+        false,
+        &SessionId("valid-participant".into()),
+        Some(&utf8_oversized_session()),
+    );
+}
+
+#[test]
+fn join_task_refuses_an_ascii65_participant_before_effects() {
+    refuse_start_or_join_before_effects(true, &ascii65_session(), None);
+}
+
+#[test]
+fn join_task_refuses_a_utf8_oversized_participant_before_effects() {
+    refuse_start_or_join_before_effects(true, &utf8_oversized_session(), None);
+}
+
+#[test]
+fn join_task_refuses_an_ascii65_actor_session_before_effects() {
+    refuse_start_or_join_before_effects(
+        true,
+        &SessionId("valid-joiner".into()),
+        Some(&ascii65_session()),
+    );
+}
+
+#[test]
+fn join_task_refuses_a_utf8_oversized_actor_session_before_effects() {
+    refuse_start_or_join_before_effects(
+        true,
+        &SessionId("valid-joiner".into()),
+        Some(&utf8_oversized_session()),
+    );
+}
+
+#[test]
+fn start_task_preserves_an_exact_64_byte_participant() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let session = exact_64_session(b'p');
+    store
+        .start_task(
+            &ProjectId("project-bind-admit".into()),
+            "dummy:BIND-64-P",
+            "Max participant",
+            &SessionId(session.clone()),
+            actor("valid-actor"),
+            bind_now(),
+        )
+        .expect("admitted participant");
+    let stored: String = store
+        .connection
+        .query_row("SELECT session_id FROM task_participants", [], |row| {
+            row.get(0)
+        })
+        .expect("participant");
+    assert_eq!(stored, session);
+}
+
+#[test]
+fn start_task_preserves_an_exact_64_byte_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let session = exact_64_session(b'a');
+    let mut ctx = actor("valid-actor");
+    ctx.session_id = Some(SessionId(session.clone()));
+    store
+        .start_task(
+            &ProjectId("project-bind-admit".into()),
+            "dummy:BIND-64-A",
+            "Max actor",
+            &SessionId("valid-participant".into()),
+            ctx,
+            bind_now(),
+        )
+        .expect("admitted actor session");
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_kind = 'task_started_event'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("started event");
+    let event: crate::domain::TaskStartedEvent = serde_json::from_slice(&bytes).expect("decode");
+    assert_eq!(
+        event.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}
+
+#[test]
+fn join_task_preserves_an_exact_64_byte_participant() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let now = bind_now();
+    let project = ProjectId("project-bind-admit".into());
+    store
+        .start_task(
+            &project,
+            "dummy:BIND-64-JOIN-P",
+            "Seed",
+            &SessionId("starter".into()),
+            actor("starter"),
+            now,
+        )
+        .expect("seed");
+    let session = exact_64_session(b'j');
+    store
+        .join_task(
+            &project,
+            "dummy:BIND-64-JOIN-P",
+            &SessionId(session.clone()),
+            actor("valid-actor"),
+            now,
+        )
+        .expect("admitted join participant");
+    let stored: String = store
+        .connection
+        .query_row(
+            "SELECT session_id FROM task_participants WHERE session_id = ?1",
+            [&session],
+            |row| row.get(0),
+        )
+        .expect("joined participant");
+    assert_eq!(stored, session);
+}
+
+#[test]
+fn join_task_preserves_an_exact_64_byte_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let now = bind_now();
+    let project = ProjectId("project-bind-admit".into());
+    store
+        .start_task(
+            &project,
+            "dummy:BIND-64-JOIN-A",
+            "Seed",
+            &SessionId("starter".into()),
+            actor("starter"),
+            now,
+        )
+        .expect("seed");
+    let session = exact_64_session(b'k');
+    let mut ctx = actor("valid-actor");
+    ctx.session_id = Some(SessionId(session.clone()));
+    store
+        .join_task(
+            &project,
+            "dummy:BIND-64-JOIN-A",
+            &SessionId("valid-joiner".into()),
+            ctx,
+            now,
+        )
+        .expect("admitted join actor session");
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_kind = 'task_joined_event'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("joined event");
+    let event: crate::domain::TaskJoinedEvent = serde_json::from_slice(&bytes).expect("decode");
+    assert_eq!(
+        event.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}

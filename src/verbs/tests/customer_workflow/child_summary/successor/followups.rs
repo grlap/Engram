@@ -296,11 +296,7 @@ fn done_refusal_keeps_the_show_successor_reason_and_core_shape() {
                 "engram work update {parent} --waive {child} --reason \"account for disposed required child\""
             )]
         );
-        assert!(refused.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&refused.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&refused) < MAX_AGENT_WORK_RESPONSE_BYTES);
         let service = LocalWorkService::new(
             path.clone(),
             project,

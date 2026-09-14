@@ -199,9 +199,7 @@ impl Receipt {
     pub(super) fn with_reminder(mut self, reminder: String) -> Result<Self, super::VerbError> {
         self.reminders.push(reminder);
         self.value["reminders"] = json!(self.reminders);
-        if self.text().len() > super::MAX_AGENT_WORK_RESPONSE_BYTES
-            || serde_json::to_vec_pretty(&self.value)?.len() > super::MAX_AGENT_WORK_RESPONSE_BYTES
-        {
+        if !agent_receipt_fits(&self, super::MAX_AGENT_WORK_RESPONSE_BYTES)? {
             return Err(StoreError::InvalidWorkProjection(
                 "add receipt exceeds the response budget".into(),
             )
@@ -560,6 +558,27 @@ impl From<serde_json::Error> for VerbError {
     }
 }
 
+/// Compact application-receipt JSON bytes, matching CLI `--json` and MCP payloads.
+pub(super) fn compact_receipt_json_bytes(value: &Value) -> Result<usize, VerbError> {
+    Ok(serde_json::to_vec(value)?.len())
+}
+
+/// CLI `println` writes one trailing LF after the application receipt text.
+pub(super) const CLI_RECEIPT_TRAILING_LF_BYTES: usize = 1;
+
+/// Actual CLI terminal bytes: application text plus the final `println` LF.
+pub(super) fn agent_receipt_terminal_bytes(text: &str) -> usize {
+    text.len() + CLI_RECEIPT_TRAILING_LF_BYTES
+}
+
+/// One candidate fits only when both delivered surfaces stay strictly under budget.
+///
+/// Compact JSON stays payload-only. Terminal text includes the CLI trailing LF.
+pub(super) fn agent_receipt_fits(receipt: &Receipt, budget: usize) -> Result<bool, VerbError> {
+    Ok(agent_receipt_terminal_bytes(&receipt.text()) < budget
+        && compact_receipt_json_bytes(&receipt.value)? < budget)
+}
+
 pub(super) fn append_changes_lines(
     lines: &mut Vec<String>,
     changes: &[String],
@@ -802,18 +821,20 @@ pub(super) fn fit_compact_next_to(
     loop {
         super::next_context::refresh_guidance(&mut compact);
         let value = compact_next_value(&compact);
-        let current_bytes = serde_json::to_vec_pretty(&value)?.len();
+        let current_bytes = compact_receipt_json_bytes(&value)?;
         // Escaped terminal data can be larger than its UTF-8 JSON value. Fit
-        // the actual emitted receipt, including guidance and the build footer.
-        let terminal_bytes = Receipt::assemble(
-            compact_next_lines(&compact),
-            compact.guidance.clone(),
-            value,
-            false,
-        )
-        .with_build_identity(&compact.read_cut, compact.context_generation.as_deref())
-        .text()
-        .len();
+        // the actual CLI emission, including guidance, the build footer, and
+        // the final println LF. Compact JSON stays payload-only.
+        let terminal_bytes = agent_receipt_terminal_bytes(
+            &Receipt::assemble(
+                compact_next_lines(&compact),
+                compact.guidance.clone(),
+                value,
+                false,
+            )
+            .with_build_identity(&compact.read_cut, compact.context_generation.as_deref())
+            .text(),
+        );
         if current_bytes < max_bytes && terminal_bytes < max_bytes {
             return Ok(compact);
         }
@@ -908,7 +929,7 @@ pub(super) fn try_shed_compact_labels(
         row.labels_omitted = Some(previous_omitted.unwrap_or(0) + labels.len());
         (labels, previous_omitted)
     };
-    let candidate_bytes = serde_json::to_vec_pretty(&compact_next_value(compact))?.len();
+    let candidate_bytes = compact_receipt_json_bytes(&compact_next_value(compact))?;
     if candidate_bytes < current_bytes {
         return Ok(true);
     }

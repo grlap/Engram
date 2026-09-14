@@ -1,13 +1,7 @@
 use super::*;
 
 fn assert_bounded(receipt: &Receipt) {
-    assert!(receipt.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&receipt.value)
-            .expect("JSON")
-            .len()
-            <= MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 pub(super) fn snapshot(

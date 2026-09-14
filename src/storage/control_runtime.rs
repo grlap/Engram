@@ -95,6 +95,10 @@ impl SqliteStore {
         actor: ActorContext,
         now: DateTime<Utc>,
     ) -> Result<TaskBindReceipt, StoreError> {
+        crate::storage::admit_session_id(participant)?;
+        if let Some(session) = &actor.session_id {
+            crate::storage::admit_session_id(session)?;
+        }
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -309,6 +313,10 @@ impl SqliteStore {
         idempotency_key: &str,
         now: DateTime<Utc>,
     ) -> Result<ControlSessionBinding, StoreError> {
+        crate::storage::admit_session_id(session_id)?;
+        if let Some(session) = &actor.session_id {
+            crate::storage::admit_session_id(session)?;
+        }
         let external_ref = external_ref.trim();
         crate::domain::validate_status_capture_actor(actor).map_err(StoreError::InvalidWork)?;
         let title = title.trim();
@@ -568,6 +576,7 @@ impl SqliteStore {
         session_id: &SessionId,
         now: DateTime<Utc>,
     ) -> Result<String, StoreError> {
+        crate::storage::admit_session_id(session_id)?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;

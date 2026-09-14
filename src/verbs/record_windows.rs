@@ -207,9 +207,7 @@ pub(super) fn fit_window(
             identity,
             budget,
         )?;
-        if candidate.text().len() < budget
-            && serde_json::to_vec_pretty(&candidate.value)?.len() < budget
-        {
+        if super::receipts::agent_receipt_fits(&candidate, budget)? {
             best = candidate;
             lower = visible;
         } else {

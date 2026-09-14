@@ -577,6 +577,7 @@ impl SqliteStore {
         &mut self,
         request: &BeginWorkProtocolAttempt<'_, T, B>,
     ) -> Result<WorkProtocolAttempt, StoreError> {
+        crate::storage::admit_session_id(request.session_id)?;
         let transaction = self.begin_work_mutation()?;
         let attempt = begin_work_protocol_attempt_on(&transaction, request)?;
         transaction.commit()?;
@@ -767,6 +768,7 @@ impl SqliteStore {
         work_id: WorkId,
         now: DateTime<Utc>,
     ) -> Result<WorkSessionState, StoreError> {
+        crate::storage::admit_session_id(session_id)?;
         let transaction = self.begin_work_mutation()?;
         let item = load_work_item(&transaction, work_id)?;
         if item.project_id != *project_id {

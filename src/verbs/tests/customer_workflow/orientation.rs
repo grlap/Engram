@@ -500,7 +500,7 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
     let with = fit_compact_next(with_cost).unwrap();
     let without = fit_compact_next(without).unwrap();
     let bytes = |receipt: &CompactNextReceipt| {
-        serde_json::to_vec_pretty(&compact_next_value(receipt))
+        serde_json::to_vec(&compact_next_value(receipt))
             .unwrap()
             .len()
     };

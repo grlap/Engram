@@ -1346,6 +1346,7 @@ pub(super) fn normalize_control_policy_actor<R: Redactor>(
     actor: &ActorContext,
     redactor: &R,
 ) -> Result<ActorContext, StoreError> {
+    crate::storage::admit_live_actor_session(actor)?;
     let normalized = normalized_control_policy_actor(actor)?;
     for prose in [
         Some(normalized.actor_id.as_str()),

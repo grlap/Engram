@@ -81,7 +81,7 @@ fn pilot_budget_clipping_adds_read_first_guidance_inside_the_budget() {
     let original = context_receipt();
     assert!(original.held[0].current_status.as_ref().unwrap().complete);
     let before = compact_next_value(&original);
-    let budget = serde_json::to_vec_pretty(&before).unwrap().len();
+    let budget = serde_json::to_vec(&before).unwrap().len();
     let fitted = fit_compact_next_to(original, budget).unwrap();
     assert_eq!(fitted.held.len(), 1);
     assert!(!fitted.held[0].current_status.as_ref().unwrap().complete);
@@ -100,7 +100,7 @@ fn pilot_budget_clipping_adds_read_first_guidance_inside_the_budget() {
     )
     .with_build_identity(&fitted.read_cut, None);
     assert!(receipt.text().len() < budget);
-    assert!(serde_json::to_vec_pretty(&receipt.value).unwrap().len() < budget);
+    assert!(serde_json::to_vec(&receipt.value).unwrap().len() < budget);
     assert!(receipt.text().contains("status body omitted"));
     assert_eq!(
         receipt.value["held"][0]["current_status"]["locator"],

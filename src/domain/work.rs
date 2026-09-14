@@ -888,7 +888,9 @@ pub struct WorkCatalogQuery {
     pub availabilities: Vec<WorkAvailability>,
     pub blocked_only: bool,
     pub assigned_to: Option<String>,
-    /// Include this session's live claims in a union with assignment when both are set.
+    /// Caller-supplied catalog filter: include this session's live claims in a
+    /// union with assignment when both are set. Length-admitted as a live
+    /// query identity, not as validation of a persisted claim holder.
     pub held_by: Option<SessionId>,
     pub label: Option<String>,
     /// Direct children of this parent, not all descendants.

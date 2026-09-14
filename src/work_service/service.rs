@@ -171,6 +171,7 @@ impl LocalWorkService {
                 "local work requires a non-empty asserted actor and session binding".into(),
             ));
         }
+        crate::storage::admit_session_id(&self.session_id)?;
         validate_process_default_work_session(
             &self.session_id,
             self.attribution_defaults.session,

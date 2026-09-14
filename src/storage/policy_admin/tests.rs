@@ -1635,3 +1635,82 @@ fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
         ControlTurnDecision::Grant { .. }
     ));
 }
+
+fn refuse_policy_actor_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let mut ctx = actor("policy-admin");
+    ctx.session_id = Some(live.clone());
+    let error = store
+        .set_required_control_assurance(
+            ControlAssurance::TurnGated,
+            &ctx,
+            "require turn mediation",
+            "should-not-write",
+            None,
+            Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized policy actor");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+}
+
+#[test]
+fn set_required_control_assurance_refuses_an_ascii65_actor_session_before_effects() {
+    refuse_policy_actor_before_effects(&ascii65_session());
+}
+
+#[test]
+fn set_required_control_assurance_refuses_a_utf8_oversized_actor_session_before_effects() {
+    refuse_policy_actor_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn set_required_control_assurance_preserves_an_exact_64_byte_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let session = exact_64_ascii_session();
+    let mut ctx = actor("policy-admin");
+    ctx.session_id = Some(SessionId(session.clone()));
+    let current = store.control_diagnostics().expect("current policy");
+    let next = if current.required_assurance == ControlAssurance::Advisory {
+        ControlAssurance::TurnGated
+    } else {
+        ControlAssurance::Advisory
+    };
+    store
+        .set_required_control_assurance(
+            next,
+            &ctx,
+            "require turn mediation",
+            "policy-64",
+            None,
+            Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted policy actor");
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects
+             WHERE object_kind = 'project_policy_authority_decision'
+             ORDER BY rowid DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("policy authority");
+    let decision: crate::ProjectPolicyAuthorityDecision =
+        serde_json::from_slice(&bytes).expect("decode authority");
+    assert_eq!(
+        decision
+            .authorized_by
+            .session_id
+            .as_ref()
+            .map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}

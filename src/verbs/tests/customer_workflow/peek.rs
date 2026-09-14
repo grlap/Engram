@@ -130,11 +130,7 @@ fn peek_bounds_both_renderers_without_shedding_disclosures() {
             )
             .unwrap();
         assert_peek(&receipt, true);
-        assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
         assert_eq!(
             crate::storage::test_database_shape_snapshot(&inspect).unwrap(),
             before
@@ -149,11 +145,7 @@ fn peek_rich_focus_remains_bounded_including_verbose_metadata() {
     for verbose in [false, true] {
         let receipt = reader.next(&peek_input(verbose), at(101)).unwrap();
         assert_peek(&receipt, true);
-        assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
     }
 }
 

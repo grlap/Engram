@@ -2,6 +2,44 @@ use super::*;
 
 mod next_context;
 
+fn receipt_with_text_len(target: usize) -> Receipt {
+    let mut pad = target;
+    for _ in 0..8 {
+        let receipt = Receipt::assemble(
+            vec!["x".repeat(pad)],
+            Guidance {
+                reminders: Vec::new(),
+                next: Vec::new(),
+            },
+            json!({ "ok": true }),
+            false,
+        );
+        let len = receipt.text().len();
+        match len.cmp(&target) {
+            std::cmp::Ordering::Equal => return receipt,
+            std::cmp::Ordering::Less => pad += target - len,
+            std::cmp::Ordering::Greater => pad = pad.saturating_sub(len - target),
+        }
+    }
+    panic!("could not stabilize receipt text to {target} bytes");
+}
+
+#[test]
+fn agent_receipt_fits_charges_the_cli_trailing_lf() {
+    let over = receipt_with_text_len(MAX_AGENT_WORK_RESPONSE_BYTES - 1);
+    assert_eq!(over.text().len(), MAX_AGENT_WORK_RESPONSE_BYTES - 1);
+    assert_eq!(
+        agent_receipt_terminal_bytes(&over.text()),
+        MAX_AGENT_WORK_RESPONSE_BYTES
+    );
+    assert!(serde_json::to_vec(&over.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(!agent_receipt_fits(&over, MAX_AGENT_WORK_RESPONSE_BYTES).expect("measure"));
+
+    let under = receipt_with_text_len(MAX_AGENT_WORK_RESPONSE_BYTES - 2);
+    assert_eq!(under.text().len(), MAX_AGENT_WORK_RESPONSE_BYTES - 2);
+    assert!(agent_receipt_fits(&under, MAX_AGENT_WORK_RESPONSE_BYTES).expect("measure"));
+}
+
 fn test_next_cut() -> crate::work_service::WorkNextReadCut {
     crate::work_service::WorkNextReadCut {
         project_position: 0,
@@ -59,7 +97,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
         .with_build_identity(&compact.read_cut, compact.context_generation.as_deref())
     };
     let before = render(&compact);
-    assert!(serde_json::to_vec_pretty(&before.value).unwrap().len() < MAX_COMPACT_NEXT_JSON_BYTES);
+    assert!(serde_json::to_vec(&before.value).unwrap().len() < MAX_COMPACT_NEXT_JSON_BYTES);
     assert!(before.text().len() > MAX_AGENT_WORK_RESPONSE_BYTES);
     // The second budget proves that even the final footer participates in
     // fitting: the body alone fits, but the complete receipt must shed a row.
@@ -71,8 +109,8 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
         }
         .expect("escaped discovery fits both formats");
         let complete = render(&fitted);
-        assert!(complete.text().len() < budget);
-        assert!(serde_json::to_vec_pretty(&complete.value).unwrap().len() < budget);
+        assert!(agent_receipt_terminal_bytes(&complete.text()) < budget);
+        assert!(serde_json::to_vec(&complete.value).unwrap().len() < budget);
         assert!(complete.text().contains("\\u{9b}"));
         assert!(!complete.text().contains('\u{9b}'));
         assert!(
@@ -155,7 +193,7 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
     receipt.discovery.participated_omitted = 1;
     let mut baseline = receipt.clone();
     while baseline.discovery.shed_one() {}
-    let limit = serde_json::to_vec_pretty(&compact_next_value(&baseline))
+    let limit = serde_json::to_vec(&compact_next_value(&baseline))
         .unwrap()
         .len()
         + 1;
@@ -183,8 +221,8 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
         context_generation: Some("termal-test".into()),
         discovery: crate::work_service::WorkDiscoveryView::default(),
         focus: Some(row.clone()),
-        held: (1..=20).map(compact_test_row).collect(),
-        ready: (21..=40).map(compact_test_row).collect(),
+        held: (1..=30).map(compact_test_row).collect(),
+        ready: (31..=80).map(compact_test_row).collect(),
         changes: (0..8)
             .map(|index| format!("change {index}: {}", "x".repeat(90)).into())
             .collect(),
@@ -218,7 +256,7 @@ fn compact_next_trims_every_advisory_section_instead_of_failing() {
         1
     );
     assert!(
-        serde_json::to_vec_pretty(&compact_next_value(&fitted))
+        serde_json::to_vec(&compact_next_value(&fitted))
             .expect("compact JSON")
             .len()
             < MAX_COMPACT_NEXT_JSON_BYTES
@@ -268,11 +306,11 @@ fn compact_next_sheds_labels_in_navigation_priority_order() {
         omissions: Vec::new(),
         guidance: Guidance::default(),
     };
-    let before = serde_json::to_vec_pretty(&compact_next_value(&receipt))
+    let before = serde_json::to_vec(&compact_next_value(&receipt))
         .expect("labeled receipt")
         .len();
     let fitted = fit_compact_next_to(receipt, before).expect("labels alone fit receipt");
-    let after = serde_json::to_vec_pretty(&compact_next_value(&fitted))
+    let after = serde_json::to_vec(&compact_next_value(&fitted))
         .expect("shed receipt")
         .len();
     assert!(after < before);
@@ -313,7 +351,7 @@ fn compact_label_shed_restores_and_continues_to_a_reducing_row() {
     let short_row = &mut short_candidate.ready[1];
     short_row.labels.clear();
     short_row.labels_omitted = Some(1);
-    let threshold = serde_json::to_vec_pretty(&compact_next_value(&short_candidate))
+    let threshold = serde_json::to_vec(&compact_next_value(&short_candidate))
         .expect("short-label candidate")
         .len();
     let mut fitted = receipt;

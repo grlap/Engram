@@ -1175,3 +1175,115 @@ fn root_completion_fences_live_optional_descendants_and_old_generations() {
     let final_report = store.verify_all().expect("integrity report");
     assert!(final_report.is_healthy(), "{final_report:?}");
 }
+
+fn rewrite_historical_claim_holder(store: &SqliteStore, run_id: WorkRunId, holder: SessionId) {
+    let (old_hash, bytes): (String, Vec<u8>) = store
+        .connection
+        .query_row(
+            "SELECT object.object_hash, object.canonical_json
+             FROM work_feed_entries entry
+             JOIN objects object ON object.object_hash = entry.object_hash
+             WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
+               AND entry.object_kind = 'work_event'
+               AND json_type(object.canonical_json, '$.claim') IS NOT NULL
+               AND json_type(object.canonical_json, '$.claim') != 'null'
+             ORDER BY entry.position DESC LIMIT 1",
+            [run_id.0.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("claimed event");
+    let mut event: WorkEvent = serde_json::from_slice(&bytes).expect("event");
+    let mut claim = event.claim.expect("claim snapshot");
+    claim.holder = holder;
+    event.claim = Some(claim.clone());
+    let object = crate::CanonicalObject::freeze(&event).expect("freeze historical holder");
+    SqliteStore::insert_object(&store.connection, "work_event", &object).expect("insert event");
+    store
+        .connection
+        .execute(
+            "UPDATE work_feed_entries SET object_hash = ?1 WHERE object_hash = ?2",
+            rusqlite::params![object.hash().as_str(), old_hash],
+        )
+        .expect("repoint feeds");
+    store
+        .connection
+        .execute(
+            "UPDATE work_items SET latest_event_hash = ?1 WHERE latest_event_hash = ?2",
+            rusqlite::params![object.hash().as_str(), old_hash],
+        )
+        .expect("repoint item");
+    store
+        .connection
+        .execute(
+            "UPDATE work_claims SET holder_session_id = ?1, claim_json = ?2 WHERE run_id = ?3",
+            rusqlite::params![
+                claim.holder.0,
+                serde_json::to_vec(&claim).expect("claim json"),
+                run_id.0.to_string()
+            ],
+        )
+        .expect("rewrite claim row");
+}
+
+#[test]
+fn dispose_work_mismatches_an_oversized_historical_holder_without_length_error() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let item = store
+        .create_work(
+            &root_request("project-historical-holder", "historical-holder", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create");
+    let claim = store
+        .claim_work(
+            &ClaimWorkRequest {
+                work_id: item.work_id,
+                expected_work_revision: item.revision,
+                expected_run_id: Some(item.active_run_id.expect("run")),
+                holder: SessionId("holder".into()),
+                ttl_seconds: 100,
+                recovery_reason: None,
+                actor: actor("holder"),
+                idempotency_key: "historical-holder-claim".into(),
+                claimed_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("claim");
+    rewrite_historical_claim_holder(&store, claim.run_id, SessionId("h".repeat(65)));
+    let before = test_database_shape_snapshot(&store.connection).expect("before dispose");
+    let error = store
+        .dispose_work(
+            &DisposeWorkRequest {
+                work_id: item.work_id,
+                expected_work_revision: item.revision,
+                disposition: WorkDisposition::Cancelled,
+                replacement_id: None,
+                reason: "caller is not the persisted holder".into(),
+                actor: actor("caller"),
+                idempotency_key: "historical-holder-dispose".into(),
+                disposed_at: at(2),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("historical holder mismatch");
+    assert!(
+        matches!(
+            error,
+            StoreError::InvalidWork(ref reason)
+                if reason.contains("does not match lifecycle holder")
+        ),
+        "{error}"
+    );
+    assert!(
+        !error
+            .to_string()
+            .contains(crate::SessionIdAdmissionError::TooLong.as_str()),
+        "historical holder must not be length-admitted: {error}"
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("after dispose"),
+        before,
+        "mismatched historical holder must not dispose or rewrite the claim"
+    );
+}

@@ -4,6 +4,10 @@ mod input_validation;
 mod memory_revisions;
 
 use super::*;
+use crate::storage::test_support::{
+    ascii65_session, assert_oversized_session_refusal, exact_64_ascii_session,
+    utf8_oversized_session,
+};
 use crate::{
     AddWorkBlockerRequest, Authority, ChangeWorkPrerequisiteRequest, ChildRequirement,
     ChildWorkDraft, ClaimWorkRequest, CreateWorkRequest, DecomposeWorkRequest, Delivery,
@@ -2086,4 +2090,183 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         child.lifecycle == WorkLifecycle::Superseded
             && child.superseded_by == Some(replacement.work_id)
     }));
+}
+
+fn refuse_save_before_effects(live: &crate::SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("snapshot-admit".into());
+    create_root(
+        &mut store,
+        &project,
+        "Admission root",
+        "snapshot-admit-root",
+    );
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .save_work_graph_snapshot(
+            &project,
+            &actor(&live.0),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized save actor");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+}
+
+fn refuse_load_before_effects(live: &crate::SessionId) {
+    let mut source = SqliteStore::open_in_memory().expect("source");
+    let project = ProjectId("snapshot-admit".into());
+    create_root(
+        &mut source,
+        &project,
+        "Admission root",
+        "snapshot-admit-root",
+    );
+    let saved = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("saver"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save");
+    let bytes = snapshot_bytes(&saved.document);
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    let before =
+        crate::storage::test_database_shape_snapshot(&destination.connection).expect("before");
+    let error = destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor(&live.0),
+            &bytes,
+            false,
+            at(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized load actor");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&destination.connection).expect("after"),
+        before
+    );
+}
+
+#[test]
+fn save_work_graph_snapshot_refuses_an_ascii65_actor_session_before_effects() {
+    refuse_save_before_effects(&ascii65_session());
+}
+
+#[test]
+fn save_work_graph_snapshot_refuses_a_utf8_oversized_actor_session_before_effects() {
+    refuse_save_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn load_work_graph_snapshot_refuses_an_ascii65_actor_session_before_effects() {
+    refuse_load_before_effects(&ascii65_session());
+}
+
+#[test]
+fn load_work_graph_snapshot_refuses_a_utf8_oversized_actor_session_before_effects() {
+    refuse_load_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn save_work_graph_snapshot_preserves_an_exact_64_byte_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("snapshot-admit-64".into());
+    create_root(
+        &mut store,
+        &project,
+        "Admission root",
+        "snapshot-admit-64-root",
+    );
+    let session = exact_64_ascii_session();
+    store
+        .save_work_graph_snapshot(
+            &project,
+            &actor(&session),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted save");
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_kind = 'work_graph_snapshot_saved'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("saved audit");
+    let event: crate::WorkGraphSnapshotSavedEvent =
+        serde_json::from_slice(&bytes).expect("decode save");
+    assert_eq!(
+        event.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}
+
+#[test]
+fn load_work_graph_snapshot_preserves_an_exact_64_byte_operator_session() {
+    let mut source = SqliteStore::open_in_memory().expect("source");
+    let project = ProjectId("snapshot-admit-64".into());
+    let root = create_root(
+        &mut source,
+        &project,
+        "Admission root",
+        "snapshot-admit-64-load",
+    );
+    let saved = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("saver"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save");
+    let session = exact_64_ascii_session();
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor(&session),
+            &snapshot_bytes(&saved.document),
+            false,
+            at(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted load");
+    let bytes: Vec<u8> = destination
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_kind = 'work_graph_snapshot_loaded'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("loaded audit");
+    let event: crate::WorkGraphSnapshotLoadedEvent =
+        serde_json::from_slice(&bytes).expect("decode load");
+    assert_eq!(
+        event.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+    let item = destination
+        .get_work_item(root.work_id)
+        .expect("restored item");
+    assert_eq!(
+        item.created_by.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
 }

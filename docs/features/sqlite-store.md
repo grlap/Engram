@@ -297,7 +297,17 @@ ceiling keeps exact lost-response replay bounded without retaining unbounded
 history or memory bodies. The `local-process-` prefix is reserved for generated
 process-default work sessions; a `local-process-v1-*` id may be reused for
 seven days, after which the caller must omit `--session-id` to receive a fresh
-process default. Creating a new process-default session atomically removes at
+process default. Live caller, planning-actor, handoff-recipient, and control
+start/join participant and actor session ids are at most 64 UTF-8 bytes;
+longer values refuse before store effects. The same live length-only admit
+applies to generic note capture, graph-snapshot save or load operator actors,
+contradiction request and actor sessions, control-policy administrator actor
+sessions, and project-memory remember, forget, full, or list callers. A caller-supplied catalog
+`held_by` filter is length-admitted the same way: that is live filter
+admission, not validation of a persisted claim holder. Control `start_task` /
+`join_task` admit both live identities before the bind transaction. A
+persisted claim holder used only for comparison is not length-admitted.
+Historical stored ids are not rewritten. Creating a new process-default session atomically removes at
 most 64 index-selected inactive session rows and their attempt rows. The
 retention indexes are declared rebuildable projections repaired by
 `doctor --repair-projections`; staged delivery, pending attempts, explicit task

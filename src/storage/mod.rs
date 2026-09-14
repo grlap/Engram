@@ -72,6 +72,26 @@ pub(crate) use work::{
     WorkNoteCapture, normalize_completion_acceptance_shape,
 };
 
+pub(crate) fn admit_session_id(session: &crate::SessionId) -> Result<(), StoreError> {
+    session
+        .validate_admitted()
+        .map_err(|error| StoreError::InvalidWork(error.as_str().into()))
+}
+
+pub(crate) fn admit_session_id_text(value: &str) -> Result<(), StoreError> {
+    crate::domain::validate_session_id_length(value)
+        .map_err(|error| StoreError::InvalidWork(error.as_str().into()))
+}
+
+pub(crate) fn admit_live_actor_session(
+    actor: &crate::domain::ActorContext,
+) -> Result<(), StoreError> {
+    if let Some(session) = actor.session_id.as_ref() {
+        admit_session_id(session)?;
+    }
+    Ok(())
+}
+
 pub(crate) const PROCESS_DEFAULT_WORK_SESSION_NAMESPACE: &str = "local-process-";
 pub(crate) const PROCESS_DEFAULT_WORK_SESSION_PREFIX: &str = "local-process-v1-";
 pub(crate) const PROCESS_DEFAULT_WORK_SESSION_RETENTION_SECONDS: i64 = 7 * 24 * 60 * 60;

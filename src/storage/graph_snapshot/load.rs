@@ -54,6 +54,7 @@ impl SqliteStore {
         loaded_at: DateTime<Utc>,
         redactor: &R,
     ) -> Result<WorkGraphSnapshotLoadResult, StoreError> {
+        crate::storage::admit_live_actor_session(actor)?;
         if !graph_destination_is_empty_on(&self.connection, project_id)? {
             return Err(StoreError::GraphDestinationNotEmpty);
         }

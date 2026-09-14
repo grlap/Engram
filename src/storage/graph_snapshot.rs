@@ -51,6 +51,7 @@ impl SqliteStore {
         exported_at: DateTime<Utc>,
         redactor: &R,
     ) -> Result<WorkGraphSnapshotExport, StoreError> {
+        crate::storage::admit_live_actor_session(actor)?;
         let widening_reason = validate_widening_reason(widening_reason)?;
         validate_snapshot_audit_actor_shape(actor).map_err(StoreError::InvalidWork)?;
         let widened = widening_reason.is_some();

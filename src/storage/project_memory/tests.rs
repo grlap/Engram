@@ -2,6 +2,10 @@ use chrono::{TimeZone, Utc};
 use std::sync::{Arc, Barrier};
 
 use super::*;
+use crate::storage::test_support::{
+    ascii65_session, assert_oversized_session_refusal, exact_64_ascii_session,
+    exact_64_utf8_session, utf8_oversized_session,
+};
 use crate::storage::{
     AssuranceLevel, MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS,
 };
@@ -1653,4 +1657,451 @@ fn project_memory_unique_index_collision_fails_closed_as_a_typed_refusal() {
         Err(StoreError::InvalidMemoryProjection(detail))
             if detail == "project memory key is reserved but its durable head is missing"
     ));
+}
+
+fn forget_request(
+    project: &str,
+    session: &str,
+    key: &str,
+    at_ms: i64,
+) -> ForgetProjectMemoryRequest {
+    ForgetProjectMemoryRequest {
+        project_id: ProjectId(project.into()),
+        session_id: SessionId(session.into()),
+        key: key.into(),
+        actor: actor(session),
+        created_at: Utc.timestamp_millis_opt(at_ms).unwrap(),
+    }
+}
+
+fn seed_project_memory(store: &mut SqliteStore, project: &str, session: &str, key: &str) {
+    store
+        .remember_project_memory(
+            &project_memory_request(
+                project,
+                session,
+                Some(key),
+                "admission seed body",
+                1_700_000_000_000,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("seed memory");
+}
+
+fn refuse_forget_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = "project-memory-admit";
+    let key = "admit-seed";
+    seed_project_memory(&mut store, project, "seed-session", key);
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .forget_project_memory(
+            &forget_request(project, &live.0, key, 1_700_000_010_000),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized forget identity");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before,
+        "oversized forget must not write a tombstone or other table rows"
+    );
+    store
+        .project_memory_full(
+            &ProjectId(project.into()),
+            &SessionId("seed-session".into()),
+            &actor("seed-session"),
+            key,
+            None,
+        )
+        .expect("seed memory stays live");
+}
+
+fn refuse_remember_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .remember_project_memory(
+            &project_memory_request(
+                "project-memory-admit",
+                &live.0,
+                Some("should-not-write"),
+                "must not persist",
+                1_700_000_000_000,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect_err("oversized remember identity");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before,
+        "oversized remember must not persist a project memory"
+    );
+}
+
+fn refuse_full_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = "project-memory-admit";
+    let key = "admit-seed";
+    seed_project_memory(&mut store, project, "seed-session", key);
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .project_memory_full(&ProjectId(project.into()), live, &actor(&live.0), key, None)
+        .expect_err("oversized full identity");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before,
+        "oversized full must not open a snapshot that mutates tables"
+    );
+}
+
+fn refuse_list_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = "project-memory-admit";
+    seed_project_memory(&mut store, project, "seed-session", "admit-seed");
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .project_memories(
+            &ProjectId(project.into()),
+            live,
+            &actor(&live.0),
+            None,
+            None,
+        )
+        .expect_err("oversized list identity");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before,
+        "oversized list must not mutate tables"
+    );
+}
+
+fn latest_assertion(store: &SqliteStore) -> crate::domain::MemoryAssertionEvent {
+    let bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects
+             WHERE object_kind = 'memory_assertion_event'
+             ORDER BY rowid DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("latest assertion");
+    serde_json::from_slice(&bytes).expect("decode assertion")
+}
+
+fn preserve_exact_session(session: &str) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = "project-memory-admit-64";
+    let key = "exact-session";
+    store
+        .remember_project_memory(
+            &project_memory_request(
+                project,
+                session,
+                Some(key),
+                "exact admitted session body",
+                1_700_000_000_000,
+            ),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted remember");
+    let remembered = store
+        .project_memory_full(
+            &ProjectId(project.into()),
+            &SessionId(session.into()),
+            &actor(session),
+            key,
+            None,
+        )
+        .expect("full after remember");
+    assert_eq!(
+        remembered.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session)
+    );
+    store
+        .forget_project_memory(
+            &forget_request(project, session, key, 1_700_000_010_000),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("admitted forget");
+    let forgotten = latest_assertion(&store);
+    assert_eq!(forgotten.status, MemoryStatus::Tombstoned);
+    assert_eq!(
+        forgotten.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session)
+    );
+}
+
+#[test]
+fn forget_project_memory_refuses_an_ascii65_session_before_effects() {
+    refuse_forget_before_effects(&ascii65_session());
+}
+
+#[test]
+fn forget_project_memory_refuses_a_utf8_oversized_session_before_effects() {
+    refuse_forget_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn remember_project_memory_refuses_an_ascii65_session_before_effects() {
+    refuse_remember_before_effects(&ascii65_session());
+}
+
+#[test]
+fn remember_project_memory_refuses_a_utf8_oversized_session_before_effects() {
+    refuse_remember_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn project_memory_full_refuses_an_ascii65_session_before_effects() {
+    refuse_full_before_effects(&ascii65_session());
+}
+
+#[test]
+fn project_memory_full_refuses_a_utf8_oversized_session_before_effects() {
+    refuse_full_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn project_memories_refuses_an_ascii65_session_before_effects() {
+    refuse_list_before_effects(&ascii65_session());
+}
+
+#[test]
+fn project_memories_refuses_a_utf8_oversized_session_before_effects() {
+    refuse_list_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn project_memory_preserves_an_exact_64_byte_ascii_session() {
+    preserve_exact_session(&exact_64_ascii_session());
+}
+
+#[test]
+fn project_memory_preserves_an_exact_64_byte_utf8_session() {
+    preserve_exact_session(&exact_64_utf8_session());
+}
+
+fn refuse_remember_actor_only_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let mut request = project_memory_request(
+        "project-memory-admit",
+        "short-caller",
+        Some("should-not-write"),
+        "must not persist",
+        1_700_000_000_000,
+    );
+    request.actor = actor(&live.0);
+    let error = store
+        .remember_project_memory(&request, &DevelopmentNoopRedactor)
+        .expect_err("oversized actor session");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+}
+
+fn refuse_advertisement_ack_before_effects(live: &SessionId) {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = "project-memory-admit";
+    seed_project_memory(&mut store, project, "seed-session", "admit-seed");
+    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
+    let error = store
+        .acknowledge_project_memory_advertisement(
+            &ProjectId(project.into()),
+            live,
+            &ProjectMemoryAdvertisement {
+                count: 1,
+                changed: true,
+                change_position: 1,
+                context_generation_digest: None,
+            },
+        )
+        .expect_err("oversized advertisement session");
+    assert_oversized_session_refusal(&error, live);
+    assert_eq!(
+        crate::storage::test_database_shape_snapshot(&store.connection).expect("after"),
+        before
+    );
+}
+
+fn insert_historical_project_memory(store: &mut SqliteStore, session: &str, key: &str) {
+    let request = project_memory_request(
+        "project-memory-historical",
+        session,
+        Some(key),
+        "historical oversized actor body",
+        1_700_000_000_000,
+    );
+    let prepared = prepare_project_memory(&request, key, None).expect("prepare historical");
+    let transaction = store.connection.transaction().expect("historical tx");
+    project_memory_state_on(&transaction, &request.project_id).expect("state");
+    SqliteStore::insert_project_memory_version_object(
+        &transaction,
+        &prepared.version_object,
+        &request.project_id,
+        key,
+    )
+    .expect("insert version");
+    SqliteStore::insert_object(
+        &transaction,
+        "memory_assertion_event",
+        &prepared.assertion_object,
+    )
+    .expect("insert assertion");
+    SqliteStore::apply_memory_projection(
+        &transaction,
+        prepared.version_object.hash(),
+        prepared.assertion_object.hash(),
+        &prepared.version,
+        &prepared.assertion,
+        MemoryProjectionMode::Live,
+    )
+    .expect("project historical memory");
+    advance_project_memory_state_on(&transaction, &request.project_id, 1).expect("advance");
+    transaction.commit().expect("commit historical");
+}
+
+#[test]
+fn remember_project_memory_refuses_an_ascii65_actor_session_with_a_short_caller() {
+    refuse_remember_actor_only_before_effects(&ascii65_session());
+}
+
+#[test]
+fn remember_project_memory_refuses_a_utf8_oversized_actor_session_with_a_short_caller() {
+    refuse_remember_actor_only_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn project_memory_advertisement_refuses_an_ascii65_session_before_effects() {
+    refuse_advertisement_ack_before_effects(&ascii65_session());
+}
+
+#[test]
+fn project_memory_advertisement_refuses_a_utf8_oversized_session_before_effects() {
+    refuse_advertisement_ack_before_effects(&utf8_oversized_session());
+}
+
+#[test]
+fn project_memory_advertisement_preserves_an_exact_64_byte_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("project-memory-admit-64".into());
+    let session = exact_64_ascii_session();
+    seed_project_memory(&mut store, &project.0, "seed-session", "admit-seed");
+    store
+        .acknowledge_project_memory_advertisement(
+            &project,
+            &SessionId(session.clone()),
+            &ProjectMemoryAdvertisement {
+                count: 1,
+                changed: true,
+                change_position: 1,
+                context_generation_digest: None,
+            },
+        )
+        .expect("admitted advertisement");
+    let stored: String = store
+        .connection
+        .query_row(
+            "SELECT session_id FROM project_memory_advertisements WHERE project_id = ?1",
+            [project.0.as_str()],
+            |row| row.get(0),
+        )
+        .expect("stored advertisement session");
+    assert_eq!(stored, session);
+}
+
+#[test]
+fn short_caller_reads_and_restores_a_historical_oversized_project_memory_actor_without_rewrite() {
+    let historical = ascii65_session();
+    let mut source = SqliteStore::open_in_memory().expect("source");
+    insert_historical_project_memory(&mut source, &historical.0, "historical-key");
+    let reader = actor("short-reader");
+    let reader_session = SessionId("short-reader".into());
+    let project = ProjectId("project-memory-historical".into());
+    let read = source
+        .project_memory_full(&project, &reader_session, &reader, "historical-key", None)
+        .expect("short caller reads historical memory");
+    assert_eq!(
+        read.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(historical.0.as_str())
+    );
+    source
+        .create_work(
+            &CreateWorkRequest {
+                external_ref: None,
+                notes: Vec::new(),
+                project_id: project.clone(),
+                parent_id: None,
+                child_requirement: crate::ChildRequirement::Required,
+                title: "Historical restore root".into(),
+                outcome: "restore keeps stored actor session".into(),
+                acceptance: vec!["historical session is unchanged".into()],
+                kind: crate::WorkItemKind::Task,
+                priority: 1,
+                labels: Vec::new(),
+                assigned_to: None,
+                deferred_until: None,
+                origin: crate::WorkOrigin::Local,
+                source_snapshot_id: None,
+                actor: actor("planner-session"),
+                idempotency_key: "historical-restore-root".into(),
+                created_at: Utc.timestamp_millis_opt(1_700_000_000_100).unwrap(),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create root");
+    let saved = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("saver"),
+            None,
+            crate::WorkGraphSnapshotDestinationKind::Stdout,
+            Utc.timestamp_millis_opt(1_700_000_000_200).unwrap(),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save");
+    let bytes = serde_json::to_vec_pretty(&saved.document).expect("snapshot bytes");
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("loader"),
+            &bytes,
+            false,
+            Utc.timestamp_millis_opt(1_700_000_000_300).unwrap(),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("load");
+    let restored = destination
+        .project_memory_full(&project, &reader_session, &reader, "historical-key", None)
+        .expect("short caller reads restored historical memory");
+    assert_eq!(
+        restored.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(historical.0.as_str())
+    );
+    let stored: Vec<u8> = destination
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects
+             WHERE object_kind = 'memory_version'
+             ORDER BY rowid DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("restored version bytes");
+    let version: crate::MemoryVersion = serde_json::from_slice(&stored).expect("decode version");
+    assert_eq!(
+        version.actor.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(historical.0.as_str())
+    );
 }

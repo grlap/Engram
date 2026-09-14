@@ -3,8 +3,10 @@
 
 use std::{env, process, sync::OnceLock};
 
+use anyhow::{Result, anyhow};
 use engram::{
     WorkActorDefaultSource, WorkAttributionDefaults, new_process_default_work_session_id,
+    validate_session_id_length,
 };
 
 /// Shell attribution resolved before the CLI dispatches a work word.
@@ -49,18 +51,20 @@ impl ShellWorkAttribution {
 pub(crate) fn resolve_shell_work_attribution(
     actor_id: Option<String>,
     session_id: Option<String>,
-) -> ShellWorkAttribution {
+) -> Result<ShellWorkAttribution> {
     let (actor_id, actor_default) =
         actor_id.map_or_else(default_shell_actor, |actor_id| (actor_id, None));
     let session_defaulted = session_id.is_none();
-    ShellWorkAttribution {
+    let session_id = session_id.unwrap_or_else(default_process_session_id);
+    validate_session_id_length(&session_id).map_err(|error| anyhow!("{error}"))?;
+    Ok(ShellWorkAttribution {
         actor_id,
-        session_id: session_id.unwrap_or_else(default_process_session_id),
+        session_id,
         defaults: WorkAttributionDefaults {
             actor: actor_default,
             session: session_defaulted,
         },
-    }
+    })
 }
 
 /// Derives an asserted local actor from conventional OS-user environment
@@ -123,19 +127,21 @@ mod tests {
             Some(WorkActorDefaultSource::ProcessFallback)
         );
 
-        let first = resolve_shell_work_attribution(None, None);
-        let second = resolve_shell_work_attribution(None, None);
+        let first = resolve_shell_work_attribution(None, None).expect("default session");
+        let second = resolve_shell_work_attribution(None, None).expect("default session");
         assert_eq!(first.session_id, second.session_id);
         assert!(first.defaults.actor.is_some());
         assert!(first.defaults.session);
         assert!(first.session_id.starts_with("local-process-v1-"));
 
-        let default_actor = resolve_shell_work_attribution(None, Some("host session".into()));
+        let default_actor = resolve_shell_work_attribution(None, Some("host session".into()))
+            .expect("host session");
         assert!(default_actor.defaults.actor.is_some());
         assert!(!default_actor.defaults.session);
         assert_eq!(default_actor.session_id, "host session");
 
-        let default_session = resolve_shell_work_attribution(Some("host actor".into()), None);
+        let default_session =
+            resolve_shell_work_attribution(Some("host actor".into()), None).expect("host actor");
         assert_eq!(default_session.actor_id, "host actor");
         assert!(default_session.defaults.actor.is_none());
         assert!(default_session.defaults.session);
@@ -143,9 +149,19 @@ mod tests {
         let injected = resolve_shell_work_attribution(
             Some(" host actor ".into()),
             Some(" host session ".into()),
-        );
+        )
+        .expect("verbatim session");
         assert_eq!(injected.actor_id, " host actor ");
         assert_eq!(injected.session_id, " host session ");
         assert_eq!(injected.defaults, WorkAttributionDefaults::default());
+
+        let oversized = "s".repeat(65);
+        let Err(error) =
+            resolve_shell_work_attribution(Some("actor".into()), Some(oversized.clone()))
+        else {
+            panic!("oversized session must be refused")
+        };
+        assert_eq!(error.to_string(), "session id exceeds 64 UTF-8 bytes");
+        assert!(!error.to_string().contains(&oversized));
     }
 }

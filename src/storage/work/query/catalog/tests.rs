@@ -577,3 +577,26 @@ fn doctor_exercises_work_catalog_fts_index() {
             .any(|record| { record == &format!("work_catalog:{}:fts_index", item.work_id.0) })
     );
 }
+
+#[test]
+fn catalog_held_by_refuses_an_oversized_session_before_sql() {
+    let store = SqliteStore::open_in_memory().expect("store");
+    let project = ProjectId("held-by-admission".into());
+    let giant = SessionId("h".repeat(65));
+    let error = store
+        .query_work_catalog(
+            &project,
+            at(1),
+            &WorkCatalogQuery {
+                held_by: Some(giant.clone()),
+                limit: 5,
+                ..WorkCatalogQuery::default()
+            },
+        )
+        .expect_err("oversized held_by");
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(ref reason) if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    assert!(!error.to_string().contains(&giant.0));
+}

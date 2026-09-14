@@ -26,7 +26,7 @@ pub(crate) fn run_graph_from_cli(
     source_skill: Option<String>,
     operation: GraphCommand,
 ) -> Result<()> {
-    let attribution = resolve_shell_work_attribution(actor_id, session_id);
+    let attribution = resolve_shell_work_attribution(actor_id, session_id)?;
     run_graph(
         WorkContext {
             database,

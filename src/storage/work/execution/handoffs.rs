@@ -77,6 +77,7 @@ impl SqliteStore {
     ) -> Result<WorkHandoffOffer, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.from)?;
+        crate::storage::admit_session_id(&request.to)?;
         validate_evidence_phase_marker(WorkLifecycle::Open, &request.actor)?;
         if request.from == request.to {
             return Err(StoreError::InvalidWork(

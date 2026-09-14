@@ -8,10 +8,10 @@ use super::{
         reminder_for_reason,
     },
     receipts::{
-        CompactNextReceipt, CompactSectionOmission, CompactWorkRow, append_changes_lines,
-        compact_next_lines, compact_next_value, compact_omitted, compact_omitted_for_reason,
-        compact_ready_reason, compact_row_line, fit_compact_next, fit_compact_next_to,
-        record_compact_omission, shed_compact_labels,
+        CompactNextReceipt, CompactSectionOmission, CompactWorkRow, agent_receipt_fits,
+        agent_receipt_terminal_bytes, append_changes_lines, compact_next_lines, compact_next_value,
+        compact_omitted, compact_omitted_for_reason, compact_ready_reason, compact_row_line,
+        fit_compact_next, fit_compact_next_to, record_compact_omission, shed_compact_labels,
     },
     show::show_lines,
     *,
@@ -24,6 +24,19 @@ use crate::{
         MAX_GATE_FAILURES, MAX_GATE_NAME_BYTES, MAX_GATE_REF_BYTES,
     },
 };
+
+fn compact_json_len(value: &Value) -> usize {
+    serde_json::to_vec(value).expect("compact JSON").len()
+}
+
+/// Independent CLI-emission measure: application text plus the final `println`
+/// LF, then the larger of that and compact JSON. Does not call the product
+/// sizing helper.
+fn emitted_receipt_bytes(receipt: &Receipt) -> usize {
+    format!("{}\n", receipt.text())
+        .len()
+        .max(serde_json::to_vec(&receipt.value).unwrap().len())
+}
 
 fn at(second: i64) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 1, 18, 0, 0)

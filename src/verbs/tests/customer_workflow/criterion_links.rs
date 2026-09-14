@@ -273,17 +273,13 @@ fn criterion_links_many_bindings_keep_exact_omissions_in_both_twins() {
             assert_eq!(row["criterion"], index + 1);
             assert_eq!(row["locator"], locator);
         }
-        assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
+        assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
         assert!(
             receipt
                 .text()
                 .contains("full frozen mapping continuation is not available on this surface")
         );
         assert!(!receipt.text().contains("more links not shown; inspect"));
-        assert!(
-            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
         assert!(
             receipt
                 .text()
@@ -518,11 +514,7 @@ fn criterion_links_none_and_all_change_only_explicit_bindings_and_stay_bounded()
         );
         assert_eq!(receipt.value["acceptance_criteria_asserted"], 3);
         assert_eq!(receipt.value["acceptance_criteria_changed"], false);
-        assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
         if linked {
             for row in receipt.value["acceptance_evidence"]["links"]
                 .as_array()

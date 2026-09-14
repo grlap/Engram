@@ -280,5 +280,5 @@ pub(super) fn fit_list_receipt(
 }
 
 fn list_fits(receipt: &Receipt, budget: usize) -> Result<bool, VerbError> {
-    Ok(serde_json::to_vec_pretty(&receipt.value)?.len() < budget && receipt.text().len() < budget)
+    super::receipts::agent_receipt_fits(receipt, budget)
 }

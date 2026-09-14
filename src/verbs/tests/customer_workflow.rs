@@ -18,6 +18,7 @@ mod read_contention;
 mod record_windows;
 mod rejection;
 mod remaining_children;
+mod response_budget;
 mod review;
 mod status_resume;
 mod terminal_safety;
@@ -236,11 +237,7 @@ fn phoenix_full_notes_keep_entire_bodies_refs_and_recorded_order_without_changin
         }
     }
     assert!(full.text().find("Note 0").expect("first") < full.text().find("Note 3").expect("last"));
-    assert!(full.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&full.value).expect("JSON").len()
-            <= MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(&full) < MAX_AGENT_WORK_RESPONSE_BYTES);
     assert_eq!(
         verbs.show(&work, at(200)).expect("default after").value,
         before.value
@@ -280,11 +277,7 @@ fn phoenix_full_notes_prioritize_newest_verdict_and_report_exact_remainder_inclu
         full.text()
             .contains(&format!("{} omitted", bodies.len() - notes.len()))
     );
-    assert!(full.text().len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&full.value).expect("JSON").len()
-            <= MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(&full) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 fn terminalize(verbs: &AgentVerbs, parent: &str, lifecycle: WorkLifecycle) {
@@ -576,10 +569,7 @@ fn phoenix_full_notes_surface_newer_verdict_before_an_oversized_older_note() {
     assert_eq!(continued.value["notes"].as_array().unwrap().len(), 1);
     assert_eq!(continued.value["notes"][0]["body_omitted"], true);
     assert!(continued.value["notes_window"]["after"].is_null());
-    assert!(
-        serde_json::to_vec_pretty(&full.value).expect("JSON").len()
-            <= MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(&full) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 #[test]

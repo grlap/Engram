@@ -84,6 +84,145 @@ fn work_request_actor_context_refusal_is_typed_and_non_mutating() {
 }
 
 #[test]
+fn create_work_refuses_an_oversized_actor_session_before_effects() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let before = test_database_shape_snapshot(&store.connection).expect("initial shape");
+    let mut request = root_request("session-admission-create", "oversized-actor-session", 0);
+    let giant = SessionId("s".repeat(65));
+    request.actor.session_id = Some(giant.clone());
+    let error = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect_err("oversized actor session");
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(ref reason) if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    assert!(!error.to_string().contains(&giant.0));
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("shape after refusal"),
+        before,
+        "oversized planning session must not mutate the store"
+    );
+}
+
+#[test]
+fn create_work_preserves_an_exact_64_byte_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let session = "s".repeat(crate::MAX_SESSION_ID_BYTES);
+    let mut request = root_request("session-admission-create", "max-actor-session", 0);
+    request.actor.session_id = Some(SessionId(session.clone()));
+    let item = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("admitted actor session");
+    assert_eq!(
+        item.created_by.session_id.as_ref().map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}
+
+#[test]
+fn decompose_work_refuses_an_oversized_actor_session_before_effects() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("session-admission-plan", "plan-root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let before = test_database_shape_snapshot(&store.connection).expect("after root");
+    let giant = SessionId("p".repeat(65));
+    let mut actor = actor("peer");
+    actor.session_id = Some(giant.clone());
+    let request = DecomposeWorkRequest {
+        parent_id: root.work_id,
+        expected_parent_revision: root.revision,
+        children: vec![child(
+            "proposal",
+            ChildRequirement::Required,
+            "Peer proposal",
+        )],
+        prerequisites: Vec::new(),
+        authority: WorkPlanningAuthority::Project,
+        actor,
+        idempotency_key: "oversized-plan".into(),
+        created_at: at(3),
+    };
+    let error = store
+        .decompose_work(&request, &DevelopmentNoopRedactor)
+        .expect_err("oversized planning session");
+    assert!(matches!(
+        error,
+        StoreError::InvalidWork(ref reason) if reason == crate::SessionIdAdmissionError::TooLong.as_str()
+    ));
+    assert!(!error.to_string().contains(&giant.0));
+    assert_eq!(
+        test_database_shape_snapshot(&store.connection).expect("shape after refusal"),
+        before,
+        "oversized decompose session must not add children or events"
+    );
+}
+
+#[test]
+fn assert_actor_session_compares_an_oversized_expected_without_length_error() {
+    let expected = SessionId("h".repeat(65));
+    let error =
+        assert_actor_session(&actor("caller"), &expected).expect_err("historical holder mismatch");
+    assert!(
+        matches!(
+            error,
+            StoreError::InvalidWork(ref reason)
+                if reason.contains("does not match lifecycle holder")
+        ),
+        "{error}"
+    );
+    assert!(
+        !error
+            .to_string()
+            .contains(crate::SessionIdAdmissionError::TooLong.as_str()),
+        "persisted expected must not be length-admitted: {error}"
+    );
+}
+
+#[test]
+fn decompose_work_preserves_an_exact_64_byte_actor_session() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("session-admission-plan", "plan-root-64", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let session = "p".repeat(crate::MAX_SESSION_ID_BYTES);
+    let mut actor = actor("peer");
+    actor.session_id = Some(SessionId(session.clone()));
+    let request = DecomposeWorkRequest {
+        parent_id: root.work_id,
+        expected_parent_revision: root.revision,
+        children: vec![child(
+            "proposal",
+            ChildRequirement::Required,
+            "Peer proposal",
+        )],
+        prerequisites: Vec::new(),
+        authority: WorkPlanningAuthority::Project,
+        actor,
+        idempotency_key: "max-plan-session".into(),
+        created_at: at(3),
+    };
+    let decomposition = store
+        .decompose_work(&request, &DevelopmentNoopRedactor)
+        .expect("admitted planning session");
+    assert_eq!(
+        decomposition.children[0]
+            .created_by
+            .session_id
+            .as_ref()
+            .map(|id| id.0.as_str()),
+        Some(session.as_str())
+    );
+}
+
+#[test]
 fn supersession_ref_and_replacement_matrix_is_enforced_in_storage() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let source = store

@@ -54,10 +54,7 @@ fn assert_group(
             .text()
             .contains("optional children do not block completion")
     );
-    assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&receipt.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 fn cancel(verbs: &AgentVerbs, work: &str, now: i64) {
@@ -383,23 +380,13 @@ fn show_child_summary_retains_exact_totals_and_navigation_under_final_byte_press
     groups.required_owed.items.clear();
     groups.open_optional.items.clear();
     let base = verbs.render_show(&minimal, at(20)).unwrap();
-    let budget = base
-        .text()
-        .len()
-        .max(serde_json::to_vec_pretty(&base.value).unwrap().len())
-        + 256;
-    assert!(
-        original
-            .text()
-            .len()
-            .max(serde_json::to_vec_pretty(&original.value).unwrap().len())
-            > budget
-    );
+    let budget = emitted_receipt_bytes(&base) + 64;
+    assert!(emitted_receipt_bytes(&original) > budget);
     let fitted =
         crate::verbs::show::fit_show_receipt(view, |view| verbs.render_show(view, at(20)), budget)
             .unwrap();
-    assert!(fitted.text().len() < budget);
-    assert!(serde_json::to_vec_pretty(&fitted.value).unwrap().len() < budget);
+    assert!(emitted_receipt_bytes(&fitted) < budget);
+    assert!(serde_json::to_vec(&fitted.value).unwrap().len() < budget);
     assert_eq!(fitted.value["children"], json!([]));
     assert_group(&fitted, "required_owed", 8, &[], &parent, true);
     assert_group(&fitted, "open_optional", 8, &[], &parent, false);

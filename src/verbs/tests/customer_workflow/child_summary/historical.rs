@@ -75,11 +75,7 @@ fn show_child_summary_preserves_historical_execution_after_root_reopen() {
                     .text()
                     .contains("required children still owed (0 of 0 shown)")
             );
-            assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-            assert!(
-                serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                    < MAX_AGENT_WORK_RESPONSE_BYTES
-            );
+            assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
         }
         let connection = rusqlite::Connection::open(&path).unwrap();
         let selected = crate::storage::test_database_shape_snapshot(&connection).unwrap();

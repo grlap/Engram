@@ -47,11 +47,7 @@ fn traverse(verbs: &AgentVerbs, work: &str, history: bool, time: i64) -> Vec<ser
     loop {
         let receipt = window(verbs, work, history, after, time);
         let (rows, meta) = parts(&receipt, history);
-        assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
         assert_eq!(meta["newer"], newest_first.len());
         assert_eq!(meta["shown"], rows.len());
         assert_eq!(

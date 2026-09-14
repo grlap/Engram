@@ -101,11 +101,7 @@ fn assert_resolution(
             format!("engram work update {parent} --waive {child} --reason \"…\"")
         );
     }
-    assert!(parent_show.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&parent_show.value).unwrap().len()
-            < MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(&parent_show) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 #[test]

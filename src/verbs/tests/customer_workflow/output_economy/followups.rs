@@ -20,8 +20,7 @@ fn assert_safe_title(receipt: &Receipt) {
         1
     );
     assert_eq!(receipt.value["work"]["title"], HOSTILE);
-    assert!(text.len() <= MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(bytes(&receipt.value) <= MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(emitted_receipt_bytes(receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 #[test]

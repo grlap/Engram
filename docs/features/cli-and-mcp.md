@@ -124,7 +124,22 @@ asserted context, not an authenticated OS identity; if no conventional user
 variable exists, Engram uses a synthetic process actor instead of refusing.
 Durable actor provenance distinguishes `defaulted:os_user_environment`,
 `defaulted:process_actor`, and `defaulted:process_session`. Explicit actor and
-session ids are recorded verbatim. Because separate shell invocations are
+session ids are recorded verbatim. A live caller, planning-actor,
+handoff-recipient, or control start/join participant and actor session id is
+admitted only when it is at most 64 UTF-8 bytes; longer values refuse before
+store, session, focus, attempt, offer, planning-write, or task-bind effects,
+with a bounded error that does not echo the rejected id. The same live
+length-only admit applies to a generic note-capture actor session, a
+graph-snapshot save or load operator actor, a contradiction request session
+and actor session, a control-policy administrator actor session, and
+project-memory remember, forget, full, or list caller sessions. A caller-supplied
+catalog `held_by` filter is length-admitted the same way: that is live filter
+admission, not validation of a persisted claim holder. A persisted claim
+holder used only for comparison is not length-admitted. That length is
+inclusive and length-only: it does not trim, normalize charset, or rewrite
+stored historical ids. UUID
+(36), TermAl `session-<n>`, and the generated `local-process-v1-<pid>-<uuidv7>`
+form (max 64) all fit. Because separate shell invocations are
 separate processes, multi-command ambient workflows still need a host-injected
 stable session id. The `local-process-` prefix is reserved for generated
 process-default work sessions; a `local-process-v1-*` id may be reused for
@@ -240,8 +255,17 @@ rows; `ls` does not shed labels. Compact `next` uses the same
 remains meaningful. Section removal is recorded in explicit `omissions`
 instead of failing.
 
-Compact `next` and safe `show` fit their complete emitted text and JSON,
-including guidance (and the `next` build footer), after projection. Hidden
+Compact `next` and safe `show` fit their complete emitted CLI text and compact
+application-receipt JSON (`serde_json::to_vec`), including guidance (and the
+`next` build footer), after projection. CLI text includes the final `println`
+LF. Both that terminal measure and compact JSON must stay strictly under
+12288 bytes; pretty JSON is not a production or acceptance measure. Compact
+JSON stays payload-only and does not charge that LF. The same
+pair binds verbose `next`, `ls`, and note/history windows. `done` refits its
+post-completion envelope after attaching a process-default
+`effective_session_id`. Ordinary mutation receipts
+are compact and have no receipt fitter; `add` may still refuse after commit
+if a reminder pushes that already-written receipt over the ceiling. Hidden
 core metadata does not consume that budget or cause visible rows to disappear.
 Summary and relation limits still apply; host-only core and verbose views
 retain their own rich-response fitting. Safe `show` reads acceptance criteria
@@ -266,7 +290,9 @@ Repeated focus, status, planning, history and parent projections are absent.
 One ASCII-quoted `full_detail` command restores item detail (`--notes` for
 add/note, `--notes --gates` for gate). Text prints it once as `full detail:`.
 `build_fingerprint` remains once where already supplied (currently `next`);
-successful process-defaulted shell mutations still add `effective_session_id`.
+successful process-defaulted shell mutations still add `effective_session_id`
+on the receipt. Only `done` then refits that envelope; other mutation words
+do not run a receipt fitter.
 The rich six-operation core and host-private protocol do not change.
 
 Rules that matter:

@@ -124,7 +124,8 @@ No real MADE session has been tested against this recipe.
    give required actor or session ids implicit defaults either.
 
    Before launching `claude`, the coordinator must check that `ENGRAM_HOME`
-   is the intended absolute store home, actor and session ids are nonblank,
+   is the intended absolute store home, actor and session ids are nonblank
+   and session ids are at most 64 UTF-8 bytes,
    and none of these values is an unexpanded placeholder. Set the working
    directory to the project checkout containing `.engram-project`. The MCP
    child, hooks and shell words must use the same project and identity.

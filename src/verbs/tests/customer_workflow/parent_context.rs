@@ -85,11 +85,7 @@ fn show_parent_context_survives_acceptance_and_note_trimming() {
     minimal.evidence_items.clear();
     minimal.latest_evidence_item = None;
     let small = verbs.render_show(&minimal, at(2)).unwrap();
-    let budget = small
-        .text()
-        .len()
-        .max(serde_json::to_vec_pretty(&small.value).unwrap().len())
-        + 600;
+    let budget = emitted_receipt_bytes(&small) + 600;
     let fitted = crate::verbs::show::fit_show_receipt(
         source.clone(),
         |view| verbs.render_show(view, at(2)),
@@ -105,8 +101,8 @@ fn show_parent_context_survives_acceptance_and_note_trimming() {
     );
     assert!(fitted.value["notes"].as_array().unwrap().is_empty());
     assert_eq!(fitted.value["notes_omitted"], 1);
-    assert!(fitted.text().len() < budget);
-    assert!(serde_json::to_vec_pretty(&fitted.value).unwrap().len() < budget);
+    assert!(emitted_receipt_bytes(&fitted) < budget);
+    assert!(serde_json::to_vec(&fitted.value).unwrap().len() < budget);
     assert!(
         serde_json::to_value(&source)
             .unwrap()
@@ -263,8 +259,7 @@ fn show_parent_correction_paginated_first_page_keeps_parent_and_recovery_visible
     assert!(first.text().contains(&format!("  {}\n", first.next[0])));
     assert!(first.text().contains(&format!("  {recovery}\n")));
     assert_parent(&first, &parent, "required");
-    assert!(first.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(serde_json::to_vec_pretty(&first.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
+    assert!(emitted_receipt_bytes(&first) < MAX_AGENT_WORK_RESPONSE_BYTES);
 
     let continued = verbs
         .show_records(

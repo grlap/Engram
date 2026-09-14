@@ -18,10 +18,7 @@ fn contract(verbs: &AgentVerbs, criteria: Vec<String>) -> String {
 }
 
 fn receipt_bytes(receipt: &Receipt) -> usize {
-    receipt
-        .text()
-        .len()
-        .max(serde_json::to_vec_pretty(&receipt.value).unwrap().len())
+    emitted_receipt_bytes(receipt)
 }
 
 #[test]

@@ -141,12 +141,7 @@ fn criterion_disclosure_fitters_exclude_the_exact_final_twin_ceiling() {
         unlinked_count: 32,
         unlinked_positions: (1..=32).collect(),
     };
-    let size = |receipt: &Receipt| {
-        receipt
-            .text()
-            .len()
-            .max(serde_json::to_vec_pretty(&receipt.value).unwrap().len())
-    };
+    let size = |receipt: &Receipt| emitted_receipt_bytes(receipt);
     for text_dominates in [false, true] {
         let base = Receipt::assemble(
             vec![if text_dominates {
@@ -160,7 +155,7 @@ fn criterion_disclosure_fitters_exclude_the_exact_final_twin_ceiling() {
         );
         let boundary = size(&base);
         assert_eq!(
-            base.text().len() > serde_json::to_vec_pretty(&base.value).unwrap().len(),
+            base.text().len() > serde_json::to_vec(&base.value).unwrap().len(),
             text_dominates
         );
         assert!(
@@ -175,7 +170,7 @@ fn criterion_disclosure_fitters_exclude_the_exact_final_twin_ceiling() {
         let render = |page: &crate::verbs::acceptance::AcceptanceEvidence| page.append(&base);
         let full = render(&crate::verbs::acceptance::AcceptanceEvidence::new(&facts)).unwrap();
         assert_eq!(
-            full.text().len() > serde_json::to_vec_pretty(&full.value).unwrap().len(),
+            full.text().len() > serde_json::to_vec(&full.value).unwrap().len(),
             text_dominates
         );
         let boundary = size(&full);
@@ -204,7 +199,7 @@ fn criterion_disclosure_fitters_exclude_the_exact_final_twin_ceiling() {
         };
         let full = render_children(usize::MAX);
         assert_eq!(
-            full.text().len() > serde_json::to_vec_pretty(&full.value).unwrap().len(),
+            full.text().len() > serde_json::to_vec(&full.value).unwrap().len(),
             text_dominates
         );
         assert_eq!(
@@ -469,11 +464,7 @@ fn criterion_disclosure_large_seals_fit_with_exact_positional_omissions() {
     let show = verbs.show(&reference, at(3)).unwrap();
     for receipt in [done, show] {
         assert!(!receipt.owed);
-        assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&receipt.value).unwrap().len()
-                < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
         let page = &receipt.value["acceptance_evidence"];
         let positions = page["unlinked_positions"].as_array().unwrap();
         assert!(!positions.is_empty() && positions.len() < count);
@@ -498,10 +489,7 @@ fn criterion_disclosure_large_seals_fit_with_exact_positional_omissions() {
 }
 
 fn assert_bounded_disclosure(receipt: &Receipt, count: usize) {
-    assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&receipt.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
     let page = &receipt.value["acceptance_evidence"];
     let positions = page["unlinked_positions"].as_array().unwrap();
     assert!(!positions.is_empty() && positions.len() < count);
@@ -1033,10 +1021,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
         );
         assert!(!done.text().contains("criteria unlinked"));
         assert!(!done.text().contains("criterion 1:"));
-        assert!(done.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-        assert!(
-            serde_json::to_vec_pretty(&done.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-        );
+        assert!(emitted_receipt_bytes(&done) < MAX_AGENT_WORK_RESPONSE_BYTES);
         for (input, healthy) in read_inputs.iter().zip(healthy_reads) {
             let readable = verbs.show_records(&reference, input, at(4)).unwrap();
             assert!(!readable.owed);
@@ -1054,11 +1039,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
             assert!(text.contains(&format!("diagnostic class: {error_class}")));
             assert!(text.contains("audit trail remains readable"));
             assert!(!text.contains("criteria unlinked"));
-            assert!(text.len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-            assert!(
-                serde_json::to_vec_pretty(&readable.value).unwrap().len()
-                    < MAX_AGENT_WORK_RESPONSE_BYTES
-            );
+            assert!(emitted_receipt_bytes(&readable) < MAX_AGENT_WORK_RESPONSE_BYTES);
             // All item, note/history rows, navigation and read-cut data survive;
             // only the failed advisory disclosure changes on either read path.
             let without_disclosure = |mut value: serde_json::Value| {

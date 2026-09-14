@@ -309,10 +309,10 @@ test("Phoenix full notes, title-independent acceptance reminders and terminal-pa
       // Reminder independence, not terminal title safety: JSON retains the
       // exact bounded title from the independently read core projection.
       assert.equal(bounded.work.title, json("core", "focus", bounded.work.short_ref).status.work.title);
-      assert.ok(Buffer.byteLength(JSON.stringify(bounded, null, 2)) <= 12288);
+      assert.ok(Buffer.byteLength(JSON.stringify(bounded)) < 12288);
       const rendered = run([...context, ...args]);
       assert.equal(rendered.status, 0, rendered.stderr);
-      assert.ok(Buffer.byteLength(rendered.stdout) <= 12288);
+      assert.ok(Buffer.byteLength(rendered.stdout) < 12288);
       assert.ok(rendered.stdout.includes(reminder));
     }
     const bodies = ["First line\n" + "Long note. ".repeat(30) + "End of first note", "Second note\nLast line"];
@@ -329,8 +329,8 @@ test("Phoenix full notes, title-independent acceptance reminders and terminal-pa
     assert.ok(text.stdout.includes("         reminders:"));
     assert.ok(text.stdout.includes("         next:"));
     assert.equal(text.stdout.split("\n").filter((line) => line === "next:").length, 1);
-    assert.ok(Buffer.byteLength(text.stdout) <= 12288);
-    assert.ok(Buffer.byteLength(JSON.stringify(full, null, 2)) <= 12288);
+    assert.ok(Buffer.byteLength(text.stdout) < 12288);
+    assert.ok(Buffer.byteLength(JSON.stringify(full)) < 12288);
     assert.notEqual(json("show", workRef).notes[0].summary, bodies[0]);
     json("claim", workRef);
     json("done", workRef, "Delivery verified");
@@ -411,11 +411,11 @@ test("scoped listing continuation is bounded and stale cursors refuse through CL
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /--limit 5; byte budget 12288/u);
     assert.match(text.stdout, /--after c1-/u);
-    assert.ok(Buffer.byteLength(text.stdout) <= 12 * 1024);
+    assert.ok(Buffer.byteLength(text.stdout) < 12288);
     let page = first;
     const actual = [];
     for (;;) {
-      assert.ok(Buffer.byteLength(JSON.stringify(page, null, 2)) <= 12 * 1024);
+      assert.ok(Buffer.byteLength(JSON.stringify(page)) < 12288);
       assert.equal(page.shown_before, actual.length);
       actual.push(...page.items.map(({ work }) => work.short_ref));
       assert.equal(page.omitted, expected.length - actual.length);
@@ -699,7 +699,7 @@ test("optional child is marked by show and does not gate parent completion", (t)
     assert.ok(completed.stdout.includes(`engram work update ${childWork.short_ref} --detach "Continue as independent work"`));
     assert.ok(completed.stdout.includes(`engram work show ${parentWork.short_ref}`));
     assert.equal(completed.stdout.match(/engram work ls --blocked/gu)?.length, 1);
-    assert.ok(Buffer.byteLength(completed.stdout) <= 12 * 1024);
+    assert.ok(Buffer.byteLength(completed.stdout) < 12 * 1024);
     const completedView = run([...hostContext, "show", parentWork.short_ref, "--json"]);
     assert.equal(completedView.status, 0, completedView.stderr);
     assert.equal(JSON.parse(completedView.stdout).status.work.lifecycle, "completed");

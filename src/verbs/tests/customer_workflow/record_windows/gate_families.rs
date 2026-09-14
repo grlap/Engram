@@ -182,10 +182,7 @@ fn assert_families(receipt: &Receipt, notes: usize, observations: usize, gates: 
         );
     }
     assert_eq!(receipt.text().matches("gate evidence:").count(), 1);
-    assert!(receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES);
-    assert!(
-        serde_json::to_vec_pretty(&receipt.value).unwrap().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-    );
+    assert!(emitted_receipt_bytes(receipt) < MAX_AGENT_WORK_RESPONSE_BYTES);
 }
 
 #[test]

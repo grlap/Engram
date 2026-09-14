@@ -24,6 +24,7 @@ pub struct AgentVerbs {
     pub(super) service: Arc<LocalWorkService>,
     pub(super) actor_id: String,
     session_id: SessionId,
+    fit_effective_session: Option<SessionId>,
 }
 
 /// `next`: what is ready, what this session holds, and what changed.
@@ -314,6 +315,22 @@ impl AgentVerbs {
             service,
             actor_id,
             session_id,
+            fit_effective_session: None,
+        }
+    }
+
+    /// Process-default CLI `--json` mutations attach this session handle
+    /// before receipt fitting so the delivered surfaces stay inside budget.
+    #[must_use]
+    pub fn with_fitted_effective_session(mut self, session_id: SessionId) -> Self {
+        self.fit_effective_session = Some(session_id);
+        self
+    }
+
+    fn finish_mutation(&self, receipt: Receipt) -> Receipt {
+        match &self.fit_effective_session {
+            Some(session) => receipt.with_effective_session_id(session),
+            None => receipt,
         }
     }
 
@@ -452,6 +469,7 @@ impl AgentVerbs {
         }
         let (lines, value, guidance) = if input.verbose {
             let mut peek_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
+            let mut agent_omissions: Vec<super::receipts::CompactSectionOmission> = Vec::new();
             loop {
                 let changes = compact_changes
                     .iter()
@@ -465,7 +483,10 @@ impl AgentVerbs {
                     )),
                     None if peek_omissions
                         .iter()
-                        .any(|omission| omission.section == "focus") =>
+                        .any(|omission| omission.section == "focus")
+                        || agent_omissions
+                            .iter()
+                            .any(|omission| omission.section == "focus") =>
                     {
                         lines.push("focus: omitted (byte budget)".into());
                     }
@@ -520,6 +541,14 @@ impl AgentVerbs {
                             omission.omitted_count, omission.section
                         ));
                     }
+                } else if !agent_omissions.is_empty() {
+                    value["agent_omissions"] = json!(agent_omissions);
+                    for omission in &agent_omissions {
+                        lines.push(format!(
+                            "  ({} {} omitted to fit this receipt)",
+                            omission.omitted_count, omission.section
+                        ));
+                    }
                 }
                 value["ready"] = serde_json::to_value(&ready)?;
                 value["changes_by_others"] = json!(changes);
@@ -540,10 +569,7 @@ impl AgentVerbs {
                 let receipt =
                     Receipt::assemble(lines.clone(), guidance.clone(), value.clone(), false)
                         .with_build_identity(&view.read_cut, view.context_generation.as_deref());
-                if receipt.text().len() < MAX_AGENT_WORK_RESPONSE_BYTES
-                    && serde_json::to_vec_pretty(&receipt.value)?.len()
-                        < MAX_AGENT_WORK_RESPONSE_BYTES
-                {
+                if super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)? {
                     break (lines, value, guidance.clone());
                 }
                 if view.discovery.shorten_status_previews()
@@ -557,45 +583,49 @@ impl AgentVerbs {
                 {
                     continue;
                 }
-                if input.peek {
-                    // These are local preview omissions, never acknowledgement
-                    // of the raw records. Preserve both pinned disclosures.
-                    // Progress is monotone in remaining raw row count, not
-                    // rendered bytes: removing completion can reveal its longer
-                    // checkpoint. Re-collapse and keep shedding until it fits.
-                    let section = if view.discovery.shed_one() {
-                        continue;
-                    } else if view
+                // Non-peek verbose delivery keeps the exact staged page. Peek
+                // may omit raw rows from the preview only; it never acknowledges
+                // them. Progress is monotone in remaining raw row count, not
+                // rendered bytes: removing completion can reveal its longer
+                // checkpoint. Re-collapse and keep shedding until it fits.
+                let section = if view.discovery.shed_one() {
+                    continue;
+                } else if input.peek
+                    && view
                         .changes
                         .as_mut()
                         .is_some_and(|rows| rows.pop().is_some())
-                    {
-                        compact_changes = super::collapsed_changes(
-                            view.changes.as_deref().unwrap_or_default(),
-                            self.service.display_identity(),
-                        );
-                        if let Some(peek) = &mut view.peek {
-                            peek.more_changes_available = true;
-                        }
-                        "changes"
-                    } else if ready.pop().is_some() {
-                        "ready"
-                    } else if held.pop().is_some() {
-                        "held"
-                    } else if guidance.reminders.pop().is_some() {
-                        "reminders"
-                    } else if guidance.next.len() > 1 {
-                        guidance.next.pop();
-                        "next"
-                    } else if view.focus.take().is_some() {
-                        "focus"
-                    } else {
-                        break (lines, value, guidance.clone());
-                    };
+                {
+                    compact_changes = super::collapsed_changes(
+                        view.changes.as_deref().unwrap_or_default(),
+                        self.service.display_identity(),
+                    );
+                    if let Some(peek) = &mut view.peek {
+                        peek.more_changes_available = true;
+                    }
+                    "changes"
+                } else if ready.pop().is_some() {
+                    "ready"
+                } else if held.pop().is_some() {
+                    "held"
+                } else if guidance.reminders.pop().is_some() {
+                    "reminders"
+                } else if guidance.next.len() > 1 {
+                    guidance.next.pop();
+                    "next"
+                } else if view.focus.take().is_some() {
+                    "focus"
+                } else {
+                    break (lines, value, guidance.clone());
+                };
+                if input.peek {
                     super::receipts::record_compact_omission(&mut peek_omissions, section, 1);
-                    continue;
+                } else if section == "ready" {
+                    record_verbose_next_omission(&mut view.omissions, 1);
+                } else {
+                    // Whole-focus removal is not a trim-step Focus count.
+                    super::receipts::record_compact_omission(&mut agent_omissions, section, 1);
                 }
-                break (lines, value, guidance.clone());
             }
         } else {
             let claims = lists
@@ -791,7 +821,7 @@ impl AgentVerbs {
             .is_empty()
             .then(|| "acceptance defaulted to the title being done; set --accept".to_owned());
         let has_initial_notes = !input.notes.is_empty();
-        let mut receipt = self.add_inner(input, now)?;
+        let mut receipt = self.finish_mutation(self.add_inner(input, now)?);
         if has_initial_notes {
             receipt = receipt.with_reminder(
                 "initial observations (no execution credit) recorded at creation".into(),
@@ -1023,7 +1053,7 @@ impl AgentVerbs {
             held_suffix(self.holder(&after, now), now)
         )];
         let guidance = self.guidance(&after, "claim", now);
-        super::mutation::receipt(
+        Ok(self.finish_mutation(super::mutation::receipt(
             &after,
             "claim",
             json!({}),
@@ -1031,7 +1061,7 @@ impl AgentVerbs {
             guidance,
             self.holder(&after, now),
             false,
-        )
+        )?))
     }
 
     /// `update`: revise planning/lifecycle state or waive one disposed required child.
@@ -1099,12 +1129,12 @@ impl AgentVerbs {
             format!("{line}{}", held_suffix(self.holder(&after, now), now))
         };
         let guidance = self.guidance(&after, "update", now);
-        Ok(Receipt::assemble(
+        Ok(self.finish_mutation(Receipt::assemble(
             vec![line],
             guidance,
             serde_json::to_value(&result)?,
             false,
-        ))
+        )))
     }
 
     /// Maps one flat `update` action onto the typed core update and the
@@ -1414,7 +1444,7 @@ impl AgentVerbs {
             short(&after.status.work.title),
             held_suffix(self.holder(&after, now), now)
         )];
-        super::mutation::receipt(
+        Ok(self.finish_mutation(super::mutation::receipt(
             &after,
             "gate",
             value,
@@ -1422,7 +1452,7 @@ impl AgentVerbs {
             guidance,
             self.holder(&after, now),
             false,
-        )
+        )?))
     }
 
     /// `remember`: create one attributed project episode.
@@ -1458,12 +1488,12 @@ impl AgentVerbs {
             ),
         };
         let lines = vec![line];
-        Ok(Receipt::assemble(
+        Ok(self.finish_mutation(Receipt::assemble(
             lines,
             guidance,
             serde_json::to_value(receipt)?,
             false,
-        ))
+        )))
     }
 
     /// `memories`: list/search compact rows or return one dedicated full body.
@@ -1514,11 +1544,7 @@ impl AgentVerbs {
                 .project_memories(input.query.as_deref(), input.after.as_deref(), now)?;
         loop {
             let receipt = project_memory_list_receipt(&result, filtered)?;
-            let structured_bytes = serde_json::to_vec(&receipt.value)?.len();
-            let terminal_bytes = receipt.text().len();
-            if structured_bytes <= MAX_AGENT_WORK_RESPONSE_BYTES
-                && terminal_bytes <= MAX_AGENT_WORK_RESPONSE_BYTES
-            {
+            if super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)? {
                 return Ok(receipt);
             }
             if result.memories.pop().is_none() {
@@ -1553,7 +1579,7 @@ impl AgentVerbs {
         let receipt = self.service.forget_project_memory(input.key, now)?;
         let replay = if receipt.duplicate { " (replayed)" } else { "" };
         let lines = vec![format!("forgot project memory {}{replay}", receipt.key)];
-        Ok(Receipt::assemble(
+        Ok(self.finish_mutation(Receipt::assemble(
             lines,
             Guidance {
                 reminders: vec!["forget is a tombstone, not erasure".into()],
@@ -1561,7 +1587,7 @@ impl AgentVerbs {
             },
             serde_json::to_value(receipt)?,
             false,
-        ))
+        )))
     }
 
     /// `note`: record an attributed observation; only a live holder also
@@ -1601,7 +1627,7 @@ impl AgentVerbs {
             short(&text),
             held_suffix(self.holder(&after, now), now)
         )];
-        super::mutation::receipt(
+        Ok(self.finish_mutation(super::mutation::receipt(
             &after,
             "note",
             value,
@@ -1609,7 +1635,7 @@ impl AgentVerbs {
             guidance,
             self.holder(&after, now),
             false,
-        )
+        )?))
     }
 
     /// `done`: complete the held item and disclose absent criterion evidence
@@ -1730,7 +1756,7 @@ impl AgentVerbs {
                 })
             }
         };
-        let receipt = super::mutation::receipt(
+        let receipt = self.finish_mutation(super::mutation::receipt(
             &after,
             "done",
             value,
@@ -1738,7 +1764,7 @@ impl AgentVerbs {
             guidance,
             self.holder(&after, now),
             owed,
-        )?;
+        )?);
         if !owed {
             let children = self.service.remaining_optional_children(
                 view.status.work.work_id,
@@ -1797,13 +1823,15 @@ impl AgentVerbs {
     pub fn handoff(&self, input: HandoffInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
         // Refuse display labels before target binding can write focus or an
         // offer. This is a usability guard, not identity resolution or trust.
-        if let HandoffAction::Offer { to, .. } = &input.action
-            && crate::work_service::identity::is_display_label(to.trim())
-        {
-            return Err(StoreError::InvalidWork(
-                super::attribution::HANDOFF_DISPLAY_TARGET_REFUSAL.into(),
-            )
-            .into());
+        if let HandoffAction::Offer { to, .. } = &input.action {
+            let forwarded = to.trim();
+            crate::storage::admit_session_id_text(forwarded)?;
+            if crate::work_service::identity::is_display_label(forwarded) {
+                return Err(StoreError::InvalidWork(
+                    super::attribution::HANDOFF_DISPLAY_TARGET_REFUSAL.into(),
+                )
+                .into());
+            }
         }
         let view = self.target(input.work_ref.as_deref(), now)?;
         let work_ref = view.status.work.short_ref.clone();
@@ -1869,12 +1897,12 @@ impl AgentVerbs {
         let holder = self.holder(&after, now);
         let line = format!("{verb}{}", held_suffix(holder, now));
         let guidance = self.guidance(&after, "handoff", now);
-        Ok(Receipt::assemble(
+        Ok(self.finish_mutation(Receipt::assemble(
             vec![line],
             guidance,
             serde_json::to_value(&result)?,
             false,
-        ))
+        )))
     }
 
     fn target(
@@ -2199,6 +2227,25 @@ pub(super) fn next_commands(
         out.push("engram work next".into());
     }
     out
+}
+
+fn record_verbose_next_omission(
+    omissions: &mut Vec<crate::work_service::WorkSectionOmission>,
+    count: usize,
+) {
+    let section = WorkNextSection::Ready;
+    if let Some(existing) = omissions.iter_mut().find(|entry| {
+        entry.section == section
+            && entry.reason == crate::work_service::WorkSectionOmissionReason::ByteBudget
+    }) {
+        existing.omitted_count += count;
+    } else {
+        omissions.push(crate::work_service::WorkSectionOmission {
+            section,
+            reason: crate::work_service::WorkSectionOmissionReason::ByteBudget,
+            omitted_count: count,
+        });
+    }
 }
 
 fn project_memory_list_receipt(
