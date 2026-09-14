@@ -78,8 +78,9 @@ fn phoenix_acceptance_reminder_is_title_independent_for_roots_and_children() {
                 .add(
                     AddInput {
                         title: format!("{prefix} {}", "large title ".repeat(2_000)),
-                        // The focus packet carries the full outcome. Keep its
-                        // independent budget out of this title-reminder test.
+                        // Summary focus bounds outcome to 192 bytes. An explicit
+                        // short outcome keeps this about the fixed reminder rather
+                        // than outcome defaulting.
                         outcome: Some("A bounded outcome".into()),
                         under: under.clone(),
                         ..AddInput::default()

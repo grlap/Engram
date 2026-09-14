@@ -214,6 +214,7 @@ engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
+engram work show REF --full  # complete authored title, outcome and acceptance
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
@@ -234,8 +235,11 @@ the full structured list projection for a human or host that explicitly needs
 it, including raw identity and integrity metadata. The MCP `verbose` options
 have the same rich contract. This is optional presentation, not a global
 confidentiality or authorization boundary. Bodies and asserted host context
-may identify their source. Host-only `work core` reads and canonical audit
-attribution remain full.
+may identify their source. Host-only `work core` reads keep rich identity and
+integrity metadata; Summary focus `outcome` text is the 192-byte compact
+bound, including core `next` and `work_propose`. Use `show REF --full` for
+the complete stored title, outcome and acceptance. Canonical audit attribution
+remains full.
 
 Rules that matter:
 
@@ -257,8 +261,21 @@ Rules that matter:
   LF, each strictly under 12288 bytes. Compact JSON stays payload-only.
   That measure is the application payload, not a duplicated MCP/JSON-RPC
   wrapper. The host-core inclusive guard still allows an exact 12288-byte
-  `to_vec` body. `show REF --note LOCATOR` full-note detail is the unchanged
-  exception and may exceed 12288.
+  `to_vec` body. Core summary focus bounds `outcome` to the existing 192-byte
+  compact text (ordinary `show` keeps the stored outcome when it fits)
+  so `add` cannot commit then emit a budget-only refusal from a defaulted
+  oversized title. Mutation `work.title` remains the existing 192-byte
+  summary. Explicit `show REF --note LOCATOR` full-note detail and
+  `show REF --full` authored-contract detail may exceed 12288.
+
+- `show REF --full` (MCP `full: true`) reads complete stored title, outcome
+  and acceptance text with short ref and revision from one read snapshot.
+  It is not a verbose identity/authority projection. JSON preserves stored
+  text; terminal output frames it as data. Ordinary show stays bounded,
+  discloses shortened title and whole-outcome omissions with byte size, and
+  offers this full read; omitted acceptance criteria are available there too.
+  Full mode cannot be combined with notes/gates/history/after/note modes.
+  It never selects focus, registers a session or changes delivery.
 
 - Resume with `next --peek`: held/ready/changed context comes from one read
   snapshot without staging or acknowledging a page, changing focus, or

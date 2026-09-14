@@ -756,7 +756,10 @@ impl LocalWorkService {
         let control_binding = run.as_ref().and_then(|run| {
             owned_control_work_binding(&status.work, run, claim.as_ref(), &self.session_id, now)
         });
-        let outcome = status.work.outcome.clone();
+        let outcome = match text {
+            FocusText::Summary => compact_text(&status.work.outcome),
+            FocusText::Full => status.work.outcome.clone(),
+        };
         let (prerequisites, prerequisite_omissions) = bounded_prerequisite_summaries(
             prerequisite_page.items,
             prerequisite_page.omitted_by_state,
@@ -815,6 +818,10 @@ impl LocalWorkService {
         } else {
             (None, None)
         };
+        let title_stored_bytes = status.work.title.len();
+        let title_truncated = matches!(text, FocusText::Full)
+            && compact_text(&status.work.title) != status.work.title;
+        let outcome_stored_bytes = status.work.outcome.len();
         let mut status = ready_work_summary(status);
         if matches!(text, FocusText::Full) {
             (status.work.current_status, status.work.status_observation) =
@@ -835,6 +842,10 @@ impl LocalWorkService {
             parent,
             completed_by_record,
             outcome,
+            title_stored_bytes,
+            title_truncated,
+            outcome_stored_bytes,
+            outcome_omitted_bytes: None,
             run: run.as_ref().map(work_run_summary),
             claim,
             control_binding,

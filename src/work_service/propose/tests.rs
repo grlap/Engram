@@ -192,3 +192,122 @@ fn maximum_default_fanout_decomposition_receipt_is_bounded_and_replays_exactly()
         serde_json::to_value(first).expect("first result JSON")
     );
 }
+
+fn count_rows(database: &std::path::Path, sql: &str, param: &str) -> i64 {
+    rusqlite::Connection::open(database)
+        .expect("inspect")
+        .query_row(sql, [param], |row| row.get(0))
+        .expect("count")
+}
+
+fn count_roots(database: &std::path::Path) -> i64 {
+    rusqlite::Connection::open(database)
+        .expect("inspect")
+        .query_row(
+            "SELECT COUNT(*) FROM work_items WHERE parent_id IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .expect("root count")
+}
+
+#[test]
+fn oversized_default_outcome_does_not_refuse_after_create() {
+    let directory = crate::test_support::temp_home().expect("temp");
+    let database = directory.path().join("work.db");
+    let service = LocalWorkService::new(
+        database.clone(),
+        ProjectId("oversized-outcome".into()),
+        "creator".into(),
+        SessionId("creator".into()),
+        None,
+    );
+    // Measured installed-build bands: 9000/10000 overflowed work_propose after
+    // commit; 11000/12000 overflowed work_focus. 6000/8000 already succeeded.
+    let mut replay = None;
+    for (index, size) in [6_000, 8_000, 9_000, 10_000, 11_000, 12_000, 16_384]
+        .into_iter()
+        .enumerate()
+    {
+        let title = format!("T{size} {}", "A".repeat(size));
+        let input = WorkProposeInput::Root {
+            external_ref: None,
+            notes: Vec::new(),
+            title: title.clone(),
+            outcome: title.clone(),
+            acceptance: vec!["Delivered".into()],
+            work_kind: None,
+            priority: None,
+            labels: Vec::new(),
+            assigned_to: None,
+            deferred_until: None,
+            idempotency_key: format!("oversized-{size}"),
+        };
+        let result = service
+            .work_propose(input.clone(), at(i64::try_from(index).expect("index")))
+            .unwrap_or_else(|error| {
+                panic!("work_propose must succeed for defaulted {size}-byte outcome: {error}")
+            });
+        let bytes = serde_json::to_vec(&result).expect("whole WorkProposeResult");
+        assert!(
+            bytes.len() <= MAX_AGENT_WORK_RESPONSE_BYTES,
+            "independent whole-result measure {size}: {} bytes",
+            bytes.len()
+        );
+        let WorkProposeResult::Root { work, focus } = &result else {
+            panic!("expected root");
+        };
+        assert_eq!(work.title, compact_text(&title));
+        assert!(focus.outcome.len() <= MAX_SUMMARY_BYTES);
+        assert_eq!(focus.outcome, compact_text(&title));
+        if size == 16_384 {
+            replay = Some((input, result));
+        }
+    }
+    let (input, first) = replay.expect("16KiB case");
+    let WorkProposeResult::Root { work, .. } = &first else {
+        panic!("expected root");
+    };
+    let work_id = work.work_id.0.to_string();
+    assert_eq!(count_roots(&database), 7);
+    assert_eq!(
+        count_rows(
+            &database,
+            "SELECT COUNT(*) FROM work_items WHERE work_id = ?1",
+            &work_id,
+        ),
+        1
+    );
+    assert_eq!(
+        count_rows(
+            &database,
+            "SELECT COUNT(*) FROM work_protocol_attempts WHERE idempotency_key = ?1",
+            "oversized-16384",
+        ),
+        1
+    );
+    let second = service
+        .work_propose(input, at(100))
+        .expect("identical explicit-key replay");
+    assert_eq!(
+        serde_json::to_value(&second).expect("replay JSON"),
+        serde_json::to_value(&first).expect("first JSON")
+    );
+    assert_eq!(
+        count_rows(
+            &database,
+            "SELECT COUNT(*) FROM work_items WHERE work_id = ?1",
+            &work_id,
+        ),
+        1
+    );
+    assert_eq!(
+        count_rows(
+            &database,
+            "SELECT COUNT(*) FROM work_protocol_attempts WHERE idempotency_key = ?1",
+            "oversized-16384",
+        ),
+        1
+    );
+    assert_eq!(count_roots(&database), 7);
+}

@@ -20,6 +20,10 @@ fn read_modes(locator: &str) -> Vec<crate::verbs::ShowInput> {
             note: Some(locator.into()),
             ..Default::default()
         },
+        crate::verbs::ShowInput {
+            full: true,
+            ..Default::default()
+        },
     ]
 }
 
@@ -81,12 +85,16 @@ fn read_contention_explicit_reads_preserve_focus_and_staged_delivery_under_write
         let receipt = reader.show_records(&target, &input, at(6)).unwrap();
         let reference = if input.note.is_some() {
             &receipt.value["work_ref"]
+        } else if input.full {
+            &receipt.value["work"]["short_ref"]
         } else {
             &receipt.value["status"]["work"]["short_ref"]
         };
         assert_eq!(reference, &json!(target));
         if input.note.is_some() {
             assert_eq!(receipt.value["note"]["summary"], "Committed note");
+        } else if input.full {
+            assert_eq!(receipt.value["work"]["title"], "Requested committed item");
         } else {
             assert_eq!(
                 receipt.value["status"]["work"]["title"],

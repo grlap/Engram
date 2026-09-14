@@ -14,8 +14,9 @@ use super::{
 };
 
 /// Short list row used by the agent words. Host-only `work core focus` remains
-/// the rich-object boundary; absent claim and parent fields are omitted to
-/// keep repeated navigation inexpensive.
+/// the rich-object boundary for identity and integrity metadata; Summary
+/// `outcome` text is still the 192-byte compact bound. Absent claim and parent
+/// fields are omitted to keep repeated navigation inexpensive.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct CompactWorkRow {
     #[serde(skip_serializing_if = "Option::is_none")]

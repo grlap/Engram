@@ -7,9 +7,13 @@ use super::{
 };
 use crate::storage::{WorkRecordFamily, WorkRecordKind};
 use crate::work_service::identity::DisplayIdentity;
-use crate::work_service::{WorkRecordRow, WorkRecordWindow};
+use crate::work_service::{WorkAuthoredContract, WorkRecordRow, WorkRecordWindow};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "exclusive show modes stay independent clap/MCP flags, not a mode enum"
+)]
 pub struct ShowInput {
     #[serde(default)]
     pub notes: bool,
@@ -20,6 +24,9 @@ pub struct ShowInput {
     pub history: bool,
     pub after: Option<String>,
     pub note: Option<String>,
+    /// Complete stored title, outcome, and acceptance; exclusive of windows.
+    #[serde(default)]
+    pub full: bool,
 }
 
 impl AgentVerbs {
@@ -35,16 +42,30 @@ impl AgentVerbs {
     ) -> Result<Receipt, VerbError> {
         if (input.notes && input.history)
             || (input.gates && !input.notes)
-            || (input.note.is_some() && (input.notes || input.history || input.after.is_some()))
+            || (input.note.is_some()
+                && (input.notes || input.history || input.after.is_some() || input.full))
             || (input.after.is_some() && !input.notes && !input.history)
+            || (input.full
+                && (input.notes
+                    || input.history
+                    || input.gates
+                    || input.after.is_some()
+                    || input.note.is_some()))
         {
             return Err(VerbError::at(
                 StoreError::InvalidWork(
-                    "choose --notes [--gates] or --history with optional --after, or --note LOCATOR alone"
+                    "choose --notes [--gates] or --history with optional --after, --note LOCATOR alone, or --full"
                         .into(),
                 ),
                 work_ref,
             ));
+        }
+        if input.full {
+            let contract = self
+                .service
+                .work_authored_contract(work_ref, now)
+                .map_err(|error| VerbError::at(error, work_ref))?;
+            return Ok(full_contract_receipt(&contract));
         }
         if let Some(locator) = &input.note {
             let (work_ref, row) = self
@@ -122,6 +143,58 @@ pub(super) fn continuation_header(view: &WorkFocusView) -> Receipt {
         json!({"work": {"short_ref": work.short_ref, "title": work.title}, "full_detail": detail}),
         false,
     )
+}
+
+fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
+    let mut lines = vec![format!(
+        "{} revision {} (complete contract)",
+        contract.short_ref, contract.revision
+    )];
+    append_labeled_block(&mut lines, "title", &contract.title);
+    append_labeled_block(&mut lines, "outcome", &contract.outcome);
+    lines.push("acceptance:".into());
+    for (position, criterion) in contract.acceptance.iter().enumerate() {
+        let safe = super::terminal_data_block(criterion);
+        for (index, line) in safe.split('\n').enumerate() {
+            let prefix = if index == 0 {
+                format!("  {}. ", position + 1)
+            } else {
+                "    ".into()
+            };
+            lines.push(format!("{prefix}{line}"));
+        }
+    }
+    Receipt::assemble(
+        lines,
+        Guidance {
+            reminders: Vec::new(),
+            next: vec![format!(
+                "engram work show {}",
+                super::listing::shell_quote(&contract.short_ref)
+            )],
+        },
+        json!({
+            "work": {
+                "short_ref": contract.short_ref,
+                "revision": contract.revision,
+                "title": contract.title,
+                "outcome": contract.outcome,
+                "acceptance": contract.acceptance,
+            }
+        }),
+        false,
+    )
+}
+
+fn append_labeled_block(lines: &mut Vec<String>, label: &str, text: &str) {
+    let safe = super::terminal_data_block(text);
+    let mut parts = safe.split('\n');
+    if let Some(first) = parts.next() {
+        lines.push(format!("{label}: {first}"));
+    }
+    for line in parts {
+        lines.push(format!("  {line}"));
+    }
 }
 
 pub(super) fn safe_reference_argument(work_ref: &str) -> String {

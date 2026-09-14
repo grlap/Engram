@@ -23,15 +23,43 @@ pub(super) fn fit_show_receipt(
     // Normalize the independently loaded latest note exactly as show does,
     // so byte shedding cannot count a page row already hidden by replacement.
     view.evidence_items = show_evidence(&view);
+    match fit_show_sections(&mut view.clone(), &render, max_bytes) {
+        Ok(receipt) => Ok(receipt),
+        Err(error)
+            if !view.outcome.is_empty()
+                && view.outcome_omitted_bytes.is_none()
+                && is_show_budget_error(&error) =>
+        {
+            view.outcome_omitted_bytes = Some(view.outcome_stored_bytes.max(view.outcome.len()));
+            view.outcome.clear();
+            fit_show_sections(&mut view, &render, max_bytes)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn is_show_budget_error(error: &super::VerbError) -> bool {
+    matches!(
+        error.error,
+        super::StoreError::InvalidWorkProjection(ref reason)
+            if reason == "show metadata exceeds the agent response byte budget"
+    )
+}
+
+fn fit_show_sections(
+    view: &mut WorkFocusView,
+    render: &impl Fn(&WorkFocusView) -> Result<super::Receipt, super::VerbError>,
+    max_bytes: usize,
+) -> Result<super::Receipt, super::VerbError> {
     loop {
-        let receipt = render(&view)?;
+        let receipt = render(view)?;
         if show_fits(&receipt, max_bytes)? {
             return Ok(receipt);
         }
-        if !shed_show_context_once(&mut view) {
-            return fit_acceptance_prefix(&mut view, &render, max_bytes);
+        if !shed_show_context_once(view) {
+            return fit_acceptance_prefix(view, render, max_bytes);
         }
-        record_show_omission(&mut view, 1);
+        record_show_omission(view, 1);
     }
 }
 
@@ -180,7 +208,14 @@ fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
 pub(super) struct ShowWorkSummary {
     pub(super) short_ref: String,
     pub(super) title: String,
-    pub(super) outcome: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) title_truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) title_bytes: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) outcome: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) outcome_omitted: Option<usize>,
     pub(super) acceptance: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_omitted: Option<usize>,
@@ -405,6 +440,13 @@ pub(super) fn show_lines(
         identity,
         now,
     )];
+    if view.title_truncated {
+        lines.push(format!(
+            "title: {} UTF-8 bytes stored; {}",
+            view.title_stored_bytes,
+            super::terminal_command(&super::mutation::full_contract(&work.short_ref))
+        ));
+    }
     lines.push(view.parent.as_ref().map_or_else(
         || "parent: root".into(),
         |parent| {
@@ -511,10 +553,17 @@ pub(super) fn show_lines(
             source_detail(&source.source_key)
         ));
     }
-    lines.push(format!(
-        "outcome: {}",
-        super::terminal_safe_line(&view.outcome)
-    ));
+    if let Some(bytes) = view.outcome_omitted_bytes {
+        lines.push(format!(
+            "outcome: {bytes} UTF-8 bytes omitted; {}",
+            super::terminal_command(&super::mutation::full_contract(&work.short_ref))
+        ));
+    } else {
+        lines.push(format!(
+            "outcome: {}",
+            super::terminal_safe_line(&view.outcome)
+        ));
+    }
     lines.push("acceptance:".into());
     if work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0 {
         lines.push(format!(
@@ -535,8 +584,10 @@ pub(super) fn show_lines(
     }
     if work.acceptance_count > work.acceptance.len() {
         lines.push(format!(
-            "  ({} more not shown); hidden criteria continue from position {} in the same numbering",
-            work.acceptance_count - work.acceptance.len(), work.acceptance.len() + 1
+            "  ({} more not shown); hidden criteria continue from position {} in the same numbering; {}",
+            work.acceptance_count - work.acceptance.len(),
+            work.acceptance.len() + 1,
+            super::terminal_command(&super::mutation::full_contract(&work.short_ref))
         ));
     }
     if let Some(facts) = &view.acceptance_evidence {
@@ -762,7 +813,13 @@ pub(super) fn show_receipt_value(
             work: ShowWorkSummary {
                 short_ref: work.short_ref.clone(),
                 title: work.title.clone(),
-                outcome: view.outcome.clone(),
+                title_truncated: view.title_truncated,
+                title_bytes: view.title_truncated.then_some(view.title_stored_bytes),
+                outcome: view
+                    .outcome_omitted_bytes
+                    .is_none()
+                    .then(|| view.outcome.clone()),
+                outcome_omitted: view.outcome_omitted_bytes,
                 acceptance: work.acceptance.clone(),
                 acceptance_omitted: (work.acceptance_count > work.acceptance.len())
                     .then(|| work.acceptance_count - work.acceptance.len()),
@@ -872,7 +929,9 @@ pub(super) fn show_item_line(
     now: DateTime<Utc>,
 ) -> String {
     // Unlike the shared item_line used by lists, terse show deliberately
-    // renders a peer holder as relative session identity.
+    // renders a peer holder as relative session identity and prints the
+    // already-bounded 192-byte summary title in full, with terminal-safe
+    // escaping instead of a second 96-byte ellipsis.
     let work = &status.work;
     let state = match holder {
         Holder::You(expires_at) => format!("held by you until {}", clock(expires_at, now)),
@@ -886,5 +945,9 @@ pub(super) fn show_item_line(
         Holder::Nobody if completed_by_record => "completed (restored)".into(),
         Holder::Nobody => availability_words(status).to_owned(),
     };
-    format!("{} \"{}\" — {state}", work.short_ref, short(&work.title))
+    format!(
+        "{} \"{}\" — {state}",
+        work.short_ref,
+        super::terminal_safe_line(&work.title)
+    )
 }

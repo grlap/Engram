@@ -339,11 +339,22 @@ impl AgentVerbs {
     /// # Errors
     ///
     /// Returns [`VerbError`] when the core cannot read or stage the view.
+    pub fn next(&self, input: &NextInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        self.next_with_verbose_budget(input, now, MAX_AGENT_WORK_RESPONSE_BYTES)
+    }
+
+    // Production always uses the protocol budget. Tests may inject a tighter
+    // verbose overlay ceiling; compact `next` ignores this parameter.
     #[allow(
         clippy::too_many_lines,
         reason = "focus, held, ready, changes, and guidance are assembled in one readable pass"
     )]
-    pub fn next(&self, input: &NextInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+    pub(super) fn next_with_verbose_budget(
+        &self,
+        input: &NextInput,
+        now: DateTime<Utc>,
+        budget: usize,
+    ) -> Result<Receipt, VerbError> {
         let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
         let ready_limit = if input.verbose {
             limit
@@ -569,7 +580,7 @@ impl AgentVerbs {
                 let receipt =
                     Receipt::assemble(lines.clone(), guidance.clone(), value.clone(), false)
                         .with_build_identity(&view.read_cut, view.context_generation.as_deref());
-                if super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)? {
+                if super::receipts::agent_receipt_fits(&receipt, budget)? {
                     break (lines, value, guidance.clone());
                 }
                 if view.discovery.shorten_status_previews()
@@ -765,6 +776,12 @@ impl AgentVerbs {
                 "engram work show {} --history",
                 view.status.work.short_ref
             ));
+        }
+        if super::mutation::needs_full_contract(view) {
+            let command = super::mutation::full_contract(&view.status.work.short_ref);
+            if !guidance.next.contains(&command) {
+                guidance.next.push(command);
+            }
         }
         Ok(Receipt::assemble(
             lines,

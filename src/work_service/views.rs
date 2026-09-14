@@ -492,10 +492,25 @@ pub struct WorkFocusView {
     /// completion seal, is the current completion authority.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub completed_by_record: bool,
-    /// The item's full outcome text; `status.work.outcome` is the compact
-    /// summary used in lists.
+    /// Summary focus bounds this with the same 192-byte compact text as other
+    /// summary fields. Safe full-focus `show` retains the stored outcome when
+    /// the receipt fits, and otherwise omits the whole field with stored-byte
+    /// disclosure. `status.work.outcome` is the compact list summary in both
+    /// cases.
     #[serde(default)]
     pub outcome: String,
+    /// Agent-show metadata only; never part of the core/ambient wire.
+    #[serde(skip)]
+    pub(crate) title_stored_bytes: usize,
+    /// Agent-show metadata only; never part of the core/ambient wire.
+    #[serde(skip)]
+    pub(crate) title_truncated: bool,
+    /// Agent-show metadata only; never part of the core/ambient wire.
+    #[serde(skip)]
+    pub(crate) outcome_stored_bytes: usize,
+    /// Agent-show metadata only; never part of the core/ambient wire.
+    #[serde(skip)]
+    pub(crate) outcome_omitted_bytes: Option<usize>,
     pub run: Option<WorkRunSummary>,
     pub claim: Option<WorkClaim>,
     /// Paste-ready native control binding for this session's live claim.

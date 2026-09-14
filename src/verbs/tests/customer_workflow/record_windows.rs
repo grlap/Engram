@@ -21,6 +21,7 @@ fn window(
                 history,
                 after,
                 note: None,
+                full: false,
             },
             at(time),
         )
@@ -298,6 +299,7 @@ fn record_windows_refuse_wrong_kind_item_anchor_read_cut_and_note_locator() {
                     history,
                     after: Some(cursor),
                     note: None,
+                    full: false,
                 },
                 at(time),
             )

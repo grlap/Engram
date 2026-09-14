@@ -517,6 +517,9 @@ enum WorkCommand {
         /// Complete note body: HASH prefix (8+ hex), or `RECORD_HASH:INDEX`.
         #[arg(long)]
         note: Option<String>,
+        /// Complete stored title, outcome, and acceptance; reading changes neither focus nor claims.
+        #[arg(long, conflicts_with_all = ["notes", "gates", "history", "after", "note"])]
+        full: bool,
     },
     /// Create work from a title; outcome and acceptance criteria are welcome.
     Add {
@@ -1257,6 +1260,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             history,
             after,
             note,
+            full,
         } => verbs.show_records(
             &work_ref,
             &engram::verbs::ShowInput {
@@ -1265,6 +1269,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 history,
                 after,
                 note,
+                full,
             },
             now,
         ),

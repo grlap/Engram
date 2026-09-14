@@ -1029,10 +1029,27 @@ See the [CLI/MCP contract](cli-and-mcp.md#using-engram-as-an-agent).
 The five mutation words `add`, `claim`, `gate`, `note`, and `done` use one
 verbs-owned compact receipt: operation facts, one ref/title/lifecycle/revision
 summary, relative live holder/expiry, actionable obligation counts, source
-omissions, refusal remedies, reminders and navigation. Done retains its
+omissions, refusal remedies, reminders and navigation. Core summary focus
+bounds `outcome`, including core `next` and `work_propose`, to the existing
+192-byte compact text so `add` does not
+commit and then emit a budget-only refusal when a title defaults a large
+outcome. Ordinary `show` keeps the complete outcome when it fits; otherwise
+it omits that whole field with its byte size and full-contract navigation.
+Mutation `work.title` remains the existing 192-byte summary. Done retains its
 child-obligation follow-ups. A single ASCII-quoted `full_detail` command
 replaces repeated focus/status/history/parent context and points to the
-explicit item or note/gate read. Core results and host protocol are unchanged.
+explicit item or note/gate read. The mutation envelope shape and host
+protocol stay the same.
+
+Explicit `show REF --full` (MCP `full: true`) returns the complete stored
+title, outcome and acceptance list, plus short ref and revision, from one
+read snapshot. It is authored contract detail, not a host-authority dump.
+Like full-note detail, the explicitly requested body may exceed 12 KiB.
+Ordinary show and note/history windows remain bounded, disclose shortened
+title or omitted contract text, and offer this full read. JSON preserves
+stored strings; terminal output safely frames multiline data and controls.
+Full mode is exclusive of notes/gates/history/after/note modes. It neither
+selects focus nor registers a session, stages delivery or acknowledges it.
 See the [receipt fields](cli-and-mcp.md#using-engram-as-an-agent).
 
 Note/history windows print their active byte budget and reflected read cut.

@@ -1,5 +1,6 @@
-//! One verb-owned mutation envelope. Full core results remain unchanged;
-//! repeated planning/history projections are available through `full_detail`.
+//! One verb-owned mutation envelope. Core Summary focus, including next and
+//! propose, bounds `outcome` to 192 bytes; repeated planning/history
+//! projections are available through `full_detail`.
 
 use super::{
     DateTime, Guidance, Holder, Receipt, Serialize, Utc, Value, VerbError, WorkFocusView,
@@ -58,6 +59,19 @@ pub(super) fn full_detail(work_ref: &str, suffix: &str) -> String {
         "engram work show {}{suffix}",
         super::listing::shell_quote(work_ref)
     )
+}
+
+pub(super) fn full_contract(work_ref: &str) -> String {
+    format!(
+        "engram work show {} --full",
+        super::listing::shell_quote(work_ref)
+    )
+}
+
+pub(super) fn needs_full_contract(view: &WorkFocusView) -> bool {
+    view.title_truncated
+        || view.outcome_omitted_bytes.is_some()
+        || view.status.work.acceptance_count > view.status.work.acceptance.len()
 }
 
 /// `result` must serialize as an object/map: its operation-specific fields

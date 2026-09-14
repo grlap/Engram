@@ -133,6 +133,8 @@ struct ShowArgs {
     after: Option<String>,
     /// Complete note body beyond the window ceiling: HASH or `RECORD_HASH:INDEX`.
     note: Option<String>,
+    /// Complete stored title, outcome, and acceptance; exclusive of windows.
+    full: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -389,6 +391,7 @@ impl McpServer {
                 history: args.history.unwrap_or(false),
                 after: args.after,
                 note: args.note,
+                full: args.full.unwrap_or(false),
             },
             Utc::now(),
         ))

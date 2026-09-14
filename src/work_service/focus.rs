@@ -4,6 +4,17 @@ use super::{
     WorkLifecycle, WorkRun, work_item_summary,
 };
 
+/// Canonical authored contract for an explicit `show --full` read. Not a core
+/// wire type and not a focus packet.
+#[derive(Clone, Debug)]
+pub(crate) struct WorkAuthoredContract {
+    pub short_ref: String,
+    pub revision: i64,
+    pub title: String,
+    pub outcome: String,
+    pub acceptance: Vec<String>,
+}
+
 impl LocalWorkService {
     /// Current direct open optional children, independent of the rich focus
     /// fitter. All rows and admission diagnostics share one read snapshot.
@@ -111,6 +122,27 @@ impl LocalWorkService {
     ) -> Result<WorkItem, StoreError> {
         self.store_at(now)?
             .resolve_work_ref(&self.project_id, work_ref)
+    }
+
+    /// Complete stored title, outcome, and acceptance. One read snapshot; no
+    /// focus, delivery, or session-registration writes. Does not load or fit a
+    /// focus view.
+    pub(crate) fn work_authored_contract(
+        &self,
+        work_ref: &str,
+        now: DateTime<Utc>,
+    ) -> Result<WorkAuthoredContract, StoreError> {
+        let store = self.read_store_at(now)?;
+        store.work_read_snapshot(|store| {
+            let item = store.resolve_work_ref(&self.project_id, work_ref)?;
+            Ok(WorkAuthoredContract {
+                short_ref: item.short_ref,
+                revision: item.revision,
+                title: item.title,
+                outcome: item.outcome,
+                acceptance: item.acceptance,
+            })
+        })
     }
 
     /// Selects and inspects ambient work without implicitly changing its claim.

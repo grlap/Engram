@@ -706,20 +706,91 @@ fn focus_section_omissions(value: &Value, field: &str) -> Vec<Value> {
 }
 
 #[test]
+fn verbose_next_retains_focus_for_an_oversized_defaulted_title() {
+    let (_directory, reader, _, _) = fixture();
+    let title = format!("Defaulted title {}", "T".repeat(400));
+    assert!(title.len() > 192);
+    let focused = reader
+        .add(
+            AddInput {
+                title: title.clone(),
+                ..AddInput::default()
+            },
+            at(0),
+        )
+        .expect("oversized defaulted title")
+        .value["work"]["short_ref"]
+        .as_str()
+        .expect("ref")
+        .to_owned();
+    reader
+        .claim(
+            ClaimInput {
+                work_ref: focused.clone(),
+                ttl_seconds: None,
+                recover: None,
+            },
+            at(1),
+        )
+        .expect("claim");
+    let page = reader
+        .next(
+            &NextInput {
+                verbose: true,
+                limit: Some(20),
+                ..NextInput::default()
+            },
+            at(2),
+        )
+        .expect("verbose next");
+    assert_agent_surfaces_fit(&page);
+    let focus_line = page
+        .text()
+        .lines()
+        .find(|line| line.starts_with("focus:"))
+        .expect("focus line")
+        .to_owned();
+    assert_ne!(focus_line, "focus: none");
+    assert_ne!(focus_line, "focus: omitted (byte budget)");
+    assert!(focus_line.contains(&focused), "{focus_line}");
+    assert!(!page.value["focus"].is_null());
+    let focus_outcome = page.value["focus"]["outcome"]
+        .as_str()
+        .expect("focus.outcome");
+    assert!(focus_outcome.len() <= 192, "{}", focus_outcome.len());
+    // Independent of product compact_text: ASCII ellipsis is three dots after
+    // a 189-byte prefix of the defaulted stored outcome (the title).
+    let expected = format!("{}...", &title[..189]);
+    assert_eq!(expected.len(), 192);
+    assert_eq!(focus_outcome, expected);
+}
+
+#[test]
 fn verbose_next_omits_an_oversized_focused_title_without_lying_none() {
+    // Measured retained-focus emission for this fixture at the protocol
+    // ceiling was 10790 bytes. Inject a named overlay budget below that
+    // measurement. This does not prove production-default 12288 whole-focus
+    // omission after Summary outcome compact.
+    const VERBOSE_FOCUS_OMISSION_BUDGET: usize = 10_000;
     let (_directory, reader, path, project) = fixture();
     let title = format!("Focused title {}", "T".repeat(400));
     let focused = reader
         .add(
             AddInput {
                 title: title.clone(),
-                // Full outcome survives trim_focus_once. 3700 bytes sits under
-                // the core 12 KiB guard with a 4 KiB staged page and still
-                // forces whole-focus removal on the agent overlay.
-                outcome: Some(format!("Untrimmable outcome {}", "O".repeat(3700))),
+                // Summary outcome is compact_text (192). That no longer forces
+                // whole-focus removal under the 12 KiB overlay. Remaining
+                // untrimmable summary fields plus the staged change page still
+                // omit focus when the overlay ceiling is tighter; production
+                // next keeps the protocol budget.
+                outcome: Some(format!("Bounded outcome {}", "O".repeat(200))),
                 acceptance: (0..6)
                     .map(|index| format!("Criterion {index} {}", "C".repeat(200)))
                     .collect(),
+                labels: (0..8)
+                    .map(|index| format!("label-{index}-{}", "L".repeat(200)))
+                    .collect(),
+                assignee: Some(format!("assignee {}", "A".repeat(200))),
                 ..AddInput::default()
             },
             at(0),
@@ -799,16 +870,21 @@ fn verbose_next_omits_an_oversized_focused_title_without_lying_none() {
     }
 
     let page = reader
-        .next(
+        .next_with_verbose_budget(
             &NextInput {
                 verbose: true,
                 limit: Some(20),
                 ..NextInput::default()
             },
             at(81),
+            VERBOSE_FOCUS_OMISSION_BUDGET,
         )
         .expect("non-peek verbose");
     assert_agent_surfaces_fit(&page);
+    assert!(
+        emitted_receipt_bytes(&page) < VERBOSE_FOCUS_OMISSION_BUDGET,
+        "injected overlay budget is the independent oracle, not the 12288 protocol ceiling"
+    );
     let page_text = page.text();
     let focus_line = page_text
         .lines()

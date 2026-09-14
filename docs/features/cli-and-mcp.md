@@ -227,14 +227,17 @@ label cannot create an offer the intended recipient cannot accept. Ask the
 host or coordinator for the recipient's real session id. This refusal does
 not authenticate the target or resolve aliases. Stored audit attribution is
 unchanged. Arbitrary bodies and host context may themselves identify people.
-Raw actor/session metadata is not part of the terse show projection.
+Raw actor/session metadata is not part of the ordinary terse show projection.
 It otherwise omits canonical UUIDs and hashes, revision and fence counters,
 and host-only run, claim, control-binding, obligation-page, and memory-version
 fields. The scoped exceptions are note/detail locators, sealed evidence links,
 and an open item's `acceptance_basis` when it has criteria to link; the basis
 is a read-concurrency token, not execution authority. Humans and hosts that
 need the rich projection use
-host-only `work core focus`; full list projections remain available through
+host-only `work core focus`. Core Summary focus, including core `next` and
+`work_propose`, bounds `outcome` to 192 UTF-8 bytes like other summary
+fields; `show REF --full` returns the complete authored contract. Full
+list projections remain available through
 `next --verbose` and `ls --verbose` (or the equivalent MCP arguments).
 Verbose JSON/MCP retains rich raw identity and integrity fields. It is an
 explicit diagnostic option, not a safe variant of terse show. This optional
@@ -255,7 +258,7 @@ rows; `ls` does not shed labels. Compact `next` uses the same
 remains meaningful. Section removal is recorded in explicit `omissions`
 instead of failing.
 
-Compact `next` and safe `show` fit their complete emitted CLI text and compact
+Compact `next` and ordinary `show` fit their complete emitted CLI text and compact
 application-receipt JSON (`serde_json::to_vec`), including guidance (and the
 `next` build footer), after projection. CLI text includes the final `println`
 LF. Both that terminal measure and compact JSON must stay strictly under
@@ -265,15 +268,38 @@ pair binds verbose `next`, `ls`, and note/history windows. `done` refits its
 post-completion envelope after attaching a process-default
 `effective_session_id`. Ordinary mutation receipts
 are compact and have no receipt fitter; `add` may still refuse after commit
-if a reminder pushes that already-written receipt over the ceiling. Hidden
-core metadata does not consume that budget or cause visible rows to disappear.
+if a reminder pushes that already-written receipt over the ceiling. An
+oversized stored title does not cause a post-commit budget-only refusal:
+core summary focus bounds `outcome` with the same 192-byte compact text as
+other summary fields, covering both the nested `work_propose` envelope and
+the inner `work_focus` view. Mutation `work.title` remains that existing
+192-byte summary. The complete canonical title and outcome remain stored;
+ordinary `show` JSON `status.work.title` is the 192-byte summary with
+shortening disclosed. Its outcome stays complete when it fits; otherwise
+the whole outcome is omitted with its byte size and `show REF --full`
+navigation. Hidden core metadata does not consume that budget or cause visible
+rows to disappear.
 Summary and relation limits still apply; host-only core and verbose views
 retain their own rich-response fitting. Safe `show` reads acceptance criteria
 in full, without the summary's 192-byte truncation or six-criterion cap. If the
 final receipt cannot fit, it removes whole criteria from the end and reports
 the exact `status.work.acceptance_omitted` count; retained criteria never gain
 an ellipsis. JSON retains their stored bytes. Terminal output escapes unsafe
-controls and frames every continuation line as criterion data.
+controls and frames every continuation line as criterion data. Omitted
+criteria remain available through `show REF --full`.
+
+`show REF --full` (MCP `show { work_ref: REF, full: true }`) is an explicit
+complete authored-contract read, not a verbose host projection. It returns
+the stored title, outcome and entire acceptance list, together with the short
+ref and item revision from one read snapshot. JSON retains exact stored text;
+terminal text frames unsafe controls and multiline content as data. It does
+not expose host claims, fences or control bindings. The revision identifies
+the read version, not execution authority. Like `show --note` full-note
+detail, this explicitly requested full-text receipt may exceed 12288 bytes;
+ordinary `show`, notes/history windows, lists and orientation stay bounded.
+The `--full` mode cannot be combined with `--notes`, `--gates`, `--history`,
+`--after` or `--note`. Neither full nor ordinary reads select focus, register
+a session, stage or acknowledge delivery, or mutate the work item.
 
 `add`, `claim`, `gate`, `note`, and `done` share a compact mutation envelope.
 `operation` and its result facts accompany exactly one `work` summary
@@ -289,11 +315,14 @@ locator and a distinct checkpoint when present; done retains seal and time.
 Repeated focus, status, planning, history and parent projections are absent.
 One ASCII-quoted `full_detail` command restores item detail (`--notes` for
 add/note, `--notes --gates` for gate). Text prints it once as `full detail:`.
+Those bounded item reads in turn offer `show REF --full` for the complete
+authored contract, including text omitted to keep the item overview small.
 `build_fingerprint` remains once where already supplied (currently `next`);
 successful process-defaulted shell mutations still add `effective_session_id`
 on the receipt. Only `done` then refits that envelope; other mutation words
 do not run a receipt fitter.
-The rich six-operation core and host-private protocol do not change.
+The six-operation envelope and host-private protocol stay the same; core
+Summary focus bounds `outcome` text like other summary fields.
 
 Rules that matter:
 

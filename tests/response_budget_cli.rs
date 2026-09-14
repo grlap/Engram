@@ -1,7 +1,7 @@
 #[path = "../src/test_support.rs"]
 mod test_support;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::{
     path::Path,
     process::{Command, Output},
@@ -194,4 +194,102 @@ fn cli_json_stdout_frames_compact_receipt_plus_one_trailing_lf() {
     );
     let owed_receipt = cli_json_stdout(&owed);
     assert!(owed_receipt.get("effective_session_id").is_none());
+}
+
+#[test]
+fn cli_default_session_add_with_oversized_title_frames_compact_json() {
+    let directory = test_support::temp_home().expect("temp");
+    let home = directory.path();
+    assert!(run(home, &["init"]).status.success());
+    let title = format!("CLI title {}", "C".repeat(16_384));
+    let added = success_json(&work(
+        home,
+        None,
+        &["add".into(), title.clone(), "--json".into()],
+    ));
+    let session = added["effective_session_id"]
+        .as_str()
+        .expect("process-default mutation must emit effective_session_id")
+        .to_owned();
+    assert!(session.starts_with("local-process-v1-"));
+    let projected = added["work"]["title"].as_str().expect("title");
+    assert!(projected.len() <= 192);
+    assert_ne!(projected, title);
+    assert!(projected.ends_with("..."));
+    assert!(added["work"]["short_ref"].as_str().is_some());
+}
+
+fn unbounded_json(output: &Output) -> Value {
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        output.stdout.last().copied(),
+        Some(b'\n'),
+        "CLI JSON stdout must end with one LF: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout[..output.stdout.len() - 1]).expect("JSON receipt")
+}
+
+#[test]
+fn cli_show_full_returns_canonical_oversized_contract() {
+    let directory = test_support::temp_home().expect("temp");
+    let home = directory.path();
+    assert!(run(home, &["init"]).status.success());
+    let title = format!("CLI title {}", "C".repeat(16_384));
+    let added = success_json(&work(
+        home,
+        None,
+        &["add".into(), title.clone(), "--json".into()],
+    ));
+    let session = added["effective_session_id"]
+        .as_str()
+        .expect("process-default mutation must emit effective_session_id")
+        .to_owned();
+    let work_ref = added["work"]["short_ref"].as_str().expect("ref").to_owned();
+    let shown = success_json(&work(
+        home,
+        Some(&session),
+        &["show".into(), work_ref.clone(), "--json".into()],
+    ));
+    assert!(shown["status"]["work"]["outcome"].is_null());
+    assert_eq!(
+        shown["status"]["work"]["outcome_omitted"].as_u64(),
+        Some(u64::try_from(title.len()).expect("bytes"))
+    );
+    let full = unbounded_json(&work(
+        home,
+        Some(&session),
+        &[
+            "show".into(),
+            work_ref.clone(),
+            "--full".into(),
+            "--json".into(),
+        ],
+    ));
+    assert_eq!(full["work"]["title"], title);
+    assert_eq!(full["work"]["outcome"], title);
+    assert_eq!(
+        full["work"]["acceptance"],
+        json!([format!("{title} is done")])
+    );
+    let mixed = work(
+        home,
+        Some(&session),
+        &[
+            "show".into(),
+            work_ref,
+            "--full".into(),
+            "--notes".into(),
+            "--json".into(),
+        ],
+    );
+    assert!(
+        !mixed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&mixed.stderr)
+    );
 }

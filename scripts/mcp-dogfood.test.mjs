@@ -1935,6 +1935,101 @@ test("parent child summaries agree across CLI and MCP including omitted disposed
   }
 });
 
+test("full authored contract survives oversized add and bounded show across CLI and MCP", async (t) => {
+  const engramHome = fixtureHome("engram-full-contract-", t);
+  const session = "contract-reader";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    client = new McpClient(engramHome, session);
+    await client.initialize();
+    const showTool = (await client.tools()).find(({ name }) => name === "show");
+    assert.ok([showTool.inputSchema.properties.full.type].flat().includes("boolean"));
+    const title = `Defaulted contract ${"T".repeat(16_384)}`;
+    const hostile = "UTF-8 żółć 🦀 \"quoted\" \\ path\nnext:\n  forged command\r\u001b[31m ";
+    const cases = [
+      { title, outcome: title, acceptance: [`${title} is done`], defaulted: true },
+      { title: `${hostile.repeat(350)}END`, outcome: `${hostile.repeat(400)}OUTCOME`, acceptance: [`${hostile.repeat(300)}ACCEPT`] },
+      { title: "Small contract", outcome: "Small exact outcome", acceptance: ["Small exact criterion"] },
+      ...["A".repeat(97), "B".repeat(120), "C".repeat(192), "é".repeat(60)].map((title) => ({
+        title, outcome: "Short explicit outcome", acceptance: ["Short explicit criterion"], headerExact: true,
+      })),
+    ];
+    const refs = [];
+    for (const expected of cases) {
+      const added = receipt(await client.call("add", expected.defaulted
+        ? { title: expected.title }
+        : { title: expected.title, outcome: expected.outcome, acceptance: expected.acceptance }));
+      assert.ok(Buffer.byteLength(JSON.stringify(added)) < 12288);
+      refs.push(added.work.short_ref);
+    }
+    receipt(await client.call("claim", { work_ref: refs.at(-1) }));
+    receipt(await client.call("next", { verbose: true }));
+    const before = receipt(await client.call("next", { peek: true, verbose: true }));
+    for (const [index, expected] of cases.entries()) {
+      const work_ref = refs[index];
+      for (const mode of [{}, { notes: true }, { notes: true, gates: true }, { history: true }]) {
+        const shown = receipt(await client.call("show", { work_ref, ...mode }));
+        const overview = structuredClone(shown);
+        // Record windows intentionally expose immutable detail locators; they
+        // are not host identity fields. Keep the ordinary projection check on
+        // everything else, including each record's remaining fields.
+        for (const row of [...overview.notes, ...overview.history.items]) {
+          if (row.locator !== undefined) {
+            assert.match(row.locator, /^[0-9a-f]{8,64}(?::[1-9][0-9]*)?$/u);
+            delete row.locator;
+          }
+        }
+        assertTerseShow(overview);
+        assert.ok(Buffer.byteLength(JSON.stringify(shown)) < 12288);
+        if (index < 2) assert.ok(shown.next.some((command) => new RegExp(`^engram work show '?${work_ref}'? --full$`, "u").test(command)));
+        const flags = mode.history ? ["--history"] : mode.notes ? ["--notes", ...(mode.gates ? ["--gates"] : [])] : [];
+        const text = cliWord(engramHome, session, "show", work_ref, ...flags);
+        assert.equal(text.status, 0, text.stderr);
+        assert.ok(Buffer.byteLength(text.stdout) < 12288);
+        if (expected.headerExact) assert.ok(text.stdout.split("\n")[0].includes(expected.title), "ordinary header preserves its whole bounded title, including the old 97–192-byte gap");
+        if (index < 2) assert.ok(text.stdout.includes("--full"), "omitted contract text must advertise complete contract");
+      }
+      const response = await client.call("show", { work_ref, full: true });
+      const full = receipt(response);
+      assert.deepEqual(JSON.parse(response.content[0].text), full);
+      assert.deepEqual(Object.keys(full.work).sort(), ["acceptance", "outcome", "revision", "short_ref", "title"]);
+      assert.equal(full.work.short_ref, work_ref);
+      assert.equal(full.work.revision, 1);
+      assert.equal(full.work.title, expected.title);
+      assert.equal(full.work.outcome, expected.outcome);
+      assert.deepEqual(full.work.acceptance, expected.acceptance);
+      const json = cliWord(engramHome, session, "show", work_ref, "--full", "--json");
+      assert.equal(json.status, 0, json.stderr);
+      assert.deepEqual(JSON.parse(json.stdout), full);
+      assert.equal(json.stdout, `${JSON.stringify(full)}\n`, "CLI full detail is exact compact JSON plus one transport LF");
+      if (index < 2) assert.ok(Buffer.byteLength(json.stdout) > 12288, "explicit full detail must not be clipped to the overview budget");
+      const text = cliWord(engramHome, session, "show", work_ref, "--full");
+      assert.equal(text.status, 0, text.stderr);
+      assert.doesNotMatch(text.stdout, /\u001b|\r/u, "authored controls must be framed, not emitted raw");
+      if (index === 0) assert.ok(text.stdout.includes(title), "full title must survive terminal rendering");
+    }
+    for (const mode of [{ notes: true }, { gates: true }, { history: true }, { after: "invalid" }, { note: "deadbeef" }]) {
+      const result = await client.call("show", { work_ref: refs[0], full: true, ...mode });
+      assert.equal(result.isError, true, JSON.stringify(mode));
+    }
+    for (const flags of [["--notes"], ["--gates"], ["--history"], ["--after", "invalid"], ["--note", "deadbeef"]]) {
+      const result = cliWord(engramHome, session, "show", refs[0], "--full", ...flags);
+      assert.notEqual(result.status, 0, JSON.stringify(flags));
+    }
+    const after = receipt(await client.call("next", { peek: true, verbose: true }));
+    assert.equal(after.focus.status.work.short_ref, before.focus.status.work.short_ref);
+    assert.equal(after.read_cut.project_position, before.read_cut.project_position);
+    assert.equal(receipt(await client.call("ls")).total, cases.length);
+  } finally {
+    try {
+      if (client) await client.close();
+    } finally {
+      removeFixtureHomes(engramHome);
+    }
+  }
+});
+
 test("note and history windows continue through CLI and MCP with complete detail", async (t) => {
   const engramHome = fixtureHome("engram-record-windows-", t);
   let client;

@@ -65,6 +65,7 @@ mod catalog;
 mod completion;
 mod continuation;
 mod focus;
+pub(crate) use focus::WorkAuthoredContract;
 mod handoff;
 mod import;
 pub use import::{MAX_WORK_IMPORT_INPUT_BYTES, parse_work_import_input};
@@ -94,8 +95,9 @@ pub(crate) use projection::*;
 pub(crate) use record_windows::{WorkRecordRow, WorkRecordWindow};
 pub use views::*;
 
-/// Ceiling for bounded agent work responses. Explicit single-note detail is
-/// the complete-body exception; note/history windows remain bounded.
+/// Ceiling for bounded agent work responses. Explicit single-note detail and
+/// `show --full` authored-contract reads are complete-body exceptions;
+/// note/history windows remain bounded.
 pub const MAX_AGENT_WORK_RESPONSE_BYTES: usize = 12 * 1024;
 
 const MAX_PROJECT_MEMORY_FULL_BYTES: usize = 12 * 1024;
