@@ -47,3 +47,51 @@ fn migration_cli_uses_explicit_files_without_project_or_active_home() {
         assert!(!directory.path().join(".engram-project").exists());
     }
 }
+
+#[test]
+fn migration_cli_imports_current_archive_without_project_home() {
+    let directory = test_support::temp_home().expect("fixture");
+    let source = directory.path().join("current.db");
+    drop(engram::SqliteStore::open_unresolved(&source).expect("current store"));
+    let archive = directory.path().join("export.db");
+    let imported = directory.path().join("imported.db");
+    let absent_home = directory.path().join("must-not-create");
+    let run = |operation: &str, extra: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_engram"))
+            .current_dir(directory.path())
+            .arg("--home")
+            .arg(&absent_home)
+            .arg("migration")
+            .arg(operation)
+            .args(extra)
+            .output()
+            .expect("CLI");
+        assert!(
+            output.status.success(),
+            "{operation}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!absent_home.exists());
+    };
+    run(
+        "export",
+        &[
+            "--database",
+            source.to_str().unwrap(),
+            "--out",
+            archive.to_str().unwrap(),
+        ],
+    );
+    run(
+        "import",
+        &[
+            "--archive",
+            archive.to_str().unwrap(),
+            "--out",
+            imported.to_str().unwrap(),
+        ],
+    );
+    let store = engram::SqliteStore::open_unresolved(&imported).expect("imported current");
+    assert!(store.verify_all().expect("doctor").is_healthy());
+    assert!(!directory.path().join(".engram-project").exists());
+}

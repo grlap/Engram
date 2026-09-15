@@ -7,7 +7,7 @@ use clap::Subcommand;
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum MigrationCommand {
-    /// Convert the supported aggregate-root archive to a new offline store file.
+    /// Convert a supported current or aggregate-root archive to a new offline store file.
     /// Preserves private data and same-host state; does not install or activate it.
     Import {
         #[arg(long)]
@@ -44,6 +44,51 @@ pub(crate) enum MigrationCommand {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Backup, export, import and validate into a fixed operation directory.
+    /// Does not move the live store. Requires attested coordinated downtime.
+    Prepare {
+        #[arg(long)]
+        database: PathBuf,
+        #[arg(long)]
+        operation: PathBuf,
+        #[arg(long)]
+        old_executable: PathBuf,
+        #[arg(long)]
+        offline_confirmed: bool,
+    },
+    /// Inspect journal records and actual files in an operation directory.
+    Status {
+        #[arg(long)]
+        operation: PathBuf,
+    },
+    /// Move the live store aside and publish the validated candidate.
+    Activate {
+        #[arg(long)]
+        operation: PathBuf,
+        #[arg(long)]
+        offline_confirmed: bool,
+    },
+    /// Restore the retained original before finalize. Refused after finalize.
+    Rollback {
+        #[arg(long)]
+        operation: PathBuf,
+        #[arg(long)]
+        offline_confirmed: bool,
+    },
+    /// Close automatic rollback forever after the candidate is live.
+    Finalize {
+        #[arg(long)]
+        operation: PathBuf,
+        #[arg(long)]
+        offline_confirmed: bool,
+    },
+    /// Reconcile interrupted filesystem effects from actual files.
+    Recover {
+        #[arg(long)]
+        operation: PathBuf,
+        #[arg(long)]
+        offline_confirmed: bool,
+    },
 }
 
 pub(crate) fn run(command: &MigrationCommand) -> Result<ExitCode> {
@@ -52,7 +97,7 @@ pub(crate) fn run(command: &MigrationCommand) -> Result<ExitCode> {
             eprintln!(
                 "WARNING: offline same-host import includes private data and authority records. Do not activate this copy alongside its source or on another host."
             );
-            let report = engram::storage::migration::import_aggregate_archive(archive, out)?;
+            let report = engram::storage::migration::import_archive(archive, out)?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         MigrationCommand::Export { database, out } => {
@@ -83,6 +128,85 @@ pub(crate) fn run(command: &MigrationCommand) -> Result<ExitCode> {
                 }))?
             );
         }
+        MigrationCommand::Prepare {
+            database,
+            operation,
+            old_executable,
+            offline_confirmed,
+        } => {
+            warn_offline();
+            let report = engram::storage::migration::prepare_upgrade(
+                &engram::storage::migration::UpgradePrepareRequest {
+                    database: database.clone(),
+                    operation: operation.clone(),
+                    old_executable: old_executable.clone(),
+                    offline_confirmed: *offline_confirmed,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        MigrationCommand::Status { operation } => {
+            let report = engram::storage::migration::upgrade_status(operation)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        MigrationCommand::Activate {
+            operation,
+            offline_confirmed,
+        } => {
+            warn_offline();
+            let report = engram::storage::migration::activate_upgrade(
+                &engram::storage::migration::UpgradeOperationRequest {
+                    operation: operation.clone(),
+                    offline_confirmed: *offline_confirmed,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        MigrationCommand::Rollback {
+            operation,
+            offline_confirmed,
+        } => {
+            warn_offline();
+            let report = engram::storage::migration::rollback_upgrade(
+                &engram::storage::migration::UpgradeOperationRequest {
+                    operation: operation.clone(),
+                    offline_confirmed: *offline_confirmed,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        MigrationCommand::Finalize {
+            operation,
+            offline_confirmed,
+        } => {
+            warn_offline();
+            let report = engram::storage::migration::finalize_upgrade(
+                &engram::storage::migration::UpgradeOperationRequest {
+                    operation: operation.clone(),
+                    offline_confirmed: *offline_confirmed,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        MigrationCommand::Recover {
+            operation,
+            offline_confirmed,
+        } => {
+            warn_offline();
+            let report = engram::storage::migration::recover_upgrade(
+                &engram::storage::migration::UpgradeOperationRequest {
+                    operation: operation.clone(),
+                    offline_confirmed: *offline_confirmed,
+                },
+            )?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn warn_offline() {
+    eprintln!(
+        "WARNING: --offline-confirmed attests coordinated downtime. It is not a store lock and does not exclude other processes."
+    );
 }

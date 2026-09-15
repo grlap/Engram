@@ -20,6 +20,7 @@ pub(super) struct CopyContext<'a> {
     pub target: &'a Connection,
     pub mapping: HashMap<String, String>,
     pub heads: HashMap<String, (String, crate::domain::RootExecutionDelta)>,
+    pub reexpressed: i64,
 }
 
 enum Cell<'a> {
@@ -81,23 +82,31 @@ impl CopyContext<'_> {
         Ok(())
     }
 
-    pub(super) fn copy_all(&self, manifest: &ExportManifest) -> Result<(), MigrationError> {
+    pub(super) fn copy_all(
+        &mut self,
+        manifest: &ExportManifest,
+        dispositions: &[(String, super::profile::TableDisposition)],
+    ) -> Result<(), MigrationError> {
         let mut tables: Vec<_> = manifest
             .tables
             .iter()
-            .filter(|table| table.kind == "table" && table.name != "objects")
+            .filter(|table| table.kind == "table")
             .collect();
         tables.sort_by_key(|table| table.name == "sqlite_sequence");
         for table in tables {
-            if super::schema::TABLES.contains(&table.name.as_str()) {
-                if table.rows != 0 {
-                    return Err(refused(
-                        "this source profile does not accept an already migrated store",
-                    ));
+            let disposition = dispositions
+                .iter()
+                .find(|(name, _)| name == &table.name)
+                .map(|(_, disposition)| *disposition)
+                .ok_or_else(|| refused(format!("missing disposition for {}", table.name)))?;
+            match disposition {
+                super::profile::TableDisposition::Rebuild => {}
+                super::profile::TableDisposition::Transform if table.name == "objects" => {}
+                super::profile::TableDisposition::Unchanged
+                | super::profile::TableDisposition::Transform => {
+                    self.copy_table(table, disposition)?;
                 }
-                continue;
             }
-            self.copy_table(table)?;
         }
         Ok(())
     }
@@ -109,9 +118,29 @@ impl CopyContext<'_> {
             .ok_or_else(|| refused(format!("missing canonical row mapping for {hash}")))
     }
 
-    fn copy_table(&self, table: &TableManifest) -> Result<(), MigrationError> {
+    pub(super) fn copy_table(
+        &mut self,
+        table: &TableManifest,
+        disposition: super::profile::TableDisposition,
+    ) -> Result<(), MigrationError> {
         if table.columns.iter().any(|column| column.hidden != 0) {
             return Err(refused("unsupported generated operational column"));
+        }
+        if disposition == super::profile::TableDisposition::Transform {
+            let needs_map = table.name == "work_root_executions"
+                || table.name == "work_runs"
+                || table.name == "work_operation_results"
+                || table.name == "work_completion_seals"
+                || table
+                    .foreign_keys
+                    .iter()
+                    .any(|foreign| foreign.target_table == "objects");
+            if needs_map && self.mapping.is_empty() {
+                return Err(refused(format!(
+                    "transform declared without canonical mappings for {}",
+                    table.name
+                )));
+            }
         }
         if table.name == "sqlite_sequence" {
             self.target.execute("DELETE FROM sqlite_sequence", [])?;
@@ -135,55 +164,58 @@ impl CopyContext<'_> {
                 .into_iter()
                 .map(Cell::Raw)
                 .collect();
-            // Check the source projection before its hash or body is replaced.
-            // Comparing only the converted row would silently repair damage.
-            if table.name == "work_completion_seals" {
-                self.validate_source_seal(
-                    cells[position("seal_hash")?].text()?,
-                    cells[position("seal_json")?].bytes()?,
-                )?;
-            }
-            for foreign in &table.foreign_keys {
-                if foreign.target_table == "objects" {
-                    let index = position(&foreign.from_column)?;
-                    if cells[index].value() != ValueRef::Null {
-                        cells[index] =
-                            Cell::Edited(Value::Text(self.mapped(cells[index].text()?)?.into()));
+            if disposition == super::profile::TableDisposition::Transform {
+                // Check the source projection before its hash or body is replaced.
+                // Comparing only the converted row would silently repair damage.
+                if table.name == "work_completion_seals" {
+                    self.validate_source_seal(
+                        cells[position("seal_hash")?].text()?,
+                        cells[position("seal_json")?].bytes()?,
+                    )?;
+                }
+                for foreign in &table.foreign_keys {
+                    if foreign.target_table == "objects" {
+                        let index = position(&foreign.from_column)?;
+                        if cells[index].value() != ValueRef::Null {
+                            cells[index] = Cell::Edited(Value::Text(
+                                self.mapped(cells[index].text()?)?.into(),
+                            ));
+                        }
                     }
                 }
-            }
-            if table.name == "work_root_executions" {
-                self.copy_root(&cells, &position)?;
-                continue;
-            }
-            match table.name.as_str() {
-                "work_completion_seals" => {
-                    let hash = cells[position("seal_hash")?].text()?;
-                    let bytes = self.object_bytes(hash)?;
-                    cells[position("seal_json")?].replace_json(bytes)?;
+                if table.name == "work_root_executions" {
+                    self.copy_root(&cells, &position)?;
+                    continue;
                 }
-                "work_runs" => {
-                    let index = position("run_json")?;
-                    let original: Json = serde_json::from_slice(cells[index].bytes()?)?;
-                    let mut run: WorkRun = super::transform::strict(&original)?;
-                    for hash in [&mut run.last_checkpoint, &mut run.completion_seal]
-                        .into_iter()
-                        .flatten()
+                match table.name.as_str() {
+                    "work_completion_seals" => {
+                        let hash = cells[position("seal_hash")?].text()?;
+                        let bytes = self.object_bytes(hash)?;
+                        cells[position("seal_json")?].replace_json(bytes)?;
+                    }
+                    "work_runs" => {
+                        let index = position("run_json")?;
+                        let original: Json = serde_json::from_slice(cells[index].bytes()?)?;
+                        let mut run: WorkRun = super::transform::strict(&original)?;
+                        for hash in [&mut run.last_checkpoint, &mut run.completion_seal]
+                            .into_iter()
+                            .flatten()
+                        {
+                            *hash = self
+                                .mapped(hash.as_str())?
+                                .parse()
+                                .map_err(|_| refused("invalid mapped run address"))?;
+                        }
+                        cells[index].replace_json(serde_json::to_vec(&run)?)?;
+                    }
+                    "work_operation_results"
+                        if cells[position("operation")?].text()? == "complete_work" =>
                     {
-                        *hash = self
-                            .mapped(hash.as_str())?
-                            .parse()
-                            .map_err(|_| refused("invalid mapped run address"))?;
+                        let key = cells[position("idempotency_key")?].text()?.to_owned();
+                        self.reexpress_completion(&key, &mut cells[position("result_json")?])?;
                     }
-                    cells[index].replace_json(serde_json::to_vec(&run)?)?;
+                    _ => {}
                 }
-                "work_operation_results"
-                    if cells[position("operation")?].text()? == "complete_work" =>
-                {
-                    let key = cells[position("idempotency_key")?].text()?.to_owned();
-                    self.reexpress_completion(&key, &mut cells[position("result_json")?])?;
-                }
-                _ => {}
             }
             let sql = format!(
                 "INSERT INTO {} ({}) VALUES ({})",
@@ -227,7 +259,11 @@ impl CopyContext<'_> {
         Ok(())
     }
 
-    fn reexpress_completion(&self, key: &str, cell: &mut Cell<'_>) -> Result<(), MigrationError> {
+    fn reexpress_completion(
+        &mut self,
+        key: &str,
+        cell: &mut Cell<'_>,
+    ) -> Result<(), MigrationError> {
         let original = cell.bytes()?.to_vec();
         let source: Json = serde_json::from_slice(&original)?;
         let source_seal = CanonicalObject::freeze(&source)?;
@@ -237,6 +273,10 @@ impl CopyContext<'_> {
         // This is the sole by-value replay exception. Full original bytes and
         // the per-key decision remain inspectable, not just their digests.
         self.target.execute("INSERT INTO migration_reexpressed_results VALUES (?1,'complete_work',?2,?3,?4,?5,?6,?7,?8)",params![seal.root_execution.project_id.0,key,original,ObjectHash::from_canonical_bytes(&original).as_str(),target_bytes,ObjectHash::from_canonical_bytes(&target_bytes).as_str(),source_seal.hash().as_str(),target_seal])?;
+        self.reexpressed = self
+            .reexpressed
+            .checked_add(1)
+            .ok_or_else(|| refused("reexpressed completion count overflow"))?;
         cell.replace_json(target_bytes)
     }
 

@@ -120,10 +120,22 @@ their presence in a file alone does not prove delivery.
 
 ### Pre-Release Discipline
 
-There is no released product, therefore there is no legacy: no
-compatibility shims, no old-version support, no migration chains for our
-own history. Every schema marker stays 1 until release; change schemas in
-place, guarded by one generic different-build refusal. No pinned hashes
+Before release, do not add compatibility shims, indefinite support for arbitrary
+old versions, or guessed/unsupported migration chains. The explicit exception is
+full-store conversion between documented, tested source profiles and the current format,
+with complete data accounting and preserved, composable migration provenance.
+Controlled offline same-host upgrade requires operator-coordinated downtime:
+stop existing store consumers and keep new ones from starting through backup,
+conversion, verification, activation, and the recorded resume decision. This is
+an operational precondition, not a new TermAl or Engram admission lock. Keep a
+coherent backup and crash-recovery journal;
+automatic rollback is allowed only before new writes are admitted. Unknown
+profiles refuse without changing the active source or publishing a target.
+See [full store migration](docs/features/full-store-migration.md) for implemented
+profiles and the approved upgrade contract; approval is not proof of delivery.
+Ordinary store opening remains strict and never migrates implicitly. Every
+schema marker stays 1 until release; change schemas in place, guarded by the
+generic different-build refusal. No pinned hashes
 anywhere in source or tests — a check derives its reference at runtime
 from the same code it checks; the only hashes in the product are canonical
 object identity computed at runtime. The only stability contracts are live

@@ -10,6 +10,7 @@ mod export;
 mod import;
 mod import_rows;
 mod predecessors;
+mod profile;
 mod resolution;
 mod restore;
 mod roots;
@@ -17,8 +18,11 @@ mod rows;
 mod schema;
 mod schema_compare;
 mod transform;
+mod upgrade;
 mod verify;
 
+#[cfg(test)]
+mod aggregate_lifecycle;
 #[cfg(test)]
 mod tests;
 
@@ -28,11 +32,16 @@ use serde::{Deserialize, Serialize};
 
 pub use convert::{ConversionCounts, convert_aggregate_store_objects};
 pub use export::export_store;
-pub use import::{ImportReport, import_aggregate_archive};
+pub use import::{ImportReport, ImportedTable, import_archive};
 pub use predecessors::{PreSealBinding, PreSealPlan, inspect_pre_seal_history};
+pub use profile::{MigrationProfile, TableDisposition};
 pub use restore::restore_source_layout;
 pub use roots::{EncodedRoot, RootHistoryEncoder};
 pub use transform::{convert_event, convert_observation, convert_seal, map_root_references};
+pub use upgrade::{
+    UpgradeOperationRequest, UpgradePhase, UpgradePrepareRequest, UpgradeReport, activate_upgrade,
+    finalize_upgrade, prepare_upgrade, recover_upgrade, rollback_upgrade, upgrade_status,
+};
 pub use verify::{compare_export_to_source, verify_export};
 
 pub(super) use audit::verify_provenance_on;

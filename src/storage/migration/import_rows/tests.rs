@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rusqlite::{Connection, params};
 
 use super::CopyContext;
-use crate::{RootExecution, storage::test_database_shape_snapshot};
+use crate::{CanonicalObject, RootExecution, storage::test_database_shape_snapshot};
 
 // Exercises the actual row copier after canonical conversion, independently of
 // full doctor. The existing phase fixture is not a complete executable store.
@@ -52,11 +52,12 @@ fn copy_case(table: &str, mutation: Option<&str>) -> Result<(), super::Migration
     let delta: crate::domain::RootExecutionDelta = serde_json::from_slice(&bytes).expect("delta");
     let heads = HashMap::from([(delta.header.root_execution_id.0.to_string(), (hash, delta))]);
     let before_target = test_database_shape_snapshot(&target).expect("target before");
-    let context = CopyContext {
+    let mut context = CopyContext {
         archive: &archive,
         target: &target,
         mapping,
         heads,
+        reexpressed: 0,
     };
     let result = context.copy_table(
         manifest
@@ -64,6 +65,7 @@ fn copy_case(table: &str, mutation: Option<&str>) -> Result<(), super::Migration
             .iter()
             .find(|t| t.name == table)
             .expect("table"),
+        crate::storage::migration::TableDisposition::Transform,
     );
     assert_eq!(
         test_database_shape_snapshot(&source).expect("source after"),
@@ -89,6 +91,153 @@ fn migration_row_copy_refuses_inconsistent_source_seal_json() {
             .contains("source completion seal projection differs"),
         "{error}"
     );
+}
+
+#[test]
+fn migration_row_copy_disposition_governs_object_foreign_key() {
+    let directory = crate::test_support::temp_home().expect("fixture");
+    let old = CanonicalObject::freeze(&serde_json::json!({"fixture":"cite-old"}))
+        .expect("old fixture")
+        .hash()
+        .to_string();
+    let new = CanonicalObject::freeze(&serde_json::json!({"fixture":"cite-new"}))
+        .expect("new fixture")
+        .hash()
+        .to_string();
+    assert_ne!(old, new);
+    let source_path = directory.path().join("source.db");
+    let source = Connection::open(&source_path).expect("source");
+    source
+        .execute_batch(
+            "CREATE TABLE objects(object_hash TEXT PRIMARY KEY);
+             CREATE TABLE cite(
+                 object_hash TEXT NOT NULL REFERENCES objects(object_hash)
+             );",
+        )
+        .expect("cite schema");
+    source
+        .execute("INSERT INTO objects(object_hash) VALUES (?1)", [&old])
+        .expect("old object");
+    source
+        .execute("INSERT INTO cite(object_hash) VALUES (?1)", [&old])
+        .expect("old cite");
+    drop(source);
+    let archive_path = directory.path().join("archive.db");
+    let manifest = super::super::export_store(&source_path, &archive_path).expect("archive");
+    let table = manifest
+        .tables
+        .iter()
+        .find(|table| table.name == "cite")
+        .expect("cite");
+    assert!(
+        table
+            .foreign_keys
+            .iter()
+            .any(|foreign| foreign.target_table == "objects"),
+        "discriminator requires an objects foreign key"
+    );
+    let archive = Connection::open(&archive_path).expect("archive");
+    let mapping = HashMap::from([(old.clone(), new.clone())]);
+
+    let unchanged_path = directory.path().join("unchanged.db");
+    let unchanged = open_cite_target(&unchanged_path, &old, &new);
+    let before_unchanged = test_database_shape_snapshot(&unchanged).expect("unchanged before");
+    let mut unchanged_context = CopyContext {
+        archive: &archive,
+        target: &unchanged,
+        mapping: mapping.clone(),
+        heads: HashMap::new(),
+        reexpressed: 0,
+    };
+    unchanged_context
+        .copy_table(
+            table,
+            crate::storage::migration::TableDisposition::Unchanged,
+        )
+        .expect("unchanged copy");
+    let stored_old: String = unchanged
+        .query_row("SELECT object_hash FROM cite", [], |row| row.get(0))
+        .expect("unchanged cell");
+    assert_eq!(
+        stored_old, old,
+        "Unchanged must keep the source object hash"
+    );
+    assert_ne!(
+        test_database_shape_snapshot(&unchanged).expect("unchanged after"),
+        before_unchanged
+    );
+
+    let transformed_path = directory.path().join("transformed.db");
+    let transformed = open_cite_target(&transformed_path, &old, &new);
+    let mut transformed_context = CopyContext {
+        archive: &archive,
+        target: &transformed,
+        mapping,
+        heads: HashMap::new(),
+        reexpressed: 0,
+    };
+    transformed_context
+        .copy_table(
+            table,
+            crate::storage::migration::TableDisposition::Transform,
+        )
+        .expect("transform copy");
+    let stored_new: String = transformed
+        .query_row("SELECT object_hash FROM cite", [], |row| row.get(0))
+        .expect("transformed cell");
+    assert_eq!(
+        stored_new, new,
+        "Transform must apply the canonical mapping"
+    );
+
+    let refused_path = directory.path().join("refused.db");
+    let refused = open_cite_target(&refused_path, &old, &new);
+    let before_refused = test_database_shape_snapshot(&refused).expect("refused before");
+    let mut refused_context = CopyContext {
+        archive: &archive,
+        target: &refused,
+        mapping: HashMap::new(),
+        heads: HashMap::new(),
+        reexpressed: 0,
+    };
+    let error = refused_context
+        .copy_table(
+            table,
+            crate::storage::migration::TableDisposition::Transform,
+        )
+        .expect_err("Transform without mappings must refuse");
+    assert!(
+        error
+            .to_string()
+            .contains("transform declared without canonical mappings for cite"),
+        "{error}"
+    );
+    assert_eq!(
+        test_database_shape_snapshot(&refused).expect("refused after"),
+        before_refused,
+        "refusal before target effects"
+    );
+    let refused_rows: i64 = refused
+        .query_row("SELECT COUNT(*) FROM cite", [], |row| row.get(0))
+        .expect("refused rows");
+    assert_eq!(refused_rows, 0);
+}
+
+fn open_cite_target(path: &std::path::Path, old: &str, new: &str) -> Connection {
+    let target = Connection::open(path).expect("target");
+    target
+        .execute_batch(
+            "CREATE TABLE objects(object_hash TEXT PRIMARY KEY);
+             CREATE TABLE cite(object_hash TEXT NOT NULL REFERENCES objects(object_hash));",
+        )
+        .expect("target schema");
+    target
+        .execute(
+            "INSERT INTO objects(object_hash) VALUES (?1), (?2)",
+            [old, new],
+        )
+        .expect("both addresses");
+    target
 }
 
 #[test]

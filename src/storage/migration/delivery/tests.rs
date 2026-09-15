@@ -105,6 +105,7 @@ fn fixture(
         target: &store.connection,
         mapping: std::collections::HashMap::default(),
         heads: std::collections::HashMap::default(),
+        reexpressed: 0,
     }
     .retain_rows(&source)
     .expect("original rows");
