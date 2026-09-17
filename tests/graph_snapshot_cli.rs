@@ -3,6 +3,11 @@ mod test_support;
 
 use std::{fs, path::PathBuf, process::Command};
 
+use chrono::{Duration, TimeZone, Utc};
+use engram::{
+    ActorContext, DevelopmentNoopRedactor, ProjectId, SqliteStore,
+    WorkGraphSnapshotDestinationKind, domain::AssuranceLevel,
+};
 use serde_json::Value;
 
 fn engram(home: &std::path::Path) -> Command {
@@ -13,6 +18,135 @@ fn engram(home: &std::path::Path) -> Command {
 
 fn output_text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).trim().to_owned()
+}
+
+fn doctor_json(home: &std::path::Path) -> Value {
+    let output = engram(home)
+        .args(["doctor", "--json"])
+        .output()
+        .expect("run doctor JSON");
+    assert!(output.status.success(), "{}", output_text(&output.stderr));
+    serde_json::from_slice(&output.stdout).expect("parse doctor JSON")
+}
+
+fn save_mixed_precision_audits(
+    store: &mut SqliteStore,
+    project: &ProjectId,
+) -> Vec<chrono::DateTime<Utc>> {
+    let actor = ActorContext {
+        actor_id: "audit-order-fixture".into(),
+        actor_kind: "test_agent".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: None,
+        session_id: Some(engram::SessionId("audit-order-session".into())),
+        source_tool: None,
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "exercise disclosure attempt ordering".into(),
+    };
+    let whole = Utc
+        .with_ymd_and_hms(2026, 9, 4, 12, 0, 0)
+        .single()
+        .expect("timestamp");
+    // One older attempt falls outside doctor's latest-32 page. The retained
+    // whole second sorts AFTER the fractional timestamps as RFC 3339 text.
+    let times: Vec<_> = std::iter::once(whole - Duration::seconds(1))
+        .chain((0..32).map(|millis| whole + Duration::milliseconds(millis)))
+        .collect();
+    assert!(times[1] < times[2]);
+    assert!(
+        serde_json::to_string(&times[1]).expect("whole-second JSON")
+            > serde_json::to_string(&times[2]).expect("fractional-second JSON")
+    );
+    for time in &times {
+        store
+            .save_work_graph_snapshot(
+                project,
+                &actor,
+                None,
+                WorkGraphSnapshotDestinationKind::Stdout,
+                *time,
+                &DevelopmentNoopRedactor,
+            )
+            .expect("save audited snapshot");
+    }
+    times
+}
+
+#[test]
+fn doctor_save_audit_page_orders_mixed_timestamp_precision_by_attempt() {
+    let directory = test_support::temp_home().expect("temporary Engram home");
+    let home = directory.path();
+    let initialized = engram(home).arg("init").output().expect("run init");
+    assert!(
+        initialized.status.success(),
+        "{}",
+        output_text(&initialized.stderr)
+    );
+    let initial = doctor_json(home);
+    let project = ProjectId(initial["project_id"].as_str().expect("project id").into());
+    let mut store =
+        SqliteStore::open_unresolved(initial["database"].as_str().expect("database path"))
+            .expect("open isolated initialized store");
+    let times = save_mixed_precision_audits(&mut store, &project);
+    let audits = store
+        .work_graph_snapshot_save_audits(&project)
+        .expect("all audits");
+    assert_eq!(
+        audits
+            .iter()
+            .map(|audit| audit.attempted_at)
+            .collect::<Vec<_>>(),
+        times
+    );
+    assert!(
+        audits
+            .windows(2)
+            .all(|pair| pair[0].attempt_id < pair[1].attempt_id)
+    );
+    for limit in [1, 2, 32, 33] {
+        let (total, page) = store
+            .recent_work_graph_snapshot_save_audits(&project, limit)
+            .expect("recent audit page");
+        assert_eq!(total, 33);
+        assert_eq!(page, audits[33 - limit..]);
+    }
+    drop(store);
+
+    let diagnosis = doctor_json(home);
+    assert_eq!(diagnosis["healthy"], true);
+    assert_eq!(diagnosis["checked"]["graph_snapshot_audits"], 33);
+    let disclosure = &diagnosis["graph_snapshot_disclosure_attempts"];
+    assert_eq!(disclosure["total"], 33);
+    let items = disclosure["items"].as_array().expect("audit page");
+    assert_eq!(items.len(), 32);
+    for (item, expected) in items.iter().zip(&audits[1..]) {
+        assert_eq!(item["attempt_id"], expected.attempt_id);
+        assert_eq!(
+            item["attempted_at"],
+            serde_json::to_value(expected.attempted_at).expect("audit timestamp JSON")
+        );
+    }
+    let text = engram(home)
+        .arg("doctor")
+        .output()
+        .expect("run doctor text");
+    assert!(text.status.success(), "{}", output_text(&text.stderr));
+    let rendered = output_text(&text.stdout);
+    assert!(rendered.contains("33 total; showing the latest 32"));
+    let lines: Vec<_> = rendered
+        .lines()
+        .filter(|line| line.starts_with("Graph snapshot disclosure attempted at "))
+        .collect();
+    assert_eq!(lines.len(), 32);
+    for (line, expected) in lines.iter().zip(&times[1..]) {
+        assert!(
+            line.starts_with(&format!(
+                "Graph snapshot disclosure attempted at {expected}:"
+            )),
+            "{line}"
+        );
+    }
 }
 
 #[test]
