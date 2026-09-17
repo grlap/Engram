@@ -76,6 +76,7 @@ pub(super) fn obligation_record(
 
 pub(super) fn root_input(title: &str, key: &str) -> WorkProposeInput {
     WorkProposeInput::Root {
+        evaluation_mode: None,
         external_ref: None,
         notes: Vec::new(),
         title: title.into(),
@@ -99,6 +100,7 @@ pub(super) fn proposed_root(result: WorkProposeResult) -> WorkItemSummary {
 
 pub(super) fn completion_input(summary: &str, key: &str) -> WorkCompleteInput {
     WorkCompleteInput {
+        source_fingerprint: None,
         links: Vec::new(),
         link_basis: None,
         capture: Some(WorkCompletionCaptureInput {
@@ -191,6 +193,7 @@ pub(super) fn commit_completion_core_without_finishing(
                     reconciled_action_outcomes: Vec::new(),
                     released_resource_leases: Vec::new(),
                 },
+                source_fingerprint: None,
                 actor,
                 idempotency_key: scoped_key,
                 completed_at: now,

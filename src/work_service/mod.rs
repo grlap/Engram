@@ -64,6 +64,7 @@ pub(crate) use acceptance::{WorkAcceptanceEvidence, WorkAcceptanceLink};
 mod catalog;
 mod completion;
 mod continuation;
+mod evaluate;
 mod focus;
 pub(crate) use focus::WorkAuthoredContract;
 mod handoff;
@@ -90,6 +91,7 @@ mod test_support;
 pub(crate) use catalog::WorkListingPage;
 #[cfg(test)]
 pub(crate) use catalog::{encode_listing_cursor_json, listing_cursor_json};
+pub use evaluate::EVALUATE_WORD_RESERVE;
 pub use operations::*;
 pub(crate) use projection::*;
 pub(crate) use record_windows::{WorkRecordRow, WorkRecordWindow};
@@ -111,7 +113,7 @@ const MAX_FOCUS_HISTORY: u32 = 4;
 pub(crate) const MAX_FOCUS_RELATIONS: usize = 8;
 pub(crate) const MAX_CHILD_OBLIGATION_REFS: usize = 5;
 const MAX_FOCUS_MEMORIES: u32 = 8;
-const MAX_SUMMARY_BYTES: usize = 192;
+pub(crate) const MAX_SUMMARY_BYTES: usize = 192;
 const MAX_HISTORY_TITLE_BYTES: usize = 72;
 const MAX_HISTORY_DETAIL_BYTES: usize = 72;
 const MAX_ACCEPTANCE_ITEMS: usize = 6;
@@ -696,6 +698,7 @@ fn completion_result(
         acceptance_criteria_asserted: seal.acceptance.len(),
         acceptance_evidence: Some(WorkAcceptanceEvidence::from_seal(seal).with_previews(store)),
         acceptance_evidence_error_class: None,
+        acceptance_provenance: acceptance::provenance(store, seal).ok(),
         obligation_page: sealed_work_obligation_page(store, seal)?,
     }))
 }
@@ -756,12 +759,43 @@ fn completion_recovery_result(
         WorkCompletionRecoveryCause::RequiredChildUnsealed { .. } => "required_child_unsealed",
         WorkCompletionRecoveryCause::MissingContribution { .. } => "missing_contribution",
         WorkCompletionRecoveryCause::MissingAcceptance { .. } => "missing_acceptance",
+        WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. } => {
+            "missing_acceptance_evaluation"
+        }
+        WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. } => {
+            "acceptance_evaluation_stale"
+        }
+        WorkCompletionRecoveryCause::AcceptanceFailed { .. } => "acceptance_failed",
+        WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { .. } => {
+            "acceptance_insufficient_evidence"
+        }
+        WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. } => "acceptance_needs_human",
     };
     let remedy = if matches!(
         &recovery.cause,
         WorkCompletionRecoveryCause::OpenObligation { .. }
     ) {
         "record the matching host verification, then checkpoint_work acknowledging it, then complete; or request a host/operator waiver"
+            .into()
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. }
+            | WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. }
+    ) {
+        "record a fresh acceptance evaluation of every current criterion with evaluate, then retry completion; evaluator absence never falls back to self-asserted completion"
+            .into()
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::AcceptanceFailed { .. }
+            | WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { .. }
+    ) {
+        "do the corrective work or record the missing evidence, then record a new acceptance evaluation and retry completion"
+            .into()
+    } else if matches!(
+        &recovery.cause,
+        WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. }
+    ) {
+        "obtain a human decision on the criterion; only a separately authorized revision or cancellation changes the requirement, and a new evaluation follows that decision"
             .into()
     } else {
         format!(
@@ -1169,6 +1203,46 @@ fn agent_change_object(
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 actor_context: projected_actor_context(&evidence.actor),
                 created_at: evidence.created_at,
+            }))
+        }
+        "acceptance_evaluation" => {
+            let evaluation = serde_json::from_value::<crate::domain::AcceptanceEvaluation>(object)?;
+            let item = store.get_work_item(evaluation.work_id)?;
+            if &evaluation.project_id != project_id || evaluation.root_id != item.root_id {
+                return Err(StoreError::InvalidWorkProjection(
+                    "acceptance evaluation crosses its work project".into(),
+                ));
+            }
+            let passed = evaluation
+                .verdicts
+                .iter()
+                .filter(|verdict| verdict.verdict == crate::domain::AcceptanceVerdict::Pass)
+                .count();
+            let summary = match evaluation.first_blocking() {
+                None => format!(
+                    "acceptance evaluated ({}): all {} criteria pass",
+                    evaluation.mode.word(),
+                    evaluation.verdicts.len()
+                ),
+                Some(blocking) => format!(
+                    "acceptance evaluated ({}): {passed} of {} pass; {} \"{}\"",
+                    evaluation.mode.word(),
+                    evaluation.verdicts.len(),
+                    blocking.verdict.word(),
+                    compact_text(&blocking.criterion)
+                ),
+            };
+            Ok(WorkChangeProjection::Visible(WorkChangeSummary {
+                schema_version: evaluation.schema_version,
+                object_kind: object_kind.into(),
+                work_id: Some(evaluation.work_id),
+                work_ref: Some(item.short_ref),
+                revision: None,
+                change_kind: "evaluated".into(),
+                summary: compact_text(&summary),
+                actor_id: Some(compact_text(&evaluation.evaluator.actor_id)),
+                actor_context: projected_actor_context(&evaluation.evaluator),
+                created_at: evaluation.created_at,
             }))
         }
         "work_observation" => {
@@ -1650,6 +1724,7 @@ fn project_work_event(
             ("external_ref", "external reference"),
             ("assigned_to", "assignment"),
             ("deferred_until", "deferral"),
+            ("evaluation_mode", "evaluation mode"),
         ]
         .into_iter()
         .filter_map(|(key, word)| (previous[key] != current[key]).then_some(word))

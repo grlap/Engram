@@ -54,6 +54,26 @@ impl SqliteStore {
         Ok(projection)
     }
 
+    /// The active acceptance-evaluation policy in canonical form; the legacy
+    /// self-asserted path when the active policy carries none.
+    pub(in crate::storage) fn load_acceptance_evaluation_policy_on(
+        connection: &Connection,
+    ) -> Result<crate::domain::AcceptanceEvaluationPolicy, StoreError> {
+        let (_, policy, _) = Self::load_control_policy_head(connection)?;
+        Ok(policy.acceptance_evaluation.normalized())
+    }
+
+    /// The active acceptance-evaluation policy of this store.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the control policy cannot be read.
+    pub fn acceptance_evaluation_policy(
+        &self,
+    ) -> Result<crate::domain::AcceptanceEvaluationPolicy, StoreError> {
+        Self::load_acceptance_evaluation_policy_on(&self.connection)
+    }
+
     pub(super) fn verify_control_policy_history(
         connection: &Connection,
     ) -> Result<ControlPolicyProjection, StoreError> {
@@ -222,6 +242,7 @@ impl SqliteStore {
             || authority.previous_policy != policy.previous_policy
             || authority.required_assurance != policy.required_assurance
             || authority.obligation_rule_set != policy.obligation_rule_set
+            || authority.acceptance_evaluation != policy.acceptance_evaluation
             || authority.decided_at != policy.activated_at
             || authority.authorized_by.assurance != AssuranceLevel::Asserted
         {
@@ -297,6 +318,9 @@ impl SqliteStore {
             ProjectPolicyOperation::SetObligationRuleSet => {
                 Self::validate_obligation_rule_set_transition(previous, current)?;
             }
+            ProjectPolicyOperation::SetAcceptanceEvaluation => {
+                Self::validate_acceptance_evaluation_transition(previous, current)?;
+            }
         }
         Ok(())
     }
@@ -314,9 +338,36 @@ impl SqliteStore {
                 || current.grant_ttl_seconds != BUILTIN_CONTROL_GRANT_TTL_SECONDS);
         let rule_set_changed = previous
             .is_some_and(|previous| current.obligation_rule_set != previous.obligation_rule_set);
-        if envelope_changed || invalid_epoch_one || rule_set_changed {
+        let acceptance_changed = previous.is_some_and(|previous| {
+            current.acceptance_evaluation != previous.acceptance_evaluation
+        }) || (previous.is_none()
+            && !current.acceptance_evaluation.is_legacy());
+        if envelope_changed || invalid_epoch_one || rule_set_changed || acceptance_changed {
             return Err(StoreError::InvalidControlProjection(
                 "a SetRequiredAssurance policy transition changed a preserved policy field".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_acceptance_evaluation_transition(
+        previous: Option<&ControlPolicy>,
+        current: &ControlPolicy,
+    ) -> Result<(), StoreError> {
+        let Some(previous) = previous else {
+            return Err(StoreError::InvalidControlProjection(
+                "an acceptance-evaluation selection cannot create policy epoch one".into(),
+            ));
+        };
+        if current.required_assurance != previous.required_assurance
+            || current.supported_effects != previous.supported_effects
+            || current.grant_ttl_seconds != previous.grant_ttl_seconds
+            || current.obligation_rule_set != previous.obligation_rule_set
+            || current.acceptance_evaluation == previous.acceptance_evaluation
+            || current.acceptance_evaluation != current.acceptance_evaluation.normalized()
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "an acceptance-evaluation selection must change only the acceptance-evaluation policy".into(),
             ));
         }
         Ok(())
@@ -335,6 +386,7 @@ impl SqliteStore {
             || current.supported_effects != previous.supported_effects
             || current.grant_ttl_seconds != previous.grant_ttl_seconds
             || current.obligation_rule_set == previous.obligation_rule_set
+            || current.acceptance_evaluation != previous.acceptance_evaluation
         {
             return Err(StoreError::InvalidControlProjection(
                 "a rule-set selection must change only the selected obligation rule set".into(),

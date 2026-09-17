@@ -437,6 +437,7 @@ fn logical_fts(connection: &Connection) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
 
 fn current_root_input() -> WorkProposeInput {
     WorkProposeInput::Root {
+        evaluation_mode: None,
         title: "Current import fixture".into(),
         outcome: "Keep every durable row".into(),
         acceptance: vec!["round-trip".into()],
@@ -848,6 +849,7 @@ fn migration_aggregate_import_remaps_completed_seal_run_and_replays() {
     let replayed = imported
         .work_complete(
             WorkCompleteInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: Some(WorkCompletionCaptureInput {
@@ -917,6 +919,7 @@ fn migration_aggregate_import_remaps_completed_seal_run_and_replays() {
     let replayed_current = current_service
         .work_complete(
             WorkCompleteInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: Some(WorkCompletionCaptureInput {

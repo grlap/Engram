@@ -272,6 +272,7 @@ fn child_request(parent: &crate::WorkItem) -> crate::DecomposeWorkRequest {
         parent_id: parent.work_id,
         expected_parent_revision: parent.revision,
         children: vec![crate::ChildWorkDraft {
+            evaluation_mode: None,
             external_ref: None,
             notes: Vec::new(),
             local_key: "new-child".into(),

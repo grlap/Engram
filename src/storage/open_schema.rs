@@ -1235,6 +1235,7 @@ impl SqliteStore {
             previous_policy: None,
             required_assurance,
             obligation_rule_set: obligation_rule_set.clone(),
+            acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy::default(),
             authorized_by,
             reason,
             decided_at: now,
@@ -1259,6 +1260,7 @@ impl SqliteStore {
             supported_effects: Self::builtin_control_effects(),
             grant_ttl_seconds: BUILTIN_CONTROL_GRANT_TTL_SECONDS,
             obligation_rule_set,
+            acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy::default(),
             authority: authority_object.hash().clone(),
             activated_at: now,
         };

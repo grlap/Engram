@@ -50,6 +50,7 @@ fn criterion_links_pending_basis_refusal_never_discloses_derived_key() {
         }
     ));
     let mut explicit = crate::work_service::WorkCompleteInput {
+        source_fingerprint: None,
         links: vec![WorkCriterionLinkInput {
             criterion: 1,
             locator: "not-a-note".into(),
@@ -165,6 +166,7 @@ fn criterion_links_same_mapping_does_not_prove_the_same_completion_intent() {
         !verbs
             .done(
                 DoneInput {
+                    source_fingerprint: None,
                     work_ref: Some(child),
                     summary: Some("Child delivered".into()),
                     ..Default::default()
@@ -297,6 +299,7 @@ fn criterion_links_membership_is_run_scoped_without_first_row_selection() {
     verbs
         .done(
             DoneInput {
+                source_fingerprint: None,
                 work_ref: Some(reference.clone()),
                 summary: Some("First execution".into()),
                 ..Default::default()

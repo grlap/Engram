@@ -193,6 +193,7 @@ fn migration_reexpressed_replay_retains_original_bytes_and_missing_map_or_audit_
         evidence: seal.evidence.clone(),
         acceptance: seal.acceptance.clone(),
         drain: seal.drain.clone(),
+        source_fingerprint: None,
         actor: seal.actor.clone(),
         idempotency_key: "old-key".into(),
         completed_at: seal.completed_at,

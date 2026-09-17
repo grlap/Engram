@@ -32,6 +32,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
             WorkProposeInput::Decompose {
                 children: (0..16)
                     .map(|index| WorkChildInput {
+                        evaluation_mode: None,
                         external_ref: None,
                         notes: Vec::new(),
                         key: format!("child-{index}"),
@@ -78,6 +79,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
             service
                 .work_complete(
                     WorkCompleteInput {
+                        source_fingerprint: None,
                         links: Vec::new(),
                         link_basis: None,
                         capture: Some(WorkCompletionCaptureInput {

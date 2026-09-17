@@ -144,6 +144,7 @@ fn status_correction_late_status_is_advisory_outside_the_seal() {
     let done = verbs
         .done(
             DoneInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(reference.clone()),

@@ -34,6 +34,102 @@ fn cold_schema_failure_after_ddl_rolls_back_every_control_table() {
     drop(SqliteStore::open(&database).expect("retry cold bootstrap"));
 }
 
+// Round 4 (Low): an enabled acceptance-evaluation policy survives the other
+// two policy operations, and the history stays healthy.
+#[test]
+fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
+    use crate::domain::{AcceptanceEvaluationMode, AcceptanceEvaluationPolicy, MechanicalBasis};
+    let directory = crate::test_support::temp_home().expect("temporary store directory");
+    let database = directory.path().join("policy-preservation.db");
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
+        .expect("initialize advisory policy");
+    let evaluated = AcceptanceEvaluationPolicy {
+        allowed_modes: vec![
+            AcceptanceEvaluationMode::SameSession,
+            AcceptanceEvaluationMode::IndependentSession,
+        ],
+        mechanical_basis: MechanicalBasis::Observed,
+        require_source_freshness: true,
+    };
+    let enabled = store
+        .set_acceptance_evaluation_policy(
+            &evaluated,
+            &actor("policy-admin"),
+            "enable evaluated completion",
+            "preserve-enable",
+            None,
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .expect("enable evaluation");
+    assert!(enabled.changed);
+    let assurance = store
+        .set_required_control_assurance(
+            ControlAssurance::TurnGated,
+            &actor("policy-admin"),
+            "require turn mediation while evaluation stays on",
+            "preserve-assurance",
+            Some(&enabled.active_policy),
+            now + TimeDelta::minutes(1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("change the required assurance");
+    assert!(assurance.changed);
+    assert_eq!(
+        store.acceptance_evaluation_policy().expect("read"),
+        evaluated,
+        "an assurance change keeps the evaluation policy"
+    );
+    let empty_rules = ObligationRuleSet {
+        schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+        rules: Vec::new(),
+    };
+    let rules = store
+        .set_obligation_rule_set(
+            &empty_rules,
+            &actor("policy-admin"),
+            "select the empty rule set while evaluation stays on",
+            "preserve-rules",
+            Some(&assurance.active_policy),
+            now + TimeDelta::minutes(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("change the rule set");
+    assert!(rules.changed);
+    assert_eq!(
+        store.acceptance_evaluation_policy().expect("read"),
+        evaluated,
+        "a rule-set change keeps the evaluation policy"
+    );
+    let unchanged = store
+        .set_required_control_assurance(
+            ControlAssurance::TurnGated,
+            &actor("policy-admin"),
+            "an exact no-op keeps the evaluation policy too",
+            "preserve-noop",
+            Some(&rules.active_policy),
+            now + TimeDelta::minutes(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("no-op assurance receipt");
+    assert!(!unchanged.changed);
+    assert_eq!(
+        store.acceptance_evaluation_policy().expect("read"),
+        evaluated
+    );
+    let report = store.verify_all().expect("scan");
+    assert!(report.is_healthy(), "{report:?}");
+    drop(store);
+    assert_eq!(
+        SqliteStore::open(&database)
+            .expect("reopen replays a healthy history")
+            .acceptance_evaluation_policy()
+            .expect("read"),
+        evaluated
+    );
+}
+
 #[test]
 #[allow(
     clippy::too_many_lines,

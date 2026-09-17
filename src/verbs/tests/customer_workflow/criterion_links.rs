@@ -43,6 +43,7 @@ fn basis(verbs: &AgentVerbs, reference: &str) -> i64 {
 
 fn input(reference: &str, basis: i64, criterion: usize, locator: &str) -> DoneInput {
     DoneInput {
+        source_fingerprint: None,
         work_ref: Some(reference.into()),
         summary: Some("Delivered outcomes".into()),
         links: vec![WorkCriterionLinkInput {
@@ -200,6 +201,7 @@ fn criterion_links_shape_refusals_precede_any_protocol_write() {
             .work_complete_on(
                 Some(&reference),
                 crate::work_service::WorkCompleteInput {
+                    source_fingerprint: None,
                     capture: None,
                     evidence: Vec::new(),
                     acceptance,
@@ -438,6 +440,7 @@ fn criterion_links_do_not_promote_prior_run_or_inherited_evidence() {
     verbs
         .done(
             DoneInput {
+                source_fingerprint: None,
                 work_ref: Some(reference.clone()),
                 summary: Some("First execution delivered".into()),
                 ..Default::default()
@@ -494,6 +497,7 @@ fn criterion_links_none_and_all_change_only_explicit_bindings_and_stay_bounded()
         );
         let locator = locators(&verbs, &reference).remove(0);
         let mut request = DoneInput {
+            source_fingerprint: None,
             work_ref: Some(reference.clone()),
             summary: Some("Delivered".into()),
             ..Default::default()

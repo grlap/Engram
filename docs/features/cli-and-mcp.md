@@ -10,7 +10,7 @@
 One core library owns classification, object storage, scope authorization,
 task binding, deltas, and context-packet construction. The CLI and MCP server
 are thin faces over it; transport code does not redefine memory policy. The
-agent sees thirteen words; every host and operator control lives under
+agent sees fourteen words; every host and operator control lives under
 [Host integration](#host-integration).
 
 ## Using Engram as an agent
@@ -301,7 +301,7 @@ The `--full` mode cannot be combined with `--notes`, `--gates`, `--history`,
 `--after` or `--note`. Neither full nor ordinary reads select focus, register
 a session, stage or acknowledge delivery, or mutate the work item.
 
-`add`, `claim`, `gate`, `note`, and `done` share a compact mutation envelope.
+`add`, `claim`, `gate`, `evaluate`, `note`, and `done` share a compact mutation envelope.
 `operation` and its result facts accompany exactly one `work` summary
 (`short_ref`, title, lifecycle, revision). Live `claim` context contains only
 relative `holder` and `held_until`, never a fence or control binding.
@@ -737,6 +737,33 @@ Rules that matter:
   check name. A consecutive identical result replays;
   the same result after an intervening different result records a fresh gate
   transition.
+- `evaluate` records one immutable acceptance evaluation on the targeted
+  item's active run: `evaluate [REF] --mode MODE --acceptance-basis N
+  --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale
+  POSITION=TEXT [--evidence POSITION=LOCATOR]...`, where `show` prints both
+  bases and `LOCATOR` is a note/gate locator exactly as `show --notes
+  --gates` prints it (resolved as `done --link` resolves it) or the full
+  hash of host-minted verification or environment evidence. The evaluator's
+  own session is the attributed identity; a pass needs at least one
+  run-evidence citation; the core validates structure and provenance, never
+  relevance, and refuses a submission whose evidence basis a host-observed
+  change has already overtaken. The receipt and ordinary `show` carry a
+  bounded prefix of verdict rows with an exact `verdicts_omitted` count and
+  the decision facts (passed count, first blocking verdict, evaluator label,
+  freshness, recorded source fingerprint); `next` prints one `evaluation:`
+  line under the focused evaluated item; `show REF --full` returns the
+  complete newest evaluation with every rationale and citation. It is
+  refused until an operator enables the
+  [acceptance evaluation](acceptance-evaluation.md) policy, and under that
+  policy `done [--source-fingerprint F]` consumes the newest fresh, all-pass
+  evaluation instead of the author's self-assertion, presenting the
+  host-measured fingerprint when the policy requires source freshness. An
+  independent evaluator that later takes the run cannot consume its own
+  pass. `done` and the completed item's `show` say where the sealed
+  acceptance came from (`evaluated (<mode>, <assurance>) by <evaluator>` or
+  `self-asserted (legacy)`); `add --evaluation-mode MODE` pins a task's mode
+  from creation, `update REF --evaluation-mode MODE` pins it later, and
+  `--clear-evaluation-mode` releases it.
 - `remember` stores a retrievable project note — an attributed
   observation, never a rule or a decision record, kept in full until an
   explicit `forget`. `next` only signals how many notes exist and whether
@@ -755,12 +782,14 @@ Rules that matter:
   histories, but only the tombstone for forgotten keys. MCP uses `revise`,
   `expected_revision`, and `revision` with the same meanings.
 
-The same thirteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
-`update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`, and
-`forget`) with the same flat arguments, plus `search` — fourteen tools,
-with no new work-core operation — `gate` wraps the existing evidence path, and
-`remember`/`memories`/`forget` are a thin project-memory surface outside the
-six-operation work core (no focus mutation, no claim renewal). Reads require
+The same fourteen words are MCP tools (`next`, `ls`, `show`, `add`, `claim`,
+`update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`, and
+`forget`) with the same flat arguments, plus `search` — fifteen tools. The
+six-operation work core is unchanged: `gate` wraps the existing evidence
+path, `remember`/`memories`/`forget` are a thin project-memory surface outside
+it (no focus mutation, no claim renewal), and `evaluate` calls the service's
+separate evaluation entry, which neither `engram work core` nor the
+host-private protocol exposes. Reads require
 the cooperative asserted project binding. `remember` and `forget` validate the
 same non-empty actor/session binding inside the write transaction;
 `memory_binding_invalid` means that binding is absent or inconsistent. The normative
@@ -782,7 +811,9 @@ If you know Beads, the words map one to one:
 
 `done` differs from `bd close` in one way: it is checked against the item's
 acceptance and against anything the host recorded as owed, and it tells you
-what is missing instead of closing anyway.
+what is missing instead of closing anyway. Under a project policy that enables
+[acceptance evaluation](acceptance-evaluation.md), that check also requires a
+fresh, passing per-criterion evaluation recorded by the evaluator the host ran.
 
 ## Host integration
 
@@ -974,7 +1005,7 @@ engram work --actor-id codex --session-id session-unique-id \
 ```
 
 `graph save` and `graph load` are operator-only CLI surfaces; neither is an MCP
-tool or changes the thirteen agent words. Save reads the work graph, native
+tool or changes the fourteen agent words. Save reads the work graph, native
 history, source provenance, and keyed project memories at one transaction cut,
 then commits an immutable disclosure-attempt audit before publishing bytes.
 The canonical body excludes the exporting build, so its digest remains content
@@ -995,7 +1026,7 @@ attribution contract.
 The optional actor context can equivalently arrive through
 `ENGRAM_ACTOR_CONTEXT`; it is fixed when the CLI invocation or MCP connection
 binds its session. The MCP process retains one `LocalWorkService` and its
-lazily opened SQLite connection for its lifetime. All fourteen MCP tools use
+lazily opened SQLite connection for its lifetime. All fifteen MCP tools use
 that service. A failed operation rolls back before the next call uses the
 connection.
 
@@ -1093,7 +1124,7 @@ setter prints a warning that no V1 host can bind at that level plus the
 `set-required-assurance turn_gated` recovery command. The operator identity is
 asserted host context, not authenticated administration.
 
-`engram work` exposes the thirteen agent words; `--json` after any word prints
+`engram work` exposes the fourteen agent words; `--json` after any word prints
 the structured receipt (the existing shape plus `reminders` and `next`)
 instead of text. A successful mutation with a process-defaulted session also
 adds top-level `effective_session_id`. `done` exits with status 2 when the typed
@@ -1147,7 +1178,8 @@ operation enforces the live control-session/run binding described above.
 
 ### MCP tools
 
-`engram mcp` registers exactly the fourteen agent-facing tools below.
+`engram mcp` registers exactly the fifteen agent-facing tools below: the
+fourteen words plus `search`.
 
 | Tool | Purpose |
 | --- | --- |
@@ -1216,12 +1248,14 @@ for a genuinely different child intent.
 
 ### Work protocol contract
 
-The fourteen tools use the six ambient work operations: `work_next`,
+The lifecycle words use the six ambient work operations: `work_next`,
 `work_focus`, `work_propose`, `work_update`, `work_complete`, and
 `work_handoff`. `remember`, `memories`, and `forget` are a separate thin
-project-memory surface, not new work-core operations. Hosts and operators may
-call the six work operations directly through `engram work core`; they are not
-additional MCP tools. Session binding supplies
+project-memory surface, not new work-core operations, and `evaluate` is the
+service's separate evaluation entry (`work_evaluate_on`), also not a core
+operation. Hosts and operators may call the six work operations directly
+through `engram work core`; they are not additional MCP tools, and `evaluate`
+is reachable only as a word. Session binding supplies
 project, actor, current work,
 and cursors, so update/complete/handoff do not repeatedly shuttle ids. Ambient
 state contains no authority token; each mutation rechecks the project, item,
@@ -1673,7 +1707,7 @@ Build an executable and configure one stdio MCP process per agent session:
 ```
 
 The proprietary runtime supplies actor/session/tool/skill instruction context.
-This process exposes exactly the fourteen MCP tools. V1 records host
+This process exposes exactly the fifteen MCP tools. V1 records host
 context with `asserted` assurance; configuration text is not authentication.
 Distinct concurrent sessions need distinct `--session-id` values. The database
 is shared; the MCP processes are not.

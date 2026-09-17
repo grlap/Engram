@@ -386,6 +386,9 @@ pub struct WorkItemSummary {
     pub priority: i32,
     pub labels: Vec<String>,
     pub assigned_to: Option<String>,
+    /// The acceptance-evaluation mode this task pins, when it pins one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<crate::domain::AcceptanceEvaluationMode>,
     pub lifecycle: WorkLifecycle,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub restored: bool,
@@ -481,6 +484,26 @@ pub struct WorkFocusView {
     /// Advisory seal failures never prevent reading intact item/audit context.
     #[serde(skip)]
     pub(crate) acceptance_evidence_error_class: Option<&'static str>,
+    /// Why a completed item's sealed provenance could not be read: the seal
+    /// exists but its bound evaluation fails the shared check. A legacy seal
+    /// carries no class, so its intentional omission stays distinguishable.
+    #[serde(skip)]
+    pub(crate) acceptance_provenance_error_class: Option<&'static str>,
+    /// Newest acceptance evaluation on the open item's run, with the freshness
+    /// completion would apply now; agent detail only.
+    #[serde(skip)]
+    pub(crate) acceptance_evaluation: Option<crate::storage::AcceptanceEvaluationStatus>,
+    /// How many verdict rows of the newest evaluation `show` still prints;
+    /// the fitter sheds trailing rows with an exact omitted count.
+    #[serde(skip)]
+    pub(crate) evaluation_rows_visible: usize,
+    /// Run-feed head of the open item's active run: the evidence basis an
+    /// evaluator passes back so its record binds what it actually read.
+    #[serde(skip)]
+    pub(crate) evidence_basis: Option<i64>,
+    /// Where a completed item's sealed acceptance came from; agent detail only.
+    #[serde(skip)]
+    pub(crate) acceptance_provenance: Option<super::WorkAcceptanceProvenance>,
     pub session: AgentWorkSession,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detached_from: Option<WorkDetachedFrom>,

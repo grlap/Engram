@@ -13,6 +13,31 @@ pub(crate) struct WorkAuthoredContract {
     pub title: String,
     pub outcome: String,
     pub acceptance: Vec<String>,
+    /// The complete newest acceptance evaluation of an open item under an
+    /// evaluated policy: every verdict with its full rationale and citations.
+    pub evaluation: Option<WorkAuthoredEvaluation>,
+}
+
+/// Complete newest evaluation for the `show --full` read.
+#[derive(Clone, Debug)]
+pub(crate) struct WorkAuthoredEvaluation {
+    pub hash: String,
+    pub mode: &'static str,
+    pub work_revision: i64,
+    pub evaluated_cut: i64,
+    pub stale: Option<&'static str>,
+    pub verdicts: Vec<WorkAuthoredVerdict>,
+}
+
+/// One complete verdict of the `show --full` read.
+#[derive(Clone, Debug)]
+pub(crate) struct WorkAuthoredVerdict {
+    pub position: usize,
+    pub criterion: String,
+    pub verdict: &'static str,
+    pub basis: &'static str,
+    pub rationale: String,
+    pub citations: Vec<String>,
 }
 
 impl LocalWorkService {
@@ -135,12 +160,46 @@ impl LocalWorkService {
         let store = self.read_store_at(now)?;
         store.work_read_snapshot(|store| {
             let item = store.resolve_work_ref(&self.project_id, work_ref)?;
+            let evaluation = if item.lifecycle == WorkLifecycle::Open
+                && store.acceptance_evaluation_policy()?.is_evaluated()
+            {
+                store
+                    .acceptance_evaluation_status(item.work_id, None)?
+                    .map(|status| WorkAuthoredEvaluation {
+                        hash: status.evaluation.as_str().to_owned(),
+                        mode: status.record.mode.word(),
+                        work_revision: status.record.work_revision,
+                        evaluated_cut: status.record.evaluated_cut.position,
+                        stale: status.stale.map(crate::AcceptanceStaleReason::word),
+                        verdicts: status
+                            .record
+                            .verdicts
+                            .iter()
+                            .enumerate()
+                            .map(|(index, verdict)| WorkAuthoredVerdict {
+                                position: index + 1,
+                                criterion: verdict.criterion.clone(),
+                                verdict: verdict.verdict.word(),
+                                basis: verdict.basis.word(),
+                                rationale: verdict.rationale.clone(),
+                                citations: verdict
+                                    .evidence
+                                    .iter()
+                                    .map(|hash| hash.as_str().to_owned())
+                                    .collect(),
+                            })
+                            .collect(),
+                    })
+            } else {
+                None
+            };
             Ok(WorkAuthoredContract {
                 short_ref: item.short_ref,
                 revision: item.revision,
                 title: item.title,
                 outcome: item.outcome,
                 acceptance: item.acceptance,
+                evaluation,
             })
         })
     }

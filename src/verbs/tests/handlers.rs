@@ -133,6 +133,7 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
     verbs
         .done(
             DoneInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(target.short_ref.clone()),
@@ -844,6 +845,7 @@ fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
         priority: 2,
         labels: Vec::new(),
         assigned_to: None,
+        evaluation_mode: None,
         lifecycle,
         restored: false,
         revision: 1,

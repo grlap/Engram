@@ -637,6 +637,7 @@ impl SqliteStore {
                 .as_ref()
                 .ok_or_else(|| invalid("first import requires a local draft"))?;
             let request = CreateWorkRequest {
+                evaluation_mode: None,
                 project_id: project.clone(),
                 parent_id: None,
                 child_requirement: ChildRequirement::Required,

@@ -115,6 +115,28 @@ pub(super) fn validated_acceptance(
     actor: &ActorContext,
     evidence: &[ObjectHash],
 ) -> Result<Vec<crate::AcceptanceResult>, StoreError> {
+    if store.acceptance_evaluation_policy()?.is_evaluated() {
+        // Under an evaluated policy the sealed vector derives from the newest
+        // fresh evaluation; author links and self-asserted results are refused
+        // here so the caller learns the route before any capture is recorded.
+        if let Some(link) = input.links.first() {
+            return Err(StoreError::WorkCriterionLinkInvalid {
+                criterion: (link.criterion > 0).then_some(link.criterion),
+                reason: "this project evaluates acceptance; record verdicts with evaluate instead of linking criteria at completion",
+            });
+        }
+        if input
+            .acceptance
+            .as_ref()
+            .is_some_and(|supplied| !supplied.is_empty())
+        {
+            return Err(StoreError::WorkCompletionRefused {
+                work: work.work_id,
+                reason: "this project evaluates acceptance; explicit acceptance results are refused, record verdicts with evaluate instead".into(),
+            });
+        }
+        return Ok(Vec::new());
+    }
     acceptance(store, work, claim, input, actor, evidence).and_then(|supplied| {
         LocalWorkService::prevalidate_completion_acceptance(
             work,

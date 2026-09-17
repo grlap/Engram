@@ -337,16 +337,32 @@ impl SqliteStore {
             now,
             false,
         )?;
-        let WorkCompletionRecoveryCause::MissingAcceptance { criterion } = cause else {
-            return Err(StoreError::InvalidWorkProjection(
-                "preflight completion recovery accepts only missing acceptance".into(),
-            ));
-        };
-        if !work.acceptance.contains(criterion) {
-            return Err(StoreError::InvalidWorkProjection(
-                "preflight completion recovery criterion is absent from the bound work revision"
-                    .into(),
-            ));
+        // The preflight admits only acceptance causes, which a read derives
+        // without an execution write. A criterion-bearing cause must name a
+        // criterion of the bound work revision; the stale cause carries its
+        // reason alone. Obligation, child, and contribution causes stay with
+        // the transactional completion path.
+        match cause {
+            WorkCompletionRecoveryCause::MissingAcceptance { criterion }
+            | WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { criterion }
+            | WorkCompletionRecoveryCause::AcceptanceFailed { criterion }
+            | WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { criterion }
+            | WorkCompletionRecoveryCause::AcceptanceNeedsHuman { criterion } => {
+                if !work.acceptance.contains(criterion) {
+                    return Err(StoreError::InvalidWorkProjection(
+                        "preflight completion recovery criterion is absent from the bound work revision"
+                            .into(),
+                    ));
+                }
+            }
+            WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. } => {}
+            WorkCompletionRecoveryCause::OpenObligation { .. }
+            | WorkCompletionRecoveryCause::RequiredChildUnsealed { .. }
+            | WorkCompletionRecoveryCause::MissingContribution { .. } => {
+                return Err(StoreError::InvalidWorkProjection(
+                    "preflight completion recovery accepts only acceptance causes".into(),
+                ));
+            }
         }
         let recovery =
             completion_recovery_snapshot_on(&transaction, &work, claim.run_id, cause.clone())?;

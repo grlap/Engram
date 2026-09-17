@@ -173,6 +173,12 @@ fn shed_show_context_once(view: &mut WorkFocusView) -> bool {
         view.restored_history.omitted += 1;
         return true;
     }
+    // Newest-evaluation verdict rows shed one at a time with an exact count;
+    // the summary line (passed count, blocking verdict, freshness) stays.
+    if view.evaluation_rows_visible > 0 {
+        view.evaluation_rows_visible -= 1;
+        return true;
+    }
     // Blockers and prerequisites are already count/field bounded. Preserve
     // their blocking context; every successful shed must remove a real row.
     if view.children.pop().is_some() {
@@ -311,6 +317,216 @@ pub(super) struct ShowDetachedFrom {
     pub(super) reason_omitted: Option<usize>,
 }
 
+/// Newest acceptance evaluation on an open item, as `show` discloses it.
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowEvaluation {
+    pub(super) hash: String,
+    pub(super) mode: &'static str,
+    /// The evaluator as recorded: an asserted label, not verified identity.
+    pub(super) evaluator: String,
+    pub(super) work_revision: i64,
+    pub(super) passed: usize,
+    pub(super) criteria: usize,
+    /// Why completion would treat the record as absent; omitted when fresh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) stale: Option<&'static str>,
+    /// The evaluated source fingerprint, when the record carries one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) source_fingerprint: Option<String>,
+    /// True when the policy requires source freshness and this read could
+    /// not measure a fingerprint: `done --source-fingerprint` checks it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(super) source_checked_at_done: bool,
+    /// A prefix of the verdict rows; the rest are counted, never dropped
+    /// silently, and the complete record is the `full_detail` read.
+    pub(super) verdicts: Vec<ShowVerdict>,
+    pub(super) verdicts_omitted: usize,
+    pub(super) full_detail: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ShowVerdict {
+    pub(super) position: usize,
+    pub(super) verdict: &'static str,
+    pub(super) basis: &'static str,
+    pub(super) citations: usize,
+}
+
+/// The evaluator of one record as an attributed label: asserted context, at
+/// the assurance it was recorded with.
+fn evaluator_label(
+    evaluator: &crate::domain::ActorContext,
+    identity: DisplayIdentity<'_>,
+) -> String {
+    actor_label(
+        &identity.author(&evaluator.actor_id, evaluator.session_id.as_ref()),
+        evaluator.attribution_context(),
+    )
+}
+
+/// `MODE P/N pass, fresh|stale: REASON`: the evaluation summary `next` and
+/// `show` share.
+pub(super) fn evaluation_summary(status: &crate::storage::AcceptanceEvaluationStatus) -> String {
+    let record = &status.record;
+    let passed = record
+        .verdicts
+        .iter()
+        .filter(|verdict| verdict.verdict == crate::AcceptanceVerdict::Pass)
+        .count();
+    let freshness = match status.stale {
+        None => "fresh".to_owned(),
+        Some(reason) => format!("stale: {}", reason.word()),
+    };
+    format!(
+        "{} {passed}/{} pass, {freshness}",
+        record.mode.word(),
+        record.verdicts.len()
+    )
+}
+
+/// Where a sealed acceptance vector came from, as one `done`/`show` line.
+pub(super) fn acceptance_provenance_line(
+    provenance: Option<&crate::work_service::WorkAcceptanceProvenance>,
+    identity: DisplayIdentity<'_>,
+) -> String {
+    use crate::work_service::WorkAcceptanceProvenance;
+    match provenance {
+        None => {
+            "acceptance: provenance unavailable (the sealed evaluation could not be read)".into()
+        }
+        Some(WorkAcceptanceProvenance::SelfAsserted) => "acceptance: self-asserted (legacy)".into(),
+        Some(WorkAcceptanceProvenance::Evaluated(details)) => format!(
+            "acceptance: evaluated ({}, {}) by {}",
+            details.mode.word(),
+            assurance_word(details.assurance),
+            evaluator_label(&details.evaluator, identity)
+        ),
+    }
+}
+
+/// The same provenance as structured receipt data.
+pub(super) fn acceptance_provenance_value(
+    provenance: Option<&crate::work_service::WorkAcceptanceProvenance>,
+    identity: DisplayIdentity<'_>,
+) -> serde_json::Value {
+    use crate::work_service::WorkAcceptanceProvenance;
+    match provenance {
+        None => serde_json::json!({ "provenance": "unavailable" }),
+        Some(WorkAcceptanceProvenance::SelfAsserted) => {
+            serde_json::json!({ "provenance": "self_asserted" })
+        }
+        Some(WorkAcceptanceProvenance::Evaluated(details)) => serde_json::json!({
+            "provenance": "evaluated",
+            "evaluation": details.evaluation,
+            "mode": details.mode.word(),
+            "assurance": assurance_word(details.assurance),
+            "evaluator": evaluator_label(&details.evaluator, identity),
+            "evaluator_model": details.evaluator_model,
+        }),
+    }
+}
+
+fn assurance_word(assurance: crate::domain::AssuranceLevel) -> String {
+    serde_json::to_value(assurance)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+pub(super) fn show_evaluation(
+    status: &crate::storage::AcceptanceEvaluationStatus,
+    visible: usize,
+    work_ref: &str,
+    identity: DisplayIdentity<'_>,
+) -> ShowEvaluation {
+    let record = &status.record;
+    let visible = visible.min(record.verdicts.len());
+    ShowEvaluation {
+        hash: status.evaluation.as_str().to_owned(),
+        mode: record.mode.word(),
+        evaluator: evaluator_label(&record.evaluator, identity),
+        work_revision: record.work_revision,
+        passed: record
+            .verdicts
+            .iter()
+            .filter(|verdict| verdict.verdict == crate::AcceptanceVerdict::Pass)
+            .count(),
+        criteria: record.verdicts.len(),
+        stale: status.stale.map(crate::AcceptanceStaleReason::word),
+        source_fingerprint: record
+            .source_basis
+            .as_ref()
+            .map(|basis| basis.fingerprint.clone()),
+        source_checked_at_done: status.source_checked_at_done,
+        verdicts: record
+            .verdicts
+            .iter()
+            .take(visible)
+            .enumerate()
+            .map(|(index, verdict)| ShowVerdict {
+                position: index + 1,
+                verdict: verdict.verdict.word(),
+                basis: verdict.basis.word(),
+                citations: verdict.evidence.len(),
+            })
+            .collect(),
+        verdicts_omitted: record.verdicts.len() - visible,
+        full_detail: super::mutation::full_contract(work_ref),
+    }
+}
+
+/// One summary line plus one line per visible criterion with the newest
+/// verdict; omitted rows are counted and the complete read is named.
+fn evaluation_lines(
+    status: &crate::storage::AcceptanceEvaluationStatus,
+    visible: usize,
+    work_ref: &str,
+    identity: DisplayIdentity<'_>,
+) -> Vec<String> {
+    let projected = show_evaluation(status, visible, work_ref, identity);
+    let freshness = match projected.stale {
+        None => "fresh".to_owned(),
+        Some(reason) => format!("stale: {reason}"),
+    };
+    let mut lines = vec![format!(
+        "evaluation: {} {} by {} — {}/{} pass, {freshness}; evaluated revision {}",
+        projected.mode,
+        &projected.hash[..12],
+        super::terminal_safe_line(&projected.evaluator),
+        projected.passed,
+        projected.criteria,
+        projected.work_revision
+    )];
+    if let Some(fingerprint) = &projected.source_fingerprint {
+        lines.push(format!(
+            "  source fingerprint: {}{}",
+            super::terminal_safe_line(fingerprint),
+            if projected.source_checked_at_done {
+                "; checked when done presents --source-fingerprint"
+            } else {
+                ""
+            }
+        ));
+    }
+    for (verdict, record) in projected.verdicts.iter().zip(&status.record.verdicts) {
+        lines.push(format!(
+            "  {}. {} ({}) {}",
+            verdict.position,
+            verdict.verdict,
+            verdict.basis,
+            super::terminal_safe_line(&super::short(&record.rationale))
+        ));
+    }
+    if projected.verdicts_omitted > 0 {
+        lines.push(format!(
+            "  ({} more verdicts not shown; {})",
+            projected.verdicts_omitted,
+            super::terminal_command(&projected.full_detail)
+        ));
+    }
+    lines
+}
+
 /// Terse projection shared by CLI `show --json` and the agent-facing MCP
 /// tool. The rich [`WorkFocusView`] remains available through `work core
 /// focus` for hosts that need authority and integrity fields.
@@ -323,6 +539,14 @@ pub(super) struct ShowReceiptValue {
     /// Explicit read-concurrency token, not read-side state or authority.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_basis: Option<i64>,
+    /// Run-feed position an evaluator passes back as `--evidence-basis`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) evidence_basis: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) acceptance_evaluation: Option<ShowEvaluation>,
+    /// Where a completed item's sealed acceptance came from.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) acceptance: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_evidence: Option<super::acceptance::AcceptanceEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -500,6 +724,9 @@ pub(super) fn show_lines(
     if let Some(assignee) = &work.assigned_to {
         facts.push(format!("assignee: {}", identity.actor(assignee)));
     }
+    if let Some(mode) = work.evaluation_mode {
+        facts.push(format!("evaluation mode: {}", mode.word()));
+    }
     lines.push(facts.join("  "));
     if let Some(replacement) = work.superseded_by {
         lines.push(format!("successor: {}", short_ref_for_work_id(replacement)));
@@ -564,12 +791,33 @@ pub(super) fn show_lines(
             super::terminal_safe_line(&view.outcome)
         ));
     }
-    lines.push("acceptance:".into());
+    // A completed item says where its sealed acceptance came from, and names
+    // the error class when that read failed.
+    if work.lifecycle == WorkLifecycle::Completed
+        && (view.acceptance_provenance.is_some()
+            || view.acceptance_provenance_error_class.is_some()
+            || view.acceptance_evidence.is_some())
+    {
+        lines.push(acceptance_provenance_line(
+            view.acceptance_provenance.as_ref(),
+            identity,
+        ));
+        if let Some(class) = view.acceptance_provenance_error_class {
+            lines.push(format!("  diagnostic class: {class}"));
+        }
+    } else {
+        lines.push("acceptance:".into());
+    }
     if work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0 {
         lines.push(format!(
             "  acceptance basis: {} (pass --link-basis with --link)",
             work.revision
         ));
+        if let Some(position) = view.evidence_basis {
+            lines.push(format!(
+                "  evidence basis: {position} (pass --evidence-basis with evaluate)"
+            ));
+        }
     }
     for (position, criterion) in work.acceptance.iter().enumerate() {
         let safe = super::terminal_data_block(criterion);
@@ -592,6 +840,14 @@ pub(super) fn show_lines(
     }
     if let Some(facts) = &view.acceptance_evidence {
         lines.extend(super::acceptance::AcceptanceEvidence::new(facts).lines());
+    }
+    if let Some(evaluation) = &view.acceptance_evaluation {
+        lines.extend(evaluation_lines(
+            evaluation,
+            view.evaluation_rows_visible,
+            &work.short_ref,
+            identity,
+        ));
     }
     if let Some(explanation) = acceptance_unavailable(view) {
         lines.push(format!("criterion evidence: {explanation}"));
@@ -790,6 +1046,32 @@ pub(super) fn show_receipt_value(
         }),
         acceptance_basis: (work.lifecycle == WorkLifecycle::Open && work.acceptance_count > 0)
             .then_some(work.revision),
+        evidence_basis: view.evidence_basis,
+        acceptance_evaluation: view.acceptance_evaluation.as_ref().map(|status| {
+            show_evaluation(
+                status,
+                view.evaluation_rows_visible,
+                &work.short_ref,
+                identity,
+            )
+        }),
+        // Legacy completions keep their existing JSON shape; the text line
+        // still says self-asserted. An evaluated seal adds the block, and a
+        // seal whose evaluation binding failed the shared check discloses
+        // that as unavailable with its error class, never as the legacy shape.
+        acceptance: match (
+            view.acceptance_provenance.as_ref(),
+            view.acceptance_provenance_error_class,
+        ) {
+            (Some(provenance @ crate::work_service::WorkAcceptanceProvenance::Evaluated(_)), _) => {
+                Some(acceptance_provenance_value(Some(provenance), identity))
+            }
+            (None, Some(class)) => Some(serde_json::json!({
+                "provenance": "unavailable",
+                "error_class": class,
+            })),
+            _ => None,
+        },
         acceptance_evidence: view
             .acceptance_evidence
             .as_ref()

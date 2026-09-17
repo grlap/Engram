@@ -91,6 +91,10 @@ pub struct WorkGraphSnapshotItem {
     pub superseded_by: Option<WorkId>,
     pub assigned_to: Option<String>,
     pub deferred_until: Option<DateTime<Utc>>,
+    /// The acceptance-evaluation mode the task pins; restored verbatim so a
+    /// transfer never silently widens which evaluator may accept it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<crate::domain::AcceptanceEvaluationMode>,
     pub disposal_reason: Option<String>,
 }
 
@@ -114,6 +118,7 @@ pub(crate) fn restored_item_basis_matches(
         && item.labels == snapshot.labels
         && item.origin == snapshot.origin
         && item.source_snapshot_id == snapshot.source_snapshot_id
+        && item.evaluation_mode == snapshot.evaluation_mode
         && item.lifecycle == snapshot.lifecycle
         && item.superseded_by == snapshot.superseded_by
         && item.assigned_to == snapshot.assigned_to

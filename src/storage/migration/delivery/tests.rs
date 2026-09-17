@@ -36,6 +36,7 @@ fn fixture(
     creator
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 title: "Attribution".into(),
                 outcome: "Keep the original page".into(),
                 acceptance: vec!["replay".into()],

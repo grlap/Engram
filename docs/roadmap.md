@@ -17,8 +17,8 @@ freshness, and only then enable a replay-proven refusal set and action gates.
 This keeps false refusals and hook latency measurable before Engram can block
 work.
 
-Current milestone: agents use thirteen words — `next`, `ls`, `show`, `add`,
-`claim`, `update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`,
+Current milestone: agents use fourteen words — `next`, `ls`, `show`, `add`,
+`claim`, `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`,
 `forget` — as flat CLI commands and MCP tools over the unchanged six-operation
 core; `add → claim → done` is
 measured at three commands and no JSON, hashes, fences, or keys, and every

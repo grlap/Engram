@@ -5,6 +5,11 @@
     reason = "work lifecycle transactions stay contiguous so their atomic invariants remain auditable"
 )]
 
+mod acceptance_evaluation;
+pub(crate) use acceptance_evaluation::attempt_identity as acceptance_attempt_identity;
+pub use acceptance_evaluation::{
+    AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
+};
 mod child_resolution;
 pub(crate) use child_resolution::RequiredChildSuccessor;
 mod completion;
@@ -51,10 +56,10 @@ use crate::{
     CanonicalObject, ObjectHash,
     domain::{
         ActorContext, CompletionSeal, FeedPosition, RootExecution, SCHEMA_VERSION, SessionId,
-        TaskId, WorkBlocker, WorkClaim, WorkClaimId, WorkCompletionRecovery, WorkEvent,
-        WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer, WorkId, WorkItem, WorkObligation,
-        WorkObligationId, WorkObligationResolutionEvent, WorkObligationState,
-        WorkPrerequisiteState, WorkRun, WorkRunId, WorkTransition,
+        TaskId, WorkBlocker, WorkClaim, WorkClaimId, WorkCompletionRecovery,
+        WorkCompletionRecoveryCause, WorkEvent, WorkEvidenceKind, WorkFeedEntry, WorkHandoffOffer,
+        WorkId, WorkItem, WorkObligation, WorkObligationId, WorkObligationResolutionEvent,
+        WorkObligationState, WorkPrerequisiteState, WorkRun, WorkRunId, WorkTransition,
     },
     schema::WORK_SCHEMA_VERSION as CURRENT_WORK_SCHEMA_VERSION,
 };

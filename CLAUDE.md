@@ -49,10 +49,11 @@ their presence in a file alone does not prove delivery.
   query, planning, execution, feed, completion, and integrity invariants.
 - `src/control.rs` owns pure deterministic control-policy evaluation.
 - `src/host.rs` owns the host-private JSON-lines transport only.
-- `src/work_service/` owns the six-operation ambient work protocol, split by
-  service setup, next/delivery, focus, propose, update, completion, handoff,
-  and memory operation families around shared projection helpers.
-- `src/verbs/` owns the thirteen-word agent surface: `mod.rs` holds shared
+- `src/work_service/` owns the six-operation ambient work protocol and the
+  separate `evaluate` service entry, split by service setup, next/delivery,
+  focus, propose, update, completion, handoff, evaluate, and memory operation
+  families around shared projection helpers.
+- `src/verbs/` owns the fourteen-word agent surface: `mod.rs` holds shared
   vocabulary; receipt shaping, terse show rendering, and word handlers live
   in owning modules, and `src/verbs/tests/` mirrors those modules; its public
   re-exports preserve the existing `crate::verbs` paths.
@@ -113,6 +114,9 @@ their presence in a file alone does not prove delivery.
 
 - Architecture and behavior live under `docs/`; feature briefs live under
   `docs/features/` and should be cross-linked when they overlap.
+- Completion under an evaluated acceptance policy follows the agreed
+  [acceptance evaluation](docs/features/acceptance-evaluation.md) contract:
+  the host evaluates, the core enforces, and Engram never calls a model.
 - Use the project skill at `.agents/skills/engram-repo/SKILL.md` before changing
   Engram domain, persistence, publication, or review behavior.
 - Track this repository's implementation work in Engram (see Work
@@ -310,12 +314,13 @@ the caller must omit `--session-id` to receive a fresh process default.
 engram work next --peek           # resume orientation without advancing delivery
 engram work next                  # explicitly advance ordinary delivery
 engram work ls | show REF
-engram work add "Title" [--under REF [--optional]] [--kind KIND] [--label L]
+engram work add "Title" [--under REF [--optional]] [--kind KIND] [--label L] [--evaluation-mode MODE]
 engram work claim REF
-engram work update REF [--after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why"]
+engram work update REF [--after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --evaluation-mode MODE | --clear-evaluation-mode]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
+engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION]
 engram work note "what you found or decided"
-engram work done ["what was delivered"]
+engram work done ["what was delivered"] [--source-fingerprint F]
 engram work remember "project note" [--key KEY]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full
 engram work forget KEY

@@ -88,13 +88,13 @@ impl SqliteStore {
                 current: current.policy_hash,
             });
         }
+        let (active_policy, _) =
+            Self::load_control_policy_version(&transaction, &current.policy_hash)?;
         if required_assurance == current.required_assurance {
-            let (policy, _) =
-                Self::load_control_policy_version(&transaction, &current.policy_hash)?;
             let receipt = ControlPolicyUpdateReceipt {
                 changed: false,
                 active_policy: current.policy_hash,
-                previous_policy: policy.previous_policy,
+                previous_policy: active_policy.previous_policy,
                 authority: current.authority_hash,
                 policy_epoch: current.epoch,
                 previous_required_assurance: current.required_assurance,
@@ -123,6 +123,7 @@ impl SqliteStore {
             previous_policy: Some(current.policy_hash.clone()),
             required_assurance,
             obligation_rule_set: current.obligation_rule_set.clone(),
+            acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
             authorized_by,
             reason,
             decided_at: now,
@@ -147,6 +148,7 @@ impl SqliteStore {
             supported_effects: current.supported_effects,
             grant_ttl_seconds: current.grant_ttl_seconds,
             obligation_rule_set: current.obligation_rule_set,
+            acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
             authority: authority_object.hash().clone(),
             activated_at: now,
         };
@@ -290,6 +292,8 @@ impl SqliteStore {
                 current: current.policy_hash,
             });
         }
+        let (active_policy, _) =
+            Self::load_control_policy_version(&transaction, &current.policy_hash)?;
         let current_rule_set = current.obligation_rule_set.clone();
         if current_rule_set == *rule_set_object.hash() {
             let (policy, _) =
@@ -327,6 +331,7 @@ impl SqliteStore {
             previous_policy: Some(current.policy_hash.clone()),
             required_assurance: current.required_assurance,
             obligation_rule_set: rule_set_object.hash().clone(),
+            acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
             authorized_by,
             reason,
             decided_at: now,
@@ -351,6 +356,7 @@ impl SqliteStore {
             supported_effects: current.supported_effects,
             grant_ttl_seconds: current.grant_ttl_seconds,
             obligation_rule_set: rule_set_object.hash().clone(),
+            acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
             authority: authority_object.hash().clone(),
             activated_at: now,
         };
@@ -411,6 +417,213 @@ impl SqliteStore {
         Self::persist_control_policy_operation(
             &transaction,
             "set_obligation_rule_set",
+            idempotency_key,
+            &intent,
+            &receipt,
+            now,
+        )?;
+        transaction.commit()?;
+        Ok(receipt)
+    }
+
+    /// Activates one acceptance-evaluation policy under a new epoch, keeping
+    /// the required assurance and obligation rule set unchanged. An empty
+    /// allowed-mode set restores the legacy self-asserted completion path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the policy shape or asserted attribution
+    /// is invalid, the expected policy is stale, history is corrupt, or the
+    /// CAS activation cannot complete atomically.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "the caller key, policy, attribution, CAS guard, clock, and redactor are independent parts of one auditable policy transaction"
+    )]
+    pub fn set_acceptance_evaluation_policy<R: Redactor>(
+        &mut self,
+        acceptance_evaluation: &crate::domain::AcceptanceEvaluationPolicy,
+        authorized_by: &ActorContext,
+        reason: &str,
+        idempotency_key: &str,
+        expected_policy: Option<&ObjectHash>,
+        now: DateTime<Utc>,
+        redactor: &R,
+    ) -> Result<crate::storage::AcceptanceEvaluationPolicyUpdateReceipt, StoreError> {
+        let acceptance_evaluation = acceptance_evaluation.normalized();
+        if authorized_by.assurance != AssuranceLevel::Asserted {
+            return Err(StoreError::InvalidControlProjection(
+                "V1 control-policy administration records asserted host context only".into(),
+            ));
+        }
+        let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
+        let reason = normalize_control_text(reason, "acceptance evaluation policy reason")?;
+        redactor
+            .inspect(&reason)
+            .map_err(StoreError::RedactionRefused)?;
+        let idempotency_key = normalize_control_policy_idempotency_key(idempotency_key)?;
+        let intent = CanonicalObject::freeze(
+            &ControlPolicyOperationFingerprint::SetAcceptanceEvaluation {
+                fingerprint_schema_version: CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION,
+                idempotency_key,
+                acceptance_evaluation: &acceptance_evaluation,
+                authorized_by: &authorized_by,
+                reason: &reason,
+                expected_policy,
+            },
+        )?;
+        if intent.bytes().len() > MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy operation intent exceeds the {MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES}-byte canonical limit"
+            )));
+        }
+
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(receipt) = Self::replay_control_policy_operation::<
+            crate::storage::AcceptanceEvaluationPolicyUpdateReceipt,
+        >(
+            &transaction,
+            "set_acceptance_evaluation",
+            idempotency_key,
+            &intent,
+        )? {
+            transaction.commit()?;
+            return Ok(receipt);
+        }
+        let current = Self::verify_control_policy_history(&transaction)?;
+        if let Some(expected) = expected_policy
+            && expected != &current.policy_hash
+        {
+            return Err(StoreError::ControlPolicyConflict {
+                expected: expected.clone(),
+                current: current.policy_hash,
+            });
+        }
+        let (active_policy, _) =
+            Self::load_control_policy_version(&transaction, &current.policy_hash)?;
+        let previous_acceptance_evaluation = active_policy.acceptance_evaluation.normalized();
+        if previous_acceptance_evaluation == acceptance_evaluation {
+            let receipt = crate::storage::AcceptanceEvaluationPolicyUpdateReceipt {
+                changed: false,
+                active_policy: current.policy_hash,
+                previous_policy: active_policy.previous_policy,
+                authority: current.authority_hash,
+                policy_epoch: current.epoch,
+                previous_acceptance_evaluation,
+                acceptance_evaluation,
+                activated_at: current.activated_at,
+            };
+            Self::persist_control_policy_operation(
+                &transaction,
+                "set_acceptance_evaluation",
+                idempotency_key,
+                &intent,
+                &receipt,
+                now,
+            )?;
+            transaction.commit()?;
+            return Ok(receipt);
+        }
+
+        let next_epoch = current.epoch.0.checked_add(1).ok_or_else(|| {
+            StoreError::InvalidControlProjection("control policy epoch overflowed".into())
+        })?;
+        let authority = ProjectPolicyAuthorityDecision {
+            schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
+            operation: ProjectPolicyOperation::SetAcceptanceEvaluation,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            obligation_rule_set: current.obligation_rule_set.clone(),
+            acceptance_evaluation: acceptance_evaluation.clone(),
+            authorized_by,
+            reason,
+            decided_at: now,
+        };
+        let authority_object = CanonicalObject::freeze(&authority)?;
+        if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
+            return Err(StoreError::InvalidControlProjection(format!(
+                "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
+            )));
+        }
+        Self::insert_object(
+            &transaction,
+            "project_policy_authority_decision",
+            &authority_object,
+        )?;
+        let policy = ControlPolicy {
+            schema_version: CONTROL_POLICY_SCHEMA_VERSION,
+            control_schema_version: CONTROL_SCHEMA_VERSION,
+            policy_epoch: ProjectPolicyEpoch(next_epoch),
+            previous_policy: Some(current.policy_hash.clone()),
+            required_assurance: current.required_assurance,
+            supported_effects: current.supported_effects,
+            grant_ttl_seconds: current.grant_ttl_seconds,
+            obligation_rule_set: current.obligation_rule_set.clone(),
+            acceptance_evaluation: acceptance_evaluation.clone(),
+            authority: authority_object.hash().clone(),
+            activated_at: now,
+        };
+        Self::validate_control_policy_shape(&policy)?;
+        let policy_object = CanonicalObject::freeze(&policy)?;
+        Self::insert_object(&transaction, "control_policy", &policy_object)?;
+        transaction.execute(
+            "INSERT INTO control_policy_versions (
+                 policy_hash, policy_epoch, authority_hash, policy_json
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                policy_object.hash().as_str(),
+                policy.policy_epoch.0,
+                authority_object.hash().as_str(),
+                policy_object.bytes(),
+            ],
+        )?;
+        let changed = transaction.execute(
+            "UPDATE control_policy_state SET
+                 schema_version = ?1, policy_epoch = ?2,
+                 required_assurance = ?3, supported_effects_json = ?4,
+                 grant_ttl_seconds = ?5, policy_hash = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+            params![
+                CONTROL_POLICY_STATE_SCHEMA_VERSION,
+                policy.policy_epoch.0,
+                enum_name(policy.required_assurance)?,
+                serde_json::to_string(&policy.supported_effects)?,
+                policy.grant_ttl_seconds,
+                policy_object.hash().as_str(),
+                current.epoch.0,
+                current.policy_hash.as_str(),
+            ],
+        )?;
+        if changed != 1 {
+            return Err(StoreError::InvalidControlProjection(
+                "acceptance evaluation policy compare-and-swap matched no row".into(),
+            ));
+        }
+        let activated = Self::load_active_control_policy(&transaction)?;
+        if activated.policy_hash != *policy_object.hash() || activated.epoch != policy.policy_epoch
+        {
+            return Err(StoreError::InvalidControlProjection(
+                "activated acceptance evaluation policy failed post-CAS integrity validation"
+                    .into(),
+            ));
+        }
+        Self::verify_control_policy_history(&transaction)?;
+        let receipt = crate::storage::AcceptanceEvaluationPolicyUpdateReceipt {
+            changed: true,
+            active_policy: policy_object.hash().clone(),
+            previous_policy: policy.previous_policy,
+            authority: authority_object.hash().clone(),
+            policy_epoch: policy.policy_epoch,
+            previous_acceptance_evaluation,
+            acceptance_evaluation,
+            activated_at: policy.activated_at,
+        };
+        Self::persist_control_policy_operation(
+            &transaction,
+            "set_acceptance_evaluation",
             idempotency_key,
             &intent,
             &receipt,

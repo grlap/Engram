@@ -91,6 +91,15 @@ impl LocalWorkService {
                                 Some(advisory_error_class(&error));
                         }
                     }
+                    // Provenance is reloaded from the frozen seal the same
+                    // way, so a replay discloses what the first receipt did.
+                    receipt.acceptance_provenance = acceptance::provenance_for_seal(
+                        &store,
+                        &receipt.seal,
+                        receipt.work_id,
+                        receipt.run_id,
+                    )
+                    .ok();
                     return Ok(result);
                 }
                 WorkCompleteResult::Refused(_) => {
@@ -270,7 +279,7 @@ impl LocalWorkService {
         })?;
         let actor = self.actor("work_complete", "complete ambient local work");
         let claim = self.live_protocol_claim(&basis, &work, now)?;
-        let evidence_basis = Self::completion_evidence_basis(&store, &claim, &input.evidence)?;
+        let mut evidence_basis = Self::completion_evidence_basis(&store, &claim, &input.evidence)?;
         let validated_acceptance =
             links::validated_acceptance(&store, &work, &claim, &input, &actor, &evidence_basis);
         let acceptance = match validated_acceptance {
@@ -288,6 +297,37 @@ impl LocalWorkService {
             }
             Err(error) => return Err(error),
         };
+        // Under an evaluated policy the readiness decision is taken before
+        // any capture is recorded: the shared assessment answers with the
+        // same typed recovery the storage completion would, and the storage
+        // completion still repeats it inside its transaction. A ready
+        // evaluation's citations join the completion evidence set, so the
+        // capture checkpoint acknowledges them and the seal names them.
+        match store.acceptance_evaluation_readiness(
+            work.work_id,
+            claim.run_id,
+            input.source_fingerprint.as_deref(),
+        )? {
+            crate::storage::AcceptanceEvaluationReadiness::Blocked(cause) => {
+                let snapshot = store.work_completion_recovery(&work, &claim, now, &cause)?;
+                let obligation_page = work_completion_recovery_page(&snapshot)?;
+                return Ok(completion_recovery_result(
+                    work.work_id,
+                    snapshot.recovery,
+                    obligation_page,
+                    snapshot.required_child_successor,
+                ));
+            }
+            crate::storage::AcceptanceEvaluationReadiness::Ready(evaluation) => {
+                evidence_basis.extend(
+                    evaluation
+                        .verdicts
+                        .iter()
+                        .flat_map(|verdict| verdict.evidence.iter().cloned()),
+                );
+            }
+            crate::storage::AcceptanceEvaluationReadiness::Legacy => {}
+        }
         let capture = input.capture;
         let prepared = self.prepare_completion_evidence(
             &mut store,
@@ -317,6 +357,7 @@ impl LocalWorkService {
                     reconciled_action_outcomes: Vec::new(),
                     released_resource_leases: Vec::new(),
                 },
+                source_fingerprint: input.source_fingerprint.clone(),
                 actor,
                 idempotency_key: scoped_key,
                 completed_at: now,

@@ -2037,6 +2037,7 @@ fn short_caller_reads_and_restores_a_historical_oversized_project_memory_actor_w
     source
         .create_work(
             &CreateWorkRequest {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 project_id: project.clone(),

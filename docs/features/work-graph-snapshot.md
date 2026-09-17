@@ -86,7 +86,7 @@ routine semver drift.
 
 | Section | Carried | Not carried |
 | --- | --- | --- |
-| `items` | work id, short ref, title, outcome, acceptance, kind, priority, labels, origin, source snapshot id, lifecycle, child requirement, parent, prerequisites, supersession, assignment, defer-until, disposal reason | runs, root executions, claims, fences, checkpoints, seals, required-child waivers (execution-generation state, kept in records as history), obligation pages, control bindings; the project's control policy and obligation rule sets, which the operator re-applies at `init` |
+| `items` | work id, short ref, title, outcome, acceptance, kind, priority, labels, origin, source snapshot id, lifecycle, child requirement, parent, prerequisites, supersession, assignment, defer-until, the pinned [acceptance-evaluation mode](acceptance-evaluation.md) when the task has one, disposal reason | runs, root executions, claims, fences, checkpoints, seals, required-child waivers (execution-generation state, kept in records as history), obligation pages, control bindings; the project's control policy and obligation rule sets, which the operator re-applies at `init` |
 | `blockers` | per item, every active `WorkBlocker`: blocker id, kind, detail, creator, time | cleared blockers (they remain in records) |
 | `sources` | every `WorkSourceSnapshot` cited by an item or its retained source notices, verbatim canonical JSON | nothing; no source bears a label today, and the build that first labels sources defines their exclusion |
 | `records` | per item, an ordered list of history layers, oldest first, each restored layer binding its project, full planning-item cut, relations, and generation index: every `RestoredRecord` the item already carries, verbatim, then the store's own **native layer** — notes (evidence kind, summary, gate name / failures / opaque ref, recorded-at), compact events (transition kind, time, reason, including waivers with the child's exact disposed revision), and for a completed item its completion summary and time — each entry carrying the original `ActorContext` verbatim (actor id, kind, assurance, session, context), so asserted and stronger attribution stay distinguishable | evidence object hashes as authority (they may appear as provenance strings), verification and environment evidence bodies, delivery cursors, session focus, handoff offers |
@@ -326,7 +326,7 @@ records rather than minting new ones.
 
 ## Words
 
-Operator words, not agent words; the thirteen-word agent surface is unchanged.
+Operator words, not agent words; the fourteen-word agent surface is unchanged.
 
 ```bash
 engram graph save [--out FILE | --stdout] [--include-restricted --reason "<why>"]
@@ -439,4 +439,4 @@ a nonempty destination where `engram restore --replace` overwrites one.
   validation refusals;
   a redaction test covers the typed placeholder, the vault-reference rule,
   and the body's redactor status and widening flag. The parity suite stays
-  scoped to the thirteen agent words.
+  scoped to the fourteen agent words.

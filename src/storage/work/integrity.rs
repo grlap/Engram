@@ -778,6 +778,15 @@ pub(super) fn verify_completion_rows(
                 "completion_seal:{seal_hash}:child_obligation_basis"
             ));
         }
+        if super::acceptance_evaluation::validate_completion_seal_acceptance_evaluation_on(
+            connection, &seal,
+        )
+        .is_err()
+        {
+            invalid.push(format!(
+                "completion_seal:{seal_hash}:acceptance_evaluation_binding"
+            ));
+        }
     }
     for seal_hash in expected.keys().filter(|hash| !seen.contains(*hash)) {
         invalid.push(format!("completion_seal:{seal_hash}:missing"));
@@ -892,6 +901,12 @@ pub(super) fn verify_work_feed_integrity(
                 .ok()
                 .and_then(|observation| {
                     expected_feeds_for_work(work_items, observation.work_id, None)
+                }),
+            "acceptance_evaluation" => object
+                .decode::<crate::domain::AcceptanceEvaluation>()
+                .ok()
+                .and_then(|evaluation| {
+                    expected_feeds_for_work(work_items, evaluation.work_id, Some(evaluation.run_id))
                 }),
             "work_source_proposal" => object
                 .decode::<crate::domain::WorkSourceProposal>()

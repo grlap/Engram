@@ -967,6 +967,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
         peer.work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),
                     key: "late-child".into(),
@@ -1421,6 +1422,7 @@ fn gate_heavy_evidence_membership_has_constant_decode_cost() {
             .work_complete_on(
                 Some(&work.short_ref),
                 WorkCompleteInput {
+                    source_fingerprint: None,
                     links: Vec::new(),
                     link_basis: None,
                     capture: None,
@@ -1777,6 +1779,7 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
         let completed = measure_scale_operation(&mut complete_samples, || {
             writer.work_complete(
                 WorkCompleteInput {
+                    source_fingerprint: None,
                     links: Vec::new(),
                     link_basis: None,
                     capture: None,

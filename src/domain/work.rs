@@ -270,6 +270,10 @@ pub struct WorkItem {
     pub restored: bool,
     #[serde(default)]
     pub superseded_by: Option<WorkId>,
+    /// Revision-controlled acceptance-evaluation mode this task selects; when
+    /// absent, any policy-allowed mode is acceptable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
     pub created_by: ActorContext,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -304,6 +308,27 @@ pub enum WorkCompletionRecoveryCause {
         participant: SessionId,
     },
     MissingAcceptance {
+        criterion: String,
+    },
+    /// An evaluated policy requires a recorded acceptance evaluation and the
+    /// run has none.
+    MissingAcceptanceEvaluation {
+        criterion: String,
+    },
+    /// The newest acceptance evaluation no longer binds the current state.
+    AcceptanceEvaluationStale {
+        reason: super::AcceptanceStaleReason,
+    },
+    /// The newest fresh evaluation failed this criterion.
+    AcceptanceFailed {
+        criterion: String,
+    },
+    /// The newest fresh evaluation found this criterion's evidence insufficient.
+    AcceptanceInsufficientEvidence {
+        criterion: String,
+    },
+    /// The newest fresh evaluation requires a human decision on this criterion.
+    AcceptanceNeedsHuman {
         criterion: String,
     },
 }
@@ -840,6 +865,10 @@ pub struct CompletionSeal {
     pub checkpoint: Option<ObjectHash>,
     pub evidence: Vec<ObjectHash>,
     pub acceptance: Vec<AcceptanceResult>,
+    /// The passing acceptance evaluation this seal derived its acceptance
+    /// vector from; absent for legacy self-asserted completions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_evaluation: Option<ObjectHash>,
     pub obligation_schema_version: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub obligations: Vec<CompletionObligationBinding>,

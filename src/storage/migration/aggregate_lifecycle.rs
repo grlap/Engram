@@ -43,6 +43,7 @@ fn complete_current(path: &Path) {
     service
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 title: "Aggregate lifecycle fixture".into(),
@@ -92,6 +93,7 @@ fn complete_current(path: &Path) {
     let completed = service
         .work_complete(
             WorkCompleteInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: Some(WorkCompletionCaptureInput {

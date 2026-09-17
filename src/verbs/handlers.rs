@@ -87,6 +87,37 @@ pub struct AddInput {
     pub labels: Vec<String>,
     pub assignee: Option<String>,
     pub kind: Option<WorkItemKind>,
+    /// `same_session`, `sub_agent`, or `independent_session`: pin the
+    /// acceptance-evaluation mode from creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<String>,
+}
+
+/// A supplied acceptance-evaluation mode word, shared by `add` and `update`.
+/// `None` is a genuine omission: no pin at creation, the explicit clear on
+/// update. A supplied blank is a mistake and refuses, as does an unknown
+/// word, before any effect.
+fn parse_supplied_evaluation_mode(
+    mode: Option<&str>,
+) -> Result<Option<crate::domain::AcceptanceEvaluationMode>, VerbError> {
+    let Some(word) = mode else {
+        return Ok(None);
+    };
+    let word = word.trim();
+    if word.is_empty() {
+        return Err(StoreError::InvalidWork(
+            "evaluation mode must not be blank; pass same_session, sub_agent, or independent_session, or leave it out (--clear-evaluation-mode clears an existing pin)"
+                .into(),
+        )
+        .into());
+    }
+    crate::domain::AcceptanceEvaluationMode::parse(word)
+        .map(Some)
+        .ok_or_else(|| {
+            VerbError::from(StoreError::InvalidWork(format!(
+                "unknown evaluation mode {word:?}; use same_session, sub_agent, or independent_session"
+            )))
+        })
 }
 
 /// `claim`: hold one item; later words default to it.
@@ -134,6 +165,13 @@ pub enum UpdateAction {
         labels: Vec<String>,
         #[serde(default)]
         unlabels: Vec<String>,
+    },
+    /// Pin or clear the acceptance-evaluation mode this task requires.
+    EvaluationMode {
+        /// `same_session`, `sub_agent`, or `independent_session`; omit to
+        /// return the task to any policy-allowed mode.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<String>,
     },
     Cancel {
         reason: String,
@@ -184,6 +222,28 @@ pub(super) fn normalize_gate_input(input: &GateInput) -> Result<GateInput, VerbE
     })
 }
 
+/// `evaluate`: one attributed acceptance evaluation on the targeted item's
+/// active run.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct EvaluateInput {
+    #[serde(default)]
+    pub work_ref: Option<String>,
+    pub mode: String,
+    pub acceptance_basis: i64,
+    pub evidence_basis: i64,
+    pub verdicts: Vec<crate::WorkCriterionVerdictInput>,
+    #[serde(default)]
+    pub attempt: Option<String>,
+    #[serde(default)]
+    pub source_fingerprint: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub execution_identity: Option<String>,
+    #[serde(default)]
+    pub parent_session: Option<String>,
+}
+
 /// `remember`: one attributed, immutable project episode.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RememberInput {
@@ -232,6 +292,10 @@ pub struct DoneInput {
     pub work_ref: Option<String>,
     pub summary: Option<String>,
     pub note: Option<String>,
+    /// Host-measured source fingerprint at completion time; checked against
+    /// the evaluated one when the policy requires source freshness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_fingerprint: Option<String>,
 }
 
 /// `handoff`: offer, accept, or cancel a transfer of the held item.
@@ -488,10 +552,18 @@ impl AgentVerbs {
                     .collect::<Vec<_>>();
                 let mut lines = Vec::new();
                 match &view.focus {
-                    Some(focus) => lines.push(format!(
-                        "focus: {}",
-                        item_line(&focus.status, self.holder(focus, now), now)
-                    )),
+                    Some(focus) => {
+                        lines.push(format!(
+                            "focus: {}",
+                            item_line(&focus.status, self.holder(focus, now), now)
+                        ));
+                        if let Some(status) = &focus.acceptance_evaluation {
+                            lines.push(format!(
+                                "  evaluation: {}",
+                                super::show::evaluation_summary(status)
+                            ));
+                        }
+                    }
                     None if peek_omissions
                         .iter()
                         .any(|omission| omission.section == "focus")
@@ -881,6 +953,7 @@ impl AgentVerbs {
             )
             .into());
         }
+        let evaluation_mode = parse_supplied_evaluation_mode(input.evaluation_mode.as_deref())?;
         if let Some(under) = input.under.as_deref() {
             let requirement = if input.optional {
                 ChildRequirement::Optional
@@ -902,6 +975,7 @@ impl AgentVerbs {
                     labels,
                     assigned_to,
                     deferred_until: None,
+                    evaluation_mode,
                 },
                 now,
             );
@@ -918,6 +992,7 @@ impl AgentVerbs {
                 labels,
                 assigned_to,
                 deferred_until: None,
+                evaluation_mode,
                 idempotency_key: String::new(),
             },
             now,
@@ -1245,6 +1320,8 @@ impl AgentVerbs {
                     clear_assignment: false,
                     deferred_until: defer,
                     clear_deferral: false,
+                    evaluation_mode: None,
+                    clear_evaluation_mode: false,
                 };
                 let mut fields = Vec::new();
                 if patch.external_ref.is_some() || patch.clear_external {
@@ -1287,6 +1364,43 @@ impl AgentVerbs {
                         idempotency_key: String::new(),
                     },
                     format!("updated {work_ref} \"{title}\" ({})", fields.join(", ")),
+                )
+            }
+            UpdateAction::EvaluationMode { mode } => {
+                // Only the explicit clear (no mode supplied) clears the pin; a
+                // supplied blank or unknown word refuses before any effect.
+                let selected = parse_supplied_evaluation_mode(mode.as_deref())?;
+                let patch = WorkRevisionPatch {
+                    external_ref: None,
+                    clear_external: false,
+                    title: None,
+                    outcome: None,
+                    acceptance: None,
+                    kind: None,
+                    priority: None,
+                    labels: None,
+                    add_labels: Vec::new(),
+                    remove_labels: Vec::new(),
+                    assigned_to: None,
+                    clear_assignment: false,
+                    deferred_until: None,
+                    clear_deferral: false,
+                    evaluation_mode: selected,
+                    clear_evaluation_mode: selected.is_none(),
+                };
+                let text = match selected {
+                    Some(mode) => format!(
+                        "pinned evaluation mode {} on {work_ref} \"{title}\"",
+                        mode.word()
+                    ),
+                    None => format!("cleared evaluation mode on {work_ref} \"{title}\""),
+                };
+                (
+                    WorkUpdateInput::Revise {
+                        patch,
+                        idempotency_key: String::new(),
+                    },
+                    text,
                 )
             }
             UpdateAction::Cancel { reason } => {
@@ -1470,6 +1584,116 @@ impl AgentVerbs {
             self.holder(&after, now),
             false,
         )?))
+    }
+
+    /// `evaluate`: record one attributed acceptance evaluation on an item's
+    /// active run. The core validates structure and provenance and binds the
+    /// record; relevance stays the evaluator's judgment.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerbError`] when no item is targeted, the revision basis is
+    /// stale, a word or citation is malformed, or the core refuses the record
+    /// for policy, identity, criteria, or provenance reasons.
+    pub fn evaluate(&self, input: EvaluateInput, now: DateTime<Utc>) -> Result<Receipt, VerbError> {
+        let view = self.target(input.work_ref.as_deref(), now).map_err(|error| {
+            if matches!(&error.error, StoreError::InvalidWork(reason) if reason.contains("no focused work")) {
+                VerbError::from(StoreError::InvalidWork(
+                    super::EVALUATE_WORK_REF_REQUIRED.into(),
+                ))
+            } else {
+                error
+            }
+        })?;
+        let work_ref = view.status.work.short_ref.clone();
+        let result = self
+            .service
+            .work_evaluate_on(
+                &crate::WorkEvaluateInput {
+                    work_ref: Some(view.status.work.work_id.0.to_string()),
+                    mode: input.mode,
+                    acceptance_basis: input.acceptance_basis,
+                    evidence_basis: input.evidence_basis,
+                    verdicts: input.verdicts,
+                    attempt: input.attempt,
+                    source_fingerprint: input.source_fingerprint,
+                    model: input.model,
+                    execution_identity: input.execution_identity,
+                    parent_session: input.parent_session,
+                },
+                now,
+            )
+            .map_err(|error| VerbError::at(error, &work_ref))?;
+        let after = self.refreshed(&view, now)?;
+        let guidance = self.guidance(&after, "evaluate", now);
+        let mut projection = result.projection;
+        let outcome = match &projection.blocking {
+            None => "all criteria pass".to_owned(),
+            Some(blocking) => format!(
+                "{} on \"{}\"",
+                blocking.verdict.word(),
+                short(&blocking.criterion)
+            ),
+        };
+        let replay = if result.replayed { " (replayed)" } else { "" };
+        let lines = vec![format!(
+            "recorded {} evaluation on {work_ref} \"{}\": {}/{} pass, {outcome}{replay}{}",
+            projection.mode.word(),
+            short(&after.status.work.title),
+            projection.passed,
+            projection.verdicts_total,
+            held_suffix(self.holder(&after, now), now)
+        )];
+        // The receipt is bounded by explicit omission of trailing verdict
+        // rows; every count stays exact and the full read is named. The
+        // finished receipt (with the process-default session metadata) is
+        // what the shared strict budget rule measures. The service fitted
+        // its own envelope with the word's reserve left free, so the row-free
+        // form fits by construction; shedding guidance below is defensive.
+        let mut guidance = guidance;
+        loop {
+            let mut evaluation = serde_json::to_value(&projection).map_err(StoreError::from)?;
+            if let Some(object) = evaluation.as_object_mut() {
+                object.insert("hash".into(), json!(result.evaluation.as_str()));
+                object.insert("replayed".into(), json!(result.replayed));
+            }
+            let receipt = self.finish_mutation(super::mutation::receipt(
+                &after,
+                "evaluate",
+                json!({ "evaluation": evaluation }),
+                lines.clone(),
+                guidance.clone(),
+                self.holder(&after, now),
+                false,
+            )?);
+            if super::receipts::agent_receipt_fits(&receipt, MAX_AGENT_WORK_RESPONSE_BYTES)? {
+                return Ok(receipt);
+            }
+            if projection.verdicts.pop().is_some() {
+                projection.verdicts_omitted += 1;
+            } else if guidance.reminders.pop().is_some() {
+            } else if guidance.next.len() > 1 {
+                guidance.next.pop();
+            } else {
+                // Unreachable under the reserve derivation; if it were ever
+                // reached, the answer is the minimal provenance receipt, which
+                // is bounded by construction (a test pins its size) and
+                // measured in debug builds. By contract no post-commit budget
+                // error exists: the committed record is always answered.
+                let minimal = self.finish_mutation(minimal_evaluate_receipt(
+                    &work_ref,
+                    after.status.work.revision,
+                    &projection,
+                    &result.evaluation,
+                    result.replayed,
+                ));
+                debug_assert!(super::receipts::agent_receipt_fits(
+                    &minimal,
+                    MAX_AGENT_WORK_RESPONSE_BYTES
+                )?);
+                return Ok(minimal);
+            }
+        }
     }
 
     /// `remember`: create one attributed project episode.
@@ -1672,6 +1896,7 @@ impl AgentVerbs {
             .work_complete_on(
                 Some(&target),
                 WorkCompleteInput {
+                    source_fingerprint: nonempty(input.source_fingerprint),
                     links: input.links,
                     link_basis: input.link_basis,
                     capture: nonempty(input.summary).map(|summary| WorkCompletionCaptureInput {
@@ -1729,6 +1954,10 @@ impl AgentVerbs {
                                 "criteria"
                             }
                         ),
+                        super::show::acceptance_provenance_line(
+                            completed.acceptance_provenance.as_ref(),
+                            self.service.display_identity(),
+                        ),
                     ],
                     guidance,
                     false,
@@ -1770,6 +1999,10 @@ impl AgentVerbs {
                     "completed_at": receipt.completed_at,
                     "acceptance_criteria_asserted": receipt.acceptance_criteria_asserted,
                     "acceptance_criteria_changed": false,
+                    "acceptance": super::show::acceptance_provenance_value(
+                        receipt.acceptance_provenance.as_ref(),
+                        self.service.display_identity(),
+                    ),
                 })
             }
         };
@@ -2041,6 +2274,48 @@ impl AgentVerbs {
     }
 }
 
+/// The smallest receipt the `evaluate` word can answer with: the
+/// verdict-independent provenance (evaluation hash, replay flag, mode, exact
+/// counts, work ref and revision, full-detail read) and nothing variable
+/// beyond bounded identifiers and numbers. Its size is pinned by a test.
+pub(super) fn minimal_evaluate_receipt(
+    work_ref: &str,
+    revision: i64,
+    projection: &crate::work_service::WorkEvaluationProjection,
+    evaluation: &crate::ObjectHash,
+    replayed: bool,
+) -> Receipt {
+    let detail = super::mutation::full_contract(work_ref);
+    Receipt::assemble(
+        vec![format!(
+            "recorded {} evaluation on {work_ref}: {}/{} pass{}",
+            projection.mode.word(),
+            projection.passed,
+            projection.verdicts_total,
+            if replayed { " (replayed)" } else { "" }
+        )],
+        Guidance {
+            reminders: Vec::new(),
+            next: vec![detail.clone()],
+        },
+        json!({
+            "operation": "evaluate",
+            "work": { "short_ref": work_ref, "revision": revision },
+            "evaluation": {
+                "hash": evaluation.as_str(),
+                "replayed": replayed,
+                "mode": projection.mode.word(),
+                "verdicts_total": projection.verdicts_total,
+                "verdicts_omitted": projection.verdicts_total,
+                "passed": projection.passed,
+                "full_detail": detail,
+            },
+            "full_detail": detail,
+        }),
+        false,
+    )
+}
+
 pub(super) fn completion_recovery_reminder(
     recovery: &crate::WorkCompletionRecovery,
     include_title: bool,
@@ -2071,6 +2346,38 @@ pub(super) fn completion_recovery_reminder(
         crate::WorkCompletionRecoveryCause::MissingAcceptance { criterion } => {
             format!("{label} is missing acceptance for \"{}\"", short(criterion))
         }
+        crate::WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { criterion } => {
+            format!(
+                "{label} has no acceptance evaluation for \"{}\"; record one with evaluate",
+                short(criterion)
+            )
+        }
+        crate::WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason } => match reason {
+            crate::AcceptanceStaleReason::Source => format!(
+                "{label} acceptance evaluation is stale (source): done must present the host-measured fingerprint that equals the evaluated one; pass --source-fingerprint F, or evaluate again with the current fingerprint"
+            ),
+            crate::AcceptanceStaleReason::Identity => format!(
+                "{label} acceptance evaluation is stale (identity): its independent evaluator has since held this run; a session that never held the run must evaluate again"
+            ),
+            reason => format!(
+                "{label} acceptance evaluation is stale ({}); evaluate again",
+                reason.word()
+            ),
+        },
+        crate::WorkCompletionRecoveryCause::AcceptanceFailed { criterion } => format!(
+            "{label} failed acceptance for \"{}\"; correct the work, then evaluate again",
+            short(criterion)
+        ),
+        crate::WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { criterion } => {
+            format!(
+                "{label} lacks sufficient evidence for \"{}\"; record evidence, then evaluate again",
+                short(criterion)
+            )
+        }
+        crate::WorkCompletionRecoveryCause::AcceptanceNeedsHuman { criterion } => format!(
+            "{label} needs a human decision on \"{}\"; revise the criteria or cancel",
+            short(criterion)
+        ),
     }
 }
 

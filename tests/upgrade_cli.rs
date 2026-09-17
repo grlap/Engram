@@ -24,6 +24,7 @@ fn add_root(path: &Path, title: &str, key: &str) {
     )
     .work_propose(
         WorkProposeInput::Root {
+            evaluation_mode: None,
             external_ref: None,
             notes: Vec::new(),
             title: title.into(),

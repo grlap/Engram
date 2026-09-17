@@ -26,6 +26,7 @@ const AGENT_TOOLS = [
   "claim",
   "update",
   "gate",
+  "evaluate",
   "note",
   "done",
   "search",
@@ -1181,7 +1182,7 @@ test("done criterion evidence disclosure agrees with frozen show and replay on C
     assert.match(doneTool.description, /no evidence linked to this criterion/);
     assert.match(doneTool.description, /what is still owed and the command that resolves it/);
     assert.match(doneTool.inputSchema.properties.note.description, /does not link evidence/);
-    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["link_basis", "links", "note", "summary", "work_ref"]);
+    assert.deepEqual(Object.keys(doneTool.inputSchema.properties).sort(), ["link_basis", "links", "note", "source_fingerprint", "summary", "work_ref"]);
     assert.match(doneTool.inputSchema.properties.link_basis.description, /Required with links/);
     const help = cliWord(engramHome, session, "done", "--help");
     assert.equal(help.status, 0, help.stderr);
@@ -2831,6 +2832,138 @@ function cliJson(engramHome, actorId, word, ...agentArgs) {
   return JSON.parse(executed.stdout);
 }
 
+test("evaluated acceptance policy over the real transports: locators, source freshness, provenance", async (t) => {
+  const engramHome = fixtureHome("engram-evaluated-policy-", t);
+  const holder = "evaluated-holder";
+  const peer = "evaluated-peer";
+  let client;
+  try {
+    buildAndInit(engramHome);
+    const policy = spawnSync(binary, [
+      "--home", engramHome, "control-policy", "set-acceptance-evaluation",
+      "--modes", "same-session,independent-session", "--mechanical-basis", "asserted",
+      "--require-source-freshness", "--authorized-by", "dogfood-operator",
+      "--reason", "evaluated completion for the dogfood fixture",
+      "--idempotency-key", "dogfood-enable-evaluation",
+    ], { cwd: root, encoding: "utf8" });
+    assert.equal(policy.status, 0, policy.stderr);
+    client = new McpClient(engramHome, holder);
+    await client.initialize();
+    const isGate = (row) => String(row.family).toLowerCase() === "gates";
+
+    // MCP: same-session evaluation citing the printed gate locator; an
+    // observation locator refuses; done without, with a changed, and with
+    // the matching fingerprint.
+    const ref = cliJson(engramHome, holder, "add", "Evaluated over MCP", "--accept", "the build passes").work.short_ref;
+    cliJson(engramHome, holder, "claim", ref);
+    // A supplied evaluation_mode reaches the store only through the
+    // evaluation_mode action; any other action refuses it before effects.
+    const beforeMisroute = receipt(await client.call("show", { work_ref: ref }));
+    const peekBefore = receipt(await client.call("next", { peek: true }));
+    assert.equal(typeof peekBefore.read_cut.project_position, "number");
+    for (const misrouted of ["same_session", ""]) {
+      const wrong = structuredError(
+        await client.call("update", { work_ref: ref, action: "revise", title: "Misrouted mode", evaluation_mode: misrouted }),
+        "invalid_argument",
+      );
+      assert.equal(wrong.details.field, "evaluation_mode");
+      // No effect: the item, the project feed, and the focus are unchanged.
+      assert.deepEqual(receipt(await client.call("show", { work_ref: ref })), beforeMisroute);
+      const peekAfter = receipt(await client.call("next", { peek: true }));
+      assert.equal(peekAfter.read_cut.project_position, peekBefore.read_cut.project_position, JSON.stringify(misrouted));
+      assert.deepEqual(peekAfter.focus, peekBefore.focus, JSON.stringify(misrouted));
+    }
+    receipt(await client.call("update", { work_ref: ref, action: "evaluation_mode", evaluation_mode: "same_session" }));
+    assert.match(cliWord(engramHome, holder, "show", ref).stdout, /evaluation mode: same_session/u);
+    receipt(await client.call("update", { work_ref: ref, action: "evaluation_mode" }));
+    assert.doesNotMatch(cliWord(engramHome, holder, "show", ref).stdout, /evaluation mode:/u);
+    cliJson(engramHome, holder, "gate", "cargo-test", "--work-ref", ref);
+    cliJson(engramHome, peer, "note", ref, "peer observation without holding the run");
+    // A refused evaluated completion carries a recovery command the CLI
+    // parses and runs read-only: navigation to the criteria and evidence,
+    // never an evaluation template with a pre-filled verdict.
+    const runRecovery = (refusalJson, expectedCode) => {
+      assert.equal(refusalJson.code, expectedCode);
+      const command = refusalJson.next[0];
+      const parts = command.split(" ");
+      assert.deepEqual(parts.slice(0, 2), ["engram", "work"], command);
+      const run = cliWord(engramHome, holder, ...parts.slice(2));
+      assert.equal(run.status, 0, `${command}\n${run.stderr}`);
+      assert.equal(parts[2], "show", command);
+      assert.ok(parts.includes("--notes"), command);
+      assert.doesNotMatch(command, /=pass/u);
+    };
+    const missingRefusal = cliWord(engramHome, holder, "done", ref, "Delivered", "--json");
+    assert.equal(missingRefusal.status, 2, missingRefusal.stderr);
+    const revisionBefore = cliJson(engramHome, holder, "show", ref).status.work.revision;
+    runRecovery(JSON.parse(missingRefusal.stdout), "missing_acceptance_evaluation");
+    assert.equal(cliJson(engramHome, holder, "show", ref).status.work.revision, revisionBefore);
+    const shown = receipt(await client.call("show", { work_ref: ref }));
+    assert.equal(typeof shown.evidence_basis, "number");
+    const records = receipt(await client.call("show", { work_ref: ref, notes: true, gates: true }));
+    const gate = records.notes.find(isGate);
+    const observation = records.notes.find((row) => row.non_holder === true);
+    assert.ok(gate && observation, JSON.stringify(records.notes));
+    const verdicts = (evidence) => [{ criterion: 1, verdict: "pass", basis: "asserted", rationale: "the gate passed", evidence }];
+    const base = { work_ref: ref, mode: "same_session", acceptance_basis: shown.acceptance_basis, evidence_basis: shown.evidence_basis };
+    const refused = structuredError(await client.call("evaluate", { ...base, verdicts: verdicts([observation.locator]) }), "acceptance_evaluation_refused");
+    assert.match(JSON.stringify(refused), /observation/);
+    const evaluated = receipt(await client.call("evaluate", { ...base, source_fingerprint: "sha256:tree-a", verdicts: verdicts([gate.locator]) }));
+    assert.equal(evaluated.evaluation.passed, 1);
+    assert.equal(evaluated.evaluation.verdicts_total, 1);
+    const unmeasured = receipt(await client.call("done", { work_ref: ref, summary: "Delivered" }));
+    assert.equal(unmeasured.code, "acceptance_evaluation_stale");
+    assert.ok(unmeasured.reminders.some((line) => line.includes("--source-fingerprint")), JSON.stringify(unmeasured.reminders));
+    const changed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered", source_fingerprint: "sha256:tree-b" }));
+    assert.equal(changed.code, "acceptance_evaluation_stale");
+    assert.ok(changed.reminders.some((line) => line.includes("(source)")), JSON.stringify(changed.reminders));
+    assert.equal(receipt(await client.call("show", { work_ref: ref })).status.work.lifecycle, "open");
+    const sealed = receipt(await client.call("done", { work_ref: ref, summary: "Delivered", source_fingerprint: "sha256:tree-a" }));
+    assert.equal(sealed.work.lifecycle, "completed");
+    assert.equal(sealed.acceptance.provenance, "evaluated");
+    assert.equal(sealed.acceptance.mode, "same_session");
+    assert.equal(sealed.acceptance.evaluation, evaluated.evaluation.hash);
+    // The evaluator label is the display identity: the caller's own session
+    // is "you"; any other session is an opaque peer label, never its id.
+    assert.equal(sealed.acceptance.evaluator, "you");
+    const completedShow = receipt(await client.call("show", { work_ref: ref }));
+    assert.equal(completedShow.acceptance.provenance, "evaluated");
+    assert.equal(completedShow.acceptance.evaluation, evaluated.evaluation.hash);
+
+    // CLI: an independent peer evaluates over the CLI; the holder's done
+    // refuses without a fingerprint and seals with --source-fingerprint.
+    const cliRef = cliJson(engramHome, holder, "add", "Evaluated over CLI", "--accept", "the build passes").work.short_ref;
+    cliJson(engramHome, holder, "claim", cliRef);
+    cliJson(engramHome, holder, "gate", "cargo-test", "--work-ref", cliRef);
+    const cliShown = cliJson(engramHome, holder, "show", cliRef);
+    const cliGate = cliJson(engramHome, peer, "show", cliRef, "--notes", "--gates").notes.find(isGate);
+    assert.ok(cliGate);
+    const cliEvaluated = cliJson(engramHome, peer, "evaluate", cliRef,
+      "--mode", "independent-session",
+      "--acceptance-basis", String(cliShown.acceptance_basis),
+      "--evidence-basis", String(cliShown.evidence_basis),
+      "--verdict", "1=pass:asserted", "--rationale", "1=the gate passed",
+      "--evidence", `1=${cliGate.locator}`, "--source-fingerprint", "sha256:tree-c");
+    assert.equal(cliEvaluated.evaluation.passed, 1);
+    const cliRefused = cliWord(engramHome, holder, "done", cliRef, "Delivered", "--json");
+    assert.equal(cliRefused.status, 2, cliRefused.stderr);
+    assert.equal(JSON.parse(cliRefused.stdout).code, "acceptance_evaluation_stale");
+    runRecovery(JSON.parse(cliRefused.stdout), "acceptance_evaluation_stale");
+    const cliSealed = cliJson(engramHome, holder, "done", cliRef, "Delivered", "--source-fingerprint", "sha256:tree-c");
+    assert.equal(cliSealed.work.lifecycle, "completed");
+    assert.equal(cliSealed.acceptance.provenance, "evaluated");
+    assert.equal(cliSealed.acceptance.mode, "independent_session");
+    assert.match(cliSealed.acceptance.evaluator, /^peer-[0-9a-f]+$/u);
+    assert.doesNotMatch(cliSealed.acceptance.evaluator, /evaluated-peer/u);
+    const cliText = cliWord(engramHome, holder, "show", cliRef);
+    assert.equal(cliText.status, 0, cliText.stderr);
+    assert.match(cliText.stdout, /acceptance: evaluated \(independent_session, asserted\) by peer-[0-9a-f]+/u);
+  } finally {
+    try { if (client) await client.close(); }
+    finally { removeFixtureHomes(engramHome); }
+  }
+});
+
 test("CLI words translate the same ambient lifecycle service", (t) => {
   const engramHome = fixtureHome("engram-work-cli-", t);
   try {
@@ -2954,7 +3087,7 @@ test("CLI words translate the same ambient lifecycle service", (t) => {
     assert.equal(notedJson.full_detail, `engram work show '${workRef}' --notes`);
 
     const done = cliText(engramHome, actor, "done");
-    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nasserted 1 acceptance criterion satisfied; completion changed no criterion\nfull detail: engram work show 'w-[0-9a-f]{12}'\ncriterion evidence: 1 of 1 criteria unlinked \(1 shown\)\n  criterion 1: no evidence linked to this criterion\nreminders: none\nnext:\n/u);
+    assert.match(done, /^done w-[0-9a-f]{12} "Dogfood work CLI" \[completed; revision \d+\]\nasserted 1 acceptance criterion satisfied; completion changed no criterion\nacceptance: self-asserted \(legacy\)\nfull detail: engram work show 'w-[0-9a-f]{12}'\ncriterion evidence: 1 of 1 criteria unlinked \(1 shown\)\n  criterion 1: no evidence linked to this criterion\nreminders: none\nnext:\n/u);
     assert.match(done, /\s+engram work next/u);
     const doneJson = cliJson(engramHome, actor, "done");
     assert.match(doneJson.seal, HASH);
@@ -3026,14 +3159,14 @@ test("two MCP sessions complete ambient work through a fenced handoff", async (t
   let b;
   try {
     buildAndInit(engramHome);
-    // Both sessions receive the same fourteen-tool MCP surface with only
+    // Both sessions receive the same fifteen-tool MCP surface with only
     // project and asserted actor/session bindings.
     a = new McpClient(engramHome, sessionA);
     b = new McpClient(engramHome, sessionB);
     await Promise.all([a.initialize(), b.initialize()]);
     assert.match(
       a.instructions,
-      /Thirteen words: next, ls, show, add, claim, update, gate, note, done, handoff, remember, memories, forget \(plus search\)/u,
+      /Fourteen words: next, ls, show, add, claim, update, gate, evaluate, note, done, handoff, remember, memories, forget \(plus search\)/u,
     );
     assert.doesNotMatch(a.instructions, /Ten words/u);
     const aToolDefinitions = await a.tools();

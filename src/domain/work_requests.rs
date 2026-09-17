@@ -31,6 +31,9 @@ pub struct CreateWorkRequest {
     pub labels: Vec<String>,
     pub assigned_to: Option<String>,
     pub deferred_until: Option<DateTime<Utc>>,
+    /// The acceptance-evaluation mode this task pins from creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
     pub origin: WorkOrigin,
     pub source_snapshot_id: Option<ObjectHash>,
     pub actor: ActorContext,
@@ -55,6 +58,9 @@ pub struct ChildWorkDraft {
     pub labels: Vec<String>,
     pub assigned_to: Option<String>,
     pub deferred_until: Option<DateTime<Utc>>,
+    /// The acceptance-evaluation mode this child pins from creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
 }
 
 /// Reference to existing work or another child in the same decomposition.
@@ -95,6 +101,10 @@ pub struct WorkDecomposition {
 /// Optimistic patch for durable planning fields.
 #[derive(Clone, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each clear flag pairs with one optional field of the same audited revision patch"
+)]
 pub struct WorkRevisionPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_ref: Option<String>,
@@ -117,6 +127,12 @@ pub struct WorkRevisionPatch {
     pub deferred_until: Option<DateTime<Utc>>,
     #[serde(default)]
     pub clear_deferral: bool,
+    /// Select the acceptance-evaluation mode this task requires.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
+    /// Return the task to "any policy-allowed mode".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub clear_evaluation_mode: bool,
 }
 
 /// Optimistic work revision request.
@@ -370,6 +386,10 @@ pub struct CompleteWorkRequest {
     pub evidence: Vec<ObjectHash>,
     pub acceptance: Vec<AcceptanceResult>,
     pub drain: CompletionDrainAttestation,
+    /// Host-measured source fingerprint at completion time; required when the
+    /// project policy requires source freshness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_fingerprint: Option<String>,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub completed_at: DateTime<Utc>,

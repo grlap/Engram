@@ -239,6 +239,7 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
                 .map_err(StoreError::InvalidWork)?,
         );
         drafts.push(ChildWorkDraft {
+            evaluation_mode: None,
             local_key: task.key.clone(),
             external_ref: crate::domain::normalize_external_reference(task.external_ref.as_deref())
                 .map_err(StoreError::InvalidWork)?,
@@ -387,6 +388,7 @@ fn admit_plan_on<R: Redactor>(
             items[index] = Some(create_root_with_validation_on(
                 transaction,
                 &CreateWorkRequest {
+                    evaluation_mode: None,
                     project_id: request.project_id.clone(),
                     parent_id: None,
                     child_requirement: ChildRequirement::Required,

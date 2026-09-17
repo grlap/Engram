@@ -86,6 +86,9 @@ impl SqliteStore {
             external_ref: item.external_ref.clone(),
             assigned_to: None,
             deferred_until: None,
+            // The successor keeps the acceptance contract, including which
+            // evaluator mode the task pinned.
+            evaluation_mode: item.evaluation_mode,
             origin: WorkOrigin::Local,
             source_snapshot_id: None,
             actor,

@@ -63,6 +63,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
         note_session_id: Some(SessionId("reader".into())),
     };
     let compact = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -161,6 +162,7 @@ fn resume_discovery_unicode_escape_expansion_fits_the_complete_terminal_receipt(
 fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
     use crate::work_service::{WorkDiscoverySummary, WorkDiscoveryView};
     let mut receipt = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -215,6 +217,7 @@ fn resume_discovery_sheds_before_existing_sections_and_keeps_exact_counts() {
 fn compact_next_trims_every_advisory_section_instead_of_failing() {
     let row = compact_test_row(0);
     let receipt = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -293,6 +296,7 @@ fn compact_next_sheds_labels_in_navigation_priority_order() {
     last_ready.labels = vec!["label-with-a-quoted-\"value\"".into()];
     let last_ready_title = last_ready.title.clone();
     let receipt = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -334,6 +338,7 @@ fn compact_label_shed_restores_and_continues_to_a_reducing_row() {
     let mut last_ready = compact_test_row(2);
     last_ready.labels = vec!["x".into()];
     let receipt = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -372,6 +377,7 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
     }];
     record_compact_omission(&mut omissions, "changes", 3);
     let receipt = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),
@@ -407,6 +413,7 @@ fn compact_change_omissions_keep_staged_and_byte_budget_meanings_separate() {
     );
 
     let byte_budget_only = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: None,
         peek: None,
         read_cut: test_next_cut(),

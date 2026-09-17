@@ -1073,7 +1073,7 @@ engram graph load FILE [--dry-run]
 ### 8.2 Agent-facing MCP server
 
 Agent-facing MCP exposes exactly `next`, `ls`, `show`, `add`, `claim`,
-`update`, `gate`, `note`, `done`, `search`, `handoff`, `remember`, `memories`,
+`update`, `gate`, `evaluate`, `note`, `done`, `search`, `handoff`, `remember`, `memories`,
 and `forget`. The ordinary lifecycle work tools translate into the
 six-operation work core: `work_next`, `work_focus`, `work_propose`,
 `work_update`, `work_complete`, and `work_handoff`; the session binding
@@ -1087,10 +1087,12 @@ a completion barrier, and the existing `CompletionSeal` never absorbs it.
 Optional generic memory capture, import, publication, and administrative
 queries remain separate tools rather than expanding every model turn.
 
-The agent surface is thirteen words plus `search` — fourteen MCP tools, with no new
-work-core operation: `gate` already wraps the existing evidence path, and
-`remember`, `memories`, and `forget` are a thin project-memory surface outside
-the six-operation work core — no focus mutation, no claim renewal. Reads use
+The agent surface is fourteen words plus `search` — fifteen MCP tools. The
+six-operation work core is unchanged: `gate` already wraps the existing
+evidence path, `remember`, `memories`, and `forget` are a thin project-memory
+surface outside it — no focus mutation, no claim renewal — and `evaluate` is
+the service's separate evaluation entry, not a core operation and not exposed
+through `engram work core` or the host-private protocol. Reads use
 the cooperative asserted project binding. `remember` and `forget` validate the
 same non-empty actor/session binding inside the memory mutation transaction.
 `memory_binding_invalid` means that binding is absent or inconsistent. The

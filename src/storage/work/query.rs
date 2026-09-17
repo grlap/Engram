@@ -858,6 +858,21 @@ pub(super) fn completion_recovery_on(
         WorkCompletionRecoveryCause::MissingAcceptance { .. } => {
             format!("engram work done {command_ref} --note \"acceptance verified\"")
         }
+        WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. }
+        | WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. } => {
+            // Runnable navigation to the notes and gate locators an evaluator
+            // reads before recording (the criteria sit in the same receipt;
+            // `--full` is a separate, exclusive mode); the evaluation itself
+            // is judgment, so no template pre-fills a verdict.
+            format!("engram work show {command_ref} --notes --gates")
+        }
+        WorkCompletionRecoveryCause::AcceptanceFailed { .. }
+        | WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { .. } => {
+            format!("engram work show {command_ref} --notes --gates")
+        }
+        WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. } => {
+            format!("engram work show {command_ref} --full")
+        }
     };
     Ok(WorkCompletionRecovery {
         cause,
@@ -884,7 +899,12 @@ pub(super) fn completion_recovery_snapshot_on(
         }
         WorkCompletionRecoveryCause::OpenObligation { .. }
         | WorkCompletionRecoveryCause::MissingContribution { .. }
-        | WorkCompletionRecoveryCause::MissingAcceptance { .. } => None,
+        | WorkCompletionRecoveryCause::MissingAcceptance { .. }
+        | WorkCompletionRecoveryCause::MissingAcceptanceEvaluation { .. }
+        | WorkCompletionRecoveryCause::AcceptanceEvaluationStale { .. }
+        | WorkCompletionRecoveryCause::AcceptanceFailed { .. }
+        | WorkCompletionRecoveryCause::AcceptanceInsufficientEvidence { .. }
+        | WorkCompletionRecoveryCause::AcceptanceNeedsHuman { .. } => None,
     };
     Ok(CompletionRecoverySnapshot {
         recovery: completion_recovery_on(connection, work, cause)?,

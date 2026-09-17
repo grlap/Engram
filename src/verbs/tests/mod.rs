@@ -47,6 +47,7 @@ fn at(second: i64) -> DateTime<Utc> {
 
 fn root_input(title: &str, key: &str) -> WorkProposeInput {
     WorkProposeInput::Root {
+        evaluation_mode: None,
         external_ref: None,
         notes: Vec::new(),
         title: title.into(),
@@ -168,6 +169,7 @@ fn assert_recovery_claim_guidance(receipt: &Receipt, work_ref: &str) {
 }
 
 mod customer_workflow;
+mod evaluate;
 mod handlers;
 mod planning;
 mod receipts;

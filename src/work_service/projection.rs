@@ -177,6 +177,7 @@ pub(super) fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
             .map(|label| compact_text(label))
             .collect(),
         assigned_to: work.assigned_to.as_deref().map(compact_text),
+        evaluation_mode: work.evaluation_mode,
         lifecycle: work.lifecycle,
         restored: work.restored,
         revision: work.revision,

@@ -1,7 +1,10 @@
-//! Thirteen-word agent surface over the unchanged six-operation work core.
+//! Fourteen-word agent surface over the six-operation work core and the
+//! separate `evaluate` service entry.
 //!
 //! Every word here is a thin translation of flat CLI flags or MCP arguments
-//! into existing [`LocalWorkService`] calls. The agent never supplies JSON,
+//! into existing [`LocalWorkService`] calls; `evaluate` reaches the
+//! service's own evaluation entry, which the six-operation host protocol
+//! does not expose. The agent never supplies JSON,
 //! mutation hashes, fences, or idempotency keys: keys are server-derived, focus is
 //! ambient, and every receipt carries `reminders` (what is owed, in words)
 //! and `next` (commands the agent can run now) derived by fixed tables from
@@ -46,9 +49,9 @@ mod show;
 mod tests;
 
 pub use handlers::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, ForgetInput, GateInput, HandoffAction,
-    HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput, RememberInput, UpdateAction,
-    UpdateInput,
+    AddInput, AgentVerbs, ClaimInput, DoneInput, EvaluateInput, ForgetInput, GateInput,
+    HandoffAction, HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput, RememberInput,
+    UpdateAction, UpdateInput,
 };
 pub use receipts::{Guidance, Receipt, VerbError};
 pub use record_windows::ShowInput;
@@ -257,6 +260,8 @@ fn collapsed_changes(
 
 pub(crate) const GATE_WORK_REF_REQUIRED: &str =
     "no item is selected for this gate; use gate NAME --work-ref REF";
+pub(crate) const EVALUATE_WORK_REF_REQUIRED: &str =
+    "no item is selected for this evaluation; use evaluate REF --mode MODE …";
 
 fn strip_kind_prefix(summary: &str, kind: &str) -> String {
     let prefix = format!("{kind}: ");

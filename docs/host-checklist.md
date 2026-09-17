@@ -43,7 +43,7 @@ it requires the host to mediate turns or actions.
    context, not authentication.
 3. **One MCP child per session.** Start
    `engram mcp --actor-id … --session-id … [--actor-context …]` on stdio; it
-   exposes the thirteen words plus `search`. Ordinary calls reuse a cached
+   exposes the fourteen words plus `search`. Ordinary calls reuse a cached
    store connection; each peek opens a separate transient read-only connection.
    A failed operation rolls back before the next call.
 4. **Show the agent what is ready.** Run `engram work next --peek` at session

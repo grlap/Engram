@@ -604,6 +604,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         Some("obligation-protocol-test".into()),
     );
     let input = WorkCompleteInput {
+        source_fingerprint: None,
         links: Vec::new(),
         link_basis: None,
         capture: Some(WorkCompletionCaptureInput {

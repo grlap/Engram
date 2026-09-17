@@ -15,6 +15,7 @@ fn service(database: &std::path::Path) -> LocalWorkService {
 fn child_input(title: &str) -> WorkProposeInput {
     WorkProposeInput::Decompose {
         children: vec![WorkChildInput {
+            evaluation_mode: None,
             external_ref: None,
             notes: vec!["Initial observation".into()],
             key: "child".into(),
@@ -75,6 +76,7 @@ fn pending_request(
         children: children
             .iter()
             .map(|child| ChildWorkDraft {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: child.notes.clone(),
                 local_key: child.key.clone(),

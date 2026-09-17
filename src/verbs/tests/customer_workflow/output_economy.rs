@@ -64,6 +64,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
         .service
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 title: title.into(),
@@ -169,6 +170,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
     let done = verbs
         .done(
             DoneInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(work_ref.clone()),
@@ -183,6 +185,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
         .work_complete_on(
             Some(&work_ref),
             WorkCompleteInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: Some(WorkCompletionCaptureInput {

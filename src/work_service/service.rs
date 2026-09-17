@@ -818,6 +818,57 @@ impl LocalWorkService {
         } else {
             (None, None)
         };
+        // The newest evaluation is agent-show detail for open items; it is
+        // read with the freshness completion would apply at this moment.
+        // A completed item discloses where its sealed acceptance came from,
+        // read from the frozen seal through the shared binding check.
+        // A readable seal whose evaluation binding fails that check is
+        // disclosed by class rather than swallowed, so a broken evaluated
+        // binding never reads like a legacy omission. An unreadable seal
+        // keeps the legacy read shape; the evidence read discloses it.
+        let (acceptance_provenance, acceptance_provenance_error_class) =
+            if matches!(text, FocusText::Full)
+                && status.work.lifecycle == crate::WorkLifecycle::Completed
+                && !completed_by_record
+            {
+                match run
+                    .as_ref()
+                    .and_then(|run| run.completion_seal.as_ref().map(|hash| (run.run_id, hash)))
+                {
+                    Some((run_id, hash)) => {
+                        match super::acceptance::bound_seal(store, hash, work_id, run_id) {
+                            Ok(seal) => match super::acceptance::provenance(store, &seal) {
+                                Ok(provenance) => (Some(provenance), None),
+                                Err(error) => (None, Some(super::advisory_error_class(&error))),
+                            },
+                            Err(_) => (None, None),
+                        }
+                    }
+                    None => (None, None),
+                }
+            } else {
+                (None, None)
+            };
+        // Agent detail for an open item under an evaluated policy: the
+        // evidence basis an evaluator passes back, and the newest record with
+        // the freshness completion would apply now. Legacy projects keep their
+        // unchanged show shape.
+        let (acceptance_evaluation, evidence_basis) = if status.work.lifecycle
+            == crate::domain::WorkLifecycle::Open
+            && store.acceptance_evaluation_policy()?.is_evaluated()
+        {
+            let evidence_basis = status
+                .work
+                .active_run_id
+                .map(|run_id| store.work_feed_head(&crate::domain::FeedId::RunExecution(run_id)))
+                .transpose()?;
+            (
+                store.acceptance_evaluation_status(status.work.work_id, None)?,
+                evidence_basis,
+            )
+        } else {
+            (None, None)
+        };
         let title_stored_bytes = status.work.title.len();
         let title_truncated = matches!(text, FocusText::Full)
             && compact_text(&status.work.title) != status.work.title;
@@ -836,6 +887,13 @@ impl LocalWorkService {
             source_error_class,
             acceptance_evidence,
             acceptance_evidence_error_class,
+            acceptance_provenance_error_class,
+            evaluation_rows_visible: acceptance_evaluation
+                .as_ref()
+                .map_or(0, |status| status.record.verdicts.len()),
+            acceptance_evaluation,
+            evidence_basis,
+            acceptance_provenance,
             session: agent_work_session(&session),
             detached_from,
             status,

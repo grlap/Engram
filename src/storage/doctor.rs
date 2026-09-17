@@ -866,6 +866,11 @@ impl SqliteStore {
                     stored.result_json.clone(),
                 )?;
             }
+            "set_acceptance_evaluation" => {
+                Self::decode_canonical_projection::<
+                    crate::storage::AcceptanceEvaluationPolicyUpdateReceipt,
+                >(&stored.result_hash, stored.result_json.clone())?;
+            }
             _ => {
                 return Err(StoreError::InvalidControlProjection(format!(
                     "control policy operation {} has unknown operation {:?}",

@@ -190,20 +190,95 @@ impl SqliteStore {
                         .into(),
             });
         }
-        let acceptance = match validate_acceptance(
-            &item,
-            &evidence,
-            &request.acceptance,
-            request.actor.assurance,
-        ) {
-            Ok(value) => value,
-            Err(StoreError::WorkCompletionRecoveryRequired { cause, .. }) if return_recovery => {
-                let recovery =
-                    completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
-                return Ok(CompleteWorkStorageResult::Recovery(recovery));
+        let acceptance_policy = SqliteStore::load_acceptance_evaluation_policy_on(&transaction)?;
+        let (acceptance_results, acceptance_evaluation) = if acceptance_policy.is_evaluated() {
+            if !request.acceptance.is_empty() {
+                return Err(StoreError::WorkCompletionRefused {
+                    work: item.work_id,
+                    reason: "explicit acceptance results are not accepted under an evaluated acceptance policy; record an acceptance evaluation with evaluate instead".into(),
+                });
             }
-            Err(error) => return Err(error),
+            let assessment = super::acceptance_evaluation::assess_on(
+                &transaction,
+                &item,
+                run.run_id,
+                &acceptance_policy,
+                request.source_fingerprint.as_deref(),
+            )?;
+            // A fresh, all-pass evaluation is the only path to a sealed vector;
+            // everything else is a recovery cause the evaluator must resolve.
+            let outcome: Result<(Vec<AcceptanceResult>, ObjectHash), WorkCompletionRecoveryCause> =
+                match assessment {
+                    super::acceptance_evaluation::AcceptanceEvaluationAssessment::Absent => {
+                        Err(WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
+                            criterion: item.acceptance.first().cloned().unwrap_or_default(),
+                        })
+                    }
+                    super::acceptance_evaluation::AcceptanceEvaluationAssessment::Stale(reason) => {
+                        Err(WorkCompletionRecoveryCause::AcceptanceEvaluationStale { reason })
+                    }
+                    super::acceptance_evaluation::AcceptanceEvaluationAssessment::Fresh {
+                        hash,
+                        evaluation,
+                    } => match super::acceptance_evaluation::blocking_cause(&evaluation) {
+                        Some(cause) => Err(cause),
+                        None => Ok((
+                            super::acceptance_evaluation::derive_acceptance_results(
+                                &evaluation,
+                                request.actor.assurance,
+                            ),
+                            hash,
+                        )),
+                    },
+                };
+            match outcome {
+                Ok((derived, hash)) => {
+                    // The evaluation froze its own run-evidence selection when
+                    // it was recorded; shape, coverage, and assurance are
+                    // re-checked against the item being sealed, and the
+                    // closure invariant still holds: every citation the sealed
+                    // vector carries must be named by the completion evidence
+                    // set the checkpoint acknowledged.
+                    let derived = normalize_completion_acceptance_shape(
+                        &item,
+                        &derived,
+                        request.actor.assurance,
+                    )?;
+                    ensure_acceptance_citations_within(&item, &evidence, &derived)?;
+                    (derived, Some(hash))
+                }
+                Err(cause) if return_recovery => {
+                    let recovery =
+                        completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
+                    return Ok(CompleteWorkStorageResult::Recovery(recovery));
+                }
+                Err(cause) => {
+                    return Err(StoreError::WorkCompletionRecoveryRequired {
+                        work: item.work_id,
+                        cause,
+                    });
+                }
+            }
+        } else {
+            let results = match validate_acceptance(
+                &item,
+                &evidence,
+                &request.acceptance,
+                request.actor.assurance,
+            ) {
+                Ok(value) => value,
+                Err(StoreError::WorkCompletionRecoveryRequired { cause, .. })
+                    if return_recovery =>
+                {
+                    let recovery =
+                        completion_recovery_snapshot_on(&transaction, &item, run.run_id, cause)?;
+                    return Ok(CompleteWorkStorageResult::Recovery(recovery));
+                }
+                Err(error) => return Err(error),
+            };
+            (results, None)
         };
+        let acceptance = acceptance_results;
         let drain = request.drain.clone();
         if !drain.reconciled_action_outcomes.is_empty()
             || !drain.released_resource_leases.is_empty()
@@ -432,6 +507,7 @@ impl SqliteStore {
             checkpoint: Some(checkpoint),
             evidence,
             acceptance,
+            acceptance_evaluation,
             obligation_schema_version: COMPLETION_OBLIGATION_SCHEMA_VERSION,
             obligations,
             environment_schema_version: COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
@@ -449,6 +525,10 @@ impl SqliteStore {
         validate_completion_seal_obligation_basis_on(&transaction, &seal)?;
         validate_completion_seal_environment_basis_on(&transaction, &seal)?;
         validate_completion_seal_children_on(&transaction, &seal, 0)?;
+        super::acceptance_evaluation::validate_completion_seal_acceptance_evaluation_on(
+            &transaction,
+            &seal,
+        )?;
         let seal_object = CanonicalObject::freeze(&seal)?;
         SqliteStore::insert_object(&transaction, "completion_seal", &seal_object)?;
         transaction.execute(
@@ -1813,14 +1893,31 @@ fn validate_acceptance(
     actor_assurance: crate::domain::AssuranceLevel,
 ) -> Result<Vec<AcceptanceResult>, StoreError> {
     let shaped = normalize_completion_acceptance_shape(item, results, actor_assurance)?;
+    let mut normalized = Vec::with_capacity(shaped.len());
+    for mut result in shaped {
+        result.evidence = unique_hashes(&result.evidence);
+        normalized.push(result);
+    }
+    ensure_acceptance_citations_within(item, completion_evidence, &normalized)?;
+    Ok(normalized)
+}
+
+/// The closure invariant shared by the self-asserted and evaluated routes:
+/// every citation a sealed criterion carries belongs to the completion
+/// evidence set, so the seal names it and the final checkpoint acknowledged
+/// it.
+fn ensure_acceptance_citations_within(
+    item: &WorkItem,
+    completion_evidence: &[ObjectHash],
+    results: &[AcceptanceResult],
+) -> Result<(), StoreError> {
     let completion_evidence = completion_evidence
         .iter()
         .map(ObjectHash::as_str)
         .collect::<HashSet<_>>();
-    let mut normalized = Vec::with_capacity(shaped.len());
-    for mut result in shaped {
-        let evidence = unique_hashes(&result.evidence);
-        if evidence
+    for result in results {
+        if result
+            .evidence
             .iter()
             .any(|hash| !completion_evidence.contains(hash.as_str()))
         {
@@ -1832,10 +1929,8 @@ fn validate_acceptance(
                 ),
             });
         }
-        result.evidence = evidence;
-        normalized.push(result);
     }
-    Ok(normalized)
+    Ok(())
 }
 
 pub(crate) fn normalize_completion_acceptance_shape(

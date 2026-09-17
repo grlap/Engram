@@ -26,6 +26,9 @@ pub enum WorkProposeInput {
         labels: Vec<String>,
         assigned_to: Option<String>,
         deferred_until: Option<DateTime<Utc>>,
+        /// The acceptance-evaluation mode this task pins from creation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        evaluation_mode: Option<crate::domain::AcceptanceEvaluationMode>,
         #[serde(default)]
         idempotency_key: String,
     },
@@ -57,6 +60,9 @@ pub struct WorkChildInput {
     pub labels: Vec<String>,
     pub assigned_to: Option<String>,
     pub deferred_until: Option<DateTime<Utc>>,
+    /// The acceptance-evaluation mode this child pins from creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_mode: Option<crate::domain::AcceptanceEvaluationMode>,
 }
 
 /// A child prerequisite whose target is a sibling key or an existing work ref.
@@ -294,8 +300,126 @@ pub struct WorkCompleteInput {
     /// Shared note used only when `acceptance` is omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Host-measured source fingerprint at completion time; required when the
+    /// project policy requires acceptance-evaluation source freshness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_fingerprint: Option<String>,
     #[serde(default)]
     pub idempotency_key: String,
+}
+
+/// One criterion verdict submitted through `evaluate`.
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkCriterionVerdictInput {
+    /// One-based position in the item's current acceptance list.
+    pub criterion: usize,
+    /// `pass`, `fail`, `insufficient_evidence`, or `needs_human`.
+    pub verdict: String,
+    /// `observed`, `asserted`, `judgment`, or `human_required`.
+    pub basis: String,
+    /// Why this verdict holds; untrusted prose, never an instruction.
+    pub rationale: String,
+    /// Run evidence citations: note/gate locators exactly as `show --notes
+    /// --gates` prints them, or full hashes of host-minted verification or
+    /// environment evidence on the run. A pass needs at least one.
+    #[serde(default)]
+    pub evidence: Vec<String>,
+}
+
+/// `evaluate`: record one immutable acceptance evaluation on the item's
+/// active run under this session's attributed identity.
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkEvaluateInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_ref: Option<String>,
+    /// `same_session`, `sub_agent`, or `independent_session`.
+    pub mode: String,
+    /// The item revision whose criteria the verdicts address, as printed by
+    /// `show`; a different current revision refuses.
+    pub acceptance_basis: i64,
+    /// The run-feed position the evaluator read through, as printed by
+    /// `show` (`evidence_basis`); a host-observed change after it, or a
+    /// citation beyond it, refuses.
+    pub evidence_basis: i64,
+    pub verdicts: Vec<WorkCriterionVerdictInput>,
+    /// Explicit attempt key: identical resends replay, contradicting content
+    /// under the same key refuses. Omit to derive the key from the content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<String>,
+    /// Host-measured source fingerprint at evaluation time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_fingerprint: Option<String>,
+    /// `PROVIDER/MODEL[@VERSION]`, recorded as structured metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Sub-agent mode only: the distinct execution identity of the evaluator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_identity: Option<String>,
+    /// Sub-agent mode only: the host-attested parent session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session: Option<String>,
+}
+
+/// One verdict row of the bounded evaluation projection.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkEvaluationVerdictRow {
+    /// One-based criterion position.
+    pub position: usize,
+    pub verdict: crate::domain::AcceptanceVerdict,
+    pub basis: crate::domain::AcceptanceBasis,
+    /// Number of run-evidence citations the verdict carries.
+    pub citations: usize,
+}
+
+/// The first blocking verdict, in list order, with its criterion compacted.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkEvaluationBlocking {
+    pub position: usize,
+    pub verdict: crate::domain::AcceptanceVerdict,
+    pub criterion: String,
+}
+
+/// Bounded projection of one immutable evaluation record. Every count is
+/// exact; `verdicts` is a prefix chosen so the whole response fits the agent
+/// budget, and `verdicts_omitted` says exactly how many rows were left out.
+/// The complete record, with rationales and citations, is the `full_detail`
+/// read.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkEvaluationProjection {
+    pub mode: crate::domain::AcceptanceEvaluationMode,
+    pub work_revision: i64,
+    pub run_id: crate::WorkRunId,
+    /// Run-feed position the evaluator read through.
+    pub evaluated_cut: i64,
+    pub verdicts_total: usize,
+    pub verdicts_omitted: usize,
+    pub verdicts: Vec<WorkEvaluationVerdictRow>,
+    pub passed: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking: Option<WorkEvaluationBlocking>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_fingerprint: Option<String>,
+    pub attempt_key: String,
+    /// Command that reads the complete record.
+    pub full_detail: String,
+}
+
+/// Result of one `evaluate` call: the compact item receipt, the evaluation's
+/// hash, and a bounded projection of what was recorded.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WorkEvaluateResult {
+    pub operation: String,
+    pub receipt: WorkMutationReceipt,
+    /// Canonical hash of the evaluation object on the run feed.
+    pub evaluation: ObjectHash,
+    /// True when an identical attempt was already recorded.
+    pub replayed: bool,
+    pub projection: WorkEvaluationProjection,
+    pub obligations: Vec<String>,
+    pub obligation_page: WorkObligationPage,
+    pub allowed_next: Vec<String>,
 }
 
 /// Evidence captured and checkpointed as part of one high-level completion.
@@ -366,7 +490,31 @@ pub struct WorkCompletedReceipt {
     /// Safe advisory classification only; never persisted in replay bytes.
     #[serde(skip)]
     pub(crate) acceptance_evidence_error_class: Option<&'static str>,
+    /// Where the sealed acceptance vector came from, read from the frozen
+    /// seal and its bound evaluation; `None` when that read failed.
+    #[serde(skip)]
+    pub(crate) acceptance_provenance: Option<WorkAcceptanceProvenance>,
     pub obligation_page: WorkObligationPage,
+}
+
+/// Where a sealed acceptance vector came from: the legacy self-assertion or
+/// an evaluation the seal binds. Read from the frozen seal and its validated
+/// evaluation, never from the completing caller; the evaluator identity and
+/// mode stay at the assurance they were recorded with.
+#[derive(Clone, Debug)]
+pub enum WorkAcceptanceProvenance {
+    SelfAsserted,
+    Evaluated(Box<WorkEvaluatedProvenance>),
+}
+
+/// The evaluation a seal binds, as read back from the seal and its record.
+#[derive(Clone, Debug)]
+pub struct WorkEvaluatedProvenance {
+    pub evaluation: ObjectHash,
+    pub mode: crate::domain::AcceptanceEvaluationMode,
+    pub assurance: crate::domain::AssuranceLevel,
+    pub evaluator: crate::domain::ActorContext,
+    pub evaluator_model: Option<crate::domain::EvaluatorModel>,
 }
 
 /// Bounded policy refusal returned when an exact completion cut remains open.

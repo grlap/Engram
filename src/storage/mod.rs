@@ -12,7 +12,11 @@ mod project_memory;
 mod schema_diagnostics;
 mod task_memory;
 mod work;
+pub(crate) use work::acceptance_attempt_identity;
 pub(crate) use work::validate_work_plan;
+pub use work::{
+    AcceptanceEvaluationReadiness, AcceptanceEvaluationReceipt, AcceptanceEvaluationStatus,
+};
 
 pub(crate) use project_memory::validate_context_generation;
 
@@ -686,6 +690,10 @@ struct WorkLeaseReleaseFingerprint<'a> {
 
 #[derive(Serialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "each variant names the audited policy operation it fingerprints"
+)]
 enum ControlPolicyOperationFingerprint<'a> {
     SetRequiredAssurance {
         fingerprint_schema_version: u16,
@@ -699,6 +707,14 @@ enum ControlPolicyOperationFingerprint<'a> {
         fingerprint_schema_version: u16,
         idempotency_key: &'a str,
         obligation_rule_set: &'a ObjectHash,
+        authorized_by: &'a ActorContext,
+        reason: &'a str,
+        expected_policy: Option<&'a ObjectHash>,
+    },
+    SetAcceptanceEvaluation {
+        fingerprint_schema_version: u16,
+        idempotency_key: &'a str,
+        acceptance_evaluation: &'a crate::domain::AcceptanceEvaluationPolicy,
         authorized_by: &'a ActorContext,
         reason: &'a str,
         expected_policy: Option<&'a ObjectHash>,
@@ -854,6 +870,11 @@ pub enum StoreError {
     ControlPolicyConflict {
         expected: ObjectHash,
         current: ObjectHash,
+    },
+    #[error("acceptance evaluation for {work:?} was refused: {reason}")]
+    AcceptanceEvaluationRefused {
+        work: crate::domain::WorkId,
+        reason: String,
     },
     #[error("pinned context requires {required} bytes, exceeding the {budget}-byte budget")]
     PinnedBudgetExceeded { required: usize, budget: usize },
@@ -1052,6 +1073,19 @@ pub struct ControlPolicyUpdateReceipt {
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_required_assurance: ControlAssurance,
     pub required_assurance: ControlAssurance,
+    pub activated_at: DateTime<Utc>,
+}
+
+/// Operator-facing receipt for one immutable acceptance-evaluation policy activation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AcceptanceEvaluationPolicyUpdateReceipt {
+    pub changed: bool,
+    pub active_policy: ObjectHash,
+    pub previous_policy: Option<ObjectHash>,
+    pub authority: ObjectHash,
+    pub policy_epoch: ProjectPolicyEpoch,
+    pub previous_acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
+    pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
     pub activated_at: DateTime<Utc>,
 }
 

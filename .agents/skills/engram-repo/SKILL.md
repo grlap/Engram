@@ -98,18 +98,20 @@ contract and keep the change narrow.
   planning, execution, feeds, completion, and integrity invariants.
 - `control`: pure control-policy evaluation without I/O.
 - `host`: host-private transport without policy forks.
-- `work_service`: six-operation ambient protocol translation split by service
-  setup, next/delivery, focus, propose, update, completion, handoff, and memory
-  operation families around shared projection helpers.
+- `work_service`: six-operation ambient protocol translation plus the separate
+  `evaluate` service entry, split by service setup, next/delivery, focus,
+  propose, update, completion, handoff, evaluate, and memory operation
+  families around shared projection helpers.
 - external adapters: backend-neutral source snapshots, backup, portable
   handoff, later concurrent sync, frozen publication, idempotency, and receipt
   capabilities.
-- `verbs`: the thirteen-word agent surface whose `mod.rs` holds shared
+- `verbs`: the fourteen-word agent surface whose `mod.rs` holds shared
   vocabulary; receipt shaping, terse show rendering, and word handlers live in
   owning modules, with mirrored tests under `src/verbs/tests/`; flat CLI flags
-  and MCP arguments translate into the unchanged six-operation core, public
-  re-exports preserve `crate::verbs` paths, and every receipt gains `reminders`
-  and `next` from fixed tables.
+  and MCP arguments translate into the unchanged six-operation core or, for
+  `evaluate`, the service's separate evaluation entry; public re-exports
+  preserve `crate::verbs` paths, and every receipt gains `reminders` and
+  `next` from fixed tables.
 - CLI/MCP front doors translate requests; they do not redefine domain rules.
 
 Keep proprietary tracker types, authentication schemes, and organization
@@ -215,12 +217,13 @@ engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work show REF --full  # complete authored title, outcome and acceptance
-engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
+engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L] [--evaluation-mode MODE]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L | --evaluation-mode MODE | --clear-evaluation-mode]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
+engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
-engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
+engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N] [--source-fingerprint F]
 engram work handoff REF --to SESSION | --accept | --cancel "why"
 engram work remember ("Project note" | --text "Project note") [--key KEY [--revise [--expected-revision N]]]
 engram work memories [QUERY] | engram work memories --after KEY | engram work memories KEY --full [--revision N]
@@ -432,7 +435,7 @@ Rules that matter:
   resolve the named condition first. Use the parent `show` command to inspect
   continuation and the broader `ls --blocked` view for blocked work. The receipt
   does not detach, cancel, or claim anything automatically.
-- `add`, `claim`, `gate`, `note`, and `done` return one compact item summary,
+- `add`, `claim`, `gate`, `evaluate`, `note`, and `done` return one compact item summary,
   operation facts, live holder/expiry, owed counts and actionable signals.
   They do not repeat full focus/history/parent projections. Follow the single
   `full_detail` command for the full item or durable note/gate evidence;
@@ -455,9 +458,9 @@ Rules that matter:
   lost the entire notice too, inspect with `ls`/`show` before repeating a
   mutation; exact replay cannot cross processes without the printed session.
 
-When injected, the same thirteen words are MCP tools (`next`, `ls`, `show`,
-`add`, `claim`, `update`, `gate`, `note`, `done`, `handoff`, `remember`, `memories`,
-`forget`) with the same flat arguments, plus `search`.
+When injected, the same fourteen words are MCP tools (`next`, `ls`, `show`,
+`add`, `claim`, `update`, `gate`, `evaluate`, `note`, `done`, `handoff`, `remember`, `memories`,
+`forget`) with the same flat arguments, plus `search` — fifteen tools.
 
 ## Verification
 

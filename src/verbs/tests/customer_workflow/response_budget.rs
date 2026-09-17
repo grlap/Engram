@@ -253,6 +253,7 @@ fn process_default_session_is_fitted_before_mutation_emission() {
     let owed = fitted
         .done(
             DoneInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(owed_parent),
@@ -318,6 +319,7 @@ fn process_default_session_is_reserved_inside_mutation_fitting() {
     verbs
         .done(
             DoneInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(parent.clone()),

@@ -993,7 +993,7 @@ impl LocalWorkService {
         Ok(result)
     }
 
-    fn work_update_result(
+    pub(super) fn work_update_result(
         &self,
         store: &SqliteStore,
         operation: &str,

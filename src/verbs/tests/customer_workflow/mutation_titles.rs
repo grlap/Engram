@@ -50,6 +50,7 @@ fn store_root(verbs: &AgentVerbs, title: &str, now: i64) -> String {
         .service
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 title: title.into(),

@@ -516,6 +516,7 @@ fn prerequisite_summary_preserves_states_and_public_omission_reasons() {
             active_run_id: None,
             restored: false,
             superseded_by: None,
+            evaluation_mode: None,
             created_by: actor.clone(),
             created_at: at(0),
             updated_at: at(0),
@@ -677,6 +678,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         active_run_id: Some(run_id),
         restored: false,
         superseded_by: None,
+        evaluation_mode: None,
         created_by: actor.clone(),
         created_at: at(0),
         updated_at: at(0),
@@ -810,6 +812,7 @@ fn oversized_ready_item_degrades_to_one_progress_making_summary() {
         active_run_id: None,
         restored: false,
         superseded_by: None,
+        evaluation_mode: None,
         created_by: actor,
         created_at: at(0),
         updated_at: at(0),
@@ -1161,6 +1164,7 @@ fn required_child_waiver_guidance_is_exact_and_carries_an_actionable_child() {
                 children: ["disposed", "open"]
                     .into_iter()
                     .map(|key| WorkChildInput {
+                        evaluation_mode: None,
                         external_ref: None,
                         notes: Vec::new(),
                         key: key.into(),
@@ -1263,6 +1267,7 @@ fn focus_bounds_repeated_direct_decomposition_at_the_root_open_work_limit() {
                 WorkProposeInput::Decompose {
                     children: (0..16)
                         .map(|index| WorkChildInput {
+                            evaluation_mode: None,
                             external_ref: None,
                             notes: Vec::new(),
                             key: format!("batch-{batch}-child-{index}"),

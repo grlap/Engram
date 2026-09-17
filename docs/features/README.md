@@ -14,6 +14,7 @@ references another.
 | [Context packets](context-packets.md) | Budgeted retrieval, reproducible hashes, ordered peer deltas, visible review pressure |
 | [Write policy & review](write-policy-and-review.md) | Origin × authority promotion matrix; distillation proposes, never writes; review lifecycle |
 | [Local work system](local-work-system.md) | First-class local work graph, claims, typed verification/environment evidence, policy-selected immutable obligation rules, and exact completion seals |
+| [Acceptance evaluation](acceptance-evaluation.md) | Agreed contract for host-evaluated, core-enforced per-criterion acceptance before completion: modes, policy, immutable evaluation record, freshness, refusal causes, and the boundary matrix tests trace to |
 | [Local tasks & reports](local-tasks-and-reports.md) | Root execution, single-executor child runs, scoped leases, handoffs, completion seals, fenced report assembly, and optional receipted publication |
 | [SQLite store](sqlite-store.md) | Local append-only canonical store; recovery snapshots; sequential portability; deferred concurrent sync |
 | [Work-graph snapshot](work-graph-snapshot.md) | Shipped deterministic save/load of the agent-visible work graph, inert history, and keyed project memories |

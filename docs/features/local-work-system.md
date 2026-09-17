@@ -751,7 +751,7 @@ are unchanged. See the [compact contract](cli-and-mcp.md#using-engram-as-an-agen
 
 This six-operation slice is shipped through one `LocalWorkService` used by
 both CLI and MCP. The long-lived MCP server retains one service instance for
-the process lifetime and shares it across the fourteen MCP tools. That instance
+the process lifetime and shares it across the fifteen MCP tools. That instance
 lazily retains one SQLite connection; cloning a
 service explicitly creates an independent connection so concurrent delivery
 and CAS behavior remains real rather than process-local serialization. The
@@ -1026,7 +1026,7 @@ limit and a carry-bulk-as-reference remedy. Existing larger notes remain
 readable; canonical read validation does not impose the new write limit.
 See the [CLI/MCP contract](cli-and-mcp.md#using-engram-as-an-agent).
 
-The five mutation words `add`, `claim`, `gate`, `note`, and `done` use one
+The six mutation words `add`, `claim`, `gate`, `evaluate`, `note`, and `done` use one
 verbs-owned compact receipt: operation facts, one ref/title/lifecycle/revision
 summary, relative live holder/expiry, actionable obligation counts, source
 omissions, refusal remedies, reminders and navigation. Core summary focus
@@ -1640,8 +1640,12 @@ replay verification. Record-window
 fitting keeps any disclosure in the item header.
 Missing links do not refuse completion or downgrade `satisfied`; explicit
 criterion citations must still be a subset of the work-level completion
-evidence. No text is interpreted and no hash is demanded to complete. The
-thirteen-word `done` without links leaves every criterion unlinked. Optional
+evidence. Under an evaluated acceptance policy the sealed vector cites the
+consumed evaluation's evidence: the service unions those citations into the
+completion evidence set it captures and checkpoints, and the core refuses a
+seal whose citations fall outside that set, so the same closure holds on
+both routes. No text is interpreted and no hash is demanded to complete. The
+fourteen-word `done` without links leaves every criterion unlinked. Optional
 `--link POSITION=LOCATOR` inputs explicitly select existing current-run
 note/gate evidence; `--link-basis` is required and carries the work revision
 from the author's `show` read. Any revision drift refuses before new evidence
@@ -1662,6 +1666,10 @@ continuation. Preview failures retain the frozen link and disclose only a
 bounded diagnostic class.
 Links assert relevance, not verification or satisfaction. Only explicitly
 selected criteria gain citations, while all omitted links remain visible.
+Semantic evaluation of what a criterion means is a separate, policy-gated
+contract: see [acceptance evaluation](acceptance-evaluation.md) for the
+host-evaluated, core-enforced per-criterion record that an evaluated project
+requires before `done` seals.
 
 Before this correction, completion automatically copied its entire work-level
 evidence set into each empty criterion evidence vector, paired with a storage

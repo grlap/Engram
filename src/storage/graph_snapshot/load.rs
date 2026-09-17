@@ -1126,6 +1126,7 @@ fn insert_prepared_load_on(
             active_run_id: None,
             restored: true,
             superseded_by: snapshot.superseded_by,
+            evaluation_mode: snapshot.evaluation_mode,
             created_by: actor.clone(),
             created_at: loaded_at,
             updated_at: loaded_at,

@@ -164,6 +164,68 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
             lines.push(format!("{prefix}{line}"));
         }
     }
+    let evaluation = contract.evaluation.as_ref().map(|evaluation| {
+        let passed = evaluation
+            .verdicts
+            .iter()
+            .filter(|verdict| verdict.verdict == "pass")
+            .count();
+        let freshness = match evaluation.stale {
+            None => "fresh".to_owned(),
+            Some(reason) => format!("stale: {reason}"),
+        };
+        lines.push(format!(
+            "evaluation: {} {} — {passed}/{} pass, {freshness}; evaluated revision {} at run position {} (complete)",
+            evaluation.mode,
+            &evaluation.hash[..12],
+            evaluation.verdicts.len(),
+            evaluation.work_revision,
+            evaluation.evaluated_cut
+        ));
+        for verdict in &evaluation.verdicts {
+            lines.push(format!(
+                "  {}. {} ({})",
+                verdict.position, verdict.verdict, verdict.basis
+            ));
+            let safe = super::terminal_data_block(&verdict.rationale);
+            for line in safe.split('\n') {
+                lines.push(format!("     {line}"));
+            }
+            if !verdict.citations.is_empty() {
+                lines.push(format!("     citations: {}", verdict.citations.join(", ")));
+            }
+        }
+        json!({
+            "hash": evaluation.hash,
+            "mode": evaluation.mode,
+            "work_revision": evaluation.work_revision,
+            "evaluated_cut": evaluation.evaluated_cut,
+            "stale": evaluation.stale,
+            "passed": passed,
+            "verdicts": evaluation
+                .verdicts
+                .iter()
+                .map(|verdict| json!({
+                    "position": verdict.position,
+                    "criterion": verdict.criterion,
+                    "verdict": verdict.verdict,
+                    "basis": verdict.basis,
+                    "rationale": verdict.rationale,
+                    "citations": verdict.citations,
+                }))
+                .collect::<Vec<_>>(),
+        })
+    });
+    let mut work = json!({
+        "short_ref": contract.short_ref,
+        "revision": contract.revision,
+        "title": contract.title,
+        "outcome": contract.outcome,
+        "acceptance": contract.acceptance,
+    });
+    if let (Some(object), Some(evaluation)) = (work.as_object_mut(), evaluation) {
+        object.insert("evaluation".into(), evaluation);
+    }
     Receipt::assemble(
         lines,
         Guidance {
@@ -173,15 +235,7 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
                 super::listing::shell_quote(&contract.short_ref)
             )],
         },
-        json!({
-            "work": {
-                "short_ref": contract.short_ref,
-                "revision": contract.revision,
-                "title": contract.title,
-                "outcome": contract.outcome,
-                "acceptance": contract.acceptance,
-            }
-        }),
+        json!({ "work": work }),
         false,
     )
 }

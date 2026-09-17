@@ -131,12 +131,37 @@ pub(super) struct CompactNextReceipt {
     pub(super) context_generation: Option<String>,
     pub(super) discovery: crate::work_service::WorkDiscoveryView,
     pub(super) focus: Option<CompactWorkRow>,
+    /// Newest evaluation on the focused open item under an evaluated policy;
+    /// shed together with the focus.
+    pub(super) focus_evaluation: Option<CompactEvaluation>,
     pub(super) held: Vec<CompactWorkRow>,
     pub(super) ready: Vec<CompactWorkRow>,
     pub(super) changes: Vec<super::next_context::CompactChange>,
     pub(super) memories: Option<ProjectMemorySignal>,
     pub(super) omissions: Vec<CompactSectionOmission>,
     pub(super) guidance: Guidance,
+}
+
+/// One-line evaluation summary for `next`: mode, pass count, freshness.
+#[derive(Clone, Debug)]
+pub(super) struct CompactEvaluation {
+    pub(super) summary: String,
+    pub(super) value: Value,
+}
+
+impl CompactEvaluation {
+    pub(super) fn from_status(status: &crate::storage::AcceptanceEvaluationStatus) -> Self {
+        Self {
+            summary: super::show::evaluation_summary(status),
+            value: json!({
+                "mode": status.record.mode.word(),
+                "passed": status.record.verdicts.iter().filter(|verdict| verdict.verdict == crate::AcceptanceVerdict::Pass).count(),
+                "criteria": status.record.verdicts.len(),
+                "stale": status.stale.map(crate::AcceptanceStaleReason::word),
+                "evaluation": status.evaluation.as_str(),
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -760,6 +785,11 @@ pub(super) fn compact_next_receipt(
             .focus
             .as_ref()
             .map(|focus| compact_row(&focus.status, claims)),
+        focus_evaluation: view
+            .focus
+            .as_ref()
+            .and_then(|focus| focus.acceptance_evaluation.as_ref())
+            .map(CompactEvaluation::from_status),
         held: held
             .iter()
             .map(|(item, _)| compact_row(item, claims))
@@ -885,6 +915,7 @@ pub(super) fn fit_compact_next_to(
             record_compact_omission(&mut compact.omissions, "next", 1);
             continue;
         }
+        compact.focus_evaluation = None;
         if compact.focus.take().is_some() {
             record_compact_omission(&mut compact.omissions, "focus", 1);
             continue;
@@ -967,6 +998,9 @@ pub(super) fn compact_next_value(compact: &CompactNextReceipt) -> Value {
         "reminders": compact.guidance.reminders,
         "next": compact.guidance.next,
     });
+    if let (Some(evaluation), true) = (&compact.focus_evaluation, compact.focus.is_some()) {
+        value["focus"]["evaluation"] = evaluation.value.clone();
+    }
     if let Some(navigation) = &compact.ready_navigation {
         let command = navigation
             .after_prefix(compact.ready.len())
@@ -1034,7 +1068,12 @@ pub(super) fn compact_next_lines(compact: &CompactNextReceipt) -> Vec<String> {
     let context = super::next_context::Context::new(compact);
     let mut lines = Vec::new();
     match &compact.focus {
-        Some(focus) => lines.push(format!("focus: {}", compact_row_line(focus))),
+        Some(focus) => {
+            lines.push(format!("focus: {}", compact_row_line(focus)));
+            if let Some(evaluation) = &compact.focus_evaluation {
+                lines.push(format!("  evaluation: {}", evaluation.summary));
+            }
+        }
         None if compact_omitted(compact, "focus") > 0 => {
             lines.push("focus: omitted (byte budget)".into());
         }

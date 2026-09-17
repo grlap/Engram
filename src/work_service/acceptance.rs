@@ -89,6 +89,64 @@ impl WorkAcceptanceEvidence {
     }
 }
 
+/// Where the sealed acceptance vector came from. The seal's bound evaluation
+/// is validated by the same check completion and doctor apply before any of
+/// it is disclosed.
+pub(super) fn provenance(
+    store: &SqliteStore,
+    seal: &CompletionSeal,
+) -> Result<super::WorkAcceptanceProvenance, StoreError> {
+    let Some(evaluation) = store.completion_seal_evaluation(seal)? else {
+        return Ok(super::WorkAcceptanceProvenance::SelfAsserted);
+    };
+    let hash = seal.acceptance_evaluation.clone().ok_or_else(|| {
+        StoreError::InvalidWorkProjection("validated seal lost its evaluation binding".into())
+    })?;
+    Ok(super::WorkAcceptanceProvenance::Evaluated(Box::new(
+        super::WorkEvaluatedProvenance {
+            evaluation: hash,
+            mode: evaluation.mode,
+            assurance: seal
+                .acceptance
+                .first()
+                .map_or(crate::domain::AssuranceLevel::Asserted, |result| {
+                    result.assurance
+                }),
+            evaluator: evaluation.evaluator,
+            evaluator_model: evaluation.evaluator_model,
+        },
+    )))
+}
+
+/// The completion seal named by hash, bound to the expected work and run.
+pub(super) fn bound_seal(
+    store: &SqliteStore,
+    hash: &ObjectHash,
+    work: WorkId,
+    run: WorkRunId,
+) -> Result<CompletionSeal, StoreError> {
+    let resolved = store.resolve_migrated_reference(hash)?;
+    let seal: CompletionSeal = store.get(&resolved)?.ok_or_else(|| {
+        StoreError::InvalidWorkProjection("acceptance provenance has no canonical seal".into())
+    })?;
+    if seal.work_id != work || seal.run_id != run {
+        return Err(StoreError::InvalidWorkProjection(
+            "acceptance provenance seal crosses its work or run binding".into(),
+        ));
+    }
+    Ok(seal)
+}
+
+/// Provenance of a seal named by hash, bound to the expected work and run.
+pub(super) fn provenance_for_seal(
+    store: &SqliteStore,
+    hash: &ObjectHash,
+    work: WorkId,
+    run: WorkRunId,
+) -> Result<super::WorkAcceptanceProvenance, StoreError> {
+    provenance(store, &bound_seal(store, hash, work, run)?)
+}
+
 pub(super) fn for_completed_run(
     store: &SqliteStore,
     run: Option<&WorkRun>,

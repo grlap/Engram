@@ -137,6 +137,7 @@ impl LocalWorkService {
                 labels,
                 assigned_to,
                 deferred_until,
+                evaluation_mode,
                 idempotency_key: _,
             } => {
                 if let Some(value) = core_result {
@@ -177,6 +178,7 @@ impl LocalWorkService {
                         labels,
                         assigned_to,
                         deferred_until,
+                        evaluation_mode,
                         origin: WorkOrigin::Local,
                         source_snapshot_id: None,
                         actor: self.actor("work_propose", "create local root work"),
@@ -227,6 +229,7 @@ impl LocalWorkService {
                             labels: child.labels,
                             assigned_to: child.assigned_to,
                             deferred_until: child.deferred_until,
+                            evaluation_mode: child.evaluation_mode,
                         })
                         .collect();
                     let mut resolved = Vec::with_capacity(prerequisites.len());

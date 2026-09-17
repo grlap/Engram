@@ -1,4 +1,5 @@
-//! MCP stdio surface for the fourteen agent-facing work tools.
+//! MCP stdio surface for the fifteen agent-facing tools: the fourteen work
+//! words plus `search`.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -14,10 +15,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, ForgetInput, GateInput, HandoffAction,
-    HandoffInput, LocalWorkService, LsInput, MemoriesInput, NextInput, NoteInput, ProjectId,
-    Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError, WorkItemKind,
-    parse_defer_date,
+    AddInput, AgentVerbs, ClaimInput, DoneInput, EvaluateInput, ForgetInput, GateInput,
+    HandoffAction, HandoffInput, LocalWorkService, LsInput, MemoriesInput, NextInput, NoteInput,
+    ProjectId, Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError,
+    WorkItemKind, parse_defer_date,
     storage::{PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL, StoreError},
     work_service::COMPLETED_WORK_LATE_FINDING_REFUSAL,
 };
@@ -160,6 +161,8 @@ struct AddArgs {
     assignee: Option<String>,
     /// task, bug, feature, epic, chore, or research.
     kind: Option<WorkItemKind>,
+    /// Pin the acceptance-evaluation mode from creation: same-session, sub-agent, or independent-session.
+    evaluation_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -180,6 +183,7 @@ enum UpdateActionArg {
     Blocked,
     Unblock,
     Revise,
+    EvaluationMode,
     Cancel,
     After,
     DropAfter,
@@ -197,9 +201,12 @@ struct UpdateArgs {
     clear_external: bool,
     /// Item to act on; defaults to the focus.
     work_ref: Option<String>,
-    /// `release`, `blocked`, `unblock`, `revise`, `cancel`, `after`,
-    /// `drop_after`, `waive`, `reject`, `supersede`, or `detach`.
+    /// `release`, `blocked`, `unblock`, `revise`, `evaluation_mode`, `cancel`,
+    /// `after`, `drop_after`, `waive`, `reject`, `supersede`, or `detach`.
     action: UpdateActionArg,
+    /// For the evaluation-mode action: same-session, sub-agent, or
+    /// independent-session; omit to return the task to any allowed mode.
+    evaluation_mode: Option<String>,
     /// Reason for release (optional), cancel, waive, reject, supersede, or detach (required).
     reason: Option<String>,
     /// Why the item is blocked.
@@ -238,6 +245,30 @@ struct GateArgs {
     failed: Option<Vec<String>>,
     /// Bounded opaque external-evidence reference; a path or URL by convention.
     evidence_ref: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct EvaluateArgs {
+    /// Item to evaluate; defaults to the focus.
+    work_ref: Option<String>,
+    /// same-session, sub-agent, or independent-session; the project policy lists the allowed modes.
+    mode: String,
+    /// The item revision whose criteria the verdicts address, as printed by show.
+    acceptance_basis: i64,
+    /// The run-feed position the evaluator read through, as printed by show; a host-observed change after it refuses.
+    evidence_basis: i64,
+    /// One verdict per current criterion by one-based position; a pass cites note/gate locators as `show` with notes and gates prints them, or full hashes of host-minted verification or environment evidence.
+    verdicts: Vec<crate::WorkCriterionVerdictInput>,
+    /// Explicit attempt key; identical resends replay, contradicting content under the same key refuses.
+    attempt: Option<String>,
+    /// Host-measured source fingerprint at evaluation time.
+    source_fingerprint: Option<String>,
+    /// PROVIDER/MODEL or PROVIDER/MODEL@VERSION, recorded as asserted metadata.
+    model: Option<String>,
+    /// Sub-agent mode only: the evaluator's distinct execution identity.
+    execution_identity: Option<String>,
+    /// Sub-agent mode only: the host-attested parent session.
+    parent_session: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -299,6 +330,8 @@ struct DoneArgs {
     summary: Option<String>,
     /// Shared acceptance note; does not link evidence to individual criteria.
     note: Option<String>,
+    /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
+    source_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -416,6 +449,7 @@ impl McpServer {
                 labels: args.labels.unwrap_or_default(),
                 assignee: args.assignee,
                 kind: args.kind,
+                evaluation_mode: args.evaluation_mode,
             },
             Utc::now(),
         ))
@@ -458,6 +492,13 @@ impl McpServer {
                 "acceptance replacement requires action revise",
             );
         }
+        if args.evaluation_mode.is_some() && !matches!(args.action, UpdateActionArg::EvaluationMode)
+        {
+            return invalid_argument(
+                "evaluation_mode",
+                "an evaluation mode requires action evaluation_mode; it is ignored by no other action",
+            );
+        }
         let action = match args.action {
             UpdateActionArg::Release => UpdateAction::Release {
                 reason: args.reason,
@@ -485,6 +526,9 @@ impl McpServer {
                     unlabels: args.unlabels.unwrap_or_default(),
                 }
             }
+            UpdateActionArg::EvaluationMode => UpdateAction::EvaluationMode {
+                mode: args.evaluation_mode,
+            },
             UpdateActionArg::Cancel => UpdateAction::Cancel {
                 reason: args.reason.unwrap_or_default(),
             },
@@ -530,6 +574,29 @@ impl McpServer {
                 name: args.name,
                 failed: args.failed.unwrap_or_default(),
                 evidence_ref: args.evidence_ref,
+            },
+            Utc::now(),
+        ))
+    }
+
+    /// Record one attributed acceptance evaluation on an item's active run.
+    #[tool(
+        name = "evaluate",
+        description = "Record one immutable acceptance evaluation on the targeted item's active run: one verdict per criterion with basis, rationale, and run-evidence citations; work_ref defaults to focus and acceptance_basis is the revision printed by show"
+    )]
+    fn evaluate(&self, Parameters(args): Parameters<EvaluateArgs>) -> CallToolResult {
+        self.verb(self.verbs().evaluate(
+            EvaluateInput {
+                work_ref: args.work_ref,
+                mode: args.mode,
+                acceptance_basis: args.acceptance_basis,
+                evidence_basis: args.evidence_basis,
+                verdicts: args.verdicts,
+                attempt: args.attempt,
+                source_fingerprint: args.source_fingerprint,
+                model: args.model,
+                execution_identity: args.execution_identity,
+                parent_session: args.parent_session,
             },
             Utc::now(),
         ))
@@ -611,6 +678,7 @@ impl McpServer {
                 work_ref: args.work_ref,
                 summary: args.summary,
                 note: args.note,
+                source_fingerprint: args.source_fingerprint,
             },
             Utc::now(),
         ))
@@ -660,7 +728,7 @@ impl McpServer {
     router = self.tool_router,
     name = "engram",
     version = "0.1.0",
-    instructions = "Thirteen words: next, ls, show, add, claim, update, gate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before execution; note accepts project-bound non-holders on open/blocked work without granting execution authority; completed note/gate append late evidence without reopening; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer ends with reminders and runnable next commands. Keyless same-holder claim calls renew without shortening expiry. A restored completed gate always appends: inspect show before repeating an uncertain call. Other identical calls retain exact retry semantics."
+    instructions = "Fourteen words: next, ls, show, add, claim, update, gate, evaluate, note, done, handoff, remember, memories, forget (plus search). add needs only a title; claim before execution; evaluate records attributed acceptance verdicts that an evaluated project policy consumes at done; note accepts project-bound non-holders on open/blocked work without granting execution authority; completed note/gate append late evidence without reopening; remember stores attributed project notes; memories is their source of truth; forget tombstones rather than erases. Every answer ends with reminders and runnable next commands. Keyless same-holder claim calls renew without shortening expiry. A restored completed gate always appends: inspect show before repeating an uncertain call. Other identical calls retain exact retry semantics."
 )]
 impl ServerHandler for McpServer {}
 
@@ -988,6 +1056,7 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::WorkClaimLapsed { .. } => "work_claim_lapsed",
         StoreError::WorkCompletionRefused { .. } => "work_completion_refused",
         StoreError::WorkCompletionRecoveryRequired { .. } => "work_completion_recovery_required",
+        StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
         StoreError::GraphDestinationNotEmpty => "graph_destination_not_empty",
         StoreError::GraphProjectMismatch { .. } => "graph_project_mismatch",
         StoreError::GraphDifferentBuild => "different_build",

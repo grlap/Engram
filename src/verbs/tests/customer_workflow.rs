@@ -296,6 +296,7 @@ fn terminalize(verbs: &AgentVerbs, parent: &str, lifecycle: WorkLifecycle) {
         let done = verbs
             .done(
                 DoneInput {
+                    source_fingerprint: None,
                     links: Vec::new(),
                     link_basis: None,
                     work_ref: Some(parent.into()),
@@ -359,6 +360,7 @@ fn phoenix_add_under_terminal_parent_returns_typed_root_followup_remedy_without_
                 parent_id: parent_before.work_id,
                 expected_parent_revision: parent_before.revision,
                 children: vec![crate::ChildWorkDraft {
+                    evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),
                     local_key: "refused".into(),
@@ -456,6 +458,7 @@ fn phoenix_full_notes_include_inherited_late_restored_and_reopened_native_genera
         !verbs
             .done(
                 DoneInput {
+                    source_fingerprint: None,
                     links: Vec::new(),
                     link_basis: None,
                     work_ref: Some(work.clone()),

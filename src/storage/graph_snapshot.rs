@@ -746,6 +746,7 @@ fn snapshot_item(
         superseded_by: item.superseded_by,
         assigned_to: item.assigned_to.clone(),
         deferred_until: item.deferred_until,
+        evaluation_mode: item.evaluation_mode,
         disposal_reason: current_disposal_reason(item.lifecycle, events, restored_records)?,
     })
 }

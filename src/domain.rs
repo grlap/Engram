@@ -1,5 +1,6 @@
 //! Domain records shared by storage, context assembly, and tracker adapters.
 
+mod acceptance_evaluation;
 mod control;
 mod identity;
 mod memory;
@@ -15,6 +16,7 @@ pub use crate::schema::{
     COMPLETION_ENVIRONMENT_SCHEMA_VERSION, COMPLETION_OBLIGATION_SCHEMA_VERSION,
     CONTROL_SCHEMA_VERSION, OBLIGATION_RULE_SET_SCHEMA_VERSION, SCHEMA_VERSION,
 };
+pub use acceptance_evaluation::*;
 pub use control::*;
 pub use identity::*;
 pub use memory::*;

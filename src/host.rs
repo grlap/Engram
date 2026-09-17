@@ -542,6 +542,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         StoreError::WorkLeaseNotFound(_) => "work_lease_not_found",
         StoreError::WorkLeaseNotHeld { .. } => "work_lease_not_held",
         StoreError::WorkLeaseExpired { .. } => "work_lease_expired",
+        StoreError::AcceptanceEvaluationRefused { .. } => "acceptance_evaluation_refused",
         StoreError::DifferentBuildSchema
         | StoreError::InvalidControlProjection(_)
         | StoreError::InvalidControlObservation(_) => "control_projection_invalid",

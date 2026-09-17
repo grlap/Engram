@@ -40,6 +40,95 @@ fn actor(session: &str) -> ActorContext {
     }
 }
 
+// A pinned acceptance-evaluation mode is planning state: the snapshot carries
+// it and load restores it verbatim, so a transfer never widens which
+// evaluator may accept the task.
+#[test]
+fn snapshot_carries_the_pinned_evaluation_mode() {
+    let directory = crate::test_support::temp_home().expect("tempdir");
+    let project = ProjectId("snapshot-evaluation-mode".into());
+    let mut source =
+        SqliteStore::open(directory.path().join("pinned-source.db")).expect("source store");
+    let pinned = source
+        .create_work(
+            &CreateWorkRequest {
+                evaluation_mode: Some(crate::AcceptanceEvaluationMode::IndependentSession),
+                external_ref: None,
+                notes: Vec::new(),
+                project_id: project.clone(),
+                parent_id: None,
+                child_requirement: ChildRequirement::Required,
+                title: "Pinned to an independent evaluator".into(),
+                outcome: "only an independent session may accept this".into(),
+                acceptance: vec!["the independent evaluator passes it".into()],
+                kind: WorkItemKind::Task,
+                priority: 1,
+                labels: Vec::new(),
+                assigned_to: None,
+                deferred_until: None,
+                origin: WorkOrigin::Local,
+                source_snapshot_id: None,
+                actor: actor("planner-session"),
+                idempotency_key: "create-pinned".into(),
+                created_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("create pinned root");
+    let unpinned = create_root(&mut source, &project, "Unpinned", "create-unpinned");
+    let saved = source
+        .save_work_graph_snapshot(
+            &project,
+            &actor("saver"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("save");
+    let exported_mode = |work_id: crate::WorkId| {
+        saved
+            .document
+            .body
+            .items
+            .iter()
+            .find(|item| item.work_id == work_id)
+            .expect("exported item")
+            .evaluation_mode
+    };
+    assert_eq!(
+        exported_mode(pinned.work_id),
+        Some(crate::AcceptanceEvaluationMode::IndependentSession)
+    );
+    assert_eq!(exported_mode(unpinned.work_id), None);
+    let mut destination = SqliteStore::open_in_memory().expect("destination");
+    destination
+        .load_work_graph_snapshot(
+            &project,
+            &actor("loader"),
+            &snapshot_bytes(&saved.document),
+            false,
+            at(3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("load");
+    assert_eq!(
+        destination
+            .get_work_item(pinned.work_id)
+            .expect("restored pinned item")
+            .evaluation_mode,
+        Some(crate::AcceptanceEvaluationMode::IndependentSession)
+    );
+    assert_eq!(
+        destination
+            .get_work_item(unpinned.work_id)
+            .expect("restored unpinned item")
+            .evaluation_mode,
+        None
+    );
+    assert!(destination.verify_all().expect("verify").is_healthy());
+}
+
 fn create_root(
     store: &mut SqliteStore,
     project: &ProjectId,
@@ -49,6 +138,7 @@ fn create_root(
     store
         .create_work(
             &CreateWorkRequest {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 project_id: project.clone(),
@@ -105,6 +195,7 @@ fn create_imported_root(
     let item = store
         .create_work(
             &CreateWorkRequest {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 project_id: project.clone(),
@@ -590,6 +681,7 @@ fn initial_note_order_survives_snapshot_recreation() {
     let item = source
         .create_work(
             &CreateWorkRequest {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: notes.clone(),
                 project_id: project.clone(),
@@ -1989,6 +2081,7 @@ fn runless_restored_work_supports_blocked_planning_and_disposal() {
         parent_id: decompose.work_id,
         expected_parent_revision: 1,
         children: vec![ChildWorkDraft {
+            evaluation_mode: None,
             external_ref: None,
             notes: Vec::new(),
             local_key: "native-child".into(),
@@ -2081,6 +2174,7 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         let parent = source.get_work_item(root.work_id).expect("current parent");
         let children = (0..16)
             .map(|index| ChildWorkDraft {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 local_key: format!("child-{batch:02}-{index:02}"),

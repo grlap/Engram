@@ -17,6 +17,7 @@ pub(super) fn stranded_child(verbs: &AgentVerbs) -> (String, String) {
     verbs
         .done(
             DoneInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 work_ref: Some(parent.clone()),

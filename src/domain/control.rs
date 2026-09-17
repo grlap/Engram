@@ -10,8 +10,8 @@ use unicode_normalization::UnicodeNormalization;
 use crate::ObjectHash;
 
 use super::{
-    ActorContext, ChangeCursor, ContextPacket, ProjectId, RootExecutionId, SessionId, TaskDelta,
-    TaskId, TaskState, WorkClaimId, WorkId, WorkRunId,
+    AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, ProjectId,
+    RootExecutionId, SessionId, TaskDelta, TaskId, TaskState, WorkClaimId, WorkId, WorkRunId,
 };
 
 /// Monotonic invalidation epoch for the active project control policy.
@@ -55,6 +55,7 @@ impl ControlAssurance {
 pub enum ProjectPolicyOperation {
     SetRequiredAssurance,
     SetObligationRuleSet,
+    SetAcceptanceEvaluation,
 }
 
 /// Immutable operator/host attribution authorizing one project policy change.
@@ -69,6 +70,10 @@ pub struct ProjectPolicyAuthorityDecision {
     pub previous_policy: Option<ObjectHash>,
     pub required_assurance: ControlAssurance,
     pub obligation_rule_set: ObjectHash,
+    /// Acceptance-evaluation policy in force after this decision; omitted
+    /// bytes mean the legacy self-asserted path.
+    #[serde(default, skip_serializing_if = "AcceptanceEvaluationPolicy::is_legacy")]
+    pub acceptance_evaluation: AcceptanceEvaluationPolicy,
     pub authorized_by: ActorContext,
     pub reason: String,
     pub decided_at: DateTime<Utc>,
@@ -85,6 +90,11 @@ pub struct ControlPolicy {
     pub supported_effects: Vec<EffectClass>,
     pub grant_ttl_seconds: i64,
     pub obligation_rule_set: ObjectHash,
+    /// Per-project acceptance-evaluation policy; omitted bytes mean the
+    /// legacy self-asserted completion path, so earlier policy objects keep
+    /// their exact bytes and hashes.
+    #[serde(default, skip_serializing_if = "AcceptanceEvaluationPolicy::is_legacy")]
+    pub acceptance_evaluation: AcceptanceEvaluationPolicy,
     pub authority: ObjectHash,
     pub activated_at: DateTime<Utc>,
 }

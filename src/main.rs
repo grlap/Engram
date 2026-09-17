@@ -1,4 +1,4 @@
-//! Engram CLI: host/operator administration plus the thirteen-word agent surface.
+//! Engram CLI: host/operator administration plus the fourteen-word agent surface.
 
 use std::{
     env, fs,
@@ -207,8 +207,8 @@ enum Command {
         #[arg(long)]
         source_skill: Option<String>,
     },
-    /// Track work with thirteen words: next, ls, show, add, claim, update,
-    /// gate, note, done, handoff, remember, memories, forget.
+    /// Track work with fourteen words: next, ls, show, add, claim, update,
+    /// gate, evaluate, note, done, handoff, remember, memories, forget.
     ///
     /// The host fixes actor and session through the environment
     /// so an agent types only the word and its arguments.
@@ -296,6 +296,10 @@ fn warn_if_assurance_weakened(previous: ControlAssurance, current: ControlAssura
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(
+    clippy::enum_variant_names,
+    reason = "each subcommand names the policy field it sets"
+)]
 enum ControlPolicyCommand {
     /// Activate a new immutable policy version with a different requirement.
     ///
@@ -338,6 +342,43 @@ enum ControlPolicyCommand {
         #[arg(long)]
         expected_policy_hash: Option<String>,
     },
+    /// Activate the acceptance-evaluation policy: which evaluator modes may
+    /// record verdicts, what backs a mechanical pass, and whether completion
+    /// must present a fresh host source fingerprint. An empty mode list
+    /// restores legacy self-asserted completion through the same audited
+    /// transition.
+    SetAcceptanceEvaluation {
+        /// Allowed evaluator modes, comma-separated: same-session, sub-agent,
+        /// independent-session. Omit for the legacy self-asserted path.
+        #[arg(long, value_name = "MODE[,MODE]", value_delimiter = ',', num_args = 0..)]
+        modes: Vec<String>,
+        /// What an observed or asserted mechanical pass may cite.
+        #[arg(long, value_enum, default_value_t = MechanicalBasisArg::Asserted)]
+        mechanical_basis: MechanicalBasisArg,
+        /// Completion must present a source fingerprint equal to the evaluated one.
+        #[arg(long)]
+        require_source_freshness: bool,
+        /// Host/operator actor id attributed to the policy decision.
+        #[arg(long)]
+        authorized_by: String,
+        /// Auditable reason for selecting this policy.
+        #[arg(long)]
+        reason: String,
+        /// Durable caller key for exact receipt replay after an uncertain response.
+        #[arg(long)]
+        idempotency_key: String,
+        /// Optional compare-and-swap guard from `engram doctor`.
+        #[arg(long)]
+        expected_policy_hash: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum MechanicalBasisArg {
+    /// Agent gate records with no failure labels back a mechanical pass.
+    Asserted,
+    /// Only host-minted verification evidence with a passed result does.
+    Observed,
 }
 
 const MAX_CONTROL_POLICY_CLI_INPUT_BYTES: u64 = 64 * 1024;
@@ -553,6 +594,10 @@ enum WorkCommand {
         assignee: Option<String>,
         #[arg(long, value_enum)]
         kind: Option<WorkKindArg>,
+        /// Pin the acceptance-evaluation mode from creation: same-session,
+        /// sub-agent, or independent-session.
+        #[arg(long, value_name = "MODE")]
+        evaluation_mode: Option<String>,
     },
     /// Hold an item before changing anything; later words default to it.
     Claim {
@@ -584,6 +629,65 @@ enum WorkCommand {
         /// Opaque evidence reference; a path or URL by convention, never ingested.
         #[arg(long = "ref", value_name = "OPAQUE_REFERENCE")]
         evidence_ref: Option<String>,
+    },
+    /// Record one attributed acceptance evaluation on an item's active run.
+    Evaluate {
+        /// Item to evaluate; defaults to the focus.
+        #[arg(value_name = "REF")]
+        work_ref: Option<String>,
+        /// same-session, sub-agent, or independent-session; the project policy lists the allowed modes.
+        #[arg(long, value_name = "MODE")]
+        mode: String,
+        /// The item revision whose criteria the verdicts address, as printed by show.
+        #[arg(long, value_name = "REVISION")]
+        acceptance_basis: i64,
+        /// The run-feed position the evaluator read through, as printed by show;
+        /// a host-observed change after it refuses.
+        #[arg(long, value_name = "POSITION")]
+        evidence_basis: i64,
+        /// POSITION=VERDICT[:BASIS]; repeatable, one per criterion. VERDICT is pass, fail,
+        /// insufficient-evidence, or needs-human; BASIS is observed, asserted, judgment, or
+        /// human-required (default judgment).
+        #[arg(
+            long = "verdict",
+            value_name = "POSITION=VERDICT[:BASIS]",
+            action = ArgAction::Append,
+            num_args = 1,
+            required = true
+        )]
+        verdicts: Vec<String>,
+        /// POSITION=TEXT; repeatable, one per criterion.
+        #[arg(
+            long = "rationale",
+            value_name = "POSITION=TEXT",
+            action = ArgAction::Append,
+            num_args = 1,
+            required = true
+        )]
+        rationales: Vec<String>,
+        /// POSITION=LOCATOR citation: a note/gate locator as `show REF --notes --gates` prints it, or the full hash of host-minted verification or environment evidence; repeatable. A pass needs at least one.
+        #[arg(
+            long = "evidence",
+            value_name = "POSITION=LOCATOR",
+            action = ArgAction::Append,
+            num_args = 1
+        )]
+        evidence: Vec<String>,
+        /// Explicit attempt key; identical resends replay, contradicting content refuses.
+        #[arg(long, value_name = "KEY")]
+        attempt: Option<String>,
+        /// Host-measured source fingerprint at evaluation time.
+        #[arg(long, value_name = "FINGERPRINT")]
+        source_fingerprint: Option<String>,
+        /// PROVIDER/MODEL or PROVIDER/MODEL@VERSION, recorded as asserted metadata.
+        #[arg(long, value_name = "PROVIDER/MODEL")]
+        model: Option<String>,
+        /// Sub-agent mode only: the evaluator's distinct execution identity.
+        #[arg(long, value_name = "ID", requires = "parent_session")]
+        execution_identity: Option<String>,
+        /// Sub-agent mode only: the host-attested parent session.
+        #[arg(long, value_name = "SESSION", requires = "execution_identity")]
+        parent_session: Option<String>,
     },
     /// Store one attributed project memory.
     #[command(group(clap::ArgGroup::new("memory_text").required(true).args(["text", "text_flag"])))]
@@ -650,6 +754,9 @@ enum WorkCommand {
         /// Shared acceptance note; does not link evidence to individual criteria.
         #[arg(long)]
         note: Option<String>,
+        /// Host-measured source fingerprint at completion time; checked against the evaluated one when the policy requires source freshness.
+        #[arg(long, value_name = "FINGERPRINT")]
+        source_fingerprint: Option<String>,
     },
     /// Offer the item you hold to another session, accept an offer, or cancel yours.
     Handoff {
@@ -686,6 +793,7 @@ impl WorkCommand {
             | Self::Claim { .. }
             | Self::Update { .. }
             | Self::Gate { .. }
+            | Self::Evaluate { .. }
             | Self::Remember { .. }
             | Self::Forget { .. }
             | Self::Note { .. }
@@ -1107,9 +1215,130 @@ fn run_control_policy(
             }
             serde_json::to_value(receipt)?
         }
+        ControlPolicyCommand::SetAcceptanceEvaluation {
+            modes,
+            mechanical_basis,
+            require_source_freshness,
+            authorized_by,
+            reason,
+            idempotency_key,
+            expected_policy_hash,
+        } => {
+            let allowed_modes = modes
+                .iter()
+                .map(|mode| mode.trim())
+                .filter(|mode| !mode.is_empty())
+                .map(|mode| {
+                    engram::AcceptanceEvaluationMode::parse(mode).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "unknown evaluation mode {mode:?}; use same_session, sub_agent, or independent_session"
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let policy = engram::AcceptanceEvaluationPolicy {
+                allowed_modes,
+                mechanical_basis: match mechanical_basis {
+                    MechanicalBasisArg::Asserted => engram::domain::MechanicalBasis::Asserted,
+                    MechanicalBasisArg::Observed => engram::domain::MechanicalBasis::Observed,
+                },
+                require_source_freshness,
+            };
+            let expected_policy = parse_expected_policy_hash(expected_policy_hash)?;
+            let receipt = store.set_acceptance_evaluation_policy(
+                &policy,
+                &control_policy_actor(authorized_by),
+                &reason,
+                &idempotency_key,
+                expected_policy.as_ref(),
+                chrono::Utc::now(),
+                &DevelopmentNoopRedactor,
+            )?;
+            if receipt.changed {
+                eprintln!(
+                    "WARNING: policy administrator identity is asserted host context, not an authenticated identity"
+                );
+            }
+            serde_json::to_value(receipt)?
+        }
     };
     println!("{}", serde_json::to_string_pretty(&value)?);
     Ok(())
+}
+
+/// Assembles `--verdict`, `--rationale`, and `--evidence` flags keyed by
+/// one-based criterion position into typed verdict inputs.
+fn evaluate_verdicts(
+    verdicts: &[String],
+    rationales: &[String],
+    evidence: &[String],
+) -> std::result::Result<Vec<engram::WorkCriterionVerdictInput>, engram::VerbError> {
+    fn invalid(reason: String) -> engram::VerbError {
+        engram::VerbError::from(StoreError::InvalidWork(reason))
+    }
+    fn split(value: &str, flag: &str) -> std::result::Result<(usize, String), engram::VerbError> {
+        let (position, rest) = value
+            .split_once('=')
+            .ok_or_else(|| invalid(format!("--{flag} expects POSITION=…, got {value:?}")))?;
+        let position = position
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|position| *position > 0)
+            .ok_or_else(|| {
+                invalid(format!(
+                    "--{flag} position must be a one-based criterion number, got {position:?}"
+                ))
+            })?;
+        Ok((position, rest.to_owned()))
+    }
+    let mut inputs: Vec<engram::WorkCriterionVerdictInput> = Vec::new();
+    for value in verdicts {
+        let (position, rest) = split(value, "verdict")?;
+        let (verdict, basis) = match rest.split_once(':') {
+            Some((verdict, basis)) => (verdict.trim().to_owned(), basis.trim().to_owned()),
+            None => (rest.trim().to_owned(), "judgment".to_owned()),
+        };
+        if inputs.iter().any(|input| input.criterion == position) {
+            return Err(invalid(format!("--verdict repeats criterion {position}")));
+        }
+        inputs.push(engram::WorkCriterionVerdictInput {
+            criterion: position,
+            verdict,
+            basis,
+            rationale: String::new(),
+            evidence: Vec::new(),
+        });
+    }
+    for value in rationales {
+        let (position, text) = split(value, "rationale")?;
+        let input = inputs
+            .iter_mut()
+            .find(|input| input.criterion == position)
+            .ok_or_else(|| invalid(format!("--rationale {position} has no matching --verdict")))?;
+        if !input.rationale.is_empty() {
+            return Err(invalid(format!("--rationale repeats criterion {position}")));
+        }
+        input.rationale = text;
+    }
+    for value in evidence {
+        let (position, locator) = split(value, "evidence")?;
+        let input = inputs
+            .iter_mut()
+            .find(|input| input.criterion == position)
+            .ok_or_else(|| invalid(format!("--evidence {position} has no matching --verdict")))?;
+        input.evidence.push(locator.trim().to_owned());
+    }
+    if let Some(missing) = inputs
+        .iter()
+        .find(|input| input.rationale.trim().is_empty())
+    {
+        return Err(invalid(format!(
+            "criterion {} needs --rationale {}=TEXT",
+            missing.criterion, missing.criterion
+        )));
+    }
+    Ok(inputs)
 }
 
 fn control_policy_actor(actor_id: String) -> ActorContext {
@@ -1189,7 +1418,7 @@ fn run_authority(
 
 #[allow(
     clippy::too_many_lines,
-    reason = "each word's flag translation stays beside the others so the thirteen-word surface is reviewable in one place"
+    reason = "each word's flag translation stays beside the others so the fourteen-word surface is reviewable in one place"
 )]
 fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<ExitCode> {
     let fit_effective_session =
@@ -1285,6 +1514,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             labels,
             assignee,
             kind,
+            evaluation_mode,
         } => verbs.add(
             AddInput {
                 external,
@@ -1298,6 +1528,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 labels,
                 assignee,
                 kind: kind.map(Into::into),
+                evaluation_mode,
             },
             now,
         ),
@@ -1338,6 +1569,8 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 waive,
                 supersede_with,
                 detach,
+                evaluation_mode,
+                clear_evaluation_mode,
             } = *args;
             if reason.is_some() && !release && supersede_with.is_none() && waive.is_none() {
                 bail!("--reason is only valid with --release, --waive, or --supersede-with");
@@ -1363,10 +1596,11 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(waive.is_some())
                 + usize::from(supersede_with.is_some())
                 + usize::from(detach.is_some())
+                + usize::from(evaluation_mode.is_some() || clear_evaluation_mode)
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, or field changes (--title, --outcome, --accept, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, --evaluation-mode MODE, --clear-evaluation-mode, or field changes (--title, --outcome, --accept, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1397,6 +1631,10 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 UpdateAction::Supersede {
                     replacement,
                     reason,
+                }
+            } else if evaluation_mode.is_some() || clear_evaluation_mode {
+                UpdateAction::EvaluationMode {
+                    mode: evaluation_mode,
                 }
             } else {
                 let defer = defer
@@ -1434,6 +1672,36 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             },
             now,
         ),
+        WorkCommand::Evaluate {
+            work_ref,
+            mode,
+            acceptance_basis,
+            evidence_basis,
+            verdicts,
+            rationales,
+            evidence,
+            attempt,
+            source_fingerprint,
+            model,
+            execution_identity,
+            parent_session,
+        } => evaluate_verdicts(&verdicts, &rationales, &evidence).and_then(|verdicts| {
+            verbs.evaluate(
+                engram::EvaluateInput {
+                    work_ref,
+                    mode,
+                    acceptance_basis,
+                    evidence_basis,
+                    verdicts,
+                    attempt,
+                    source_fingerprint,
+                    model,
+                    execution_identity,
+                    parent_session,
+                },
+                now,
+            )
+        }),
         WorkCommand::Remember {
             text,
             text_flag,
@@ -1496,6 +1764,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             note,
             links,
             link_basis,
+            source_fingerprint,
         } => {
             let (work_ref, summary) = match args.len() {
                 0 => (None, None),
@@ -1529,6 +1798,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                         work_ref,
                         summary,
                         note,
+                        source_fingerprint,
                     },
                     now,
                 ),
@@ -1849,6 +2119,10 @@ async fn serve_mcp(server: McpServer) -> Result<()> {
 
 /// Flat flags for one planning/lifecycle update, boxed in the command enum.
 #[derive(clap::Args, Debug)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag is one exclusive update action or clear switch of the same word"
+)]
 struct WorkUpdateArgs {
     /// Replace the item's opaque external planning reference.
     #[arg(long, value_name = "REF")]
@@ -1894,6 +2168,13 @@ struct WorkUpdateArgs {
     /// Remove a label; repeatable.
     #[arg(long = "unlabel", value_name = "LABEL")]
     unlabels: Vec<String>,
+    /// Pin the acceptance-evaluation mode this task requires: same-session,
+    /// sub-agent, or independent-session.
+    #[arg(long, value_name = "MODE", conflicts_with = "clear_evaluation_mode")]
+    evaluation_mode: Option<String>,
+    /// Return the task to any policy-allowed evaluation mode.
+    #[arg(long)]
+    clear_evaluation_mode: bool,
     /// Cancel the item and say why.
     #[arg(long, value_name = "REASON")]
     cancel: Option<String>,
@@ -2115,6 +2396,23 @@ mod tests {
             (&["claim", "w-000000000001"], true),
             (&["update", "--release"], true),
             (&["gate", "cargo-check"], true),
+            (
+                &[
+                    "evaluate",
+                    "w-000000000001",
+                    "--mode",
+                    "same-session",
+                    "--acceptance-basis",
+                    "1",
+                    "--evidence-basis",
+                    "4",
+                    "--verdict",
+                    "1=pass:judgment",
+                    "--rationale",
+                    "1=verified",
+                ],
+                true,
+            ),
             (&["remember", "project observation"], true),
             (&["memories"], false),
             (&["forget", "project-observation"], true),

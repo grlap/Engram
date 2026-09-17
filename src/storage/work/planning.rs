@@ -183,6 +183,7 @@ fn create_root_with_validation_on<R: Redactor>(
         active_run_id: Some(run_id),
         restored: false,
         superseded_by: None,
+        evaluation_mode: request.evaluation_mode,
         created_by: request.actor.clone(),
         created_at: request.created_at,
         updated_at: request.created_at,
@@ -423,6 +424,11 @@ impl SqliteStore {
                 "assignment cannot be set and cleared in one revision".into(),
             ));
         }
+        if request.patch.clear_evaluation_mode && request.patch.evaluation_mode.is_some() {
+            return Err(StoreError::InvalidWork(
+                "evaluation mode cannot be set and cleared in one revision".into(),
+            ));
+        }
         if request.patch.clear_deferral && request.patch.deferred_until.is_some() {
             return Err(StoreError::InvalidWork(
                 "deferral cannot be set and cleared in one revision".into(),
@@ -484,7 +490,9 @@ impl SqliteStore {
             || request.patch.assigned_to.is_some()
             || request.patch.clear_assignment
             || request.patch.deferred_until.is_some()
-            || request.patch.clear_deferral;
+            || request.patch.clear_deferral
+            || request.patch.evaluation_mode.is_some()
+            || request.patch.clear_evaluation_mode;
         if !changed {
             return Err(StoreError::InvalidWork("revision patch is empty".into()));
         }
@@ -563,6 +571,11 @@ impl SqliteStore {
             item.deferred_until = None;
         } else if let Some(deferred_until) = request.patch.deferred_until {
             item.deferred_until = Some(deferred_until);
+        }
+        if request.patch.clear_evaluation_mode {
+            item.evaluation_mode = None;
+        } else if let Some(mode) = request.patch.evaluation_mode {
+            item.evaluation_mode = Some(mode);
         }
         item.revision += 1;
         item.updated_at = request.updated_at;
@@ -1013,6 +1026,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
             active_run_id: Some(run_id),
             restored: false,
             superseded_by: None,
+            evaluation_mode: draft.evaluation_mode,
             created_by: child_actor.clone(),
             created_at: request.created_at,
             updated_at: request.created_at,

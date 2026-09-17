@@ -430,6 +430,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let root = match a
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 title: "Ship ambient work".into(),
@@ -461,6 +462,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let concurrent = match b
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 title: "Concurrent project event".into(),
@@ -679,6 +681,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let seal = b
         .work_complete(
             WorkCompleteInput {
+                source_fingerprint: None,
                 links: Vec::new(),
                 link_basis: None,
                 capture: None,
@@ -819,6 +822,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let replacement = match b
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 title: "Replacement approach".into(),
@@ -843,6 +847,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let obsolete = match b
         .work_propose(
             WorkProposeInput::Root {
+                evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
                 title: "Obsolete approach".into(),

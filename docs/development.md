@@ -12,7 +12,7 @@ is a proposal, not a change to standing instructions.
 
 ## Task tracking
 
-This project tracks its work in Engram — the thirteen agent words, documented in
+This project tracks its work in Engram — the fourteen agent words, documented in
 [CLI & MCP](features/cli-and-mcp.md#using-engram-as-an-agent).
 
 - `engram work next` — what you hold, what is ready, what others changed;

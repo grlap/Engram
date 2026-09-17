@@ -462,6 +462,7 @@ fn orientation_reason_cost_preserves_candidates_in_rich_peek_fixture() {
     // Construct the pre-fit pair from one collected snapshot, not from an
     // already fitted result that could have silently lost candidates.
     let with = CompactNextReceipt {
+        focus_evaluation: None,
         ready_navigation: lists.ready_navigation,
         peek: view.peek,
         read_cut: view.read_cut,
