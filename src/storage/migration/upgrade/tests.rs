@@ -3328,6 +3328,35 @@ fn intent_only_prepared_foreign_temp_fixture()
     (directory, request)
 }
 
+fn activating_split_retain_foreign_temp_fixture()
+-> (crate::test_support::TempHome, UpgradePrepareRequest) {
+    let (directory, request, database, original) =
+        interrupt_equal_content_at_empty_sidecar("-wal", UpgradeFault::RetainedWal);
+    let journal: Vec<_> = load_journal_records(&request.operation)
+        .into_iter()
+        .map(|record| (record.sequence, record.kind))
+        .collect();
+    assert_eq!(
+        journal,
+        vec![(1, JournalKind::Prepared), (2, JournalKind::Activating),]
+    );
+    assert_eq!(fs::read(&database).expect("live original"), original);
+    assert!(!sidecar(&database, "-wal").exists(), "live WAL retained");
+    assert_eq!(
+        fs::read(sidecar(
+            &request.operation.join("retained-original.db"),
+            "-wal"
+        ))
+        .expect("retained WAL"),
+        b""
+    );
+    assert!(
+        !request.operation.join("retained-original.db").exists(),
+        "retained main not reached"
+    );
+    (directory, request)
+}
+
 fn activated_foreign_temp_fixture() -> (crate::test_support::TempHome, UpgradePrepareRequest) {
     let (directory, request, _) = fixture();
     prepare_upgrade(&request).expect("prepare");
@@ -3346,6 +3375,10 @@ fn upgrade_review_v7_status_nonterminal_foreign_temps_refuse_before_effects() {
         (
             "intent-only-prepared",
             intent_only_prepared_foreign_temp_fixture,
+        ),
+        (
+            "activating-split-retain",
+            activating_split_retain_foreign_temp_fixture,
         ),
         ("activated", activated_foreign_temp_fixture),
     ];

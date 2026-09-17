@@ -182,7 +182,17 @@ fn insert_classified_project_memory(
     created_at: DateTime<Utc>,
 ) {
     let version = classified_project_memory(project, key, body, sensitivity, created_at);
-    let version_object = CanonicalObject::freeze(&version).expect("freeze memory version");
+    insert_project_memory_version(store, project, &version);
+}
+
+fn insert_project_memory_version(
+    store: &mut SqliteStore,
+    project: &ProjectId,
+    version: &MemoryVersion,
+) {
+    let created_at = version.created_at;
+    let sensitivity = version.sensitivity;
+    let version_object = CanonicalObject::freeze(version).expect("freeze memory version");
     let assertion = crate::domain::MemoryAssertionEvent {
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id: version.memory_id,
@@ -225,6 +235,12 @@ fn insert_classified_project_memory(
             ],
         )
         .expect("insert memory head");
+    transaction
+        .execute(
+            "INSERT INTO object_fts (object_hash, title, body) VALUES (?1, ?2, ?3)",
+            rusqlite::params![version_object.hash().as_str(), version.title, version.body],
+        )
+        .expect("insert memory search projection");
     transaction
         .execute(
             "INSERT INTO project_memory_state (project_id, active_count, change_position)
@@ -866,6 +882,80 @@ fn widened_save_records_reason_even_when_current_project_memories_are_internal()
     assert_eq!(audits.len(), 2);
     assert_eq!(audits[0].widening_reason, None);
     assert_eq!(audits[1].widening_reason.as_deref(), Some(widening_reason));
+}
+
+#[test]
+fn graph_save_and_doctor_reject_invalid_keyed_memory_shape() {
+    let project = ProjectId("snapshot-keyed-memory-shape".into());
+    for case in ["valid", "missing-tag", "wrong-classification-reason"] {
+        let mut store = SqliteStore::open_in_memory().expect("isolated store");
+        let mut version = classified_project_memory(
+            &project,
+            "shape-entry",
+            "planning detail",
+            Sensitivity::Internal,
+            at(1),
+        );
+        match case {
+            "missing-tag" => version.tags.clear(),
+            "wrong-classification-reason" => version.classification_reason.clear(),
+            _ => {}
+        }
+        // Freeze fresh canonical bytes and bind both hashes and the head to them.
+        // Neither changed field is projected, so this is not projection drift.
+        insert_project_memory_version(&mut store, &project, &version);
+        let integrity = store.verify_all().expect("doctor scan");
+        let saved = store.save_work_graph_snapshot(
+            &project,
+            &actor("save-session"),
+            None,
+            WorkGraphSnapshotDestinationKind::Stdout,
+            at(2),
+            &DevelopmentNoopRedactor,
+        );
+        if case == "valid" {
+            assert!(integrity.is_healthy(), "{integrity:?}");
+            assert_eq!(
+                saved
+                    .expect("valid shape saves")
+                    .document
+                    .body
+                    .memories
+                    .len(),
+                1
+            );
+        } else {
+            assert!(
+                integrity
+                    .invalid_objects
+                    .contains(&format!("memory_head:{}", version.memory_id.0)),
+                "{case}: {integrity:?}"
+            );
+            assert!(
+                integrity
+                    .invalid_objects
+                    .iter()
+                    .all(|entry| ObjectHash::from_stored(entry.clone()).is_none()),
+                "{case}: canonical hashes must remain valid: {integrity:?}"
+            );
+            assert!(
+                matches!(
+                    saved,
+                    Err(StoreError::InvalidMemoryProjection(ref message))
+                        if message == "keyed project memory has invalid canonical shape: version fields do not match the fixed project-episode contract"
+                ),
+                "{case}: {saved:?}"
+            );
+        }
+        assert_eq!(
+            store
+                .work_graph_snapshot_save_audits(&project)
+                .expect("save audits")
+                .len(),
+            usize::from(case == "valid"),
+            "{case}: refused saves must not record disclosure"
+        );
+    }
 }
 
 #[test]

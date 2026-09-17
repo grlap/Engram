@@ -1468,6 +1468,10 @@ fn memories_on(
     Ok((memories, redacted))
 }
 
+// Projection/redaction only: this helper does not validate keyed-memory shape.
+// Production callers in memories_on validate canonical versions and their
+// assertion history before projecting them. Direct unit fixtures can exercise
+// sensitivity branches without claiming those shapes are admissible live writes.
 fn snapshot_active_memory(
     version: crate::MemoryVersion,
     widened: bool,

@@ -2606,8 +2606,12 @@ test("file intake notifies ordinary CLI and MCP reads without steering local wor
       draft: { title: "Authored local title", outcome: "Authored local outcome" },
     };
     let importingSession = session;
+    // Match McpClient's default attribution: host context must not alter this fixture.
+    const importEnvironment = { ...process.env };
+    delete importEnvironment.ENGRAM_ACTOR_CONTEXT;
     const invoke = (...args) => spawnSync(binary, ["--home", engramHome, "import",
-      "--actor-id", importingSession, "--session-id", importingSession, ...args], { cwd: root, encoding: "utf8" });
+      "--actor-id", importingSession, "--session-id", importingSession, ...args],
+      { cwd: root, encoding: "utf8", env: importEnvironment });
     const json = (...args) => {
       const result = invoke(...args);
       assert.equal(result.status, 0, result.stderr);
@@ -2657,9 +2661,10 @@ test("file intake notifies ordinary CLI and MCP reads without steering local wor
     assert.equal(afterSource.local_work_unchanged_by_notices, undefined);
     assert.match(afterSource.detail, /engram import lookup -- 'planner' 'plan\/item-1'/u);
     assert.deepEqual(cliJson(engramHome, session, "show", work_ref), after);
-    const peerChanges = receipt(await client.call("next", { peek: true })).changes
+    const peerOrientation = receipt(await client.call("next", { peek: true }));
+    const peerChanges = peerOrientation.changes
       .filter((line) => line.includes("external source changed"));
-    assert.equal(peerChanges.length, 2);
+    assert.equal(peerChanges.length, 2, JSON.stringify(peerOrientation));
     for (const line of peerChanges) {
       assert.match(line, /by peer-[0-9a-f]{24}/u);
       assert.ok(line.includes(work_ref));
