@@ -91,7 +91,7 @@ impl SqliteStore {
             attempted_at: exported_at,
         };
         inspect_serialized_strings(redactor, &serde_json::to_value(&saved)?)?;
-        let saved_object = CanonicalObject::freeze(&saved)?;
+        let saved_object = CanonicalObject::mint(&saved)?;
         let audit = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -135,7 +135,7 @@ impl SqliteStore {
                 let hash = ObjectHash::from_stored(stored_hash.clone())
                     .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
                 let event: WorkGraphSnapshotSavedEvent =
-                    CanonicalObject::verify(&hash, bytes)?.decode()?;
+                    CanonicalObject::stored(&hash, bytes)?.decode()?;
                 validate_saved_event(&event, Some(project_id))?;
                 Ok(event)
             })
@@ -186,7 +186,7 @@ impl SqliteStore {
                 let hash = ObjectHash::from_stored(stored_hash.clone())
                     .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
                 let event: WorkGraphSnapshotSavedEvent =
-                    CanonicalObject::verify(&hash, bytes)?.decode()?;
+                    CanonicalObject::stored(&hash, bytes)?.decode()?;
                 validate_saved_event(&event, Some(project_id))?;
                 Ok(event)
             })
@@ -244,7 +244,7 @@ impl SqliteStore {
                 let hash = ObjectHash::from_stored(stored_hash.clone())
                     .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
                 let event: WorkGraphSnapshotLoadedEvent =
-                    CanonicalObject::verify(&hash, bytes)?.decode()?;
+                    CanonicalObject::stored(&hash, bytes)?.decode()?;
                 validate_loaded_event(&event, Some(project_id))?;
                 Ok(event)
             })
@@ -283,7 +283,7 @@ pub(super) fn verify_work_graph_snapshot_saved_events_on(
     for (stored_hash, bytes) in &rows {
         let valid = ObjectHash::from_stored(stored_hash.clone())
             .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
-            .and_then(|hash| CanonicalObject::verify(&hash, bytes.clone()))
+            .and_then(|hash| CanonicalObject::stored(&hash, bytes.clone()))
             .and_then(|object| object.decode::<WorkGraphSnapshotSavedEvent>())
             .and_then(|event| {
                 validate_saved_event(&event, None)?;
@@ -315,7 +315,7 @@ pub(super) fn verify_work_graph_snapshot_saved_events_on(
     for (stored_hash, bytes) in loaded_rows {
         let valid = ObjectHash::from_stored(stored_hash.clone())
             .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
-            .and_then(|hash| CanonicalObject::verify(&hash, bytes))
+            .and_then(|hash| CanonicalObject::stored(&hash, bytes))
             .and_then(|object| object.decode::<WorkGraphSnapshotLoadedEvent>())
             .and_then(|event| {
                 validate_loaded_event(&event, None)?;
@@ -394,7 +394,7 @@ pub(in crate::storage) fn work_graph_snapshot_load_origin_on(
     })?;
     let hash = ObjectHash::from_stored(stored_hash.clone())
         .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-    let event: WorkGraphSnapshotLoadedEvent = CanonicalObject::verify(&hash, bytes)?.decode()?;
+    let event: WorkGraphSnapshotLoadedEvent = CanonicalObject::stored(&hash, bytes)?.decode()?;
     validate_loaded_event(&event, Some(project_id))?;
     Ok(event)
 }
@@ -859,7 +859,7 @@ fn load_verified_value_on(
             requested: required_kind.into(),
         });
     }
-    CanonicalObject::verify(hash, stored.1)?.decode()
+    CanonicalObject::stored(hash, stored.1)?.decode()
 }
 
 fn notes_for_item_on(
@@ -931,7 +931,7 @@ fn notes_for_item_on(
                 requested: "work_restored_evidence".into(),
             });
         }
-        let evidence: RestoredWorkEvidence = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        let evidence: RestoredWorkEvidence = CanonicalObject::stored(&hash, bytes)?.decode()?;
         let projection_matches = evidence.work_id == work_id
             && evidence.restored_record.as_str() == record_hash
             && evidence.gate.as_ref().map(|gate| gate.name.as_str()) == gate_name.as_deref()
@@ -1000,7 +1000,7 @@ fn snapshot_note_from_row(
     let (stored_kind, stored_hash, object_kind, bytes) = row;
     let hash = ObjectHash::from_stored(stored_hash.clone())
         .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-    let object = CanonicalObject::verify(&hash, bytes)?;
+    let object = CanonicalObject::stored(&hash, bytes)?;
     let (note, expected_kind) = match object_kind.as_str() {
         "work_evidence" => {
             let evidence: WorkEvidence = object.decode()?;

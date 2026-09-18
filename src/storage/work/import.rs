@@ -179,6 +179,37 @@ pub(in crate::storage) fn validate_restored_source_notices_on(
 
 // Membership is a navigation probe, not an integrity audit. Select only a
 // matching inherited container; omitted captures belong to doctor/export.
+/// The stored snapshot of this source, already known to `item`, whose content
+/// equals `bytes`. Equal content is found by comparing the stored bytes.
+fn known_snapshot_on(
+    connection: &Connection,
+    item: &WorkItem,
+    source: &WorkSourceKey,
+    bytes: &[u8],
+) -> Result<Option<ObjectHash>, StoreError> {
+    let mut statement = connection.prepare(
+        "SELECT object_hash FROM objects INDEXED BY objects_work_source_key
+         WHERE object_kind = 'work_source_snapshot'
+           AND json_extract(canonical_json, '$.adapter_kind') = ?1
+           AND json_extract(canonical_json, '$.canonical_ref') = ?2
+           AND canonical_json = ?3
+         ORDER BY object_hash",
+    )?;
+    let ids = statement
+        .query_map(
+            params![source.adapter_kind, source.canonical_ref, bytes],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    for id in ids {
+        let id = ObjectHash::from_stored(id.clone()).ok_or(StoreError::InvalidStoredHash(id))?;
+        if source_snapshot_known_on(connection, item, &id)? {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
+}
+
 fn source_snapshot_known_on(
     connection: &Connection,
     item: &WorkItem,
@@ -430,17 +461,18 @@ fn preview_on(
     project: &ProjectId,
     input: &WorkImportInput,
 ) -> Result<WorkImportPreview, StoreError> {
-    let snapshot = CanonicalObject::freeze(&input.snapshot)?;
+    let content = CanonicalObject::freeze(&input.snapshot)?;
     let source_key = key(&input.snapshot);
     let item = source_item_on(connection, project, &source_key)?;
+    let mut known = None;
     let effect = if let Some(item) = &item {
-        let known = source_snapshot_known_on(connection, item, snapshot.hash())?;
+        known = known_snapshot_on(connection, item, &source_key, content.bytes())?;
         if input.draft.is_some() {
             return Err(invalid(
                 "source refresh takes no local draft; omit draft and author local changes separately with work update",
             ));
         }
-        if known {
+        if known.is_some() {
             WorkImportEffect::AlreadyKnown
         } else {
             WorkImportEffect::Notify
@@ -457,7 +489,7 @@ fn preview_on(
     Ok(WorkImportPreview {
         project_id: project.clone(),
         source_key,
-        snapshot: snapshot.hash().clone(),
+        snapshot: known,
         effect,
         work_id: item.as_ref().map(|item| item.work_id),
         work_ref: item.as_ref().map(|item| item.short_ref.clone()),
@@ -627,7 +659,10 @@ impl SqliteStore {
             let item = load_work_item(&transaction, id)?;
             latest_source_notice_on(&transaction, &item)?;
         }
-        let snapshot = CanonicalObject::freeze(&input.snapshot)?;
+        let snapshot = match &preview.snapshot {
+            Some(known) => CanonicalObject::identified(known, &input.snapshot)?,
+            None => CanonicalObject::mint(&input.snapshot)?,
+        };
         Self::insert_object(&transaction, "work_source_snapshot", &snapshot)?;
         let item = if let Some(id) = preview.work_id {
             load_work_item(&transaction, id)?
@@ -696,7 +731,7 @@ impl SqliteStore {
                 },
             };
             validate_proposal_on(&transaction, &item, &proposal)?;
-            let object = CanonicalObject::freeze(&proposal)?;
+            let object = CanonicalObject::mint(&proposal)?;
             Self::insert_object(&transaction, "work_source_proposal", &object)?;
             append_to_work_feeds(
                 &transaction,

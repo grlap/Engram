@@ -31,7 +31,7 @@ local mutation, and a lease-backed local-mutation turn. Per-action mediation,
 the full lease recovery/handoff lifecycle, and controlled finalization remain
 on the V1 path below.
 
-- Rust core; local SQLite canonical store (append-only, content-addressed)
+- Rust core; local SQLite canonical store (append-only, minted record ids)
   with stable project identity, WAL multi-process access, ordered task events,
   and derived FTS5 tables — [SQLite store](features/sqlite-store.md)
 - First-class local work graph: parent forest, transactionally cycle-checked

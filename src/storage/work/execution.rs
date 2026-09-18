@@ -302,7 +302,7 @@ fn append_restored_work_evidence_on(
         ),
         created_at: recorded_at,
     };
-    let object = CanonicalObject::freeze(&evidence)?;
+    let object = CanonicalObject::mint(&evidence)?;
     SqliteStore::insert_object(transaction, "work_restored_evidence", &object)?;
     transaction.execute(
         "INSERT INTO work_restored_evidence (
@@ -1334,7 +1334,7 @@ fn persist_work_checkpoint_on(
         actor: actor.clone(),
         created_at: checkpointed_at,
     };
-    let object = CanonicalObject::freeze(&checkpoint)?;
+    let object = CanonicalObject::mint(&checkpoint)?;
     SqliteStore::insert_object(transaction, "work_checkpoint", &object)?;
     append_to_work_feeds(
         transaction,
@@ -1392,7 +1392,7 @@ fn persist_work_evidence_on(
     evidence: &WorkEvidence,
 ) -> Result<ObjectHash, StoreError> {
     validate_evidence_phase_marker(WorkLifecycle::Open, &evidence.actor)?;
-    let object = CanonicalObject::freeze(evidence)?;
+    let object = CanonicalObject::mint(evidence)?;
     SqliteStore::insert_object(transaction, "work_evidence", &object)?;
     transaction.execute(
         "INSERT INTO work_run_evidence (evidence_hash, work_id, run_id)
@@ -1709,7 +1709,7 @@ fn persist_post_completion_work_evidence_on(
     evidence: &WorkEvidence,
 ) -> Result<ObjectHash, StoreError> {
     validate_evidence_phase_marker(WorkLifecycle::Completed, &evidence.actor)?;
-    let object = CanonicalObject::freeze(evidence)?;
+    let object = CanonicalObject::mint(evidence)?;
     SqliteStore::insert_object(transaction, "work_evidence", &object)?;
     transaction.execute(
         "INSERT INTO work_run_evidence (evidence_hash, work_id, run_id)
@@ -1996,7 +1996,7 @@ fn load_work_evidence_selection_rows_on(
                     "run evidence projection names missing canonical bytes {hash}"
                 ))
             })?;
-            let object = CanonicalObject::verify(&hash, bytes)?;
+            let object = CanonicalObject::stored(&hash, bytes)?;
             let (kind, environment, canonical_work, canonical_run) = match object_kind.as_str() {
                 "work_evidence" => {
                     let evidence: WorkEvidence = object.decode()?;

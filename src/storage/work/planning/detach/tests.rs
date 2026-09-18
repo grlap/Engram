@@ -3,9 +3,8 @@ use crate::storage::work::canonical_work_events_for_item;
 use crate::storage::work::query::{inspect_work_on, load_root_execution};
 use crate::storage::work::test_support::*;
 use crate::{
-    AddWorkBlockerRequest, CanonicalObject, ChangeWorkPrerequisiteRequest, ClaimWorkRequest,
-    DecomposeWorkRequest, ReviseWorkRequest, SessionId, WorkAvailability, WorkBlockerKind,
-    WorkReadinessReason,
+    AddWorkBlockerRequest, ChangeWorkPrerequisiteRequest, ClaimWorkRequest, DecomposeWorkRequest,
+    ReviseWorkRequest, SessionId, WorkAvailability, WorkBlockerKind, WorkReadinessReason,
 };
 
 fn fixture(claim_child: bool) -> (SqliteStore, WorkItem, WorkItem) {
@@ -121,7 +120,14 @@ fn detach_refuses_a_canonically_bound_run_from_another_root() {
         .expect("child history")
         .pop()
         .expect("child event");
-    let original = crate::CanonicalObject::freeze(&event).expect("original event");
+    let event_id: String = store
+        .connection
+        .query_row(
+            "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+            [child.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .expect("child latest event");
     event.run.as_mut().expect("child run").root_execution_id = foreign_run.root_execution_id;
     let forged = crate::CanonicalObject::freeze(&event).expect("forged event");
     let run = event.run.as_ref().expect("forged run");
@@ -131,7 +137,15 @@ fn detach_refuses_a_canonically_bound_run_from_another_root() {
         .connection
         .transaction()
         .expect("corruption transaction");
-    SqliteStore::insert_object(&transaction, "work_event", &forged).expect("forged object");
+    assert_eq!(
+        transaction
+            .execute(
+                "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+                params![event_id, forged.bytes()],
+            )
+            .expect("forged event"),
+        1
+    );
     transaction
         .execute(
             "UPDATE work_runs SET root_execution_id = ?2, run_json = ?3 WHERE run_id = ?1",
@@ -142,18 +156,6 @@ fn detach_refuses_a_canonically_bound_run_from_another_root() {
             ],
         )
         .expect("forged run binding");
-    transaction
-        .execute(
-            "UPDATE work_feed_entries SET object_hash = ?2 WHERE object_hash = ?1",
-            params![original.hash().as_str(), forged.hash().as_str()],
-        )
-        .expect("forged feed binding");
-    transaction
-        .execute(
-            "UPDATE work_items SET latest_event_hash = ?2 WHERE work_id = ?1",
-            params![child.work_id.0.to_string(), forged.hash().as_str()],
-        )
-        .expect("forged item binding");
     transaction.commit().expect("commit corruption");
     assert_eq!(
         *run,
@@ -216,17 +218,13 @@ fn detach_catalog_is_projection_only_but_mutation_checks_canonical_ancestry() {
     );
     assert!(matches!(
         store.inspect_work(root.work_id, at(5004)),
-        Err(StoreError::HashMismatch { .. })
+        Err(StoreError::Json(_))
     ));
     let before = test_database_shape_snapshot(&store.connection).expect("before");
     let error = store
         .detach_work(&request(&child), &DevelopmentNoopRedactor)
         .expect_err("write verifies ancestry");
-    let StoreError::HashMismatch { expected, actual } = error else {
-        panic!("wrong refusal: {error:?}")
-    };
-    assert_eq!(expected.as_str(), hash);
-    assert_eq!(actual, crate::ObjectHash::from_canonical_bytes(b"{}"));
+    assert!(matches!(error, StoreError::Json(_)), "{error:?}");
     assert_eq!(
         test_database_shape_snapshot(&store.connection).expect("after"),
         before
@@ -420,7 +418,7 @@ fn detach_admission_is_leaf_first_and_does_not_take_over_live_claims() {
     )
     .expect("root completes without hidden barrier");
     let accounting = store
-        .completion_root_execution(CanonicalObject::freeze(&seal).unwrap().hash())
+        .completion_root_execution(&store.stored_seal_id(&seal))
         .unwrap();
     assert!(
         accounting

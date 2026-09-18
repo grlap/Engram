@@ -4,7 +4,7 @@
 > [context packets](context-packets.md), [write policy & review](write-policy-and-review.md).
 
 A memory in Engram is not a string — it is a stable identity plus an
-append-only chain of immutable, content-addressed versions, classified along
+append-only chain of immutable versions under minted ids, classified along
 three orthogonal axes.
 
 ## The three axes

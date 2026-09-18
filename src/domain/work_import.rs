@@ -73,7 +73,9 @@ pub enum WorkImportEffect {
 pub struct WorkImportPreview {
     pub project_id: ProjectId,
     pub source_key: WorkSourceKey,
-    pub snapshot: ObjectHash,
+    /// The stored snapshot with this content that the item already knows;
+    /// absent when applying would store a new snapshot.
+    pub snapshot: Option<ObjectHash>,
     pub effect: WorkImportEffect,
     pub work_id: Option<WorkId>,
     pub work_ref: Option<String>,

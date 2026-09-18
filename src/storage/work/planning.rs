@@ -727,7 +727,7 @@ impl SqliteStore {
             created_by: request.actor.clone(),
             created_at: request.blocked_at,
         };
-        let blocker_object = CanonicalObject::freeze(&blocker)?;
+        let blocker_object = CanonicalObject::mint(&blocker)?;
         SqliteStore::insert_object(&transaction, "work_blocker", &blocker_object)?;
         item.revision += 1;
         item.updated_at = request.blocked_at;

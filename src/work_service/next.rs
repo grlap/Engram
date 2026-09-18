@@ -198,7 +198,7 @@ impl LocalWorkService {
                         change.entry.position.position
                     });
                 let omitted_count = candidate_count - changes.len();
-                let payload = CanonicalObject::freeze(&StagedWorkChangePage {
+                let payload = serde_json_canonicalizer::to_vec(&StagedWorkChangePage {
                     schema_version: SCHEMA_VERSION,
                     changes: changes.clone(),
                     omitted_count,

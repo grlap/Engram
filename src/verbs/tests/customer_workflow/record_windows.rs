@@ -595,8 +595,12 @@ fn record_windows_refuse_expired_fractional_cuts_and_keep_detail_canonical() {
         )
         .unwrap_err();
     // Direct reads preserve the storage error, unlike the done advisory's
-    // redacted error-class marker. Pin canonical verification itself.
-    assert!(matches!(error.error, StoreError::HashMismatch { .. }));
+    // redacted error-class marker: the damaged note no longer decodes.
+    assert!(
+        matches!(error.error, StoreError::Json(_)),
+        "{:?}",
+        error.error
+    );
     connection
         .execute(
             "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",

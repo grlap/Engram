@@ -10,6 +10,7 @@ use super::{
     normalize_control_policy_actor, normalize_control_policy_idempotency_key,
     normalize_control_text, params,
 };
+use rusqlite::OptionalExtension;
 
 #[cfg(test)]
 mod tests;
@@ -128,7 +129,7 @@ impl SqliteStore {
             reason,
             decided_at: now,
         };
-        let authority_object = CanonicalObject::freeze(&authority)?;
+        let authority_object = CanonicalObject::mint(&authority)?;
         if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
@@ -153,7 +154,7 @@ impl SqliteStore {
             activated_at: now,
         };
         Self::validate_control_policy_shape(&policy)?;
-        let policy_object = CanonicalObject::freeze(&policy)?;
+        let policy_object = CanonicalObject::mint(&policy)?;
         Self::insert_object(&transaction, "control_policy", &policy_object)?;
         transaction.execute(
             "INSERT INTO control_policy_versions (
@@ -252,13 +253,13 @@ impl SqliteStore {
         redactor
             .inspect(&reason)
             .map_err(StoreError::RedactionRefused)?;
-        let rule_set_object = CanonicalObject::freeze(rule_set)?;
+        let requested = CanonicalObject::freeze(rule_set)?;
         let idempotency_key = normalize_control_policy_idempotency_key(idempotency_key)?;
         let intent =
             CanonicalObject::freeze(&ControlPolicyOperationFingerprint::SetObligationRuleSet {
                 fingerprint_schema_version: CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION,
                 idempotency_key,
-                obligation_rule_set: rule_set_object.hash(),
+                obligation_rule_set: requested.hash(),
                 authorized_by: &authorized_by,
                 reason: &reason,
                 expected_policy,
@@ -295,7 +296,12 @@ impl SqliteStore {
         let (active_policy, _) =
             Self::load_control_policy_version(&transaction, &current.policy_hash)?;
         let current_rule_set = current.obligation_rule_set.clone();
-        if current_rule_set == *rule_set_object.hash() {
+        let current_bytes = Self::load_control_object_bytes(
+            &transaction,
+            &current_rule_set,
+            "obligation_rule_set",
+        )?;
+        if current_bytes == requested.bytes() {
             let (policy, _) =
                 Self::load_control_policy_version(&transaction, &current.policy_hash)?;
             let receipt = ObligationRuleSetUpdateReceipt {
@@ -320,6 +326,29 @@ impl SqliteStore {
             return Ok(receipt);
         }
 
+        // Returning to a rule set an earlier policy named reuses that record;
+        // equal content is found by comparing the stored bytes.
+        let earlier: Option<String> = transaction
+            .query_row(
+                "SELECT rule_set.object_hash
+                 FROM control_policy_versions version
+                 JOIN objects rule_set
+                   ON rule_set.object_hash =
+                      json_extract(version.policy_json, '$.obligation_rule_set')
+                 WHERE rule_set.object_kind = 'obligation_rule_set'
+                   AND rule_set.canonical_json = ?1
+                 ORDER BY version.policy_epoch LIMIT 1",
+                [requested.bytes()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let rule_set_object = match earlier {
+            Some(id) => CanonicalObject::identified(
+                &ObjectHash::from_stored(id.clone()).ok_or(StoreError::InvalidStoredHash(id))?,
+                rule_set,
+            )?,
+            None => CanonicalObject::mint(rule_set)?,
+        };
         Self::insert_object(&transaction, "obligation_rule_set", &rule_set_object)?;
         let next_epoch = current.epoch.0.checked_add(1).ok_or_else(|| {
             StoreError::InvalidControlProjection("control policy epoch overflowed".into())
@@ -336,7 +365,7 @@ impl SqliteStore {
             reason,
             decided_at: now,
         };
-        let authority_object = CanonicalObject::freeze(&authority)?;
+        let authority_object = CanonicalObject::mint(&authority)?;
         if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
@@ -361,7 +390,7 @@ impl SqliteStore {
             activated_at: now,
         };
         Self::validate_control_policy_shape(&policy)?;
-        let policy_object = CanonicalObject::freeze(&policy)?;
+        let policy_object = CanonicalObject::mint(&policy)?;
         Self::insert_object(&transaction, "control_policy", &policy_object)?;
         transaction.execute(
             "INSERT INTO control_policy_versions (
@@ -542,7 +571,7 @@ impl SqliteStore {
             reason,
             decided_at: now,
         };
-        let authority_object = CanonicalObject::freeze(&authority)?;
+        let authority_object = CanonicalObject::mint(&authority)?;
         if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
@@ -567,7 +596,7 @@ impl SqliteStore {
             activated_at: now,
         };
         Self::validate_control_policy_shape(&policy)?;
-        let policy_object = CanonicalObject::freeze(&policy)?;
+        let policy_object = CanonicalObject::mint(&policy)?;
         Self::insert_object(&transaction, "control_policy", &policy_object)?;
         transaction.execute(
             "INSERT INTO control_policy_versions (

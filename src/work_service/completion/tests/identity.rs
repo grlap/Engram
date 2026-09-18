@@ -274,7 +274,10 @@ fn keyless_completion_finishes_its_original_pending_attempt_after_core_commit() 
     };
     assert_eq!(replay.run_id, seal.run_id);
     assert_eq!(replay.completed_at, seal.completed_at);
-    assert_eq!(replay.seal, *CanonicalObject::freeze(&seal).unwrap().hash());
+    assert_eq!(
+        replay.seal,
+        service.store().expect("store").stored_seal_id(&seal)
+    );
     assert_eq!(
         attempts(&service),
         vec![(key, true)],

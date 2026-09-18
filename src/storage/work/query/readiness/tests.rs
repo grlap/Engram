@@ -719,10 +719,8 @@ fn advisory_child_readiness_does_not_replace_completion_proof_validation() {
             .complete_work(&request, &DevelopmentNoopRedactor)
             .expect_err("completion must verify the damaged proof");
         match (damage, error) {
-            (ProofDamage::SealBytes, StoreError::HashMismatch { expected, actual }) => {
-                assert_eq!(expected.as_str(), hash);
-                assert_eq!(actual, ObjectHash::from_canonical_bytes(b"{}"));
-            }
+            // The damaged seal no longer decodes as a completion seal.
+            (ProofDamage::SealBytes, StoreError::Json(_)) => {}
             (ProofDamage::MissingWaiverEvent, StoreError::InvalidWorkProjection(reason)) => {
                 assert_eq!(
                     reason,

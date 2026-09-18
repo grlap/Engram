@@ -209,7 +209,7 @@ reasons, actor ids, actor contexts, memory bodies — must already be normalized
 and free of unsafe control/format characters (carried prose admits newlines
 and tabs), while gates, actor attribution, and memory
 bodies also pass their live count and byte bounds. One failing field refuses
-the whole file as corrupt, because records are content-addressed and nothing
+the whole file as corrupt, because records are stored as written and nothing
 is normalized on load. A refused
 load leaves the destination exactly as it found it. The configured Redactor
 inspects every string in the raw document before the write transaction;
@@ -219,9 +219,9 @@ lands, or nothing does.
 
 - Items land with their original ids, refs, relations, lifecycle, blockers,
   origin, and source snapshot id, plus a `restored` provenance marker.
-  Source snapshots are re-inserted verbatim; because canonical objects are
-  content-addressed, every exported `source_snapshot_id` resolves to the same
-  hash it had before. A placeholder lands as a placeholder with a `redacted`
+  Source snapshots are re-inserted verbatim under the id the file gives
+  them, so every exported `source_snapshot_id` resolves to the same record
+  it named before. A placeholder lands as a placeholder with a `redacted`
   provenance marker and stays inert.
 - **Planning state survives; execution state does not.** Lifecycle,
   blockers, prerequisites, deferral, and assignment load exactly. No run,
@@ -235,8 +235,10 @@ lands, or nothing does.
   parent whose earlier generation waived a required child sees that waiver
   in its restored history only; sealing the restored generation needs a
   fresh `update --waive CHILD --reason "…"`, exactly as after a reopen.
-- **History lands as inert `RestoredRecord`s**, content-addressed and minted
-  only by load. Each inherited layer is re-inserted verbatim, so its identity
+- **History lands as inert `RestoredRecord`s**, minted only by load. The
+  file's own native layer becomes a record with a newly minted id at each load,
+  while each inherited layer is re-inserted verbatim under the id the file gives
+  it, so its identity
   is unchanged across generations, and the file's native layer becomes one
   new record binding the project id, full planning-item snapshot, relation
   basis, generation index, and history payload — not the file, cut, or load
@@ -321,8 +323,8 @@ A store that was loaded and then worked on saves both histories: the
 inherited `RestoredRecord`s verbatim and its own native layer, so the chain
 build A → B → C keeps A's restoration provenance, B's work, and nothing
 twice — a load of the same file, or of a later save carrying the same
-layers, into another fresh store re-inserts the same content-addressed
-records rather than minting new ones.
+layers, into another fresh store re-inserts the same records under the ids
+the file gives them rather than minting new ones.
 
 ## Words
 

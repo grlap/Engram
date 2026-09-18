@@ -136,9 +136,10 @@ impl SqliteStore {
         work_run_evidence_on(&self.connection, run_id)
     }
 
-    /// Returns a bounded, hash-verified selection basis for one focus page.
-    /// Candidate identity is chosen only by the immutable evidence hash; the
-    /// canonical kind and environment binding are verified before selection.
+    /// Returns a bounded selection basis for one focus page. A candidate is
+    /// chosen only by its evidence record's id; the record's canonical kind and
+    /// environment binding are checked against the run projection before
+    /// selection.
     pub(crate) fn work_run_evidence_projection(
         &self,
         run_id: WorkRunId,
@@ -194,8 +195,9 @@ impl SqliteStore {
             .transpose()
     }
 
-    /// Returns hash-verified obligation definitions and terminal resolutions
-    /// for one exact run in trigger order.
+    /// Returns obligation definitions and terminal resolutions for one exact
+    /// run in trigger order, each decoded from its record and checked against
+    /// the run's durable projection.
     ///
     /// # Errors
     ///
@@ -1424,7 +1426,7 @@ fn decode_canonical_work_event(stored: (String, Vec<u8>)) -> Result<WorkEvent, S
     let (stored_hash, bytes) = stored;
     let hash = ObjectHash::from_stored(stored_hash.clone())
         .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-    CanonicalObject::verify(&hash, bytes)?.decode()
+    CanonicalObject::stored(&hash, bytes)?.decode()
 }
 
 pub(super) fn load_work_item_projection(
@@ -1735,7 +1737,7 @@ fn native_work_event_optional(
     if kind != "work_event" {
         return Ok(None);
     }
-    Ok(Some(CanonicalObject::verify(hash, bytes)?.decode()?))
+    Ok(Some(CanonicalObject::stored(hash, bytes)?.decode()?))
 }
 
 fn restored_work_evidence_for_item(

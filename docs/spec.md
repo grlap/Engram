@@ -84,7 +84,7 @@ knowledge graph or process scheduler.**
 - **Typed, not a bag of strings.** A hard constraint, a design decision, and
   a session anecdote have different delivery requirements; the model encodes
   that (§2.2).
-- **Append-only truth.** Records are immutable and content-addressed; state
+- **Append-only truth.** Records are immutable and named by a minted id; state
   is derived. Nothing is edited in place, so history and audit come for free
   (§2.4, §3).
 - **Budgeted delivery.** Injection operates under hard byte budgets with
@@ -121,8 +121,8 @@ knowledge graph or process scheduler.**
 
 A **memory** is a stable identity (`mem-<hash>`, collision-resistant for
 concurrent writers) plus an append-only chain of immutable **versions**. A
-version is content-addressed (its id is the hash of its canonical
-serialization) and names its parent version(s). Asserting a change creates a
+version has a minted id (a random UUID, independent of its bytes) and names
+its parent version(s). Asserting a change creates a
 new version; it never mutates history. A memory with multiple unsuperseded
 head versions is *contested* (§6.3).
 
@@ -176,7 +176,7 @@ team scope activate with a shared backend later (§3.2–3.3, §12).
 
 ```
 Version {
-  version_id      // sha-256 of canonical serialization
+  version_id      // minted random UUID; never derived from the bytes
   memory_id       // stable identity: mem-<hash>
   project_key?    // safe permanent key for the constrained project-episode surface
   parents[]       // prior version ids; >1 = conflict resolution (§6.3)
@@ -597,9 +597,9 @@ contract are specified in the
 ### 3.1 V1 canonical store: local SQLite, append-only
 
 V1's canonical store is a **local SQLite database** holding the same
-immutable, content-addressed objects the model defines (§2.4): versions,
-events, edges, and evidence as append-only rows keyed by their content hash,
-written transactionally. Append-only is a semantic contract enforced by the
+immutable objects the model defines (§2.4): versions, events, edges, and
+evidence as append-only rows keyed by their minted id, written
+transactionally. Append-only is a semantic contract enforced by the
 core, not a hope — nothing updates or deletes object rows except the purge
 runbook (§6.5).
 
@@ -625,7 +625,7 @@ stores as a global sequence number.
 
 ```
 engram.db
-  objects      // content-addressed rows: versions, events, edges, evidence — write-once
+  objects      // rows keyed by minted id: versions, events, edges, evidence — write-once
   projections  // exact-current heads/status/order plus rebuildable indexes and FTS5
   control.*    // live grants + bounded diagnostics — operational, never memory
   meta         // current-build marker; refuses stores created by another build
@@ -635,8 +635,9 @@ Runtime heads, status, ordering, authority, and idempotency tables are durable
 parts of the exact-current store and are recovered from a verified current
 backup. `engram doctor --repair-projections` rebuilds only declared indexes,
 triggers, and FTS5 content from those verified durable rows; it never recreates
-durable tables from `objects`. `engram doctor` verifies hashes, graph references,
-projection bindings, and index freshness. `local` mode relies on SQLite
+durable tables from `objects`. `engram doctor` checks that stored records decode
+and agree, along with graph references, projection bindings, and index freshness
+(§3.1.1). `local` mode relies on SQLite
 transactions. An optional
 deterministic recovery snapshot and verified restore provide
 `local_backed_up`. Sequential off-host transfer under one active host provides
@@ -646,23 +647,26 @@ operation.
 
 #### 3.1.1 Canonical-bytes contract
 
-Content addressing is only as interoperable as its byte-level definition, so
-the contract is part of the spec, not an implementation detail:
+Stored bytes and identity are separate concerns, and the contract is part of
+the spec, not an implementation detail:
 
-- Objects serialize as **RFC 8785 (JCS) canonical JSON**, UTF-8.
-- `version_id` = SHA-256 over the canonical bytes, with the hash field itself
-  excluded; the object's storage key — SQLite row key today, filename in a
-  portable/shared backend (§3.2–3.3) — is that hash.
-- Hashes are **verified at read time**, so `engram doctor` distinguishes
-  corruption from formatting drift.
+- Objects serialize as **RFC 8785 (JCS) canonical JSON**, UTF-8, so equal
+  content has equal bytes and can be compared directly.
+- An object's id is a **random UUID minted when it is stored**. The id is the
+  storage key — SQLite row key today, filename in a portable/shared backend
+  (§3.2–3.3) — and the only thing a link holds. It never depends on the
+  bytes, so a record can be re-expressed in a new shape under the id it has,
+  and no link ever needs rewriting. Ids written before this rule are 64 hex
+  digits and remain valid as opaque strings.
+- A **SHA-256 over canonical bytes is a content fingerprint**: it compares
+  content (idempotency intents, snapshot bodies, build identity). It is never
+  an id or a link, and it is not a corruption check. SQLite guards the bytes
+  on disk; `engram doctor` checks that stored rows decode and agree.
 - Every executable object carries the exact supported schema version.
   State from a different build is refused rather than interpreted.
 - State changes mint new objects; they never rewrite old ones.
-
-Without this contract, two implementations could mint different hashes for
-semantically identical records, and integrity checking would be impossible to
-define. It holds regardless of substrate — which is what keeps the deferred
-backend below a drop-in.
+- A whole store changes format by [plain JSON export and
+  import](features/full-store-migration.md), which carries ids unchanged.
 
 ### 3.2 Optional portable replication
 
@@ -740,26 +744,28 @@ Portable projection is closed, not an arbitrary filtered object subset:
   `portable_projection_incomplete`; a stub may not stand in for executable
   state.
 - A provenance-only reference into excluded private or non-executable content
-  resolves through an `ExclusionStub { target_hash, object_kind, reason,
-  export_policy_hash, stub_hash }`. The stub is a projection record under its
-  own canonical `stub_hash`; it asserts but never impersonates the excluded
-  object's content hash. `doctor` treats a matching stub as deliberately
-  excluded and a missing target/stub as corruption.
+  resolves through an `ExclusionStub { target_id, object_kind, reason,
+  export_policy_hash, stub_id }`. The stub is a projection record under its own
+  minted `stub_id`; it names the excluded object's id and never stands in for
+  its content. `export_policy_hash` is a fingerprint of the policy that was
+  applied, kept for comparison. `doctor` treats a matching stub as deliberately
+  excluded and a missing target/stub as corruption. *(Draft text before
+  2026-09-17 called these `target_hash` and `stub_hash`; ids are minted, not
+  derived, since then.)*
 - An excluded non-semantic feed payload leaves an `ExcludedFeedEntry` binding
-  feed identity, dense position, original event hash, exclusion-stub hash, and
-  policy hash. Positions are never removed or renumbered. A behavior-affecting
+  feed identity, dense position, the original event's id, the exclusion stub's
+  id, and the policy fingerprint. Positions are never removed or renumbered. A behavior-affecting
   shared event cannot be replaced this way and must be included or fail the
   release.
 - Projection of an already canonical object is **pass or exclude, never byte
-  rewrite**. A Redactor may transform a candidate before its canonical id is
-  minted on initial write; it cannot mutate bytes during export while keeping
-  the old hash. Sanitized derivatives are new canonical objects with explicit
-  provenance.
+  rewrite**. A Redactor may transform a candidate before it is first written
+  and its id minted; it cannot mutate bytes during export under the same id.
+  Sanitized derivatives are new canonical objects with explicit provenance.
 
-The manifest coverage hash commits included objects, stubs, excluded feed
-entries, and closure results. `doctor` reports counts/reasons and may claim
+The manifest coverage fingerprint commits included objects, stubs, excluded
+feed entries, and closure results. `doctor` reports counts/reasons and may claim
 `portable` only when executable shared-state closure is complete. Stubs leak
-existence, kind, and hashes; the portable target must be authorized for that
+existence, kind, and ids; the portable target must be authorized for that
 metadata. If policy forbids even stubs, Engram can make a marked-truncated
 backup/export but cannot call it portable or activate it as a working store.
 Acquire requires the same recognized `export_policy_hash`; mismatch refuses
@@ -780,7 +786,7 @@ count, privacy, and lifecycle do not couple to the code remote.
 ### 3.3 Deferred: concurrent cross-host sync
 
 **Deferred, not rejected.** Draft 0.2's shared backend—append-only
-content-addressed objects, set-union object transfer, concurrent heads
+objects under globally unique ids, set-union object transfer, concurrent heads
 surfacing as *contested* (§6.3), and tombstones preventing resurrection—solves
 live cross-host coordination. Same-host concurrent sessions and sequential
 portable handoff are already V1 requirements. Concurrent sync additionally
@@ -1463,7 +1469,7 @@ outcomes:
 | Topic | Fable v1 | Codex position | Merged outcome |
 | --- | --- | --- | --- |
 | Typing | Four species, behavior bound to type | Orthogonal kind / authority / delivery axes; `decision` first-class | **Codex**, plus Fable's derived-default mapping so the simple mental model survives (§2.2) |
-| Identity | Single record, edited via supersedes | Stable id + immutable content-addressed versions with parents | **Codex** (§2.1, §2.4) |
+| Identity | Single record, edited via supersedes | Stable id + immutable content-addressed versions with parents | **Codex** (§2.1, §2.4). *Superseded 2026-09-17: a version's id is a random UUID minted when it is stored, never derived from its bytes; hashes remain content fingerprints only (§3.1.1).* |
 | Storage | SQLite canonical, JSONL export | Git object store canonical; SQLite as disposable derived index | **Codex** (Draft 0.2); superseded by Greg's local-first V1 (SQLite canonical, Git deferred, §3) |
 | Retrieval shape | Three rungs, hard budgets, titles index | Agree; add fail-closed pinned tier, omission manifest, packet hash/explain | **Fable** structure + **Codex** hardening (§4) |
 | Write policy | Trust follows priority; distillation proposes only | Refine by origin × authority; evidence-backed agent writes activate | **Both** — merged matrix (§5) |

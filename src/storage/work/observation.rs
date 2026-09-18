@@ -171,7 +171,7 @@ fn persist_work_observation_on(
     transaction: &Transaction<'_>,
     observation: &WorkObservation,
 ) -> Result<WorkNoteCapture, StoreError> {
-    let object = CanonicalObject::freeze(observation)?;
+    let object = CanonicalObject::mint(observation)?;
     SqliteStore::insert_object(transaction, "work_observation", &object)?;
     insert_projection(transaction, object.hash(), observation)?;
     append_to_work_feeds(
@@ -369,7 +369,7 @@ pub(super) fn rebuild(connection: &Connection) -> Result<(), StoreError> {
         .collect::<Result<Vec<_>, _>>()?;
     for (hash, bytes) in rows {
         let hash = parse_hash(hash)?;
-        let value: WorkObservation = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        let value: WorkObservation = CanonicalObject::stored(&hash, bytes)?.decode()?;
         validate(connection, &value)?;
         insert_projection(connection, &hash, &value)?;
     }

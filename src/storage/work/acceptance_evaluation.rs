@@ -268,7 +268,7 @@ impl SqliteStore {
             attempt_key: attempt.key.clone(),
             created_at: request.recorded_at,
         };
-        let object = CanonicalObject::freeze(&record)?;
+        let object = CanonicalObject::mint(&record)?;
         // The explicit cap is checked on the frozen bytes before any write:
         // a refused record leaves the feed and the newest record untouched.
         if object.bytes().len() > MAX_ACCEPTANCE_EVALUATION_BYTES {

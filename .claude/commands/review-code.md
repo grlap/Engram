@@ -40,7 +40,8 @@ Apply each lens inline in this session. Do not create one child per lens.
 Engram V1 is a Rust, host-local concurrent execution-memory system:
 
 - SQLite+FTS5 is canonical locally; projections are rebuildable.
-- RFC 8785 canonical JSON plus SHA-256 addresses immutable objects.
+- Immutable records are stored as RFC 8785 canonical JSON under a minted UUID
+  id; a SHA-256 over those bytes is a content fingerprint, never an identity.
 - Memory kind, authority, and delivery are orthogonal.
 - Stable project identity unifies sessions/worktrees; task scope is shared and
   agent scope private.

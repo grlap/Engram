@@ -340,7 +340,7 @@ fn claims_recover_across_connections_and_handoff_fences_old_sessions() {
     )
     .expect("complete after current-fence checkpoint");
     let accounting = first
-        .completion_root_execution(CanonicalObject::freeze(&seal).unwrap().hash())
+        .completion_root_execution(&first.stored_seal_id(&seal))
         .unwrap();
     assert_eq!(accounting.waivers.len(), 1);
     assert_eq!(accounting.expected_contributors.len(), 3);

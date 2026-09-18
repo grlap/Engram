@@ -253,14 +253,15 @@ impl FromStr for WorkNextSection {
     }
 }
 
-/// One hash-verified source object at an exact project-feed position, exposed
-/// as an authority-redacted projection. `entry.object_hash` binds the original
-/// canonical bytes; it intentionally does not hash the compact `delivery`.
+/// One source record at an exact project-feed position, exposed as an
+/// authority-redacted projection. `entry.object_hash` is that record's id; a
+/// page is admitted by decoding it and by dense-interval agreement, and the
+/// compact `delivery` is projected from the record, not fingerprinted.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChange {
     /// Transient canonical producer attribution for outer display only. Hydrated
-    /// from verified source bytes on fresh delivery and staged replay; never
-    /// changes the frozen delivery payload or its hash.
+    /// from the source record on fresh delivery and staged replay; never
+    /// changes the frozen delivery payload.
     #[serde(skip)]
     pub(crate) display_producer: Option<(String, Option<SessionId>)>,
     pub entry: WorkFeedEntry,

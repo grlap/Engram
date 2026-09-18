@@ -236,40 +236,6 @@ fn schema_object_namespace_collisions_refuse_on_open_and_repair() {
 }
 
 #[test]
-fn migration_schema_namespace_collisions_refuse_restore_without_output() {
-    use crate::storage::migration::{MigrationError, export_store, restore_source_layout};
-
-    for sql in schema_object_namespace_collision_fixtures() {
-        let directory = crate::test_support::temp_home().unwrap();
-        let source = directory.path().join("source.db");
-        drop(SqliteStore::open_unresolved(&source).unwrap());
-        let connection = Connection::open(&source).unwrap();
-        connection.execute_batch(sql).unwrap();
-        let before_shape = test_database_shape_snapshot(&connection).unwrap();
-        drop(connection);
-        let before = std::fs::read(&source).unwrap();
-        let archive = directory.path().join("archive.db");
-        export_store(&source, &archive).unwrap();
-        let archive_before = std::fs::read(&archive).unwrap();
-        let output = directory.path().join("restored.db");
-        let error = restore_source_layout(&archive, &output).unwrap_err();
-        assert!(
-            matches!(&error, MigrationError::Refused(reason)
-                if reason.starts_with("source schema is not an explicitly supported migration profile")),
-            "{sql}: {error}",
-        );
-        assert!(!output.exists());
-        assert_eq!(std::fs::read(&source).unwrap(), before);
-        assert_eq!(std::fs::read(&archive).unwrap(), archive_before);
-        let connection = Connection::open(&source).unwrap();
-        assert_eq!(
-            test_database_shape_snapshot(&connection).unwrap(),
-            before_shape
-        );
-    }
-}
-
-#[test]
 fn missing_work_schema_metadata_refuses_on_open_and_repair() {
     assert_open_schema_refusal_without_mutation(
         "DROP TABLE work_schema_metadata",
@@ -357,54 +323,6 @@ fn fts_schema_repair_preserves_owned_rebuild_paths() {
             assert!(report.is_healthy(), "{sql}: {report:?}");
             let store = SqliteStore::open(&database).unwrap();
             assert!(store.verify_all().unwrap().is_healthy());
-        }
-    }
-}
-
-#[test]
-fn migration_orphan_fts_schema_shadows_refuse_without_output() {
-    use crate::storage::migration::{MigrationError, export_store, restore_source_layout};
-
-    for table in ["object_fts", "work_catalog_fts"] {
-        for plain_parent in [false, true] {
-            let directory = crate::test_support::temp_home().unwrap();
-            let source = directory.path().join("source.db");
-            drop(SqliteStore::open_unresolved(&source).unwrap());
-            let connection = Connection::open(&source).unwrap();
-            connection
-                .execute_batch(&format!("DROP TABLE {table};"))
-                .unwrap();
-            if plain_parent {
-                connection
-                    .execute_batch(&format!("CREATE TABLE {table}(value TEXT);"))
-                    .unwrap();
-            }
-            connection
-                .execute_batch(&format!(
-                    "CREATE TABLE {table}_data(value TEXT);
-                 INSERT INTO {table}_data VALUES ('preserved');"
-                ))
-                .unwrap();
-            let before_shape = test_database_shape_snapshot(&connection).unwrap();
-            drop(connection);
-            let before = std::fs::read(&source).unwrap();
-            let archive = directory.path().join("archive.db");
-            export_store(&source, &archive).unwrap();
-            let archive_before = std::fs::read(&archive).unwrap();
-            let output = directory.path().join("restored.db");
-            let error = restore_source_layout(&archive, &output).unwrap_err();
-            assert!(
-                matches!(&error, MigrationError::Refused(_)),
-                "{table}: {error}"
-            );
-            assert!(!output.exists());
-            assert_eq!(std::fs::read(&source).unwrap(), before);
-            assert_eq!(std::fs::read(&archive).unwrap(), archive_before);
-            let connection = Connection::open(&source).unwrap();
-            assert_eq!(
-                test_database_shape_snapshot(&connection).unwrap(),
-                before_shape
-            );
         }
     }
 }

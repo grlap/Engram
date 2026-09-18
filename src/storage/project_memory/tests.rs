@@ -1306,10 +1306,12 @@ fn project_memory_reads_reject_projection_and_canonical_drift() {
             params![forged_version.bytes(), version_hash],
         )
         .expect("corrupt canonical key without changing its hash");
-    assert!(matches!(
-        store.project_memory_full(&project, &session, &actor(&session.0), "forged-key", None),
-        Err(StoreError::HashMismatch { .. })
-    ));
+    let drifted =
+        store.project_memory_full(&project, &session, &actor(&session.0), "forged-key", None);
+    assert!(
+        matches!(drifted, Err(StoreError::InvalidMemoryProjection(_))),
+        "{drifted:?}"
+    );
 }
 
 #[test]

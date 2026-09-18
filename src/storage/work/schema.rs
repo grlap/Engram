@@ -444,7 +444,6 @@ pub(in crate::storage) fn initialize_schema(
              project_cursor INTEGER NOT NULL DEFAULT 0 CHECK(project_cursor >= 0),
              tentative_project_cursor INTEGER CHECK(tentative_project_cursor >= 0),
              tentative_delivery_token TEXT,
-             tentative_delivery_payload_hash TEXT,
              tentative_delivery_payload BLOB,
              updated_at_ms INTEGER NOT NULL,
              PRIMARY KEY(project_id, session_id)
@@ -649,7 +648,7 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
         let record: RestoredRecord = super::feeds::decode_work_object(
             "work_restored_record",
-            &CanonicalObject::verify(&hash, bytes)?,
+            &CanonicalObject::stored(&hash, bytes)?,
         )?;
         connection.execute(
             "INSERT INTO work_restored_records (work_id, generation_index, record_hash)
@@ -673,7 +672,7 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
     for (stored_hash, bytes) in restored_evidence {
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-        let evidence: RestoredWorkEvidence = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        let evidence: RestoredWorkEvidence = CanonicalObject::stored(&hash, bytes)?.decode()?;
         connection.execute(
             "INSERT INTO work_restored_evidence (
                  evidence_hash, work_id, record_hash, sequence, gate_name, created_at_ms

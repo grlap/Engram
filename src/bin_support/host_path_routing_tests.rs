@@ -104,8 +104,9 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
             "migration",
             false,
             Command::Migration {
-                operation: crate::bin_support::migration::MigrationCommand::Verify {
-                    archive: PathBuf::from("archive"),
+                operation: crate::bin_support::migration::MigrationCommand::Export {
+                    database: PathBuf::from("database"),
+                    out: PathBuf::from("out"),
                 },
             },
         ),

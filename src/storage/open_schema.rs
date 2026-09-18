@@ -170,8 +170,8 @@ impl SqliteStore {
     }
 
     /// Writes a consistent copy of this store to `path` through SQLite's own
-    /// online backup (`VACUUM INTO`), then opens the copy and verifies every
-    /// immutable object and hash-bound record in it. The copy is a full store:
+    /// online backup (`VACUUM INTO`), then opens the copy and checks that every
+    /// stored record decodes and agrees with its projections. The copy is a full store:
     /// it carries host-private state and private scratch and must be kept where the
     /// store itself may be kept.
     ///
@@ -236,9 +236,10 @@ impl SqliteStore {
     }
 
     /// Verifies an existing backup file without creating, transforming, or
-    /// modifying anything. The bytes are hashed first, then the file is
-    /// opened read-only and every immutable object and hash-bound record is
-    /// checked. Only the current store schema is accepted.
+    /// modifying anything. The file's bytes are fingerprinted first, for the
+    /// manifest, then the file is opened read-only and every stored record is
+    /// checked to decode and agree with its projections. Only the current store
+    /// schema is accepted.
     ///
     /// # Errors
     ///
@@ -848,7 +849,6 @@ impl SqliteStore {
                  UNIQUE(session_id, operation, idempotency_key)
              ) STRICT;",
             )?;
-            connection.execute_batch(super::migration::MIGRATION_SCHEMA)?;
             #[cfg(test)]
             if fail_cold_schema_after_ddl() && !building_schema_reference() {
                 return Err(StoreError::InvalidControlProjection(
@@ -1240,7 +1240,7 @@ impl SqliteStore {
             reason,
             decided_at: now,
         };
-        let authority_object = CanonicalObject::freeze(&authority)?;
+        let authority_object = CanonicalObject::mint(&authority)?;
         if authority_object.bytes().len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy authority exceeds the {MAX_CONTROL_POLICY_AUTHORITY_BYTES}-byte canonical limit"
@@ -1264,7 +1264,7 @@ impl SqliteStore {
             authority: authority_object.hash().clone(),
             activated_at: now,
         };
-        let policy_object = CanonicalObject::freeze(&policy)?;
+        let policy_object = CanonicalObject::mint(&policy)?;
         Self::insert_object(connection, "control_policy", &policy_object)?;
         connection.execute(
             "INSERT INTO control_policy_versions (
@@ -1309,7 +1309,7 @@ impl SqliteStore {
     ) -> Result<ObjectHash, StoreError> {
         let rule_set = crate::control::builtin_obligation_rule_set();
         Self::validate_obligation_rule_set(&rule_set)?;
-        let object = CanonicalObject::freeze(&rule_set)?;
+        let object = CanonicalObject::mint(&rule_set)?;
         Self::insert_object(connection, "obligation_rule_set", &object)?;
         Ok(object.hash().clone())
     }
@@ -1319,7 +1319,7 @@ impl SqliteStore {
         hash: &ObjectHash,
     ) -> Result<ObligationRuleSet, StoreError> {
         let bytes = Self::load_control_object_bytes(connection, hash, "obligation_rule_set")?;
-        let rule_set: ObligationRuleSet = CanonicalObject::verify(hash, bytes)?.decode()?;
+        let rule_set: ObligationRuleSet = CanonicalObject::stored(hash, bytes)?.decode()?;
         Self::validate_obligation_rule_set(&rule_set)?;
         Ok(rule_set)
     }

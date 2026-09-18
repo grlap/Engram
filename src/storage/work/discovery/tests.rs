@@ -66,7 +66,7 @@ fn discovery_orders_nested_binding_observations_by_run_head() {
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
-        obligation_rule_set: builtin_rule_set_hash(),
+        obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: None,
         observed_at: Some(at(0)),
         actor: observer,

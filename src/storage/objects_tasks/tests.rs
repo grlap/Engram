@@ -75,7 +75,7 @@ fn task_cursor_arithmetic_refuses_overflow() {
 }
 
 #[test]
-fn append_is_idempotent_and_round_trips_verified_content() {
+fn append_mints_a_record_per_call_and_round_trips_content() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let value = Example {
         title: "Decision".into(),
@@ -86,16 +86,17 @@ fn append_is_idempotent_and_round_trips_verified_content() {
     let second = store.append("memory_version", &value).unwrap();
     let loaded: Example = store.get(first.hash()).unwrap().unwrap();
 
-    assert_eq!(first, second);
+    assert_ne!(first.hash(), second.hash());
+    assert_eq!(first.bytes(), second.bytes());
     assert_eq!(loaded, value);
     assert_eq!(
         store.verify_all().unwrap(),
         IntegrityReport {
             snapshot: crate::storage::IntegritySnapshot {
-                object_count: 4,
+                object_count: 5,
                 project_feed_heads: Vec::new(),
             },
-            checked_objects: 4,
+            checked_objects: 5,
             invalid_objects: Vec::new(),
             checked_graph_snapshot_audits: 0,
             invalid_graph_snapshot_audits: Vec::new(),
@@ -108,24 +109,36 @@ fn append_is_idempotent_and_round_trips_verified_content() {
 }
 
 #[test]
-fn object_kind_is_bound_to_the_content_address() {
+fn a_stored_id_keeps_its_kind_and_bytes() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let value = Example {
         title: "Decision".into(),
         body: "Task memory is shared by default.".into(),
     };
 
-    store.append("memory_version", &value).unwrap();
-    let mismatch = store.append("report", &value);
-
+    let stored = store.append("memory_version", &value).unwrap();
+    SqliteStore::insert_object(&store.connection, "memory_version", &stored)
+        .expect("the same record under its own id is a replay");
     assert!(matches!(
-        mismatch,
+        SqliteStore::insert_object(&store.connection, "report", &stored),
         Err(StoreError::ObjectKindMismatch { .. })
+    ));
+    let other = CanonicalObject::identified(
+        stored.hash(),
+        &Example {
+            title: "Decision".into(),
+            body: "Different content under a taken id.".into(),
+        },
+    )
+    .unwrap();
+    assert!(matches!(
+        SqliteStore::insert_object(&store.connection, "memory_version", &other),
+        Err(StoreError::ImmutableCollision(_))
     ));
 }
 
 #[test]
-fn task_changes_are_ordered_and_idempotent() {
+fn task_changes_are_ordered() {
     let mut store = SqliteStore::open_in_memory().unwrap();
     let task_id = TaskId::new();
     let first = Example {
@@ -140,14 +153,10 @@ fn task_changes_are_ordered_and_idempotent() {
     let (first_object, first_cursor) = store
         .append_task_object(task_id, "memory_version", &first)
         .unwrap();
-    let (_, replay_cursor) = store
-        .append_task_object(task_id, "memory_version", &first)
-        .unwrap();
     let (second_object, second_cursor) = store
         .append_task_object(task_id, "memory_version", &second)
         .unwrap();
 
-    assert_eq!(first_cursor, replay_cursor);
     assert!(second_cursor > first_cursor);
     assert_eq!(
         store

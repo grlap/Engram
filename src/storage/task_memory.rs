@@ -439,7 +439,7 @@ impl SqliteStore {
             actor,
             created_at: now,
         };
-        let object = CanonicalObject::freeze(&event)?;
+        let object = CanonicalObject::mint(&event)?;
         Self::insert_object(&transaction, "memory_contradiction_event", &object)?;
         transaction.execute(
             "INSERT INTO memory_contradiction_edges (
@@ -811,7 +811,7 @@ impl SqliteStore {
         for (stored_hash, bytes) in assertions {
             let assertion_hash = ObjectHash::from_stored(stored_hash.clone())
                 .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-            let assertion_object = CanonicalObject::verify(&assertion_hash, bytes)?;
+            let assertion_object = CanonicalObject::stored(&assertion_hash, bytes)?;
             let value: serde_json::Value = serde_json::from_slice(assertion_object.bytes())?;
             if value
                 .get("schema_version")
@@ -835,7 +835,7 @@ impl SqliteStore {
                     assertion.version
                 )));
             };
-            let version_object = CanonicalObject::verify(&assertion.version, version_bytes)?;
+            let version_object = CanonicalObject::stored(&assertion.version, version_bytes)?;
             let version_value: serde_json::Value = serde_json::from_slice(version_object.bytes())?;
             if version_value
                 .get("schema_version")
@@ -892,7 +892,7 @@ impl SqliteStore {
         for (stored_hash, bytes) in contradictions {
             let contradiction_hash = ObjectHash::from_stored(stored_hash.clone())
                 .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-            let object = CanonicalObject::verify(&contradiction_hash, bytes)?;
+            let object = CanonicalObject::stored(&contradiction_hash, bytes)?;
             let value: serde_json::Value = serde_json::from_slice(object.bytes())?;
             if value
                 .get("schema_version")
@@ -1131,7 +1131,7 @@ impl SqliteStore {
             stale_count: assembly.stale_count,
             created_at: now,
         };
-        let object = CanonicalObject::freeze(&payload)?;
+        let object = CanonicalObject::mint(&payload)?;
         Self::insert_object(transaction, "context_packet", &object)?;
         let packet = ContextPacket {
             header: ContextPacketHeader {
@@ -1596,7 +1596,7 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
         actor: request.actor.clone(),
         created_at: request.created_at,
     };
-    let version_object = CanonicalObject::freeze(&version)?;
+    let version_object = CanonicalObject::mint(&version)?;
     let assertion = MemoryAssertionEvent {
         schema_version: SCHEMA_VERSION,
         memory_id,
@@ -1606,7 +1606,7 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
         actor: request.actor.clone(),
         created_at: request.created_at,
     };
-    let assertion_object = CanonicalObject::freeze(&assertion)?;
+    let assertion_object = CanonicalObject::mint(&assertion)?;
     Ok(PreparedNote {
         version,
         assertion,

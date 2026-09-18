@@ -454,7 +454,7 @@ impl SqliteStore {
                 reason: "completion requires every descendant claim and handoff offer to be released, completed, or expired".into(),
             });
         }
-        let accepted_work_revision = CanonicalObject::freeze(&item)?;
+        let accepted_work_revision = CanonicalObject::mint(&item)?;
         SqliteStore::insert_object(&transaction, "work_item_revision", &accepted_work_revision)?;
         // The checkpoint commits both facts atomically. Completion must not
         // heal missing canonical accounting or seal a state at another address.
@@ -529,7 +529,7 @@ impl SqliteStore {
             &transaction,
             &seal,
         )?;
-        let seal_object = CanonicalObject::freeze(&seal)?;
+        let seal_object = CanonicalObject::mint(&seal)?;
         SqliteStore::insert_object(&transaction, "completion_seal", &seal_object)?;
         transaction.execute(
             "INSERT INTO work_completion_seals (
@@ -1154,7 +1154,7 @@ fn require_expected_obligations_on(
     for (position, stored_hash, bytes) in expected {
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-        let observation: ExecutionObservation = CanonicalObject::verify(&hash, bytes)?.decode()?;
+        let observation: ExecutionObservation = CanonicalObject::stored(&hash, bytes)?.decode()?;
         let rule_set = obligation_rule_set_for_observation_on(connection, &observation)?;
         for (rule, requirement) in
             crate::control::evaluate_obligation_rules(&rule_set, &observation)
@@ -1483,7 +1483,7 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
     transaction: &Transaction<'_>,
     evidence: &VerificationEvidence,
 ) -> Result<ObjectHash, StoreError> {
-    let object = CanonicalObject::freeze(evidence)?;
+    let object = CanonicalObject::mint(evidence)?;
     let result = encode_state(evidence.result)?;
     let evidence_hash = append_control_typed_evidence_on(
         transaction,
@@ -1515,7 +1515,7 @@ pub(in crate::storage) fn append_control_environment_evidence_on(
     transaction: &Transaction<'_>,
     evidence: &EnvironmentEvidence,
 ) -> Result<ObjectHash, StoreError> {
-    let object = CanonicalObject::freeze(evidence)?;
+    let object = CanonicalObject::mint(evidence)?;
     append_control_typed_evidence_on(
         transaction,
         &evidence.project_id,
@@ -1664,7 +1664,7 @@ pub(in crate::storage) fn append_control_execution_observation_on(
             "execution observation binding does not match canonical work state".into(),
         ));
     }
-    let object = CanonicalObject::freeze(observation)?;
+    let object = CanonicalObject::mint(observation)?;
     SqliteStore::insert_object(transaction, "execution_observation", &object)?;
     let positions = append_to_work_feeds(
         transaction,
@@ -1721,7 +1721,7 @@ fn append_builtin_obligations_on(
             requirement,
             opened_at: observation.recorded_at,
         };
-        let object = CanonicalObject::freeze(&obligation)?;
+        let object = CanonicalObject::mint(&obligation)?;
         SqliteStore::insert_object(transaction, "work_obligation", &object)?;
         append_to_work_feeds(
             transaction,
@@ -1848,7 +1848,7 @@ fn append_obligation_resolution_on(
         ),
         WorkObligationResolution::Waived { .. } => (WorkObligationState::Waived, "waived", None),
     };
-    let object = CanonicalObject::freeze(event)?;
+    let object = CanonicalObject::mint(event)?;
     SqliteStore::insert_object(transaction, "work_obligation_resolution", &object)?;
     append_to_work_feeds(
         transaction,

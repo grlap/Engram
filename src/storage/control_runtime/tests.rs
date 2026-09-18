@@ -345,7 +345,7 @@ fn shadow_turn_observations_are_idempotent_across_restart() {
         .unwrap();
     assert!(matches!(
         reopened.record_turn_observation(&replay_input),
-        Err(StoreError::HashMismatch { .. })
+        Err(StoreError::Json(_))
     ));
     let corrupted = reopened.verify_all().unwrap();
     assert_eq!(

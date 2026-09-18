@@ -124,7 +124,7 @@ fn disposing_claimed_child_records_an_attributed_participant_waiver() {
     )
     .expect("root completes with child participant accounted");
     let accounting = store
-        .completion_root_execution(CanonicalObject::freeze(&seal).unwrap().hash())
+        .completion_root_execution(&store.stored_seal_id(&seal))
         .unwrap();
     assert!(accounting.waivers.iter().any(|waiver| {
         waiver.participant == child_claim.holder && waiver.reason == "optional path was abandoned"
@@ -579,7 +579,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
                     effect: EffectClass::MutateLocal,
                     outcome: ExecutionOutcome::Succeeded,
                     source_changed: true,
-                    obligation_rule_set: builtin_rule_set_hash(),
+                    obligation_rule_set: active_rule_set_id(&transaction),
                     source_basis: Some(child_basis.clone()),
                     observed_at: Some(at(7)),
                     actor: child_actor.clone(),
@@ -602,7 +602,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
                     effect: EffectClass::Observe,
                     outcome: ExecutionOutcome::Succeeded,
                     source_changed: false,
-                    obligation_rule_set: builtin_rule_set_hash(),
+                    obligation_rule_set: active_rule_set_id(&transaction),
                     source_basis: Some(child_basis.clone()),
                     observed_at: Some(at(7)),
                     actor: child_actor.clone(),
@@ -669,11 +669,12 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         );
         assert_eq!(child_seal.obligations.len(), 1);
         let child_seal_object =
-            CanonicalObject::freeze(&child_seal).expect("freeze valid child completion seal");
+            CanonicalObject::identified(&store.stored_seal_id(&child_seal), &child_seal)
+                .expect("valid child completion seal");
         let mut forged_child_seal = child_seal.clone();
         forged_child_seal.environment_schema_version += 1;
-        let forged_child_object = CanonicalObject::freeze(&forged_child_seal)
-            .expect("freeze child seal with invalid environment basis");
+        let forged_child_object = CanonicalObject::mint(&forged_child_seal)
+            .expect("child seal with invalid environment basis");
         SqliteStore::insert_object(&store.connection, "completion_seal", &forged_child_object)
             .expect("insert forged child seal fixture");
         store
@@ -761,10 +762,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         assert_eq!(root_seal.required_child_seals.len(), 1);
         assert_eq!(
             root_seal.required_child_seals[0],
-            CanonicalObject::freeze(&child_seal)
-                .expect("freeze child seal")
-                .hash()
-                .clone()
+            store.stored_seal_id(&child_seal)
         );
         assert_eq!(
             root_seal.obligation_schema_version,

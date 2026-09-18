@@ -150,7 +150,7 @@ impl SqliteStore {
                     actor,
                     created_at: now,
                 };
-                let object = CanonicalObject::freeze(&event)?;
+                let object = CanonicalObject::mint(&event)?;
                 Self::insert_object(transaction, "task_joined_event", &object)?;
                 Self::insert_task_change(transaction, task_id, "task_joined_event", &object)?
             } else {
@@ -189,7 +189,7 @@ impl SqliteStore {
                 actor,
                 created_at: now,
             };
-            let object = CanonicalObject::freeze(&event)?;
+            let object = CanonicalObject::mint(&event)?;
             Self::insert_object(transaction, "task_started_event", &object)?;
             let cursor =
                 Self::insert_task_change(transaction, task_id, "task_started_event", &object)?;
@@ -838,7 +838,7 @@ impl SqliteStore {
             actor: session.actor.clone(),
             created_at: now,
         };
-        let event_object = CanonicalObject::freeze(&event)?;
+        let event_object = CanonicalObject::mint(&event)?;
         Self::insert_object(&transaction, "work_lease_event", &event_object)?;
         let cursor = Self::insert_task_change(
             &transaction,
@@ -1128,7 +1128,7 @@ impl SqliteStore {
             actor: actor.clone(),
             created_at: now,
         };
-        let event_object = CanonicalObject::freeze(&event)?;
+        let event_object = CanonicalObject::mint(&event)?;
         Self::insert_object(transaction, "work_lease_event", &event_object)?;
         Self::insert_task_change(
             transaction,
@@ -2054,7 +2054,7 @@ impl SqliteStore {
                     actor: session.actor.clone(),
                     created_at: now,
                 };
-                let event_object = CanonicalObject::freeze(&event)?;
+                let event_object = CanonicalObject::mint(&event)?;
                 Self::insert_object(&transaction, "turn_checkpoint_event", &event_object)?;
                 let head_before_checkpoint =
                     Self::latest_task_cursor(&transaction, session.task_id)?;

@@ -32,13 +32,15 @@ contract and keep the change narrow.
 
 - Memory kind, authority, and delivery are orthogonal fields.
 - Immutable versions supersede; they are never edited in place.
-- Canonical object identity is SHA-256 over RFC 8785 UTF-8 JSON bytes.
+- A record's id is a random UUID minted when it is stored; links hold that
+  id. Stored bytes are RFC 8785 UTF-8 JSON. A SHA-256 over those bytes is a
+  content fingerprint only: never an id, a link, or a corruption check.
 - An established store opens only when every enforced schema marker and
   durable shape exactly matches the current binary; stores created by a
   different build are refused before mutation.
 - Never pin a digest in source or tests. References are derived at runtime
-  from the code that produces them; hashes remain only as computed canonical
-  object identity.
+  from the code that produces them; hashes remain only as computed content
+  fingerprints.
 - Applicable hard/firm pinned contradictions and pinned-budget overflow fail
   context assembly before an agent acts.
 - Local work needs no external reference. Explicit imports preserve immutable
@@ -51,10 +53,10 @@ contract and keep the change narrow.
 - Assignment is future intent; fenced work claims schedule execution; fenced
   resource leases authorize mutation. Never infer one from another. Every
   handoff/recovery transition emits an immutable event.
-- Packet hashes reproduce content; typed dense positions in named project,
-  root-work, and run-execution feeds order deltas. A session's dense delivery
-  position is distinct from its source-feed progress vector. Never substitute
-  a hash or global row id for either.
+- Packet fingerprints reproduce content; typed dense positions in named
+  project, root-work, and run-execution feeds order deltas. A session's dense
+  delivery position is distinct from its source-feed progress vector. Never
+  substitute a record id, a fingerprint or a global row id for either.
 - V1 has one ordinary executor/claim per `WorkRun`; parallel sessions claim
   distinct child runs under a `RootExecution` aggregate.
 - Root completion requires a `CompletionSeal` over the dense run-feed cut,
@@ -215,7 +217,7 @@ engram work next --peek [--verbose]  # orientation without advancing delivery
 engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
-engram work show REF --note HASH[:INDEX]  # complete immutable note detail
+engram work show REF --note ID[:INDEX]  # complete immutable note detail
 engram work show REF --full  # complete authored title, outcome and acceptance
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L] [--evaluation-mode MODE]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
@@ -332,8 +334,8 @@ Rules that matter:
   A too-large body stays as an explicit locator/size/detail placeholder and
   does not prevent traversal. Use `show REF --note LOCATOR` for complete detail
   beyond 12 KiB, independently of the gate filter. Native locators are unique
-  hash prefixes of at least eight hex digits; inherited locators are
-  `RECORD_HASH:INDEX`, where INDEX is an
+  prefixes of a record's id, at least eight hex digits of an id of 32 or 64;
+  inherited locators are `RECORD_ID:INDEX`, where INDEX is an
   immutable one-based member position, never a display ordinal. These are
   read-only exceptions to hidden canonical identity. MCP uses `notes`,
   `history`, `after`, and `note` with the same meaning. New note bodies have a

@@ -65,7 +65,10 @@ pub(crate) struct WorkRecordAddress {
 
 impl WorkRecordAddress {
     pub(crate) fn locator(&self, hash_chars: usize) -> String {
-        let hash = &self.hash.as_str()[..hash_chars];
+        // A record id is 32 characters; records written earlier keep a
+        // 64-character id. "Full" means the whole id, whichever it is.
+        let id = self.hash.as_str();
+        let hash = &id[..hash_chars.min(id.len())];
         match self.member {
             None => hash.to_owned(),
             Some(RestoredMember::Note(index)) => format!("{hash}:{index}"),

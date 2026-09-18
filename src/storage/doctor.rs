@@ -17,8 +17,10 @@ use super::{
 mod tests;
 
 impl SqliteStore {
-    /// Verifies canonical bytes, audit bindings and mutable projections in one
-    /// read transaction. Reuses an existing caller-owned transaction/savepoint.
+    /// Verifies stored records, audit bindings and mutable projections in one
+    /// read transaction. Each record must carry a well-formed id and decode as
+    /// JSON; nothing re-derives an id from bytes, and no check enforces
+    /// store-wide that a stored body is in canonical form. Reuses an existing caller-owned transaction/savepoint.
     ///
     /// # Errors
     ///
@@ -48,7 +50,7 @@ impl SqliteStore {
             let (stored_hash, bytes) = row?;
             report.checked_objects += 1;
             let valid = ObjectHash::from_stored(stored_hash.clone())
-                .is_some_and(|expected| CanonicalObject::verify(&expected, bytes).is_ok());
+                .is_some_and(|expected| CanonicalObject::stored(&expected, bytes).is_ok());
             if !valid {
                 report.invalid_objects.push(stored_hash);
             }
@@ -313,7 +315,6 @@ impl SqliteStore {
             super::graph_snapshot::verify_work_graph_snapshot_saved_events_on(&self.connection)?;
         report.checked_graph_snapshot_audits = checked_graph_snapshot_audits;
         report.invalid_graph_snapshot_audits = invalid_graph_snapshot_audits;
-        super::migration::verify_provenance_on(&self.connection)?;
         Ok(report)
     }
 
@@ -607,7 +608,7 @@ impl SqliteStore {
         let input_hash = ObjectHash::from_stored(stored.input_hash.clone())
             .ok_or_else(|| StoreError::InvalidStoredHash(stored.input_hash.clone()))?;
         let input: TurnEvaluationInput =
-            CanonicalObject::verify(&input_hash, stored.input_json.clone())?.decode()?;
+            CanonicalObject::stored(&input_hash, stored.input_json.clone())?.decode()?;
         let expected_intent = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
             control_schema_version: input.control_schema_version,
             session_id: &input.session_id,
@@ -617,7 +618,7 @@ impl SqliteStore {
         let decision_hash = ObjectHash::from_stored(stored.decision_hash.clone())
             .ok_or_else(|| StoreError::InvalidStoredHash(stored.decision_hash.clone()))?;
         let observation: ObservedTurnDecision =
-            CanonicalObject::verify(&decision_hash, stored.decision_json.clone())?.decode()?;
+            CanonicalObject::stored(&decision_hash, stored.decision_json.clone())?.decode()?;
 
         let input_task = input.task_id.map(|task_id| task_id.0.to_string());
         let row_matches = expected_intent.hash().as_str() == stored.intent_hash

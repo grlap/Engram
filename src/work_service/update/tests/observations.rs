@@ -358,7 +358,7 @@ fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging()
         .staged_work_session_delivery_payload(&owner.project_id, &owner.session_id)
         .unwrap()
         .unwrap();
-    let mut page: StagedWorkChangePage = payload.decode().unwrap();
+    let mut page: StagedWorkChangePage = serde_json::from_slice(&payload).unwrap();
     assert_eq!(page.changes.len(), 1);
     assert!(!page.changes[0].from_current_session);
     assert!(
@@ -375,7 +375,7 @@ fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging()
         session.project_cursor,
         through,
         &mut page,
-        &[],
+        PendingDelivery::AsStored,
     )
     .unwrap();
     let mut wrong_session = page.clone();
@@ -388,7 +388,7 @@ fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging()
             session.project_cursor,
             through,
             &mut wrong_session,
-            &[]
+            PendingDelivery::AsStored,
         )
         .is_err()
     );

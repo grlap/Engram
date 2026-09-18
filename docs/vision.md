@@ -69,7 +69,7 @@ cross-host team sync remains later (see
 - **Typed, not a bag of strings.** A hard constraint, a design decision, and
   a session anecdote have different delivery requirements; the model encodes
   that. See [typed memory model](features/typed-memory-model.md).
-- **Append-only truth.** Records are immutable and content-addressed; state
+- **Append-only truth.** Records are immutable and named by a minted id; state
   is derived. Nothing is edited in place, so history and audit come for free.
 - **Budgeted delivery.** Injection operates under hard byte budgets with
   visible omission; the constraint tier fails closed rather than truncating

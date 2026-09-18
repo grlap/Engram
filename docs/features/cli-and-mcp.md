@@ -509,8 +509,9 @@ Rules that matter:
   listing reader's conservative boundary-millisecond policy. Tokens encode
   readable context, are not confidential, and grant no authority.
 - Every full-note row prints a copyable `locator`. Native notes accept a unique
-  canonical hash prefix of at least eight hex digits; inherited notes use
-  `RECORD_HASH:INDEX`, where INDEX is the one-based immutable member position,
+  prefix of the record's id, at least eight hex digits of an id of 32 or 64;
+  inherited notes use `RECORD_ID:INDEX`, where INDEX is the one-based immutable
+  member position,
   not a display ordinal. `show REF --note LOCATOR` (MCP `note: LOCATOR`)
   returns the complete body and references, with `body_bytes` in UTF-8, and
   deliberately may exceed 12 KiB. Ambiguous or wrong-item references refuse
@@ -1274,10 +1275,10 @@ their canonical work-event basis under the write lock.
 The `--blocked`/`blocked_only` filter is independent of derived availability:
 it returns work with an active blocker or incomplete prerequisite even when
 the item is deferred or its lifecycle is closed.
-Hash-verified source changes retain dense positions and explicit compact
-summaries instead of canonical work snapshots or memory bodies. A change's
-`object_hash` identifies the verified canonical source and intentionally is not
-a hash of its summary. Restricted
+Source changes retain dense positions and explicit compact summaries instead
+of canonical work snapshots or memory bodies. A change's `object_hash` is the
+id of the source record the summary was projected from; it names that record
+and says nothing about the summary's content. Restricted
 work memory, and work memory outside the session's currently focused verified
 root, is replaced by a typed `omission` marker at its original dense position;
 the protected body and structured fields never cross the agent boundary. The

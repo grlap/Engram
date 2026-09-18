@@ -286,7 +286,7 @@ pub(in crate::storage) fn load_control_execution_observation_on(
     if kind != "execution_observation" {
         return Ok(None);
     }
-    Ok(Some(CanonicalObject::verify(hash, bytes)?.decode()?))
+    Ok(Some(CanonicalObject::stored(hash, bytes)?.decode()?))
 }
 
 pub(in crate::storage) fn load_control_environment_evidence_on(
@@ -306,7 +306,7 @@ pub(in crate::storage) fn load_control_environment_evidence_on(
     if kind != "environment_evidence" {
         return Ok(None);
     }
-    let evidence = CanonicalObject::verify(hash, bytes)?.decode()?;
+    let evidence = CanonicalObject::stored(hash, bytes)?.decode()?;
     expected_environment_projection(connection, hash)?;
     Ok(Some(evidence))
 }
@@ -347,7 +347,7 @@ pub(super) fn verify_anchored_memory_feeds(
             invalid.push(label);
             continue;
         };
-        let Ok(object) = CanonicalObject::verify(&hash, bytes) else {
+        let Ok(object) = CanonicalObject::stored(&hash, bytes) else {
             invalid.push(label);
             continue;
         };
@@ -468,7 +468,7 @@ pub(super) fn latest_source_mutation_on(
         .map(|(position, stored_hash, bytes)| {
             let hash = ObjectHash::from_stored(stored_hash.clone())
                 .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-            let observation = CanonicalObject::verify(&hash, bytes)?.decode()?;
+            let observation = CanonicalObject::stored(&hash, bytes)?.decode()?;
             Ok((position, observation))
         })
         .transpose()
@@ -547,7 +547,7 @@ fn append_work_event_on(
     let event = event
         .clone()
         .finalize(work_relation_fingerprint(&relation_basis)?, root);
-    let object = CanonicalObject::freeze(&event)?;
+    let object = CanonicalObject::mint(&event)?;
     SqliteStore::insert_object(transaction, "work_event", &object)?;
     let positions = append_to_work_feeds(
         transaction,
@@ -596,7 +596,7 @@ pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
             requested: object_kind.into(),
         });
     }
-    decode_work_object(object_kind, &CanonicalObject::verify(hash, bytes)?)
+    decode_work_object(object_kind, &CanonicalObject::stored(hash, bytes)?)
 }
 
 /// Keep the current required restored shape distinct from ordinary corruption.
@@ -885,7 +885,7 @@ pub(super) fn expire_handoff_offers(
     for row in rows {
         let mut offer = load_handoff_offer_projection(transaction, row)?;
         offer.state = WorkHandoffState::Expired;
-        let offer_object = CanonicalObject::freeze(&offer)?;
+        let offer_object = CanonicalObject::mint(&offer)?;
         SqliteStore::insert_object(transaction, "work_handoff_offer", &offer_object)?;
         let changed = transaction.execute(
             "UPDATE work_handoff_offers
@@ -954,7 +954,6 @@ pub(super) fn replay_operation<T: DeserializeOwned>(
             key: key.into(),
         });
     }
-    super::super::migration::validate_reexpressed_result_on(transaction, operation, key, &result)?;
     serde_json::from_slice(&result)
         .map(Some)
         .map_err(StoreError::from)

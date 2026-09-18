@@ -89,7 +89,7 @@ fn assert_service_citation_refusal(malformed: bool) {
         .unwrap_err();
     if malformed {
         assert!(matches!(error, StoreError::InvalidWork(reason)
-            if reason == "expected a lowercase 64-character SHA-256 hash"));
+            if reason == "expected a lowercase hex record id"));
     } else {
         let expected = format!(
             "acceptance criterion {:?} cites evidence {citation} outside the requested completion basis",
@@ -1003,7 +1003,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
         let error_class = if missing {
             "work_projection_invalid"
         } else {
-            "canonical_object_invalid"
+            "stored_json_invalid"
         };
         assert_eq!(replayed.acceptance_evidence_error_class, Some(error_class));
         let done = verbs.done(word, at(4)).unwrap();

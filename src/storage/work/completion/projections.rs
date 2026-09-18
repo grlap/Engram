@@ -109,7 +109,7 @@ impl SqliteStore {
                 invalid.push(label);
                 continue;
             }
-            let event = CanonicalObject::verify(&hash, bytes).and_then(|object| {
+            let event = CanonicalObject::stored(&hash, bytes).and_then(|object| {
                 Ok((
                     object.decode::<WorkEvent>()?,
                     object.decode::<serde_json::Value>()?,
@@ -540,7 +540,7 @@ fn seed_restored_projection_expectations(
             continue;
         };
         let record = if let Ok(hash) = &hash {
-            match CanonicalObject::verify(hash, bytes).and_then(|object| {
+            match CanonicalObject::stored(hash, bytes).and_then(|object| {
                 crate::storage::work::decode_work_object::<RestoredRecord>(
                     object_kind.as_deref().unwrap_or(""),
                     &object,

@@ -399,10 +399,10 @@ fn decomposition_correction_absent_completed_basis_is_healthy_but_cannot_replay(
             "retention is a write policy; integrity verifies any retained basis"
         );
         connection.execute("UPDATE work_protocol_attempts SET basis_json = NULL WHERE operation = 'work_propose:root'", []).unwrap();
-        connection.execute("UPDATE work_protocol_attempts SET basis_json = ?1 WHERE operation = 'work_propose:decompose'", [b"{}".as_slice()]).unwrap();
+        connection.execute("UPDATE work_protocol_attempts SET basis_json = ?1 WHERE operation = 'work_propose:decompose'", [b"{".as_slice()]).unwrap();
         assert!(
             !store.verify_all().unwrap().is_healthy(),
-            "retained basis must verify against its hash"
+            "a retained basis must be readable JSON"
         );
         connection.execute("UPDATE work_protocol_attempts SET basis_json = ?1 WHERE operation = 'work_propose:decompose'", [&basis]).unwrap();
         writer.work_propose(input, at(3)).unwrap();

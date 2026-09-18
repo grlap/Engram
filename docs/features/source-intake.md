@@ -50,7 +50,8 @@ The input file limit is 1 MiB. The complete canonical snapshot, including
 - `payload_hash`: the declared canonical source-payload hash.
 - `raw`: optional bounded extension data.
 
-Engram hashes and verifies the snapshot it stores. File intake does not fetch
+Engram stores the snapshot under a minted id; it does not derive that id from
+the snapshot's bytes or verify one against the other. File intake does not fetch
 the original payload or verify a planner's declared fingerprint or payload
 hash against a remote system. Identity and provenance are asserted context,
 not authentication. The development redactor filters nothing: do not put
@@ -74,7 +75,9 @@ canonical planning will store. No normalization invents a criterion.
 
 First apply atomically stores the snapshot and creates an Open, unassigned,
 unclaimed task root at priority 2. Its origin is `imported` and its
-`source_snapshot_id` is the snapshot hash. External status and owner remain
+`source_snapshot_id` is the id of the stored snapshot: a minted id, or the id
+the item already holds for a snapshot whose stored bytes are equal. External
+status and owner remain
 source facts; they do not become local lifecycle or assignment. The receipt
 names the local item and its source citation.
 

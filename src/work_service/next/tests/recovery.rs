@@ -11,7 +11,6 @@ struct DeliveryState {
     confirmed: i64,
     through: Option<i64>,
     token: Option<String>,
-    payload_hash: Option<String>,
     payload: Option<Vec<u8>>,
 }
 
@@ -59,7 +58,7 @@ impl RecoveryFixture {
         connection
             .query_row(
                 "SELECT project_cursor, tentative_project_cursor, tentative_delivery_token,
-                    tentative_delivery_payload_hash, tentative_delivery_payload
+                    tentative_delivery_payload
              FROM work_session_state WHERE session_id = 'reader'",
                 [],
                 |row| {
@@ -67,8 +66,7 @@ impl RecoveryFixture {
                         confirmed: row.get(0)?,
                         through: row.get(1)?,
                         token: row.get(2)?,
-                        payload_hash: row.get(3)?,
-                        payload: row.get(4)?,
+                        payload: row.get(3)?,
                     })
                 },
             )
@@ -189,7 +187,6 @@ fn host_ack_recovery_replays_pending_page_and_preserves_the_following_page() {
     assert_eq!(finished.through, None);
     assert_eq!(finished.token, None);
     assert_eq!(finished.payload, None);
-    assert_eq!(finished.payload_hash, None);
 }
 
 #[test]
@@ -240,7 +237,6 @@ fn agent_ack_recovery_after_focus_discard_has_plain_retry_guidance() {
     assert_eq!(discarded.confirmed, previous.project_cursor);
     assert_eq!(discarded.through, None);
     assert_eq!(discarded.token, None);
-    assert_eq!(discarded.payload_hash, None);
     assert_eq!(discarded.payload, None);
     let error = store
         .acknowledge_work_session_delivery(

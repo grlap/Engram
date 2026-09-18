@@ -495,15 +495,14 @@ fn validate_sources(
         if sources.contains_key(&source.hash) {
             return Err(corrupt("duplicate source hash"));
         }
-        let object = CanonicalObject::freeze(&source.canonical_json)?;
-        if object.hash() != &source.hash {
-            return Err(corrupt("source hash differs from its canonical JSON"));
-        }
+        // The file names each record by its id; an id is not derived from the
+        // record's content, so only the typed shape is compared with the bytes.
+        let object = CanonicalObject::identified(&source.hash, &source.canonical_json)?;
         let snapshot: WorkSourceSnapshot = object
             .decode()
             .map_err(|_| corrupt("source canonical JSON has an invalid shape"))?;
         let typed = CanonicalObject::freeze(&snapshot)?;
-        if typed.hash() != &source.hash || typed.bytes() != object.bytes() {
+        if typed.bytes() != object.bytes() {
             return Err(corrupt(
                 "source canonical JSON is not exactly preserved by its typed shape",
             ));
@@ -593,15 +592,12 @@ fn validate_and_materialize_records(
                 object_hash,
                 canonical_json,
             } => {
-                let object = CanonicalObject::freeze(canonical_json)?;
-                if object.hash() != object_hash {
-                    return Err(corrupt("restored record hash differs from canonical JSON"));
-                }
+                let object = CanonicalObject::identified(object_hash, canonical_json)?;
                 let restored: RestoredRecord = object
                     .decode()
                     .map_err(|_| corrupt("restored record canonical JSON has an invalid shape"))?;
                 let typed = CanonicalObject::freeze(&restored)?;
-                if typed.hash() != object_hash || typed.bytes() != object.bytes() {
+                if typed.bytes() != object.bytes() {
                     return Err(corrupt(
                         "restored record canonical JSON is not exactly preserved by its typed shape",
                     ));
@@ -621,7 +617,7 @@ fn validate_and_materialize_records(
                     relations: restored_relation_basis(document, record.work_id)?,
                     history: (**history).clone(),
                 };
-                let object = CanonicalObject::freeze(&restored)?;
+                let object = CanonicalObject::mint(&restored)?;
                 (restored, object)
             }
         };
@@ -1098,7 +1094,7 @@ fn insert_prepared_load_on(
 ) -> Result<(), StoreError> {
     transaction.execute_batch("PRAGMA defer_foreign_keys = ON")?;
     for source in &prepared.document.body.sources {
-        let object = CanonicalObject::freeze(&source.canonical_json)?;
+        let object = CanonicalObject::identified(&source.hash, &source.canonical_json)?;
         SqliteStore::insert_object(transaction, "work_source_snapshot", &object)?;
     }
     for snapshot in &prepared.document.body.items {
@@ -1257,7 +1253,7 @@ fn insert_prepared_load_on(
         actor: actor.clone(),
         loaded_at,
     };
-    let object = CanonicalObject::freeze(&loaded)?;
+    let object = CanonicalObject::mint(&loaded)?;
     SqliteStore::insert_object(transaction, "work_graph_snapshot_loaded", &object)?;
     Ok(())
 }
@@ -1390,7 +1386,7 @@ fn insert_memory_version_on(
         actor: actor.clone(),
         created_at: remembered_at,
     };
-    let version_object = CanonicalObject::freeze(&version)?;
+    let version_object = CanonicalObject::mint(&version)?;
     let assertion = MemoryAssertionEvent {
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id,
@@ -1405,7 +1401,7 @@ fn insert_memory_version_on(
         actor,
         created_at: assertion_at,
     };
-    let assertion_object = CanonicalObject::freeze(&assertion)?;
+    let assertion_object = CanonicalObject::mint(&assertion)?;
     SqliteStore::insert_project_memory_version_object(
         transaction,
         &version_object,

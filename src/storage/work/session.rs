@@ -206,7 +206,7 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
         (Some(stored_hash), Some(bytes)) => {
             let hash = ObjectHash::from_stored(stored_hash.clone())
                 .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))?;
-            Some(CanonicalObject::verify(&hash, bytes.clone())?.decode()?)
+            Some(CanonicalObject::stored(&hash, bytes.clone())?.decode()?)
         }
         (_, None) if stored.result_hash.is_some() && stored.result_json.is_some() => None,
         _ => {
@@ -225,8 +225,9 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
                 &hash,
                 "work_protocol_result",
             )?;
-            let object = CanonicalObject::freeze(&value)?;
-            if object.hash() != &hash || object.bytes() != bytes {
+            // The row carries the result record's exact bytes. Its id was
+            // minted when the record was written and is not derived from them.
+            if serde_json_canonicalizer::to_vec(&value)? != bytes {
                 return Err(StoreError::InvalidWorkProjection(
                     "work-protocol replay bytes differ from their canonical result".into(),
                 ));
@@ -452,7 +453,6 @@ impl SqliteStore {
             .query_row(
                 "SELECT focused_work_id, project_cursor,
                         tentative_project_cursor, tentative_delivery_token,
-                        tentative_delivery_payload_hash,
                         tentative_delivery_payload, updated_at_ms
                  FROM work_session_state WHERE project_id = ?1 AND session_id = ?2",
                 params![project_id.0, session_id.0],
@@ -462,9 +462,8 @@ impl SqliteStore {
                         row.get::<_, i64>(1)?,
                         row.get::<_, Option<i64>>(2)?,
                         row.get::<_, Option<String>>(3)?,
-                        row.get::<_, Option<String>>(4)?,
-                        row.get::<_, Option<Vec<u8>>>(5)?,
-                        row.get::<_, i64>(6)?,
+                        row.get::<_, Option<Vec<u8>>>(4)?,
+                        row.get::<_, i64>(5)?,
                     ))
                 },
             )
@@ -474,7 +473,6 @@ impl SqliteStore {
             project_cursor,
             tentative_project_cursor,
             tentative_delivery_token,
-            tentative_delivery_payload_hash,
             tentative_delivery_payload,
             updated_at_ms,
         )) = row
@@ -492,7 +490,6 @@ impl SqliteStore {
         let pending_fields = [
             tentative_project_cursor.is_some(),
             tentative_delivery_token.is_some(),
-            tentative_delivery_payload_hash.is_some(),
             tentative_delivery_payload.is_some(),
         ];
         if pending_fields
@@ -500,16 +497,11 @@ impl SqliteStore {
             .any(|present| *present != pending_fields[0])
         {
             return Err(StoreError::InvalidWorkProjection(
-                "staged work delivery cursor, token, payload hash, and payload must be present together"
-                    .into(),
+                "staged work delivery cursor, token, and payload must be present together".into(),
             ));
         }
-        if let (Some(hash), Some(payload)) =
-            (tentative_delivery_payload_hash, tentative_delivery_payload)
-        {
-            let hash =
-                ObjectHash::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredHash(hash))?;
-            CanonicalObject::verify(&hash, payload)?;
+        if let Some(payload) = tentative_delivery_payload {
+            serde_json::from_slice::<serde::de::IgnoredAny>(&payload)?;
         }
         Ok(WorkSessionState {
             project_id: project_id.clone(),
@@ -617,7 +609,7 @@ impl SqliteStore {
             operation,
             &compact_result,
         )?;
-        let result_object = CanonicalObject::freeze(&compact_result)?;
+        let result_object = CanonicalObject::mint(&compact_result)?;
         Self::insert_object(&transaction, "work_protocol_result", &result_object)?;
         let changed = transaction.execute(
             "UPDATE work_protocol_attempts
@@ -799,7 +791,6 @@ impl SqliteStore {
             "UPDATE work_session_state SET
                  tentative_project_cursor = NULL,
                  tentative_delivery_token = NULL,
-                 tentative_delivery_payload_hash = NULL,
                  tentative_delivery_payload = NULL
              WHERE project_id = ?1 AND session_id = ?2
                AND focused_work_id IS NOT ?3",
@@ -957,20 +948,18 @@ impl SqliteStore {
             "UPDATE work_session_state SET
                  tentative_project_cursor = ?3,
                  tentative_delivery_token = ?4,
-                 tentative_delivery_payload_hash = ?5,
-                 tentative_delivery_payload = ?6,
-                 updated_at_ms = ?7
+                 tentative_delivery_payload = ?5,
+                 updated_at_ms = ?6
              WHERE project_id = ?1 AND session_id = ?2
-               AND project_cursor = ?8
+               AND project_cursor = ?7
                AND tentative_project_cursor IS NULL
-               AND focused_work_id IS ?9",
+               AND focused_work_id IS ?8",
             params![
                 project_id.0,
                 session_id.0,
                 tentative,
                 tentative_delivery_token.as_deref(),
-                tentative.map(|_| delivery_payload.hash().as_str()),
-                tentative.map(|_| delivery_payload.bytes()),
+                tentative.map(|_| delivery_payload),
                 now.timestamp_millis(),
                 expected_confirmed_through,
                 expected_focused_work_id.map(|work_id| work_id.0.to_string())
@@ -992,38 +981,23 @@ impl SqliteStore {
         Ok(Some(staged))
     }
 
-    /// Loads the exact canonical agent page bound to a pending delivery.
+    /// Loads the exact frozen agent page bound to a pending delivery.
     pub(crate) fn staged_work_session_delivery_payload(
         &self,
         project_id: &crate::domain::ProjectId,
         session_id: &SessionId,
-    ) -> Result<Option<CanonicalObject>, StoreError> {
+    ) -> Result<Option<Vec<u8>>, StoreError> {
         let row = self
             .connection
             .query_row(
-                "SELECT tentative_delivery_payload_hash, tentative_delivery_payload
+                "SELECT tentative_delivery_payload
                  FROM work_session_state
                  WHERE project_id = ?1 AND session_id = ?2",
                 params![project_id.0, session_id.0],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<Vec<u8>>>(1)?,
-                    ))
-                },
+                |row| row.get::<_, Option<Vec<u8>>>(0),
             )
             .optional()?;
-        match row {
-            None | Some((None, None)) => Ok(None),
-            Some((Some(hash), Some(bytes))) => {
-                let hash = ObjectHash::from_stored(hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(hash))?;
-                Ok(Some(CanonicalObject::verify(&hash, bytes)?))
-            }
-            Some(_) => Err(StoreError::InvalidWorkProjection(
-                "staged work delivery payload hash and bytes must be present together".into(),
-            )),
-        }
+        Ok(row.flatten())
     }
 
     /// Acknowledges the exact staged delivery using compare-and-swap semantics.
@@ -1051,7 +1025,6 @@ impl SqliteStore {
                  project_cursor = ?3,
                  tentative_project_cursor = NULL,
                  tentative_delivery_token = NULL,
-                 tentative_delivery_payload_hash = NULL,
                  tentative_delivery_payload = NULL,
                  updated_at_ms = ?5
              WHERE project_id = ?1 AND session_id = ?2

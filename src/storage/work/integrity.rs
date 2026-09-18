@@ -507,7 +507,7 @@ pub(super) fn verify_restored_evidence_rows(
             invalid.push(label);
             continue;
         };
-        let evidence = CanonicalObject::verify(&hash, bytes)
+        let evidence = CanonicalObject::stored(&hash, bytes)
             .and_then(|object| object.decode::<RestoredWorkEvidence>());
         let item = item_json
             .as_deref()
@@ -686,7 +686,7 @@ pub(super) fn verify_obligation_rows(
             invalid.push(format!("work_obligation_trigger:{run_id}:{position}"));
             continue;
         };
-        let Ok(observation) = CanonicalObject::verify(&hash, bytes)
+        let Ok(observation) = CanonicalObject::stored(&hash, bytes)
             .and_then(|object| object.decode::<ExecutionObservation>())
         else {
             invalid.push(format!("work_obligation_trigger:{run_id}:{position}"));
@@ -856,7 +856,7 @@ pub(super) fn verify_work_feed_integrity(
             invalid.push(label);
             continue;
         };
-        let Ok(object) = CanonicalObject::verify(&hash, bytes) else {
+        let Ok(object) = CanonicalObject::stored(&hash, bytes) else {
             invalid.push(label);
             continue;
         };
@@ -1725,7 +1725,7 @@ pub(super) fn verify_canonical_work_rows(
                 canonical.as_ref(),
             ) {
                 (Some(hash), Some(bytes)) => {
-                    CanonicalObject::verify(&hash, bytes.clone()).is_ok()
+                    CanonicalObject::stored(&hash, bytes.clone()).is_ok()
                         && object_kind.as_deref() == Some(kind)
                         && equivalent(&projection, bytes)
                 }
@@ -1834,7 +1834,7 @@ pub(super) fn verify_work_protocol_attempts(
         let request_valid = ObjectHash::from_stored(request_hash).is_some();
         let basis_valid = match (&basis_hash, &basis_json, &result_hash, &result_json) {
             (Some(stored_hash), Some(bytes), _, _) => ObjectHash::from_stored(stored_hash.clone())
-                .is_some_and(|hash| CanonicalObject::verify(&hash, bytes.clone()).is_ok()),
+                .is_some_and(|hash| CanonicalObject::stored(&hash, bytes.clone()).is_ok()),
             (stored_hash, None, Some(_), Some(_)) => stored_hash
                 .as_ref()
                 .is_none_or(|hash| ObjectHash::from_stored(hash.clone()).is_some()),
@@ -1852,10 +1852,9 @@ pub(super) fn verify_work_protocol_attempts(
                     .ok()
                     .map(|value| (hash, value))
                 })
-                .is_some_and(|(hash, value)| {
-                    CanonicalObject::freeze(&value).is_ok_and(|object| {
-                        object.hash() == &hash
-                            && object.bytes() == bytes
+                .is_some_and(|(_, value)| {
+                    serde_json_canonicalizer::to_vec(&value).is_ok_and(|canonical| {
+                        canonical == bytes
                             && validate_work_protocol_result_binding(
                                 connection,
                                 &project_id,

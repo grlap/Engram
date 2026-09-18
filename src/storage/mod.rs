@@ -732,13 +732,6 @@ pub enum StoreError {
     StoreNotInitialized,
     #[error("{DIFFERENT_BUILD_STORE_MESSAGE}")]
     DifferentBuildSchema,
-    #[error("object {0} is not RFC 8785 canonical JSON")]
-    NonCanonicalObject(ObjectHash),
-    #[error("object hash mismatch: expected {expected}, got {actual}")]
-    HashMismatch {
-        expected: ObjectHash,
-        actual: ObjectHash,
-    },
     #[error("immutable object collision at {0}")]
     ImmutableCollision(ObjectHash),
     #[error("object {hash} is stored as kind {stored:?}, not {requested:?}")]

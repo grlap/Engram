@@ -125,8 +125,7 @@ pub(super) fn bound_seal(
     work: WorkId,
     run: WorkRunId,
 ) -> Result<CompletionSeal, StoreError> {
-    let resolved = store.resolve_migrated_reference(hash)?;
-    let seal: CompletionSeal = store.get(&resolved)?.ok_or_else(|| {
+    let seal: CompletionSeal = store.get(hash)?.ok_or_else(|| {
         StoreError::InvalidWorkProjection("acceptance provenance has no canonical seal".into())
     })?;
     if seal.work_id != work || seal.run_id != run {
@@ -166,8 +165,7 @@ pub(super) fn for_seal(
     work: WorkId,
     run: WorkRunId,
 ) -> Result<WorkAcceptanceEvidence, StoreError> {
-    let resolved = store.resolve_migrated_reference(hash)?;
-    let seal: CompletionSeal = store.get(&resolved)?.ok_or_else(|| {
+    let seal: CompletionSeal = store.get(hash)?.ok_or_else(|| {
         StoreError::InvalidWorkProjection("acceptance disclosure has no canonical seal".into())
     })?;
     if seal.work_id != work || seal.run_id != run {
@@ -263,7 +261,7 @@ mod tests {
         assert!(failed.links[0].preview.is_none());
         assert_eq!(
             failed.links[0].preview_error_class,
-            Some("canonical_object_invalid")
+            Some("stored_json_invalid")
         );
         assert_eq!(
             crate::storage::test_database_shape_snapshot(&connection).unwrap(),
@@ -339,13 +337,12 @@ mod tests {
         let mut other = seal.clone();
         other.work_id = WorkId(uuid::Uuid::now_v7());
         other.run_id = WorkRunId(uuid::Uuid::now_v7());
-        let missing = crate::CanonicalObject::freeze(&other).unwrap();
+        let missing = crate::ObjectHash::mint();
         assert!(
-            matches!(for_seal(&store, missing.hash(), work.work_id, completed.run_id),
+            matches!(for_seal(&store, &missing, work.work_id, completed.run_id),
             Err(StoreError::InvalidWorkProjection(reason)) if reason == "acceptance disclosure has no canonical seal")
         );
         let inserted = store.append("completion_seal", &other).unwrap();
-        assert_eq!(inserted.hash(), missing.hash());
         for (expected_work, expected_run) in [
             (work.work_id, other.run_id),
             (other.work_id, completed.run_id),

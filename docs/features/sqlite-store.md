@@ -4,9 +4,9 @@
 > [typed memory model](typed-memory-model.md),
 > [security & trust](security-and-trust.md).
 
-V1's canonical store is a single local SQLite database holding immutable,
-content-addressed objects — versions, events, edges, evidence — as
-append-only rows keyed by their content hash, written transactionally.
+V1's canonical store is a single local SQLite database holding immutable
+objects — versions, events, edges, evidence — as append-only rows keyed by a
+minted id, written transactionally.
 Append-only is a contract enforced by the core: nothing updates or deletes
 object rows except the exceptional purge runbook.
 
@@ -19,7 +19,7 @@ under `ENGRAM_HOME/projects/<project-id-hash>/engram.db`, outside the checkout.
 
 ```
 engram.db
-  objects      # content-addressed rows — write-once
+  objects      # rows keyed by minted id — write-once
   work_items / work_prerequisites / work_blockers # shipped work graph projections
   work_root_executions / work_runs / work_claims  # shipped execution projections
   work_root_members # element rows for current root collections
@@ -30,7 +30,7 @@ engram.db
   task_changes # dense task-local feed positions plus an internal global row sequence
   context_deliveries # target dense per-session delivery + exact source ranges
   task_claims  # historical whole-task advisory claim data; not an agent tool
-  control_observations # non-authoritative, hash-verified shadow decisions
+  control_observations # non-authoritative shadow decisions, replayed by idempotency intent
   control_sessions     # durable host routing, phase, cursors, epochs
   control_connections  # current host-process generation; fences predecessors
   control_turn_results # idempotent enforced decisions
@@ -123,8 +123,13 @@ receipt, and commits the receipt in the same transaction as policy activation.
 The caller's wall-clock retry time is attribution rather than intent, so a
 lost-response retry can replay the original receipt after restart even when
 the original compare-and-swap hash is no longer the active head.
-`doctor` verifies the redundant row bindings and canonical hashes for all of
-these tiers. Context contents, pinned-safety evaluation, packet hash, and the
+`doctor` checks that the redundant row bindings of all these tiers agree with
+the records they project, and that each stored record decodes. It derives no
+record id from bytes and treats no checksum as a corruption check. The
+fingerprints it does recompute and compare are of content: a stored control
+observation's intent is re-fingerprinted from its input and must match the
+intent fingerprint the row carries, which is the same comparison a retried
+operation makes before it replays the stored receipt. Context contents, pinned-safety evaluation, packet hash, and the
 stamped task head are read in one immediate transaction before a grant is
 persisted.
 
@@ -177,13 +182,18 @@ Repair refuses a
 zero-byte or empty SQLite file with `store_not_initialized`, without creating
 a schema; initialization remains an explicit `engram init` operation.
 
-Objects serialize as RFC 8785 (JCS) canonical JSON, UTF-8. An object's id is
-the SHA-256 of its canonical bytes (hash field excluded); the storage key is
-that hash; hashes are verified at read time so `engram doctor` distinguishes
-corruption from formatting drift. Executable records require the exact current
-schema; state changes mint new objects and never rewrite old ones. The
-contract is substrate-neutral — it is what keeps the deferred Git backend a
-drop-in and gives reports stable provenance hashes.
+Objects serialize as RFC 8785 (JCS) canonical JSON, UTF-8, so equal content
+has equal bytes. An object's id is a random UUID minted when it is stored; the
+storage key is that id and links hold it. The id never depends on the bytes,
+so no link needs rewriting when a record is re-expressed, and a whole store
+changes format by [plain JSON export and import](full-store-migration.md)
+with ids unchanged. Ids written before this rule are 64 hex digits and stay
+valid as opaque strings. A SHA-256 over canonical bytes is a content
+fingerprint for comparing content — idempotency intents, snapshot bodies,
+report bytes — never an id, a link, or a corruption check: SQLite guards the
+bytes on disk, and `engram doctor` checks that stored rows decode and agree.
+Executable records require the exact current schema; state changes mint new
+objects and never rewrite old ones.
 
 Normal open remains fail-closed when the active control-policy selector or its
 immutable history is corrupt. `engram doctor --recover-policy` is a distinct
@@ -355,13 +365,13 @@ plumbing ref, never a branch or working-tree projection; an access-controlled
 object store/service is the organization-scale substrate.
 
 Projection integrity distinguishes three cases: included canonical content,
-a separately hashed `ExclusionStub` for a provenance-only excluded target,
-and a typed excluded-feed placeholder preserving an original dense position.
-Executable shared-state references must resolve to included content; otherwise
-release fails. Existing canonical bytes are passed or excluded, never rewritten
-under their old hash. The manifest hashes inclusion/stub/placeholder coverage,
-`doctor` reports it, and only complete executable closure qualifies as
-`portable`. Export-policy mismatch blocks acquire.
+an `ExclusionStub` under its own minted id for a provenance-only excluded
+target, and a typed excluded-feed placeholder preserving an original dense
+position. Executable shared-state references must resolve to included content;
+otherwise release fails. Existing canonical bytes are passed or excluded, never
+rewritten under their id. The manifest fingerprints inclusion/stub/placeholder
+coverage for comparison, `doctor` reports it, and only complete executable
+closure qualifies as `portable`. Export-policy mismatch blocks acquire.
 
 Generic JSONL export remains interchange only and is not automatically a
 backup of record. The recovery snapshot is a separate versioned contract with
@@ -370,8 +380,9 @@ and `secret-ref` records unless explicitly widened.
 
 ## Portable projection and deferred concurrent sync
 
-V1 portable mode projects append-only `objects/<sha256>.json` plus a manifest,
-work/event data, and feed ordering behind `PortableStoreAdapter`. It supports
+V1 portable mode projects append-only `objects/<id>.json`, one file per record
+named by its minted id, plus a manifest, work/event data, and feed ordering
+behind `PortableStoreAdapter`. It supports
 one active host, explicit handoff/restore, and divergence refusal. Concurrent
 set-union transfer, per-origin ordering, contested-on-concurrency semantics,
 and cross-host claims remain **deferred, not rejected** behind `Sync`.

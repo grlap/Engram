@@ -117,15 +117,9 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
             "UPDATE work_session_state SET
                  tentative_project_cursor = 0,
                  tentative_delivery_token = 'retained-delivery-token',
-                 tentative_delivery_payload_hash = ?3,
-                 tentative_delivery_payload = ?4
+                 tentative_delivery_payload = ?3
              WHERE project_id = ?1 AND session_id = ?2",
-            params![
-                project.0,
-                staged.0,
-                staged_payload.hash().as_str(),
-                staged_payload.bytes()
-            ],
+            params![project.0, staged.0, staged_payload.bytes()],
         )
         .expect("stage an unconfirmed delivery");
     let bulk_expired = MAX_PROCESS_DEFAULT_SESSION_RECLAIMS_PER_CREATION + 6;

@@ -49,7 +49,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         effect: EffectClass::MutateLocal,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
-        obligation_rule_set: builtin_rule_set_hash(),
+        obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: Some(source_basis.clone()),
         observed_at: Some(at(3)),
         actor: run_actor.clone(),
@@ -125,7 +125,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
-        obligation_rule_set: builtin_rule_set_hash(),
+        obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: Some(source_basis.clone()),
         observed_at: Some(at(7)),
         actor: run_actor.clone(),
@@ -266,10 +266,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         .expect("reconstruct exact completion basis");
     let report = store.verify_all().expect("integrity report");
     assert!(report.is_healthy(), "{report:?}");
-    let seal_hash = CanonicalObject::freeze(&seal)
-        .expect("freeze sealed obligation basis")
-        .hash()
-        .clone();
+    let seal_hash = store.stored_seal_id(&seal);
     let mut forged_seal = seal.clone();
     forged_seal.obligations.clear();
     store
@@ -476,7 +473,7 @@ fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
                 effect: EffectClass::MutateLocal,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: true,
-                obligation_rule_set: builtin_rule_set_hash(),
+                obligation_rule_set: active_rule_set_id(&transaction),
                 source_basis: Some(ExecutionSourceBasis {
                     workspace_id: "workspace-bounded".into(),
                     source_revision: format!("revision-{index}"),
@@ -572,7 +569,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 effect: EffectClass::MutateLocal,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: true,
-                obligation_rule_set: builtin_rule_set_hash(),
+                obligation_rule_set: active_rule_set_id(&transaction),
                 source_basis: Some(source_basis.clone()),
                 observed_at: Some(at(3)),
                 actor: run_actor.clone(),
@@ -774,7 +771,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 effect: EffectClass::Observe,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: false,
-                obligation_rule_set: builtin_rule_set_hash(),
+                obligation_rule_set: active_rule_set_id(&store.connection),
                 source_basis: Some(source_basis.clone()),
                 observed_at: Some(at(11)),
                 actor: run_actor.clone(),
@@ -848,6 +845,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
     };
     let mut run_actor = actor("runner");
     run_actor.run_id = Some(run.run_id.0.to_string());
+    let rule_set = active_rule_set_id(&store.connection);
     let observation = |id: &str,
                        source_changed: bool,
                        basis: Option<ExecutionSourceBasis>,
@@ -867,7 +865,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         },
         outcome: ExecutionOutcome::Succeeded,
         source_changed,
-        obligation_rule_set: builtin_rule_set_hash(),
+        obligation_rule_set: rule_set.clone(),
         source_basis: basis,
         observed_at: Some(at_time),
         actor: run_actor.clone(),
@@ -1260,7 +1258,7 @@ fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
         effect: EffectClass::MutateLocal,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
-        obligation_rule_set: builtin_rule_set_hash(),
+        obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: None,
         observed_at: Some(at(3)),
         actor: host_actor.clone(),

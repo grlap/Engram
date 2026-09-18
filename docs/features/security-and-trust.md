@@ -102,8 +102,8 @@ outside Engram's V1 assurance.
 
 ## Immutable history is the audit log
 
-Versions, approvals, retractions, evidence, and tombstones are append-only,
-content-addressed objects. There is no separate audit channel to fall out of
+Versions, approvals, retractions, evidence, and tombstones are append-only
+objects under minted ids. There is no separate audit channel to fall out of
 sync with the data.
 
 Control decisions and transitions also use immutable intent fingerprints and
@@ -164,9 +164,9 @@ shared-state closure.
 If a restricted shared object is needed to rebuild readiness, policy,
 acceptance, completion, or a behavior-affecting feed, export must be authorized
 for that object or release fails `portable_projection_incomplete`. A
-provenance-only reference into excluded content may use a separately hashed
-`ExclusionStub`; because a stub leaks the target's existence, kind, and hash,
-the remote must be authorized for that metadata. If it is not, the result is a
+provenance-only reference into excluded content may use an `ExclusionStub`
+under its own minted id; because a stub leaks the target's existence, kind,
+and id, the remote must be authorized for that metadata. If it is not, the result is a
 marked-truncated backup/export, not an activatable portable store.
 
 ## Redaction: the real control
@@ -176,8 +176,8 @@ and fails closed where policy demands. Secrets and PII are stored as vault
 references, never as remembered values.
 
 The Redactor may transform a candidate before canonical bytes and identity are
-minted. Projection of an existing content-addressed object is pass-or-exclude,
-never rewrite-under-the-old-hash. A sanitized derivative must be a new
+minted. Projection of an existing stored object is pass-or-exclude,
+never rewrite-under-the-old-id. A sanitized derivative must be a new
 canonical object with explicit provenance; portable feed closure still uses
 the original position plus an exclusion stub/placeholder where permitted.
 

@@ -690,8 +690,16 @@ fn completion_result(
     store: &SqliteStore,
     seal: &CompletionSeal,
 ) -> Result<WorkCompleteResult, StoreError> {
+    // The seal's id is the one the completed run records. It was minted when
+    // the seal was written and cannot be re-derived from the seal's content.
+    let seal_id = store
+        .get_work_run(seal.run_id)?
+        .completion_seal
+        .ok_or_else(|| {
+            StoreError::InvalidWorkProjection("a completed run records no completion seal".into())
+        })?;
     Ok(WorkCompleteResult::Completed(WorkCompletedReceipt {
-        seal: crate::CanonicalObject::freeze(seal)?.hash().clone(),
+        seal: seal_id,
         work_id: seal.work_id,
         run_id: seal.run_id,
         completed_at: seal.completed_at,
@@ -938,16 +946,48 @@ fn verified_bounded_work_changes(
     Ok(changes)
 }
 
-pub(crate) fn validate_migration_delivery(
+/// What a retained pending delivery page is read for.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum PendingDelivery {
+    /// Admit the page exactly as stored.
+    AsStored,
+    /// Supply an attribution bit the page omits and current source state
+    /// proves, for a store whose separate audit of it no longer exists. A bit
+    /// the source contradicts is still refused.
+    Materialized,
+}
+
+/// Validates one retained pending delivery page against current source state,
+/// returning the page when `mode` supplied a field the page omitted.
+///
+/// A whole-store transfer reads a page this way so that it either carries the
+/// page or refuses it, rather than publishing a store whose next core retry
+/// would fail on it.
+///
+/// # Errors
+///
+/// Returns [`StoreError`] when the page does not bind its exact dense source
+/// interval or its attribution disagrees with the receiving session.
+pub(crate) fn read_pending_delivery(
     store: &SqliteStore,
     session: &SessionId,
     project: &ProjectId,
     confirmed: i64,
     through: i64,
-    payload: &crate::CanonicalObject,
-) -> Result<(), StoreError> {
-    decode_staged_work_change_page(store, session, project, confirmed, through, payload)?;
-    Ok(())
+    payload: &[u8],
+    mode: PendingDelivery,
+) -> Result<Option<StagedWorkChangePage>, StoreError> {
+    let mut page: StagedWorkChangePage = serde_json::from_slice(payload)?;
+    let supplied = verify_staged_work_change_page(
+        store,
+        session,
+        &FeedId::Project(project.clone()),
+        confirmed,
+        through,
+        &mut page,
+        mode,
+    )?;
+    Ok(supplied.then_some(page))
 }
 
 fn decode_staged_work_change_page(
@@ -956,11 +996,9 @@ fn decode_staged_work_change_page(
     project: &ProjectId,
     confirmed: i64,
     through: i64,
-    payload: &crate::CanonicalObject,
+    payload: &[u8],
 ) -> Result<StagedWorkChangePage, StoreError> {
-    let mut page: StagedWorkChangePage = payload.decode()?;
-    let derived =
-        store.migrated_delivery_attribution(project, session, confirmed, through, payload)?;
+    let mut page: StagedWorkChangePage = serde_json::from_slice(payload)?;
     verify_staged_work_change_page(
         store,
         session,
@@ -968,7 +1006,7 @@ fn decode_staged_work_change_page(
         confirmed,
         through,
         &mut page,
-        &derived,
+        PendingDelivery::AsStored,
     )?;
     Ok(page)
 }
@@ -980,14 +1018,15 @@ fn verify_staged_work_change_page(
     confirmed_through: i64,
     delivered_through: i64,
     page: &mut StagedWorkChangePage,
-    derived_positions: &[i64],
-) -> Result<(), StoreError> {
+    mode: PendingDelivery,
+) -> Result<bool, StoreError> {
     if page.schema_version != SCHEMA_VERSION {
         return Err(StoreError::InvalidWorkProjection(format!(
             "staged work delivery schema {} is unsupported",
             page.schema_version
         )));
     }
+    let mut supplied = false;
     let entries = store.work_feed_between(feed, confirmed_through, delivered_through)?;
     if entries.len() != page.changes.len() {
         return Err(StoreError::InvalidWorkProjection(
@@ -995,10 +1034,9 @@ fn verify_staged_work_change_page(
         ));
     }
     for (entry, change) in entries.iter().zip(&page.changes) {
-        let resolved = store.resolve_migrated_reference(&change.entry.object_hash)?;
         if entry.position != change.entry.position
             || entry.object_kind != change.entry.object_kind
-            || entry.object_hash != resolved
+            || entry.object_hash != change.entry.object_hash
         {
             return Err(StoreError::InvalidWorkProjection(
                 "staged work delivery payload does not bind its exact dense source interval".into(),
@@ -1017,10 +1055,12 @@ fn verify_staged_work_change_page(
         let expected = matches!(&change.delivery, WorkChangeProjection::Visible(_))
             && source_is_from_session(&entry.object_kind, &object, session_id);
         if change.from_current_session != expected {
-            if expected && derived_positions.contains(&entry.position.position) {
-                // Only this exact imported page has a verified per-page audit.
-                // Hydration never writes its frozen payload or changes its token.
+            // A page that omits the bit the source proves may have it supplied
+            // once, for a transfer. A page that claims what the source denies is
+            // wrong in the other direction and stays refused.
+            if mode == PendingDelivery::Materialized && expected {
                 change.from_current_session = true;
+                supplied = true;
             } else {
                 return Err(StoreError::InvalidWorkProjection(
                     "staged work attribution differs from the receiving session".into(),
@@ -1029,7 +1069,7 @@ fn verify_staged_work_change_page(
         }
         change.display_producer = source_display_producer(&entry.object_kind, &object);
     }
-    Ok(())
+    Ok(supplied)
 }
 
 fn source_actor<'a>(kind: &str, object: &'a serde_json::Value) -> Option<&'a serde_json::Value> {

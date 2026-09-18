@@ -265,7 +265,7 @@ events enter the project/root/current-run feeds, are delivered as typed
 A `WorkSourceSnapshot` records adapter kind, canonical external reference,
 captured time, source revision/fingerprint, projected fields, and canonical
 payload hash plus bounded extension data. [File intake](source-intake.md)
-stores a typed, hash-verified snapshot as provenance. First import requires
+stores a typed snapshot as provenance under a minted id. First import requires
 an authored local title and outcome; it does not map external fields into
 local work. Refresh records an immutable source-change notice that applies
 nothing. It never overwrites local state or implicitly reopens/completes work.
@@ -1007,9 +1007,10 @@ feeds, reversed clocks and time-boundary expiry refuse with fresh navigation.
 The encoded context is readable, not confidential or authoritative.
 
 Explicit note locators are the narrow exception to the default safe view's
-identity omission. Native notes use a unique canonical hash prefix (at least
-eight hex digits); inherited notes use `RECORD_HASH:INDEX`, with a one-based
-immutable member index rather than a display ordinal. No new hashes are made.
+identity omission. Native notes use a unique prefix of the record's id (at
+least eight hex digits, from an id of 32 or 64); inherited notes use
+`RECORD_ID:INDEX`, with a one-based immutable member index rather than a display
+ordinal. No id is derived from content to build a locator.
 `show REF --note LOCATOR` / MCP `note: LOCATOR` returns complete detail and
 UTF-8 `body_bytes`, deliberately beyond 12 KiB when necessary. A window that
 cannot fit a body retains its locator, size, `body_omitted` flag and detail
@@ -1850,11 +1851,12 @@ The projection must be closed under executable shared-state references. Every
 object required to rebuild the work graph, readiness, policy, root context,
 acceptance/evidence, completion, and behavior-affecting feed history is either
 included or release fails `portable_projection_incomplete`. Provenance-only
-references into excluded content use a separately hashed `ExclusionStub` that
-names the original hash/kind, reason, and export-policy hash without pretending
-to be that object. Excluded non-semantic feed payloads leave typed placeholders
-at their original dense positions. Export passes or excludes an existing
-canonical object; it never rewrites its bytes under the old hash. `doctor`
+references into excluded content use an `ExclusionStub` under its own minted
+id that names the excluded object's id and kind, the reason, and the
+export-policy fingerprint without pretending to be that object. Excluded
+non-semantic feed payloads leave typed placeholders at their original dense
+positions. Export passes or excludes an existing canonical object; it never
+rewrites its bytes under its id. `doctor`
 distinguishes missing/corrupt from deliberately excluded, reports coverage,
 and claims `portable` only for a complete shared-state closure. Acquire refuses
 an export-policy hash mismatch. If policy forbids even stub metadata, the

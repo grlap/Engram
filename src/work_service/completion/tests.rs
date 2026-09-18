@@ -1400,10 +1400,10 @@ fn interrupted_completion_replays_the_original_work_and_run() {
             .expect("claim original work");
         let input = completion_input("original run completed", "interrupted-completion");
         let original_seal = commit_completion_core_without_finishing(&service, &input, at(2));
-        let original_seal_hash = CanonicalObject::freeze(&original_seal)
-            .expect("original seal object")
-            .hash()
-            .clone();
+        let original_seal_hash = service
+            .store()
+            .expect("store")
+            .stored_seal_id(&original_seal);
 
         match scenario {
             "focus-change" => {

@@ -618,6 +618,62 @@ fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
 }
 
 #[test]
+fn returning_to_an_earlier_rule_set_names_the_same_record() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let initial = store.control_diagnostics().expect("initial diagnostics");
+    let empty = ObligationRuleSet {
+        schema_version: OBLIGATION_RULE_SET_SCHEMA_VERSION,
+        rules: Vec::new(),
+    };
+    let emptied = store
+        .set_obligation_rule_set(
+            &empty,
+            &actor("rule-policy-admin"),
+            "disable future obligation triggers",
+            "rule-set-empty",
+            Some(&initial.active_policy),
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .expect("activate empty rule set");
+    assert_ne!(emptied.obligation_rule_set, initial.obligation_rule_set);
+    let records = |store: &SqliteStore| -> i64 {
+        store
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM objects WHERE object_kind = 'obligation_rule_set'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rule-set records")
+    };
+    assert_eq!(records(&store), 2);
+
+    let restored = store
+        .set_obligation_rule_set(
+            &crate::control::builtin_obligation_rule_set(),
+            &actor("rule-policy-admin"),
+            "return to the stock rule set",
+            "rule-set-stock-again",
+            Some(&emptied.active_policy),
+            now + TimeDelta::seconds(1),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("return to the stock rule set");
+    assert!(restored.changed);
+    assert_eq!(restored.policy_epoch, ProjectPolicyEpoch(3));
+    assert_eq!(
+        restored.previous_rule_set,
+        Some(emptied.obligation_rule_set)
+    );
+    // Equal content an earlier policy named is the same record, not a copy.
+    assert_eq!(restored.obligation_rule_set, initial.obligation_rule_set);
+    assert_eq!(records(&store), 2);
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
 fn established_store_missing_policy_state_refuses_without_bootstrap() {
     let directory = crate::test_support::temp_home().expect("temporary store directory");
 

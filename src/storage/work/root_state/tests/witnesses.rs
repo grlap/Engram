@@ -73,19 +73,26 @@ fn advance_root(store: &mut SqliteStore, root: &crate::WorkItem) {
     claim(store, &item, "holder", "claim", 10, 3600);
 }
 
-// Deliberately re-canonicalize a corrupted fixture and rebind its event edges.
-// The reader must reject semantic faults, not merely a stale object hash.
-fn replace_head(store: &SqliteStore, old: &ObjectHash, new: &RootExecutionDelta) -> ObjectHash {
-    let frozen = CanonicalObject::freeze(new).unwrap();
-    SqliteStore::insert_object(&store.connection, KIND, &frozen).unwrap();
-    store
-        .connection
-        .execute(
-            "UPDATE work_root_executions SET head_hash = ?2 WHERE head_hash = ?1",
-            params![old.as_str(), frozen.hash().as_str()],
-        )
-        .unwrap();
-    let hashes: Vec<String> = store
+// Rewrites the stored head `id` as `new`. The record keeps its id, so every
+// edge that names it still resolves: the reader must reject the semantic
+// fault itself.
+fn rewrite_head(store: &SqliteStore, id: &ObjectHash, new: &RootExecutionDelta) {
+    let object = CanonicalObject::identified(id, new).unwrap();
+    assert_eq!(
+        store
+            .connection
+            .execute(
+                "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+                params![id.as_str(), object.bytes()],
+            )
+            .unwrap(),
+        1
+    );
+}
+
+// Points every event that names the head `old` at the stored head `new`.
+fn rebind_events(store: &SqliteStore, old: &ObjectHash, new: &ObjectHash) {
+    let ids: Vec<String> = store
         .connection
         .prepare(
             "SELECT object_hash FROM objects WHERE object_kind = 'work_event'
@@ -96,38 +103,21 @@ fn replace_head(store: &SqliteStore, old: &ObjectHash, new: &RootExecutionDelta)
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    for hash in hashes {
-        let old_event = ObjectHash::from_stored(hash).unwrap();
+    assert!(!ids.is_empty());
+    for id in ids {
+        let id = ObjectHash::from_stored(id).unwrap();
         let mut event: WorkEvent =
-            load_typed_work_object(&store.connection, &old_event, "work_event").unwrap();
-        event.root_execution.as_mut().unwrap().head = frozen.hash().clone();
-        let object = CanonicalObject::freeze(&event).unwrap();
-        SqliteStore::insert_object(&store.connection, "work_event", &object).unwrap();
+            load_typed_work_object(&store.connection, &id, "work_event").unwrap();
+        event.root_execution.as_mut().unwrap().head = new.clone();
+        let object = CanonicalObject::identified(&id, &event).unwrap();
         store
             .connection
             .execute(
-                "UPDATE work_feed_entries SET object_hash = ?2 WHERE object_hash = ?1",
-                params![old_event.as_str(), object.hash().as_str()],
+                "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+                params![id.as_str(), object.bytes()],
             )
             .unwrap();
-        store
-            .connection
-            .execute(
-                "UPDATE work_items SET latest_event_hash = ?2 WHERE latest_event_hash = ?1",
-                params![old_event.as_str(), object.hash().as_str()],
-            )
-            .unwrap();
-        if old_event != *object.hash() {
-            store
-                .connection
-                .execute(
-                    "DELETE FROM objects WHERE object_hash = ?1",
-                    [old_event.as_str()],
-                )
-                .unwrap();
-        }
     }
-    frozen.hash().clone()
 }
 
 #[test]
@@ -172,7 +162,7 @@ fn root_delta_waiver_fact_proof_checks_ancestry_exact_addition_and_current_ancho
     }
     let mut branch = load_head(&store.connection, &witness.0).unwrap();
     branch.header.updated_at = at(500);
-    let object = CanonicalObject::freeze(&branch).unwrap();
+    let object = CanonicalObject::mint(&branch).unwrap();
     SqliteStore::insert_object(&store.connection, KIND, &object).unwrap();
     let mut fork = witness.clone();
     fork.0.head = object.hash().clone();
@@ -190,7 +180,7 @@ fn root_delta_waiver_fact_proof_checks_ancestry_exact_addition_and_current_ancho
 
     let mut broken = load_head(&store.connection, &current).unwrap();
     broken.state_checksum = witness.0.head.clone();
-    replace_head(&store, &current.head, &broken);
+    rewrite_head(&store, &current.head, &broken);
     assert!(
         verify_waiver_witnesses(&store.connection, &state, &[witness])
             .unwrap_err()
@@ -217,8 +207,7 @@ fn root_delta_waiver_fact_proof_refuses_remove_then_readd() {
     transaction.commit().unwrap();
     // Rebind the fixture's latest event to the resulting valid current state.
     let (_, current) = projected(&store.connection, id).unwrap();
-    let head = load_head(&store.connection, &current).unwrap();
-    replace_head(&store, &witness.0.head, &head);
+    rebind_events(&store, &witness.0.head, &current.head);
     assert_eq!(resolve(&store.connection, &current).unwrap(), restored);
     let snapshot = test_database_shape_snapshot(&store.connection).unwrap();
     assert!(
@@ -243,19 +232,14 @@ fn root_delta_waiver_fact_proof_refuses_broken_chain_without_writes() {
         let mut head = load_head(&store.connection, &current).unwrap();
         match fault {
             "missing_predecessor" => {
-                head.predecessor = Some(
-                    CanonicalObject::freeze(&"missing predecessor")
-                        .unwrap()
-                        .hash()
-                        .clone(),
-                );
+                head.predecessor = Some(ObjectHash::mint());
             }
             "sequence" => head.sequence += 1,
             "revision" => head.previous_revision = Some(0),
             "origin" => head.predecessor = None,
             _ => unreachable!(),
         }
-        replace_head(&store, &current.head, &head);
+        rewrite_head(&store, &current.head, &head);
         let snapshot = test_database_shape_snapshot(&store.connection).unwrap();
         let error = verify_waiver_witnesses(&store.connection, &state, &[witness])
             .unwrap_err()
@@ -278,32 +262,16 @@ fn root_delta_waiver_fact_proof_refuses_broken_chain_without_writes() {
 #[test]
 fn root_delta_waiver_live_proof_does_not_audit_historical_checksums() {
     let (mut store, root, id) = fixture();
-    let mut witness = append_waiver(&mut store, &root, 1);
+    let witness = append_waiver(&mut store, &root, 1);
     advance_root(&mut store, &root);
     let (state, current) = projected(&store.connection, id).unwrap();
     let mut bad = load_head(&store.connection, &witness.0).unwrap();
     let original_delta = bad.clone();
-    let original_head = witness.0.head.clone();
     bad.state_checksum = current.head.clone();
-    let bad_hash = replace_head(&store, &witness.0.head, &bad);
-    witness.0.head = bad_hash.clone();
-    let mut successor = load_head(&store.connection, &current).unwrap();
-    assert_eq!(successor.predecessor, Some(original_head.clone()));
-    successor.predecessor = Some(bad_hash.clone());
-    let current_hash = replace_head(&store, &current.head, &successor);
-    // Remove obsolete fixture objects: export must not fail merely because
-    // re-canonicalization left an unbound old head behind.
-    store
-        .connection
-        .execute(
-            "DELETE FROM objects WHERE object_hash IN (?1, ?2)",
-            params![original_head.as_str(), current.head.as_str()],
-        )
-        .unwrap();
-    let address = RootExecutionRef {
-        head: current_hash.clone(),
-        ..current
-    };
+    rewrite_head(&store, &witness.0.head, &bad);
+    let successor = load_head(&store.connection, &current).unwrap();
+    assert_eq!(successor.predecessor, Some(witness.0.head.clone()));
+    let address = current.clone();
     let snapshot = test_database_shape_snapshot(&store.connection).unwrap();
     verify_waiver_witnesses(&store.connection, &state, std::slice::from_ref(&witness)).unwrap();
     assert_eq!(
@@ -338,18 +306,9 @@ fn root_delta_waiver_live_proof_does_not_audit_historical_checksums() {
         test_database_shape_snapshot(&store.connection).unwrap(),
         snapshot
     );
-    // Repair only the intentionally false checksum and its content addresses.
-    // A healthy full audit now rules out another fixture fault as the cause.
-    let repaired = replace_head(&store, &bad_hash, &original_delta);
-    successor.predecessor = Some(repaired);
-    replace_head(&store, &current_hash, &successor);
-    store
-        .connection
-        .execute(
-            "DELETE FROM objects WHERE object_hash IN (?1, ?2)",
-            params![bad_hash.as_str(), current_hash.as_str()],
-        )
-        .unwrap();
+    // Repair only the intentionally false checksum. A healthy full audit now
+    // rules out another fixture fault as the cause.
+    rewrite_head(&store, &witness.0.head, &original_delta);
     assert!(store.verify_all().unwrap().is_healthy());
 }
 

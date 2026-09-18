@@ -260,7 +260,7 @@ impl SqliteStore {
             actor,
             created_at: request.created_at,
         };
-        let assertion_object = CanonicalObject::freeze(&assertion)?;
+        let assertion_object = CanonicalObject::mint(&assertion)?;
         Self::insert_object(&transaction, "memory_assertion_event", &assertion_object)?;
         Self::apply_memory_projection(
             &transaction,
@@ -693,7 +693,7 @@ fn prepare_project_memory(
         actor: request.actor.clone(),
         created_at: request.created_at,
     };
-    let version_object = CanonicalObject::freeze(&version)?;
+    let version_object = CanonicalObject::mint(&version)?;
     let assertion = MemoryAssertionEvent {
         schema_version: SCHEMA_VERSION,
         memory_id,
@@ -703,7 +703,7 @@ fn prepare_project_memory(
         actor: request.actor.clone(),
         created_at: request.created_at,
     };
-    let assertion_object = CanonicalObject::freeze(&assertion)?;
+    let assertion_object = CanonicalObject::mint(&assertion)?;
     Ok(PreparedProjectMemory {
         version,
         assertion,

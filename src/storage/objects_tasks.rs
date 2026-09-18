@@ -217,19 +217,18 @@ impl SqliteStore {
         Ok(())
     }
 
-    /// Appends an immutable object. Re-appending identical content is
-    /// idempotent; the same digest with different bytes is a hard error.
+    /// Appends an immutable object under a newly minted id. Appending equal
+    /// content again stores a second record.
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError`] on serialization, SQLite, or immutable-collision
-    /// failure.
+    /// Returns [`StoreError`] on serialization or SQLite failure.
     pub fn append<T: Serialize>(
         &mut self,
         object_kind: &str,
         value: &T,
     ) -> Result<CanonicalObject, StoreError> {
-        let object = CanonicalObject::freeze(value)?;
+        let object = CanonicalObject::mint(value)?;
         let transaction = self.connection.transaction()?;
         Self::insert_object(&transaction, object_kind, &object)?;
         transaction.commit()?;
@@ -237,7 +236,7 @@ impl SqliteStore {
     }
 
     /// Appends an immutable task object and records its ordered peer-visible
-    /// change in the same transaction. Replays return the original cursor.
+    /// change in the same transaction.
     ///
     /// # Errors
     ///
@@ -249,7 +248,7 @@ impl SqliteStore {
         object_kind: &str,
         value: &T,
     ) -> Result<(CanonicalObject, ChangeCursor), StoreError> {
-        let object = CanonicalObject::freeze(value)?;
+        let object = CanonicalObject::mint(value)?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -358,7 +357,7 @@ impl SqliteStore {
                     requested: object_kind,
                 });
             }
-            let object = CanonicalObject::verify(&object_hash, bytes)?.decode()?;
+            let object = CanonicalObject::stored(&object_hash, bytes)?.decode()?;
             changes.push(DeltaItem {
                 cursor: ChangeCursor(cursor),
                 object_kind: stored_kind,
@@ -547,7 +546,7 @@ impl SqliteStore {
             actor,
             created_at: now,
         };
-        let object = CanonicalObject::freeze(&event)?;
+        let object = CanonicalObject::mint(&event)?;
         Self::insert_object(&transaction, "task_claim_event", &object)?;
         Self::insert_task_change(&transaction, task_id, "task_claim_event", &object)?;
         transaction.commit()?;
@@ -571,7 +570,7 @@ impl SqliteStore {
             .optional()?;
 
         bytes
-            .map(|bytes| CanonicalObject::verify(hash, bytes)?.decode())
+            .map(|bytes| CanonicalObject::stored(hash, bytes)?.decode())
             .transpose()
     }
 
@@ -615,7 +614,7 @@ impl SqliteStore {
                 requested: object_kind.into(),
             });
         }
-        CanonicalObject::verify(hash, bytes).map(Some)
+        CanonicalObject::stored(hash, bytes).map(Some)
     }
 
     pub(super) fn load_task(

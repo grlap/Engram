@@ -49,7 +49,7 @@ pub(in crate::storage::work) fn latest_canonical_handoff_offer(
     }
     let hash = ObjectHash::from_stored(stored_hash.clone())
         .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-    let event: WorkEvent = CanonicalObject::verify(&hash, bytes)?.decode()?;
+    let event: WorkEvent = CanonicalObject::stored(&hash, bytes)?.decode()?;
     if event
         .handoff_offer
         .as_ref()
@@ -131,7 +131,7 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.offered_at,
         };
-        let checkpoint_object = CanonicalObject::freeze(&checkpoint)?;
+        let checkpoint_object = CanonicalObject::mint(&checkpoint)?;
         SqliteStore::insert_object(&transaction, "work_checkpoint", &checkpoint_object)?;
         append_to_work_feeds(
             &transaction,
@@ -170,7 +170,7 @@ impl SqliteStore {
             expires_at: claim.expires_at.min(requested_expiry),
             state: WorkHandoffState::Offered,
         };
-        let offer_object = CanonicalObject::freeze(&offer)?;
+        let offer_object = CanonicalObject::mint(&offer)?;
         SqliteStore::insert_object(&transaction, "work_handoff_offer", &offer_object)?;
         transaction.execute(
             "INSERT INTO work_handoff_offers (
@@ -304,7 +304,7 @@ impl SqliteStore {
             persist_root_execution(&transaction, &root_execution)?;
         }
         offer.state = WorkHandoffState::Accepted;
-        let accepted_offer_object = CanonicalObject::freeze(&offer)?;
+        let accepted_offer_object = CanonicalObject::mint(&offer)?;
         SqliteStore::insert_object(&transaction, "work_handoff_offer", &accepted_offer_object)?;
         transaction.execute(
             "UPDATE work_handoff_offers
@@ -424,7 +424,7 @@ impl SqliteStore {
         )?;
         renew_holder_claim(&transaction, &mut claim, request.cancelled_at)?;
         offer.state = WorkHandoffState::Cancelled;
-        let offer_object = CanonicalObject::freeze(&offer)?;
+        let offer_object = CanonicalObject::mint(&offer)?;
         SqliteStore::insert_object(&transaction, "work_handoff_offer", &offer_object)?;
         transaction.execute(
             "UPDATE work_handoff_offers

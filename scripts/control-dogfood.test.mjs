@@ -451,7 +451,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     );
     assert.equal(advisoryDoctor.status, 0, advisoryDoctor.stderr);
     const initialPolicy = advisoryDoctor.stdout.match(
-      /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=advisory obligation_rules=([0-9a-f]{64})/,
+      /Control policy schema=1 id=([0-9a-f]{32}) epoch=1 required=advisory obligation_rules=([0-9a-f]{32})/,
     );
     assert.ok(initialPolicy, advisoryDoctor.stdout);
     const unknownRuleField = setObligationRuleSet(
@@ -758,7 +758,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     );
     assert.equal(configuredDoctor.status, 0, configuredDoctor.stderr);
     const configuredPolicyLine = configuredDoctor.stdout.match(
-      /Control policy schema=1 id=[0-9a-f]{64} epoch=2 required=turn_gated obligation_rules=([0-9a-f]{64})/,
+      /Control policy schema=1 id=[0-9a-f]{32} epoch=2 required=turn_gated obligation_rules=([0-9a-f]{32})/,
     );
     assert.ok(configuredPolicyLine, configuredDoctor.stdout);
     assert.equal(configuredPolicyLine[1], initialPolicy[2]);
@@ -1351,7 +1351,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
     });
     assert.equal(boundDoctor.status, 0, boundDoctor.stderr);
     const boundInitialPolicy = boundDoctor.stdout.match(
-      /Control policy schema=1 id=([0-9a-f]{64}) epoch=1 required=turn_gated obligation_rules=([0-9a-f]{64})/,
+      /Control policy schema=1 id=([0-9a-f]{32}) epoch=1 required=turn_gated obligation_rules=([0-9a-f]{32})/,
     );
     assert.ok(boundInitialPolicy, boundDoctor.stdout);
     const proposed = cliWork(engramHome, actor, "propose", {
@@ -2030,7 +2030,7 @@ test("work-bound control records observations and rebinds after a stale fence", 
       ),
       owed.stdout,
     );
-    assert.doesNotMatch(owed.stdout, /\b[0-9a-f]{64}\b/u);
+    assert.doesNotMatch(owed.stdout, /\b(?:[0-9a-f]{32}|[0-9a-f]{64})\b/u);
 
     const staleVerificationTurn = ok(
       await client.request({

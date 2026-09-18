@@ -10,7 +10,7 @@ references another.
 | Brief | One line |
 | --- | --- |
 | [Behavioral control plane](behavioral-control-plane.md) | Shipped host-private turn admission channel with exact bounded delivery, scoped leases, checkpoints, and restart recovery; enforcement depends on the embedding host and action gating remains planned |
-| [Typed memory model](typed-memory-model.md) | Kind × authority × delivery axes over immutable, content-addressed versions |
+| [Typed memory model](typed-memory-model.md) | Kind × authority × delivery axes over immutable versions under minted ids |
 | [Context packets](context-packets.md) | Budgeted retrieval, reproducible hashes, ordered peer deltas, visible review pressure |
 | [Write policy & review](write-policy-and-review.md) | Origin × authority promotion matrix; distillation proposes, never writes; review lifecycle |
 | [Local work system](local-work-system.md) | First-class local work graph, claims, typed verification/environment evidence, policy-selected immutable obligation rules, and exact completion seals |

@@ -244,7 +244,7 @@ fn measure_new_generation(
     prior: u32,
 ) -> [Payload; 3] {
     let root_seal = complete(store, root, held, "holder", proof, "root-done", 210).unwrap();
-    let root_seal_hash = CanonicalObject::freeze(&root_seal).unwrap().hash().clone();
+    let root_seal_hash = store.stored_seal_id(&root_seal);
     let sealed = store.completion_root_execution(&root_seal_hash).unwrap();
     let old_generation = projected(&store.connection, id).unwrap();
     let before = sample(store);
@@ -284,7 +284,7 @@ fn root_delta_reopen_payload_depends_on_change_not_unchanged_history() {
             child_seal,
             id,
         } = ready(prior);
-        let seal_hash = CanonicalObject::freeze(&child_seal).unwrap().hash().clone();
+        let seal_hash = store.stored_seal_id(&child_seal);
         let historical = store.completion_root_execution(&seal_hash).unwrap();
         let (before_root, before_ref) = projected(&store.connection, id).unwrap();
         let depth = load_head(&store.connection, &before_ref).unwrap().sequence;

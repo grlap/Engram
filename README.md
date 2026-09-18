@@ -193,7 +193,7 @@ optional private API.
 ## Data and limits
 
 SQLite is the source of truth for a project on one host. Work history and
-memory versions are stored as immutable, content-addressed records.
+memory versions are stored as immutable records under minted ids.
 Concurrent sessions use transactions and checked ownership to coordinate.
 
 `engram doctor` verifies objects and stored state in one read snapshot.
@@ -206,7 +206,9 @@ Important limits:
 - Identity comes from the caller. It is recorded, not authenticated.
 - The development redactor is a no-op. It does not detect or remove secrets.
 - Prerelease builds can reject an incompatible store. There is no automatic
-  migration chain. Read the [upgrade guidance](docs/development.md) first.
+  migration chain: a whole store moves with `migration export` and
+  `migration import`. Read the [upgrade guidance](docs/development.md) and
+  [full store migration](docs/features/full-store-migration.md) first.
 - Installing a new binary does not update an already-running MCP process.
   Compare its `next` build token with `engram --version` and restart the
   child process when needed.

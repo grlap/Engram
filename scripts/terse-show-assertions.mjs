@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
-const HASH = /\b[0-9a-f]{64}\b/u;
+// A full record id: minted ids are 32 hex digits, earlier ids are 64.
+const HASH = /\b(?:[0-9a-f]{32}|[0-9a-f]{64})\b/u;
 export const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/iu;
 const INTERNAL_FIELDS = new Set([
   "accepted_work_revision",

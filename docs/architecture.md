@@ -58,11 +58,12 @@ ends translate requests; they do not decide eligibility.
 
 ## Object model
 
-Everything canonical is an **immutable, content-addressed object**: memory
+Everything canonical is an **immutable object under a minted id**: memory
 versions, events (approve, retract, verify, tombstone, resolve), edges, and
 evidence. Objects serialize as RFC 8785 (JCS) canonical JSON; an object's id
-is the SHA-256 of its canonical bytes (hash field excluded), verified at read
-time. Readers accept the exact supported schema; policy changes append new
+is a random UUID minted when it is stored, never derived from its bytes, and
+links hold that id. A SHA-256 over canonical bytes is only a content
+fingerprint for comparing content. Readers accept the exact supported schema; policy changes append new
 objects and never rewrite an existing object.
 
 A **memory** is a stable id plus an append-only chain of versions with parent
@@ -84,15 +85,17 @@ report assembly uses a separate fenced assembly claim. See
 
 ## Storage
 
-V1's canonical store is a **local SQLite database**: object rows keyed by
-content hash, written transactionally, append-only by core-enforced contract.
+V1's canonical store is a **local SQLite database**: object rows keyed by a
+minted id, written transactionally, append-only by core-enforced contract.
 Exact-current durable tables include the active heads, status, authority,
 ordering, and idempotency projections consumed by runtime writes. Damage to
 those tables requires restoring a verified current backup. Declared indexes,
 triggers, and FTS5 content are separately rebuildable from verified durable rows
 with `engram doctor --repair-projections`; ordinary open never repairs them.
-`engram doctor` verifies hashes, graph references, projection bindings, and
-configured durability freshness. SQLite is canonical in `local` mode.
+`engram doctor` checks that every stored record decodes and agrees with the
+projections built from it, along with graph references, projection bindings, and
+configured durability freshness. It does not re-derive a record's id from its
+bytes: SQLite guards the bytes on disk. SQLite is canonical in `local` mode.
 Optional recovery snapshots produce `local_backed_up`; sequential
 cross-machine handoff produces `portable`; a later concurrent `Sync` backend
 produces `synchronized`. These are honest durability claims, not runtime

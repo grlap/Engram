@@ -176,8 +176,8 @@ soon as the agent starts.
    bounded ([context packets](context-packets.md)), so intake must decide what
    is pinned (acceptance, repro, the decisive stack trace), what is indexed
    (the list of available evidence), and what is on demand (full logs).
-4. **Redaction must happen at intake.** The canonical store is immutable and
-   content-addressed; what enters it cannot be unwritten. Production logs
+4. **Redaction must happen at intake.** The canonical store is immutable;
+   what enters it cannot be unwritten. Production logs
    must be redacted before they become a snapshot, not after. Until a real
    redactor is installed, V1's visibly labeled no-op
    ([security & trust](security-and-trust.md)) must not be treated as

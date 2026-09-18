@@ -4,7 +4,7 @@
 use super::*;
 use crate::domain::{
     AcceptWorkHandoffRequest, ControlPolicy, EvaluatorModel, MAX_EXECUTION_IDENTITY_BYTES,
-    OfferWorkHandoffRequest, ReopenWorkRequest, WorkEvent, WorkTransition,
+    OfferWorkHandoffRequest, ReopenWorkRequest,
 };
 
 fn pass_judgment(note: &ObjectHash) -> Vec<CriterionVerdictInput> {
@@ -58,97 +58,25 @@ fn handoff(
         .expect("accept handoff")
 }
 
-/// Re-freezes `seal` as `forged` in place. The seal hash is named by the
-/// immutable completion event and the run projection, so both are
-/// re-frozen too: every hash is recomputed and only the forged relationship
-/// is wrong.
-fn refreeze_seal(store: &SqliteStore, seal: &CompletionSeal, forged: &CompletionSeal) {
-    let original = CanonicalObject::freeze(seal).expect("freeze seal");
-    let forged_object = CanonicalObject::freeze(forged).expect("freeze forged seal");
-    let event_hash: String = store
-        .connection
-        .query_row(
-            "SELECT object_hash FROM work_feed_entries
-             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_kind = 'work_event'
-             ORDER BY position DESC LIMIT 1",
-            [seal.run_id.0.to_string()],
-            |row| row.get(0),
-        )
-        .expect("completion event");
-    let event_hash = ObjectHash::from_stored(event_hash).expect("stored hash");
-    let mut event: WorkEvent = store
-        .get(&event_hash)
-        .expect("read event")
-        .expect("canonical event");
-    assert!(
-        matches!(&event.transition, WorkTransition::Completed { seal } if seal == original.hash()),
-        "{:?}",
-        event.transition
-    );
-    event.transition = WorkTransition::Completed {
-        seal: forged_object.hash().clone(),
-    };
-    if let Some(run) = &mut event.run {
-        run.completion_seal = Some(forged_object.hash().clone());
-    }
-    let forged_event = CanonicalObject::freeze(&event).expect("freeze forged event");
-    for (object, source) in [
-        (&forged_object, original.hash()),
-        (&forged_event, &event_hash),
+/// Rewrites the stored `seal` as `forged`. The record keeps its id, so the
+/// completion event and the run projection still name it and only the forged
+/// relationship is wrong.
+fn forge_stored_seal(store: &SqliteStore, seal: &CompletionSeal, forged: &CompletionSeal) {
+    let forged_object =
+        CanonicalObject::identified(&store.stored_seal_id(seal), forged).expect("forged seal");
+    for statement in [
+        "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+        "UPDATE work_completion_seals SET seal_json = ?2 WHERE seal_hash = ?1",
     ] {
-        store
+        let changed = store
             .connection
             .execute(
-                "INSERT INTO objects (object_hash, object_kind, canonical_json, created_at)
-                 SELECT ?1, object_kind, ?2, created_at FROM objects WHERE object_hash = ?3",
-                params![object.hash().as_str(), object.bytes(), source.as_str()],
+                statement,
+                params![forged_object.hash().as_str(), forged_object.bytes()],
             )
-            .expect("insert re-frozen object");
+            .expect("rewrite the stored seal");
+        assert_eq!(changed, 1, "{statement}");
     }
-    store
-        .connection
-        .execute(
-            "UPDATE work_completion_seals SET seal_hash = ?1, seal_json = ?2 WHERE seal_hash = ?3",
-            params![
-                forged_object.hash().as_str(),
-                forged_object.bytes(),
-                original.hash().as_str()
-            ],
-        )
-        .expect("repoint the seal projection");
-    for (new, old) in [
-        (forged_object.hash(), original.hash()),
-        (forged_event.hash(), &event_hash),
-    ] {
-        store
-            .connection
-            .execute(
-                "UPDATE work_feed_entries SET object_hash = ?1 WHERE object_hash = ?2",
-                params![new.as_str(), old.as_str()],
-            )
-            .expect("repoint the feed entries");
-    }
-    store
-        .connection
-        .execute(
-            "UPDATE work_runs
-             SET completion_seal_hash = ?1,
-                 run_json = CAST(replace(CAST(run_json AS TEXT), ?2, ?1) AS BLOB)
-             WHERE run_id = ?3",
-            params![
-                forged_object.hash().as_str(),
-                original.hash().as_str(),
-                seal.run_id.0.to_string()
-            ],
-        )
-        .expect("repoint the run projection");
-    store
-        .connection
-        .execute(
-            "UPDATE work_items SET latest_event_hash = ?1 WHERE latest_event_hash = ?2",
-            params![forged_event.hash().as_str(), event_hash.as_str()],
-        )
-        .expect("repoint the item's latest event");
 }
 
 // Review 1 (High): an independent evaluator that later becomes the holder,
@@ -466,12 +394,11 @@ fn doctor_reports_a_seal_bound_to_the_wrong_evaluation() {
     )
     .expect("evaluation on the other run");
 
-    // Forge the seal to bind the other run's evaluation; the re-freeze keeps
-    // every hash consistent so only the seal-to-evaluation relationship is
-    // wrong.
+    // Forge the seal to bind the other run's evaluation, so only the
+    // seal-to-evaluation relationship is wrong.
     let mut forged = seal.clone();
     forged.acceptance_evaluation = Some(other_evaluation.evaluation);
-    refreeze_seal(store, &seal, &forged);
+    forge_stored_seal(store, &seal, &forged);
     let report = store.verify_all().expect("scan");
     assert!(
         report
@@ -1572,7 +1499,7 @@ fn a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused() {
         // refuse it.
         let mut forged = seal.clone();
         forged.acceptance_evaluation = Some(older.evaluation.clone());
-        refreeze_seal(store, &seal, &forged);
+        forge_stored_seal(store, &seal, &forged);
         let report = store.verify_all().expect("scan");
         assert!(
             report

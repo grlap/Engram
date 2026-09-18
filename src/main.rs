@@ -91,7 +91,7 @@ fn resolve_host_path_identity(
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Export all SQLite data for controlled, same-host format migration.
+    /// Move a whole store between formats as plain JSON: export, then import.
     Migration {
         #[command(subcommand)]
         operation: bin_support::migration::MigrationCommand,

@@ -29,7 +29,6 @@ pub(crate) use planning::validate_work_plan;
 mod query;
 mod record_windows;
 mod root_state;
-pub(in crate::storage) use root_state::KIND as ROOT_DELTA_KIND;
 mod schema;
 mod session;
 mod status;
@@ -127,7 +126,8 @@ pub(crate) struct StageWorkSessionDelivery<'a> {
     pub expected_bound_task_id: Option<TaskId>,
     pub delivered_through: i64,
     pub delivered_entries: &'a [WorkFeedEntry],
-    pub delivery_payload: &'a CanonicalObject,
+    /// The page, frozen as canonical bytes.
+    pub delivery_payload: &'a [u8],
     pub now: DateTime<Utc>,
 }
 
@@ -285,7 +285,8 @@ fn empty_work_relation_basis() -> WorkRelationBasis {
     }
 }
 
-/// Hash-verified immutable obligation plus its durable terminal-state projection.
+/// An immutable obligation decoded from its record, with the durable
+/// terminal-state projection that must agree with it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkObligationRecord {
     pub definition_hash: ObjectHash,
@@ -296,9 +297,9 @@ pub(crate) struct WorkObligationRecord {
     pub resolution_position: Option<FeedPosition>,
 }
 
-/// Hash-verified evidence selection basis used to choose a bounded focus page.
-/// The loader derives these fields from canonical bytes and rejects any
-/// disagreement with the durable run projection before selection.
+/// Evidence selection basis used to choose a bounded focus page. The loader
+/// decodes these fields from the evidence record and rejects any disagreement
+/// with the durable run projection before selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkEvidenceProjectionSummary {
     pub hash: ObjectHash,
@@ -321,6 +322,17 @@ thread_local! {
     static WORK_EVENT_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
     static WORK_ITEM_PROJECTION_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
     static WORK_CATALOG_COUNT_QUERIES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+impl SqliteStore {
+    /// The id under which a run's completion seal is stored.
+    pub(crate) fn stored_seal_id(&self, seal: &CompletionSeal) -> ObjectHash {
+        self.get_work_run(seal.run_id)
+            .expect("sealed run")
+            .completion_seal
+            .expect("a sealed run records its completion seal")
+    }
 }
 
 #[cfg(test)]

@@ -78,9 +78,9 @@ check is authority validation, not remote work-state retrieval.
 Portable export must include the transitive shared-state closure needed to
 rebuild work/readiness/policy/context/acceptance/completion. A disallowed
 executable object fails release. Provenance-only excluded targets use
-separately hashed `ExclusionStub` records, and excluded non-semantic feed
-payloads use typed placeholders that preserve dense positions. Existing
-canonical objects are pass-or-exclude, never rewritten under their old hash.
+`ExclusionStub` records under their own minted ids, and excluded non-semantic
+feed payloads use typed placeholders that preserve dense positions. Existing
+canonical objects are pass-or-exclude, never rewritten under their ids.
 The manifest commits projection coverage and export policy; `doctor` reports
 both, and acquire rejects a policy mismatch. If even stub metadata is not
 allowed, the filtered result is backup/export only, not `portable`.

@@ -33,9 +33,13 @@ This project tracks its work in Engram — the fourteen agent words, documented 
   project store on the destination build. The two builds must share the
   runtime-derived snapshot format fingerprint; a format change or an older
   store keeps the manual re-add path.
-  Either way the file carries no control policy: `engram init` on the new
+  Either way that file carries no control policy: `engram init` on the new
   build repeats the project's `--required-assurance … --authorized-by …
   --reason …` bootstrap and any obligation rule set is re-applied by hand.
+  Those bootstrap steps belong to graph and manual reconstruction only. A
+  [whole-store transfer](features/full-store-migration.md) is the other route
+  and carries the store's policy, authority and rule-set rows with everything
+  else, so nothing is re-applied by hand after one.
 - Every `HostControlRequest` variant is strict: the paired TermAl consumer must
   send exactly the current field set for every operation, with no additive or
   legacy fields. The no-agent-grants build is paired with the coordinated

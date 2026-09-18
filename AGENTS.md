@@ -40,7 +40,8 @@ their presence in a file alone does not prove delivery.
 ### Architecture Boundaries
 
 - `src/domain.rs` owns substrate-neutral memory, task, report, and actor types.
-- `src/canonical.rs` owns RFC 8785 canonical bytes and SHA-256 object identity.
+- `src/canonical.rs` owns RFC 8785 canonical bytes, minted record ids, and
+  content fingerprints.
 - `src/storage/mod.rs` owns the V1 SQLite façade and shared persistence types;
   sibling modules split open/schema guards, canonical objects/task feeds, task
   memory/notes, project memory, control runtime/support, policy administration,
@@ -125,26 +126,29 @@ their presence in a file alone does not prove delivery.
 ### Pre-Release Discipline
 
 Before release, do not add compatibility shims, indefinite support for arbitrary
-old versions, or guessed/unsupported migration chains. The explicit exception is
-full-store conversion between documented, tested source profiles and the current format,
-with complete data accounting and preserved, composable migration provenance.
-Controlled offline same-host upgrade requires operator-coordinated downtime:
-stop existing store consumers and keep new ones from starting through backup,
-conversion, verification, activation, and the recorded resume decision. This is
-an operational precondition, not a new TermAl or Engram admission lock. Keep a
-coherent backup and crash-recovery journal;
-automatic rollback is allowed only before new writes are admitted. Unknown
-profiles refuse without changing the active source or publishing a target.
-See [full store migration](docs/features/full-store-migration.md) for implemented
-profiles and the approved upgrade contract; approval is not proof of delivery.
+old versions, or guessed/unsupported migration chains. A store moves to a new
+format one way: `migration export` writes every row as plain JSON, and
+`migration import` creates a new store in the current format from that file.
+A record's id is a random UUID minted when the record is stored. Ids travel
+unchanged: an import never recomputes an id, never rewrites a link because a
+record changed shape, and never keeps a copy of the old format beside the new.
+A table or column the current format has no place for is refused by name, not
+dropped in silence. The one exception is a column this build has explicitly
+retired, named in its retired-column list (today: the staged delivery page's
+fingerprint, retired on 2026-09-17 at Greg's decision); import stores nothing
+for it and reports it with the values it carried. That list is the whole of
+that authority. The operator stops store consumers, keeps the old file as
+the backup, and swaps the files; see
+[full store migration](docs/features/full-store-migration.md).
 Ordinary store opening remains strict and never migrates implicitly. Every
 schema marker stays 1 until release; change schemas in place, guarded by the
-generic different-build refusal. No pinned hashes
-anywhere in source or tests — a check derives its reference at runtime
-from the same code it checks; the only hashes in the product are canonical
-object identity computed at runtime. The only stability contracts are live
-external consumers (today: TermAl's host protocol). Ceremony is the enemy;
-speed of change is the point.
+generic different-build refusal. A hash is a content fingerprint, used only to
+compare content (idempotency intents, snapshot bodies, build identity). It is
+never a record's identity or a link, and never a corruption check: SQLite
+guards the bytes on disk. No pinned hashes anywhere in source or tests — a
+check derives its reference at runtime from the same code it checks. The only
+stability contracts are live external consumers (today: TermAl's host
+protocol). Ceremony is the enemy; speed of change is the point.
 
 ## Required Quality Gates
 

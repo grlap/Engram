@@ -35,7 +35,8 @@ const AGENT_TOOLS = [
   "memories",
   "forget",
 ];
-const HASH = /\b[0-9a-f]{64}\b/u;
+// A full record id: minted ids are 32 hex digits, earlier ids are 64.
+const HASH = /\b(?:[0-9a-f]{32}|[0-9a-f]{64})\b/u;
 const SOFT_TIMING_MS = 2000;
 const fixtureTimings = new Map();
 const testTimings = new WeakMap();

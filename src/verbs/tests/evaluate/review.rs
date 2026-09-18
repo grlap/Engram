@@ -224,7 +224,7 @@ fn evaluate_accepts_the_locators_show_prints_and_refuses_observations() {
         cited.contains(&gate_hashes(&database, &item)[0]),
         "{cited:?}"
     );
-    assert!(cited.iter().all(|hash| hash.len() == 64), "{cited:?}");
+    assert!(cited.iter().all(|id| id.len() == 32), "{cited:?}");
 
     let head_before_refusals = basis(&database, &item);
     for (label, rejected, reason_word) in [

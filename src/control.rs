@@ -604,8 +604,6 @@ fn delivery_delta_matches(page: &crate::domain::DeliveryPage, delta: &TaskDelta)
                     .checked_add(offset)
                     .and_then(|cursor| cursor.checked_add(1))
                     .is_some_and(|cursor| change.cursor.0 == cursor)
-                    && CanonicalObject::freeze(&change.object)
-                        .is_ok_and(|object| object.hash() == &change.object_hash)
             })
         })
 }

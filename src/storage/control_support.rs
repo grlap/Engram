@@ -216,7 +216,7 @@ impl SqliteStore {
                 "control policy {policy_hash} projection bytes do not match the canonical object"
             )));
         }
-        let policy: ControlPolicy = CanonicalObject::verify(policy_hash, policy_bytes)?.decode()?;
+        let policy: ControlPolicy = CanonicalObject::stored(policy_hash, policy_bytes)?.decode()?;
         let stored_authority = ObjectHash::from_stored(authority_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(authority_hash))?;
         if policy.policy_epoch.0 != projected_epoch || policy.authority != stored_authority {
@@ -231,7 +231,7 @@ impl SqliteStore {
             "project_policy_authority_decision",
         )?;
         let authority: ProjectPolicyAuthorityDecision =
-            CanonicalObject::verify(&policy.authority, authority_bytes.clone())?.decode()?;
+            CanonicalObject::stored(&policy.authority, authority_bytes.clone())?.decode()?;
         if authority_bytes.len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy {policy_hash} authority exceeds its canonical byte limit"
@@ -285,7 +285,7 @@ impl SqliteStore {
                 requested: expected_kind.into(),
             });
         }
-        CanonicalObject::verify(hash, bytes.clone())?;
+        CanonicalObject::stored(hash, bytes.clone())?;
         Ok(bytes)
     }
 
@@ -523,7 +523,7 @@ impl SqliteStore {
             let bind_hash = ObjectHash::from_stored(raw.bind_intent_hash.clone())
                 .ok_or_else(|| StoreError::InvalidStoredHash(raw.bind_intent_hash.clone()))?;
             let bind_value: serde_json::Value =
-                CanonicalObject::verify(&bind_hash, raw.bind_intent_json.clone())?.decode()?;
+                CanonicalObject::stored(&bind_hash, raw.bind_intent_json.clone())?.decode()?;
             let work_binding = match (
                 raw.root_execution_id,
                 raw.work_id,
@@ -1083,7 +1083,7 @@ impl SqliteStore {
     ) -> Result<T, StoreError> {
         let hash = ObjectHash::from_stored(stored_hash.to_owned())
             .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.to_owned()))?;
-        CanonicalObject::verify(&hash, bytes)?.decode()
+        CanonicalObject::stored(&hash, bytes)?.decode()
     }
 
     pub(super) fn replay_control_operation<T: DeserializeOwned>(
@@ -1150,7 +1150,7 @@ impl SqliteStore {
         };
         let stored_intent = ObjectHash::from_stored(stored_intent_hash.clone())
             .ok_or_else(|| StoreError::InvalidStoredHash(stored_intent_hash))?;
-        CanonicalObject::verify(&stored_intent, stored_intent_json.clone())?;
+        CanonicalObject::stored(&stored_intent, stored_intent_json.clone())?;
         if stored_intent != *intent.hash() || stored_intent_json != intent.bytes() {
             return Err(StoreError::ControlOperationIdempotencyConflict {
                 operation: operation.into(),

@@ -1063,8 +1063,6 @@ fn error_code(error: &StoreError) -> &'static str {
         StoreError::InvalidGraphSnapshot(_) => "graph_snapshot_corrupt",
         StoreError::Json(_)
         | StoreError::Sqlite(_)
-        | StoreError::NonCanonicalObject(_)
-        | StoreError::HashMismatch { .. }
         | StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
         | StoreError::InvalidStoredHash(_)

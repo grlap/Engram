@@ -265,17 +265,12 @@ fn detached_origin_requires_reciprocal_canonical_history() {
             rusqlite::params![b"{}".as_slice(), hash],
         )
         .expect("damage source proof");
+    // The damaged source event no longer decodes as a work event.
     match store
         .detached_work_origin(&successor)
         .expect_err("must verify source")
     {
-        StoreError::HashMismatch { expected, actual } => {
-            assert_eq!(
-                expected,
-                crate::ObjectHash::from_stored(hash.clone()).unwrap()
-            );
-            assert_eq!(actual, crate::ObjectHash::from_canonical_bytes(b"{}"));
-        }
+        StoreError::Json(_) => {}
         error => panic!("unexpected refusal: {error}"),
     }
     connection

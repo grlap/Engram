@@ -612,12 +612,12 @@ fn concurrent_same_session_delivery_returns_only_the_winning_exact_page() {
         state.tentative_delivery_token,
         short_response.delivery_token
     );
-    let durable: StagedWorkChangePage = store
+    let durable = store
         .staged_work_session_delivery_payload(&project, &session)
         .expect("durable payload")
-        .expect("pending payload")
-        .decode()
-        .expect("decode durable payload");
+        .expect("pending payload");
+    let durable: StagedWorkChangePage =
+        serde_json::from_slice(&durable).expect("decode durable payload");
     assert_eq!(
         serde_json::to_value(&durable.changes).expect("durable changes"),
         serde_json::to_value(&short_response.changes).expect("response changes")
@@ -781,12 +781,12 @@ fn focus_winning_before_delivery_stage_forces_reprojection() {
     assert_eq!(state.focused_work_id, Some(replacement.work_id));
     assert_eq!(state.tentative_project_cursor, response.delivered_through);
     assert_eq!(state.tentative_delivery_token, response.delivery_token);
-    let durable: StagedWorkChangePage = store
+    let durable = store
         .staged_work_session_delivery_payload(&project, &session)
         .expect("durable payload")
-        .expect("pending payload")
-        .decode()
-        .expect("decode durable payload");
+        .expect("pending payload");
+    let durable: StagedWorkChangePage =
+        serde_json::from_slice(&durable).expect("decode durable payload");
     assert_eq!(
         serde_json::to_value(&durable.changes).expect("durable changes"),
         serde_json::to_value(&response.changes).expect("response changes")

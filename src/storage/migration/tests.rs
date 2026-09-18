@@ -1,969 +1,1832 @@
-use std::fs;
+use std::{collections::BTreeMap, fs, path::Path};
 
-use crate::test_support::temp_home;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension, types::Value};
 
-use super::{
-    ExportManifest, MigrationProfile, TableDisposition, compare_export_to_source, export_store,
-    import_archive, restore_source_layout, verify_export,
-};
-use crate::work_service::{
-    LocalWorkService, WorkCompleteInput, WorkCompleteResult, WorkCompletionCaptureInput,
-    WorkNextQuery, WorkNextSection, WorkNextView, WorkProposeInput, WorkProposeResult,
+use super::*;
+use crate::{
+    ProjectId,
+    domain::{ActorContext, AssuranceLevel, CreateWorkRequest},
+    memory::DevelopmentNoopRedactor,
 };
 
-#[test]
-fn migration_export_preserves_unknown_empty_tables_and_raw_sqlite_cells() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let connection = Connection::open(&source).expect("source");
-    connection.execute_batch("
-        PRAGMA user_version = 73;
-        CREATE TABLE unknown_empty (x BLOB);
-        CREATE TABLE data (id INTEGER PRIMARY KEY, n, i, r, t, b);
-        INSERT INTO data VALUES (8, NULL, -9223372036854775808, 1.25, CAST(x'ff00' AS TEXT), x'ff00');
-        CREATE TABLE keyed (k TEXT PRIMARY KEY, v BLOB) WITHOUT ROWID;
-        INSERT INTO keyed VALUES ('z', x''), ('a', x'00');
-        CREATE VIEW visible AS SELECT id FROM data;
-        CREATE TRIGGER keep_empty AFTER DELETE ON data BEGIN INSERT INTO unknown_empty VALUES (OLD.b); END;
-    ").expect("fixture");
-    drop(connection);
-    let before = fs::read(&source).expect("source bytes");
-    let output = directory.path().join("export.db");
-    let manifest = export_store(&source, &output).expect("export old/unknown schema");
-    assert_eq!(manifest.source_user_version, 73);
-    assert_eq!(manifest.total_rows, 3);
-    assert_eq!(manifest.empty_tables, ["unknown_empty"]);
-    assert_eq!(manifest.tables.len(), 3);
-    assert!(manifest.schema.iter().any(|entry| entry.kind == "trigger"));
-    assert!(manifest.schema.iter().any(|entry| entry.kind == "view"));
-    let archive = Connection::open(&output).expect("archive");
-    let cells: Vec<u8> = archive
-        .query_row(
-            "SELECT cells FROM migration_rows WHERE table_name = 'data'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("cells");
-    let mut expected = vec![1];
-    expected.extend_from_slice(&8_i64.to_be_bytes()); // rowid
-    expected.push(1);
-    expected.extend_from_slice(&8_i64.to_be_bytes()); // declared id
-    expected.push(0);
-    expected.push(1);
-    expected.extend_from_slice(&i64::MIN.to_be_bytes());
-    expected.push(2);
-    expected.extend_from_slice(&1.25_f64.to_bits().to_be_bytes());
-    for tag in [3, 4] {
-        expected.push(tag);
-        expected.extend_from_slice(&2_u64.to_be_bytes());
-        expected.extend_from_slice(&[255, 0]);
-    }
-    assert_eq!(cells, expected);
-    let document: Vec<u8> = archive
-        .query_row("SELECT document FROM migration_manifest", [], |row| {
-            row.get(0)
-        })
-        .expect("manifest");
-    assert_eq!(
-        serde_json::from_slice::<ExportManifest>(&document).expect("decode"),
-        manifest
-    );
-    let second = export_store(&source, &directory.path().join("second.db")).expect("repeat");
-    assert_eq!(second, manifest);
-    assert_eq!(fs::read(&source).expect("source unchanged"), before);
-}
-
-#[test]
-fn migration_export_reads_committed_wal_under_writer_and_never_overwrites() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let connection = Connection::open(&source).expect("source");
-    connection.execute_batch("PRAGMA journal_mode = WAL; CREATE TABLE t(x); INSERT INTO t VALUES ('committed'); BEGIN IMMEDIATE; INSERT INTO t VALUES ('pending');").expect("writer");
-    let output = directory.path().join("archive.db");
-    assert_eq!(
-        export_store(&source, &output)
-            .expect("read under writer")
-            .total_rows,
-        1
-    );
-    let before = fs::read(&output).expect("archive");
-    assert!(export_store(&source, &output).is_err());
-    assert_eq!(fs::read(&output).expect("unchanged"), before);
-    assert!(export_store(&source, &source).is_err());
-    connection.execute_batch("ROLLBACK").expect("rollback");
-    assert!(!fs::read_dir(directory.path()).expect("list").any(|entry| {
-        entry
-            .expect("entry")
-            .file_name()
-            .to_string_lossy()
-            .starts_with(".engram-migration-")
-    }));
-}
-
-#[test]
-fn migration_export_covers_current_store_including_fts_shadow_tables() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let store = crate::SqliteStore::open_unresolved(&source).expect("current store");
-    drop(store);
-    let manifest =
-        export_store(&source, &directory.path().join("archive.db")).expect("full export");
-    assert!(manifest.tables.iter().any(|table| table.kind == "shadow"));
-    assert!(
-        manifest
-            .tables
-            .iter()
-            .any(|table| table.name == "objects" && table.rows > 0)
-    );
-    let source = Connection::open(&source).expect("source");
-    let names: Vec<String> = source
-        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
-        .expect("query")
-        .query_map([], |row| row.get(0))
-        .expect("names")
-        .collect::<Result<_, _>>()
-        .expect("collect");
-    assert_eq!(
-        manifest
-            .tables
-            .iter()
-            .map(|table| table.name.clone())
-            .collect::<Vec<_>>(),
-        names
-    );
-}
-
-#[test]
-fn migration_export_rejects_damage_and_self_consistent_truncation_against_source() {
-    use sha2::{Digest, Sha256};
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let connection = Connection::open(&source).expect("source");
-    connection.execute_batch("CREATE TABLE a(x); CREATE TABLE b(x); CREATE TABLE empty(x); INSERT INTO a VALUES (1), (2); INSERT INTO b VALUES (3);").expect("fixture");
-    let output = directory.path().join("archive.db");
-    let original = export_store(&source, &output).expect("export");
-    assert_eq!(
-        compare_export_to_source(&source, &output).expect("compare"),
-        original
-    );
-    let archive = Connection::open(&output).expect("archive");
-    archive
-        .execute("DELETE FROM migration_rows WHERE table_name = 'b'", [])
-        .expect("truncate");
-    assert!(verify_export(&output).is_err());
-    let mut forged = original;
-    forged
-        .schema
-        .retain(|entry| entry.table != "b" && entry.table != "empty");
-    forged
-        .tables
-        .retain(|table| table.name != "b" && table.name != "empty");
-    forged.total_rows -= 1;
-    forged.empty_tables.clear();
-    let document = serde_json::to_vec(&forged).expect("document");
-    archive
-        .execute(
-            "UPDATE migration_manifest SET document = ?1, document_sha256 = ?2",
-            rusqlite::params![document, format!("{:x}", Sha256::digest(&document))],
-        )
-        .expect("rewrite manifest");
-    assert_eq!(
-        verify_export(&output).expect("self-consistent is not complete"),
-        forged
-    );
-    assert!(compare_export_to_source(&source, &output).is_err());
-}
-
-#[test]
-fn migration_export_refuses_unrepresentable_rowids_without_publishing_output() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let connection = Connection::open(&source).expect("source");
-    connection
-        .execute_batch("CREATE TABLE t(rowid, _rowid_, oid); INSERT INTO t VALUES (1, 2, 3);")
-        .expect("fixture");
-    let output = directory.path().join("archive.db");
-    assert!(export_store(&source, &output).is_err());
-    assert!(!output.exists());
-    assert_eq!(
-        fs::read_dir(directory.path()).expect("directory").count(),
-        1
-    );
-}
-
-#[test]
-fn migration_restore_current_layout_preserves_all_rows_and_sequence_high_water() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let store = crate::SqliteStore::open_unresolved(&source).expect("source");
-    store
-        .connection
-        .execute(
-            "INSERT INTO sqlite_sequence(name, seq) VALUES ('control_turn_results', 99)",
-            [],
-        )
-        .expect("high water above all surviving rows");
-    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
-    drop(store);
-    let archive = directory.path().join("archive.db");
-    let exported = export_store(&source, &archive).expect("export");
-    let restored = directory.path().join("restored.db");
-    assert_eq!(
-        restore_source_layout(&archive, &restored).expect("raw restore"),
-        exported
-    );
-    let store = crate::SqliteStore::open_unresolved(&restored).expect("ordinary current open");
-    assert!(store.verify_all().expect("doctor").is_healthy());
-    let after = crate::storage::test_database_shape_snapshot(&store.connection).expect("after");
-    assert_eq!(before.rows, after.rows);
-    assert_eq!(before.table_info, after.table_info);
-    assert_eq!(
-        store
-            .connection
-            .query_row(
-                "SELECT seq FROM sqlite_sequence WHERE name = 'control_turn_results'",
-                [],
-                |row| row.get::<_, i64>(0)
-            )
-            .expect("sequence"),
-        99
-    );
-}
-
-#[test]
-fn migration_restore_refuses_unknown_profile_without_output() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let connection = Connection::open(&source).expect("source");
-    connection
-        .execute_batch("CREATE TABLE unrecognized(x); INSERT INTO unrecognized VALUES (1);")
-        .expect("fixture");
-    let archive = directory.path().join("archive.db");
-    export_store(&source, &archive).expect("generic export");
-    let output = directory.path().join("restored.db");
-    assert!(restore_source_layout(&archive, &output).is_err());
-    assert!(!output.exists());
-}
-
-#[test]
-fn migration_restore_aggregate_without_intake_indexes() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    aggregate_profile(&source);
-    let archive = directory.path().join("archive.db");
-    let exported = export_store(&source, &archive).expect("export");
-    let output = directory.path().join("restored.db");
-    assert_eq!(
-        restore_source_layout(&archive, &output).expect("exact source layout"),
-        exported
-    );
-    assert!(
-        crate::SqliteStore::open_unresolved(&output).is_err(),
-        "raw unpack must not claim an upgrade"
-    );
-}
-
-pub(in crate::storage::migration) fn aggregate_profile(source: &std::path::Path) {
-    let store = crate::SqliteStore::open_unresolved(source).expect("source");
-    store
-        .connection
-        .execute_batch(
-            "PRAGMA foreign_keys = OFF;
-        DROP TABLE work_root_members;
-        DROP INDEX work_root_execution_active;
-        DROP TABLE work_root_executions;
-        CREATE TABLE work_root_executions (
-             root_execution_id TEXT PRIMARY KEY,
-             project_id TEXT NOT NULL,
-             root_id TEXT NOT NULL REFERENCES work_items(work_id),
-             generation INTEGER NOT NULL,
-             state TEXT NOT NULL,
-             revision INTEGER NOT NULL,
-             created_at_ms INTEGER NOT NULL,
-             updated_at_ms INTEGER NOT NULL,
-             execution_json BLOB NOT NULL,
-             UNIQUE(root_id, generation)
-         ) STRICT;
-        CREATE UNIQUE INDEX work_root_execution_active
-             ON work_root_executions(root_id) WHERE state = 'active';
-        DROP INDEX objects_work_source_key;
-        DROP INDEX objects_work_source_proposal_work;
-        DROP INDEX work_items_source_snapshot;
-        DROP INDEX control_work_leases_task_state;
-        CREATE INDEX control_work_leases_task_state
-                  ON control_work_leases(task_id, state, expires_at_ms);
-    ",
-        )
-        .expect("source predecessor schema");
-    drop(store);
-}
-
-#[test]
-fn migration_import_empty_work_profile_opens_current_without_repair_and_never_overwrites() {
-    let directory = temp_home().expect("fixture");
-    let source = directory.path().join("source.db");
-    aggregate_profile(&source);
-    let archive = directory.path().join("archive.db");
-    let manifest = export_store(&source, &archive).expect("export");
-    let output = directory.path().join("current.db");
-    let report = super::import_archive(&archive, &output).expect("complete bootstrap import");
-    assert_eq!(report.profile, MigrationProfile::AggregateRootV1);
-    assert!(report.dispositions.iter().any(|table| {
-        table.name == "objects" && table.disposition == TableDisposition::Transform
-    }));
-    assert!(report.dispositions.iter().any(|table| {
-        table.name == "work_root_executions" && table.disposition == TableDisposition::Transform
-    }));
-    assert_eq!(report.source, manifest);
-    assert!(!report.installed);
-    assert_eq!(report.conversion.changed_objects, 0);
-    let store = crate::SqliteStore::open_unresolved(&output).expect("current format");
-    assert!(store.verify_all().expect("doctor").is_healthy());
-    let before =
-        crate::storage::test_database_shape_snapshot(&store.connection).expect("before fault");
-    store
-        .connection
-        .execute_batch("SAVEPOINT missing_original")
-        .expect("savepoint");
-    let removed = store.connection.execute("DELETE FROM migration_original_rows WHERE (source_id,table_name,row_number) IN (SELECT source_id,table_name,row_number FROM migration_original_rows ORDER BY source_id,table_name,row_number LIMIT 1)", []).expect("remove one retained row");
-    assert_eq!(removed, 1, "the negative control must remove actual data");
-    assert!(
-        store.verify_all().is_err(),
-        "doctor must audit retained rows, not only active projections"
-    );
-    store
-        .connection
-        .execute_batch("ROLLBACK TO missing_original; RELEASE missing_original")
-        .expect("restore fixture");
-    assert_eq!(
-        crate::storage::test_database_shape_snapshot(&store.connection).expect("after fault"),
-        before
-    );
-    assert!(store.verify_all().expect("restored doctor").is_healthy());
-    assert!(super::import_archive(&archive, &output).is_err());
-}
-
-fn assert_core_complete_result_is_mapped_seal(connection: &Connection, mapped: &str) {
-    let count: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM work_operation_results WHERE operation = 'complete_work'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("core complete_work rows");
-    assert_eq!(count, 1, "one complete_work result");
-    let result: Vec<u8> = connection
-        .query_row(
-            "SELECT result_json FROM work_operation_results WHERE operation = 'complete_work'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("core complete_work bytes");
-    let seal: Vec<u8> = connection
-        .query_row(
-            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
-            [mapped],
-            |row| row.get(0),
-        )
-        .expect("mapped seal bytes");
-    assert_eq!(result, seal);
-}
-
-fn assert_same_durable(left: &Connection, right: &Connection) {
-    let left_rows = durable_rows(left);
-    let right_rows = durable_rows(right);
-    assert_eq!(
-        left_rows
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect::<Vec<_>>(),
-        right_rows
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect::<Vec<_>>(),
-        "durable table names"
-    );
-    for ((name, left), (_, right)) in left_rows.iter().zip(right_rows.iter()) {
-        assert_eq!(left.len(), right.len(), "{name} row count");
-        assert_eq!(left, right, "{name} row bytes");
+fn actor(session: &str) -> ActorContext {
+    ActorContext {
+        actor_id: session.into(),
+        actor_kind: "test_agent".into(),
+        assurance: AssuranceLevel::Asserted,
+        run_id: None,
+        session_id: Some(crate::SessionId(session.into())),
+        source_tool: Some("migration-test".into()),
+        source_skill: None,
+        provenance_chain: Vec::new(),
+        reason: "migration test".into(),
     }
 }
 
-fn durable_rows(connection: &Connection) -> Vec<(String, Vec<Vec<u8>>)> {
+/// A store with work, a note, a claim and a project memory in it.
+fn populated(path: &Path) {
+    let mut store = SqliteStore::open_unresolved(path).expect("store");
+    let project = ProjectId("project-json-transfer".into());
+    let at = chrono::DateTime::parse_from_rfc3339("2026-09-17T10:00:00Z")
+        .expect("time")
+        .with_timezone(&Utc);
+    let item = store
+        .create_work(
+            &CreateWorkRequest {
+                evaluation_mode: None,
+                project_id: project.clone(),
+                parent_id: None,
+                child_requirement: crate::domain::ChildRequirement::Required,
+                title: "Carry a store across formats".into(),
+                outcome: "Every row arrives".into(),
+                acceptance: vec!["rows are equal".into()],
+                kind: crate::domain::WorkItemKind::Task,
+                priority: 1,
+                labels: vec!["transfer".into()],
+                assigned_to: None,
+                deferred_until: None,
+                external_ref: None,
+                notes: vec!["created with a note — naïve ünïcode and \"quotes\"".into()],
+                origin: crate::domain::WorkOrigin::Local,
+                source_snapshot_id: None,
+                actor: actor("author"),
+                idempotency_key: "create".into(),
+                created_at: at,
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("work item");
+    assert!(item.active_run_id.is_some());
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+/// Every stored row of every ordinary table, keyed for comparison.
+///
+/// The tables come from SQLite itself rather than from the exporter, so a table
+/// the exporter wrongly leaves out cannot hide from this comparison.
+fn rows(path: &Path) -> BTreeMap<String, Vec<Vec<Value>>> {
+    let connection = Connection::open(path).expect("open");
     let names: Vec<String> = connection
-        .prepare("SELECT name FROM pragma_table_list WHERE type = 'table' ORDER BY name")
-        .expect("table list")
+        .prepare(
+            "SELECT name FROM pragma_table_list
+             WHERE schema = 'main' AND type = 'table'
+               AND substr(name, 1, 7) COLLATE NOCASE != 'sqlite_'
+             ORDER BY name",
+        )
+        .expect("prepare table list")
         .query_map([], |row| row.get(0))
-        .expect("names")
+        .expect("table list")
         .collect::<Result<_, _>>()
-        .expect("collect");
+        .expect("table names");
     names
         .into_iter()
-        .filter(|name| name != "sqlite_schema" && name != "sqlite_temp_schema")
         .map(|name| {
-            let quoted = name.replace('"', "\"\"");
-            let mut statement = connection
-                .prepare(&format!("SELECT * FROM \"{quoted}\""))
-                .expect("rows");
-            let count = statement.column_count();
-            let mut query = statement.query([]).expect("query");
-            let mut rows = Vec::new();
-            while let Some(row) = query.next().expect("row") {
-                rows.push(super::rows::encode(row, count).expect("encode"));
-            }
-            rows.sort();
-            (name, rows)
+            let columns: Vec<String> = connection
+                .prepare(&format!("PRAGMA table_xinfo({})", quoted(&name)))
+                .expect("prepare columns")
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(6)?, row.get::<_, String>(1)?))
+                })
+                .expect("columns")
+                .map(|column| column.expect("column"))
+                .filter(|(hidden, _)| *hidden == 0)
+                .map(|(_, column)| column)
+                .collect();
+            let select = format!(
+                "SELECT {} FROM {}",
+                columns
+                    .iter()
+                    .map(|column| quoted(column))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                quoted(&name)
+            );
+            let mut statement = connection.prepare(&select).expect("select");
+            let width = columns.len();
+            let mut found = statement
+                .query_map([], |row| {
+                    (0..width).map(|index| row.get::<_, Value>(index)).collect()
+                })
+                .expect("rows")
+                .collect::<Result<Vec<Vec<Value>>, _>>()
+                .expect("row values");
+            found.sort_by_key(|row| format!("{row:?}"));
+            (name, found)
         })
         .collect()
 }
 
-fn logical_fts(connection: &Connection) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
-    let encode = |sql: &str| {
-        let mut statement = connection.prepare(sql).expect("fts");
-        let count = statement.column_count();
-        let mut query = statement.query([]).expect("query");
-        let mut rows = Vec::new();
-        while let Some(row) = query.next().expect("row") {
-            rows.push(super::rows::encode(row, count).expect("encode"));
+#[test]
+fn a_store_round_trips_row_for_row_and_is_healthy() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    let exported = export_json(&source, &file).expect("export");
+    assert!(exported.rows > 0);
+    assert!(
+        exported
+            .left_out
+            .iter()
+            .all(|left| left.reason.contains("search index"))
+    );
+
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import");
+    assert_eq!(imported.replaced_retired_ids, 0);
+
+    let before = rows(&source);
+    let mut after = rows(&target);
+    // Delivery bookkeeping that projection repair discards by design.
+    let mut expected = before.clone();
+    expected.insert("project_memory_advertisements".into(), Vec::new());
+    after.insert("project_memory_advertisements".into(), Vec::new());
+    assert_eq!(after, expected);
+    assert!(before["objects"].len() > 3, "the fixture wrote records");
+
+    let store = SqliteStore::open_unresolved(&target).expect("imported store opens");
+    assert!(store.verify_all().expect("doctor").is_healthy());
+    // The source was only read.
+    assert_eq!(rows(&source), before);
+}
+
+#[test]
+fn every_line_of_the_file_is_plain_json_with_nested_records() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let text = fs::read_to_string(&file).expect("file");
+    let parsed = text
+        .lines()
+        .map(|line| serde_json::from_str::<Json>(line).expect("each line is JSON"))
+        .collect::<Vec<_>>();
+    assert_eq!(parsed[0]["engram_export"]["format"], FORMAT);
+    assert!(parsed.last().expect("end")["end"]["rows"].is_u64());
+    let event = parsed
+        .iter()
+        .find(|line| line["row"]["values"]["object_kind"] == "work_event")
+        .expect("a work event row");
+    // A record is readable where it sits: nested JSON, not an escaped string.
+    assert_eq!(
+        event["row"]["values"]["canonical_json"]["json"]["project_id"],
+        "project-json-transfer"
+    );
+}
+
+#[test]
+fn values_keep_their_storage_class_and_bytes() {
+    for (stored, written) in [
+        (Value::Null, serde_json::json!(null)),
+        (Value::Integer(i64::MIN), serde_json::json!(i64::MIN)),
+        (Value::Real(1.5), serde_json::json!(1.5)),
+        (
+            Value::Text("{\"a\":1}".into()),
+            serde_json::json!("{\"a\":1}"),
+        ),
+        (
+            Value::Blob(b"{\"a\":1,\"b\":[true,null]}".to_vec()),
+            serde_json::json!({"json": {"a": 1, "b": [true, null]}}),
+        ),
+        // Valid JSON that is not in canonical form keeps its exact text.
+        (
+            Value::Blob(b"{\"b\": 1, \"a\": 2}".to_vec()),
+            serde_json::json!({"text": "{\"b\": 1, \"a\": 2}"}),
+        ),
+        (
+            Value::Blob(vec![0xff, 0x00, 0x7f]),
+            serde_json::json!({"hex": "ff007f"}),
+        ),
+    ] {
+        let encoded = encode((&stored).into()).expect("encode");
+        assert_eq!(encoded, written);
+        assert_eq!(decode(encoded).expect("decode"), stored);
+    }
+    assert!(decode(serde_json::json!(true)).is_err());
+    assert!(decode(serde_json::json!({"hex": "f"})).is_err());
+    assert!(decode(serde_json::json!(18_446_744_073_709_551_615_u64)).is_err());
+}
+
+type Edit = Box<dyn Fn(Vec<String>) -> Vec<String>>;
+
+fn rewritten(file: &Path, edit: impl Fn(Vec<String>) -> Vec<String>) {
+    let lines = fs::read_to_string(file)
+        .expect("file")
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    fs::write(file, edit(lines).join("\n") + "\n").expect("rewrite");
+}
+
+#[test]
+fn import_refuses_without_publishing_anything() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    let target = directory.path().join("target.db");
+
+    let cases: Vec<(&str, Edit, &str)> = vec![
+        (
+            "truncated",
+            Box::new(|mut lines| {
+                lines.pop();
+                lines
+            }),
+            "truncated",
+        ),
+        (
+            "missing row",
+            Box::new(|mut lines| {
+                lines.remove(1);
+                lines
+            }),
+            "truncated or its row counts",
+        ),
+        (
+            "unknown table",
+            Box::new(|mut lines| {
+                lines[0] =
+                    lines[0].replace("\"name\":\"objects\"", "\"name\":\"objects_of_tomorrow\"");
+                lines
+            }),
+            "has no place in the current format",
+        ),
+        (
+            "unknown column",
+            Box::new(|mut lines| {
+                lines[0] = lines[0].replace("\"object_kind\"", "\"object_flavour\"");
+                lines
+            }),
+            "column object_flavour of table objects has no place",
+        ),
+        (
+            "not an export",
+            Box::new(|mut lines| {
+                lines[0] = "{\"hello\":1}".into();
+                lines
+            }),
+            "",
+        ),
+    ];
+    for (label, edit, reason) in cases {
+        fs::write(&file, &original).expect("restore file");
+        rewritten(&file, edit);
+        let error = import_json(&file, &target).expect_err(label).to_string();
+        assert!(error.contains(reason), "{label}: {error}");
+        assert!(!target.exists(), "{label} published a store");
+        let leftovers = fs::read_dir(directory.path())
+            .expect("directory")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".engram-migration-")
+            })
+            .count();
+        assert_eq!(leftovers, 0, "{label} left a staging file");
+    }
+
+    fs::write(&file, &original).expect("restore file");
+    fs::write(&target, b"already here").expect("occupied destination");
+    assert!(import_json(&file, &target).is_err());
+    assert_eq!(fs::read(&target).expect("kept"), b"already here");
+    assert!(
+        export_json(&source, &file).is_err(),
+        "export never replaces a file"
+    );
+}
+
+#[test]
+fn a_broken_reference_between_rows_is_refused() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    // Drop one record that a feed entry names, and lower the counts to match.
+    let text = fs::read_to_string(&file).expect("file");
+    let mut lines = text.lines().map(str::to_owned).collect::<Vec<_>>();
+    let victim = lines
+        .iter()
+        .position(|line| line.contains("\"object_kind\":\"work_event\""))
+        .expect("an event row");
+    lines.remove(victim);
+    let mut header: Json = serde_json::from_str(&lines[0]).expect("header");
+    for table in header["engram_export"]["tables"]
+        .as_array_mut()
+        .expect("tables")
+    {
+        if table["name"] == "objects" {
+            table["rows"] = Json::from(table["rows"].as_u64().expect("rows") - 1);
         }
-        rows
+    }
+    lines[0] = header.to_string();
+    let end = lines.len() - 1;
+    let mut last: Json = serde_json::from_str(&lines[end]).expect("end");
+    last["end"]["rows"] = Json::from(last["end"]["rows"].as_u64().expect("rows") - 1);
+    lines[end] = last.to_string();
+    fs::write(&file, lines.join("\n") + "\n").expect("rewrite");
+
+    let target = directory.path().join("target.db");
+    let error = import_json(&file, &target).expect_err("dangling reference");
+    assert!(matches!(error, MigrationError::Sqlite(_)), "{error}");
+    assert!(!target.exists());
+}
+
+#[test]
+fn retired_ids_convert_only_in_reference_slots_and_the_retired_tables_are_not_carried() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let old = "a".repeat(64);
+    let (current, kept_count) = {
+        let connection = Connection::open(&source).expect("source");
+        let current: String = connection
+            .query_row(
+                "SELECT object_hash FROM objects WHERE object_kind = 'work_event' LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("an event");
+        // The shape the retired design left behind: its tables, one binding
+        // record, and a stored replay result that still names the retired id.
+        // The protocol result holds that id in two reference slots, in authored
+        // prose, and in a field that is no reference slot; the observation holds
+        // it under the same field name but is a kind with no slot at all.
+        let body = format!(
+            "{{\"evidence\":{{\"result\":\"{old}\"}},\"note\":\"I checked {old} by hand\",\"opaque\":\"{old}\",\"seal\":\"{old}\"}}"
+        );
+        connection
+            .execute_batch(&format!(
+                "CREATE TABLE migration_original_objects (object_hash TEXT PRIMARY KEY, body BLOB);
+                 INSERT INTO migration_original_objects VALUES ('{old}', x'00');
+                 CREATE TABLE migration_object_map (
+                     source_hash TEXT PRIMARY KEY, target_hash TEXT NOT NULL, binding_hash TEXT NOT NULL);
+                 INSERT INTO objects (object_hash, object_kind, canonical_json)
+                     VALUES ('{binding}', 'migration_object_binding', CAST('{{}}' AS BLOB));
+                 INSERT INTO migration_object_map VALUES ('{old}', '{current}', '{binding}');
+                 INSERT INTO objects (object_hash, object_kind, canonical_json)
+                     VALUES ('{result}', 'work_protocol_result', CAST('{body}' AS BLOB));
+                 INSERT INTO objects (object_hash, object_kind, canonical_json)
+                     VALUES ('{other}', 'test_replay_result',
+                             CAST('{{\"seal\":\"{old}\"}}' AS BLOB));",
+                binding = "b".repeat(64),
+                result = "c".repeat(64),
+                other = "d".repeat(64),
+            ))
+            .expect("retired fixture");
+        let kept: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM objects WHERE object_kind != 'migration_object_binding'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        (current, kept)
     };
+
+    let file = directory.path().join("export.jsonl");
+    let exported = export_json(&source, &file).expect("export");
+    assert!(
+        exported
+            .left_out
+            .iter()
+            .any(|left| left.name == "migration_original_objects" && left.rows == 1)
+    );
+    let written = fs::read_to_string(&file).expect("file");
+    assert!(!written.contains("migration_original_objects\",\"values"));
+
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import");
+    // Exactly the two reference slots, and nothing else.
+    assert_eq!(imported.replaced_retired_ids, 2);
+    let connection = Connection::open(&target).expect("target");
+    let stored = |kind: &str| -> Json {
+        let text: String = connection
+            .query_row(
+                "SELECT CAST(canonical_json AS TEXT) FROM objects WHERE object_kind = ?1",
+                [kind],
+                |row| row.get(0),
+            )
+            .expect("stored record");
+        serde_json::from_str(&text).expect("json")
+    };
+    let result = stored("work_protocol_result");
+    assert_eq!(result["seal"], current);
+    assert_eq!(result["evidence"]["result"], current);
+    // Authored prose, and a field that is not a reference slot, keep their exact
+    // bytes even though they read like an id.
+    assert_eq!(result["note"], format!("I checked {old} by hand"));
+    assert_eq!(result["opaque"], old);
+    // A record kind with no reference slot is untouched.
+    assert_eq!(stored("test_replay_result")["seal"], old);
+
+    let objects: i64 = connection
+        .query_row("SELECT COUNT(*) FROM objects", [], |row| row.get(0))
+        .expect("count");
+    assert_eq!(objects, kept_count);
+    let retired: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE 'migration%'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("schema");
+    assert_eq!(retired, 0);
+}
+
+#[test]
+fn a_retired_id_converts_inside_a_replay_result_that_was_not_stored_canonically() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let old = "a".repeat(64);
+    let current = {
+        let connection = Connection::open(&source).expect("source");
+        let current: String = connection
+            .query_row(
+                "SELECT object_hash FROM objects WHERE object_kind = 'work_event' LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("an event");
+        // A note receipt whose keys are in authored rather than canonical order
+        // travels as text, and a checkpoint result is a bare stored value.
+        connection
+            .execute_batch(&format!(
+                "CREATE TABLE migration_object_map (
+                     source_hash TEXT PRIMARY KEY, target_hash TEXT NOT NULL, binding_hash TEXT NOT NULL);
+                 INSERT INTO migration_object_map VALUES ('{old}', '{current}', '{current}');
+                 INSERT INTO work_operation_results (operation, idempotency_key, request_hash, result_json)
+                     VALUES ('work_note', 'retired-note', '{current}',
+                             CAST('{{\"non_holder\":true,\"evidence\":\"{old}\"}}' AS BLOB));
+                 INSERT INTO work_operation_results (operation, idempotency_key, request_hash, result_json)
+                     VALUES ('work_checkpoint', 'bare-id', '{current}',
+                             CAST('\"{old}\"' AS BLOB));"
+            ))
+            .expect("retired replay fixture");
+        current
+    };
+
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import");
+    assert_eq!(imported.replaced_retired_ids, 1);
+    let connection = Connection::open(&target).expect("target");
+    let result = |key: &str| -> String {
+        connection
+            .query_row(
+                "SELECT CAST(result_json AS TEXT) FROM work_operation_results
+                 WHERE idempotency_key = ?1",
+                [key],
+                |row| row.get(0),
+            )
+            .expect("replay result")
+    };
+    let note: Json = serde_json::from_str(&result("retired-note")).expect("json");
+    assert_eq!(note["evidence"], current);
+    assert_eq!(note["non_holder"], Json::Bool(true));
+    // A bare stored value is no declared reference slot, so it is untouched.
+    assert_eq!(result("bare-id"), format!("\"{old}\""));
+}
+
+#[test]
+fn a_source_table_the_current_format_has_no_place_for_is_refused_without_output() {
+    for table in ["object_fts", "work_catalog_fts"] {
+        for plain_parent in [false, true] {
+            let directory = crate::test_support::temp_home().expect("directory");
+            let source = directory.path().join("source.db");
+            drop(SqliteStore::open_unresolved(&source).expect("store"));
+            let connection = Connection::open(&source).expect("source");
+            connection
+                .execute_batch(&format!("DROP TABLE {table};"))
+                .expect("drop the search index");
+            if plain_parent {
+                connection
+                    .execute_batch(&format!("CREATE TABLE {table}(value TEXT);"))
+                    .expect("plain table under the index name");
+            }
+            connection
+                .execute_batch(&format!(
+                    "CREATE TABLE {table}_data(value TEXT);
+                     INSERT INTO {table}_data VALUES ('preserved');"
+                ))
+                .expect("plain table under a shadow name");
+            drop(connection);
+            let before = fs::read(&source).expect("source bytes");
+            let file = directory.path().join("export.jsonl");
+            export_json(&source, &file).expect("export reads whatever tables exist");
+            let output = directory.path().join("imported.db");
+            // Both names belong to derived tables in the current format, so the
+            // refusal names the collision rather than a missing table.
+            let error = import_json(&file, &output).expect_err("a derived destination");
+            assert!(
+                matches!(&error, MigrationError::Refused(reason)
+                    if reason.contains(table) && reason.contains("derived")),
+                "{table}: {error}"
+            );
+            assert!(!output.exists());
+            assert_eq!(fs::read(&source).expect("source bytes"), before);
+        }
+    }
+}
+
+#[test]
+fn the_store_is_built_in_the_reserved_file_itself() {
+    use std::io::Read;
+
+    let directory = crate::test_support::temp_home().expect("directory");
+    let staged = Staged::beside(&directory.path().join("out.db")).expect("reserve");
+    // A handle on the file that was reserved. If the initializer deleted that
+    // file and let SQLite create a replacement — the sequence that widens the
+    // permissions — this handle would still refer to the reserved file and
+    // would never see a database header through it.
+    let mut reserved = fs::File::open(&staged.path).expect("hold the reserved file open");
+
+    let store = SqliteStore::open_unresolved(&staged.path).expect("open the reserved file");
+    // The mode is inspected here, before any sensitive row is written, not only
+    // on the published result.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let reserved_identity = reserved.metadata().expect("metadata").ino();
+        let opened = fs::metadata(&staged.path).expect("metadata");
+        assert_eq!(
+            opened.ino(),
+            reserved_identity,
+            "the same file, not a new one"
+        );
+        assert_eq!(
+            opened.permissions().mode() & 0o777,
+            0o600,
+            "private before the first sensitive write"
+        );
+    }
+    assert!(store.verify_all().expect("doctor").is_healthy());
+    drop(store);
+
+    let mut header = [0_u8; 16];
+    reserved
+        .read_exact(&mut header)
+        .expect("the reserved file now holds the store");
+    assert_eq!(
+        &header, b"SQLite format 3\0",
+        "the store was built in the reserved file"
+    );
+
+    // What this shows and does not show: the initializer import uses opens the
+    // reserved file in place, so the mode it was created with still governs
+    // every later write. The journals import itself writes are not observed
+    // here; their privacy rests on SQLite matching the database file's mode,
+    // which the unix test below exercises on a store of the same mode.
+}
+
+#[cfg(unix)]
+#[test]
+fn a_journal_beside_a_private_store_is_private_too() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = crate::test_support::temp_home().expect("directory");
+    let staged = Staged::beside(&directory.path().join("out.db")).expect("reserve");
+    let store = SqliteStore::open_unresolved(&staged.path).expect("open the reserved file");
+    // Hold a write open, so a journal exists while it is inspected.
+    store
+        .connection
+        .execute_batch("BEGIN IMMEDIATE; CREATE TABLE probe (value TEXT);")
+        .expect("begin a write");
+    let mut found = 0;
+    for suffix in ["-wal", "-journal"] {
+        let sidecar = PathBuf::from(format!("{}{suffix}", staged.path.display()));
+        if sidecar.exists() {
+            found += 1;
+            assert_eq!(
+                fs::metadata(&sidecar)
+                    .expect("metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600,
+                "{suffix} carries the same rows as the store"
+            );
+        }
+    }
+    assert!(found > 0, "the fixture needs an active journal");
+    store
+        .connection
+        .execute_batch("ROLLBACK;")
+        .expect("release the write");
+}
+
+// Windows has no POSIX mode, so this pins the permission itself only where the
+// permission exists.
+#[cfg(unix)]
+#[test]
+fn an_imported_store_and_its_journals_stay_private() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    import_json(&file, &target).expect("import");
+    let mode = |path: &Path| fs::metadata(path).expect("metadata").permissions().mode() & 0o777;
+    assert_eq!(
+        mode(&target),
+        0o600,
+        "the imported store holds private data"
+    );
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let sidecar = PathBuf::from(format!("{}{suffix}", target.display()));
+        if sidecar.exists() {
+            assert_eq!(mode(&sidecar), 0o600, "{suffix} carries the same rows");
+        }
+    }
+}
+
+#[test]
+fn an_ordinary_table_beside_a_search_index_is_exported_then_refused_by_name() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    {
+        // object_fts is a real search index here; object_fts_notes only reads
+        // like one of the shadow tables SQLite keeps for it.
+        let connection = Connection::open(&source).expect("source");
+        connection
+            .execute_batch(
+                "CREATE TABLE object_fts_notes (note TEXT NOT NULL);
+                 INSERT INTO object_fts_notes VALUES ('kept'), ('also kept');",
+            )
+            .expect("ordinary table beside the index");
+        let classified: String = connection
+            .query_row(
+                "SELECT type FROM pragma_table_list WHERE schema = 'main' AND name = 'object_fts'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("classification");
+        assert_eq!(classified, "virtual", "the fixture keeps the real index");
+    }
+    let file = directory.path().join("export.jsonl");
+    let exported = export_json(&source, &file).expect("export");
+    assert!(
+        exported
+            .tables
+            .iter()
+            .any(|table| table.name == "object_fts_notes" && table.rows == 2),
+        "{:?}",
+        exported.tables
+    );
+    assert!(
+        !exported
+            .left_out
+            .iter()
+            .any(|left| left.name == "object_fts_notes")
+    );
+
+    // The current format has no such table, so import refuses it by name
+    // instead of dropping rows it reported as exported.
+    let target = directory.path().join("target.db");
+    let error = import_json(&file, &target).expect_err("no place for the table");
+    assert!(
+        matches!(&error, MigrationError::Refused(reason)
+            if reason.contains("object_fts_notes") && reason.contains("no place")),
+        "{error}"
+    );
+    assert!(!target.exists());
+}
+
+#[test]
+fn a_virtual_table_this_build_cannot_rebuild_is_refused_by_name() {
+    // The second name starts with a supported index, so a prefix test would
+    // take it for one of that index's shadow tables and drop its rows.
+    for stray in ["stray_fts", "object_fts_extra"] {
+        let directory = crate::test_support::temp_home().expect("directory");
+        let source = directory.path().join("source.db");
+        populated(&source);
+        {
+            let connection = Connection::open(&source).expect("source");
+            connection
+                .execute_batch(&format!(
+                    "CREATE VIRTUAL TABLE {stray} USING fts5(body);
+                     INSERT INTO {stray}(body) VALUES ('rows nobody may drop');"
+                ))
+                .expect("unknown search index");
+            let classified: String = connection
+                .query_row(
+                    "SELECT type FROM pragma_table_list WHERE schema = 'main' AND name = ?1",
+                    [stray],
+                    |row| row.get(0),
+                )
+                .expect("classification");
+            assert_eq!(classified, "virtual", "{stray}");
+            let parent: String = connection
+                .query_row(
+                    "SELECT type FROM pragma_table_list WHERE schema = 'main' AND name = 'object_fts'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("classification");
+            assert_eq!(parent, "virtual", "the real index is still present");
+        }
+        let file = directory.path().join("export.jsonl");
+        let error = export_json(&source, &file).expect_err("unknown virtual table");
+        assert!(
+            matches!(&error, MigrationError::Refused(reason)
+                if reason.contains(stray) && reason.contains("copies or rebuilds")),
+            "{stray}: {error}"
+        );
+        assert!(!file.exists());
+    }
+
+    // Positive control: the supported indexes and their real shadow tables are
+    // still reported as rebuilt, and the store still exports.
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    let exported = export_json(&source, &file).expect("export");
+    for index in SUPPORTED_SEARCH_INDEXES {
+        assert!(
+            exported
+                .left_out
+                .iter()
+                .any(|left| left.name == *index && left.reason.contains("search index")),
+            "{index} is rebuilt, not copied"
+        );
+        assert!(
+            exported
+                .left_out
+                .iter()
+                .any(|left| left.name == format!("{index}_data")),
+            "the shadow tables of {index} are rebuilt too"
+        );
+    }
+}
+
+#[test]
+fn an_undeclared_trigger_refuses_and_an_undeclared_index_is_named() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let indexed = directory.path().join("indexed.db");
+    populated(&indexed);
+    {
+        let connection = Connection::open(&indexed).expect("source");
+        connection
+            .execute_batch("CREATE INDEX rogue_work_items_priority ON work_items(priority);")
+            .expect("undeclared index");
+    }
+    let file = directory.path().join("indexed.jsonl");
+    let exported = export_json(&indexed, &file).expect("an index is derived data");
+    assert!(
+        exported
+            .left_out
+            .iter()
+            .any(|left| left.name == "rogue_work_items_priority"
+                && left.reason.contains("does not declare")),
+        "{:?}",
+        exported.left_out
+    );
+    let target = directory.path().join("indexed-target.db");
+    import_json(&file, &target).expect("import");
+    let connection = Connection::open(&target).expect("target");
+    let rogue: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name = 'rogue_work_items_priority'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("schema");
+    assert_eq!(rogue, 0, "the new store has the current indexes");
+
+    let triggered = directory.path().join("triggered.db");
+    populated(&triggered);
+    {
+        let connection = Connection::open(&triggered).expect("source");
+        connection
+            .execute_batch(
+                "CREATE TRIGGER rogue_work_items_guard BEFORE DELETE ON work_items
+                 BEGIN SELECT RAISE(ABORT, 'no'); END;",
+            )
+            .expect("undeclared trigger");
+    }
+    let refused = directory.path().join("triggered.jsonl");
+    let error = export_json(&triggered, &refused).expect_err("a trigger is behaviour");
+    assert!(
+        matches!(&error, MigrationError::Refused(reason)
+            if reason.contains("rogue_work_items_guard") && reason.contains("not declared")),
+        "{error}"
+    );
+    assert!(!refused.exists());
+}
+
+/// A store whose session has a delivery page staged and not yet acknowledged.
+fn staged_pending_delivery(database: &Path) -> (ProjectId, crate::SessionId) {
+    let project = ProjectId("project-pending-transfer".into());
+    let session = crate::SessionId("pending-session".into());
+    let service = crate::work_service::LocalWorkService::new(
+        database.to_path_buf(),
+        project.clone(),
+        "author".into(),
+        session.clone(),
+        None,
+    );
+    let at = |second: i64| {
+        chrono::DateTime::parse_from_rfc3339("2026-09-17T10:00:00Z")
+            .expect("time")
+            .with_timezone(&Utc)
+            + chrono::Duration::seconds(second)
+    };
+    let peer = crate::work_service::LocalWorkService::new(
+        database.to_path_buf(),
+        project.clone(),
+        "peer".into(),
+        crate::SessionId("peer-session".into()),
+        None,
+    );
+    peer.work_propose(
+        crate::work_service::WorkProposeInput::Root {
+            evaluation_mode: None,
+            external_ref: None,
+            notes: Vec::new(),
+            title: "Work another session proposed".into(),
+            outcome: "the page carries a peer change".into(),
+            acceptance: vec!["the peer change stays a peer change".into()],
+            work_kind: None,
+            priority: None,
+            labels: Vec::new(),
+            assigned_to: None,
+            deferred_until: None,
+            idempotency_key: "peer-root".into(),
+        },
+        at(1),
+    )
+    .expect("peer root");
+    service
+        .work_propose(
+            crate::work_service::WorkProposeInput::Root {
+                evaluation_mode: None,
+                external_ref: None,
+                notes: Vec::new(),
+                title: "Carry a staged delivery".into(),
+                outcome: "the page survives".into(),
+                acceptance: vec!["the page replays".into()],
+                work_kind: None,
+                priority: None,
+                labels: Vec::new(),
+                assigned_to: None,
+                deferred_until: None,
+                idempotency_key: "pending-root".into(),
+            },
+            at(1),
+        )
+        .expect("root");
+    service
+        .work_next(20, crate::work_service::WorkNextQuery::default(), at(2))
+        .expect("stage a delivery page");
+    assert!(
+        pending_cursor(database).is_some(),
+        "the fixture needs a page staged but unacknowledged"
+    );
+    (project, session)
+}
+
+/// The confirmed cursor, the cursor a page is staged through, and its capability.
+fn pending_state(path: &Path) -> (i64, i64, Option<String>) {
+    Connection::open(path)
+        .expect("open")
+        .query_row(
+            "SELECT project_cursor, tentative_project_cursor, tentative_delivery_token
+             FROM work_session_state WHERE tentative_project_cursor IS NOT NULL",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("a staged page")
+}
+
+/// The cursor a page is staged through, when one is pending.
+fn pending_cursor(path: &Path) -> Option<i64> {
+    Connection::open(path)
+        .expect("open")
+        .query_row(
+            "SELECT tentative_project_cursor FROM work_session_state
+             WHERE tentative_project_cursor IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .expect("staged cursor")
+}
+
+/// The session holding a staged page, and the page.
+fn pending_payload(path: &Path) -> (String, Json) {
+    let connection = Connection::open(path).expect("open");
+    let (id, payload): (String, Vec<u8>) = connection
+        .query_row(
+            "SELECT session_id, tentative_delivery_payload
+             FROM work_session_state WHERE tentative_project_cursor IS NOT NULL",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("a staged page");
     (
-        encode("SELECT object_hash,title,body FROM object_fts ORDER BY object_hash"),
-        encode("SELECT work_id,search_text FROM work_catalog_fts ORDER BY work_id"),
+        id,
+        serde_json::from_slice(&payload).expect("staged page json"),
     )
 }
 
-fn current_root_input() -> WorkProposeInput {
-    WorkProposeInput::Root {
-        evaluation_mode: None,
-        title: "Current import fixture".into(),
-        outcome: "Keep every durable row".into(),
-        acceptance: vec!["round-trip".into()],
-        external_ref: None,
-        notes: vec!["seed note".into()],
-        work_kind: None,
-        priority: Some(1),
-        labels: vec!["migration".into()],
-        assigned_to: None,
-        deferred_until: None,
-        idempotency_key: "current-root".into(),
-    }
-}
-
-fn populate_current(path: &std::path::Path) -> (WorkProposeResult, WorkNextView) {
-    let now = chrono::Utc::now();
-    let service = LocalWorkService::new(
-        path.to_path_buf(),
-        crate::ProjectId("migration-current".into()),
-        "author".into(),
-        crate::SessionId("session".into()),
-        None,
-    );
-    let first = service
-        .work_propose(current_root_input(), now)
-        .expect("root");
-    let replay = service
-        .work_propose(current_root_input(), now)
-        .expect("replay same propose");
-    assert_eq!(
-        serde_json::to_value(&replay).expect("replay JSON"),
-        serde_json::to_value(&first).expect("first JSON"),
-        "source idempotent propose must be exact and have no extra effects"
-    );
-    let pending = service
-        .work_next(
-            20,
-            WorkNextQuery {
-                sections: vec![WorkNextSection::Changes],
-                ..WorkNextQuery::default()
-            },
-            now,
-        )
-        .expect("pending delivery");
-    assert!(pending.delivery_token.is_some());
-    assert!(pending.delivered_through.is_some());
-    let store = crate::SqliteStore::open_unresolved(path).expect("open");
-    let updated = store
-        .connection
-        .execute(
-            "UPDATE sqlite_sequence SET seq = MAX(seq, 77) WHERE name = 'control_turn_results'",
-            [],
-        )
-        .expect("bump sequence");
-    if updated == 0 {
-        store
-            .connection
-            .execute(
-                "INSERT INTO sqlite_sequence(name, seq) VALUES ('control_turn_results', 77)",
-                [],
-            )
-            .expect("sequence high water");
-    }
-    drop(store);
-    (first, pending)
-}
-
 #[test]
-fn migration_current_import_twice_preserves_rows_provenance_and_replay() {
-    let directory = temp_home().expect("directory");
+fn a_staged_delivery_page_survives_the_transfer_and_replays_at_its_confirmed_cursor() {
+    let directory = crate::test_support::temp_home().expect("directory");
     let source = directory.path().join("source.db");
-    let (original_propose, pending) = populate_current(&source);
-    let first_archive = directory.path().join("first.db");
-    let first = directory.path().join("imported.db");
-    let exported = export_store(&source, &first_archive).expect("export");
-    let report = import_archive(&first_archive, &first).expect("current import");
-    assert_eq!(report.profile, MigrationProfile::Current);
-    assert!(report.dispositions.iter().any(|table| {
-        table.name == "objects" && table.disposition == TableDisposition::Unchanged
-    }));
-    assert!(report.dispositions.iter().any(|table| {
-        table.name == "object_fts" && table.disposition == TableDisposition::Rebuild
-    }));
-    assert!(
-        report
-            .dispositions
-            .iter()
-            .all(|table| table.disposition != TableDisposition::Transform)
-    );
-    assert_eq!(report.source, exported);
-    assert!(!report.installed);
-    assert_eq!(report.conversion.changed_objects, 0);
-    assert_eq!(report.reexpressed_completion_results, 0);
-    let source_store = crate::SqliteStore::open_unresolved(&source).expect("source");
-    let imported = crate::SqliteStore::open_unresolved(&first).expect("imported");
-    assert!(imported.verify_all().expect("doctor").is_healthy());
-    assert_same_durable(&source_store.connection, &imported.connection);
+    let (project, session) = staged_pending_delivery(&source);
+    let (_, before) = pending_payload(&source);
+
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import");
+    assert_eq!(imported.checked_pending_deliveries, 1);
+    let (_, after) = pending_payload(&target);
+    assert_eq!(after, before, "the frozen payload is carried verbatim");
+
+    assert_replays_without_acknowledging(&target, &project, &session, &before);
+}
+
+/// The pending state a source holds before a transfer, captured for comparison.
+struct SourcePending {
+    confirmed: i64,
+    through: i64,
+    token: Option<String>,
+    source_bytes: Vec<u8>,
+}
+
+fn source_pending(source: &Path) -> SourcePending {
+    let (confirmed, through, token) = pending_state(source);
+    SourcePending {
+        confirmed,
+        through,
+        token,
+        source_bytes: fs::read(source).expect("source bytes"),
+    }
+}
+
+/// One transfer under test: the store it read, the file it wrote and that
+/// file's bytes as written, the store it published, and whose page it carried.
+struct Transfer<'a> {
+    source: &'a Path,
+    export: &'a Path,
+    export_bytes_before: &'a [u8],
+    target: &'a Path,
+    project: &'a ProjectId,
+    session: &'a crate::SessionId,
+}
+
+/// Proves the transfer carried the source's pending delivery state: the target
+/// holds the same confirmed cursor, staged cursor and delivery capability the
+/// source held before export, the page replays there at the confirmed cursor
+/// without being acknowledged away, and neither the source nor the export file
+/// changed in the process.
+fn assert_transfer_keeps_pending_state(
+    transfer: &Transfer<'_>,
+    before: &SourcePending,
+    expected_page: &Json,
+) {
+    let Transfer {
+        source,
+        export,
+        export_bytes_before,
+        target,
+        project,
+        session,
+    } = *transfer;
+    let (confirmed, through, token) = pending_state(target);
     assert_eq!(
-        logical_fts(&source_store.connection),
-        logical_fts(&imported.connection)
+        (confirmed, through, &token),
+        (before.confirmed, before.through, &before.token),
+        "import carried the source's cursors and delivery capability"
     );
-    drop(source_store);
-    drop(imported);
-    let second_archive = directory.path().join("second.db");
-    let second = directory.path().join("imported-again.db");
-    export_store(&first, &second_archive).expect("re-export");
-    let again = import_archive(&second_archive, &second).expect("second current import");
-    assert_eq!(again.profile, MigrationProfile::Current);
-    let first_store = crate::SqliteStore::open_unresolved(&first).expect("first");
-    let second_store = crate::SqliteStore::open_unresolved(&second).expect("second");
-    assert_same_durable(&first_store.connection, &second_store.connection);
-    let maps: i64 = second_store
-        .connection
-        .query_row("SELECT COUNT(*) FROM migration_object_map", [], |row| {
-            row.get(0)
-        })
-        .expect("maps");
-    assert_eq!(maps, 0, "current no-op must not invent remappings");
-    drop(first_store);
-    drop(second_store);
-    let imported = LocalWorkService::new(
-        second.clone(),
-        crate::ProjectId("migration-current".into()),
+    assert_replays_without_acknowledging(target, project, session, expected_page);
+    let (still_confirmed, still_through, still_token) = pending_state(target);
+    assert_eq!(
+        (still_confirmed, still_through, &still_token),
+        (before.confirmed, before.through, &before.token),
+        "replay changed nothing"
+    );
+    assert_eq!(
+        fs::read(source).expect("source bytes"),
+        before.source_bytes,
+        "the source was only read"
+    );
+    assert_eq!(
+        fs::read(export).expect("export bytes"),
+        export_bytes_before,
+        "the export file was only read"
+    );
+}
+
+/// Replays the retained page the way a core retry does: at the cursor already
+/// confirmed, with no acknowledgement capability, so the pending page is
+/// re-read rather than cleared. Proves the page, its capability and the cursors
+/// are exactly as they were afterwards.
+fn assert_replays_without_acknowledging(
+    database: &Path,
+    project: &ProjectId,
+    session: &crate::SessionId,
+    expected: &Json,
+) {
+    let (confirmed, through, token) = pending_state(database);
+    let service = crate::work_service::LocalWorkService::new(
+        database.to_path_buf(),
+        project.clone(),
         "author".into(),
-        crate::SessionId("session".into()),
+        session.clone(),
         None,
     );
-    let roots_before: i64 = {
-        let connection = Connection::open(&second).expect("count");
-        connection
-            .query_row(
-                "SELECT COUNT(*) FROM work_items WHERE parent_id IS NULL",
-                [],
-                |row| row.get(0),
-            )
-            .expect("roots")
-    };
-    let attempts_before: i64 = {
-        let connection = Connection::open(&second).expect("attempts");
-        connection
-            .query_row(
-                "SELECT COUNT(*) FROM work_protocol_attempts WHERE idempotency_key = 'current-root'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("attempts")
-    };
-    let replayed = imported
-        .work_propose(current_root_input(), chrono::Utc::now())
-        .expect("operation replay after current import");
-    assert_eq!(
-        serde_json::to_value(&replayed).expect("imported replay JSON"),
-        serde_json::to_value(&original_propose).expect("original propose JSON"),
-        "imported propose replay must return the original exact result"
-    );
-    let connection = Connection::open(&second).expect("after replay");
-    let roots_after: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM work_items WHERE parent_id IS NULL",
-            [],
-            |row| row.get(0),
-        )
-        .expect("roots after");
-    let attempts_after: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM work_protocol_attempts WHERE idempotency_key = 'current-root'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("attempts after");
-    assert_eq!(roots_before, 1);
-    assert_eq!(roots_after, roots_before);
-    assert_eq!(attempts_after, attempts_before);
-    drop(connection);
-    let query = WorkNextQuery {
-        sections: vec![WorkNextSection::Changes],
-        ..WorkNextQuery::default()
-    };
-    let now = chrono::Utc::now();
-    assert!(
-        imported
-            .work_next_with_delivery_token(
-                20,
-                pending.delivered_through,
-                Some("wrong-token"),
-                query.clone(),
-                now,
-            )
-            .is_err(),
-        "imported pending page must still require the original token"
-    );
-    imported
+    let at = chrono::DateTime::parse_from_rfc3339("2026-09-17T11:00:00Z")
+        .expect("time")
+        .with_timezone(&Utc);
+    let replayed = service
         .work_next_with_delivery_token(
             20,
-            pending.delivered_through,
-            pending.delivery_token.as_deref(),
-            query,
-            now,
+            Some(confirmed),
+            None,
+            crate::work_service::WorkNextQuery::default(),
+            at,
         )
-        .expect("pending delivery token replay after current import");
+        .expect("the retained page replays");
+    let delivered = replayed.changes.as_ref().expect("the retained page");
+    let staged = expected["changes"].as_array().expect("changes");
+    assert_eq!(delivered.len(), staged.len(), "the exact retained entries");
+    for (delivered, staged) in delivered.iter().zip(staged) {
+        let delivered = serde_json::to_value(delivered).expect("change");
+        assert_eq!(delivered["entry"], staged["entry"], "the exact feed entry");
+        assert_eq!(
+            delivered["from_current_session"].as_bool().unwrap_or(false),
+            staged["from_current_session"].as_bool().unwrap_or(false),
+            "the exact attribution"
+        );
+    }
+    // Nothing was acknowledged: the same page, capability and cursors remain.
+    let (still_confirmed, still_through, still_token) = pending_state(database);
+    assert_eq!((still_confirmed, still_through), (confirmed, through));
+    assert_eq!(still_token, token, "the delivery capability is unchanged");
+    let (_, unchanged) = pending_payload(database);
+    assert_eq!(&unchanged, expected, "the frozen page is unchanged");
 }
 
 #[test]
-fn migration_current_import_preserves_prior_aggregate_provenance() {
-    let directory = temp_home().expect("directory");
+fn a_staged_page_that_omits_its_attribution_has_it_supplied_once_from_source_state() {
+    let directory = crate::test_support::temp_home().expect("directory");
     let source = directory.path().join("source.db");
-    aggregate_profile(&source);
-    let archive = directory.path().join("aggregate.db");
-    export_store(&source, &archive).expect("export");
-    let converted = directory.path().join("converted.db");
-    let first = import_archive(&archive, &converted).expect("aggregate");
-    assert_eq!(first.profile, MigrationProfile::AggregateRootV1);
-    assert!(first.dispositions.iter().any(|table| {
-        table.name == "objects" && table.disposition == TableDisposition::Transform
-    }));
-    let converted_store = crate::SqliteStore::open_unresolved(&converted).expect("converted");
-    let maps_before: i64 = converted_store
-        .connection
-        .query_row("SELECT COUNT(*) FROM migration_object_map", [], |row| {
-            row.get(0)
-        })
-        .expect("maps");
-    assert!(maps_before > 0);
-    drop(converted_store);
-    let current_archive = directory.path().join("current.db");
-    export_store(&converted, &current_archive).expect("export converted");
-    let round = directory.path().join("round.db");
-    let report = import_archive(&current_archive, &round).expect("current after aggregate");
-    assert_eq!(report.profile, MigrationProfile::Current);
-    let before = crate::SqliteStore::open_unresolved(&converted).expect("before");
-    let after = crate::SqliteStore::open_unresolved(&round).expect("after");
-    assert_same_durable(&before.connection, &after.connection);
-    let maps_after: i64 = after
-        .connection
-        .query_row("SELECT COUNT(*) FROM migration_object_map", [], |row| {
-            row.get(0)
-        })
-        .expect("maps");
-    assert_eq!(maps_before, maps_after);
-    assert_eq!(report.reexpressed_completion_results, 0);
-    let audits: i64 = after
-        .connection
-        .query_row(
-            "SELECT COUNT(*) FROM migration_reexpressed_results",
-            [],
-            |row| row.get(0),
+    let (project, session) = staged_pending_delivery(&source);
+    let (id, mut payload) = pending_payload(&source);
+    // The state a store converted by the retired design can hold: the page
+    // omits the attribution bit, because a separate audit recorded it. That
+    // audit no longer exists, and the current reader rejects the absent bit.
+    let mut stripped = 0;
+    for change in payload["changes"].as_array_mut().expect("changes") {
+        if change
+            .as_object_mut()
+            .expect("change")
+            .remove("from_current_session")
+            .is_some_and(|bit| bit == Json::Bool(true))
+        {
+            stripped += 1;
+        }
+    }
+    assert!(stripped > 0, "the fixture needs an own-session change");
+    write_pending_payload(&source, &id, &payload);
+
+    let before_transfer = source_pending(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let export_bytes = fs::read(&file).expect("export bytes");
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import supplies the omitted field");
+    assert_eq!(imported.checked_pending_deliveries, 1);
+    assert_eq!(imported.materialized_pending_attributions, 1);
+
+    // The field is now in the page itself, and the page is admitted exactly as
+    // stored by the reader that had rejected it.
+    let (_, admitted) = pending_payload(&target);
+    let own = admitted["changes"]
+        .as_array()
+        .expect("changes")
+        .iter()
+        .filter(|change| change["from_current_session"] == Json::Bool(true))
+        .count();
+    assert_eq!(own, stripped, "exactly the omitted bits are supplied");
+    assert!(
+        admitted["changes"]
+            .as_array()
+            .expect("changes")
+            .iter()
+            .any(|change| change["from_current_session"] != Json::Bool(true)),
+        "a peer change stays a peer change"
+    );
+    // Only the page changed: the cursors and the delivery capability it was
+    // issued under came across from the source and survive the replay.
+    assert_transfer_keeps_pending_state(
+        &Transfer {
+            source: &source,
+            export: &file,
+            export_bytes_before: &export_bytes,
+            target: &target,
+            project: &project,
+            session: &session,
+        },
+        &before_transfer,
+        &admitted,
+    );
+
+    // The same replay path refuses the page as it stood before import supplied
+    // the field, which is what makes the materialization the cause.
+    let (confirmed, _, _) = pending_state(&source);
+    let unrepaired = crate::work_service::LocalWorkService::new(
+        source.clone(),
+        project,
+        "author".into(),
+        session,
+        None,
+    );
+    let refused = unrepaired
+        .work_next_with_delivery_token(
+            20,
+            Some(confirmed),
+            None,
+            crate::work_service::WorkNextQuery::default(),
+            chrono::DateTime::parse_from_rfc3339("2026-09-17T11:00:00Z")
+                .expect("time")
+                .with_timezone(&Utc),
         )
-        .expect("audits");
-    assert_eq!(
-        audits, 0,
-        "empty-work predecessor has no completion rewrites"
+        .expect_err("the omitted field is refused before it is supplied");
+    assert!(
+        matches!(&refused, crate::StoreError::InvalidWorkProjection(reason)
+            if reason.contains("attribution differs")),
+        "{refused}"
     );
 }
 
 #[test]
-fn migration_import_refuses_corruption_unknown_profile_and_existing_destination() {
-    let directory = temp_home().expect("directory");
+fn a_staged_page_whose_attribution_the_source_denies_refuses_before_publication() {
+    let directory = crate::test_support::temp_home().expect("directory");
     let source = directory.path().join("source.db");
-    let _ = populate_current(&source);
-    let archive = directory.path().join("archive.db");
-    export_store(&source, &archive).expect("export");
-    let output = directory.path().join("out.db");
-    import_archive(&archive, &output).expect("first");
-    assert!(import_archive(&archive, &output).is_err());
-    assert!(output.exists());
-
-    let unknown = directory.path().join("unknown.db");
-    let connection = Connection::open(&unknown).expect("unknown");
-    connection
-        .execute_batch("CREATE TABLE unrecognized(x); INSERT INTO unrecognized VALUES (1);")
-        .expect("fixture");
-    drop(connection);
-    let unknown_archive = directory.path().join("unknown-archive.db");
-    export_store(&unknown, &unknown_archive).expect("generic export");
-    let unknown_out = directory.path().join("unknown-out.db");
-    assert!(import_archive(&unknown_archive, &unknown_out).is_err());
-    assert!(!unknown_out.exists());
-
-    let damaged = directory.path().join("damaged.db");
-    fs::copy(&archive, &damaged).expect("copy");
-    let archive_connection = Connection::open(&damaged).expect("archive");
-    archive_connection
-        .execute("DELETE FROM migration_rows", [])
-        .expect("corrupt");
-    drop(archive_connection);
-    let damaged_out = directory.path().join("damaged-out.db");
-    assert!(import_archive(&damaged, &damaged_out).is_err());
-    assert!(!damaged_out.exists());
-}
-
-#[test]
-fn migration_import_refuses_current_layout_without_all_provenance_tables() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    drop(crate::SqliteStore::open_unresolved(&source).expect("current"));
-    let connection = Connection::open(&source).expect("open");
-    connection
-        .execute_batch("PRAGMA foreign_keys=OFF")
-        .expect("fk off");
-    for table in super::schema::TABLES {
-        connection
-            .execute_batch(&format!("DROP TABLE {table}"))
-            .expect("drop provenance");
+    staged_pending_delivery(&source);
+    let (id, mut payload) = pending_payload(&source);
+    // A claim in the other direction: the page says a change another session
+    // made is this session's own. Nothing may supply that, because the record
+    // names the other session. An absent bit is indistinguishable from false,
+    // so only this direction can be contradicted.
+    let mut claimed = 0;
+    for change in payload["changes"].as_array_mut().expect("changes") {
+        let change = change.as_object_mut().expect("change");
+        if change.get("from_current_session") != Some(&Json::Bool(true)) {
+            change.insert("from_current_session".into(), Json::Bool(true));
+            claimed += 1;
+        }
     }
-    drop(connection);
-    let archive = directory.path().join("archive.db");
-    export_store(&source, &archive).expect("export current-shaped without provenance tables");
-    let restored = directory.path().join("restored.db");
-    restore_source_layout(&archive, &restored)
-        .expect("unpack still restores the all-absent provenance layout");
-    let imported = directory.path().join("imported.db");
-    let error = import_archive(&archive, &imported).expect_err("not a current import profile");
+    assert!(claimed > 0, "the fixture needs a peer change");
+    write_pending_payload(&source, &id, &payload);
+
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    let error = import_json(&file, &target).expect_err("contradicted attribution");
     assert!(
-        error
-            .to_string()
-            .contains("current import requires all six migration provenance tables"),
+        matches!(&error, MigrationError::Refused(reason)
+            if reason.contains("pending-session") && reason.contains("can admit")),
         "{error}"
     );
-    assert!(!imported.exists());
+    assert!(!target.exists());
+}
 
-    let partial = directory.path().join("partial.db");
-    drop(crate::SqliteStore::open_unresolved(&partial).expect("current"));
-    let connection = Connection::open(&partial).expect("partial");
-    connection
-        .execute_batch("PRAGMA foreign_keys=OFF; DROP TABLE migration_object_map")
-        .expect("drop one provenance table");
-    drop(connection);
-    let partial_archive = directory.path().join("partial-archive.db");
-    export_store(&partial, &partial_archive).expect("export partial provenance");
-    let partial_restored = directory.path().join("partial-restored.db");
-    assert!(restore_source_layout(&partial_archive, &partial_restored).is_err());
-    assert!(!partial_restored.exists());
-    let partial_imported = directory.path().join("partial-imported.db");
-    assert!(import_archive(&partial_archive, &partial_imported).is_err());
-    assert!(!partial_imported.exists());
+fn write_pending_payload(path: &Path, id: &str, payload: &Json) {
+    let bytes = serde_json_canonicalizer::to_vec(payload).expect("canonical page");
+    let connection = Connection::open(path).expect("open");
+    let changed = connection
+        .execute(
+            "UPDATE work_session_state SET tentative_delivery_payload = ?2
+             WHERE session_id = ?1",
+            rusqlite::params![id, bytes],
+        )
+        .expect("rewrite the staged page");
+    assert_eq!(changed, 1);
+}
+
+/// Builds a stored value holding `id` at `path`, beside a sibling that reads
+/// exactly like an id but is authored text.
+fn value_at(path: &str, id: &str) -> Json {
+    let mut steps: Vec<&str> = path.split('.').collect();
+    let last = steps.pop().expect("a path has a field");
+    let mut value = match last.strip_suffix("[]") {
+        Some(field) => serde_json::json!({field: [id], "note": format!("about {id}")}),
+        None => serde_json::json!({last: id, "note": format!("about {id}")}),
+    };
+    while let Some(step) = steps.pop() {
+        value = match step.strip_suffix("[]") {
+            Some(field) => serde_json::json!({field: [value], "note": format!("about {id}")}),
+            None => serde_json::json!({step: value, "note": format!("about {id}")}),
+        };
+    }
+    value
+}
+
+/// Reads back the id `value_at` placed at `path`.
+fn id_at(value: &Json, path: &str) -> Json {
+    let mut here = value;
+    for step in path.split('.') {
+        here = match step.strip_suffix("[]") {
+            Some(field) => &here[field][0],
+            None => &here[step],
+        };
+    }
+    here.clone()
 }
 
 #[test]
-fn migration_aggregate_import_remaps_completed_seal_run_and_replays() {
-    let directory = temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let source_seal = super::aggregate_lifecycle::populate_completed_aggregate(&source);
-    {
-        let source = Connection::open(&source).expect("predecessor source");
-        let seals: i64 = source
-            .query_row("SELECT COUNT(*) FROM work_completion_seals", [], |row| {
-                row.get(0)
-            })
-            .expect("source seals");
-        assert_eq!(
-            seals, 1,
-            "lifecycle helper builds one completed root, not parallel child seals"
-        );
+fn every_declared_reference_slot_converts_and_its_neighbours_do_not() {
+    let old = "a".repeat(64);
+    let current = "b".repeat(64);
+    let ids = HashMap::from([(old.clone(), current.clone())]);
+    assert!(
+        !RETIRED_REFERENCE_SLOTS.is_empty(),
+        "the declared slots are the whole conversion scope"
+    );
+    for slot in RETIRED_REFERENCE_SLOTS {
+        for path in slot.paths {
+            let mut replaced = 0;
+            let carried = convert_retired_references(
+                slot.table,
+                slot.kind,
+                slot.column,
+                serde_json::json!({ "json": value_at(path, &old) }),
+                &ids,
+                &mut replaced,
+            )
+            .expect("convert");
+            assert_eq!(replaced, 1, "{} {path}", slot.table);
+            let body = &carried["json"];
+            assert_eq!(id_at(body, path), Json::String(current.clone()), "{path}");
+            // Authored text beside the slot, at every level of the path, is
+            // untouched even though it contains the same id.
+            let mut here = body;
+            for step in path.split('.') {
+                assert_eq!(
+                    here["note"],
+                    Json::String(format!("about {old}")),
+                    "prose beside {path}"
+                );
+                here = match step.strip_suffix("[]") {
+                    Some(field) => &here[field][0],
+                    None => &here[step],
+                };
+            }
+
+            // The same value under another table, column or record kind is not
+            // a declared slot, so nothing in it changes.
+            let mut untouched = 0;
+            let other = convert_retired_references(
+                "some_other_table",
+                slot.kind,
+                slot.column,
+                serde_json::json!({ "json": value_at(path, &old) }),
+                &ids,
+                &mut untouched,
+            )
+            .expect("convert");
+            assert_eq!(untouched, 0, "{} {path}", slot.table);
+            assert_eq!(id_at(&other["json"], path), Json::String(old.clone()));
+            if slot.kind.is_some() {
+                let mut wrong_kind = 0;
+                convert_retired_references(
+                    slot.table,
+                    Some("another_kind"),
+                    slot.column,
+                    serde_json::json!({ "json": value_at(path, &old) }),
+                    &ids,
+                    &mut wrong_kind,
+                )
+                .expect("convert");
+                assert_eq!(wrong_kind, 0, "{} {path}", slot.table);
+            }
+        }
     }
-    let archive = directory.path().join("archive.db");
-    export_store(&source, &archive).expect("export");
-    let output = directory.path().join("imported.db");
-    let report = import_archive(&archive, &output).expect("aggregate completed import");
-    assert_eq!(report.profile, MigrationProfile::AggregateRootV1);
-    assert!(report.conversion.changed_objects > 0);
-    assert!(report.reexpressed_completion_results > 0);
-    for name in [
-        "objects",
-        "work_root_executions",
-        "work_runs",
-        "work_completion_seals",
-        "work_operation_results",
+}
+
+#[test]
+fn a_copied_table_may_not_take_the_place_of_a_derived_one() {
+    // An ordinary source table with a search index's name and exact columns
+    // would pass a column check, be inserted, and then be thrown away when the
+    // index is rebuilt, while the report counted its rows as copied. The same
+    // holds for one wearing a shadow table's name and columns.
+    for (name, columns, row) in [
+        (
+            "object_fts",
+            "object_hash TEXT, title TEXT, body TEXT",
+            "('independent', 'a row of its own', 'not derived from anything')",
+        ),
+        (
+            "object_fts_data",
+            "id INTEGER PRIMARY KEY, block BLOB",
+            "(1, x'00')",
+        ),
     ] {
+        let directory = crate::test_support::temp_home().expect("directory");
+        let source = directory.path().join("source.db");
+        populated(&source);
+        {
+            let connection = Connection::open(&source).expect("source");
+            connection
+                .execute_batch(&format!(
+                    "DROP TABLE object_fts;
+                     CREATE TABLE {name} ({columns});
+                     INSERT INTO {name} VALUES {row};"
+                ))
+                .expect("an ordinary table under a derived name");
+            let classified: String = connection
+                .query_row(
+                    "SELECT type FROM pragma_table_list WHERE schema = 'main' AND name = ?1",
+                    [name],
+                    |row| row.get(0),
+                )
+                .expect("classification");
+            assert_eq!(classified, "table", "{name} is ordinary in the source");
+        }
+        let before = fs::read(&source).expect("source bytes");
+        let file = directory.path().join("export.jsonl");
+        let exported = export_json(&source, &file).expect("an ordinary table exports");
         assert!(
-            report.dispositions.iter().any(|table| {
-                table.name == name && table.disposition == TableDisposition::Transform
-            }),
-            "{name}"
+            exported
+                .tables
+                .iter()
+                .any(|table| table.name == name && table.rows == 1),
+            "{name}: {:?}",
+            exported.tables
+        );
+
+        let target = directory.path().join("target.db");
+        let error = import_json(&file, &target).expect_err("a derived destination");
+        assert!(
+            matches!(&error, MigrationError::Refused(reason)
+                if reason.contains(name) && reason.contains("derived")),
+            "{name}: {error}"
+        );
+        assert!(!target.exists(), "{name} published a store");
+        let leftovers = fs::read_dir(directory.path())
+            .expect("directory")
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".engram-migration-")
+            })
+            .count();
+        assert_eq!(leftovers, 0, "{name} left a staging file");
+        assert_eq!(fs::read(&source).expect("source bytes"), before, "{name}");
+    }
+}
+
+#[test]
+fn a_hex_blob_is_read_from_an_explicit_alphabet_only() {
+    // A numeric sign is not a hex digit, even where a number parser would take
+    // one; nor is anything outside the alphabet, an odd length, or non-ASCII.
+    for malformed in ["+f", "-f", "zz", "0g", "f", "abc", "é0", "0x", " 0"] {
+        assert!(
+            decode(serde_json::json!({ "hex": malformed })).is_err(),
+            "{malformed:?} must be refused"
         );
     }
-    let store = crate::SqliteStore::open_unresolved(&output).expect("imported");
-    assert!(store.verify_all().expect("doctor").is_healthy());
-    let mapped: String = store
-        .connection
-        .query_row(
-            "SELECT target_hash FROM migration_object_map WHERE source_hash = ?1",
-            [source_seal.as_str()],
-            |row| row.get(0),
-        )
-        .expect("mapped seal");
-    assert_ne!(mapped, source_seal.as_str());
-    let run_seal: String = store
-        .connection
-        .query_row("SELECT completion_seal_hash FROM work_runs", [], |row| {
-            row.get(0)
-        })
-        .expect("run seal");
-    let projection_seal: String = store
-        .connection
-        .query_row("SELECT seal_hash FROM work_completion_seals", [], |row| {
-            row.get(0)
-        })
-        .expect("projection seal");
-    assert_eq!(run_seal, mapped);
-    assert_eq!(projection_seal, mapped);
-    let imported = LocalWorkService::new(
-        output.clone(),
-        crate::ProjectId("migration-aggregate-lifecycle".into()),
-        "agent".into(),
-        crate::SessionId("migration-aggregate-session".into()),
-        Some("protocol-test".into()),
-    );
-    let before = crate::storage::test_database_shape_snapshot(&store.connection).expect("before");
-    let replayed = imported
-        .work_complete(
-            WorkCompleteInput {
-                source_fingerprint: None,
-                links: Vec::new(),
-                link_basis: None,
-                capture: Some(WorkCompletionCaptureInput {
-                    summary: "delivered".into(),
-                    refs: Vec::new(),
-                }),
-                evidence: Vec::new(),
-                acceptance: None,
-                note: None,
-                idempotency_key: "aggregate-lifecycle-complete".into(),
-            },
-            chrono::DateTime::parse_from_rfc3339("2026-08-27T03:00:05Z")
-                .expect("ts")
-                .with_timezone(&chrono::Utc),
-        )
-        .expect("remapped complete_work replay");
-    let WorkCompleteResult::Completed(receipt) = replayed else {
-        panic!("expected completed replay");
-    };
-    assert_eq!(receipt.seal.as_str(), source_seal.as_str());
+    // Both cases of the alphabet are accepted, deliberately, and the bytes are
+    // exactly the bytes written.
+    for (written, bytes) in [
+        ("ff007f", vec![0xff, 0x00, 0x7f]),
+        ("FF007F", vec![0xff, 0x00, 0x7f]),
+        ("aBcD", vec![0xab, 0xcd]),
+        ("", Vec::new()),
+    ] {
+        assert_eq!(
+            decode(serde_json::json!({ "hex": written })).expect("valid hex"),
+            Value::Blob(bytes),
+            "{written}"
+        );
+    }
+    // Export writes the alphabet's lowercase form, and it reads back.
+    let round = encode((&Value::Blob(vec![0xde, 0xad, 0xbe, 0xef])).into()).expect("encode");
+    assert_eq!(round, serde_json::json!({ "hex": "deadbeef" }));
     assert_eq!(
-        store
-            .resolve_migrated_reference(&receipt.seal)
-            .expect("resolve replayed seal")
-            .as_str(),
-        mapped
+        decode(round).expect("decode"),
+        Value::Blob(vec![0xde, 0xad, 0xbe, 0xef])
     );
-    let first_receipt = serde_json::to_value(&receipt).expect("first ambient receipt");
-    assert_core_complete_result_is_mapped_seal(&store.connection, &mapped);
-    drop(imported);
-    let after = crate::SqliteStore::open_unresolved(&output).expect("after replay");
+}
+
+#[test]
+fn a_failed_publication_names_the_operation_and_keeps_the_cause() {
+    use std::io::{Error, ErrorKind};
+
+    let destination = Path::new("C:/somewhere/new-store.db");
+    let mapped = |kind: ErrorKind| publish_failure(destination, &Error::new(kind, "the cause"));
+    assert!(matches!(
+        mapped(ErrorKind::AlreadyExists),
+        MigrationError::Refused(reason) if reason == "destination already exists"
+    ));
+    for kind in [ErrorKind::Unsupported, ErrorKind::PermissionDenied] {
+        assert!(
+            matches!(mapped(kind), MigrationError::Refused(reason)
+                if reason.contains("hard link") && reason.contains("new-store.db") && reason.contains("the cause")),
+            "{kind:?}"
+        );
+    }
+    // Any other failure keeps its kind and its cause, and says what was
+    // being done, instead of arriving as a bare I/O error.
+    for kind in [
+        ErrorKind::Other,
+        ErrorKind::NotFound,
+        ErrorKind::Interrupted,
+    ] {
+        let MigrationError::Io(error) = mapped(kind) else {
+            panic!("{kind:?} is an I/O failure");
+        };
+        assert_eq!(error.kind(), kind);
+        let text = error.to_string();
+        assert!(
+            text.contains("publishing") && text.contains("new-store.db"),
+            "{text}"
+        );
+        assert!(text.contains("the cause"), "{text}");
+    }
+}
+
+#[test]
+fn a_retired_column_is_named_and_its_rows_go_in_without_it() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    let (project, session) = staged_pending_delivery(&source);
+    let (_, before) = pending_payload(&source);
+    {
+        // A store written before the column was retired still carries it,
+        // with a value on the staged row.
+        let connection = Connection::open(&source).expect("source");
+        connection
+            .execute_batch(
+                "ALTER TABLE work_session_state ADD COLUMN tentative_delivery_payload_hash TEXT;
+                 UPDATE work_session_state SET tentative_delivery_payload_hash = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+                 WHERE tentative_project_cursor IS NOT NULL;",
+            )
+            .expect("the retired column, as an older store holds it");
+    }
+    let file = directory.path().join("export.jsonl");
+    let exported = export_json(&source, &file).expect("export writes the source as it is");
+    let state = exported
+        .tables
+        .iter()
+        .find(|table| table.name == "work_session_state")
+        .expect("the session table");
+    assert!(
+        state
+            .columns
+            .iter()
+            .any(|column| column == "tentative_delivery_payload_hash"),
+        "export carries the retired column"
+    );
+
+    let before_transfer = source_pending(&source);
+    let export_bytes = fs::read(&file).expect("export bytes");
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import names the retired column");
     assert_eq!(
-        crate::storage::test_database_shape_snapshot(&after.connection).expect("after"),
-        before
+        imported.retired_fields,
+        vec![RetiredField {
+            table: "work_session_state".into(),
+            column: "tentative_delivery_payload_hash".into(),
+            values: 1,
+        }],
+        "the field is reported apart from any rows left out"
     );
-    drop(after);
-    let converted_archive = directory.path().join("converted-archive.db");
-    export_store(&output, &converted_archive).expect("export converted");
-    let current = directory.path().join("current.db");
-    let current_report =
-        import_archive(&converted_archive, &current).expect("current after populated aggregate");
-    assert_eq!(current_report.profile, MigrationProfile::Current);
-    assert_eq!(current_report.reexpressed_completion_results, 0);
-    let converted_store = crate::SqliteStore::open_unresolved(&output).expect("converted");
-    let current_store = crate::SqliteStore::open_unresolved(&current).expect("current");
-    assert_same_durable(&converted_store.connection, &current_store.connection);
-    let audits: i64 = current_store
-        .connection
+    assert!(
+        !imported
+            .left_out
+            .iter()
+            .any(|left| left.name.contains("payload_hash")),
+        "a retired column is not a row count"
+    );
+    let connection = Connection::open(&target).expect("target");
+    let columns: Vec<String> = connection
+        .prepare("PRAGMA table_info(work_session_state)")
+        .expect("columns")
+        .query_map([], |row| row.get::<_, String>(1))
+        .expect("columns")
+        .collect::<Result<_, _>>()
+        .expect("column names");
+    assert!(
+        !columns
+            .iter()
+            .any(|column| column == "tentative_delivery_payload_hash")
+    );
+    // The page went in without it, under the source's own cursors and delivery
+    // capability, and still replays there at its confirmed cursor.
+    assert_transfer_keeps_pending_state(
+        &Transfer {
+            source: &source,
+            export: &file,
+            export_bytes_before: &export_bytes,
+            target: &target,
+            project: &project,
+            session: &session,
+        },
+        &before_transfer,
+        &before,
+    );
+}
+
+#[test]
+fn an_unknown_column_beside_a_retired_one_still_refuses_by_name() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    {
+        let connection = Connection::open(&source).expect("source");
+        connection
+            .execute_batch(
+                "ALTER TABLE work_session_state ADD COLUMN tentative_delivery_payload_hash TEXT;
+                 ALTER TABLE work_session_state ADD COLUMN stray_note TEXT;",
+            )
+            .expect("a retired column and an unknown one");
+    }
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    let error = import_json(&file, &target).expect_err("an unknown column");
+    assert!(
+        matches!(&error, MigrationError::Refused(reason)
+            if reason.contains("stray_note") && reason.contains("no place")),
+        "{error}"
+    );
+    assert!(!target.exists());
+}
+
+#[test]
+fn a_current_store_carries_no_retired_fields() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    let (project, session) = staged_pending_delivery(&source);
+    let (_, page) = pending_payload(&source);
+    let before = source_pending(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let export_bytes = fs::read(&file).expect("export bytes");
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import");
+    assert!(imported.retired_fields.is_empty());
+    assert_transfer_keeps_pending_state(
+        &Transfer {
+            source: &source,
+            export: &file,
+            export_bytes_before: &export_bytes,
+            target: &target,
+            project: &project,
+            session: &session,
+        },
+        &before,
+        &page,
+    );
+}
+
+/// Rewrites the first stored record's blob in an export file as `{"hex": …}`.
+fn with_first_record_blob_as_hex(file: &Path, hex: &str) {
+    with_row_cell(
+        file,
+        "objects",
+        |_| true,
+        "canonical_json",
+        serde_json::json!({ "hex": hex }),
+    );
+}
+
+/// Sets one cell of the first row of `table` in the file that `select` admits.
+fn with_row_cell(
+    file: &Path,
+    table: &str,
+    select: impl Fn(&Json) -> bool,
+    column: &str,
+    value: Json,
+) {
+    let text = fs::read_to_string(file).expect("file");
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
+    let marker = format!("\"table\":\"{table}\"");
+    let at = lines
+        .iter()
+        .position(|line| {
+            line.contains(&marker)
+                && serde_json::from_str::<Json>(line).is_ok_and(|row| select(&row["row"]["values"]))
+        })
+        .expect("a row of the table");
+    let mut row: Json = serde_json::from_str(&lines[at]).expect("row");
+    row["row"]["values"][column] = value;
+    lines[at] = row.to_string();
+    fs::write(file, lines.join("\n") + "\n").expect("rewrite");
+}
+
+/// Staging files an import left behind in `directory`.
+fn staging_leftovers(directory: &Path) -> usize {
+    fs::read_dir(directory)
+        .expect("directory")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains(".engram-migration-")
+        })
+        .count()
+}
+
+#[test]
+fn a_malformed_hex_blob_refuses_the_import_and_a_valid_one_is_the_same_bytes() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let source_bytes = fs::read(&source).expect("source bytes");
+
+    // Valid control: the first record's canonical bytes written as hex decode
+    // to the identical bytes, so the store round-trips row for row.
+    let (first_id, first_bytes): (String, Vec<u8>) = Connection::open(&source)
+        .expect("source")
         .query_row(
-            "SELECT COUNT(*) FROM migration_reexpressed_results",
+            "SELECT object_hash, canonical_json FROM objects ORDER BY rowid LIMIT 1",
             [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("first record");
+    let hex = first_bytes.iter().fold(String::new(), |mut hex, byte| {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    });
+    let valid = directory.path().join("valid.jsonl");
+    fs::copy(&file, &valid).expect("copy");
+    with_first_record_blob_as_hex(&valid, &hex);
+    let target = directory.path().join("valid-target.db");
+    import_json(&valid, &target).expect("valid hex imports");
+    let stored: Vec<u8> = Connection::open(&target)
+        .expect("target")
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            [&first_id],
             |row| row.get(0),
         )
-        .expect("preserved audits");
-    assert!(audits > 0, "prior aggregate rewrites stay inspectable");
-    drop(converted_store);
-    let before_current = crate::storage::test_database_shape_snapshot(&current_store.connection)
-        .expect("before current replay");
-    drop(current_store);
-    let current_service = LocalWorkService::new(
-        current.clone(),
-        crate::ProjectId("migration-aggregate-lifecycle".into()),
-        "agent".into(),
-        crate::SessionId("migration-aggregate-session".into()),
-        Some("protocol-test".into()),
-    );
-    let replayed_current = current_service
-        .work_complete(
-            WorkCompleteInput {
-                source_fingerprint: None,
-                links: Vec::new(),
-                link_basis: None,
-                capture: Some(WorkCompletionCaptureInput {
-                    summary: "delivered".into(),
-                    refs: Vec::new(),
-                }),
-                evidence: Vec::new(),
-                acceptance: None,
-                note: None,
-                idempotency_key: "aggregate-lifecycle-complete".into(),
-            },
-            chrono::DateTime::parse_from_rfc3339("2026-08-27T03:00:05Z")
-                .expect("ts")
-                .with_timezone(&chrono::Utc),
-        )
-        .expect("complete_work replay after current import");
-    let WorkCompleteResult::Completed(current_receipt) = replayed_current else {
-        panic!("expected completed replay after current import");
-    };
-    assert_eq!(current_receipt.seal.as_str(), source_seal.as_str());
+        .expect("the record");
+    assert_eq!(stored, first_bytes, "the same bytes arrived through hex");
     assert_eq!(
-        crate::SqliteStore::open_unresolved(&current)
-            .expect("resolve store")
-            .resolve_migrated_reference(&current_receipt.seal)
-            .expect("resolve current replayed seal")
-            .as_str(),
-        mapped
+        rows(&target),
+        rows(&source)
+            .into_iter()
+            .map(|(name, rows)| {
+                if name == "project_memory_advertisements" {
+                    (name, Vec::new())
+                } else {
+                    (name, rows)
+                }
+            })
+            .collect()
+    );
+
+    // Malformed: the same slot with a sign the alphabet excludes. Import must
+    // reach the decoder and refuse there, publishing nothing and leaving
+    // nothing behind.
+    let malformed = directory.path().join("malformed.jsonl");
+    fs::copy(&file, &malformed).expect("copy");
+    with_first_record_blob_as_hex(&malformed, "+f");
+    let input_bytes = fs::read(&malformed).expect("input bytes");
+    let refused_target = directory.path().join("malformed-target.db");
+    let error = import_json(&malformed, &refused_target).expect_err("malformed hex");
+    assert!(
+        matches!(&error, MigrationError::Refused(reason) if reason.contains("hex blob")),
+        "{error}"
+    );
+    assert!(!refused_target.exists(), "nothing was published");
+    let leftovers = fs::read_dir(directory.path())
+        .expect("directory")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains(".engram-migration-")
+        })
+        .count();
+    assert_eq!(leftovers, 0, "no staging file was left");
+    assert_eq!(
+        fs::read(&malformed).expect("input bytes"),
+        input_bytes,
+        "the input was only read"
     );
     assert_eq!(
-        serde_json::to_value(&current_receipt).expect("current ambient receipt"),
-        first_receipt
+        fs::read(&source).expect("source bytes"),
+        source_bytes,
+        "the source was only read"
     );
-    assert_core_complete_result_is_mapped_seal(
-        &crate::SqliteStore::open_unresolved(&current)
-            .expect("core after current")
-            .connection,
-        &mapped,
-    );
-    drop(current_service);
-    let after_current =
-        crate::SqliteStore::open_unresolved(&current).expect("after current replay");
-    assert_eq!(
-        crate::storage::test_database_shape_snapshot(&after_current.connection)
-            .expect("after current"),
-        before_current
-    );
+}
+
+#[test]
+fn a_pending_delivery_the_file_left_incomplete_is_refused_by_session() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    staged_pending_delivery(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    let staged = |values: &Json| values["session_id"] == "pending-session";
+
+    // The schema permits a row with only part of a pending delivery; the next
+    // retry of that session refuses to read one. Either missing part must refuse
+    // the import instead, so the published store never holds it.
+    for column in ["tentative_delivery_payload", "tentative_delivery_token"] {
+        fs::write(&file, &original).expect("restore file");
+        with_row_cell(&file, "work_session_state", staged, column, Json::Null);
+        let target = directory.path().join(format!("without-{column}.db"));
+        let error = import_json(&file, &target).expect_err(column);
+        assert!(
+            matches!(&error, MigrationError::Refused(reason)
+                if reason.contains("pending-session") && reason.contains("present together")),
+            "{column}: {error}"
+        );
+        assert!(!target.exists(), "{column}: a store was published");
+        assert_eq!(
+            staging_leftovers(directory.path()),
+            0,
+            "{column}: a staging file was left"
+        );
+    }
+
+    // Control: the same row as exported goes in, and is counted as checked.
+    fs::write(&file, &original).expect("restore file");
+    let target = directory.path().join("complete.db");
+    let imported = import_json(&file, &target).expect("the complete row imports");
+    assert_eq!(imported.checked_pending_deliveries, 1);
+}
+
+#[test]
+fn a_refused_cell_is_named_by_its_place_and_never_printed() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    // The export carries private and restricted bodies, and a refusal reaches
+    // the operator's terminal: it names where and what shape, not what.
+    let sentinel = "a private note nobody else may read";
+    let shapes = [
+        ("an array", serde_json::json!([sentinel])),
+        (
+            "a blob wrapper with an extra key",
+            serde_json::json!({ "json": { "body": sentinel }, "encoding": "json" }),
+        ),
+        (
+            "a text blob that is not a string",
+            serde_json::json!({ "text": [sentinel] }),
+        ),
+        (
+            "a wrapper of an unknown kind",
+            serde_json::json!({ "body": sentinel }),
+        ),
+        ("a boolean", Json::Bool(true)),
+    ];
+    for (label, value) in shapes {
+        fs::write(&file, &original).expect("restore file");
+        with_row_cell(&file, "objects", |_| true, "canonical_json", value);
+        let target = directory.path().join("target.db");
+        let error = import_json(&file, &target).expect_err(label);
+        assert!(
+            matches!(&error, MigrationError::Refused(_)),
+            "{label}: {error}"
+        );
+        let text = error.to_string();
+        assert!(
+            text.contains("column canonical_json of a row of table objects"),
+            "{label}: {text}"
+        );
+        assert!(!text.contains(sentinel), "{label} printed the cell: {text}");
+        assert!(
+            !text.contains("body"),
+            "{label} printed a key of the cell: {text}"
+        );
+        assert!(!target.exists(), "{label}: a store was published");
+        assert_eq!(
+            staging_leftovers(directory.path()),
+            0,
+            "{label}: a staging file was left"
+        );
+    }
 }

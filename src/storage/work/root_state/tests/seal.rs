@@ -118,7 +118,7 @@ fn root_delta_seal_keeps_exact_predecessor_and_history_after_later_changes() {
     let (before, address) = projected(&store.connection, id).unwrap();
     let seal = complete(&mut store, &root, &held, "holder", &proof, "done", 20).unwrap();
     assert_eq!(seal.root_execution, address);
-    let hash = CanonicalObject::freeze(&seal).unwrap().hash().clone();
+    let hash = store.stored_seal_id(&seal);
     let event = super::super::super::query::latest_canonical_work_event_for_item_optional(
         &store.connection,
         root.work_id,
@@ -261,7 +261,9 @@ fn root_delta_seal_accounting_address_does_not_copy_growing_collections() {
             assert!(json.get(removed).is_none());
         }
         let frozen = CanonicalObject::freeze(&seal).unwrap();
-        let accounting = store.completion_root_execution(frozen.hash()).unwrap();
+        let accounting = store
+            .completion_root_execution(&store.stored_seal_id(&seal))
+            .unwrap();
         assert!(accounting.contributions.len() > usize::try_from(prior).unwrap());
         eprintln!(
             "seal_size prior_peer_checkpoints={prior} contributions={} root_bytes={} seal_bytes={} root_run_cut={}",
@@ -287,7 +289,9 @@ fn root_delta_seal_own_run_growth_is_only_cut_decimal_width() {
         let (mut store, root, held, proof) = ready(prior);
         let seal = complete(&mut store, &root, &held, "holder", &proof, "done", 30).unwrap();
         let frozen = CanonicalObject::freeze(&seal).unwrap();
-        let accounting = store.completion_root_execution(frozen.hash()).unwrap();
+        let accounting = store
+            .completion_root_execution(&store.stored_seal_id(&seal))
+            .unwrap();
         let cut_width = seal.completion_cut.position.to_string().len();
         let root_bytes = CanonicalObject::freeze(&accounting).unwrap().bytes().len();
         eprintln!(

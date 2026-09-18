@@ -25,7 +25,8 @@ const binary = join(target, "debug", "engram");
 
 const MAX_COMMANDS = 3;
 const MAX_FIELDS = 3;
-const HASH = /\b[0-9a-f]{64}\b/u;
+// A full record id: minted ids are 32 hex digits, earlier ids are 64.
+const HASH = /\b(?:[0-9a-f]{32}|[0-9a-f]{64})\b/u;
 
 /**
  * Test oracle for the claim clock the receipts render. Same UTC day as `now`
@@ -1428,7 +1429,7 @@ test("done says what is owed and exits 2 when the item cannot seal yet", (t) => 
     const observation = JSON.parse(unheld.stdout);
     assert.equal(observation.non_holder, true);
     assert.equal("checkpoint" in observation, false);
-    assert.match(observation.evidence, /^[0-9a-f]{64}$/u);
+    assert.match(observation.evidence, /^[0-9a-f]{32}$/u);
     const observationDetail = run([
       ...hostContext, "show", ref, "--note", observation.evidence, "--json",
     ]);

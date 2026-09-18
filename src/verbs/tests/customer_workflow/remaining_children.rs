@@ -519,7 +519,7 @@ fn done_retains_success_when_real_child_diagnostics_find_damaged_canonical_data(
     assert_eq!(receipt.value["child_obligations_unavailable"], true);
     assert_eq!(
         receipt.value["child_obligations_error_class"],
-        "canonical_object_invalid"
+        "stored_json_invalid"
     );
     assert!(receipt.value.get("child_obligations").is_none());
     assert!(receipt.value.get("seal").is_some());

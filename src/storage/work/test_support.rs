@@ -40,11 +40,19 @@ pub(super) fn process_default_session_at(pid: u32, created_at: DateTime<Utc>) ->
     ))
 }
 
-pub(super) fn builtin_rule_set_hash() -> ObjectHash {
-    CanonicalObject::freeze(&crate::control::builtin_obligation_rule_set())
-        .expect("canonical built-in obligation rule set")
-        .hash()
-        .clone()
+/// The id of the rule set that the store's active control policy names.
+pub(super) fn active_rule_set_id(connection: &Connection) -> ObjectHash {
+    let policy: String = connection
+        .query_row(
+            "SELECT policy_hash FROM control_policy_state WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("active control policy");
+    let policy = ObjectHash::from_stored(policy).expect("stored policy id");
+    SqliteStore::obligation_rule_set_for_policy_on(connection, &policy)
+        .expect("active obligation rule set")
+        .0
 }
 
 pub(super) fn restore_savepoint(store: &SqliteStore) {

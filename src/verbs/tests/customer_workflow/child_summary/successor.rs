@@ -151,8 +151,8 @@ fn required_successor_resolution_agrees_in_show_listing_and_completion_without_w
             .contains_key("required_child_resolutions")
     );
     assert_eq!(
-        crate::CanonicalObject::freeze(&unchanged).unwrap().hash(),
-        &successor_hash
+        crate::CanonicalObject::freeze(&unchanged).unwrap().bytes(),
+        original_bytes.as_slice()
     );
     supersede(&verbs, &child, &successor, 8);
     assert_resolution(&verbs, &parent, &child, &successor, true, 9);
@@ -357,10 +357,6 @@ fn required_successor_resolution_never_transfers_across_root_generations() {
             .unwrap()
             .unwrap(),
         old_seal
-    );
-    assert_eq!(
-        crate::CanonicalObject::freeze(&old_seal).unwrap().hash(),
-        &old_hash
     );
     assert!(store.verify_all().unwrap().is_healthy());
 }

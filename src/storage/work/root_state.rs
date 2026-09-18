@@ -630,7 +630,7 @@ pub(super) fn initialize(
         removed: Vec::new(),
         added: Vec::new(),
     };
-    let object = CanonicalObject::freeze(&origin)?;
+    let object = CanonicalObject::mint(&origin)?;
     SqliteStore::insert_object(transaction, KIND, &object)?;
     transaction.execute(
         "INSERT INTO work_root_executions (
@@ -771,7 +771,7 @@ fn persist_loaded(
         added: added.iter().map(|(_, member)| member.clone()).collect(),
         state_checksum: checksum(value)?,
     };
-    let object = CanonicalObject::freeze(&head)?;
+    let object = CanonicalObject::mint(&head)?;
     SqliteStore::insert_object(transaction, KIND, &object)?;
     for (hash, _) in &removed {
         let changed = transaction.execute(

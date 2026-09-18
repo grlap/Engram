@@ -36,7 +36,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
                 expected_bound_task_id: None,
                 delivered_through: head + 1,
                 delivered_entries: &[],
-                delivery_payload: &empty_payload,
+                delivery_payload: empty_payload.bytes(),
                 now: at(2),
             },
         ),
@@ -54,7 +54,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
                 expected_bound_task_id: None,
                 delivered_through: head,
                 delivered_entries: &entries,
-                delivery_payload: &payload,
+                delivery_payload: payload.bytes(),
                 now: at(2),
             },
         )
@@ -105,7 +105,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
                 expected_bound_task_id: None,
                 delivered_through: head - 1,
                 delivered_entries: &[],
-                delivery_payload: &empty_payload,
+                delivery_payload: empty_payload.bytes(),
                 now: at(4),
             }
         ),
@@ -131,7 +131,7 @@ fn staged_work_delivery_rejects_future_stale_and_gapped_ranges() {
                 expected_bound_task_id: None,
                 delivered_through: head,
                 delivered_entries: &entries,
-                delivery_payload: &payload,
+                delivery_payload: payload.bytes(),
                 now: at(5),
             },
         ),
@@ -178,7 +178,7 @@ fn staged_work_delivery_cas_binds_the_current_task() {
                     expected_bound_task_id: None,
                     delivered_through: head,
                     delivered_entries: &entries,
-                    delivery_payload: &payload,
+                    delivery_payload: payload.bytes(),
                     now: at(2),
                 },
             )
@@ -195,7 +195,7 @@ fn staged_work_delivery_cas_binds_the_current_task() {
                 expected_bound_task_id: Some(task.task_id),
                 delivered_through: head,
                 delivered_entries: &entries,
-                delivery_payload: &payload,
+                delivery_payload: payload.bytes(),
                 now: at(3),
             },
         )
@@ -246,7 +246,7 @@ fn focus_change_and_pending_delivery_serialize_across_connections() {
                 expected_bound_task_id: None,
                 delivered_through: head,
                 delivered_entries: &entries,
-                delivery_payload: &payload,
+                delivery_payload: payload.bytes(),
                 now: at(3),
             },
         )
@@ -290,7 +290,7 @@ fn focus_change_and_pending_delivery_serialize_across_connections() {
                 expected_bound_task_id: None,
                 delivered_through: head,
                 delivered_entries: &entries,
-                delivery_payload: &payload,
+                delivery_payload: payload.bytes(),
                 now: at(6),
             },
         )
@@ -314,7 +314,7 @@ fn focus_change_and_pending_delivery_serialize_across_connections() {
 }
 
 #[test]
-fn doctor_rejects_tampered_pending_protocol_basis() {
+fn doctor_rejects_an_unreadable_pending_protocol_basis() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let project = crate::domain::ProjectId("project-pending-attempt".into());
     let session = SessionId("pending-session".into());
@@ -335,9 +335,9 @@ fn doctor_rejects_tampered_pending_protocol_basis() {
             "UPDATE work_protocol_attempts SET basis_json = ?1
              WHERE project_id = ?2 AND session_id = ?3
                AND operation = 'work_next' AND idempotency_key = 'pending-attempt'",
-            params![b"{}".as_slice(), project.0, session.0],
+            params![b"{".as_slice(), project.0, session.0],
         )
-        .expect("tamper pending basis");
+        .expect("damage pending basis");
 
     let report = store.verify_all().expect("integrity report");
     assert!(report.invalid_work_records.iter().any(|record| {
