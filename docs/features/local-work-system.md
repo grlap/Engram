@@ -324,6 +324,13 @@ holder mutation on a lapsed claim is refused with one recovery command:
 `engram work claim <ref>`. When the work is ready, that ordinary claim command
 retakes the same holder's claim under the stable project/session binding,
 advances the fence, preserves an active run, and needs no recovery reason.
+`claim --under PARENT` (core update `claim_next_ready`) selects the parent's
+next ready direct child by the same derived readiness and the `ls --ready`
+order, then claims it inside that one write transaction under SQLite's single
+writer, so concurrent callers are served distinct children; a child this
+holder already holds under the parent is renewed instead, a ready child
+lapsed under an unaccounted holder is passed over without a recovery reason,
+and a call with nothing ready refuses and claims nothing.
 Every handoff offer expires no later than its source claim. Expired offers are
 swept inside the completing mutation transaction, so a refused completion rolls
 the sweep back with the rest of that attempt. The immutable expiry event is

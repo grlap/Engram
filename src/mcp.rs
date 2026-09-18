@@ -15,9 +15,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, EvaluateInput, ForgetInput, GateInput,
-    HandoffAction, HandoffInput, LocalWorkService, LsInput, MemoriesInput, NextInput, NoteInput,
-    ProjectId, Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError,
+    AddInput, AgentVerbs, ClaimInput, ClaimUnderInput, DoneInput, EvaluateInput, ForgetInput,
+    GateInput, HandoffAction, HandoffInput, LocalWorkService, LsInput, MemoriesInput, NextInput,
+    NoteInput, ProjectId, Receipt, RememberInput, SessionId, UpdateAction, UpdateInput, VerbError,
     WorkItemKind, parse_defer_date,
     storage::{PROCESS_DEFAULT_WORK_SESSION_REUSE_REFUSAL, StoreError},
     work_service::COMPLETED_WORK_LATE_FINDING_REFUSAL,
@@ -171,8 +171,10 @@ struct AddArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct WorkClaimArgs {
-    /// Short work ref or full UUID.
-    work_ref: String,
+    /// Short work ref or full UUID; omit it with `under`.
+    work_ref: Option<String>,
+    /// Hold this parent's next ready child instead, chosen in the ls --ready order and claimed in the same transaction.
+    under: Option<String>,
     /// Claim lifetime in seconds (default one hour).
     ttl_seconds: Option<i64>,
     /// Attributed reason for recovering a lapsed prior claim.
@@ -464,20 +466,35 @@ impl McpServer {
         ))
     }
 
-    /// Hold an item.
+    /// Hold an item, or a parent's next ready child.
     #[tool(
         name = "claim",
-        description = "Hold an item before changing anything; later calls default to it"
+        description = "Hold an item before changing anything; later calls default to it. With under instead of work_ref, hold that parent's next ready child, chosen in ls --ready order and claimed in the same transaction"
     )]
     fn claim(&self, Parameters(args): Parameters<WorkClaimArgs>) -> CallToolResult {
-        self.verb(self.verbs().claim(
-            ClaimInput {
-                work_ref: args.work_ref,
-                ttl_seconds: args.ttl_seconds,
-                recover: args.recover,
-            },
-            Utc::now(),
-        ))
+        let outcome = match (args.work_ref, args.under) {
+            (None, Some(under)) => self.verbs().claim_under(
+                ClaimUnderInput {
+                    under,
+                    ttl_seconds: args.ttl_seconds,
+                    recover: args.recover,
+                },
+                Utc::now(),
+            ),
+            (Some(work_ref), None) => self.verbs().claim(
+                ClaimInput {
+                    work_ref,
+                    ttl_seconds: args.ttl_seconds,
+                    recover: args.recover,
+                },
+                Utc::now(),
+            ),
+            _ => Err(crate::StoreError::InvalidWork(
+                "claim takes work_ref or under, not both".into(),
+            )
+            .into()),
+        };
+        self.verb(outcome)
     }
 
     /// Apply exactly one planning or claim action.

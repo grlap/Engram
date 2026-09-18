@@ -473,13 +473,20 @@ impl LocalWorkService {
         };
         let auto_rejection =
             raw_key.trim().is_empty() && protocol_operation == REJECT_PROTOCOL_OPERATION;
-        if raw_key.is_empty()
-            && let WorkUpdateInput::Claim {
+        let keyless_claim = match &input {
+            WorkUpdateInput::Claim {
                 ttl_seconds,
                 recovery_reason,
                 ..
-            } = &input
-        {
+            } if raw_key.is_empty() => Some((ttl_seconds, recovery_reason, false)),
+            WorkUpdateInput::ClaimNextReady {
+                ttl_seconds,
+                recovery_reason,
+                ..
+            } if raw_key.is_empty() => Some((ttl_seconds, recovery_reason, true)),
+            _ => None,
+        };
+        if let Some((ttl_seconds, recovery_reason, next_ready)) = keyless_claim {
             // Agent claims deliberately carry no replay key: repeating one
             // renews the live claim rather than returning an older expiry.
             let work = basis.focused_work.as_ref().ok_or_else(|| {
@@ -490,13 +497,39 @@ impl LocalWorkService {
                     COMPLETED_WORK_LATE_FINDING_REFUSAL.into(),
                 ));
             }
+            let ttl_seconds = ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS);
+            if next_ready {
+                let selection = store.claim_next_ready_child(
+                    &crate::domain::ClaimNextReadyChildRequest {
+                        parent_id: work.work_id,
+                        holder: self.session_id.clone(),
+                        ttl_seconds,
+                        recovery_reason: recovery_reason.clone(),
+                        actor: self.actor(
+                            "work_update",
+                            "claim the next ready child under ambient local work",
+                        ),
+                        idempotency_key: String::new(),
+                        claimed_at: now,
+                    },
+                    &DevelopmentNoopRedactor,
+                )?;
+                let work_id = selection.work_id;
+                return self.work_update_result(
+                    &store,
+                    "claim_next_ready",
+                    work_id,
+                    agent_update_receipt("claim_next_ready", serde_json::to_value(selection)?)?,
+                    now,
+                );
+            }
             let claim = store.claim_work(
                 &ClaimWorkRequest {
                     work_id: work.work_id,
                     expected_work_revision: work.revision,
                     expected_run_id: work.active_run_id,
                     holder: self.session_id.clone(),
-                    ttl_seconds: ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
+                    ttl_seconds,
                     recovery_reason: recovery_reason.clone(),
                     actor: self.actor("work_update", "claim or renew ambient local work"),
                     idempotency_key: String::new(),
@@ -648,6 +681,28 @@ impl LocalWorkService {
                     &DevelopmentNoopRedactor,
                 )?;
                 ("claim", serde_json::to_value(claim)?)
+            }
+            WorkUpdateInput::ClaimNextReady {
+                ttl_seconds,
+                recovery_reason,
+                idempotency_key: _,
+            } => {
+                let selection = store.claim_next_ready_child(
+                    &crate::domain::ClaimNextReadyChildRequest {
+                        parent_id: work.work_id,
+                        holder: self.session_id.clone(),
+                        ttl_seconds: ttl_seconds.unwrap_or(DEFAULT_WORK_CLAIM_TTL_SECONDS),
+                        recovery_reason,
+                        actor: self.actor(
+                            "work_update",
+                            "claim the next ready child under ambient local work",
+                        ),
+                        idempotency_key: scoped_key,
+                        claimed_at: now,
+                    },
+                    &DevelopmentNoopRedactor,
+                )?;
+                ("claim_next_ready", serde_json::to_value(selection)?)
             }
             WorkUpdateInput::Release {
                 reason,
@@ -1001,15 +1056,16 @@ impl LocalWorkService {
         receipt: serde_json::Value,
         now: DateTime<Utc>,
     ) -> Result<WorkUpdateResult, StoreError> {
-        // Detach returns the independent successor, not the now-superseded source.
-        // This also applies when recovering a core commit without a protocol receipt.
-        let work_id = if operation == "detach" {
+        // Detach returns the independent successor and a next-ready claim the
+        // selected child, not the item the request named. This also applies
+        // when recovering a core commit without a protocol receipt.
+        let work_id = if operation == "detach" || operation == "claim_next_ready" {
             serde_json::from_value::<WorkId>(receipt["work_id"].clone())?
         } else {
             work_id
         };
         let guidance = self.work_guidance(store, work_id, now)?;
-        let control_binding = if operation == "claim" {
+        let control_binding = if operation == "claim" || operation == "claim_next_ready" {
             guidance
                 .claim
                 .as_ref()

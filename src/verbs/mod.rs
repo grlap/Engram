@@ -49,9 +49,9 @@ mod show;
 mod tests;
 
 pub use handlers::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, EvaluateInput, ForgetInput, GateInput,
-    HandoffAction, HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput, RememberInput,
-    UpdateAction, UpdateInput,
+    AddInput, AgentVerbs, ClaimInput, ClaimUnderInput, DoneInput, EvaluateInput, ForgetInput,
+    GateInput, HandoffAction, HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput,
+    RememberInput, UpdateAction, UpdateInput,
 };
 pub use receipts::{Guidance, Receipt, VerbError};
 pub use record_windows::ShowInput;

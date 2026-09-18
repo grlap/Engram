@@ -9,8 +9,9 @@ use crate::ObjectHash;
 
 use super::{
     AcceptanceResult, ActorContext, ChildRequirement, CompletionDrainAttestation, ProjectId,
-    SessionId, WorkBlockerKind, WorkClaimId, WorkHandoffOfferId, WorkId, WorkItem, WorkItemKind,
-    WorkObligationId, WorkObligationState, WorkOrigin, WorkPlanningAuthority, WorkRunId,
+    SessionId, WorkBlockerKind, WorkClaim, WorkClaimId, WorkHandoffOfferId, WorkId, WorkItem,
+    WorkItemKind, WorkObligationId, WorkObligationState, WorkOrigin, WorkPlanningAuthority,
+    WorkRunId,
 };
 
 /// Request to create a root or child work item.
@@ -209,6 +210,38 @@ pub struct ClaimWorkRequest {
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub claimed_at: DateTime<Utc>,
+}
+
+/// Request to select one parent's next ready direct child by derived
+/// readiness and the priority-then-id order of `ls --ready`, and claim it in
+/// the same write transaction.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ClaimNextReadyChildRequest {
+    pub parent_id: WorkId,
+    pub holder: SessionId,
+    pub ttl_seconds: i64,
+    /// Attributed reason that lets the selection take over a ready child
+    /// whose prior claim lapsed under an unaccounted holder; without it such
+    /// a child is passed over.
+    pub recovery_reason: Option<String>,
+    pub actor: ActorContext,
+    pub idempotency_key: String,
+    pub claimed_at: DateTime<Utc>,
+}
+
+/// One child selected and claimed under its parent.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NextReadyChildClaim {
+    pub parent_id: WorkId,
+    pub work_id: WorkId,
+    pub claim: WorkClaim,
+    /// One-based place of the claimed child in the parent's verified ready
+    /// order at selection; absent when the call renewed a child this holder
+    /// already held.
+    pub position: Option<usize>,
+    /// Verified ready direct children at selection, the claimed one included.
+    pub ready_count: usize,
+    pub renewed: bool,
 }
 
 /// Request to release live responsibility without completing the run.

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -24,7 +24,7 @@ use super::planning::{
 use super::query::{
     active_root_execution_optional, inspect_work_canonical_on, latest_restored_record,
     load_root_execution, load_work_claim_optional, load_work_item, load_work_run,
-    work_completed_by_restored_record_on,
+    open_children_by_ready_order_on, work_completed_by_restored_record_on,
 };
 use super::session::begin_work_protocol_attempt_on;
 use super::{
@@ -35,8 +35,9 @@ use crate::{
     CanonicalObject, ObjectHash, RestoredWorkEvidence, WorkId,
     domain::{
         AcceptWorkHandoffRequest, ActorContext, AppendRestoredWorkGateRequest,
-        CancelWorkHandoffRequest, ClaimWorkRequest, CompletionSeal, EnvironmentEvidence, FeedId,
-        FeedPosition, GATE_EVIDENCE_SUMMARY, GateEvidenceRecord, OfferWorkHandoffRequest,
+        CancelWorkHandoffRequest, ClaimNextReadyChildRequest, ClaimWorkRequest, CompletionSeal,
+        EnvironmentEvidence, FeedId, FeedPosition, GATE_EVIDENCE_SUMMARY, GateEvidenceRecord,
+        NextReadyChildClaim, OfferWorkHandoffRequest,
         POST_COMPLETION_EVIDENCE_PROVENANCE_REFERENCE, POST_COMPLETION_EVIDENCE_PROVENANCE_SOURCE,
         RecordGateEvidenceRequest, RecordRestoredWorkEvidenceRequest, RecordWorkEvidenceRequest,
         RecordWorkNoteRequest, ReleaseWorkRequest, RestoredWorkEvidenceInput, RootExecution,
@@ -411,7 +412,6 @@ impl SqliteStore {
     ) -> Result<WorkClaim, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
-        let expires_at = claim_expiry(request.claimed_at, request.ttl_seconds)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
         let keyed = !request.idempotency_key.is_empty();
@@ -426,7 +426,210 @@ impl SqliteStore {
             transaction.commit()?;
             return Ok(claim);
         }
-        let mut item = load_work_item(&transaction, request.work_id)?;
+        let claim = Self::claim_work_on(&transaction, request)?;
+        if keyed {
+            persist_operation_result(
+                &transaction,
+                "claim_work",
+                &request.idempotency_key,
+                request_object.hash(),
+                &claim,
+            )?;
+        }
+        transaction.commit()?;
+        Ok(claim)
+    }
+
+    /// Selects the next ready direct child of one parent and claims it in the
+    /// same write transaction. Candidates are the parent's open children in
+    /// the `ls --ready` order (priority, then work id) whose canonical basis
+    /// is ready; blocked, deferred, held and terminal children are never
+    /// selected. A child this holder already holds under the parent is the
+    /// answer to a repeat: the call renews it instead of taking a second one.
+    /// A ready child whose prior claim lapsed under an unaccounted holder is
+    /// passed over unless the request carries a recovery reason. A nonempty
+    /// key replays the original selection exactly.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StoreError`] when the parent is unknown, no child can be
+    /// claimed, the request conflicts with an idempotent retry, or
+    /// persistence fails. A refusal claims nothing.
+    pub fn claim_next_ready_child<R: Redactor>(
+        &mut self,
+        request: &ClaimNextReadyChildRequest,
+        redactor: &R,
+    ) -> Result<NextReadyChildClaim, StoreError> {
+        inspect_work_request(redactor, request, &request.actor)?;
+        assert_actor_session(&request.actor, &request.holder)?;
+        let request_object = request_object(request)?;
+        let transaction = self.begin_work_mutation()?;
+        let keyed = !request.idempotency_key.is_empty();
+        if keyed
+            && let Some(selection) = replay_operation::<NextReadyChildClaim>(
+                &transaction,
+                "claim_next_ready_child",
+                &request.idempotency_key,
+                request_object.hash(),
+            )?
+        {
+            transaction.commit()?;
+            return Ok(selection);
+        }
+        let parent = load_work_item(&transaction, request.parent_id)?;
+        let mut ready = Vec::new();
+        let mut held = None;
+        let mut others = BTreeMap::new();
+        for (child_id, availability) in
+            open_children_by_ready_order_on(&transaction, parent.work_id, request.claimed_at)?
+        {
+            if availability == "ready" {
+                ready.push(child_id);
+                continue;
+            }
+            if held.is_none() && (availability == "claimed" || availability == "active") {
+                let item = load_work_item(&transaction, child_id)?;
+                if let Some(run_id) = item.active_run_id
+                    && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
+                    && claim.holder == request.holder
+                    && claim.state == WorkClaimState::Active
+                    && claim.expires_at > request.claimed_at
+                {
+                    held = Some(item);
+                }
+            }
+            *others.entry(availability).or_insert(0) += 1;
+        }
+        let claim_request = |item: &WorkItem, recovery_reason: Option<String>| ClaimWorkRequest {
+            work_id: item.work_id,
+            expected_work_revision: item.revision,
+            expected_run_id: item.active_run_id,
+            holder: request.holder.clone(),
+            ttl_seconds: request.ttl_seconds,
+            recovery_reason,
+            actor: request.actor.clone(),
+            idempotency_key: String::new(),
+            claimed_at: request.claimed_at,
+        };
+        let selection = if let Some(item) = held {
+            let claim = Self::claim_work_on(&transaction, &claim_request(&item, None))?;
+            NextReadyChildClaim {
+                parent_id: parent.work_id,
+                work_id: item.work_id,
+                claim,
+                position: None,
+                ready_count: ready.len(),
+                renewed: true,
+            }
+        } else {
+            let (item, position, ready_count) =
+                Self::select_next_ready_child_on(&transaction, ready, request, &mut others)?;
+            let claim = Self::claim_work_on(
+                &transaction,
+                &claim_request(&item, request.recovery_reason.clone()),
+            )?;
+            NextReadyChildClaim {
+                parent_id: parent.work_id,
+                work_id: item.work_id,
+                claim,
+                position: Some(position),
+                ready_count,
+                renewed: false,
+            }
+        };
+        if keyed {
+            persist_operation_result(
+                &transaction,
+                "claim_next_ready_child",
+                &request.idempotency_key,
+                request_object.hash(),
+                &selection,
+            )?;
+        }
+        transaction.commit()?;
+        Ok(selection)
+    }
+
+    /// The projection narrows the candidates; the canonical basis decides, so
+    /// an entry it does not confirm is passed over. Returns the selected
+    /// child, its one-based place in the verified ready order, and that
+    /// order's length.
+    fn select_next_ready_child_on(
+        transaction: &Transaction<'_>,
+        candidates: Vec<WorkId>,
+        request: &ClaimNextReadyChildRequest,
+        others: &mut BTreeMap<String, usize>,
+    ) -> Result<(WorkItem, usize, usize), StoreError> {
+        let mut verified = Vec::new();
+        for child_id in candidates {
+            let view = inspect_work_canonical_on(transaction, child_id, request.claimed_at)?;
+            if matches!(view.availability, WorkAvailability::Ready) {
+                verified.push(load_work_item(transaction, child_id)?);
+            } else {
+                *others.entry("not ready".to_owned()).or_insert(0) += 1;
+            }
+        }
+        let mut lapsed = 0;
+        for (index, item) in verified.iter().enumerate() {
+            if request.recovery_reason.is_none()
+                && Self::lapsed_under_unaccounted_holder_on(transaction, item, &request.holder)?
+            {
+                lapsed += 1;
+                continue;
+            }
+            return Ok((item.clone(), index + 1, verified.len()));
+        }
+        Err(StoreError::InvalidWork(Self::no_ready_child_reason(
+            others, lapsed,
+        )))
+    }
+
+    /// A ready child whose last claim belongs to a different holder that the
+    /// root execution has neither credited nor waived needs attributed
+    /// recovery, exactly as an explicit claim of it would.
+    fn lapsed_under_unaccounted_holder_on(
+        transaction: &Transaction<'_>,
+        item: &WorkItem,
+        holder: &crate::domain::SessionId,
+    ) -> Result<bool, StoreError> {
+        let Some(run_id) = item.active_run_id else {
+            return Ok(false);
+        };
+        let Some(prior) = load_work_claim_optional(transaction, run_id)? else {
+            return Ok(false);
+        };
+        if prior.holder == *holder {
+            return Ok(false);
+        }
+        let run = load_work_run(transaction, run_id)?;
+        let execution = load_root_execution(transaction, run.root_execution_id)?;
+        Ok(!root_participant_is_accounted(&execution, &prior.holder))
+    }
+
+    fn no_ready_child_reason(others: &BTreeMap<String, usize>, lapsed: usize) -> String {
+        let mut parts = others
+            .iter()
+            .map(|(availability, count)| format!("{count} {availability}"))
+            .collect::<Vec<_>>();
+        if lapsed > 0 {
+            parts.push(format!(
+                "{lapsed} ready but lapsed under another holder; pass a recovery reason to take one over"
+            ));
+        }
+        if parts.is_empty() {
+            return "no ready child to claim: the item has no open children".into();
+        }
+        format!("no ready child to claim: {}", parts.join(", "))
+    }
+
+    /// The claim body shared by an explicit claim and a next-ready selection;
+    /// the caller owns replay and commit.
+    fn claim_work_on(
+        transaction: &Transaction<'_>,
+        request: &ClaimWorkRequest,
+    ) -> Result<WorkClaim, StoreError> {
+        let expires_at = claim_expiry(request.claimed_at, request.ttl_seconds)?;
+        let mut item = load_work_item(transaction, request.work_id)?;
         assert_revision(&item, request.expected_work_revision)?;
         if item.active_run_id != request.expected_run_id {
             return Err(StoreError::InvalidWorkProjection(
@@ -434,19 +637,19 @@ impl SqliteStore {
             ));
         }
         if let Some(run_id) = request.expected_run_id {
-            expire_handoff_offers(&transaction, run_id, request.claimed_at, &request.actor)?;
+            expire_handoff_offers(transaction, run_id, request.claimed_at, &request.actor)?;
         }
         if item.lifecycle != WorkLifecycle::Open {
             return Err(StoreError::WorkNotOpen(item.work_id));
         }
         if let Some(run_id) = item.active_run_id
-            && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
+            && let Some(claim) = load_work_claim_optional(transaction, run_id)?
             && claim.holder == request.holder
             && claim.state == WorkClaimState::Active
             && claim.expires_at > request.claimed_at
         {
             let (item, run, mut claim) = validate_live_claim_for_item_on(
-                &transaction,
+                transaction,
                 item,
                 run_id,
                 request.expected_work_revision,
@@ -456,12 +659,12 @@ impl SqliteStore {
                 request.claimed_at,
                 false,
             )?;
-            let root_execution = load_root_execution(&transaction, run.root_execution_id)?;
+            let root_execution = load_root_execution(transaction, run.root_execution_id)?;
             claim.expires_at = claim.expires_at.max(expires_at);
             claim.revision += 1;
-            persist_claim(&transaction, &claim)?;
+            persist_claim(transaction, &claim)?;
             append_work_event(
-                &transaction,
+                transaction,
                 &WorkEventDraft {
                     schema_version: SCHEMA_VERSION,
                     project_id: item.project_id.clone(),
@@ -482,25 +685,15 @@ impl SqliteStore {
                     created_at: request.claimed_at,
                 },
             )?;
-            if keyed {
-                persist_operation_result(
-                    &transaction,
-                    "claim_work",
-                    &request.idempotency_key,
-                    request_object.hash(),
-                    &claim,
-                )?;
-            }
-            transaction.commit()?;
             return Ok(claim);
         }
-        let view = inspect_work_canonical_on(&transaction, item.work_id, request.claimed_at)?;
+        let view = inspect_work_canonical_on(transaction, item.work_id, request.claimed_at)?;
         if !matches!(view.availability, WorkAvailability::Ready) {
             if matches!(
                 view.availability,
                 WorkAvailability::Claimed | WorkAvailability::Active
             ) && let Some(run_id) = item.active_run_id
-                && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
+                && let Some(claim) = load_work_claim_optional(transaction, run_id)?
             {
                 return Err(StoreError::WorkClaimHeld {
                     work: item.work_id,
@@ -514,12 +707,12 @@ impl SqliteStore {
             )));
         }
         let (mut root_execution, mut run, created_run) =
-            ensure_restored_execution_state(&transaction, &mut item, request.claimed_at)?;
+            ensure_restored_execution_state(transaction, &mut item, request.claimed_at)?;
         let run_id = run.run_id;
         let prior = if created_run {
             None
         } else {
-            load_work_claim_optional(&transaction, run_id)?
+            load_work_claim_optional(transaction, run_id)?
         };
         if let Some(claim) = prior.as_ref()
             && claim.state == WorkClaimState::Active
@@ -571,7 +764,7 @@ impl SqliteStore {
         if root_changed {
             root_execution.revision += 1;
             root_execution.updated_at = request.claimed_at;
-            persist_root_execution(&transaction, &root_execution)?;
+            persist_root_execution(transaction, &root_execution)?;
         }
         let preserve_active_run = run.state == WorkRunState::Active
             && prior
@@ -583,8 +776,8 @@ impl SqliteStore {
         }
         run.revision += 1;
         run.updated_at = request.claimed_at;
-        persist_claim(&transaction, &claim)?;
-        persist_work_run(&transaction, &run, claim.fence)?;
+        persist_claim(transaction, &claim)?;
+        persist_work_run(transaction, &run, claim.fence)?;
         let event = WorkEventDraft {
             schema_version: SCHEMA_VERSION,
             project_id: item.project_id.clone(),
@@ -605,7 +798,7 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.claimed_at,
         };
-        let (event_hash, positions) = append_work_event(&transaction, &event)?;
+        let (event_hash, positions) = append_work_event(transaction, &event)?;
         // A run this claim is the first to hold may still owe the obligations
         // its bound criteria open; a run that already holds them keeps them.
         if let Some(position) = positions
@@ -613,7 +806,7 @@ impl SqliteStore {
             .find(|position| position.feed == FeedId::RunExecution(run_id))
         {
             super::completion::open_binding_obligations_on(
-                &transaction,
+                transaction,
                 &item,
                 &run,
                 &event_hash,
@@ -621,16 +814,6 @@ impl SqliteStore {
                 request.claimed_at,
             )?;
         }
-        if keyed {
-            persist_operation_result(
-                &transaction,
-                "claim_work",
-                &request.idempotency_key,
-                request_object.hash(),
-                &claim,
-            )?;
-        }
-        transaction.commit()?;
         Ok(claim)
     }
 

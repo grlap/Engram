@@ -319,7 +319,7 @@ engram work next --peek           # resume orientation without advancing deliver
 engram work next                  # explicitly advance ordinary delivery
 engram work ls | show REF
 engram work add "Title" [--accept "criterion"]... [--bind POSITION=KIND]... [--under REF [--optional]] [--kind KIND] [--label L] [--evaluation-mode MODE]
-engram work claim REF
+engram work claim REF | --under PARENT
 engram work update REF [--after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --accept "criterion"... | --bind POSITION=KIND... | --evaluation-mode MODE | --clear-evaluation-mode]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION]
@@ -336,10 +336,13 @@ engram work forget KEY
   `done` tells you what is still owed. Receipts carry `next:` commands —
   follow them.
 - `claim REF --ttl SECONDS` renews your live claim without changing its
-  identity/fence or shortening expiry. A non-holder may `note` open or blocked
-  work, including a child of a completed parent, as a marked observation only;
-  it grants no execution or completion credit. Unclaimed planning updates
-  remain available. With no focus, use `gate NAME --work-ref REF`.
+  identity/fence or shortening expiry. `claim --under PARENT` holds the
+  parent's next ready child, chosen in `ls --ready` order and claimed in one
+  transaction; a repeat renews the child you already hold under it. A
+  non-holder may `note` open or blocked work, including a child of a
+  completed parent, as a marked observation only; it grants no execution or
+  completion credit. Unclaimed planning updates remain available. With no
+  focus, use `gate NAME --work-ref REF`.
 - After completion, any project-bound session may use `note` or `gate` for a
   late finding without claiming or reopening the item; the existing seal stays
   frozen.

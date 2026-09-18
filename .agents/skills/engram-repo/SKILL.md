@@ -221,6 +221,7 @@ engram work show REF --note ID[:INDEX]  # complete immutable note detail
 engram work show REF --full  # complete authored title, outcome and acceptance
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L] [--evaluation-mode MODE]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
+engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the parent's next ready child, chosen in ls --ready order and claimed in one transaction
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L | --evaluation-mode MODE | --clear-evaluation-mode]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION]
@@ -368,6 +369,10 @@ Rules that matter:
   Existing children and their fences remain unchanged.
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   without changing its identity or fence, and never shortens its expiry.
+  `claim --under PARENT` holds the parent's next ready child, chosen in the
+  `ls --ready` order and claimed in the same transaction; a repeat renews the
+  child you already hold under that parent, a child lapsed under another
+  holder is passed over without `--recover`, and nothing ready refuses.
   Open-work `gate` and `done` require the holder. A non-holder may `note`
   open work, including blocked work or a child of a completed parent: this is
   a marked observation, not a checkpoint, renewal, or completion credit.

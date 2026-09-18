@@ -111,9 +111,10 @@ pub use storage::{
 };
 pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use verbs::{
-    AddInput, AgentVerbs, ClaimInput, DoneInput, EvaluateInput, ForgetInput, GateInput, Guidance,
-    HandoffAction, HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput, Receipt,
-    RememberInput, UpdateAction, UpdateInput, VerbError, looks_like_work_ref, parse_defer_date,
+    AddInput, AgentVerbs, ClaimInput, ClaimUnderInput, DoneInput, EvaluateInput, ForgetInput,
+    GateInput, Guidance, HandoffAction, HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput,
+    Receipt, RememberInput, UpdateAction, UpdateInput, VerbError, looks_like_work_ref,
+    parse_defer_date,
 };
 pub use work_service::{
     LocalWorkService, ProjectMemorySignal, WorkAcceptanceInput, WorkActorDefaultSource,

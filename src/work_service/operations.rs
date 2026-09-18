@@ -127,6 +127,19 @@ pub enum WorkUpdateInput {
         #[serde(default)]
         idempotency_key: String,
     },
+    /// Select the focused item's next ready direct child by derived
+    /// readiness and the `ls --ready` order, and claim it in the same
+    /// transaction. The result names the child, its place among the ready
+    /// children, and whether the call renewed a child already held.
+    ClaimNextReady {
+        ttl_seconds: Option<i64>,
+        /// Lets the selection take over a ready child whose prior claim
+        /// lapsed under an unaccounted holder; without it such a child is
+        /// passed over. Not permission-bearing.
+        recovery_reason: Option<String>,
+        #[serde(default)]
+        idempotency_key: String,
+    },
     Release {
         reason: String,
         /// Attributed audit reason for waiving a missing contribution. It is

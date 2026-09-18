@@ -130,6 +130,37 @@ pub(super) fn projected_detach_admitted(
         |row| row.get(0)).map_err(StoreError::from)
 }
 
+/// Open direct children of one parent in the `ls --ready` order, each with
+/// its projected availability word. Advisory like every projection: a claim
+/// path rechecks the canonical basis of the child it selects.
+pub(in crate::storage::work) fn open_children_by_ready_order_on(
+    connection: &Connection,
+    parent_id: WorkId,
+    now: DateTime<Utc>,
+) -> Result<Vec<(WorkId, String)>, StoreError> {
+    let sql = format!(
+        "WITH classified AS (
+             SELECT candidate.work_id, candidate.priority,
+                    ({PROJECTED_WORK_AVAILABILITY_SQL}) AS availability
+             FROM work_items candidate
+             WHERE candidate.parent_id = ?1 AND candidate.lifecycle = 'open'
+         )
+         SELECT work_id, availability FROM classified ORDER BY priority, work_id"
+    );
+    let mut statement = connection.prepare(&sql)?;
+    let rows = statement
+        .query_map(
+            params![parent_id.0.to_string(), now.timestamp_millis()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )?
+        .map(|row| {
+            let (work_id, availability) = row?;
+            Ok((parse_work_id(&work_id)?, availability))
+        })
+        .collect::<Result<Vec<_>, StoreError>>()?;
+    Ok(rows)
+}
+
 impl SqliteStore {
     /// Returns ready work ordered by priority, unblocking value, age, and stable id.
     ///

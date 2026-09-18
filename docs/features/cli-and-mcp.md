@@ -168,6 +168,7 @@ engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
+engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the parent's next ready child, chosen in ls --ready order and claimed in one transaction
 engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
@@ -690,6 +691,14 @@ Rules that matter:
 - Claim before execution. `claim REF --ttl SECONDS` renews your live claim
   with the same identity and fence; expiry becomes the later of its existing
   expiry and now plus the requested TTL (one hour by default).
+  `claim --under PARENT` selects the parent's next ready direct child in the
+  `ls --ready` order (priority, then work id) and claims it in the same core
+  transaction, so parallel sessions under one parent never receive the same
+  child and never a blocked, deferred, held or closed one. The receipt names
+  the child and its place among the ready children; a repeat renews the
+  child you already hold under that parent. A ready child whose prior claim
+  lapsed under another holder is passed over unless you pass `--recover`.
+  With nothing ready the call refuses with the reason and holds nothing.
   Open-work `gate` and `done` require the holder. A non-holder may `note`
   open work, including blocked work or a child of a completed parent: this
   produces a marked observation, never execution or completion credit.

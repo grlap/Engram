@@ -13,9 +13,9 @@ use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 use engram::domain::AssuranceLevel;
 use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
-    ClaimInput, ControlAssurance, DevelopmentNoopRedactor, DoneInput, ForgetInput, GateInput,
-    HandoffAction, HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService, LsInput,
-    McpServer, MemoriesInput, NextInput, NoteInput, ObjectHash, ObligationRuleDefinition,
+    ClaimInput, ClaimUnderInput, ControlAssurance, DevelopmentNoopRedactor, DoneInput, ForgetInput,
+    GateInput, HandoffAction, HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService,
+    LsInput, McpServer, MemoriesInput, NextInput, NoteInput, ObjectHash, ObligationRuleDefinition,
     ObligationRuleSet, ProjectId, RememberInput, SessionId, SqliteStore, StoreError, UpdateAction,
     UpdateInput, VerificationKind, VerificationRequirement, WaiveWorkObligationRequest,
     WorkAttributionDefaults, WorkAvailability, WorkCompleteInput, WorkCompleteResult,
@@ -606,7 +606,13 @@ enum WorkCommand {
     },
     /// Hold an item before changing anything; later words default to it.
     Claim {
-        work_ref: String,
+        /// Item to hold; omit it with --under.
+        #[arg(required_unless_present = "under", conflicts_with = "under")]
+        work_ref: Option<String>,
+        /// Hold the parent's next ready child instead, chosen in the
+        /// `ls --ready` order and claimed in the same transaction.
+        #[arg(long, value_name = "PARENT")]
+        under: Option<String>,
         /// Claim lifetime in seconds (default one hour).
         #[arg(long, value_name = "SECONDS")]
         ttl: Option<i64>,
@@ -1541,16 +1547,31 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
         ),
         WorkCommand::Claim {
             work_ref,
+            under,
             ttl,
             recover,
-        } => verbs.claim(
-            ClaimInput {
-                work_ref,
-                ttl_seconds: ttl,
-                recover,
-            },
-            now,
-        ),
+        } => match (work_ref, under) {
+            (None, Some(under)) => verbs.claim_under(
+                ClaimUnderInput {
+                    under,
+                    ttl_seconds: ttl,
+                    recover,
+                },
+                now,
+            ),
+            (Some(work_ref), None) => verbs.claim(
+                ClaimInput {
+                    work_ref,
+                    ttl_seconds: ttl,
+                    recover,
+                },
+                now,
+            ),
+            _ => Err(
+                StoreError::InvalidWork("claim takes REF or --under PARENT, not both".into())
+                    .into(),
+            ),
+        },
         WorkCommand::Update(args) => {
             let WorkUpdateArgs {
                 external,

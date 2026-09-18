@@ -619,6 +619,13 @@ fn update_metadata(input: &WorkUpdateInput) -> (&'static str, &'static str, &str
         WorkUpdateInput::Claim {
             idempotency_key, ..
         } => ("claim", "claim_work", idempotency_key),
+        WorkUpdateInput::ClaimNextReady {
+            idempotency_key, ..
+        } => (
+            "claim_next_ready",
+            "claim_next_ready_child",
+            idempotency_key,
+        ),
         WorkUpdateInput::Release {
             idempotency_key, ..
         } => ("release", "release_work", idempotency_key),
@@ -1908,6 +1915,16 @@ fn agent_update_receipt(
             "parent_ref": rejected.parent_ref,
             "required_child_waived": true,
         }));
+    }
+    if operation == "claim_next_ready" {
+        // One flat claim receipt, shaped like an ordinary claim's, plus the
+        // selection it came from.
+        let selection: crate::domain::NextReadyChildClaim = serde_json::from_value(receipt)?;
+        let mut flat = serde_json::to_value(&selection.claim)?;
+        flat["position"] = serde_json::json!(selection.position);
+        flat["ready_count"] = serde_json::json!(selection.ready_count);
+        flat["renewed"] = serde_json::json!(selection.renewed);
+        return Ok(flat);
     }
     if operation != "waive_required_child" {
         return Ok(receipt);

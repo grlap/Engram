@@ -143,6 +143,17 @@ pub struct ClaimInput {
     pub recover: Option<String>,
 }
 
+/// `claim --under PARENT`: hold the parent's next ready child.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClaimUnderInput {
+    pub under: String,
+    pub ttl_seconds: Option<i64>,
+    /// Attributed reason that lets the selection take over a ready child
+    /// whose prior claim lapsed under another holder; without it such a
+    /// child is passed over.
+    pub recover: Option<String>,
+}
+
 /// `update`: exactly one action against an item.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UpdateInput {
@@ -1171,6 +1182,73 @@ impl AgentVerbs {
             &after,
             "claim",
             json!({}),
+            lines,
+            guidance,
+            self.holder(&after, now),
+            false,
+        )?))
+    }
+
+    /// `claim --under PARENT`: select the parent's next ready child in the
+    /// `ls --ready` order and hold it, in one core transaction; later words
+    /// default to the child. A repeat renews the child this session already
+    /// holds under the parent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerbError`] when the parent is unknown, no child is ready, or
+    /// the core does not admit the claim.
+    pub fn claim_under(
+        &self,
+        input: ClaimUnderInput,
+        now: DateTime<Utc>,
+    ) -> Result<Receipt, VerbError> {
+        let parent = self.target(Some(&input.under), now)?;
+        let parent_ref = parent.status.work.short_ref.clone();
+        let target = parent.status.work.work_id.0.to_string();
+        let result = self
+            .service
+            .work_update_on(
+                Some(&target),
+                WorkUpdateInput::ClaimNextReady {
+                    ttl_seconds: input.ttl_seconds,
+                    recovery_reason: input
+                        .recover
+                        .map(|value| value.trim().to_owned())
+                        .filter(|value| !value.is_empty()),
+                    idempotency_key: String::new(),
+                },
+                now,
+            )
+            .map_err(|error| VerbError::at(error, &parent_ref))?;
+        let selection = &result.receipt.result;
+        let renewed = selection["renewed"].as_bool().unwrap_or(false);
+        let ready = selection["ready_count"].as_u64().unwrap_or(0);
+        let position = selection["position"].as_u64();
+        let after = self.target(Some(result.receipt.work_ref.as_str()), now)?;
+        let work_ref = after.status.work.short_ref.clone();
+        let title = short(&after.status.work.title);
+        let held = held_suffix(self.holder(&after, now), now);
+        let lines = vec![if renewed {
+            format!("renewed {work_ref} \"{title}\", already held under {parent_ref}{held}")
+        } else {
+            format!(
+                "claimed {work_ref} \"{title}\", ready child {} of {ready} under {parent_ref}{held}",
+                position.unwrap_or(1)
+            )
+        }];
+        let guidance = self.guidance(&after, "claim", now);
+        Ok(self.finish_mutation(super::mutation::receipt(
+            &after,
+            "claim",
+            json!({
+                "under": {
+                    "parent_ref": parent_ref,
+                    "position": position,
+                    "ready": ready,
+                    "renewed": renewed,
+                }
+            }),
             lines,
             guidance,
             self.holder(&after, now),

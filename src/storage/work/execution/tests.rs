@@ -8,6 +8,7 @@ use super::*;
 
 mod claims;
 mod gate_evidence;
+mod next_ready;
 mod sessions;
 mod status;
 
