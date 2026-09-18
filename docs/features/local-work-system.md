@@ -109,9 +109,10 @@ are typed/indexed fields, and children inherit configured labels.
 
 An acceptance criterion may be **bound** to a typed verification requirement:
 a `VerificationKind` (`test`, `build`, `lint`, `review`, `acceptance`) and,
-optionally, one exact check, pinned by its command fingerprint — the 64-hex
-`check_fingerprint` the host records on verification evidence, never a record
-id. Bindings are authored with the criteria
+optionally, one exact check, pinned by its command fingerprint — the
+`check_fingerprint` the host records on verification evidence. The id of a
+stored record is not one and is refused where the binding is authored.
+Bindings are authored with the criteria
 (`add`/`update --bind POSITION=KIND[:FINGERPRINT]`, a plan task's
 `bindings`) and name criteria by one-based position: in the list as typed
 when the list is authored in the same call, in the stored list `show`
@@ -123,17 +124,21 @@ triggered by that planning event; host-minted `VerificationEvidence` of the
 bound kind (and pinned check) with a passed result satisfies it, with or
 without a source mutation on the run; `done` refuses while it is open, and
 refuses when the newest verification of that kind at the completion cut did
-not pass, since a later failure outranks an earlier pass, or predates the
-run's latest observed source change, since it certifies code that has since
-moved; the seal binds the obligation and the criterion cites the satisfying
-record when the completion cites it. Under an evaluated policy a bound
-criterion passes only on an `observed` basis citing that evidence — never
-judgment or an asserted gate. A revision that drops a binding waives its
-obligation in the revising actor's name and one that adds a binding opens the
-obligation from that revision; a criterion rewritten under an unchanged
-binding owes its verification again, because the earlier pass answered the
-earlier sentence; `--accept` without `--bind` drops every binding, and the
-receipt says so.
+not pass, since a later failure outranks an earlier pass, or does not verify
+the run's latest observed source change under the same rule that matches
+verification evidence to a mutation (source revision, position and time, not
+recording order alone), since it certifies code that has since moved. Both
+checks belong to `done`; recording an evaluation does not apply them. The
+seal binds the obligation, and an asserted criterion cites the verification
+that carried it when the completion cites it. Under an evaluated policy a
+bound criterion passes only on an `observed` basis citing that evidence —
+never judgment or an asserted gate — and seals with exactly the citations it
+was judged on. A revision that drops a binding waives its obligation in the
+revising actor's name. A binding the preceding revision did not carry
+unchanged — a new one, one added back after being dropped, or one whose
+sentence was rewritten — owes its verification from that revision, because
+an earlier pass answered an earlier authoring; `--accept` without `--bind`
+drops every binding, and the receipt says so.
 Free-text criteria are judged as before.
 
 ### Root execution and work run

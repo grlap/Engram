@@ -78,34 +78,50 @@ fn a_bound_plan_task_opens_its_obligation_and_a_record_id_pin_is_refused() {
     );
     assert!(store.verify_all().expect("doctor").is_healthy());
 
-    // A minted record id is not a command fingerprint: the whole plan refuses.
-    let mut other = SqliteStore::open_in_memory().expect("store");
-    let mut pinned = request();
-    pinned.plan.tasks[2].acceptance = vec!["write docs".into(), "run tests".into()];
-    pinned.plan.tasks[2].bindings = vec![bind(Some("a".repeat(32)))];
-    let refused = other
-        .propose_work_plan(&pinned, &DevelopmentNoopRedactor)
-        .expect_err("a record id pin");
-    let reason = refused.to_string();
-    assert!(
-        reason.contains("task child") && reason.contains("not a record id"),
-        "{reason}"
-    );
-    assert!(
-        other
+    // The id of a stored record is not a command fingerprint, whatever its
+    // shape: a second plan pinned to one refuses whole and creates nothing.
+    let count = |store: &SqliteStore| {
+        store
             .query_work_catalog(
                 &crate::ProjectId("atomic-plan".into()),
                 at(1),
                 &crate::domain::WorkCatalogQuery {
-                    limit: 10,
+                    limit: 100,
                     ..crate::domain::WorkCatalogQuery::default()
                 },
             )
             .expect("catalog")
             .items
-            .is_empty(),
-        "a refused plan creates nothing"
-    );
+            .len()
+    };
+    let before = count(&store);
+    let stored: String = store
+        .connection
+        .query_row("SELECT object_hash FROM objects LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("a stored record id");
+    let mut pinned = request();
+    pinned.plan.idempotency_key = "plan-pinned-to-a-record".into();
+    pinned.plan.tasks[2].acceptance = vec!["write docs".into(), "run tests".into()];
+    pinned.plan.tasks[2].bindings = vec![bind(Some(stored))];
+    let refused = store
+        .propose_work_plan(&pinned, &DevelopmentNoopRedactor)
+        .expect_err("a record id pin");
+    let reason = refused.to_string();
+    assert!(reason.contains("is the id of a stored record"), "{reason}");
+    assert_eq!(count(&store), before, "a refused plan creates nothing");
+
+    // A value that is not hex at all refuses at validation, naming the task.
+    let mut malformed = request();
+    malformed.plan.idempotency_key = "plan-malformed-pin".into();
+    malformed.plan.tasks[2].bindings = vec![bind(Some("not-a-fingerprint".into()))];
+    malformed.plan.tasks[2].acceptance = vec!["write docs".into(), "run tests".into()];
+    let reason = store
+        .propose_work_plan(&malformed, &DevelopmentNoopRedactor)
+        .expect_err("a malformed pin")
+        .to_string();
+    assert!(reason.contains("task child"), "{reason}");
 }
 
 #[test]

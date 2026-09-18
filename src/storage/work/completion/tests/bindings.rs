@@ -349,11 +349,9 @@ fn bindings_are_read_from_the_shell_form_and_admitted_against_the_list() {
             "{text:?} must be refused"
         );
     }
-    // A minted record id has the shape of no command fingerprint: pinning one
-    // could never be satisfied, so it is refused where it is authored.
-    let record_id = AcceptanceBinding::parse(&format!("1=test:{}", "a".repeat(32)))
-        .expect_err("a record id is not a check fingerprint");
-    assert!(record_id.contains("not a record id"), "{record_id}");
+    // Shape cannot tell a command fingerprint from a record id, so any well
+    // formed value parses; storage refuses a stored record's id on admission.
+    assert!(AcceptanceBinding::parse(&format!("1=test:{}", "a".repeat(32))).is_ok());
     let sorted = crate::domain::normalize_acceptance_bindings(
         3,
         &[
@@ -605,16 +603,25 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
     // The source then changes. The builtin rule asks for a test, which is
     // given; nothing asks for the build again, yet the build on record
     // certifies code that has since moved.
-    source_mutation(&mut store, &work, &claim, "runner", "change", 4);
-    host_verification(
+    source_mutation(
         &mut store,
         &work,
         &claim,
         "runner",
         "change",
+        4,
+        "revision-after-change",
+    );
+    host_verification_of(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-after-change",
         VerificationKind::Test,
         VerificationResult::Passed,
         5,
+        "revision-after-change",
     );
     assert!(
         store
@@ -642,11 +649,47 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
     };
     assert!(
         reason.contains("criterion 1 requires build verification")
-            && reason.contains("predates the run's latest source change"),
+            && reason.contains("does not verify the run's latest source change"),
         "{reason}"
     );
 
-    let rebuilt = host_verification(
+    // Recording order proves nothing about what was checked: a build recorded
+    // after the change, but of the source as it stood before it, is as stale.
+    let old_source = host_verification_of(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "build-of-the-old-source",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        9,
+        "revision-as-it-stands",
+    );
+    let all = store.work_run_evidence(run_id).expect("run evidence");
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "checkpoint-old-source",
+        10,
+        &all,
+    );
+    let mut rerecorded =
+        completion_request(&work, &claim, "runner", &generic, "complete-old-source", 11);
+    rerecorded.evidence.push(old_source);
+    let refused = store.complete_work(&rerecorded, &DevelopmentNoopRedactor);
+    let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+        panic!("a build of the older source must not seal: {refused:?}");
+    };
+    assert!(
+        reason.contains("does not verify the run's latest source change")
+            && reason.contains("stale_source_revision"),
+        "{reason}"
+    );
+
+    let rebuilt = host_verification_of(
         &mut store,
         &work,
         &claim,
@@ -654,7 +697,8 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
         "build-after",
         VerificationKind::Build,
         VerificationResult::Passed,
-        9,
+        12,
+        "revision-after-change",
     );
     let all = store.work_run_evidence(run_id).expect("run evidence");
     checkpoint(
@@ -663,15 +707,179 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
         &claim,
         "runner",
         "checkpoint-rebuilt",
-        10,
+        13,
         &all,
     );
-    let mut fresh = completion_request(&work, &claim, "runner", &generic, "complete-rebuilt", 11);
-    fresh.evidence.push(rebuilt);
-    store
+    let mut fresh = completion_request(&work, &claim, "runner", &generic, "complete-rebuilt", 14);
+    fresh.evidence.push(rebuilt.clone());
+    let seal = store
         .complete_work(&fresh, &DevelopmentNoopRedactor)
-        .expect("a build after the change carries the criterion");
+        .expect("a build of the changed source carries the criterion");
+    // The criterion cites the verification the freshness rule accepted, not
+    // the older record that first satisfied the obligation.
+    assert!(seal.acceptance[0].evidence.contains(&rebuilt));
+    assert!(!seal.acceptance[0].evidence.contains(&build));
     assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn a_binding_dropped_and_added_again_owes_its_verification_from_the_new_authoring() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-rebound-criterion");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-rebound", 2, 300);
+    host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-first-authoring",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+
+    // Rewrite the sentence under the binding, drop the binding, add it back.
+    let rewritten = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        Some(vec!["run the whole suite", "write docs"]),
+        Some(vec![bound(1, VerificationKind::Test)]),
+        "rebound-rewrite",
+        4,
+    );
+    let dropped = revise_bound(
+        &mut store,
+        &rewritten,
+        &claim,
+        None,
+        Some(Vec::new()),
+        "rebound-drop",
+        5,
+    );
+    let rebound = revise_bound(
+        &mut store,
+        &dropped,
+        &claim,
+        None,
+        Some(vec![bound(1, VerificationKind::Test)]),
+        "rebound-add",
+        6,
+    );
+
+    // The first authoring's pass and the rewrite's waived obligation are
+    // history; the binding authored now owes its own verification.
+    let records = store.work_run_obligations(run_id).expect("obligations");
+    let states = records
+        .iter()
+        .map(|record| (record.obligation.work_revision, record.state))
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 3, "{states:?}");
+    let open = records
+        .iter()
+        .filter(|record| record.state == WorkObligationState::Open)
+        .collect::<Vec<_>>();
+    assert_eq!(open.len(), 1, "{states:?}");
+    assert_eq!(open[0].obligation.work_revision, rebound.revision);
+
+    let claim = store
+        .current_work_claim(rebound.work_id)
+        .expect("claim")
+        .expect("live claim");
+    let fresh = host_verification(
+        &mut store,
+        &rebound,
+        &claim,
+        "runner",
+        "test-new-authoring",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        7,
+    );
+    let terminal = store.work_run_obligations(run_id).expect("obligations");
+    assert!(terminal.iter().any(|record| {
+        record.obligation.work_revision == rebound.revision
+            && matches!(
+                record.resolution.as_ref().map(|event| &event.resolution),
+                Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &fresh
+            )
+    }));
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn rewriting_a_bound_criterion_whose_obligation_is_open_waives_it_by_name() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-open-rewrite");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-open-rewrite", 2, 300);
+    let revised = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        Some(vec!["run the whole suite", "write docs"]),
+        Some(vec![bound(1, VerificationKind::Test)]),
+        "open-rewrite",
+        3,
+    );
+    let records = store.work_run_obligations(run_id).expect("obligations");
+    assert_eq!(records.len(), 2);
+    let waived = records
+        .iter()
+        .find(|record| record.state == WorkObligationState::Waived)
+        .expect("the old sentence's open obligation is waived");
+    assert_eq!(waived.obligation.work_revision, work.revision);
+    let Some(WorkObligationResolution::Waived { waived_by, reason }) =
+        waived.resolution.as_ref().map(|event| &event.resolution)
+    else {
+        panic!("expected an attributed waiver");
+    };
+    assert_eq!(waived_by, "runner");
+    assert!(
+        reason.contains("criterion 1 was rewritten, and its verification is owed again"),
+        "{reason}"
+    );
+    let open = records
+        .iter()
+        .filter(|record| record.state == WorkObligationState::Open)
+        .collect::<Vec<_>>();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].obligation.work_revision, revised.revision);
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn a_pin_that_is_a_stored_record_id_is_refused_where_it_is_authored() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    store
+        .create_work(
+            &root_request("project-record-id-pin", "first-root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("a first root, so the store holds records");
+    let stored: String = store
+        .connection
+        .query_row("SELECT object_hash FROM objects LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("a stored record id");
+    let mut request = root_request("project-record-id-pin", "pinned-root", 1);
+    request.acceptance = vec!["run tests".into()];
+    let mut pinned = bound(1, VerificationKind::Test);
+    pinned.requirement.check_fingerprint =
+        Some(ObjectHash::from_stored(stored).expect("stored id shape"));
+    request.acceptance_bindings = vec![pinned];
+    let refused = store.create_work(&request, &DevelopmentNoopRedactor);
+    let Err(StoreError::InvalidWork(reason)) = refused else {
+        panic!("a stored record's id must not be admitted as a pin: {refused:?}");
+    };
+    assert!(
+        reason.contains("criterion 1 pins") && reason.contains("is the id of a stored record"),
+        "{reason}"
+    );
 }
 
 #[test]

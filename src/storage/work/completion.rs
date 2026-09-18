@@ -442,6 +442,7 @@ impl SqliteStore {
             run.run_id,
             &completion_cut,
             &evidence,
+            acceptance_evaluation.is_some(),
             acceptance,
         )?;
         let environment =
@@ -1870,24 +1871,27 @@ pub(super) fn open_binding_obligations_on(
 /// obligation is resolved there, or completion refused before this; a
 /// satisfied one is contradicted when the newest verification of its kind at
 /// the cut did not pass, since a later failed check outranks an earlier pass,
-/// and is stale when that verification predates the run's latest observed
-/// source change, since it certifies code that has since moved; and the
-/// sealed result for the criterion cites the evidence that satisfied it, so
-/// the seal says what the pass rested on.
+/// and is stale when that verification does not verify the run's latest
+/// observed source change under the rule that matches verification evidence
+/// to a mutation (source revision, position and time), since it certifies
+/// code that has since moved. A criterion the author asserted then cites the
+/// verification that carried it, so the seal says what the pass rested on; a
+/// criterion an evaluation judged keeps exactly the citations the evaluation
+/// recorded, and the obligation binding names the satisfying record.
 fn bind_acceptance_to_obligations_on(
     connection: &Connection,
     item: &WorkItem,
     run_id: WorkRunId,
     cut: &FeedPosition,
     completion_evidence: &[ObjectHash],
+    evaluated: bool,
     mut acceptance: Vec<AcceptanceResult>,
 ) -> Result<Vec<AcceptanceResult>, StoreError> {
     if item.acceptance_bindings.is_empty() {
         return Ok(acceptance);
     }
     let records = load_work_obligation_records_on(connection, run_id, None)?;
-    let latest_mutation =
-        latest_source_mutation_on(connection, run_id, cut.position)?.map(|(position, _)| position);
+    let latest_mutation = latest_source_mutation_on(connection, run_id, cut.position)?;
     for binding in &item.acceptance_bindings {
         let Some(index) = binding.criterion.checked_sub(1) else {
             return Err(StoreError::InvalidWorkProjection(format!(
@@ -1918,37 +1922,61 @@ fn bind_acceptance_to_obligations_on(
         else {
             continue;
         };
-        if let Some((position, newest, result)) =
+        let mut carried_by = satisfying.clone();
+        if let Some((position, newest, evidence)) =
             newest_verification_of_kind_on(connection, run_id, &binding.requirement, cut)?
         {
             let kind = encode_state(binding.requirement.check_kind)?;
-            if result != crate::domain::VerificationResult::Passed {
+            if evidence.result != crate::domain::VerificationResult::Passed {
                 return Err(StoreError::WorkCompletionRefused {
                     work: item.work_id,
                     reason: format!(
-                        "criterion {} requires {kind} verification and is contradicted by newer verification evidence {newest} that did not pass; record a passing check after it, or revise the criterion",
+                        "criterion {} requires {kind} verification and is contradicted by newer verification evidence {newest} that did not pass; record a passing check after it, or drop the binding",
                         binding.criterion
                     ),
                 });
             }
-            if latest_mutation.is_some_and(|mutation| position < mutation) {
-                return Err(StoreError::WorkCompletionRefused {
-                    work: item.work_id,
-                    reason: format!(
-                        "criterion {} requires {kind} verification, and the newest one ({newest}) predates the run's latest source change; record a passing check after that change, or revise the criterion",
-                        binding.criterion
-                    ),
-                });
+            // Recording order alone proves nothing about what was checked: a
+            // record appended after the change may still verify the older
+            // source. The rule that matches evidence to a mutation decides.
+            if let Some((mutation_position, mutation)) = latest_mutation.as_ref() {
+                let producer = load_typed_work_object::<ExecutionObservation>(
+                    connection,
+                    &evidence.producer_observation,
+                    "execution_observation",
+                )?;
+                if let Err(mismatch) = crate::control::match_verification_evidence(
+                    &crate::control::VerificationEvidenceMatchInput {
+                        candidate_kind: crate::domain::WorkEvidenceKind::Verification,
+                        evidence: Some(&evidence),
+                        producer: Some(&producer),
+                        latest_mutation: Some((mutation, *mutation_position)),
+                        evidence_position: position,
+                        requirement: &binding.requirement,
+                    },
+                ) {
+                    return Err(StoreError::WorkCompletionRefused {
+                        work: item.work_id,
+                        reason: format!(
+                            "criterion {} requires {kind} verification, and the newest one ({newest}) does not verify the run's latest source change ({}); record a passing check of the changed source, or drop the binding",
+                            binding.criterion,
+                            encode_state(mismatch)?
+                        ),
+                    });
+                }
             }
+            carried_by = newest;
         }
-        // The seal's obligation binding already names the satisfying record;
-        // the criterion cites it too when the completion's evidence set holds
-        // it, so the citation closure the checkpoint acknowledged still holds.
-        if completion_evidence.contains(satisfying)
+        // An evaluation's citations are its own and are sealed as recorded.
+        // An asserted criterion cites the verification that carried it when
+        // the completion's evidence set holds it, so the citation closure the
+        // checkpoint acknowledged still holds.
+        if !evaluated
+            && completion_evidence.contains(&carried_by)
             && let Some(result) = acceptance.get_mut(index)
-            && !result.evidence.contains(satisfying)
+            && !result.evidence.contains(&carried_by)
         {
-            result.evidence.push(satisfying.clone());
+            result.evidence.push(carried_by);
         }
     }
     Ok(acceptance)
@@ -1956,13 +1984,13 @@ fn bind_acceptance_to_obligations_on(
 
 /// The newest host-minted verification of `requirement`'s kind (and pinned
 /// check, when it pins one) on the run at or before `cut`, with its run-feed
-/// position and result.
+/// position.
 fn newest_verification_of_kind_on(
     connection: &Connection,
     run_id: WorkRunId,
     requirement: &crate::domain::VerificationRequirement,
     cut: &FeedPosition,
-) -> Result<Option<(i64, ObjectHash, crate::domain::VerificationResult)>, StoreError> {
+) -> Result<Option<(i64, ObjectHash, VerificationEvidence)>, StoreError> {
     let stored: Vec<String> = connection
         .prepare(
             "SELECT evidence_hash FROM work_run_evidence
@@ -1970,7 +1998,7 @@ fn newest_verification_of_kind_on(
         )?
         .query_map([run_id.0.to_string()], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
-    let mut newest: Option<(i64, ObjectHash, crate::domain::VerificationResult)> = None;
+    let mut newest: Option<(i64, ObjectHash, VerificationEvidence)> = None;
     for stored_hash in stored {
         let hash = ObjectHash::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
@@ -1992,7 +2020,7 @@ fn newest_verification_of_kind_on(
             .as_ref()
             .is_none_or(|(known, _, _)| position.position > *known)
         {
-            newest = Some((position.position, hash, evidence.result));
+            newest = Some((position.position, hash, evidence));
         }
     }
     Ok(newest)

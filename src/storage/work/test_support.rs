@@ -291,6 +291,36 @@ pub(super) fn host_verification(
     result: crate::domain::VerificationResult,
     second: i64,
 ) -> ObjectHash {
+    host_verification_of(
+        store,
+        work,
+        claim,
+        holder,
+        key,
+        kind,
+        result,
+        second,
+        "revision-as-it-stands",
+    )
+}
+
+/// `host_verification` of the source at `source_revision`: the content the
+/// check ran against, which the anti-stale rule compares with a mutation's.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one test helper mirrors the host verification surface"
+)]
+pub(super) fn host_verification_of(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    kind: crate::domain::VerificationKind,
+    result: crate::domain::VerificationResult,
+    second: i64,
+    source_revision: &str,
+) -> ObjectHash {
     use crate::domain::{
         ControlWorkBinding, EffectClass, EnvironmentComponents, EnvironmentEvidence,
         ExecutionObservation, ExecutionOutcome, ExecutionSourceBasis, VerificationEvidence,
@@ -308,7 +338,7 @@ pub(super) fn host_verification(
     run_actor.run_id = Some(run.run_id.0.to_string());
     let source_basis = ExecutionSourceBasis {
         workspace_id: format!("workspace-{key}"),
-        source_revision: "revision-as-it-stands".into(),
+        source_revision: source_revision.into(),
     };
     let observation = ExecutionObservation {
         schema_version: SCHEMA_VERSION,
@@ -317,7 +347,7 @@ pub(super) fn host_verification(
         session_id: SessionId(holder.into()),
         grant_id: format!("grant-{key}"),
         observation_id: format!("check-{key}"),
-        action_fingerprint: ObjectHash::from_canonical_bytes(format!("check {key}").as_bytes()),
+        action_fingerprint: check_fingerprint(key),
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
@@ -390,9 +420,9 @@ pub(super) fn check_fingerprint(key: &str) -> ObjectHash {
     ObjectHash::from_canonical_bytes(format!("check {key}").as_bytes())
 }
 
-/// Appends a host-observed source mutation on the claimed run, in the
-/// workspace and at the source revision `host_verification` uses for the same
-/// `key`, so a test verification under that key answers the builtin rule.
+/// Appends a host-observed source mutation on the claimed run that leaves
+/// the source at `source_revision`; a verification of that revision recorded
+/// afterwards answers it.
 pub(super) fn source_mutation(
     store: &mut SqliteStore,
     work: &WorkItem,
@@ -400,6 +430,7 @@ pub(super) fn source_mutation(
     holder: &str,
     key: &str,
     second: i64,
+    source_revision: &str,
 ) -> ObjectHash {
     use crate::domain::{
         ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome,
@@ -429,7 +460,7 @@ pub(super) fn source_mutation(
         obligation_rule_set: active_rule_set_id(&store.connection),
         source_basis: Some(ExecutionSourceBasis {
             workspace_id: format!("workspace-{key}"),
-            source_revision: "revision-as-it-stands".into(),
+            source_revision: source_revision.into(),
         }),
         observed_at: Some(at(second)),
         actor: run_actor.clone(),

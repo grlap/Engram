@@ -502,12 +502,6 @@ impl SqliteStore {
             }
             *others.entry(availability).or_insert(0) += 1;
         }
-        let ready = Self::verified_ready_children_on(
-            &transaction,
-            candidates,
-            request.claimed_at,
-            &mut others,
-        )?;
         let claim_request = |item: &WorkItem, recovery_reason: Option<String>| ClaimWorkRequest {
             work_id: item.work_id,
             expected_work_revision: item.revision,
@@ -520,6 +514,15 @@ impl SqliteStore {
             claimed_at: request.claimed_at,
         };
         let selection = if let Some(item) = held {
+            // A renewal keeps the caller's own claim alive, so a sibling whose
+            // basis cannot be read is counted as not ready, not as a failure.
+            let ready = Self::verified_ready_children_on(
+                &transaction,
+                candidates,
+                request.claimed_at,
+                &mut others,
+                true,
+            )?;
             let claim = Self::claim_work_on(&transaction, &claim_request(&item, None))?;
             NextReadyChildClaim {
                 parent_id: parent.work_id,
@@ -530,6 +533,13 @@ impl SqliteStore {
                 renewed: true,
             }
         } else {
+            let ready = Self::verified_ready_children_on(
+                &transaction,
+                candidates,
+                request.claimed_at,
+                &mut others,
+                false,
+            )?;
             let (item, position) =
                 Self::select_next_ready_child_on(&transaction, &ready, request, &others)?;
             let claim = Self::claim_work_on(
@@ -560,18 +570,25 @@ impl SqliteStore {
 
     /// The projection narrows the candidates; the canonical basis decides, so
     /// an entry it does not confirm is counted as not ready and left out.
-    /// Returns the verified ready children in their order.
+    /// Returns the verified ready children's ids in their order. With
+    /// `tolerate_unreadable`, a candidate whose basis cannot be read is
+    /// counted as not ready too, instead of failing the caller.
     fn verified_ready_children_on(
         transaction: &Transaction<'_>,
         candidates: Vec<WorkId>,
         now: DateTime<Utc>,
         others: &mut BTreeMap<String, usize>,
-    ) -> Result<Vec<WorkItem>, StoreError> {
+        tolerate_unreadable: bool,
+    ) -> Result<Vec<WorkId>, StoreError> {
         let mut verified = Vec::new();
         for child_id in candidates {
-            let view = inspect_work_canonical_on(transaction, child_id, now)?;
-            if matches!(view.availability, WorkAvailability::Ready) {
-                verified.push(load_work_item(transaction, child_id)?);
+            let ready = match inspect_work_canonical_on(transaction, child_id, now) {
+                Ok(view) => matches!(view.availability, WorkAvailability::Ready),
+                Err(_) if tolerate_unreadable => false,
+                Err(error) => return Err(error),
+            };
+            if ready {
+                verified.push(child_id);
             } else {
                 *others.entry("not ready".to_owned()).or_insert(0) += 1;
             }
@@ -580,22 +597,23 @@ impl SqliteStore {
     }
 
     /// Returns the first verified ready child this request may claim and its
-    /// one-based place in that order.
+    /// one-based place in that order; only a child it considers is loaded.
     fn select_next_ready_child_on(
         transaction: &Transaction<'_>,
-        ready: &[WorkItem],
+        ready: &[WorkId],
         request: &ClaimNextReadyChildRequest,
         others: &BTreeMap<String, usize>,
     ) -> Result<(WorkItem, usize), StoreError> {
         let mut lapsed = 0;
-        for (index, item) in ready.iter().enumerate() {
+        for (index, child_id) in ready.iter().enumerate() {
+            let item = load_work_item(transaction, *child_id)?;
             if request.recovery_reason.is_none()
-                && Self::lapsed_under_unaccounted_holder_on(transaction, item, &request.holder)?
+                && Self::lapsed_under_unaccounted_holder_on(transaction, &item, &request.holder)?
             {
                 lapsed += 1;
                 continue;
             }
-            return Ok((item.clone(), index + 1));
+            return Ok((item, index + 1));
         }
         Err(StoreError::InvalidWork(Self::no_ready_child_reason(
             others, lapsed,

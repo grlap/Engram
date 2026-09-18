@@ -532,17 +532,22 @@ Rules that matter:
   binds the criterion at that one-based position to host verification of
   that kind (`test`, `build`, `lint`, `review` or `acceptance`), optionally of
   one exact check. `FINGERPRINT` is that check's command fingerprint: the
-  64-hex `check_fingerprint` the host records on its verification evidence,
-  never a record id, which no evidence could match and which is refused where
-  it is typed. Positions follow the call: with `--accept` in the same call
+  `check_fingerprint` the host records on its verification evidence. It is
+  never a record id: no evidence could match one, so the id of a stored
+  record is refused where the binding is authored, whatever its shape.
+  Positions follow the call: with `--accept` in the same call
   they count the acceptance list as typed and are carried to the stored
   order; `--bind` alone on `update` counts the stored list, as `show` numbers
   it. `show` marks each bound criterion `[requires host KIND verification]`
   and counts bound criteria behind a clipped list. A bound criterion opens a
   typed obligation on the item's run, so `done` refuses until the host has
   minted passing verification evidence of that kind; a newer failed check of
-  that kind contradicts it, and a check older than the run's latest observed
-  source change no longer carries it. Under an evaluated policy its pass
+  that kind contradicts it, and a check that does not verify the run's latest
+  observed source change (judged by the source revision it ran against, not
+  by when it was recorded) no longer carries it. Both are enforced at `done`,
+  not when an evaluation is recorded; the refusal's remedy is a passing check
+  of the changed source, or dropping the binding. Under an evaluated policy
+  the criterion keeps exactly the citations it was judged on, and its pass
   needs an `observed` basis citing that evidence — never judgment or a gate
   record. Revision changes the requirement: `--accept` without `--bind` drops
   the bindings and the receipt says so; a dropped binding's obligation is

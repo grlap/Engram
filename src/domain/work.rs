@@ -295,18 +295,18 @@ pub struct AcceptanceBinding {
 impl AcceptanceBinding {
     /// Reads a pinned check: the content fingerprint of the check's command,
     /// which the host records as `check_fingerprint` on its verification
-    /// evidence. It is 64 hex digits. A record id names a stored record, can
-    /// never equal one, and would leave the binding unsatisfiable.
+    /// evidence, in the hex form that evidence carries it. The id of a stored
+    /// record is a different kind of value that no evidence can match; shape
+    /// cannot tell the two apart, so storage refuses a stored record's id
+    /// where the binding is authored.
     ///
     /// # Errors
     ///
-    /// Returns the reason when the text is not such a fingerprint.
+    /// Returns the reason when the text is not a fingerprint in that form.
     pub fn check_fingerprint_from(text: &str) -> Result<ObjectHash, String> {
-        ObjectHash::from_stored(text.trim().to_owned())
-            .filter(|fingerprint| fingerprint.as_str().len() == 64)
-            .ok_or_else(|| {
-                "a pinned check is the 64-hex command fingerprint the host recorded as check_fingerprint on its verification evidence, not a record id".to_owned()
-            })
+        ObjectHash::from_stored(text.trim().to_owned()).ok_or_else(|| {
+            "a pinned check is the command fingerprint the host recorded as check_fingerprint on its verification evidence, in lowercase hex".to_owned()
+        })
     }
 
     /// Reads the shell form `POSITION=KIND[:FINGERPRINT]`: a one-based

@@ -160,6 +160,7 @@ fn create_root_with_validation_on<R: Redactor>(
     };
     let (acceptance, acceptance_bindings) =
         normalize_acceptance(&request.acceptance, &request.acceptance_bindings)?;
+    refuse_record_id_pins_on(transaction, &acceptance_bindings)?;
     let item = WorkItem {
         schema_version: SCHEMA_VERSION,
         project_id: request.project_id.clone(),
@@ -578,21 +579,28 @@ impl SqliteStore {
             }
             (None, None) => {}
         }
-        // A criterion rewritten under an unchanged binding owes its
-        // verification again: the old obligation answered the old sentence.
-        let reauthored =
-            item.acceptance_bindings
-                .iter()
-                .filter(|binding| {
-                    authored_before.1.iter().any(|before| {
-                        before.criterion == binding.criterion
-                            && before.requirement == binding.requirement
-                    }) && binding.criterion.checked_sub(1).is_some_and(|index| {
-                        authored_before.0.get(index) != item.acceptance.get(index)
-                    })
-                })
-                .map(|binding| binding.criterion)
-                .collect::<Vec<_>>();
+        if request.patch.acceptance_bindings.is_some() {
+            refuse_record_id_pins_on(&transaction, &item.acceptance_bindings)?;
+        }
+        // A binding the preceding revision did not carry unchanged (same
+        // position, same requirement, same sentence) is authored by this
+        // revision and owes its verification from here: an obligation an
+        // earlier revision resolved answered an earlier authoring, whether the
+        // sentence was rewritten or the binding was dropped and added again.
+        let reauthored = item
+            .acceptance_bindings
+            .iter()
+            .filter(|binding| {
+                let carried = authored_before.1.iter().any(|before| {
+                    before.criterion == binding.criterion
+                        && before.requirement == binding.requirement
+                }) && binding.criterion.checked_sub(1).is_some_and(|index| {
+                    authored_before.0.get(index) == item.acceptance.get(index)
+                });
+                !carried
+            })
+            .map(|binding| binding.criterion)
+            .collect::<Vec<_>>();
         if let Some(kind) = request.patch.kind {
             item.kind = kind;
         }
@@ -1083,6 +1091,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
         labels.extend(draft.labels.clone());
         let (acceptance, acceptance_bindings) =
             normalize_acceptance(&draft.acceptance, &draft.acceptance_bindings)?;
+        refuse_record_id_pins_on(transaction, &acceptance_bindings)?;
         let item = WorkItem {
             external_ref: crate::domain::normalize_external_reference(
                 draft.external_ref.as_deref(),
@@ -1712,6 +1721,34 @@ pub(in crate::storage) fn normalize_acceptance(
     let bindings = crate::domain::normalize_acceptance_bindings(stored.len(), &carried)
         .map_err(StoreError::InvalidWork)?;
     Ok((stored, bindings))
+}
+
+/// A pinned check is the fingerprint of a check's command, which the host
+/// records as `check_fingerprint` on its verification evidence. The id of a
+/// stored record is a different kind of value that no evidence can match, so a
+/// binding pinned to one could never be satisfied: it is refused where it is
+/// authored, whatever its shape.
+fn refuse_record_id_pins_on(
+    connection: &Connection,
+    bindings: &[crate::domain::AcceptanceBinding],
+) -> Result<(), StoreError> {
+    for binding in bindings {
+        let Some(pinned) = binding.requirement.check_fingerprint.as_ref() else {
+            continue;
+        };
+        let is_record: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM objects WHERE object_hash = ?1)",
+            [pinned.as_str()],
+            |row| row.get(0),
+        )?;
+        if is_record {
+            return Err(StoreError::InvalidWork(format!(
+                "criterion {} pins {pinned}, which is the id of a stored record; pin the check's command fingerprint, the check_fingerprint the host recorded on its verification evidence",
+                binding.criterion
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn short_ref(work_id: WorkId) -> String {

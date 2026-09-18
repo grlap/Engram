@@ -581,9 +581,9 @@ enum WorkCommand {
         /// Bind a criterion to typed host verification: POSITION=KIND[:FINGERPRINT],
         /// kind test, build, lint, review or acceptance; repeatable. POSITION
         /// counts the --accept list as typed. FINGERPRINT pins one check by its
-        /// 64-hex command fingerprint (the evidence's `check_fingerprint`), never
-        /// a record id. A bound criterion passes only on host-observed
-        /// verification of that kind.
+        /// command fingerprint (the evidence's `check_fingerprint`); a stored
+        /// record's id is refused. A bound criterion passes only on
+        /// host-observed verification of that kind.
         #[arg(long = "bind", value_name = "POSITION=KIND")]
         bindings: Vec<String>,
         /// Add as a child of this item instead of a root.
@@ -2202,8 +2202,8 @@ struct WorkUpdateArgs {
     /// Replace the criteria bound to typed host verification, as
     /// POSITION=KIND[:FINGERPRINT]; repeatable. POSITION counts the --accept
     /// list as typed when given in the same call, otherwise the stored list as
-    /// show numbers it. FINGERPRINT is a check's 64-hex command fingerprint,
-    /// never a record id. Omitted while --accept replaces the list, the
+    /// show numbers it. FINGERPRINT is a check's command fingerprint; a stored
+    /// record's id is refused. Omitted while --accept replaces the list, the
     /// bindings are cleared; omitted otherwise, unchanged.
     #[arg(long = "bind", value_name = "POSITION=KIND", action = ArgAction::Append, num_args = 1)]
     bindings: Option<Vec<String>>,

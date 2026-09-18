@@ -153,8 +153,8 @@ struct AddArgs {
     acceptance: Option<Vec<String>>,
     /// Bind criteria to typed host verification, as `POSITION=KIND[:FINGERPRINT]`
     /// (kind: test, build, lint, review or acceptance; positions count the
-    /// acceptance list as typed; FINGERPRINT is a check's 64-hex command
-    /// fingerprint, never a record id); a bound criterion passes only on
+    /// acceptance list as typed; FINGERPRINT is a check's command fingerprint,
+    /// and a stored record's id is refused); a bound criterion passes only on
     /// host-observed verification of that kind, never on judgment.
     bindings: Option<Vec<String>>,
     /// Add as a child of this item instead of a root.
@@ -227,8 +227,8 @@ struct UpdateArgs {
     /// Replace the criteria bound to typed host verification for revise, as
     /// `POSITION=KIND[:FINGERPRINT]`. Positions count the acceptance list as
     /// typed when it is replaced in the same call, otherwise the stored list
-    /// as show numbers it; FINGERPRINT is a check's 64-hex command
-    /// fingerprint, never a record id. Omitted while acceptance is replaced,
+    /// as show numbers it; FINGERPRINT is a check's command fingerprint, and a
+    /// stored record's id is refused. Omitted while acceptance is replaced,
     /// the bindings are cleared; omitted otherwise, they are unchanged.
     bindings: Option<Vec<String>>,
     assignee: Option<String>,

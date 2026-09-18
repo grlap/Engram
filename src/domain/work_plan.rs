@@ -56,9 +56,9 @@ pub struct WorkPlanBinding {
     /// One-based position in the task's `acceptance`.
     pub criterion: usize,
     pub check_kind: super::VerificationKind,
-    /// The command fingerprint of one exact check to require: the 64-hex
-    /// `check_fingerprint` the host records on its verification evidence,
-    /// never a record id. Omit to accept any check of the kind.
+    /// The command fingerprint of one exact check to require: the
+    /// `check_fingerprint` the host records on its verification evidence. The
+    /// id of a stored record is refused. Omit to accept any check of the kind.
     #[serde(default)]
     pub check_fingerprint: Option<String>,
 }
