@@ -99,7 +99,10 @@ pub(crate) fn terminal_safe_actor_label(actor_id: &str, actor_context: Option<&s
     safe
 }
 
-pub(super) fn normalize_actor_context(actor_context: Option<String>) -> (Option<String>, bool) {
+/// Shared by every surface that accepts host-asserted actor context (the
+/// work words, MCP, and the host-control connection), so one context is
+/// retained identically whichever channel carried it.
+pub(crate) fn normalize_actor_context(actor_context: Option<String>) -> (Option<String>, bool) {
     let Some(original) = actor_context else {
         return (None, false);
     };

@@ -75,6 +75,7 @@ mod memories;
 mod next;
 mod operations;
 mod projection;
+pub(crate) use projection::normalize_actor_context;
 mod propose;
 mod record_windows;
 mod service;

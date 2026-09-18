@@ -446,7 +446,11 @@ fn acceptance_evaluation_line(policy: &engram::AcceptanceEvaluationPolicy) -> St
     )
 }
 
-fn control_diagnostics_json(control: &engram::storage::ControlDiagnostics) -> serde_json::Value {
+/// The active policy as `control-policy show` prints it: the same keys the
+/// doctor report carries, without the live session and turn counts.
+pub(crate) fn control_policy_json(
+    control: &engram::storage::ControlDiagnostics,
+) -> serde_json::Value {
     serde_json::json!({
         "schema_version": control.control_schema_version,
         "policy": control.active_policy,
@@ -455,10 +459,15 @@ fn control_diagnostics_json(control: &engram::storage::ControlDiagnostics) -> se
         "obligation_rules": control.obligation_rule_set,
         "acceptance_evaluation": control.acceptance_evaluation,
         "supported_effects": control.supported_effects,
-        "sessions": control.active_sessions,
-        "issued": control.issued_turns,
-        "begun": control.begun_turns,
     })
+}
+
+fn control_diagnostics_json(control: &engram::storage::ControlDiagnostics) -> serde_json::Value {
+    let mut value = control_policy_json(control);
+    value["sessions"] = control.active_sessions.into();
+    value["issued"] = control.issued_turns.into();
+    value["begun"] = control.begun_turns.into();
+    value
 }
 
 fn corruption_findings(value: &serde_json::Value) -> serde_json::Value {

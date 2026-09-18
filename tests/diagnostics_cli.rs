@@ -87,6 +87,23 @@ fn doctor_reports_the_acceptance_evaluation_policy_in_json_and_text() {
         ),
         "{text}"
     );
+    // The per-request read a host uses: the policy head, not the audit.
+    let shown: Value =
+        serde_json::from_slice(&success(home, &["control-policy", "show"]).stdout).unwrap();
+    for key in [
+        "policy",
+        "epoch",
+        "required_assurance",
+        "obligation_rules",
+        "acceptance_evaluation",
+        "supported_effects",
+    ] {
+        assert_eq!(shown[key], evaluated["control"][key], "{key}");
+    }
+    assert!(
+        shown.get("sessions").is_none(),
+        "show prints the policy, not live control counts: {shown}"
+    );
 }
 
 #[test]

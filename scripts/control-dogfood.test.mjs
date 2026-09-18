@@ -158,6 +158,11 @@ class ControlClient {
         "control",
         "--actor-id",
         sessionId,
+        // The live host passes its execution context to every channel of a
+        // session, in this position; a control command that refuses it dies
+        // at argument parsing and the host degrades to no mediation at all.
+        "--actor-context",
+        "agent=dogfood;model=control-dogfood;reasoning=high",
         "--session-id",
         sessionId,
         "--source-skill",

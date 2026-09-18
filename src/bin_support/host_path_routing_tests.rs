@@ -71,6 +71,7 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
             Command::Control {
                 actor_id: "host".into(),
                 session_id: "session".into(),
+                actor_context: None,
                 source_skill: None,
             },
         ),

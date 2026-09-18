@@ -119,9 +119,24 @@ pub struct HostControlServer {
     session_id: SessionId,
     connection_token: String,
     source_skill: Option<String>,
+    actor_context: Option<String>,
+    actor_context_normalized: bool,
 }
 
 impl HostControlServer {
+    /// Attributes this connection's records to the host-asserted execution
+    /// context (agent, model, reasoning), normalized exactly as the work
+    /// words normalize it. It describes the actor; it never changes the
+    /// principal used for assignment or authority.
+    #[must_use]
+    pub fn with_actor_context(mut self, actor_context: Option<String>) -> Self {
+        let (actor_context, normalized) =
+            crate::work_service::normalize_actor_context(actor_context);
+        self.actor_context = actor_context;
+        self.actor_context_normalized = normalized;
+        self
+    }
+
     /// Opens the project store and fixes asserted host context for this
     /// connection.
     ///
@@ -171,6 +186,8 @@ impl HostControlServer {
             session_id,
             connection_token,
             source_skill,
+            actor_context: None,
+            actor_context_normalized: false,
         })
     }
 
@@ -418,6 +435,27 @@ impl HostControlServer {
     }
 
     fn actor(&self, operation: &str, reason: &str) -> ActorContext {
+        let mut provenance_chain = vec![ProvenanceLink {
+            relation: ProvenanceRelation::AssertedBy,
+            source: self.actor_id.clone(),
+            reference: Some(self.session_id.0.clone()),
+        }];
+        // The same two links the work words record, so one session's control
+        // and work records carry one attribution.
+        if let Some(actor_context) = &self.actor_context {
+            provenance_chain.push(ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: actor_context.clone(),
+                reference: Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE.into()),
+            });
+        }
+        if self.actor_context_normalized {
+            provenance_chain.push(ProvenanceLink {
+                relation: ProvenanceRelation::DerivedFrom,
+                source: "actor_context:normalized".into(),
+                reference: Some(crate::domain::ACTOR_CONTEXT_NORMALIZED_REFERENCE.into()),
+            });
+        }
         ActorContext {
             actor_id: self.actor_id.clone(),
             actor_kind: "agent".into(),
@@ -426,11 +464,7 @@ impl HostControlServer {
             session_id: Some(self.session_id.clone()),
             source_tool: Some(format!("host-control:{operation}")),
             source_skill: self.source_skill.clone(),
-            provenance_chain: vec![ProvenanceLink {
-                relation: ProvenanceRelation::AssertedBy,
-                source: self.actor_id.clone(),
-                reference: Some(self.session_id.0.clone()),
-            }],
+            provenance_chain,
             reason: reason.into(),
         }
     }
@@ -637,6 +671,8 @@ mod tests {
             session_id: SessionId("frame-session".into()),
             connection_token: "frame-connection".into(),
             source_skill: None,
+            actor_context: None,
+            actor_context_normalized: false,
         };
 
         server
@@ -799,5 +835,63 @@ mod tests {
         ));
         assert!(!error.to_string().contains(&giant.0));
         assert!(!path.exists());
+    }
+
+    // The host passes one execution context to every channel of a session. The
+    // control connection attributes its records to it exactly as the work
+    // words do, and an unsafe value is normalized rather than refused.
+    #[test]
+    fn host_control_attributes_its_records_to_the_supplied_actor_context() {
+        let directory = crate::test_support::temp_home().expect("temp");
+        let open = |name: &str| {
+            HostControlServer::open_with_host_path_identity(
+                directory.path().join(name),
+                None,
+                ProjectId("control-context".into()),
+                "greg/claude".into(),
+                SessionId("session-context".into()),
+                None,
+            )
+            .expect("open the control connection")
+        };
+        let context_of = |actor: &ActorContext| {
+            actor
+                .provenance_chain
+                .iter()
+                .find(|link| {
+                    link.reference.as_deref()
+                        == Some(crate::domain::ACTOR_CONTEXT_PROVENANCE_REFERENCE)
+                })
+                .map(|link| link.source.clone())
+        };
+
+        let plain = open("plain.sqlite3").actor("turn_begin", "begin");
+        assert_eq!(context_of(&plain), None);
+
+        let attributed = open("attributed.sqlite3")
+            .with_actor_context(Some("agent=claude;model=fable;reasoning=high".into()))
+            .actor("turn_begin", "begin");
+        assert_eq!(
+            context_of(&attributed).as_deref(),
+            Some("agent=claude;model=fable;reasoning=high")
+        );
+        assert_eq!(attributed.actor_id, "greg/claude");
+        attributed
+            .validate_attribution_context()
+            .expect("a valid attribution");
+
+        let normalized = open("normalized.sqlite3")
+            .with_actor_context(Some("agent=claude\u{7};model=fable".into()))
+            .actor("turn_begin", "begin");
+        assert_eq!(
+            context_of(&normalized).as_deref(),
+            Some("agent=claude ;model=fable")
+        );
+        assert!(normalized.provenance_chain.iter().any(|link| {
+            link.reference.as_deref() == Some(crate::domain::ACTOR_CONTEXT_NORMALIZED_REFERENCE)
+        }));
+        normalized
+            .validate_attribution_context()
+            .expect("a normalized attribution stays valid");
     }
 }

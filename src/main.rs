@@ -203,6 +203,11 @@ enum Command {
         /// live ids are at most 64 UTF-8 bytes.
         #[arg(long)]
         session_id: String,
+        /// Optional free-form execution context attributed to this actor, as
+        /// the work words and the MCP server accept it; the host passes one
+        /// value to every channel of a session.
+        #[arg(long, env = "ENGRAM_ACTOR_CONTEXT")]
+        actor_context: Option<String>,
         /// Skill instruction that supplied this actor context, when available.
         #[arg(long)]
         source_skill: Option<String>,
@@ -296,11 +301,13 @@ fn warn_if_assurance_weakened(previous: ControlAssurance, current: ControlAssura
 }
 
 #[derive(Debug, Subcommand)]
-#[allow(
-    clippy::enum_variant_names,
-    reason = "each subcommand names the policy field it sets"
-)]
 enum ControlPolicyCommand {
+    /// Print the active policy: required assurance, obligation rule set,
+    /// supported effects, and the acceptance-evaluation policy (which
+    /// evaluator modes may record verdicts). It reads the policy head only,
+    /// never the whole-store audit `doctor` runs, so a host can ask it on
+    /// every evaluation request.
+    Show,
     /// Activate a new immutable policy version with a different requirement.
     ///
     /// Activation bumps the project policy epoch. Issued grants then fail
@@ -1106,6 +1113,7 @@ async fn run_cli() -> Result<ExitCode> {
         Command::Control {
             actor_id,
             session_id,
+            actor_context,
             source_skill,
         } => serve_control(
             database,
@@ -1113,6 +1121,7 @@ async fn run_cli() -> Result<ExitCode> {
             project_id,
             actor_id,
             session_id,
+            actor_context,
             source_skill,
         )?,
         Command::Work {
@@ -1169,6 +1178,9 @@ fn run_control_policy(
     let mut store = SqliteStore::open_with_host_path_identity(database, identity)
         .with_context(|| format!("failed to open {}", database.display()))?;
     let value = match operation {
+        ControlPolicyCommand::Show => {
+            bin_support::doctor::control_policy_json(&store.control_diagnostics()?)
+        }
         ControlPolicyCommand::SetRequiredAssurance {
             level,
             authorized_by,
@@ -2104,6 +2116,7 @@ fn serve_control(
     project_id: ProjectId,
     actor_id: String,
     session_id: String,
+    actor_context: Option<String>,
     source_skill: Option<String>,
 ) -> Result<()> {
     validate_session_id_length(&session_id)?;
@@ -2115,7 +2128,8 @@ fn serve_control(
         SessionId(session_id),
         source_skill,
     )
-    .context("failed to start Engram host-control service")?;
+    .context("failed to start Engram host-control service")?
+    .with_actor_context(actor_context);
     server
         .serve(
             BufReader::new(io::stdin().lock()),

@@ -467,10 +467,14 @@ verbatim, so a transfer never widens which evaluator may accept a task.
 
 A host selects the evaluator from two reads. `show --json` carries the task's
 pin as `status.work.evaluation_mode`, omitted when the task pins nothing; the
-text form prints the same fact as `evaluation mode:`. `doctor --json` carries
-the active policy as `control.acceptance_evaluation` (`allowed_modes`,
-`mechanical_basis`, `require_source_freshness`), and the text form prints one
-`Acceptance evaluation:` line. An empty `allowed_modes` is the self-asserted
+text form prints the same fact as `evaluation mode:`. `control-policy show`
+prints the active policy as JSON, with `acceptance_evaluation`
+(`allowed_modes`, `mechanical_basis`, `require_source_freshness`) beside the
+policy hash, epoch, required assurance, rule set and supported effects. It
+reads the policy head only, so a host can ask it on every evaluation request;
+`doctor --json` carries the same keys under `control` and the text report one
+`Acceptance evaluation:` line, but `doctor` audits the whole store and can
+take minutes on a large one. An empty `allowed_modes` is the self-asserted
 path: no evaluator is needed.
 
 Scoped exceptions to the terse agent surface: receipts expose the evaluation

@@ -1144,6 +1144,13 @@ same transaction. A retry after restart or an uncertain response returns the
 original receipt even though its expected policy hash is now stale; reusing
 the key for another intent is a typed conflict.
 
+`engram control-policy show` prints the active policy as JSON: `policy` (the
+hash a compare-and-swap names), `epoch`, `required_assurance`,
+`obligation_rules`, `acceptance_evaluation` and `supported_effects`. It reads
+the policy head and changes nothing, so a host asks it whenever it needs the
+admitted evaluator modes; the `doctor` report carries the same keys but runs
+the whole-store audit first.
+
 The sibling operator-only `set-obligation-rule-set` command selects a
 validated canonical rule set with the same atomic policy successor,
 compare-and-swap, attribution, and replay contract; it is not an MCP tool or
@@ -1491,8 +1498,12 @@ the same fact into another status ledger.
 
 `engram control` is a long-lived stdio process. It accepts one JSON object per
 line and returns one `{ "status": "ok", "result": ... }` or typed error line.
-The runtime session and asserted actor are fixed by process arguments. The
-shipped operations are:
+The runtime session and asserted actor are fixed by process arguments:
+`--actor-id`, `--session-id`, and the optional `--actor-context` (or
+`ENGRAM_ACTOR_CONTEXT`) that the work words and the MCP server also accept. A
+host passes one context to every channel of a session; the control connection
+normalizes it the same way and records it on its attribution, never on the
+principal. The shipped operations are:
 
 | Operation | Durable effect |
 | --- | --- |
