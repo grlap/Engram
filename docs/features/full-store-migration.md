@@ -103,8 +103,12 @@ compared. A store written by a design this build no longer knows is refused
 the same way; the build that still reads it is kept beside its backups.
 
 The store's own format marker is not imported; the new store keeps its own.
-Delivery bookkeeping that projection repair is allowed to discard starts empty,
-which causes one harmless memory re-announcement per session.
+A table this build drops and recreates whenever it repairs a store — the
+project-memory state and the delivery bookkeeping beside it — is derived
+state: export names it as left out with its row count, and import starts it
+empty and lets repair rebuild it, so the report never counts a row the
+published store does not hold. The empty delivery bookkeeping causes one
+harmless memory re-announcement per session.
 
 The new file is built inside the private file the transfer reserves for it,
 which is opened in place rather than deleted and recreated. On a system with
@@ -140,9 +144,18 @@ converts with the last build that could.
 ## Operator workflow
 
 1. Stop every consumer of the store: hosts, agents and the CLI.
-2. `engram migration export` from the store file.
-3. `engram migration import` into a new file with the new build.
-4. Move the old file aside as the backup and put the new file in its place.
+2. `engram migration export` from the store file. It reads the store's
+   write-ahead log too, so committed data a crashed consumer left there is in
+   the export; the report says how large that log is, and the command warns
+   when it is not empty.
+3. `engram migration import` into a new file with the new build. Import
+   refuses a destination that has a `-wal`, `-shm` or `-journal` file beside
+   it, before it stages anything and again before it publishes.
+4. Move the old file aside as the backup **together with its `-wal` and
+   `-shm` files**: they hold committed data until the next checkpoint and
+   belong to that file alone. Put the new file in its place with nothing of
+   the old one beside it; SQLite applies whatever log it finds at a database's
+   name to that database.
 5. Start the consumers again.
 
 Live claims, leases, grants and delivery state are rows like any other and are

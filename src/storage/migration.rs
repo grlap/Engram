@@ -115,6 +115,10 @@ enum Line {
 #[derive(Debug, Serialize)]
 pub struct ExportReport {
     pub database_bytes: u64,
+    /// Size of the write-ahead log beside the source, or zero. The export
+    /// read the committed frames it holds; a backup of the source is the
+    /// database file together with that log and its `-shm` file.
+    pub wal_bytes: u64,
     pub file_bytes: u64,
     pub rows: u64,
     pub tables: Vec<TableRows>,
@@ -198,11 +202,42 @@ fn publish_failure(destination: &Path, error: &std::io::Error) -> MigrationError
 impl Drop for Staged {
     fn drop(&mut self) {
         for suffix in ["", "-journal", "-wal", "-shm"] {
-            let mut name = self.path.as_os_str().to_os_string();
-            name.push(suffix);
-            let _ = fs::remove_file(PathBuf::from(name));
+            let _ = fs::remove_file(sidecar(&self.path, suffix));
         }
     }
+}
+
+/// The SQLite sidecar files a database may have beside it.
+const SIDECARS: &[&str] = &["-wal", "-shm", "-journal"];
+
+/// `database` with `suffix` appended to its file name.
+fn sidecar(database: &Path, suffix: &str) -> PathBuf {
+    let mut name = database.as_os_str().to_os_string();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// Refuses a destination that has a write-ahead log, its shared-memory file or
+/// a rollback journal beside it. Such a file belongs to the database it was
+/// written for; SQLite would apply it to whatever database it finds at that
+/// name, so one left behind by the old file must move with the old file.
+fn refuse_sidecars(destination: &Path) -> Result<(), MigrationError> {
+    for suffix in SIDECARS {
+        let sidecar = sidecar(destination, suffix);
+        if sidecar.try_exists()? {
+            return Err(refused(format!(
+                "{} exists beside the destination; a write-ahead log or journal belongs to the database it was written for and must move with that file, never sit beside another",
+                sidecar.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A derived table export names as left out, with the reason it is.
+struct DerivedTable {
+    name: String,
+    reason: &'static str,
 }
 
 struct SourceTable {
@@ -215,6 +250,21 @@ struct SourceTable {
 /// records they index, so export reports them and import rebuilds them.
 const SUPPORTED_SEARCH_INDEXES: &[&str] = &["object_fts", "work_catalog_fts"];
 
+const SEARCH_INDEX: &str = "search index; import rebuilds it";
+const REBUILT_PROJECTION: &str =
+    "rebuilt projection; import starts it empty and repair rebuilds it";
+
+/// An ordinary table this build drops and recreates whenever it repairs a
+/// store, so its rows are derived state: export reports them, and import
+/// leaves them out rather than count rows the published store will not hold.
+/// A search index is classified by SQLite's own kind, not by this list.
+fn rebuilt_projection(name: &str) -> bool {
+    !SUPPORTED_SEARCH_INDEXES.contains(&name)
+        && super::CORE_REBUILDABLE_SCHEMA_OBJECTS
+            .iter()
+            .any(|(kind, object)| *kind == "table" && *object == name)
+}
+
 /// Tables to copy, and the derived tables import rebuilds instead.
 ///
 /// The classification is SQLite's own (`pragma_table_list`), never a guess from
@@ -224,7 +274,7 @@ const SUPPORTED_SEARCH_INDEXES: &[&str] = &["object_fts", "work_catalog_fts"];
 /// table, its shadow tables, a view — is refused by name rather than dropped.
 fn source_tables(
     connection: &Connection,
-) -> Result<(Vec<SourceTable>, Vec<String>), MigrationError> {
+) -> Result<(Vec<SourceTable>, Vec<DerivedTable>), MigrationError> {
     let mut statement = connection.prepare(
         "SELECT name, type FROM pragma_table_list
          WHERE schema = 'main' AND substr(name, 1, 7) COLLATE NOCASE != 'sqlite_'
@@ -245,11 +295,18 @@ fn source_tables(
     let mut rebuilt = Vec::new();
     for (name, kind) in &all {
         match kind.as_str() {
+            "table" if rebuilt_projection(name) => rebuilt.push(DerivedTable {
+                name: name.clone(),
+                reason: REBUILT_PROJECTION,
+            }),
             "table" => tables.push(ordinary_table(connection, name.clone())?),
             // A virtual table must be one of the search indexes by name. A name
             // that merely starts with one, such as `object_fts_extra`, is not.
             "virtual" if SUPPORTED_SEARCH_INDEXES.contains(&name.as_str()) => {
-                rebuilt.push(name.clone());
+                rebuilt.push(DerivedTable {
+                    name: name.clone(),
+                    reason: SEARCH_INDEX,
+                });
             }
             "shadow"
                 if SUPPORTED_SEARCH_INDEXES.iter().any(|index| {
@@ -258,7 +315,10 @@ fn source_tables(
                         && present(index)
                 }) =>
             {
-                rebuilt.push(name.clone());
+                rebuilt.push(DerivedTable {
+                    name: name.clone(),
+                    reason: SEARCH_INDEX,
+                });
             }
             kind => {
                 return Err(refused(format!(
@@ -487,11 +547,11 @@ pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, Migratio
         return Err(refused("the source has no tables; it is not a store"));
     }
     let mut left_out = non_table_objects(&connection)?;
-    for name in rebuilt {
+    for DerivedTable { name, reason } in rebuilt {
         left_out.push(LeftOut {
             rows: count(&connection, &name)?,
             name,
-            reason: "search index; import rebuilds it".into(),
+            reason: reason.into(),
         });
     }
     let copied = tables;
@@ -579,6 +639,7 @@ pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, Migratio
     staged.publish(out)?;
     Ok(ExportReport {
         database_bytes: fs::metadata(database)?.len(),
+        wal_bytes: fs::metadata(sidecar(database, "-wal")).map_or(0, |wal| wal.len()),
         file_bytes,
         rows: total,
         tables: header.tables,
@@ -619,6 +680,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     if out.try_exists()? {
         return Err(refused("import destination already exists"));
     }
+    refuse_sidecars(out)?;
     let header = header_of(file)?;
 
     // The reserved file is private from the moment it exists, and SQLite keeps
@@ -645,6 +707,14 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                 name: table.name.clone(),
                 rows: table.rows,
                 reason: "format marker; the new store keeps its own".into(),
+            });
+            continue;
+        }
+        if rebuilt_projection(&table.name) {
+            left_out.push(LeftOut {
+                name: table.name.clone(),
+                rows: table.rows,
+                reason: REBUILT_PROJECTION.into(),
             });
             continue;
         }
@@ -769,6 +839,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     checkpoint.close().map_err(|(_, error)| error)?;
 
     let database_bytes = fs::metadata(&staged.path)?.len();
+    refuse_sidecars(out)?;
     staged.publish(out)?;
     Ok(ImportReport {
         file_bytes: fs::metadata(file)?.len(),
@@ -889,7 +960,8 @@ fn admit_pending_deliveries(path: &Path) -> Result<u64, MigrationError> {
             .work_session_state(&project_id, &session_id, Utc::now())
             .map_err(|error| {
                 refused(format!(
-                    "the pending delivery of session {session} of project {project} is not one this build can admit: {error}"
+                    "the pending delivery of session {session} of project {project} is not one this build can admit: {}",
+                    admission_reason(&error)
                 ))
             })?;
         let (Some(through), Some(payload)) = (
@@ -908,9 +980,34 @@ fn admit_pending_deliveries(path: &Path) -> Result<u64, MigrationError> {
         )
         .map_err(|error| {
             refused(format!(
-                "the delivery page staged for session {session} of project {project} is not one this build can admit: {error}"
+                "the delivery page staged for session {session} of project {project} is not one this build can admit: {}",
+                admission_reason(&error)
             ))
         })?;
     }
     Ok(checked)
+}
+
+/// What a refused pending delivery may say to the operator: the shape of the
+/// problem and where it is, never a value from the page, which carries work
+/// titles and actor context. A projection reason is this build's own fixed
+/// wording; a decoding error is reduced to its category and position.
+fn admission_reason(error: &crate::StoreError) -> String {
+    match error {
+        crate::StoreError::Json(error) => {
+            let category = match error.classify() {
+                serde_json::error::Category::Syntax => "malformed JSON",
+                serde_json::error::Category::Eof => "truncated JSON",
+                serde_json::error::Category::Data => "a field of the wrong type or a missing field",
+                serde_json::error::Category::Io => "unreadable JSON",
+            };
+            format!(
+                "the page is not a delivery page ({category} at line {} column {})",
+                error.line(),
+                error.column()
+            )
+        }
+        crate::StoreError::InvalidWorkProjection(reason) => reason.clone(),
+        _ => "the row cannot be read by this build".into(),
+    }
 }

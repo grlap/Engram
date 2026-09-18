@@ -36,6 +36,12 @@ pub(crate) fn run(command: &MigrationCommand) -> Result<ExitCode> {
                 "WARNING: the export holds private scratch, restricted bodies and host authority records. Protect it like the store itself."
             );
             let report = engram::storage::migration::export_json(database, out)?;
+            if report.wal_bytes > 0 {
+                eprintln!(
+                    "WARNING: the source has a {}-byte write-ahead log beside it. The export read the committed frames it holds; a backup of the source is the database file together with its -wal and -shm files, and none of them may be left beside another database.",
+                    report.wal_bytes
+                );
+            }
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         MigrationCommand::Import { file, out } => {

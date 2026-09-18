@@ -128,18 +128,20 @@ fn a_store_round_trips_row_for_row_and_is_healthy() {
         exported
             .left_out
             .iter()
-            .all(|left| left.reason.contains("search index"))
+            .all(|left| left.reason == SEARCH_INDEX || left.reason == REBUILT_PROJECTION),
+        "{:?}",
+        exported.left_out
     );
 
     let target = directory.path().join("target.db");
     import_json(&file, &target).expect("import");
 
     let before = rows(&source);
-    let mut after = rows(&target);
-    // Delivery bookkeeping that projection repair discards by design.
+    let after = rows(&target);
+    // Delivery bookkeeping is derived state: left out by name, and started
+    // empty by the import rather than carried.
     let mut expected = before.clone();
     expected.insert("project_memory_advertisements".into(), Vec::new());
-    after.insert("project_memory_advertisements".into(), Vec::new());
     assert_eq!(after, expected);
     assert!(before["objects"].len() > 3, "the fixture wrote records");
 
@@ -1027,7 +1029,7 @@ fn a_staged_page_whose_attribution_the_source_denies_refuses_before_publication(
     let error = import_json(&file, &target).expect_err("contradicted attribution");
     assert!(
         matches!(&error, MigrationError::Refused(reason)
-            if reason.contains("pending-session") && reason.contains("can admit")),
+            if reason.contains("pending-session") && reason.contains("attribution differs")),
         "{error}"
     );
     assert!(!target.exists());
@@ -1565,4 +1567,197 @@ fn a_refused_cell_is_named_by_its_place_and_never_printed() {
             "{label}: a staging file was left"
         );
     }
+}
+
+#[test]
+fn a_sidecar_beside_the_destination_refuses_the_import() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    // A log or journal left at the destination's name belongs to another
+    // database, and SQLite would apply it to the imported one. Each is refused
+    // by name before anything is staged.
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let mut name = target.as_os_str().to_os_string();
+        name.push(suffix);
+        let sidecar = std::path::PathBuf::from(name);
+        fs::write(&sidecar, b"left behind by the old database").expect("sidecar");
+        let error = import_json(&file, &target).expect_err(suffix);
+        assert!(
+            matches!(&error, MigrationError::Refused(reason)
+                if reason.contains(suffix) && reason.contains("beside the destination")),
+            "{suffix}: {error}"
+        );
+        assert!(!target.exists(), "{suffix}: a store was published");
+        assert_eq!(
+            staging_leftovers(directory.path()),
+            0,
+            "{suffix}: a staging file was left"
+        );
+        fs::remove_file(&sidecar).expect("remove the sidecar");
+    }
+    import_json(&file, &target).expect("with nothing beside it, the import publishes");
+}
+
+#[test]
+fn a_malformed_staged_page_is_refused_without_printing_it() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    staged_pending_delivery(&source);
+    let (_, page) = pending_payload(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let original = fs::read_to_string(&file).expect("file");
+    let staged = |values: &Json| values["session_id"] == "pending-session";
+    // The page carries work titles and actor context. A page this build cannot
+    // read is refused by session with the shape of the problem, never with
+    // what the page holds.
+    let sentinel = "a private title nobody else may read";
+    let mut wrong_field = page.clone();
+    wrong_field["changes"][0]["entry"]["position"] = Json::String(sentinel.into());
+    let shapes = [
+        (
+            "a page that is one string",
+            serde_json::json!({ "json": sentinel }),
+        ),
+        (
+            "a page with a field of the wrong type",
+            serde_json::json!({ "json": wrong_field }),
+        ),
+        (
+            "bytes that are not JSON",
+            serde_json::json!({ "text": format!("{{ not json {sentinel}") }),
+        ),
+    ];
+    for (label, value) in shapes {
+        fs::write(&file, &original).expect("restore file");
+        with_row_cell(
+            &file,
+            "work_session_state",
+            staged,
+            "tentative_delivery_payload",
+            value,
+        );
+        let target = directory.path().join("target.db");
+        let error = import_json(&file, &target).expect_err(label);
+        let text = error.to_string();
+        assert!(
+            matches!(&error, MigrationError::Refused(reason)
+                if reason.contains("pending-session") && reason.contains("not a delivery page")),
+            "{label}: {text}"
+        );
+        assert!(!text.contains(sentinel), "{label} printed the page: {text}");
+        assert!(!target.exists(), "{label}: a store was published");
+    }
+}
+
+#[test]
+fn the_report_counts_only_rows_the_published_store_holds() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    let imported = import_json(&file, &target).expect("import");
+    let published = rows(&target);
+    for table in &imported.tables {
+        let held = u64::try_from(published.get(&table.name).map_or(0, Vec::len)).expect("count");
+        assert_eq!(
+            held, table.rows,
+            "{} is reported with rows the published store does not hold",
+            table.name
+        );
+    }
+    assert_eq!(
+        imported.rows,
+        imported.tables.iter().map(|table| table.rows).sum::<u64>()
+    );
+    // What the store will not hold is named instead of counted.
+    assert!(
+        imported
+            .left_out
+            .iter()
+            .any(|left| left.name == "project_memory_advertisements")
+    );
+}
+
+#[test]
+fn an_autoincrement_mark_above_the_surviving_rows_is_carried_across() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    // A dense cursor table whose highest rows were deleted keeps its mark, so
+    // that no later row takes a sequence a session already confirmed.
+    Connection::open(&source)
+        .expect("source")
+        .execute_batch(
+            "DELETE FROM sqlite_sequence WHERE name = 'task_changes';
+             INSERT INTO sqlite_sequence (name, seq) VALUES ('task_changes', 1000);",
+        )
+        .expect("a mark above every surviving row");
+    let file = directory.path().join("export.jsonl");
+    export_json(&source, &file).expect("export");
+    let target = directory.path().join("target.db");
+    import_json(&file, &target).expect("import");
+    let mark: i64 = Connection::open(&target)
+        .expect("target")
+        .query_row(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'task_changes'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the mark travelled");
+    assert_eq!(mark, 1000);
+}
+
+#[test]
+fn an_export_reads_the_source_wal_and_reports_it() {
+    let directory = crate::test_support::temp_home().expect("directory");
+    let source = directory.path().join("source.db");
+    populated(&source);
+    {
+        // A consumer that stopped without a checkpoint leaves committed rows in
+        // the write-ahead log. Export reads them, and says the log is there.
+        let connection = Connection::open(&source).expect("source");
+        connection
+            .set_db_config(
+                rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+                true,
+            )
+            .expect("no checkpoint on close");
+        connection
+            .execute(
+                "INSERT INTO agent_context_revisions (project_id, agent_id, revision)
+                 VALUES ('wal-project', 'wal-agent', 7)",
+                [],
+            )
+            .expect("a row committed to the log");
+    }
+    let wal = {
+        let mut name = source.as_os_str().to_os_string();
+        name.push("-wal");
+        std::path::PathBuf::from(name)
+    };
+    assert!(
+        fs::metadata(&wal).is_ok_and(|log| log.len() > 0),
+        "the fixture needs a log with frames in it"
+    );
+    let file = directory.path().join("export.jsonl");
+    let exported = export_json(&source, &file).expect("export");
+    assert!(exported.wal_bytes > 0, "the report names the log");
+    let target = directory.path().join("target.db");
+    import_json(&file, &target).expect("import");
+    let revision: i64 = Connection::open(&target)
+        .expect("target")
+        .query_row(
+            "SELECT revision FROM agent_context_revisions WHERE project_id = 'wal-project'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the row that was only in the log");
+    assert_eq!(revision, 7);
 }
