@@ -122,7 +122,11 @@ enforced through the existing typed obligations: creating, claiming or
 revising the item opens one `WorkObligation` per binding on the item's run,
 triggered by that planning event; host-minted `VerificationEvidence` of the
 bound kind (and pinned check) with a passed result satisfies it, with or
-without a source mutation on the run; `done` refuses while it is open, and
+without a source mutation on the run. Host-minted means recorded through the
+control turn checkpoint, the one path that records typed verification
+evidence: enforcement needs no grant and no turn-gated hosting, but a host
+that runs no control plane cannot mint that evidence and can only revise or
+waive a bound requirement. `done` refuses while the obligation is open, and
 refuses when the newest verification of that kind at the completion cut did
 not pass, since a later failure outranks an earlier pass, or does not verify
 the run's latest observed source change under the same rule that matches

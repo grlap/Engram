@@ -541,7 +541,9 @@ Rules that matter:
   it. `show` marks each bound criterion `[requires host KIND verification]`
   and counts bound criteria behind a clipped list. A bound criterion opens a
   typed obligation on the item's run, so `done` refuses until the host has
-  minted passing verification evidence of that kind; a newer failed check of
+  minted passing verification evidence of that kind (recorded through the
+  control turn checkpoint; a host that runs no control plane can only revise
+  or waive a bound requirement); a newer failed check of
   that kind contradicts it, and a check that does not verify the run's latest
   observed source change (judged by the source revision it ran against, not
   by when it was recorded) no longer carries it. Both are enforced at `done`,
