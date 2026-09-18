@@ -1787,23 +1787,34 @@ fn a_refused_cell_is_named_by_its_place_and_never_printed() {
     // The export carries private and restricted bodies, and a refusal reaches
     // the operator's terminal: it names where and what shape, not what.
     let sentinel = "a private note nobody else may read";
+    // A number is a value too: one above i64::MAX, whose digits must not
+    // appear in the refusal any more than the sentinel does.
+    let private_number = "18446744073709551615";
     let shapes = [
-        ("an array", serde_json::json!([sentinel])),
+        ("an array", serde_json::json!([sentinel]), sentinel),
         (
             "a blob wrapper with an extra key",
             serde_json::json!({ "json": { "body": sentinel }, "encoding": "json" }),
+            sentinel,
         ),
         (
             "a text blob that is not a string",
             serde_json::json!({ "text": [sentinel] }),
+            sentinel,
         ),
         (
             "a wrapper of an unknown kind",
             serde_json::json!({ "body": sentinel }),
+            sentinel,
         ),
-        ("a boolean", Json::Bool(true)),
+        ("a boolean", Json::Bool(true), sentinel),
+        (
+            "a number outside a stored integer",
+            serde_json::json!(18_446_744_073_709_551_615_u64),
+            private_number,
+        ),
     ];
-    for (label, value) in shapes {
+    for (label, value, private) in shapes {
         fs::write(&file, &original).expect("restore file");
         with_row_cell(&file, "objects", |_| true, "canonical_json", value);
         let target = directory.path().join("target.db");
@@ -1817,7 +1828,7 @@ fn a_refused_cell_is_named_by_its_place_and_never_printed() {
             text.contains("column canonical_json of a row of table objects"),
             "{label}: {text}"
         );
-        assert!(!text.contains(sentinel), "{label} printed the cell: {text}");
+        assert!(!text.contains(private), "{label} printed the cell: {text}");
         assert!(
             !text.contains("body"),
             "{label} printed a key of the cell: {text}"

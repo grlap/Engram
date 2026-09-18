@@ -426,9 +426,9 @@ fn decode(value: Json) -> Result<SqlValue, MigrationError> {
             (Some(integer), _) => SqlValue::Integer(integer),
             (None, Some(real)) if number.is_f64() => SqlValue::Real(real),
             _ => {
-                return Err(refused(format!(
-                    "number {number} does not fit a stored integer"
-                )));
+                return Err(refused(
+                    "a number outside the range of a stored integer or real",
+                ));
             }
         },
         Json::String(text) => SqlValue::Text(text),
