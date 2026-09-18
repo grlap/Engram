@@ -52,6 +52,7 @@ fn snapshot_carries_the_pinned_evaluation_mode() {
     let pinned = source
         .create_work(
             &CreateWorkRequest {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: Some(crate::AcceptanceEvaluationMode::IndependentSession),
                 external_ref: None,
                 notes: Vec::new(),
@@ -138,6 +139,7 @@ fn create_root(
     store
         .create_work(
             &CreateWorkRequest {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
@@ -195,6 +197,7 @@ fn create_imported_root(
     let item = store
         .create_work(
             &CreateWorkRequest {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
@@ -681,6 +684,7 @@ fn initial_note_order_survives_snapshot_recreation() {
     let item = source
         .create_work(
             &CreateWorkRequest {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: notes.clone(),
@@ -2081,6 +2085,7 @@ fn runless_restored_work_supports_blocked_planning_and_disposal() {
         parent_id: decompose.work_id,
         expected_parent_revision: 1,
         children: vec![ChildWorkDraft {
+            acceptance_bindings: Vec::new(),
             evaluation_mode: None,
             external_ref: None,
             notes: Vec::new(),
@@ -2174,6 +2179,7 @@ fn terminal_direct_children_above_the_open_envelope_round_trip() {
         let parent = source.get_work_item(root.work_id).expect("current parent");
         let children = (0..16)
             .map(|index| ChildWorkDraft {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),

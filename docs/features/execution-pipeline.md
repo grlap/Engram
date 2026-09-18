@@ -218,7 +218,11 @@ soon as the agent starts.
    environment object); `EnvironmentEvidence` (source revision and workspace
    identity plus a canonical toolchain, sandbox/image, workspace, and
    capability-map component identity). Component values are asserted host
-   context, not attestation. An obligation names the kind that satisfies it;
+   context, not attestation. An obligation is opened by a builtin rule a
+   host-observed source mutation triggers, or by an acceptance criterion
+   bound to a verification kind, opened from the planning event that
+   authored the binding and waived by the revision that drops it. An
+   obligation names the kind that satisfies it;
    a seal over the
    wrong kind is not a seal, and today's generic `WorkEvidence` may remain
    narrative or acceptance support but never discharges a verification

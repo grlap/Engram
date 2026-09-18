@@ -79,6 +79,10 @@ pub struct AddInput {
     pub title: String,
     pub outcome: Option<String>,
     pub acceptance: Vec<String>,
+    /// `POSITION=KIND[:FINGERPRINT]` bindings of criteria to typed
+    /// verification requirements.
+    #[serde(default)]
+    pub bindings: Vec<String>,
     pub under: Option<String>,
     /// Make the child non-blocking for parent completion. Valid only with
     /// `under`.
@@ -91,6 +95,16 @@ pub struct AddInput {
     /// acceptance-evaluation mode from creation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation_mode: Option<String>,
+}
+
+/// `POSITION=KIND[:FINGERPRINT]` bindings as supplied, each read before any
+/// effect; the core then checks the positions against the acceptance list.
+fn parse_bindings(bindings: &[String]) -> Result<Vec<crate::domain::AcceptanceBinding>, VerbError> {
+    bindings
+        .iter()
+        .map(|text| crate::domain::AcceptanceBinding::parse(text))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|reason| StoreError::InvalidWork(reason).into())
 }
 
 /// A supplied acceptance-evaluation mode word, shared by `add` and `update`.
@@ -157,6 +171,11 @@ pub enum UpdateAction {
         outcome: Option<String>,
         /// Replace the whole acceptance list; omission leaves it unchanged.
         acceptance: Option<Vec<String>>,
+        /// Replace the criteria bound to typed verification requirements, as
+        /// `POSITION=KIND[:FINGERPRINT]`; omitted with `acceptance` replaced,
+        /// the bindings are cleared.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bindings: Option<Vec<String>>,
         assignee: Option<String>,
         priority: Option<i32>,
         defer: Option<DateTime<Utc>>,
@@ -954,6 +973,7 @@ impl AgentVerbs {
             .into());
         }
         let evaluation_mode = parse_supplied_evaluation_mode(input.evaluation_mode.as_deref())?;
+        let acceptance_bindings = parse_bindings(&input.bindings)?;
         if let Some(under) = input.under.as_deref() {
             let requirement = if input.optional {
                 ChildRequirement::Optional
@@ -969,6 +989,7 @@ impl AgentVerbs {
                     title,
                     outcome,
                     acceptance,
+                    acceptance_bindings,
                     requirement: Some(requirement),
                     kind: input.kind,
                     priority,
@@ -987,6 +1008,7 @@ impl AgentVerbs {
                 title,
                 outcome,
                 acceptance,
+                acceptance_bindings,
                 work_kind: input.kind,
                 priority,
                 labels,
@@ -1183,7 +1205,12 @@ impl AgentVerbs {
             }
             _ => None,
         };
-        let (core, line) = Self::update_translation(input.action, &work_ref, &title)?;
+        let (core, line) = Self::update_translation(
+            input.action,
+            &work_ref,
+            &title,
+            !view.status.work.acceptance_bindings.is_empty(),
+        )?;
         let target = view.status.work.work_id.0.to_string();
         let result = self
             .service
@@ -1239,6 +1266,7 @@ impl AgentVerbs {
         action: UpdateAction,
         work_ref: &str,
         title: &str,
+        has_bindings: bool,
     ) -> Result<(WorkUpdateInput, String), VerbError> {
         Ok(match action {
             UpdateAction::Release { reason } => (
@@ -1296,6 +1324,7 @@ impl AgentVerbs {
                 clear_external,
                 outcome,
                 acceptance,
+                bindings,
                 assignee,
                 priority,
                 defer,
@@ -1305,7 +1334,9 @@ impl AgentVerbs {
             } => {
                 let add_labels = trimmed(&labels);
                 let remove_labels = trimmed(&unlabels);
+                let acceptance_bindings = bindings.as_deref().map(parse_bindings).transpose()?;
                 let patch = WorkRevisionPatch {
+                    acceptance_bindings,
                     external_ref: external,
                     clear_external,
                     title: nonempty(new_title),
@@ -1336,6 +1367,9 @@ impl AgentVerbs {
                 if patch.acceptance.is_some() {
                     fields.push("acceptance");
                 }
+                if patch.acceptance_bindings.is_some() {
+                    fields.push("verification bindings");
+                }
                 if patch.assigned_to.is_some() {
                     fields.push("assignee");
                 }
@@ -1358,12 +1392,24 @@ impl AgentVerbs {
                     )
                     .into());
                 }
+                // Positions name the list that was replaced, so bindings the
+                // revision did not restate are gone; say so where the agent
+                // reads the receipt.
+                let cleared_bindings = patch.acceptance.is_some()
+                    && patch.acceptance_bindings.is_none()
+                    && has_bindings;
+                let mut text = format!("updated {work_ref} \"{title}\" ({})", fields.join(", "));
+                if cleared_bindings {
+                    text.push_str(
+                        "; the replaced acceptance list drops its verification bindings, pass --bind again if they still apply",
+                    );
+                }
                 (
                     WorkUpdateInput::Revise {
                         patch,
                         idempotency_key: String::new(),
                     },
-                    format!("updated {work_ref} \"{title}\" ({})", fields.join(", ")),
+                    text,
                 )
             }
             UpdateAction::EvaluationMode { mode } => {
@@ -1371,6 +1417,7 @@ impl AgentVerbs {
                 // supplied blank or unknown word refuses before any effect.
                 let selected = parse_supplied_evaluation_mode(mode.as_deref())?;
                 let patch = WorkRevisionPatch {
+                    acceptance_bindings: None,
                     external_ref: None,
                     clear_external: false,
                     title: None,

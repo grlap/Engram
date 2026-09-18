@@ -32,6 +32,7 @@ fn show_keeps_open_children_ahead_of_the_capped_terminal_remainder() {
             WorkProposeInput::Decompose {
                 children: (0..16)
                     .map(|index| WorkChildInput {
+                        acceptance_bindings: Vec::new(),
                         evaluation_mode: None,
                         external_ref: None,
                         notes: Vec::new(),

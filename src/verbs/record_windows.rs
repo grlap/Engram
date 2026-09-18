@@ -155,13 +155,24 @@ fn full_contract_receipt(contract: &WorkAuthoredContract) -> Receipt {
     lines.push("acceptance:".into());
     for (position, criterion) in contract.acceptance.iter().enumerate() {
         let safe = super::terminal_data_block(criterion);
+        let bound = contract
+            .acceptance_bindings
+            .iter()
+            .find(|binding| binding.criterion == position + 1)
+            .map(|binding| super::show::binding_note(&binding.requirement));
+        let last = safe.split('\n').count().saturating_sub(1);
         for (index, line) in safe.split('\n').enumerate() {
             let prefix = if index == 0 {
                 format!("  {}. ", position + 1)
             } else {
                 "    ".into()
             };
-            lines.push(format!("{prefix}{line}"));
+            let suffix = if index == last {
+                bound.as_deref().unwrap_or("")
+            } else {
+                ""
+            };
+            lines.push(format!("{prefix}{line}{suffix}"));
         }
     }
     let evaluation = contract.evaluation.as_ref().map(|evaluation| {

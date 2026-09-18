@@ -487,7 +487,7 @@ pub enum ExecutionObservationReference {
 }
 
 /// Host-declared class of one verification command or check.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationKind {
     Test,
@@ -591,7 +591,7 @@ pub struct VerificationEvidence {
 /// the command fingerprint and environment open. Future immutable rules may
 /// pin an exact fingerprint and environment without allowing candidate
 /// evidence to define its own requirement.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub struct VerificationRequirement {
     pub check_kind: VerificationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]

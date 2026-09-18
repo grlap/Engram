@@ -383,6 +383,10 @@ pub struct WorkItemSummary {
     pub acceptance: Vec<String>,
     #[serde(default)]
     pub acceptance_count: usize,
+    /// Criteria bound to typed verification requirements, by one-based
+    /// position; each passes only on host-observed verification of its kind.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acceptance_bindings: Vec<crate::domain::AcceptanceBinding>,
     pub kind: WorkItemKind,
     pub priority: i32,
     pub labels: Vec<String>,

@@ -26,6 +26,9 @@ pub struct CreateWorkRequest {
     pub title: String,
     pub outcome: String,
     pub acceptance: Vec<String>,
+    /// Criteria bound to typed verification requirements, by one-based position.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acceptance_bindings: Vec<super::AcceptanceBinding>,
     pub kind: WorkItemKind,
     pub priority: i32,
     pub labels: Vec<String>,
@@ -53,6 +56,9 @@ pub struct ChildWorkDraft {
     pub title: String,
     pub outcome: String,
     pub acceptance: Vec<String>,
+    /// Criteria bound to typed verification requirements, by one-based position.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acceptance_bindings: Vec<super::AcceptanceBinding>,
     pub kind: WorkItemKind,
     pub priority: i32,
     pub labels: Vec<String>,
@@ -114,6 +120,11 @@ pub struct WorkRevisionPatch {
     pub title: Option<String>,
     pub outcome: Option<String>,
     pub acceptance: Option<Vec<String>>,
+    /// Replace the criteria bound to typed verification requirements. Omitted
+    /// with `acceptance` replaced, the bindings are cleared, since positions
+    /// name the old list; omitted otherwise, they are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_bindings: Option<Vec<super::AcceptanceBinding>>,
     pub kind: Option<WorkItemKind>,
     pub priority: Option<i32>,
     pub labels: Option<Vec<String>>,

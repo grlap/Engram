@@ -238,6 +238,36 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
             crate::domain::normalize_initial_work_notes(&task.notes)
                 .map_err(StoreError::InvalidWork)?,
         );
+        let acceptance_bindings = task
+            .bindings
+            .iter()
+            .map(|binding| {
+                Ok(crate::domain::AcceptanceBinding {
+                    criterion: binding.criterion,
+                    requirement: crate::domain::VerificationRequirement {
+                        check_kind: binding.check_kind,
+                        check_fingerprint: binding
+                            .check_fingerprint
+                            .clone()
+                            .map(|id| {
+                                crate::ObjectHash::from_stored(id).ok_or_else(|| {
+                                    invalid("a binding's check fingerprint must be a record id")
+                                })
+                            })
+                            .transpose()?,
+                        required_environment: None,
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>, StoreError>>()?;
+        let (acceptance, acceptance_bindings) = super::normalize_acceptance(
+            &task.acceptance,
+            &acceptance_bindings,
+        )
+        .map_err(|error| match error {
+            StoreError::InvalidWork(reason) => invalid(&format!("task {}: {reason}", task.key)),
+            other => other,
+        })?;
         drafts.push(ChildWorkDraft {
             evaluation_mode: None,
             local_key: task.key.clone(),
@@ -245,7 +275,8 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
                 .map_err(StoreError::InvalidWork)?,
             title: normalize_text(&task.title, "plan task title")?,
             outcome: normalize_text(&task.outcome, "plan task outcome")?,
-            acceptance: normalize_strings(&task.acceptance),
+            acceptance,
+            acceptance_bindings,
             kind: task.kind.unwrap_or(crate::domain::WorkItemKind::Task),
             priority: task.priority.unwrap_or(1),
             child_requirement: task.requirement.unwrap_or(ChildRequirement::Required),
@@ -388,6 +419,7 @@ fn admit_plan_on<R: Redactor>(
             items[index] = Some(create_root_with_validation_on(
                 transaction,
                 &CreateWorkRequest {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     project_id: request.project_id.clone(),
                     parent_id: None,

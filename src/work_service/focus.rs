@@ -13,6 +13,8 @@ pub(crate) struct WorkAuthoredContract {
     pub title: String,
     pub outcome: String,
     pub acceptance: Vec<String>,
+    /// Criteria bound to typed host verification, by one-based position.
+    pub acceptance_bindings: Vec<crate::domain::AcceptanceBinding>,
     /// The complete newest acceptance evaluation of an open item under an
     /// evaluated policy: every verdict with its full rationale and citations.
     pub evaluation: Option<WorkAuthoredEvaluation>,
@@ -199,6 +201,7 @@ impl LocalWorkService {
                 title: item.title,
                 outcome: item.outcome,
                 acceptance: item.acceptance,
+                acceptance_bindings: item.acceptance_bindings,
                 evaluation,
             })
         })

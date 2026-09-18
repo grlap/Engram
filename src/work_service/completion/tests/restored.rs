@@ -147,6 +147,7 @@ fn restored_completed_child_is_bound_into_a_new_parent_seal() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),
@@ -460,6 +461,7 @@ fn restored_native_completed_child(
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),

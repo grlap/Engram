@@ -37,6 +37,7 @@ fn claimed_root(
     let work = store
         .create_work(
             &CreateWorkRequest {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),

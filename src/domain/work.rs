@@ -274,9 +274,104 @@ pub struct WorkItem {
     /// absent, any policy-allowed mode is acceptable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
+    /// Criteria bound to typed verification requirements, in position order.
+    /// A bound criterion passes on host-observed verification evidence of its
+    /// kind and never on judgment or an author's assertion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acceptance_bindings: Vec<AcceptanceBinding>,
     pub created_by: ActorContext,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// One acceptance criterion bound to a typed verification requirement. The
+/// position is one-based, as `show` numbers the criteria.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+pub struct AcceptanceBinding {
+    pub criterion: usize,
+    pub requirement: VerificationRequirement,
+}
+
+impl AcceptanceBinding {
+    /// Reads the shell form `POSITION=KIND[:FINGERPRINT]`: a one-based
+    /// criterion position, a verification kind (`test`, `build`, `lint`,
+    /// `review` or `acceptance`), and optionally the id of the exact check
+    /// record to require.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason when the text does not have that shape.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let shape = "use POSITION=KIND[:FINGERPRINT], such as 2=test";
+        let (position, requirement) = text
+            .trim()
+            .split_once('=')
+            .ok_or_else(|| format!("binding {text:?} has no '='; {shape}"))?;
+        let criterion = position
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|position| *position > 0)
+            .ok_or_else(|| {
+                format!("binding {text:?} needs a one-based criterion position; {shape}")
+            })?;
+        let (kind, fingerprint) = match requirement.trim().split_once(':') {
+            Some((kind, fingerprint)) => (kind.trim(), Some(fingerprint.trim())),
+            None => (requirement.trim(), None),
+        };
+        let check_kind: VerificationKind =
+            serde_json::from_value(serde_json::Value::String(kind.to_owned())).map_err(|_| {
+                format!(
+                    "binding {text:?} names verification kind {kind:?}; use test, build, lint, review or acceptance"
+                )
+            })?;
+        let check_fingerprint = fingerprint
+            .map(|fingerprint| {
+                ObjectHash::from_stored(fingerprint.to_owned()).ok_or_else(|| {
+                    format!("binding {text:?} names a check fingerprint that is not a record id")
+                })
+            })
+            .transpose()?;
+        Ok(Self {
+            criterion,
+            requirement: VerificationRequirement {
+                check_kind,
+                check_fingerprint,
+                required_environment: None,
+            },
+        })
+    }
+}
+
+/// Admits bindings against an acceptance list of `acceptance_len` criteria:
+/// every position names a criterion, no criterion is bound twice, and the
+/// result is in position order.
+///
+/// # Errors
+///
+/// Returns the reason when a binding names no criterion or one twice.
+pub fn normalize_acceptance_bindings(
+    acceptance_len: usize,
+    bindings: &[AcceptanceBinding],
+) -> Result<Vec<AcceptanceBinding>, String> {
+    let mut normalized = bindings.to_vec();
+    normalized.sort_by_key(|binding| binding.criterion);
+    if let Some(pair) = normalized
+        .windows(2)
+        .find(|pair| pair[0].criterion == pair[1].criterion)
+    {
+        return Err(format!("criterion {} is bound twice", pair[0].criterion));
+    }
+    if let Some(outside) = normalized
+        .iter()
+        .find(|binding| binding.criterion == 0 || binding.criterion > acceptance_len)
+    {
+        return Err(format!(
+            "a binding names criterion {}, but the acceptance list has {acceptance_len} criteria numbered from 1",
+            outside.criterion
+        ));
+    }
+    Ok(normalized)
 }
 
 /// Bounded identity shown when a human-facing work reference is ambiguous.

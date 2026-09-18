@@ -219,9 +219,9 @@ engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note ID[:INDEX]  # complete immutable note detail
 engram work show REF --full  # complete authored title, outcome and acceptance
-engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L] [--evaluation-mode MODE]
+engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L] [--evaluation-mode MODE]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L | --evaluation-mode MODE | --clear-evaluation-mode]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L | --evaluation-mode MODE | --clear-evaluation-mode]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work evaluate REF --mode MODE --acceptance-basis N --evidence-basis M --verdict POSITION=VERDICT[:BASIS] --rationale POSITION=TEXT [--evidence POSITION=LOCATOR]... [--attempt KEY] [--source-fingerprint F] [--model PROVIDER/MODEL] [--execution-identity ID --parent-session SESSION]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
@@ -342,6 +342,13 @@ Rules that matter:
   64 KiB UTF-8 write limit; carry bulk content as a reference. Existing larger
   bodies remain readable. See the
   [window/detail contract](../../../docs/features/cli-and-mcp.md#using-engram-as-an-agent).
+- `--bind POSITION=KIND[:FINGERPRINT]` on `add` and `update` binds the
+  criterion at that position (counted in the list as typed) to host
+  verification of that kind. A bound criterion opens a typed obligation on
+  the run: `done` refuses until the host minted passing verification of that
+  kind, a newer failed check contradicts it, and an evaluated pass needs an
+  `observed` basis citing that evidence, never judgment or a gate. `--accept`
+  without `--bind` drops the bindings and the receipt says so.
 - `update REF --accept "criterion"...` replaces the whole acceptance list;
   omitting it preserves the list. Empty or blank criteria are refused, and
   completed work cannot be revised. History names the revised fields.

@@ -158,6 +158,8 @@ fn create_root_with_validation_on<R: Redactor>(
         created_at: request.created_at,
         updated_at: request.created_at,
     };
+    let (acceptance, acceptance_bindings) =
+        normalize_acceptance(&request.acceptance, &request.acceptance_bindings)?;
     let item = WorkItem {
         schema_version: SCHEMA_VERSION,
         project_id: request.project_id.clone(),
@@ -168,7 +170,8 @@ fn create_root_with_validation_on<R: Redactor>(
         child_requirement: request.child_requirement,
         title,
         outcome,
-        acceptance: normalize_strings(&request.acceptance),
+        acceptance,
+        acceptance_bindings,
         kind: request.kind,
         priority: request.priority,
         labels: normalize_strings(&request.labels),
@@ -272,7 +275,20 @@ fn create_root_with_validation_on<R: Redactor>(
         actor: request.actor.clone(),
         created_at: request.created_at,
     };
-    append_work_event(transaction, &event)?;
+    let (event_hash, positions) = append_work_event(transaction, &event)?;
+    if let Some(position) = positions
+        .iter()
+        .find(|position| position.feed == crate::domain::FeedId::RunExecution(run_id))
+    {
+        super::completion::open_binding_obligations_on(
+            transaction,
+            &item,
+            &run,
+            &event_hash,
+            position,
+            request.created_at,
+        )?;
+    }
     append_initial_notes_on(transaction, &item, initial_notes, redactor)?;
     Ok(item)
 }
@@ -482,6 +498,7 @@ impl SqliteStore {
             || request.patch.title.is_some()
             || request.patch.outcome.is_some()
             || request.patch.acceptance.is_some()
+            || request.patch.acceptance_bindings.is_some()
             || request.patch.kind.is_some()
             || request.patch.priority.is_some()
             || request.patch.labels.is_some()
@@ -535,8 +552,29 @@ impl SqliteStore {
         if let Some(outcome) = request.patch.outcome.as_deref() {
             item.outcome = normalize_text(outcome, "outcome")?;
         }
-        if let Some(acceptance) = request.patch.acceptance.as_ref() {
-            item.acceptance = normalize_strings(acceptance);
+        match (
+            request.patch.acceptance.as_ref(),
+            request.patch.acceptance_bindings.as_ref(),
+        ) {
+            // Bindings authored with a new list name its positions as typed.
+            (Some(acceptance), Some(bindings)) => {
+                let (acceptance, bindings) = normalize_acceptance(acceptance, bindings)?;
+                item.acceptance = acceptance;
+                item.acceptance_bindings = bindings;
+            }
+            // Positions name the list that was replaced; nothing is carried
+            // over to a list they were never authored against.
+            (Some(acceptance), None) => {
+                item.acceptance = normalize_strings(acceptance);
+                item.acceptance_bindings.clear();
+            }
+            // Bindings alone name the stored list, as `show` numbers it.
+            (None, Some(bindings)) => {
+                item.acceptance_bindings =
+                    crate::domain::normalize_acceptance_bindings(item.acceptance.len(), bindings)
+                        .map_err(StoreError::InvalidWork)?;
+            }
+            (None, None) => {}
         }
         if let Some(kind) = request.patch.kind {
             item.kind = kind;
@@ -604,7 +642,32 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.updated_at,
         };
-        append_work_event(&transaction, &event)?;
+        let (event_hash, positions) = append_work_event(&transaction, &event)?;
+        if let Some(run_id) = item.active_run_id {
+            // A binding the revision removed retires its obligation in the
+            // revising actor's name; one it added opens from this revision.
+            super::completion::waive_unbound_obligations_on(
+                &transaction,
+                &item,
+                run_id,
+                &request.actor,
+                request.updated_at,
+            )?;
+            if let Some(run) = event.run.as_ref()
+                && let Some(position) = positions
+                    .iter()
+                    .find(|position| position.feed == crate::domain::FeedId::RunExecution(run_id))
+            {
+                super::completion::open_binding_obligations_on(
+                    &transaction,
+                    &item,
+                    run,
+                    &event_hash,
+                    position,
+                    request.updated_at,
+                )?;
+            }
+        }
         persist_operation_result(
             &transaction,
             "revise_work",
@@ -999,6 +1062,8 @@ fn decompose_work_with_validation_on<R: Redactor>(
         let run_id = WorkRunId::new();
         let mut labels = parent.labels.clone();
         labels.extend(draft.labels.clone());
+        let (acceptance, acceptance_bindings) =
+            normalize_acceptance(&draft.acceptance, &draft.acceptance_bindings)?;
         let item = WorkItem {
             external_ref: crate::domain::normalize_external_reference(
                 draft.external_ref.as_deref(),
@@ -1013,7 +1078,8 @@ fn decompose_work_with_validation_on<R: Redactor>(
             child_requirement: draft.child_requirement,
             title: normalize_text(&draft.title, "child title")?,
             outcome: normalize_text(&draft.outcome, "child outcome")?,
-            acceptance: normalize_strings(&draft.acceptance),
+            acceptance,
+            acceptance_bindings,
             kind: draft.kind,
             priority: draft.priority,
             labels: normalize_strings(&labels),
@@ -1125,7 +1191,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
             actor: child_actor.clone(),
             created_at: request.created_at,
         };
-        let (event_hash, _) = append_work_event(transaction, &event)?;
+        let (event_hash, positions) = append_work_event(transaction, &event)?;
         for prerequisite in item_prerequisites {
             transaction.execute(
                 "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
@@ -1135,6 +1201,19 @@ fn decompose_work_with_validation_on<R: Redactor>(
                     prerequisite.0.to_string(),
                     event_hash.as_str()
                 ],
+            )?;
+        }
+        if let Some(position) = positions
+            .iter()
+            .find(|position| position.feed == crate::domain::FeedId::RunExecution(run_id))
+        {
+            super::completion::open_binding_obligations_on(
+                transaction,
+                item,
+                run,
+                &event_hash,
+                position,
+                request.created_at,
             )?;
         }
         append_initial_notes_on(transaction, item, notes, redactor)?;
@@ -1565,6 +1644,54 @@ pub(super) fn normalize_strings(values: &[String]) -> Vec<String> {
     normalized.sort();
     normalized.dedup();
     normalized
+}
+
+/// Normalizes an acceptance list as `normalize_strings` does — trimmed,
+/// deduplicated and sorted, which is the order `show` numbers — and carries
+/// each binding from the position it was authored at, in the list as typed,
+/// to the position its criterion holds in the stored order.
+///
+/// # Errors
+///
+/// Returns [`StoreError::InvalidWork`] when a binding names no criterion of
+/// the list as typed, or a criterion twice.
+pub(in crate::storage) fn normalize_acceptance(
+    values: &[String],
+    bindings: &[crate::domain::AcceptanceBinding],
+) -> Result<(Vec<String>, Vec<crate::domain::AcceptanceBinding>), StoreError> {
+    let authored = values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    let stored = normalize_strings(values);
+    let mut carried = Vec::with_capacity(bindings.len());
+    for binding in bindings {
+        let text = binding
+            .criterion
+            .checked_sub(1)
+            .and_then(|index| authored.get(index))
+            .ok_or_else(|| {
+                StoreError::InvalidWork(format!(
+                    "a binding names criterion {}, but the acceptance list has {} criteria numbered from 1",
+                    binding.criterion,
+                    authored.len()
+                ))
+            })?;
+        let position = stored
+            .iter()
+            .position(|criterion| criterion == text)
+            .ok_or_else(|| {
+                StoreError::InvalidWorkProjection("a normalized criterion lost its text".into())
+            })?;
+        carried.push(crate::domain::AcceptanceBinding {
+            criterion: position + 1,
+            requirement: binding.requirement.clone(),
+        });
+    }
+    let bindings = crate::domain::normalize_acceptance_bindings(stored.len(), &carried)
+        .map_err(StoreError::InvalidWork)?;
+    Ok((stored, bindings))
 }
 
 fn short_ref(work_id: WorkId) -> String {

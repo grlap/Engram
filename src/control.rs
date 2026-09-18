@@ -37,9 +37,12 @@ pub struct VerificationEvidenceMatchInput<'a> {
     pub candidate_kind: WorkEvidenceKind,
     pub evidence: Option<&'a VerificationEvidence>,
     pub producer: Option<&'a ExecutionObservation>,
-    pub latest_mutation: &'a ExecutionObservation,
+    /// The newest source mutation the run observed at the cut, with its
+    /// run-feed position, or `None` when the run observed no mutation: then
+    /// the verification is of the run's source as it stands, and the checks
+    /// that compare it with a mutation do not apply.
+    pub latest_mutation: Option<(&'a ExecutionObservation, i64)>,
     pub evidence_position: i64,
-    pub latest_mutation_position: i64,
     pub requirement: &'a VerificationRequirement,
 }
 
@@ -69,27 +72,34 @@ pub fn match_verification_evidence(
     if evidence.check_kind != input.requirement.check_kind {
         return Err(VerificationEvidenceMismatch::CheckKindMismatch);
     }
-    let latest_basis = input
+    let mutation = input
         .latest_mutation
-        .source_basis
-        .as_ref()
-        .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
-    let latest_observed_at = input
-        .latest_mutation
-        .observed_at
-        .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
-    let same_run = evidence.project_id == input.latest_mutation.project_id
-        && evidence.binding.root_execution_id == input.latest_mutation.binding.root_execution_id
-        && evidence.binding.work_id == input.latest_mutation.binding.work_id
-        && evidence.binding.run_id == input.latest_mutation.binding.run_id
-        && producer.project_id == evidence.project_id
+        .map(|(latest_mutation, position)| {
+            let basis = latest_mutation
+                .source_basis
+                .as_ref()
+                .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+            let observed_at = latest_mutation
+                .observed_at
+                .ok_or(VerificationEvidenceMismatch::InvalidProducer)?;
+            Ok::<_, VerificationEvidenceMismatch>((latest_mutation, position, basis, observed_at))
+        })
+        .transpose()?;
+    let same_run = producer.project_id == evidence.project_id
         && producer.binding == evidence.binding
-        && producer.session_id == evidence.session_id;
+        && producer.session_id == evidence.session_id
+        && mutation.is_none_or(|(latest_mutation, _, _, _)| {
+            evidence.project_id == latest_mutation.project_id
+                && evidence.binding.root_execution_id == latest_mutation.binding.root_execution_id
+                && evidence.binding.work_id == latest_mutation.binding.work_id
+                && evidence.binding.run_id == latest_mutation.binding.run_id
+        });
     if !same_run {
         return Err(VerificationEvidenceMismatch::WrongRun);
     }
-    if !input.latest_mutation.source_changed
-        || evidence.source_basis.source_revision != latest_basis.source_revision
+    if let Some((latest_mutation, _, latest_basis, _)) = mutation
+        && (!latest_mutation.source_changed
+            || evidence.source_basis.source_revision != latest_basis.source_revision)
     {
         return Err(VerificationEvidenceMismatch::StaleSourceRevision);
     }
@@ -113,14 +123,17 @@ pub fn match_verification_evidence(
     if evidence.result != VerificationResult::Passed {
         return Err(VerificationEvidenceMismatch::ResultNotPassed);
     }
-    if input.evidence_position <= input.latest_mutation_position {
+    if mutation.is_some_and(|(_, latest_mutation_position, _, _)| {
+        input.evidence_position <= latest_mutation_position
+    }) {
         return Err(VerificationEvidenceMismatch::NotAfterMutation);
     }
     let actor_matches = evidence.actor.session_id.as_ref() == Some(&evidence.session_id)
         && evidence.actor.run_id.as_deref() == Some(evidence.binding.run_id.0.to_string().as_str())
         && producer.actor.session_id.as_ref() == Some(&producer.session_id)
         && producer.actor.run_id.as_deref() == Some(producer.binding.run_id.0.to_string().as_str());
-    let times_are_monotone = evidence.completed_at >= latest_observed_at
+    let times_are_monotone = mutation
+        .is_none_or(|(_, _, _, latest_observed_at)| evidence.completed_at >= latest_observed_at)
         && evidence.completed_at <= evidence.recorded_at
         && producer.observed_at == Some(evidence.completed_at)
         && producer.recorded_at >= evidence.completed_at;
@@ -150,6 +163,31 @@ pub fn builtin_obligation_rule_set() -> ObligationRuleSet {
     }
 }
 
+/// Rule id prefix of an obligation an acceptance criterion's binding opens.
+/// The bound criterion's one-based position follows it, so a run holds at
+/// most one such obligation per criterion and trigger.
+pub const ACCEPTANCE_BINDING_RULE_PREFIX: &str = "acceptance_criterion_requires_verification:";
+const ACCEPTANCE_BINDING_RULE_VERSION: u16 = 1;
+
+/// The rule an acceptance binding on the criterion at `criterion` opens.
+#[must_use]
+pub fn acceptance_binding_rule(criterion: usize) -> BuiltinObligationRuleRef {
+    BuiltinObligationRuleRef {
+        rule_id: format!("{ACCEPTANCE_BINDING_RULE_PREFIX}{criterion}"),
+        rule_version: ACCEPTANCE_BINDING_RULE_VERSION,
+    }
+}
+
+/// The criterion position an obligation's rule names, when an acceptance
+/// binding opened it.
+#[must_use]
+pub fn acceptance_binding_criterion(rule: &BuiltinObligationRuleRef) -> Option<usize> {
+    rule.rule_id
+        .strip_prefix(ACCEPTANCE_BINDING_RULE_PREFIX)?
+        .parse()
+        .ok()
+}
+
 /// Evaluates one exact immutable rule set against one host observation.
 #[must_use]
 pub fn evaluate_obligation_rules(
@@ -173,9 +211,12 @@ pub struct ObligationSatisfactionInput<'a> {
     pub open_obligations: &'a [WorkObligation],
     pub evidence: &'a VerificationEvidence,
     pub producer: &'a ExecutionObservation,
-    pub latest_mutation: &'a ExecutionObservation,
+    /// The newest source mutation at the cut with its run-feed position, or
+    /// `None` when the run observed none. A builtin rule is triggered by a
+    /// mutation and is never satisfied without one; a binding's obligation
+    /// is satisfied by verification of the source as it stands.
+    pub latest_mutation: Option<(&'a ExecutionObservation, i64)>,
     pub evidence_position: i64,
-    pub latest_mutation_position: i64,
     pub evaluated_cut: &'a crate::domain::FeedPosition,
 }
 
@@ -200,6 +241,9 @@ pub fn evaluate_obligation_satisfaction(
             obligation.run_id == input.evidence.binding.run_id
                 && obligation.trigger_position.feed == expected_feed
                 && obligation.trigger_position.position <= input.evaluated_cut.position
+                && input.evidence_position > obligation.trigger_position.position
+                && (input.latest_mutation.is_some()
+                    || acceptance_binding_criterion(&obligation.rule).is_some())
         })
         .filter(|obligation| {
             match_verification_evidence(&VerificationEvidenceMatchInput {
@@ -208,7 +252,6 @@ pub fn evaluate_obligation_satisfaction(
                 producer: Some(input.producer),
                 latest_mutation: input.latest_mutation,
                 evidence_position: input.evidence_position,
-                latest_mutation_position: input.latest_mutation_position,
                 requirement: &obligation.requirement,
             })
             .is_ok()
@@ -2091,9 +2134,8 @@ mod tests {
             candidate_kind: WorkEvidenceKind::Verification,
             evidence: Some(&evidence),
             producer: Some(&producer),
-            latest_mutation: &latest_mutation,
+            latest_mutation: Some((&latest_mutation, 1)),
             evidence_position: 4,
-            latest_mutation_position: 1,
             requirement: &requirement,
         };
         assert_eq!(match_verification_evidence(&exact), Ok(()));
@@ -2141,9 +2183,8 @@ mod tests {
             candidate_kind: WorkEvidenceKind::Verification,
             evidence: Some(&evidence),
             producer: Some(&producer),
-            latest_mutation: &later_mutation,
+            latest_mutation: Some((&later_mutation, 3)),
             evidence_position: 4,
-            latest_mutation_position: 3,
             requirement: &requirement,
         };
         assert_eq!(

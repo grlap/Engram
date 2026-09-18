@@ -967,6 +967,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
         peer.work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),

@@ -750,6 +750,7 @@ fn orientation_ready_prefix_ranks_later_high_priority_ahead_of_older_low() {
                         .to_owned(),
                 ),
                 action: UpdateAction::Revise {
+                    bindings: None,
                     clear_external: false,
                     external: None,
                     title: None,

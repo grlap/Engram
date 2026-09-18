@@ -436,6 +436,14 @@ impl SqliteStore {
             }
             Err(error) => return Err(error),
         };
+        let acceptance = bind_acceptance_to_obligations_on(
+            &transaction,
+            &item,
+            run.run_id,
+            &completion_cut,
+            &evidence,
+            acceptance,
+        )?;
         let environment =
             completion_environment_basis_on(&transaction, run.run_id, &completion_cut)?;
         if environment.len() > MAX_COMPLETION_ENVIRONMENT_EVIDENCE {
@@ -1259,25 +1267,23 @@ fn load_work_obligation_record_on(
             row.obligation_id
         )));
     }
-    let trigger = load_typed_work_object::<ExecutionObservation>(
-        connection,
-        &obligation.triggering_observation,
-        "execution_observation",
-    )?;
-    let trigger_entry_matches = connection.query_row(
-        "SELECT EXISTS(
-             SELECT 1 FROM work_feed_entries
-             WHERE feed_kind = 'run_execution' AND feed_id = ?1
-               AND position = ?2 AND object_kind = 'execution_observation'
-               AND object_hash = ?3
-         )",
-        params![
-            obligation.run_id.0.to_string(),
-            obligation.trigger_position.position,
-            obligation.triggering_observation.as_str()
-        ],
-        |query| query.get::<_, bool>(0),
-    )?;
+    let trigger_entry_matches = |kind: &str| -> Result<bool, StoreError> {
+        Ok(connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM work_feed_entries
+                 WHERE feed_kind = 'run_execution' AND feed_id = ?1
+                   AND position = ?2 AND object_kind = ?4
+                   AND object_hash = ?3
+             )",
+            params![
+                obligation.run_id.0.to_string(),
+                obligation.trigger_position.position,
+                obligation.triggering_observation.as_str(),
+                kind
+            ],
+            |query| query.get::<_, bool>(0),
+        )?)
+    };
     let definition_position: Option<i64> = connection
         .query_row(
             "SELECT position FROM work_feed_entries
@@ -1287,14 +1293,41 @@ fn load_work_obligation_record_on(
             |query| query.get(0),
         )
         .optional()?;
-    if !trigger.source_changed
-        || trigger.project_id != obligation.project_id
-        || trigger.binding.root_execution_id != obligation.root_execution_id
-        || trigger.binding.work_id != obligation.work_id
-        || trigger.binding.run_id != obligation.run_id
-        || trigger.binding.work_revision != obligation.work_revision
-        || trigger.recorded_at != obligation.opened_at
-        || !trigger_entry_matches
+    // A builtin rule is triggered by a source mutation the host observed; an
+    // acceptance binding by the planning event (creation, claim or revision)
+    // that authored the binding, which must still carry it.
+    let trigger_matches = if let Some(criterion) = binding_rule_criterion(&obligation.rule) {
+        let trigger = load_typed_work_object::<crate::domain::WorkEvent>(
+            connection,
+            &obligation.triggering_observation,
+            "work_event",
+        )?;
+        trigger.project_id == obligation.project_id
+            && trigger.root_id == obligation.root_id
+            && trigger.work_id == obligation.work_id
+            && trigger.run_id == Some(obligation.run_id)
+            && trigger.revision == obligation.work_revision
+            && trigger.created_at == obligation.opened_at
+            && trigger.work.acceptance_bindings.iter().any(|binding| {
+                binding.criterion == criterion && binding.requirement == obligation.requirement
+            })
+            && trigger_entry_matches("work_event")?
+    } else {
+        let trigger = load_typed_work_object::<ExecutionObservation>(
+            connection,
+            &obligation.triggering_observation,
+            "execution_observation",
+        )?;
+        trigger.source_changed
+            && trigger.project_id == obligation.project_id
+            && trigger.binding.root_execution_id == obligation.root_execution_id
+            && trigger.binding.work_id == obligation.work_id
+            && trigger.binding.run_id == obligation.run_id
+            && trigger.binding.work_revision == obligation.work_revision
+            && trigger.recorded_at == obligation.opened_at
+            && trigger_entry_matches("execution_observation")?
+    };
+    if !trigger_matches
         || definition_position
             .is_none_or(|position| position <= obligation.trigger_position.position)
     {
@@ -1421,21 +1454,17 @@ fn validate_obligation_resolution_projection(
             )?;
             let evidence_position =
                 run_feed_position_for_object_on(connection, obligation.run_id, evidence)?;
-            let (mutation_position, latest_mutation) =
-                latest_source_mutation_on(connection, obligation.run_id, evaluated_cut.position)?
-                    .ok_or_else(|| {
-                    StoreError::InvalidWorkProjection(
-                        "satisfied obligation has no source mutation at its evaluated cut".into(),
-                    )
-                })?;
+            let latest =
+                latest_source_mutation_on(connection, obligation.run_id, evaluated_cut.position)?;
             let satisfied = crate::control::evaluate_obligation_satisfaction(
                 &crate::control::ObligationSatisfactionInput {
                     open_obligations: std::slice::from_ref(obligation),
                     evidence: &verification,
                     producer: &producer,
-                    latest_mutation: &latest_mutation,
+                    latest_mutation: latest
+                        .as_ref()
+                        .map(|(position, mutation)| (mutation, *position)),
                     evidence_position: evidence_position.position,
-                    latest_mutation_position: mutation_position,
                     evaluated_cut,
                 },
             );
@@ -1721,51 +1750,272 @@ fn append_builtin_obligations_on(
             requirement,
             opened_at: observation.recorded_at,
         };
-        let object = CanonicalObject::mint(&obligation)?;
-        SqliteStore::insert_object(transaction, "work_obligation", &object)?;
-        append_to_work_feeds(
-            transaction,
-            &obligation.project_id,
-            obligation.root_id,
-            Some(obligation.run_id),
-            None,
-            "work_obligation",
-            &object,
-        )?;
-        transaction.execute(
-            "INSERT INTO work_run_obligations (
-                 obligation_id, definition_hash, project_id, root_execution_id,
-                 root_id, work_id, run_id, work_revision, rule_set_hash, rule_id, rule_version,
-                 triggering_observation_hash, trigger_position, check_kind,
-                 check_fingerprint, state, opened_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
-            params![
-                obligation.obligation_id.0.to_string(),
-                object.hash().as_str(),
-                obligation.project_id.0,
-                obligation.root_execution_id.0.to_string(),
-                obligation.root_id.0.to_string(),
-                obligation.work_id.0.to_string(),
-                obligation.run_id.0.to_string(),
-                obligation.work_revision,
-                obligation.rule_set.as_str(),
-                obligation.rule.rule_id,
-                obligation.rule.rule_version,
-                obligation.triggering_observation.as_str(),
-                obligation.trigger_position.position,
-                encode_state(obligation.requirement.check_kind)?,
-                obligation
-                    .requirement
-                    .check_fingerprint
-                    .as_ref()
-                    .map(ObjectHash::as_str),
-                encode_state(WorkObligationState::Open)?,
-                obligation.opened_at.timestamp_millis(),
-            ],
-        )?;
-        definitions.push(object.hash().clone());
+        definitions.push(persist_obligation_on(transaction, &obligation)?);
     }
     Ok(definitions)
+}
+
+/// Stores one obligation as a record, on the feeds and in the projection,
+/// returning the definition's id.
+fn persist_obligation_on(
+    transaction: &Transaction<'_>,
+    obligation: &WorkObligation,
+) -> Result<ObjectHash, StoreError> {
+    let object = CanonicalObject::mint(obligation)?;
+    SqliteStore::insert_object(transaction, "work_obligation", &object)?;
+    append_to_work_feeds(
+        transaction,
+        &obligation.project_id,
+        obligation.root_id,
+        Some(obligation.run_id),
+        None,
+        "work_obligation",
+        &object,
+    )?;
+    transaction.execute(
+        "INSERT INTO work_run_obligations (
+             obligation_id, definition_hash, project_id, root_execution_id,
+             root_id, work_id, run_id, work_revision, rule_set_hash, rule_id, rule_version,
+             triggering_observation_hash, trigger_position, check_kind,
+             check_fingerprint, state, opened_at_ms
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+        params![
+            obligation.obligation_id.0.to_string(),
+            object.hash().as_str(),
+            obligation.project_id.0,
+            obligation.root_execution_id.0.to_string(),
+            obligation.root_id.0.to_string(),
+            obligation.work_id.0.to_string(),
+            obligation.run_id.0.to_string(),
+            obligation.work_revision,
+            obligation.rule_set.as_str(),
+            obligation.rule.rule_id,
+            obligation.rule.rule_version,
+            obligation.triggering_observation.as_str(),
+            obligation.trigger_position.position,
+            encode_state(obligation.requirement.check_kind)?,
+            obligation
+                .requirement
+                .check_fingerprint
+                .as_ref()
+                .map(ObjectHash::as_str),
+            encode_state(WorkObligationState::Open)?,
+            obligation.opened_at.timestamp_millis(),
+        ],
+    )?;
+    Ok(object.hash().clone())
+}
+
+pub(super) use crate::control::{
+    acceptance_binding_criterion as binding_rule_criterion, acceptance_binding_rule as binding_rule,
+};
+
+/// Opens one obligation on the item's run for each bound criterion the run
+/// does not already hold an obligation for, triggered by the planning event
+/// (creation, claim or revision) at `trigger_position`. An obligation waived
+/// by an earlier revision does not count as held: the binding was re-authored
+/// and opens again from this trigger. Returns the definitions opened.
+pub(super) fn open_binding_obligations_on(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run: &WorkRun,
+    trigger: &ObjectHash,
+    trigger_position: &FeedPosition,
+    now: DateTime<Utc>,
+) -> Result<Vec<ObjectHash>, StoreError> {
+    if item.acceptance_bindings.is_empty() {
+        return Ok(Vec::new());
+    }
+    let existing = load_work_obligation_records_on(transaction, run.run_id, None)?;
+    let (_, policy, _) = SqliteStore::load_control_policy_head(transaction)?;
+    let mut definitions = Vec::new();
+    for binding in &item.acceptance_bindings {
+        let rule = binding_rule(binding.criterion);
+        let held = existing.iter().any(|record| {
+            record.obligation.rule == rule
+                && record.obligation.requirement == binding.requirement
+                && record.state != WorkObligationState::Waived
+        });
+        if held {
+            continue;
+        }
+        let obligation = WorkObligation {
+            schema_version: SCHEMA_VERSION,
+            obligation_id: WorkObligationId::new(),
+            project_id: item.project_id.clone(),
+            root_execution_id: run.root_execution_id,
+            root_id: item.root_id,
+            work_id: item.work_id,
+            run_id: run.run_id,
+            work_revision: item.revision,
+            rule_set: policy.obligation_rule_set.clone(),
+            rule,
+            triggering_observation: trigger.clone(),
+            trigger_position: trigger_position.clone(),
+            requirement: binding.requirement.clone(),
+            opened_at: now,
+        };
+        definitions.push(persist_obligation_on(transaction, &obligation)?);
+    }
+    Ok(definitions)
+}
+
+/// Holds each bound criterion to its obligation at the completion cut. The
+/// obligation is resolved there, or completion refused before this; a
+/// satisfied one is contradicted when the newest verification of its kind at
+/// the cut did not pass, since a later failed check outranks an earlier pass;
+/// and the sealed result for the criterion cites the evidence that satisfied
+/// it, so the seal says what the pass rested on.
+fn bind_acceptance_to_obligations_on(
+    connection: &Connection,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    cut: &FeedPosition,
+    completion_evidence: &[ObjectHash],
+    mut acceptance: Vec<AcceptanceResult>,
+) -> Result<Vec<AcceptanceResult>, StoreError> {
+    if item.acceptance_bindings.is_empty() {
+        return Ok(acceptance);
+    }
+    let records = load_work_obligation_records_on(connection, run_id, None)?;
+    for binding in &item.acceptance_bindings {
+        let rule = binding_rule(binding.criterion);
+        let satisfied = records
+            .iter()
+            .filter(|record| {
+                record.obligation.rule == rule
+                    && record.obligation.requirement == binding.requirement
+                    && record.state == WorkObligationState::Satisfied
+            })
+            .max_by_key(|record| record.obligation.trigger_position.position);
+        let Some(record) = satisfied else {
+            // Waived by an authority the obligation path admitted; the seal
+            // binds that waiver where it binds every obligation.
+            continue;
+        };
+        let Some(WorkObligationResolution::Satisfied {
+            evidence: satisfying,
+            ..
+        }) = record.resolution.as_ref().map(|event| &event.resolution)
+        else {
+            continue;
+        };
+        if let Some((newest, result)) =
+            newest_verification_of_kind_on(connection, run_id, &binding.requirement, cut)?
+            && result != crate::domain::VerificationResult::Passed
+        {
+            return Err(StoreError::WorkCompletionRefused {
+                work: item.work_id,
+                reason: format!(
+                    "criterion {} requires {} verification and is contradicted by newer verification evidence {newest} that did not pass; record a passing check after it, or revise the criterion",
+                    binding.criterion,
+                    encode_state(binding.requirement.check_kind)?
+                ),
+            });
+        }
+        // The seal's obligation binding already names the satisfying record;
+        // the criterion cites it too when the completion's evidence set holds
+        // it, so the citation closure the checkpoint acknowledged still holds.
+        if completion_evidence.contains(satisfying)
+            && let Some(result) = acceptance.get_mut(binding.criterion - 1)
+            && !result.evidence.contains(satisfying)
+        {
+            result.evidence.push(satisfying.clone());
+        }
+    }
+    Ok(acceptance)
+}
+
+/// The newest host-minted verification of `requirement`'s kind (and pinned
+/// check, when it pins one) on the run at or before `cut`, with its result.
+fn newest_verification_of_kind_on(
+    connection: &Connection,
+    run_id: WorkRunId,
+    requirement: &crate::domain::VerificationRequirement,
+    cut: &FeedPosition,
+) -> Result<Option<(ObjectHash, crate::domain::VerificationResult)>, StoreError> {
+    let stored: Vec<String> = connection
+        .prepare(
+            "SELECT evidence_hash FROM work_run_evidence
+             WHERE run_id = ?1 AND evidence_kind = 'verification'",
+        )?
+        .query_map([run_id.0.to_string()], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    let mut newest: Option<(i64, ObjectHash, crate::domain::VerificationResult)> = None;
+    for stored_hash in stored {
+        let hash = ObjectHash::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let position = run_feed_position_for_object_on(connection, run_id, &hash)?;
+        if position.position > cut.position {
+            continue;
+        }
+        let evidence: VerificationEvidence =
+            load_typed_work_object(connection, &hash, "verification_evidence")?;
+        if evidence.check_kind != requirement.check_kind
+            || requirement
+                .check_fingerprint
+                .as_ref()
+                .is_some_and(|required| required != &evidence.check_fingerprint)
+        {
+            continue;
+        }
+        if newest
+            .as_ref()
+            .is_none_or(|(known, _, _)| position.position > *known)
+        {
+            newest = Some((position.position, hash, evidence.result));
+        }
+    }
+    Ok(newest.map(|(_, hash, result)| (hash, result)))
+}
+
+/// Resolves as waived, in the revising actor's name, every open obligation on
+/// `run_id` that an acceptance binding opened and the revised item no longer
+/// binds. Revision is how a requirement changes; the waiver is the audited
+/// record of that change on the obligation it retires.
+pub(super) fn waive_unbound_obligations_on(
+    transaction: &Transaction<'_>,
+    item: &WorkItem,
+    run_id: WorkRunId,
+    actor: &crate::domain::ActorContext,
+    now: DateTime<Utc>,
+) -> Result<Vec<ObjectHash>, StoreError> {
+    let mut resolutions = Vec::new();
+    for record in
+        load_work_obligation_records_on(transaction, run_id, Some(WorkObligationState::Open))?
+    {
+        let Some(criterion) = binding_rule_criterion(&record.obligation.rule) else {
+            continue;
+        };
+        let still_bound = item.acceptance_bindings.iter().any(|binding| {
+            binding.criterion == criterion && binding.requirement == record.obligation.requirement
+        });
+        if still_bound {
+            continue;
+        }
+        let event = WorkObligationResolutionEvent {
+            schema_version: SCHEMA_VERSION,
+            project_id: item.project_id.clone(),
+            obligation_id: record.obligation.obligation_id,
+            definition: record.definition_hash.clone(),
+            run_id,
+            resolution: WorkObligationResolution::Waived {
+                waived_by: actor.actor_id.clone(),
+                reason: format!(
+                    "acceptance revised at revision {}: criterion {criterion} no longer requires this verification",
+                    item.revision
+                ),
+            },
+            actor: actor.clone(),
+            created_at: now,
+        };
+        resolutions.push(append_obligation_resolution_on(
+            transaction,
+            &record,
+            &event,
+        )?);
+    }
+    Ok(resolutions)
 }
 
 fn satisfy_open_obligations_on(
@@ -1776,11 +2026,8 @@ fn satisfy_open_obligations_on(
     let evidence_position =
         run_feed_position_for_object_on(transaction, evidence.binding.run_id, evidence_hash)?;
     let evaluated_cut = current_run_feed_cut_on(transaction, evidence.binding.run_id)?;
-    let Some((latest_mutation_position, latest_mutation)) =
-        latest_source_mutation_on(transaction, evidence.binding.run_id, evaluated_cut.position)?
-    else {
-        return Ok(Vec::new());
-    };
+    let latest =
+        latest_source_mutation_on(transaction, evidence.binding.run_id, evaluated_cut.position)?;
     let producer = load_typed_work_object::<ExecutionObservation>(
         transaction,
         &evidence.producer_observation,
@@ -1799,9 +2046,10 @@ fn satisfy_open_obligations_on(
             open_obligations: &obligations,
             evidence,
             producer: &producer,
-            latest_mutation: &latest_mutation,
+            latest_mutation: latest
+                .as_ref()
+                .map(|(position, mutation)| (mutation, *position)),
             evidence_position: evidence_position.position,
-            latest_mutation_position,
             evaluated_cut: &evaluated_cut,
         },
     );

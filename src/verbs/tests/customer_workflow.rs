@@ -360,6 +360,7 @@ fn phoenix_add_under_terminal_parent_returns_typed_root_followup_remedy_without_
                 parent_id: parent_before.work_id,
                 expected_parent_revision: parent_before.revision,
                 children: vec![crate::ChildWorkDraft {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),

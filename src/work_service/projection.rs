@@ -166,6 +166,7 @@ pub(super) fn work_item_summary(work: &WorkItem) -> WorkItemSummary {
             .map(|criterion| compact_text(criterion))
             .collect(),
         acceptance_count: work.acceptance.len(),
+        acceptance_bindings: work.acceptance_bindings.clone(),
         kind: work.kind,
         priority: work.priority,
         labels: work

@@ -152,7 +152,11 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   `asserted`: each citation is a gate record on this run with no failure
   labels; refused when policy `mechanical_basis` is `observed`. `judgment`:
   each citation is run evidence (note, gate, verification, or environment
-  evidence). `human_required` can never be a `pass`.
+  evidence). `human_required` can never be a `pass`. A criterion bound to a
+  typed verification requirement (`--bind`) passes only on `observed`, and
+  every citation must be verification evidence of the bound kind (and pinned
+  check) with a passed result; `asserted` and `judgment` are refused for it
+  by name.
 - **R6 non-pass citations.** `fail`, `insufficient_evidence`, and `needs_human`
   carry a rationale; citations are optional but must belong to this run, and a
   failed check may be cited (a failed build supports a `fail`).

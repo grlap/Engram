@@ -73,6 +73,7 @@ impl SqliteStore {
             reference: Some(item.work_id.0.to_string()),
         });
         let creation = CreateWorkRequest {
+            acceptance_bindings: Vec::new(),
             notes: Vec::new(),
             project_id: item.project_id.clone(),
             parent_id: None,

@@ -151,6 +151,10 @@ struct AddArgs {
     /// Acceptance criteria `done` is checked against; defaults to one
     /// criterion "<title> is done".
     acceptance: Option<Vec<String>>,
+    /// Bind criteria to typed host verification, as `POSITION=KIND[:FINGERPRINT]`
+    /// (kind: test, build, lint, review or acceptance); a bound criterion passes
+    /// only on host-observed verification of that kind, never on judgment.
+    bindings: Option<Vec<String>>,
     /// Add as a child of this item instead of a root.
     under: Option<String>,
     /// Make the child optional for parent completion. Requires `under`.
@@ -216,6 +220,10 @@ struct UpdateArgs {
     /// Replace the whole acceptance list for revise. Omission preserves it;
     /// an empty list or blank criterion is refused.
     acceptance: Option<Vec<String>>,
+    /// Replace the criteria bound to typed host verification for revise, as
+    /// `POSITION=KIND[:FINGERPRINT]`. Omitted while acceptance is replaced, the
+    /// bindings are cleared; omitted otherwise, they are unchanged.
+    bindings: Option<Vec<String>>,
     assignee: Option<String>,
     /// 0 (highest) through 4.
     priority: Option<i32>,
@@ -443,6 +451,7 @@ impl McpServer {
                 title: args.title,
                 outcome: args.outcome,
                 acceptance: args.acceptance.unwrap_or_default(),
+                bindings: args.bindings.unwrap_or_default(),
                 under: args.under,
                 optional: args.optional.unwrap_or(false),
                 priority: args.priority,
@@ -492,6 +501,9 @@ impl McpServer {
                 "acceptance replacement requires action revise",
             );
         }
+        if args.bindings.is_some() && !matches!(args.action, UpdateActionArg::Revise) {
+            return invalid_argument("bindings", "verification bindings require action revise");
+        }
         if args.evaluation_mode.is_some() && !matches!(args.action, UpdateActionArg::EvaluationMode)
         {
             return invalid_argument(
@@ -518,6 +530,7 @@ impl McpServer {
                     title: args.title,
                     outcome: args.outcome,
                     acceptance: args.acceptance,
+                    bindings: args.bindings,
                     assignee: args.assignee,
                     priority: args.priority,
                     defer,

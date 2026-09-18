@@ -605,7 +605,22 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.claimed_at,
         };
-        append_work_event(&transaction, &event)?;
+        let (event_hash, positions) = append_work_event(&transaction, &event)?;
+        // A run this claim is the first to hold may still owe the obligations
+        // its bound criteria open; a run that already holds them keeps them.
+        if let Some(position) = positions
+            .iter()
+            .find(|position| position.feed == FeedId::RunExecution(run_id))
+        {
+            super::completion::open_binding_obligations_on(
+                &transaction,
+                &item,
+                &run,
+                &event_hash,
+                position,
+                request.claimed_at,
+            )?;
+        }
         if keyed {
             persist_operation_result(
                 &transaction,

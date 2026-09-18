@@ -94,6 +94,7 @@ impl Redactor for RejectingRedactor {
 
 pub(super) fn root_request(project: &str, key: &str, second: i64) -> CreateWorkRequest {
     CreateWorkRequest {
+        acceptance_bindings: Vec::new(),
         evaluation_mode: None,
         external_ref: None,
         notes: Vec::new(),
@@ -118,6 +119,7 @@ pub(super) fn root_request(project: &str, key: &str, second: i64) -> CreateWorkR
 
 pub(super) fn child(key: &str, requirement: ChildRequirement, title: &str) -> ChildWorkDraft {
     ChildWorkDraft {
+        acceptance_bindings: Vec::new(),
         evaluation_mode: None,
         external_ref: None,
         notes: Vec::new(),
@@ -270,4 +272,115 @@ pub(super) fn complete(
         &completion_request(work, claim, holder, evidence, key, second),
         &DevelopmentNoopRedactor,
     )
+}
+
+/// A host-minted verification of `kind` with `result` on the claimed run,
+/// with its producer observation and environment record, as the host
+/// checkpoint path mints them; no source mutation is observed.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one test helper mirrors the host verification surface"
+)]
+pub(super) fn host_verification(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    kind: crate::domain::VerificationKind,
+    result: crate::domain::VerificationResult,
+    second: i64,
+) -> ObjectHash {
+    use crate::domain::{
+        ControlWorkBinding, EffectClass, EnvironmentComponents, EnvironmentEvidence,
+        ExecutionObservation, ExecutionOutcome, ExecutionSourceBasis, VerificationEvidence,
+    };
+    let run = super::query::load_work_run(&store.connection, claim.run_id).expect("claimed run");
+    let binding = ControlWorkBinding {
+        root_execution_id: run.root_execution_id,
+        work_id: work.work_id,
+        run_id: run.run_id,
+        work_revision: claim.accepted_work_revision,
+        claim_id: claim.claim_id,
+        claim_fence: claim.fence,
+    };
+    let mut run_actor = actor(holder);
+    run_actor.run_id = Some(run.run_id.0.to_string());
+    let source_basis = ExecutionSourceBasis {
+        workspace_id: format!("workspace-{key}"),
+        source_revision: "revision-as-it-stands".into(),
+    };
+    let observation = ExecutionObservation {
+        schema_version: SCHEMA_VERSION,
+        project_id: work.project_id.clone(),
+        binding: binding.clone(),
+        session_id: SessionId(holder.into()),
+        grant_id: format!("grant-{key}"),
+        observation_id: format!("check-{key}"),
+        action_fingerprint: ObjectHash::from_canonical_bytes(format!("check {key}").as_bytes()),
+        effect: EffectClass::Observe,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: false,
+        obligation_rule_set: active_rule_set_id(&store.connection),
+        source_basis: Some(source_basis.clone()),
+        observed_at: Some(at(second)),
+        actor: run_actor.clone(),
+        recorded_at: at(second),
+    };
+    let components = EnvironmentComponents {
+        toolchain: "rustc-test".into(),
+        sandbox: Some("test-sandbox".into()),
+        workspace_id: source_basis.workspace_id.clone(),
+        capability_map_revision: 1,
+    };
+    let environment_fingerprint = CanonicalObject::freeze(&components)
+        .expect("freeze environment components")
+        .hash()
+        .clone();
+    let transaction = store
+        .connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("verification transaction");
+    let producer =
+        super::completion::append_control_execution_observation_on(&transaction, &observation)
+            .expect("append the check's observation");
+    let environment = super::completion::append_control_environment_evidence_on(
+        &transaction,
+        &EnvironmentEvidence {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding: binding.clone(),
+            session_id: SessionId(holder.into()),
+            source_basis: source_basis.clone(),
+            environment_fingerprint,
+            components: Some(components),
+            observed_at: at(second),
+            actor: run_actor.clone(),
+            recorded_at: at(second),
+        },
+    )
+    .expect("append environment evidence");
+    let verification = super::completion::append_control_verification_evidence_on(
+        &transaction,
+        &VerificationEvidence {
+            schema_version: SCHEMA_VERSION,
+            project_id: work.project_id.clone(),
+            binding,
+            session_id: SessionId(holder.into()),
+            producer_observation: producer,
+            source_basis,
+            environment: Some(environment),
+            check_kind: kind,
+            check_fingerprint: observation.action_fingerprint.clone(),
+            result,
+            completed_at: at(second),
+            summary: format!("host observed {key}"),
+            refs: vec![format!("command:{key}")],
+            actor: run_actor,
+            recorded_at: at(second),
+        },
+    )
+    .expect("append verification evidence");
+    transaction.commit().expect("commit verification");
+    verification
 }

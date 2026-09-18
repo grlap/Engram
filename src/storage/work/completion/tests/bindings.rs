@@ -1,0 +1,422 @@
+use super::*;
+use crate::domain::{
+    AcceptanceBinding, ReviseWorkRequest, VerificationRequirement, WorkPlanningAuthority,
+};
+
+fn bound(criterion: usize, kind: VerificationKind) -> AcceptanceBinding {
+    AcceptanceBinding {
+        criterion,
+        requirement: VerificationRequirement {
+            check_kind: kind,
+            check_fingerprint: None,
+            required_environment: None,
+        },
+    }
+}
+
+/// A root whose first criterion requires host test verification.
+fn bound_root(store: &mut SqliteStore, project: &str) -> WorkItem {
+    let mut request = root_request(project, "create-bound-work", 1);
+    request.acceptance = vec!["run tests".into(), "write docs".into()];
+    request.acceptance_bindings = vec![bound(1, VerificationKind::Test)];
+    store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("create bound work")
+}
+
+fn revise_bound(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    acceptance: Option<Vec<&str>>,
+    bindings: Option<Vec<AcceptanceBinding>>,
+    key: &str,
+    second: i64,
+) -> WorkItem {
+    let patch = crate::domain::WorkRevisionPatch {
+        acceptance: acceptance.map(|list| list.into_iter().map(str::to_owned).collect()),
+        acceptance_bindings: bindings,
+        ..crate::domain::WorkRevisionPatch::default()
+    };
+    store
+        .revise_work(
+            &ReviseWorkRequest {
+                work_id: work.work_id,
+                expected_revision: work.revision,
+                patch,
+                authority: WorkPlanningAuthority::Claim {
+                    run_id: claim.run_id,
+                    holder: claim.holder.clone(),
+                    claim_id: claim.claim_id,
+                    claim_fence: claim.fence,
+                },
+                actor: actor(&claim.holder.0),
+                idempotency_key: key.into(),
+                updated_at: at(second),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("revise bound work")
+}
+
+#[test]
+fn a_bound_criterion_opens_an_obligation_and_completes_only_on_host_verification_of_its_kind() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-bound-criterion");
+    let run_id = work.active_run_id.expect("active run");
+    // Creation opened the obligation: the run owes a test verification for
+    // criterion 1, triggered by the creation event on its own feed.
+    let opened = store.work_run_obligations(run_id).expect("obligations");
+    assert_eq!(opened.len(), 1);
+    assert_eq!(opened[0].state, WorkObligationState::Open);
+    assert_eq!(
+        opened[0].obligation.rule.rule_id,
+        "acceptance_criterion_requires_verification:1"
+    );
+    assert_eq!(
+        opened[0].obligation.requirement.check_kind,
+        VerificationKind::Test
+    );
+    assert_eq!(
+        opened[0].obligation.trigger_position.feed,
+        FeedId::RunExecution(run_id)
+    );
+
+    // A claim on the same run does not open it twice.
+    let claim = claim(&mut store, &work, "runner", "claim-bound", 2, 300);
+    assert_eq!(
+        store
+            .work_run_obligations(run_id)
+            .expect("obligations")
+            .len(),
+        1
+    );
+
+    let generic = evidence(&mut store, &work, &claim, "runner", "generic-bound", 3);
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "checkpoint-bound-open",
+        4,
+        std::slice::from_ref(&generic),
+    );
+    let refused = complete(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        &generic,
+        "complete-bound-open",
+        5,
+    );
+    let Err(StoreError::OpenWorkObligations { obligations, .. }) = refused else {
+        panic!("a bound criterion without verification must refuse completion: {refused:?}");
+    };
+    assert_eq!(obligations[0].required_check, VerificationKind::Test);
+
+    // A passing check of another kind satisfies nothing.
+    let build = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "build-bound",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        6,
+    );
+    assert_eq!(
+        store.work_run_obligations(run_id).expect("obligations")[0].state,
+        WorkObligationState::Open
+    );
+
+    // A passing test verification does, although the run observed no source
+    // mutation at all: the source as it stands was verified.
+    let verification = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-bound",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        7,
+    );
+    let terminal = store.work_run_obligations(run_id).expect("obligations");
+    assert_eq!(terminal.len(), 1);
+    assert_eq!(terminal[0].state, WorkObligationState::Satisfied);
+    assert!(matches!(
+        terminal[0].resolution.as_ref().map(|event| &event.resolution),
+        Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &verification
+    ));
+
+    let all = store.work_run_evidence(run_id).expect("run evidence");
+    assert!(all.contains(&build) && all.contains(&verification));
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "checkpoint-bound-verified",
+        8,
+        &all,
+    );
+    let mut request = completion_request(&work, &claim, "runner", &generic, "complete-bound", 9);
+    request.evidence.push(verification.clone());
+    let seal = store
+        .complete_work(&request, &DevelopmentNoopRedactor)
+        .expect("complete once the bound criterion is verified");
+    // The seal binds the obligation, and the bound criterion cites the record
+    // that satisfied it; the free-text criterion is as the author left it.
+    assert_eq!(seal.obligations.len(), 1);
+    assert_eq!(
+        seal.obligations[0].obligation_id,
+        terminal[0].obligation.obligation_id
+    );
+    assert!(seal.acceptance[0].evidence.contains(&verification));
+    assert_eq!(seal.acceptance[1].evidence, vec![generic.clone()]);
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn a_newer_failed_verification_contradicts_a_satisfied_bound_criterion() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-bound-contradiction");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-contradiction", 2, 300);
+    let generic = evidence(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "generic-contradiction",
+        3,
+    );
+    let passed = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-passed",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        4,
+    );
+    assert_eq!(
+        store.work_run_obligations(run_id).expect("obligations")[0].state,
+        WorkObligationState::Satisfied
+    );
+    // The host then observes the same kind of check failing. The obligation
+    // stays satisfied as a record, but completion holds the criterion to the
+    // newest verification of its kind.
+    let failed = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-failed",
+        VerificationKind::Test,
+        VerificationResult::Failed,
+        5,
+    );
+    let all = store.work_run_evidence(run_id).expect("run evidence");
+    assert!(all.contains(&passed) && all.contains(&failed));
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "checkpoint-contradiction",
+        6,
+        &all,
+    );
+    let refused = complete(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        &generic,
+        "complete-contradicted",
+        7,
+    );
+    let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+        panic!("a newer failed check must refuse completion: {refused:?}");
+    };
+    assert!(
+        reason.contains("criterion 1 requires test verification"),
+        "{reason}"
+    );
+    assert!(
+        reason.contains("contradicted by newer verification evidence"),
+        "{reason}"
+    );
+    assert!(reason.contains(failed.as_str()), "{reason}");
+}
+
+#[test]
+fn revising_the_acceptance_waives_the_bindings_it_drops_and_opens_the_ones_it_adds() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-bound-revision");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-revision", 2, 300);
+
+    // Replacing the acceptance list without restating the bindings drops
+    // them: the obligation is waived in the revising actor's name.
+    let revised = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        Some(vec!["run tests", "write docs", "zap lint"]),
+        None,
+        "revise-drop",
+        3,
+    );
+    assert!(revised.acceptance_bindings.is_empty());
+    let after_drop = store.work_run_obligations(run_id).expect("obligations");
+    assert_eq!(after_drop.len(), 1);
+    assert_eq!(after_drop[0].state, WorkObligationState::Waived);
+    assert!(matches!(
+        after_drop[0].resolution.as_ref().map(|event| &event.resolution),
+        Some(WorkObligationResolution::Waived { waived_by, reason })
+            if waived_by == "runner" && reason.contains("revision 2") && reason.contains("criterion 1")
+    ));
+
+    // Binding two criteria opens one obligation each, from the revision that
+    // authored them, on the same run.
+    let rebound = revise_bound(
+        &mut store,
+        &revised,
+        &claim,
+        None,
+        Some(vec![
+            bound(3, VerificationKind::Lint),
+            bound(1, VerificationKind::Test),
+        ]),
+        "revise-rebind",
+        4,
+    );
+    assert_eq!(
+        rebound
+            .acceptance_bindings
+            .iter()
+            .map(|binding| binding.criterion)
+            .collect::<Vec<_>>(),
+        vec![1, 3],
+        "bindings are kept in position order"
+    );
+    let after_rebind = store.work_run_obligations(run_id).expect("obligations");
+    let open = after_rebind
+        .iter()
+        .filter(|record| record.state == WorkObligationState::Open)
+        .map(|record| {
+            (
+                record.obligation.rule.rule_id.clone(),
+                record.obligation.requirement.check_kind,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(after_rebind.len(), 3);
+    assert!(open.contains(&(
+        "acceptance_criterion_requires_verification:1".into(),
+        VerificationKind::Test
+    )));
+    assert!(open.contains(&(
+        "acceptance_criterion_requires_verification:3".into(),
+        VerificationKind::Lint
+    )));
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn bindings_are_read_from_the_shell_form_and_admitted_against_the_list() {
+    let parsed = AcceptanceBinding::parse(" 2 = test ").expect("plain binding");
+    assert_eq!(parsed.criterion, 2);
+    assert_eq!(parsed.requirement.check_kind, VerificationKind::Test);
+    assert_eq!(parsed.requirement.check_fingerprint, None);
+    let pinned = AcceptanceBinding::parse(&format!("1=build:{}", "a".repeat(32))).expect("pinned");
+    assert_eq!(pinned.requirement.check_kind, VerificationKind::Build);
+    assert_eq!(
+        pinned
+            .requirement
+            .check_fingerprint
+            .as_ref()
+            .map(ObjectHash::as_str),
+        Some("a".repeat(32).as_str())
+    );
+    for text in ["test", "0=test", "x=test", "1=magic", "1=test:not-an-id"] {
+        assert!(
+            AcceptanceBinding::parse(text).is_err(),
+            "{text:?} must be refused"
+        );
+    }
+    let sorted = crate::domain::normalize_acceptance_bindings(
+        3,
+        &[
+            bound(3, VerificationKind::Lint),
+            bound(1, VerificationKind::Test),
+        ],
+    )
+    .expect("in range");
+    assert_eq!(
+        sorted
+            .iter()
+            .map(|binding| binding.criterion)
+            .collect::<Vec<_>>(),
+        vec![1, 3]
+    );
+    let twice = crate::domain::normalize_acceptance_bindings(
+        3,
+        &[
+            bound(2, VerificationKind::Lint),
+            bound(2, VerificationKind::Test),
+        ],
+    )
+    .expect_err("bound twice");
+    assert!(twice.contains("criterion 2 is bound twice"), "{twice}");
+    let outside =
+        crate::domain::normalize_acceptance_bindings(1, &[bound(2, VerificationKind::Test)])
+            .expect_err("outside the list");
+    assert!(outside.contains("names criterion 2"), "{outside}");
+}
+
+#[test]
+fn a_binding_follows_its_criterion_into_the_stored_order() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    // The list is stored sorted, as `show` numbers it; the binding was
+    // authored against the list as typed and lands on the same criterion.
+    let mut request = root_request("project-bound-order", "create-reordered-work", 1);
+    request.acceptance = vec!["zeta: tests pass".into(), "alpha: docs updated".into()];
+    request.acceptance_bindings = vec![bound(1, VerificationKind::Test)];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("create reordered work");
+    assert_eq!(
+        work.acceptance,
+        vec!["alpha: docs updated", "zeta: tests pass"]
+    );
+    assert_eq!(work.acceptance_bindings.len(), 1);
+    assert_eq!(work.acceptance_bindings[0].criterion, 2);
+    let opened = store
+        .work_run_obligations(work.active_run_id.expect("active run"))
+        .expect("obligations");
+    assert_eq!(
+        opened[0].obligation.rule.rule_id,
+        "acceptance_criterion_requires_verification:2"
+    );
+    // A position past the list as typed refuses before any effect.
+    request.idempotency_key = "create-overbound-work".into();
+    request.acceptance_bindings = vec![bound(3, VerificationKind::Test)];
+    let refused = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect_err("a binding past the list");
+    assert!(
+        matches!(&refused, StoreError::InvalidWork(reason) if reason.contains("names criterion 3")),
+        "{refused:?}"
+    );
+}

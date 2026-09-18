@@ -140,6 +140,7 @@ fn phoenix_note_under_completed_parent_survives_snapshot_and_rebuild() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),

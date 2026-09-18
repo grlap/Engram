@@ -33,6 +33,7 @@ fn populated(path: &Path) {
     let item = store
         .create_work(
             &CreateWorkRequest {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 project_id: project.clone(),
                 parent_id: None,
@@ -811,6 +812,7 @@ fn staged_pending_delivery(database: &Path) -> (ProjectId, crate::SessionId) {
     );
     peer.work_propose(
         crate::work_service::WorkProposeInput::Root {
+            acceptance_bindings: Vec::new(),
             evaluation_mode: None,
             external_ref: None,
             notes: Vec::new(),
@@ -830,6 +832,7 @@ fn staged_pending_delivery(database: &Path) -> (ProjectId, crate::SessionId) {
     service
         .work_propose(
             crate::work_service::WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),

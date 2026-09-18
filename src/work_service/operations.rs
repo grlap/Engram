@@ -20,6 +20,10 @@ pub enum WorkProposeInput {
         title: String,
         outcome: String,
         acceptance: Vec<String>,
+        /// Criteria bound to typed verification requirements, by one-based
+        /// position in `acceptance`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        acceptance_bindings: Vec<crate::domain::AcceptanceBinding>,
         work_kind: Option<WorkItemKind>,
         priority: Option<i32>,
         #[serde(default)]
@@ -53,6 +57,10 @@ pub struct WorkChildInput {
     pub title: String,
     pub outcome: String,
     pub acceptance: Vec<String>,
+    /// Criteria bound to typed verification requirements, by one-based
+    /// position in `acceptance`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acceptance_bindings: Vec<crate::domain::AcceptanceBinding>,
     pub requirement: Option<ChildRequirement>,
     pub kind: Option<WorkItemKind>,
     pub priority: Option<i32>,

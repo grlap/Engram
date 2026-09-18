@@ -64,6 +64,7 @@ fn mutation_receipts_keep_one_item_and_measure_the_same_core_fixture() {
         .service
         .work_propose(
             WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
@@ -361,6 +362,7 @@ fn continuation_headers_reduce_same_row_bytes_and_fixed_backlog_page_count() {
                 UpdateInput {
                     work_ref: Some(work.into()),
                     action: UpdateAction::Revise {
+                        bindings: None,
                         clear_external: false,
                         external: None,
                         title: None,

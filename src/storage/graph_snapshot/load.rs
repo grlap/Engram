@@ -1123,6 +1123,9 @@ fn insert_prepared_load_on(
             restored: true,
             superseded_by: snapshot.superseded_by,
             evaluation_mode: snapshot.evaluation_mode,
+            // An inert planning snapshot carries no verification bindings; a
+            // restored item's criteria are judged as authored.
+            acceptance_bindings: Vec::new(),
             created_by: actor.clone(),
             created_at: loaded_at,
             updated_at: loaded_at,

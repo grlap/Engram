@@ -430,6 +430,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let root = match a
         .work_propose(
             WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
@@ -462,6 +463,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let concurrent = match b
         .work_propose(
             WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
@@ -822,6 +824,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let replacement = match b
         .work_propose(
             WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
@@ -847,6 +850,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     let obsolete = match b
         .work_propose(
             WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),

@@ -11,6 +11,7 @@ mod single_root;
 
 fn task(key: &str, parent: Option<&str>) -> WorkPlanTask {
     WorkPlanTask {
+        bindings: Vec::new(),
         key: key.into(),
         parent_key: parent.map(str::to_owned),
         title: format!("Task {key}"),

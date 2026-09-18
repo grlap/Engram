@@ -828,6 +828,7 @@ fn allowed_next_tags_become_commands_and_host_only_entries_vanish() {
 )]
 fn drop_prerequisite_guidance_requires_plan_authority_and_a_dead_target() {
     let summary = |index: u128, lifecycle| crate::work_service::WorkItemSummary {
+        acceptance_bindings: Vec::new(),
         current_status: None,
         status_observation: None,
         external_ref: None,

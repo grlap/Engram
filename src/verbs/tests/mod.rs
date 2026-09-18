@@ -47,6 +47,7 @@ fn at(second: i64) -> DateTime<Utc> {
 
 fn root_input(title: &str, key: &str) -> WorkProposeInput {
     WorkProposeInput::Root {
+        acceptance_bindings: Vec::new(),
         evaluation_mode: None,
         external_ref: None,
         notes: Vec::new(),

@@ -224,6 +224,7 @@ fn recovery_cause(result: Result<CompletionSeal, StoreError>) -> WorkCompletionR
 
 fn empty_patch() -> WorkRevisionPatch {
     WorkRevisionPatch {
+        acceptance_bindings: None,
         external_ref: None,
         clear_external: false,
         title: None,
@@ -2259,4 +2260,183 @@ fn a_newer_non_passing_record_blocks_an_older_pass() {
             AcceptanceVerdict::Pass => unreachable!(),
         }
     }
+}
+
+// A criterion bound to typed verification passes only on an observed basis
+// citing host-minted verification of that kind with a passed result; judgment
+// and an asserted gate are refused for it and stay available to the free-text
+// criterion beside it.
+#[test]
+fn a_bound_criterion_passes_only_on_observed_verification_of_its_kind() {
+    let mut fixture = fixture("project-bound-evaluation");
+    let claim = fixture.claim.clone();
+    let work = revise(
+        &mut fixture.store,
+        &fixture.work,
+        &claim,
+        WorkRevisionPatch {
+            acceptance: Some(vec!["run tests".into(), "write docs".into()]),
+            acceptance_bindings: Some(vec![crate::domain::AcceptanceBinding {
+                criterion: 1,
+                requirement: crate::domain::VerificationRequirement {
+                    check_kind: VerificationKind::Test,
+                    check_fingerprint: None,
+                    required_environment: None,
+                },
+            }]),
+            ..empty_patch()
+        },
+        "bind-criterion",
+        5,
+    )
+    .expect("bind the first criterion");
+    enable(
+        &mut fixture.store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-bound-evaluation",
+        6,
+    );
+    let generic = fixture.evidence.clone();
+    let gate = gate(&mut fixture.store, &work, &claim, "runner", "tests", &[], 7);
+
+    let through = cut(&fixture.store, &work);
+    let judgment = refusal(record(
+        &mut fixture.store,
+        &request(
+            &work,
+            through,
+            "runner",
+            Mode::SameSession,
+            vec![
+                verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&generic),
+                ),
+                verdict(
+                    2,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&generic),
+                ),
+            ],
+            8,
+        ),
+    ));
+    assert!(
+        judgment.contains("criterion 1 is bound to test verification"),
+        "{judgment}"
+    );
+
+    let through = cut(&fixture.store, &work);
+    let asserted = refusal(record(
+        &mut fixture.store,
+        &request(
+            &work,
+            through,
+            "runner",
+            Mode::SameSession,
+            vec![
+                verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Asserted,
+                    std::slice::from_ref(&gate),
+                ),
+                verdict(
+                    2,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&generic),
+                ),
+            ],
+            9,
+        ),
+    ));
+    assert!(
+        asserted.contains("criterion 1 is bound to test verification"),
+        "{asserted}"
+    );
+
+    let build = host_verification(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "build-check",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        10,
+    );
+    let through = cut(&fixture.store, &work);
+    let wrong_kind = refusal(record(
+        &mut fixture.store,
+        &request(
+            &work,
+            through,
+            "runner",
+            Mode::SameSession,
+            vec![
+                verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Observed,
+                    std::slice::from_ref(&build),
+                ),
+                verdict(
+                    2,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&generic),
+                ),
+            ],
+            11,
+        ),
+    ));
+    assert!(
+        wrong_kind.contains("is not passed host-minted verification evidence of that kind"),
+        "{wrong_kind}"
+    );
+
+    let test = host_verification(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "test-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        12,
+    );
+    let through = cut(&fixture.store, &work);
+    let accepted = record(
+        &mut fixture.store,
+        &request(
+            &work,
+            through,
+            "runner",
+            Mode::SameSession,
+            vec![
+                verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Observed,
+                    std::slice::from_ref(&test),
+                ),
+                verdict(
+                    2,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    &[generic],
+                ),
+            ],
+            13,
+        ),
+    )
+    .expect("an observed test verification passes the bound criterion");
+    assert!(accepted.record.all_pass());
+    assert_eq!(accepted.record.verdicts[0].evidence, vec![test]);
 }

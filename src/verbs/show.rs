@@ -225,6 +225,9 @@ pub(super) struct ShowWorkSummary {
     pub(super) acceptance: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acceptance_omitted: Option<usize>,
+    /// Criteria bound to typed host verification, by the positions above.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) acceptance_bindings: Vec<crate::domain::AcceptanceBinding>,
     pub(super) kind: WorkItemKind,
     pub(super) priority: i32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -431,6 +434,23 @@ fn assurance_word(assurance: crate::domain::AssuranceLevel) -> String {
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))
         .unwrap_or_default()
+}
+
+/// What a bound criterion says beside its text: the verification kind the
+/// host must observe, and whether an exact check is required.
+pub(super) fn binding_note(requirement: &crate::domain::VerificationRequirement) -> String {
+    let kind = match requirement.check_kind {
+        crate::domain::VerificationKind::Test => "test",
+        crate::domain::VerificationKind::Build => "build",
+        crate::domain::VerificationKind::Lint => "lint",
+        crate::domain::VerificationKind::Review => "review",
+        crate::domain::VerificationKind::Acceptance => "acceptance",
+    };
+    if requirement.check_fingerprint.is_some() {
+        format!("  [requires host {kind} verification of one exact check]")
+    } else {
+        format!("  [requires host {kind} verification]")
+    }
 }
 
 pub(super) fn show_evaluation(
@@ -821,13 +841,24 @@ pub(super) fn show_lines(
     }
     for (position, criterion) in work.acceptance.iter().enumerate() {
         let safe = super::terminal_data_block(criterion);
+        let bound = work
+            .acceptance_bindings
+            .iter()
+            .find(|binding| binding.criterion == position + 1)
+            .map(|binding| binding_note(&binding.requirement));
+        let last = safe.split('\n').count().saturating_sub(1);
         for (index, line) in safe.split('\n').enumerate() {
             let prefix = if index == 0 {
                 format!("  {}. ", position + 1)
             } else {
                 "    ".into()
             };
-            lines.push(format!("{prefix}{line}"));
+            let suffix = if index == last {
+                bound.as_deref().unwrap_or("")
+            } else {
+                ""
+            };
+            lines.push(format!("{prefix}{line}{suffix}"));
         }
     }
     if work.acceptance_count > work.acceptance.len() {
@@ -1105,6 +1136,7 @@ pub(super) fn show_receipt_value(
                 acceptance: work.acceptance.clone(),
                 acceptance_omitted: (work.acceptance_count > work.acceptance.len())
                     .then(|| work.acceptance_count - work.acceptance.len()),
+                acceptance_bindings: work.acceptance_bindings.clone(),
                 kind: work.kind,
                 priority: work.priority,
                 labels: work.labels.clone(),

@@ -309,6 +309,7 @@ fn listing_cursor_refuses_deferral_and_handoff_time_boundaries() {
                     UpdateInput {
                         work_ref: Some(first),
                         action: UpdateAction::Revise {
+                            bindings: None,
                             clear_external: false,
                             external: None,
                             title: None,

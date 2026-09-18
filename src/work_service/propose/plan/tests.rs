@@ -9,6 +9,7 @@ fn plan(count: usize) -> WorkPlanInput {
         idempotency_key: "atomic-plan".into(),
         tasks: (0..count)
             .map(|index| WorkPlanTask {
+                bindings: Vec::new(),
                 key: format!("k{index:03}{}", "x".repeat(60)),
                 parent_key: None,
                 title: format!("Task {index}"),

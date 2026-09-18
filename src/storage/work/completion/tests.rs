@@ -3,6 +3,7 @@ use super::super::test_support::*;
 use super::super::*;
 use super::*;
 
+mod bindings;
 mod obligations;
 
 #[test]

@@ -2,6 +2,7 @@ use super::*;
 
 fn revise(acceptance: Option<Vec<String>>, title: Option<&str>) -> UpdateAction {
     UpdateAction::Revise {
+        bindings: None,
         clear_external: false,
         external: None,
         acceptance,
@@ -89,6 +90,7 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
                 UpdateInput {
                     work_ref: Some(work_ref.clone()),
                     action: UpdateAction::Revise {
+                        bindings: None,
                         clear_external: false,
                         external: None,
                         title: Some("After".into()),
@@ -466,4 +468,86 @@ fn phoenix_only_list_counts_and_zero_row_guidance_names_the_first_match() {
     );
     assert!(serde_json::to_vec(&listed.value).expect("json").len() <= budget);
     assert!(listed.text().len() <= budget);
+}
+
+#[test]
+fn a_binding_travels_from_add_to_show_and_a_bare_acceptance_replacement_drops_it() {
+    let directory = crate::test_support::temp_home().expect("temp");
+    let verbs = AgentVerbs::new(
+        directory.path().join("bindings.db"),
+        ProjectId("bindings".into()),
+        "agent".into(),
+        SessionId("agent".into()),
+        None,
+    );
+    let added = verbs
+        .add(
+            AddInput {
+                title: "Bound work".into(),
+                acceptance: vec!["run tests".into(), "write docs".into()],
+                bindings: vec!["1=test".into()],
+                ..AddInput::default()
+            },
+            at(0),
+        )
+        .expect("add with a binding");
+    let work_ref = added.value["work"]["short_ref"]
+        .as_str()
+        .expect("ref")
+        .to_owned();
+    let shown = verbs.show(&work_ref, at(1)).expect("show");
+    assert!(
+        shown
+            .text()
+            .contains("1. run tests  [requires host test verification]"),
+        "{}",
+        shown.text()
+    );
+    assert!(
+        !shown.text().contains("write docs  [requires"),
+        "{}",
+        shown.text()
+    );
+    assert!(
+        serde_json::to_string(&shown.value)
+            .expect("json")
+            .contains("acceptance_bindings"),
+        "the structured receipt carries the binding"
+    );
+
+    // A binding outside the list, or in no readable shape, refuses before any
+    // effect.
+    for bindings in [vec!["2=test".to_owned()], vec!["1=magic".to_owned()]] {
+        let refused = verbs.add(
+            AddInput {
+                title: "Badly bound".into(),
+                acceptance: vec!["one criterion".into()],
+                bindings,
+                ..AddInput::default()
+            },
+            at(2),
+        );
+        assert!(refused.is_err());
+    }
+
+    // Replacing the acceptance list without restating the bindings drops
+    // them, and the receipt says so.
+    let updated = verbs
+        .update(
+            UpdateInput {
+                work_ref: Some(work_ref.clone()),
+                action: revise(Some(vec!["run tests".into()]), None),
+            },
+            at(3),
+        )
+        .expect("replace the acceptance list");
+    assert!(
+        updated.text().contains("drops its verification bindings"),
+        "{}",
+        updated.text()
+    );
+    let shown = verbs
+        .show(&work_ref, at(4))
+        .expect("show after the replacement");
+    assert!(!shown.text().contains("requires host"), "{}", shown.text());
 }

@@ -493,6 +493,7 @@ fn prerequisite_summary_preserves_states_and_public_omission_reasons() {
     let item = |index: u128| {
         let work_id = WorkId(uuid::Uuid::from_u128(index));
         WorkItem {
+            acceptance_bindings: Vec::new(),
             external_ref: None,
             schema_version: SCHEMA_VERSION,
             project_id: ProjectId("prerequisite-summary".into()),
@@ -655,6 +656,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         reason: "pin the agent projection boundary".into(),
     };
     let work = WorkItem {
+        acceptance_bindings: Vec::new(),
         external_ref: None,
         schema_version: SCHEMA_VERSION,
         project_id: ProjectId("projection-project".into()),
@@ -787,6 +789,7 @@ fn oversized_ready_item_degrades_to_one_progress_making_summary() {
         reason: "exercise bounded ready delivery".into(),
     };
     let work = WorkItem {
+        acceptance_bindings: Vec::new(),
         external_ref: None,
         schema_version: SCHEMA_VERSION,
         project_id: ProjectId("bounded-prefix".into()),
@@ -1164,6 +1167,7 @@ fn required_child_waiver_guidance_is_exact_and_carries_an_actionable_child() {
                 children: ["disposed", "open"]
                     .into_iter()
                     .map(|key| WorkChildInput {
+                        acceptance_bindings: Vec::new(),
                         evaluation_mode: None,
                         external_ref: None,
                         notes: Vec::new(),
@@ -1267,6 +1271,7 @@ fn focus_bounds_repeated_direct_decomposition_at_the_root_open_work_limit() {
                 WorkProposeInput::Decompose {
                     children: (0..16)
                         .map(|index| WorkChildInput {
+                            acceptance_bindings: Vec::new(),
                             evaluation_mode: None,
                             external_ref: None,
                             notes: Vec::new(),

@@ -166,9 +166,9 @@ engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
 engram work show REF --note HASH[:INDEX]  # complete immutable note detail
-engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
+engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
-engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --title "..." | --kind KIND | --label L | --unlabel L]
+engram work update REF [--release | --blocked "why" | --unblock | --cancel "why" | --reject "why" | --after OTHER | --drop-after OTHER | --waive CHILD --reason "why" | --supersede-with NEW --reason "why" | --assignee A | --priority N | --defer DATE | --accept "criterion"... | --bind POSITION=KIND[:FINGERPRINT]... | --title "..." | --kind KIND | --label L | --unlabel L]
 engram work gate NAME [--work-ref REF] [--failed FAILURE]... [--ref opaque-reference]
 engram work note [REF] "What you found or decided" [--ref path-or-url]
 engram work done ["What was delivered"] [--link POSITION=LOCATOR --link-basis N]
@@ -527,6 +527,19 @@ Rules that matter:
   bulk content as a reference. Initial-note batches remain atomic. Existing
   larger bodies remain readable through `--note`; read validation adds no
   retroactive limit. Default terse notes retain their existing summary shape.
+- `--bind POSITION=KIND[:FINGERPRINT]` (MCP `bindings`) on `add` and `update`
+  binds the criterion at that one-based position to host verification of
+  that kind (`test`, `build`, `lint`, `review` or `acceptance`), optionally of
+  one exact check record. Positions count the list as typed; `show` numbers
+  the stored list and marks each bound criterion `[requires host KIND
+  verification]`. A bound criterion opens a typed obligation on the item's
+  run, so `done` refuses until the host has minted passing verification
+  evidence of that kind, a newer failed check of that kind contradicts it,
+  and under an evaluated policy its pass needs an `observed` basis citing
+  that evidence — never judgment or a gate record. Revision changes the
+  requirement: `--accept` without `--bind` drops the bindings and the receipt
+  says so; a dropped binding's obligation is waived in the revising actor's
+  name, a new one opens from that revision.
 - `update REF --accept "criterion"...` replaces the whole acceptance list in
   one attributed revision. Omission preserves it; empty lists and any blank
   criterion are refused. The core trims, sorts, and deduplicates criteria.

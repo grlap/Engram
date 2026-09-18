@@ -131,10 +131,16 @@ struct AttemptFingerprint<'a> {
 }
 
 enum Citation {
-    VerificationPassed,
+    VerificationPassed {
+        kind: crate::domain::VerificationKind,
+        check_fingerprint: ObjectHash,
+    },
     VerificationOther,
     Environment,
-    Gate { name: String, passed: bool },
+    Gate {
+        name: String,
+        passed: bool,
+    },
     Note,
 }
 
@@ -853,6 +859,23 @@ fn bind_verdicts(
                 format!("criterion {} has no verdict", index + 1),
             )
         })?;
+        let binding = item
+            .acceptance_bindings
+            .iter()
+            .find(|binding| binding.criterion == index + 1);
+        if let Some(binding) = binding
+            && input.verdict == AcceptanceVerdict::Pass
+            && input.basis != AcceptanceBasis::Observed
+        {
+            return Err(refused(
+                item.work_id,
+                format!(
+                    "criterion {} is bound to {} verification: a pass needs an observed basis citing host-minted verification evidence of that kind with a passed result, never judgment or an asserted gate",
+                    index + 1,
+                    super::planning::encode_state(binding.requirement.check_kind)?
+                ),
+            ));
+        }
         let mut evidence = input.evidence.clone();
         evidence.sort();
         evidence.dedup();
@@ -880,6 +903,25 @@ fn bind_verdicts(
             }
             if input.verdict == AcceptanceVerdict::Pass {
                 admit_pass_citation(item.work_id, index + 1, input.basis, policy, &citation)?;
+                if let Some(binding) = binding {
+                    let matches = matches!(&citation, Citation::VerificationPassed { kind, check_fingerprint }
+                        if *kind == binding.requirement.check_kind
+                            && binding
+                                .requirement
+                                .check_fingerprint
+                                .as_ref()
+                                .is_none_or(|required| required == check_fingerprint));
+                    if !matches {
+                        return Err(refused(
+                            item.work_id,
+                            format!(
+                                "criterion {} is bound to {} verification; {hash} is not passed host-minted verification evidence of that kind",
+                                index + 1,
+                                super::planning::encode_state(binding.requirement.check_kind)?
+                            ),
+                        ));
+                    }
+                }
             }
         }
         bound.push(CriterionVerdict {
@@ -902,7 +944,7 @@ fn admit_pass_citation(
 ) -> Result<(), StoreError> {
     match basis {
         AcceptanceBasis::Observed => match citation {
-            Citation::VerificationPassed => Ok(()),
+            Citation::VerificationPassed { .. } => Ok(()),
             _ => Err(refused(
                 work,
                 format!(
@@ -967,7 +1009,10 @@ fn classify_citation(
                 )));
             }
             if evidence.result == VerificationResult::Passed {
-                Citation::VerificationPassed
+                Citation::VerificationPassed {
+                    kind: evidence.check_kind,
+                    check_fingerprint: evidence.check_fingerprint,
+                }
             } else {
                 Citation::VerificationOther
             }

@@ -33,6 +33,10 @@ pub struct WorkPlanTask {
     pub title: String,
     pub outcome: String,
     pub acceptance: Vec<String>,
+    /// Criteria bound to typed verification requirements, by one-based
+    /// position in `acceptance`.
+    #[serde(default)]
+    pub bindings: Vec<WorkPlanBinding>,
     pub requirement: Option<ChildRequirement>,
     pub kind: Option<WorkItemKind>,
     pub priority: Option<i32>,
@@ -43,6 +47,19 @@ pub struct WorkPlanTask {
     pub external_ref: Option<String>,
     #[serde(default)]
     pub notes: Vec<String>,
+}
+
+/// One criterion of a plan task bound to a typed verification requirement.
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkPlanBinding {
+    /// One-based position in the task's `acceptance`.
+    pub criterion: usize,
+    pub check_kind: super::VerificationKind,
+    /// An exact check fingerprint to require, as a stored record id; omit to
+    /// accept any check of the kind.
+    #[serde(default)]
+    pub check_fingerprint: Option<String>,
 }
 
 /// Direction: `work_key` requires the named prerequisite to complete first.

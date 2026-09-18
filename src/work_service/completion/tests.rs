@@ -26,6 +26,7 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
     service
         .work_propose(
             WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),
@@ -540,6 +541,7 @@ fn keyless_completion_rechecks_required_children_until_the_parent_seals() {
                 ]
                 .into_iter()
                 .map(|(key, requirement)| WorkChildInput {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),
@@ -811,6 +813,7 @@ fn refused_explicit_completion_stays_target_bound_and_rotates_with_holder_claim_
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),
@@ -936,6 +939,7 @@ fn refused_explicit_completion_cannot_refresh_across_work_revision() {
         .work_propose(
             WorkProposeInput::Decompose {
                 children: vec![WorkChildInput {
+                    acceptance_bindings: Vec::new(),
                     evaluation_mode: None,
                     external_ref: None,
                     notes: Vec::new(),
@@ -1034,6 +1038,7 @@ fn capture_completion_rejects_bad_acceptance_without_substeps() {
     let root = match service
         .work_propose(
             WorkProposeInput::Root {
+                acceptance_bindings: Vec::new(),
                 evaluation_mode: None,
                 external_ref: None,
                 notes: Vec::new(),

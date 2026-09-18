@@ -578,6 +578,11 @@ enum WorkCommand {
         /// Defaults to one criterion "<title> is done".
         #[arg(long = "accept", value_name = "CRITERION")]
         acceptance: Vec<String>,
+        /// Bind a criterion to typed host verification: POSITION=KIND[:FINGERPRINT],
+        /// kind test, build, lint, review or acceptance; repeatable. A bound
+        /// criterion passes only on host-observed verification of that kind.
+        #[arg(long = "bind", value_name = "POSITION=KIND")]
+        bindings: Vec<String>,
         /// Add as a child of this item instead of a root.
         #[arg(long, value_name = "REF")]
         under: Option<String>,
@@ -1508,6 +1513,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
             title,
             outcome,
             acceptance,
+            bindings,
             under,
             optional,
             priority,
@@ -1522,6 +1528,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 title,
                 outcome,
                 acceptance,
+                bindings,
                 under,
                 optional,
                 priority,
@@ -1560,6 +1567,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 outcome,
                 kind,
                 acceptance,
+                bindings,
                 labels,
                 unlabels,
                 cancel,
@@ -1583,6 +1591,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 || title.is_some()
                 || outcome.is_some()
                 || acceptance.is_some()
+                || bindings.is_some()
                 || kind.is_some()
                 || !labels.is_empty()
                 || !unlabels.is_empty();
@@ -1600,7 +1609,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 + usize::from(revise);
             if selected != 1 {
                 bail!(
-                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, --evaluation-mode MODE, --clear-evaluation-mode, or field changes (--title, --outcome, --accept, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
+                    "update needs exactly one action: --release, --blocked WHY, --unblock, --cancel REASON, --reject REASON, --detach REASON, --after REF, --drop-after REF, --waive REF --reason WHY, --supersede-with REF --reason WHY, --evaluation-mode MODE, --clear-evaluation-mode, or field changes (--title, --outcome, --accept, --bind, --assignee, --external, --clear-external, --priority, --defer, --kind, --label, --unlabel)"
                 );
             }
             let action = if release {
@@ -1648,6 +1657,7 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                     title,
                     outcome,
                     acceptance,
+                    bindings,
                     assignee,
                     priority,
                     defer,
@@ -2162,6 +2172,11 @@ struct WorkUpdateArgs {
     /// Replace the whole acceptance list; repeat for multiple criteria.
     #[arg(long = "accept", value_name = "CRITERION", action = ArgAction::Append, num_args = 1)]
     acceptance: Option<Vec<String>>,
+    /// Replace the criteria bound to typed host verification, as
+    /// POSITION=KIND[:FINGERPRINT]; repeatable. Omitted while --accept replaces
+    /// the list, the bindings are cleared; omitted otherwise, unchanged.
+    #[arg(long = "bind", value_name = "POSITION=KIND", action = ArgAction::Append, num_args = 1)]
+    bindings: Option<Vec<String>>,
     /// Add a label; repeatable.
     #[arg(long = "label", value_name = "LABEL")]
     labels: Vec<String>,

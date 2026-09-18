@@ -107,6 +107,27 @@ explicit integer ordered by project policy and is user/policy-authorized by
 default; models do not silently reprioritize the backlog. Work kind and labels
 are typed/indexed fields, and children inherit configured labels.
 
+An acceptance criterion may be **bound** to a typed verification requirement:
+a `VerificationKind` (`test`, `build`, `lint`, `review`, `acceptance`) and,
+optionally, one exact check record. Bindings are authored with the criteria
+(`add`/`update --bind POSITION=KIND[:FINGERPRINT]`, a plan task's
+`bindings`), name criteria by one-based position in the list as typed, and
+are stored in the item beside the list `show` numbers. A bound criterion is
+enforced through the existing typed obligations: creating, claiming or
+revising the item opens one `WorkObligation` per binding on the item's run,
+triggered by that planning event; host-minted `VerificationEvidence` of the
+bound kind (and pinned check) with a passed result satisfies it, with or
+without a source mutation on the run; `done` refuses while it is open, and
+refuses when the newest verification of that kind at the completion cut did
+not pass, since a later failure outranks an earlier pass; the seal binds the
+obligation and the criterion cites the satisfying record when the completion
+cites it. Under an evaluated policy a bound criterion passes only on an
+`observed` basis citing that evidence — never judgment or an asserted gate.
+A revision that drops a binding waives its obligation in the revising actor's
+name and one that adds a binding opens the obligation from that revision;
+`--accept` without `--bind` drops every binding, and the receipt says so.
+Free-text criteria are judged as before.
+
 ### Root execution and work run
 
 A `RootExecution` is the aggregate execution generation for one root work

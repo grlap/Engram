@@ -132,6 +132,7 @@ impl LocalWorkService {
                 title,
                 outcome,
                 acceptance,
+                acceptance_bindings,
                 work_kind,
                 priority,
                 labels,
@@ -165,6 +166,7 @@ impl LocalWorkService {
                 }
                 let work = store.create_work(
                     &CreateWorkRequest {
+                        acceptance_bindings,
                         external_ref,
                         notes,
                         project_id: self.project_id.clone(),
@@ -215,6 +217,7 @@ impl LocalWorkService {
                     let children = children
                         .into_iter()
                         .map(|child| ChildWorkDraft {
+                            acceptance_bindings: child.acceptance_bindings,
                             external_ref: child.external_ref,
                             notes: child.notes,
                             local_key: child.key,
