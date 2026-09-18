@@ -132,8 +132,7 @@ fn a_store_round_trips_row_for_row_and_is_healthy() {
     );
 
     let target = directory.path().join("target.db");
-    let imported = import_json(&file, &target).expect("import");
-    assert_eq!(imported.replaced_retired_ids, 0);
+    import_json(&file, &target).expect("import");
 
     let before = rows(&source);
     let mut after = rows(&target);
@@ -339,161 +338,44 @@ fn a_broken_reference_between_rows_is_refused() {
 }
 
 #[test]
-fn retired_ids_convert_only_in_reference_slots_and_the_retired_tables_are_not_carried() {
+fn a_store_of_the_previous_design_is_refused_by_name() {
     let directory = crate::test_support::temp_home().expect("directory");
     let source = directory.path().join("source.db");
     populated(&source);
-    let old = "a".repeat(64);
-    let (current, kept_count) = {
+    {
+        // The shape the previous design left behind: its id-pair table beside a
+        // copy of every pre-migration record. Nothing in this build knows them,
+        // so they are unknown tables like any other, and the build kept beside
+        // the old-format backups is the one that reads them.
         let connection = Connection::open(&source).expect("source");
-        let current: String = connection
-            .query_row(
-                "SELECT object_hash FROM objects WHERE object_kind = 'work_event' LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .expect("an event");
-        // The shape the retired design left behind: its tables, one binding
-        // record, and a stored replay result that still names the retired id.
-        // The protocol result holds that id in two reference slots, in authored
-        // prose, and in a field that is no reference slot; the observation holds
-        // it under the same field name but is a kind with no slot at all.
-        let body = format!(
-            "{{\"evidence\":{{\"result\":\"{old}\"}},\"note\":\"I checked {old} by hand\",\"opaque\":\"{old}\",\"seal\":\"{old}\"}}"
-        );
         connection
-            .execute_batch(&format!(
-                "CREATE TABLE migration_original_objects (object_hash TEXT PRIMARY KEY, body BLOB);
-                 INSERT INTO migration_original_objects VALUES ('{old}', x'00');
-                 CREATE TABLE migration_object_map (
-                     source_hash TEXT PRIMARY KEY, target_hash TEXT NOT NULL, binding_hash TEXT NOT NULL);
-                 INSERT INTO objects (object_hash, object_kind, canonical_json)
-                     VALUES ('{binding}', 'migration_object_binding', CAST('{{}}' AS BLOB));
-                 INSERT INTO migration_object_map VALUES ('{old}', '{current}', '{binding}');
-                 INSERT INTO objects (object_hash, object_kind, canonical_json)
-                     VALUES ('{result}', 'work_protocol_result', CAST('{body}' AS BLOB));
-                 INSERT INTO objects (object_hash, object_kind, canonical_json)
-                     VALUES ('{other}', 'test_replay_result',
-                             CAST('{{\"seal\":\"{old}\"}}' AS BLOB));",
-                binding = "b".repeat(64),
-                result = "c".repeat(64),
-                other = "d".repeat(64),
-            ))
-            .expect("retired fixture");
-        let kept: i64 = connection
-            .query_row(
-                "SELECT COUNT(*) FROM objects WHERE object_kind != 'migration_object_binding'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("count");
-        (current, kept)
-    };
-
-    let file = directory.path().join("export.jsonl");
-    let exported = export_json(&source, &file).expect("export");
-    assert!(
-        exported
-            .left_out
-            .iter()
-            .any(|left| left.name == "migration_original_objects" && left.rows == 1)
-    );
-    let written = fs::read_to_string(&file).expect("file");
-    assert!(!written.contains("migration_original_objects\",\"values"));
-
-    let target = directory.path().join("target.db");
-    let imported = import_json(&file, &target).expect("import");
-    // Exactly the two reference slots, and nothing else.
-    assert_eq!(imported.replaced_retired_ids, 2);
-    let connection = Connection::open(&target).expect("target");
-    let stored = |kind: &str| -> Json {
-        let text: String = connection
-            .query_row(
-                "SELECT CAST(canonical_json AS TEXT) FROM objects WHERE object_kind = ?1",
-                [kind],
-                |row| row.get(0),
-            )
-            .expect("stored record");
-        serde_json::from_str(&text).expect("json")
-    };
-    let result = stored("work_protocol_result");
-    assert_eq!(result["seal"], current);
-    assert_eq!(result["evidence"]["result"], current);
-    // Authored prose, and a field that is not a reference slot, keep their exact
-    // bytes even though they read like an id.
-    assert_eq!(result["note"], format!("I checked {old} by hand"));
-    assert_eq!(result["opaque"], old);
-    // A record kind with no reference slot is untouched.
-    assert_eq!(stored("test_replay_result")["seal"], old);
-
-    let objects: i64 = connection
-        .query_row("SELECT COUNT(*) FROM objects", [], |row| row.get(0))
-        .expect("count");
-    assert_eq!(objects, kept_count);
-    let retired: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE 'migration%'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("schema");
-    assert_eq!(retired, 0);
-}
-
-#[test]
-fn a_retired_id_converts_inside_a_replay_result_that_was_not_stored_canonically() {
-    let directory = crate::test_support::temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    populated(&source);
-    let old = "a".repeat(64);
-    let current = {
-        let connection = Connection::open(&source).expect("source");
-        let current: String = connection
-            .query_row(
-                "SELECT object_hash FROM objects WHERE object_kind = 'work_event' LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .expect("an event");
-        // A note receipt whose keys are in authored rather than canonical order
-        // travels as text, and a checkpoint result is a bare stored value.
-        connection
-            .execute_batch(&format!(
+            .execute_batch(
                 "CREATE TABLE migration_object_map (
                      source_hash TEXT PRIMARY KEY, target_hash TEXT NOT NULL, binding_hash TEXT NOT NULL);
-                 INSERT INTO migration_object_map VALUES ('{old}', '{current}', '{current}');
-                 INSERT INTO work_operation_results (operation, idempotency_key, request_hash, result_json)
-                     VALUES ('work_note', 'retired-note', '{current}',
-                             CAST('{{\"non_holder\":true,\"evidence\":\"{old}\"}}' AS BLOB));
-                 INSERT INTO work_operation_results (operation, idempotency_key, request_hash, result_json)
-                     VALUES ('work_checkpoint', 'bare-id', '{current}',
-                             CAST('\"{old}\"' AS BLOB));"
-            ))
-            .expect("retired replay fixture");
-        current
-    };
-
-    let file = directory.path().join("export.jsonl");
-    export_json(&source, &file).expect("export");
-    let target = directory.path().join("target.db");
-    let imported = import_json(&file, &target).expect("import");
-    assert_eq!(imported.replaced_retired_ids, 1);
-    let connection = Connection::open(&target).expect("target");
-    let result = |key: &str| -> String {
-        connection
-            .query_row(
-                "SELECT CAST(result_json AS TEXT) FROM work_operation_results
-                 WHERE idempotency_key = ?1",
-                [key],
-                |row| row.get(0),
+                 INSERT INTO migration_object_map VALUES ('old', 'current', 'binding');
+                 CREATE TABLE migration_original_objects (object_hash TEXT PRIMARY KEY, body BLOB);
+                 INSERT INTO migration_original_objects VALUES ('old', x'00');",
             )
-            .expect("replay result")
-    };
-    let note: Json = serde_json::from_str(&result("retired-note")).expect("json");
-    assert_eq!(note["evidence"], current);
-    assert_eq!(note["non_holder"], Json::Bool(true));
-    // A bare stored value is no declared reference slot, so it is untouched.
-    assert_eq!(result("bare-id"), format!("\"{old}\""));
+            .expect("previous-design fixture");
+    }
+    let file = directory.path().join("export.jsonl");
+    let exported = export_json(&source, &file).expect("export writes the source as it is");
+    assert!(
+        exported
+            .tables
+            .iter()
+            .any(|table| table.name == "migration_object_map" && table.rows == 1),
+        "export carries the table like any other"
+    );
+    let target = directory.path().join("target.db");
+    let error = import_json(&file, &target).expect_err("a table of the previous design");
+    assert!(
+        matches!(&error, MigrationError::Refused(reason)
+            if reason.starts_with("table migration_")
+                && reason.contains("has no place in the current format")),
+        "{error}"
+    );
+    assert!(!target.exists(), "nothing was published");
 }
 
 #[test]
@@ -1083,14 +965,15 @@ fn assert_replays_without_acknowledging(
 }
 
 #[test]
-fn a_staged_page_that_omits_its_attribution_has_it_supplied_once_from_source_state() {
+fn a_staged_page_that_omits_the_attribution_the_source_proves_is_refused() {
     let directory = crate::test_support::temp_home().expect("directory");
     let source = directory.path().join("source.db");
-    let (project, session) = staged_pending_delivery(&source);
+    staged_pending_delivery(&source);
     let (id, mut payload) = pending_payload(&source);
-    // The state a store converted by the retired design can hold: the page
-    // omits the attribution bit, because a separate audit recorded it. That
-    // audit no longer exists, and the current reader rejects the absent bit.
+    // A page that leaves out the bit saying a change is the session's own reads
+    // as claiming it is not, which the record contradicts. Nothing is supplied
+    // on its behalf: the page is refused before publication, exactly as the
+    // next retry would refuse it.
     let mut stripped = 0;
     for change in payload["changes"].as_array_mut().expect("changes") {
         if change
@@ -1105,74 +988,16 @@ fn a_staged_page_that_omits_its_attribution_has_it_supplied_once_from_source_sta
     assert!(stripped > 0, "the fixture needs an own-session change");
     write_pending_payload(&source, &id, &payload);
 
-    let before_transfer = source_pending(&source);
     let file = directory.path().join("export.jsonl");
     export_json(&source, &file).expect("export");
-    let export_bytes = fs::read(&file).expect("export bytes");
     let target = directory.path().join("target.db");
-    let imported = import_json(&file, &target).expect("import supplies the omitted field");
-    assert_eq!(imported.checked_pending_deliveries, 1);
-    assert_eq!(imported.materialized_pending_attributions, 1);
-
-    // The field is now in the page itself, and the page is admitted exactly as
-    // stored by the reader that had rejected it.
-    let (_, admitted) = pending_payload(&target);
-    let own = admitted["changes"]
-        .as_array()
-        .expect("changes")
-        .iter()
-        .filter(|change| change["from_current_session"] == Json::Bool(true))
-        .count();
-    assert_eq!(own, stripped, "exactly the omitted bits are supplied");
+    let error = import_json(&file, &target).expect_err("omitted attribution");
     assert!(
-        admitted["changes"]
-            .as_array()
-            .expect("changes")
-            .iter()
-            .any(|change| change["from_current_session"] != Json::Bool(true)),
-        "a peer change stays a peer change"
+        matches!(&error, MigrationError::Refused(reason)
+            if reason.contains("pending-session") && reason.contains("attribution differs")),
+        "{error}"
     );
-    // Only the page changed: the cursors and the delivery capability it was
-    // issued under came across from the source and survive the replay.
-    assert_transfer_keeps_pending_state(
-        &Transfer {
-            source: &source,
-            export: &file,
-            export_bytes_before: &export_bytes,
-            target: &target,
-            project: &project,
-            session: &session,
-        },
-        &before_transfer,
-        &admitted,
-    );
-
-    // The same replay path refuses the page as it stood before import supplied
-    // the field, which is what makes the materialization the cause.
-    let (confirmed, _, _) = pending_state(&source);
-    let unrepaired = crate::work_service::LocalWorkService::new(
-        source.clone(),
-        project,
-        "author".into(),
-        session,
-        None,
-    );
-    let refused = unrepaired
-        .work_next_with_delivery_token(
-            20,
-            Some(confirmed),
-            None,
-            crate::work_service::WorkNextQuery::default(),
-            chrono::DateTime::parse_from_rfc3339("2026-09-17T11:00:00Z")
-                .expect("time")
-                .with_timezone(&Utc),
-        )
-        .expect_err("the omitted field is refused before it is supplied");
-    assert!(
-        matches!(&refused, crate::StoreError::InvalidWorkProjection(reason)
-            if reason.contains("attribution differs")),
-        "{refused}"
-    );
+    assert!(!target.exists(), "nothing was published");
 }
 
 #[test]
@@ -1219,106 +1044,6 @@ fn write_pending_payload(path: &Path, id: &str, payload: &Json) {
         )
         .expect("rewrite the staged page");
     assert_eq!(changed, 1);
-}
-
-/// Builds a stored value holding `id` at `path`, beside a sibling that reads
-/// exactly like an id but is authored text.
-fn value_at(path: &str, id: &str) -> Json {
-    let mut steps: Vec<&str> = path.split('.').collect();
-    let last = steps.pop().expect("a path has a field");
-    let mut value = match last.strip_suffix("[]") {
-        Some(field) => serde_json::json!({field: [id], "note": format!("about {id}")}),
-        None => serde_json::json!({last: id, "note": format!("about {id}")}),
-    };
-    while let Some(step) = steps.pop() {
-        value = match step.strip_suffix("[]") {
-            Some(field) => serde_json::json!({field: [value], "note": format!("about {id}")}),
-            None => serde_json::json!({step: value, "note": format!("about {id}")}),
-        };
-    }
-    value
-}
-
-/// Reads back the id `value_at` placed at `path`.
-fn id_at(value: &Json, path: &str) -> Json {
-    let mut here = value;
-    for step in path.split('.') {
-        here = match step.strip_suffix("[]") {
-            Some(field) => &here[field][0],
-            None => &here[step],
-        };
-    }
-    here.clone()
-}
-
-#[test]
-fn every_declared_reference_slot_converts_and_its_neighbours_do_not() {
-    let old = "a".repeat(64);
-    let current = "b".repeat(64);
-    let ids = HashMap::from([(old.clone(), current.clone())]);
-    assert!(
-        !RETIRED_REFERENCE_SLOTS.is_empty(),
-        "the declared slots are the whole conversion scope"
-    );
-    for slot in RETIRED_REFERENCE_SLOTS {
-        for path in slot.paths {
-            let mut replaced = 0;
-            let carried = convert_retired_references(
-                slot.table,
-                slot.kind,
-                slot.column,
-                serde_json::json!({ "json": value_at(path, &old) }),
-                &ids,
-                &mut replaced,
-            )
-            .expect("convert");
-            assert_eq!(replaced, 1, "{} {path}", slot.table);
-            let body = &carried["json"];
-            assert_eq!(id_at(body, path), Json::String(current.clone()), "{path}");
-            // Authored text beside the slot, at every level of the path, is
-            // untouched even though it contains the same id.
-            let mut here = body;
-            for step in path.split('.') {
-                assert_eq!(
-                    here["note"],
-                    Json::String(format!("about {old}")),
-                    "prose beside {path}"
-                );
-                here = match step.strip_suffix("[]") {
-                    Some(field) => &here[field][0],
-                    None => &here[step],
-                };
-            }
-
-            // The same value under another table, column or record kind is not
-            // a declared slot, so nothing in it changes.
-            let mut untouched = 0;
-            let other = convert_retired_references(
-                "some_other_table",
-                slot.kind,
-                slot.column,
-                serde_json::json!({ "json": value_at(path, &old) }),
-                &ids,
-                &mut untouched,
-            )
-            .expect("convert");
-            assert_eq!(untouched, 0, "{} {path}", slot.table);
-            assert_eq!(id_at(&other["json"], path), Json::String(old.clone()));
-            if slot.kind.is_some() {
-                let mut wrong_kind = 0;
-                convert_retired_references(
-                    slot.table,
-                    Some("another_kind"),
-                    slot.column,
-                    serde_json::json!({ "json": value_at(path, &old) }),
-                    &ids,
-                    &mut wrong_kind,
-                )
-                .expect("convert");
-                assert_eq!(wrong_kind, 0, "{} {path}", slot.table);
-            }
-        }
-    }
 }
 
 #[test]

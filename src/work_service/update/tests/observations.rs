@@ -375,7 +375,6 @@ fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging()
         session.project_cursor,
         through,
         &mut page,
-        PendingDelivery::AsStored,
     )
     .unwrap();
     let mut wrong_session = page.clone();
@@ -388,7 +387,6 @@ fn phoenix_same_actor_peer_note_is_delivered_once_and_session_bound_in_staging()
             session.project_cursor,
             through,
             &mut wrong_session,
-            PendingDelivery::AsStored,
         )
         .is_err()
     );

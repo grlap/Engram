@@ -31,24 +31,6 @@ const FORMAT: &str = "engram-json-export";
 /// The new store keeps its own.
 const FORMAT_MARKER_TABLES: &[&str] = &["work_schema_metadata"];
 
-/// Tables of the retired design that kept every pre-migration record beside
-/// its converted form. Their rows are left out of an export.
-const RETIRED_TABLES: &[&str] = &[
-    "migration_source_manifest",
-    "migration_original_objects",
-    "migration_original_rows",
-    "migration_reexpressed_results",
-    "migration_delivery_attribution",
-];
-
-/// The retired design's old-id to new-id pairs. An export carries them so that
-/// import can replace the pre-migration ids still recorded in replay results;
-/// the table itself has no place in the current format.
-const RETIRED_ID_MAP: &str = "migration_object_map";
-
-/// Records that existed only to bind one retired old-id to new-id pair.
-const RETIRED_OBJECT_KIND: &str = "migration_object_binding";
-
 /// Columns the current format retired, as (table, column). Export writes them
 /// as the source holds them; import names each one it met, with the number of
 /// values it carried, and stores nothing for it. Any other column the current
@@ -146,17 +128,12 @@ pub struct ImportReport {
     pub rows: u64,
     pub tables: Vec<TableRows>,
     pub left_out: Vec<LeftOut>,
-    /// Occurrences of a retired pre-migration id replaced by its current id.
-    pub replaced_retired_ids: u64,
     pub checked_objects: usize,
     pub checked_control_records: usize,
     pub checked_work_records: usize,
     /// Session rows carrying any part of a pending delivery, each read before
     /// publication the way the next retry reads it.
     pub checked_pending_deliveries: u64,
-    /// Those pages whose attribution this import supplied once from verified
-    /// source state, because the retired audit that held it is gone.
-    pub materialized_pending_attributions: u64,
     /// Retired columns the file carried, each with the values it held.
     pub retired_fields: Vec<RetiredField>,
 }
@@ -517,18 +494,7 @@ pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, Migratio
             reason: "search index; import rebuilds it".into(),
         });
     }
-    let mut copied = Vec::new();
-    for table in tables {
-        if RETIRED_TABLES.contains(&table.name.as_str()) {
-            left_out.push(LeftOut {
-                rows: count(&connection, &table.name)?,
-                name: table.name,
-                reason: "retired copy of pre-migration records".into(),
-            });
-        } else {
-            copied.push(table);
-        }
-    }
+    let copied = tables;
     let has_sequences: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = 'sqlite_sequence')",
         [],
@@ -620,163 +586,6 @@ pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, Migratio
     })
 }
 
-/// The record references a retained protocol receipt can name.
-const PROTOCOL_RESULT_PATHS: &[&str] = &[
-    "seal",
-    "evidence.result",
-    "receipt.result",
-    "focus.history.items[].entry.object_hash",
-    "focus.evidence_items[].evidence",
-];
-
-/// One place where a store converted by the retired design may still name a
-/// pre-migration id, as the stored column and the path inside its JSON.
-struct ReferenceSlot {
-    table: &'static str,
-    /// The record kind, where one table holds records of several kinds.
-    kind: Option<&'static str>,
-    column: &'static str,
-    /// Field names from the stored root; `[]` means every item of an array.
-    paths: &'static [&'static str],
-}
-
-/// Every reference slot a converted store can still hold. Nothing outside this
-/// list is rewritten, so an authored note body, a content fingerprint or an
-/// opaque key that happens to read like an id keeps its exact bytes.
-const RETIRED_REFERENCE_SLOTS: &[ReferenceSlot] = &[
-    // A staged delivery page names the record at each feed position it carries.
-    ReferenceSlot {
-        table: "work_session_state",
-        kind: None,
-        column: "tentative_delivery_payload",
-        paths: &["changes[].entry.object_hash"],
-    },
-    // A retained protocol attempt replays the receipt it returned.
-    ReferenceSlot {
-        table: "work_protocol_attempts",
-        kind: None,
-        column: "result_json",
-        paths: PROTOCOL_RESULT_PATHS,
-    },
-    ReferenceSlot {
-        table: "objects",
-        kind: Some("work_protocol_result"),
-        column: "canonical_json",
-        paths: PROTOCOL_RESULT_PATHS,
-    },
-    // A retained operation result replays the record a note produced.
-    ReferenceSlot {
-        table: "work_operation_results",
-        kind: None,
-        column: "result_json",
-        paths: &["evidence"],
-    },
-];
-
-/// Rewrites a retired id at `path` and nowhere else. A slot holds one id or an
-/// array of them; anything else at the path is left exactly as it is.
-fn replace_at_path(
-    value: &mut Json,
-    path: &str,
-    ids: &HashMap<String, String>,
-    replaced: &mut u64,
-) {
-    let (step, rest) = match path.split_once('.') {
-        Some((step, rest)) => (step, Some(rest)),
-        None => (path, None),
-    };
-    let (field, every_item) = match step.strip_suffix("[]") {
-        Some(field) => (field, true),
-        None => (step, false),
-    };
-    let Some(target) = value.get_mut(field) else {
-        return;
-    };
-    let reached: Vec<&mut Json> = if every_item {
-        match target.as_array_mut() {
-            Some(items) => items.iter_mut().collect(),
-            None => return,
-        }
-    } else {
-        vec![target]
-    };
-    for value in reached {
-        match rest {
-            Some(rest) => replace_at_path(value, rest, ids, replaced),
-            None => replace_reference(value, ids, replaced),
-        }
-    }
-}
-
-fn replace_reference(value: &mut Json, ids: &HashMap<String, String>, replaced: &mut u64) {
-    match value {
-        Json::String(id) => {
-            if let Some(current) = ids.get(id.as_str()) {
-                *id = current.clone();
-                *replaced += 1;
-            }
-        }
-        Json::Array(items) => {
-            for item in items {
-                replace_reference(item, ids, replaced);
-            }
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => {}
-    }
-}
-
-/// Converts the retired ids this stored value holds in its reference slots,
-/// and nothing else. A value outside every slot is returned untouched.
-fn convert_retired_references(
-    table: &str,
-    kind: Option<&str>,
-    column: &str,
-    mut value: Json,
-    ids: &HashMap<String, String>,
-    replaced: &mut u64,
-) -> Result<Json, MigrationError> {
-    if ids.is_empty() {
-        return Ok(value);
-    }
-    let paths = RETIRED_REFERENCE_SLOTS
-        .iter()
-        .filter(|slot| {
-            slot.table == table
-                && slot.column == column
-                && (slot.kind.is_none() || slot.kind == kind)
-        })
-        .flat_map(|slot| slot.paths.iter().copied())
-        .collect::<Vec<_>>();
-    if paths.is_empty() {
-        return Ok(value);
-    }
-    let Json::Object(blob) = &mut value else {
-        return Ok(value);
-    };
-    if let Some(nested) = blob.get_mut("json") {
-        for path in paths {
-            replace_at_path(nested, path, ids, replaced);
-        }
-    } else if let Some(Json::String(text)) = blob.get_mut("text") {
-        // A replay result that was not stored in canonical form. Its bytes are
-        // never compared — it is only ever decoded — so it is rewritten
-        // compactly when a reference inside it changes.
-        let mut nested: Json = serde_json::from_str(text).map_err(|error| {
-            refused(format!(
-                "a reference slot of table {table} column {column} does not hold JSON: {error}"
-            ))
-        })?;
-        let before = *replaced;
-        for path in paths {
-            replace_at_path(&mut nested, path, ids, replaced);
-        }
-        if *replaced != before {
-            *text = serde_json::to_string(&nested)?;
-        }
-    }
-    Ok(value)
-}
-
 fn lines(
     file: &Path,
 ) -> Result<impl Iterator<Item = Result<Line, MigrationError>>, MigrationError> {
@@ -796,34 +605,6 @@ fn header_of(file: &Path) -> Result<Header, MigrationError> {
     }
 }
 
-/// The retired old-id to new-id pairs the file carries, if any.
-fn retired_ids(file: &Path, header: &Header) -> Result<HashMap<String, String>, MigrationError> {
-    let mut ids = HashMap::new();
-    if !header
-        .tables
-        .iter()
-        .any(|table| table.name == RETIRED_ID_MAP)
-    {
-        return Ok(ids);
-    }
-    for line in lines(file)? {
-        if let Line::Row { table, values } = line?
-            && table == RETIRED_ID_MAP
-            && let (Some(Json::String(old)), Some(Json::String(current))) =
-                (values.get("source_hash"), values.get("target_hash"))
-            && old != current
-        {
-            ids.insert(old.clone(), current.clone());
-        }
-    }
-    Ok(ids)
-}
-
-fn is_retired_object(table: &str, values: &serde_json::Map<String, Json>) -> bool {
-    table == "objects"
-        && values.get("object_kind").and_then(Json::as_str) == Some(RETIRED_OBJECT_KIND)
-}
-
 /// Creates a new store at `out` in the current format from an export file.
 ///
 /// Rows go in by column name under the ids they already have. A table or
@@ -839,7 +620,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         return Err(refused("import destination already exists"));
     }
     let header = header_of(file)?;
-    let ids = retired_ids(file, &header)?;
 
     // The reserved file is private from the moment it exists, and SQLite keeps
     // an existing file's permissions — including on the journals it creates
@@ -860,15 +640,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     let mut left_out = header.left_out.clone();
     let mut retired_fields: Vec<RetiredField> = Vec::new();
     for table in &header.tables {
-        if table.name == RETIRED_ID_MAP {
-            left_out.push(LeftOut {
-                name: table.name.clone(),
-                rows: table.rows,
-                reason: "retired id pairs; applied to the records that still named an old id"
-                    .into(),
-            });
-            continue;
-        }
         if FORMAT_MARKER_TABLES.contains(&table.name.as_str()) {
             left_out.push(LeftOut {
                 name: table.name.clone(),
@@ -911,8 +682,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         tables.push(table.clone());
     }
 
-    let mut replaced = 0_u64;
-    let mut retired_objects = 0_u64;
     let mut seen = 0_u64;
     let mut ended = None;
     for line in lines(file)?.skip(1) {
@@ -924,10 +693,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             }
             Line::Row { table, mut values } => {
                 seen += 1;
-                if is_retired_object(&table, &values) {
-                    retired_objects += 1;
-                    continue;
-                }
                 let Some((insert, columns, retired, inserted)) = inserts.get_mut(&table) else {
                     if header.tables.iter().any(|declared| declared.name == table) {
                         continue;
@@ -945,23 +710,11 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                         field.values += 1;
                     }
                 }
-                let kind = values
-                    .get("object_kind")
-                    .and_then(Json::as_str)
-                    .map(str::to_owned);
                 let mut row = Vec::with_capacity(columns.len());
                 for column in columns.iter() {
                     let value = values.remove(column).ok_or_else(|| {
                         refused(format!("a row of table {table} lacks column {column}"))
                     })?;
-                    let value = convert_retired_references(
-                        &table,
-                        kind.as_deref(),
-                        column,
-                        value,
-                        &ids,
-                        &mut replaced,
-                    )?;
                     row.push(decode(value).map_err(|error| match error {
                         MigrationError::Refused(reason) => refused(format!(
                             "column {column} of a row of table {table}: {reason}"
@@ -989,29 +742,14 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         .into_iter()
         .map(|(name, (_, _, _, rows))| (name, rows))
         .collect::<HashMap<_, _>>();
-    for table in &mut tables {
+    for table in &tables {
         let inserted = inserted[&table.name];
-        let retired = if table.name == "objects" {
-            retired_objects
-        } else {
-            0
-        };
-        if inserted + retired != table.rows {
+        if inserted != table.rows {
             return Err(refused(format!(
                 "table {} declares {} rows but the file holds {}",
-                table.name,
-                table.rows,
-                inserted + retired
+                table.name, table.rows, inserted
             )));
         }
-        table.rows = inserted;
-    }
-    if retired_objects > 0 {
-        left_out.push(LeftOut {
-            name: format!("objects of kind {RETIRED_OBJECT_KIND}"),
-            rows: retired_objects,
-            reason: "retired id-pair records".into(),
-        });
     }
     restore_sequences(&transaction, &header.sequences, &inserted)?;
     transaction.commit()?;
@@ -1025,7 +763,7 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     // Rebuilds the search indexes and runs the full doctor; an unhealthy
     // result is an error that names the records.
     let report = SqliteStore::repair_rebuildable_projections(&staged.path)?;
-    let (pending, materialized) = admit_pending_deliveries(&staged.path)?;
+    let pending = admit_pending_deliveries(&staged.path)?;
     let checkpoint = Connection::open(&staged.path)?;
     checkpoint.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
     checkpoint.close().map_err(|(_, error)| error)?;
@@ -1038,12 +776,10 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         rows: tables.iter().map(|table| table.rows).sum(),
         tables,
         left_out,
-        replaced_retired_ids: replaced,
         checked_objects: report.checked_objects,
         checked_control_records: report.checked_control_records,
         checked_work_records: report.checked_work_records,
         checked_pending_deliveries: pending,
-        materialized_pending_attributions: materialized,
         retired_fields,
     })
 }
@@ -1127,13 +863,11 @@ fn restore_sequences(
 /// cursor it already confirmed, and the doctor does not look at one. Every
 /// session row that carries any part of a pending delivery is read the way that
 /// retry reads it, so a row the file left with its cursor, token and payload
-/// not present together is refused here, by session, and never published. A
-/// page from a store converted by the retired design can omit the attribution
-/// the retired audit recorded separately; that field is supplied once here from
-/// verified source state, in the page itself, keeping the delivery capability
-/// it already issued. A page current source state contradicts is refused
-/// instead, so it cannot reach a published store where that retry would fail.
-fn admit_pending_deliveries(path: &Path) -> Result<(u64, u64), MigrationError> {
+/// not present together, or a page that disagrees with current source state
+/// about what the session's own changes are, is refused here, by session, and
+/// never reaches a published store where that retry would fail. Nothing is
+/// supplied or rewritten on a page's behalf.
+fn admit_pending_deliveries(path: &Path) -> Result<u64, MigrationError> {
     let store = SqliteStore::open_unresolved(path)?;
     let pending: Vec<(String, String)> = store
         .connection
@@ -1148,7 +882,6 @@ fn admit_pending_deliveries(path: &Path) -> Result<(u64, u64), MigrationError> {
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?;
     let checked = u64::try_from(pending.len()).unwrap_or(u64::MAX);
-    let mut materialized = 0;
     for (project, session) in pending {
         let project_id = crate::ProjectId(project.clone());
         let session_id = crate::SessionId(session.clone());
@@ -1165,46 +898,19 @@ fn admit_pending_deliveries(path: &Path) -> Result<(u64, u64), MigrationError> {
         ) else {
             continue;
         };
-        let confirmed = state.project_cursor;
-        let supplied = crate::work_service::read_pending_delivery(
+        crate::work_service::read_pending_delivery(
             &store,
-            &crate::SessionId(session.clone()),
-            &crate::ProjectId(project.clone()),
-            confirmed,
+            &session_id,
+            &project_id,
+            state.project_cursor,
             through,
             &payload,
-            crate::work_service::PendingDelivery::Materialized,
         )
         .map_err(|error| {
             refused(format!(
                 "the delivery page staged for session {session} of project {project} is not one this build can admit: {error}"
             ))
         })?;
-        let Some(page) = supplied else {
-            continue;
-        };
-        let page = serde_json_canonicalizer::to_vec(&page)?;
-        store.connection.execute(
-            "UPDATE work_session_state SET tentative_delivery_payload = ?3
-             WHERE project_id = ?1 AND session_id = ?2",
-            rusqlite::params![project, session, page],
-        )?;
-        materialized += 1;
-        // The page must now be admissible exactly as it is stored.
-        crate::work_service::read_pending_delivery(
-            &store,
-            &crate::SessionId(session.clone()),
-            &crate::ProjectId(project.clone()),
-            confirmed,
-            through,
-            &page,
-            crate::work_service::PendingDelivery::AsStored,
-        )
-        .map_err(|error| {
-            refused(format!(
-                "the delivery page staged for session {session} of project {project} is still not admissible after its attribution was supplied: {error}"
-            ))
-        })?;
     }
-    Ok((checked, materialized))
+    Ok(checked)
 }

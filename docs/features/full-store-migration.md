@@ -94,12 +94,13 @@ Anything else is refused with the table, column or record named, and no output
 file exists afterwards. A refusal names the place and the shape it met, never
 the value in a cell: the file holds private bodies, and a refusal reaches the
 operator's terminal. A table or column that the current format has no place
-for is never dropped in silence. When a format change retires one, the importer
-names it explicitly: a retired table appears in the report as left out with its
-row count, and a retired column appears under `retired_fields` with the number
-of values it carried, its rows having gone in without it. Any other unknown
-column still refuses by name. Today one column is retired: a fingerprint of the
-staged delivery page that nothing compared.
+for is never dropped in silence. The one exception is a column this build has
+explicitly retired, named in its retired-column list: it appears in the report
+under `retired_fields` with the number of values it carried, its rows having
+gone in without it. Any other unknown table or column refuses by name. Today
+one column is retired: a fingerprint of the staged delivery page that nothing
+compared. A store written by a design this build no longer knows is refused
+the same way; the build that still reads it is kept beside its backups.
 
 The store's own format marker is not imported; the new store keeps its own.
 Delivery bookkeeping that projection repair is allowed to discard starts empty,
@@ -121,46 +122,20 @@ of a pending delivery the way that retry reads it, before publishing anything.
 A row the file left with its cursor, its delivery token and its page not
 present together is refused by session, since that retry could not read it.
 
-A page from a store converted by the retired design can omit the attribution
-that says a change came from the receiving session, because that design recorded
-it in a separate audit table. That table is gone. Import supplies the field once
-from verified source state, writing it into the page itself; the page's bytes
-change, while the delivery capability it already issued does not, so the
-acknowledgement the session holds still binds. The report counts the pages
-checked and the pages whose attribution had to be supplied.
-
-Only an omitted field is supplied. A page that claims a change came from the
-receiving session when the record names another one says more than the source
-supports, and is refused by name instead. After decoding, an omitted field and a
-stored `false` are the same thing, so only that direction can be contradicted.
+The page must say what the source says about which of its changes are the
+receiving session's own. A page that claims a change the record attributes to
+another session, or leaves out the attribution the record proves, is refused
+by session; nothing is supplied or rewritten on its behalf. The report counts
+the session rows checked.
 
 ### Changing the format
 
 A format change edits the schema in place and teaches import the difference:
 a renamed column is mapped, a reshaped record is rewritten from its nested JSON
-under its existing id, a retired table is named as left out. There is no
-profile detection, no archive format, and no chain of versions to maintain.
-
-### Stores converted by the retired design
-
-An earlier design derived a record's id from a hash of its bytes, so a changed
-record got a new id and every link to it had to be rewritten. It kept every
-pre-migration record beside its converted form, with a table of old-id to
-new-id pairs, and resolved old ids at read time.
-
-Export leaves those retired copies out. It carries only the id pairs, and
-import uses them once, in a named list of reference slots: the stored column and
-the path inside its JSON where a converted store can still hold a
-pre-migration id. A reference there is replaced with the current id. Everything
-else keeps its exact bytes — an authored note body, a content fingerprint, an
-opaque key, a field outside the list, a record of another kind — even where it
-reads exactly like an id. That list is the whole scope of the conversion: it was
-derived from what the two real converted stores actually hold, which is evidence
-for those stores rather than a proof that no other store could differ.
-
-The pairs, and the records that existed only to bind them, are then left out.
-The import report counts the replacements. After one import the store holds no
-trace of the retired design, and the product has no read-time resolver.
+under its existing id, a retired column is named in the retired-column list.
+There is no profile detection, no archive format, and no chain of versions to
+maintain. What the current build cannot name, it refuses, and the operator
+converts with the last build that could.
 
 ## Operator workflow
 

@@ -59,7 +59,11 @@ fn migration_cli_exports_and_imports_explicit_files_without_project_or_active_ho
         String::from_utf8_lossy(&first.stderr)
     );
     let report: serde_json::Value = serde_json::from_slice(&first.stdout).expect("report");
-    assert_eq!(report["replaced_retired_ids"], 0);
+    assert!(
+        report["tables"]
+            .as_array()
+            .is_some_and(|tables| !tables.is_empty())
+    );
     let store = engram::SqliteStore::open_unresolved(&imported).expect("imported store opens");
     assert!(store.verify_all().expect("doctor").is_healthy());
     drop(store);
