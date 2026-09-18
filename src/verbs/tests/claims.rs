@@ -60,7 +60,7 @@ fn claim_under_holds_the_next_ready_child_and_names_its_place() {
     assert_eq!(claimed.value["claim"]["holder"], "you");
     assert_eq!(
         claimed.value["under"],
-        serde_json::json!({"parent_ref": root, "position": 1, "ready": 3, "renewed": false})
+        serde_json::json!({"parent_ref": root, "position": 1, "ready_count": 3, "renewed": false})
     );
 
     // A second session is handed the next child, never the held one.
@@ -90,7 +90,7 @@ fn claim_under_holds_the_next_ready_child_and_names_its_place() {
         renewed.text()
     );
     assert_eq!(renewed.value["under"]["renewed"], true);
-    assert_eq!(renewed.value["under"]["ready"], 1);
+    assert_eq!(renewed.value["under"]["ready_count"], 1);
 
     // With nothing ready the call refuses at the parent and holds nothing.
     let three = session(directory.path(), "three");

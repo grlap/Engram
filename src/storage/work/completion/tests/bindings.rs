@@ -338,22 +338,22 @@ fn bindings_are_read_from_the_shell_form_and_admitted_against_the_list() {
     assert_eq!(parsed.criterion, 2);
     assert_eq!(parsed.requirement.check_kind, VerificationKind::Test);
     assert_eq!(parsed.requirement.check_fingerprint, None);
-    let pinned = AcceptanceBinding::parse(&format!("1=build:{}", "a".repeat(32))).expect("pinned");
+    let fingerprint = check_fingerprint("pinned");
+    let pinned =
+        AcceptanceBinding::parse(&format!("1=build:{}", fingerprint.as_str())).expect("pinned");
     assert_eq!(pinned.requirement.check_kind, VerificationKind::Build);
-    assert_eq!(
-        pinned
-            .requirement
-            .check_fingerprint
-            .as_ref()
-            .map(ObjectHash::as_str),
-        Some("a".repeat(32).as_str())
-    );
+    assert_eq!(pinned.requirement.check_fingerprint, Some(fingerprint));
     for text in ["test", "0=test", "x=test", "1=magic", "1=test:not-an-id"] {
         assert!(
             AcceptanceBinding::parse(text).is_err(),
             "{text:?} must be refused"
         );
     }
+    // A minted record id has the shape of no command fingerprint: pinning one
+    // could never be satisfied, so it is refused where it is authored.
+    let record_id = AcceptanceBinding::parse(&format!("1=test:{}", "a".repeat(32)))
+        .expect_err("a record id is not a check fingerprint");
+    assert!(record_id.contains("not a record id"), "{record_id}");
     let sorted = crate::domain::normalize_acceptance_bindings(
         3,
         &[
@@ -382,6 +382,296 @@ fn bindings_are_read_from_the_shell_form_and_admitted_against_the_list() {
         crate::domain::normalize_acceptance_bindings(1, &[bound(2, VerificationKind::Test)])
             .expect_err("outside the list");
     assert!(outside.contains("names criterion 2"), "{outside}");
+}
+
+#[test]
+fn a_bound_child_opens_its_obligations_when_the_parent_is_decomposed() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let root = store
+        .create_work(
+            &root_request("project-bound-child", "root", 0),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("root");
+    let mut first = child("first", ChildRequirement::Required, "First");
+    first.acceptance = vec!["run tests".into(), "write docs".into()];
+    first.acceptance_bindings = vec![
+        bound(1, VerificationKind::Test),
+        bound(2, VerificationKind::Review),
+    ];
+    let plain = child("plain", ChildRequirement::Required, "Plain");
+    let decomposition = store
+        .decompose_work(
+            &DecomposeWorkRequest {
+                parent_id: root.work_id,
+                expected_parent_revision: root.revision,
+                children: vec![first, plain],
+                prerequisites: Vec::new(),
+                authority: delegated(&root.project_id.0, "planner"),
+                actor: actor("planner"),
+                idempotency_key: "decompose-bound".into(),
+                created_at: at(1),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("decompose");
+    let run_of = |title: &str| {
+        decomposition
+            .children
+            .iter()
+            .find(|child| child.title == title)
+            .and_then(|child| child.active_run_id)
+            .expect("child run")
+    };
+    let opened = store
+        .work_run_obligations(run_of("First"))
+        .expect("obligations");
+    assert!(
+        opened
+            .iter()
+            .all(|record| record.state == WorkObligationState::Open)
+    );
+    let mut owed = opened
+        .iter()
+        .map(|record| {
+            format!(
+                "{} {:?}",
+                record.obligation.rule.rule_id, record.obligation.requirement.check_kind
+            )
+        })
+        .collect::<Vec<_>>();
+    owed.sort();
+    assert_eq!(
+        owed,
+        vec![
+            "acceptance_criterion_requires_verification:1 Test",
+            "acceptance_criterion_requires_verification:2 Review",
+        ]
+    );
+    assert!(
+        store
+            .work_run_obligations(run_of("Plain"))
+            .expect("obligations")
+            .is_empty()
+    );
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn a_pinned_binding_is_satisfied_only_by_the_check_it_pins() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let mut request = root_request("project-pinned-criterion", "create-pinned-work", 1);
+    request.acceptance = vec!["run tests".into()];
+    let mut pinned = bound(1, VerificationKind::Test);
+    pinned.requirement.check_fingerprint = Some(check_fingerprint("pinned-test"));
+    request.acceptance_bindings = vec![pinned];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("create pinned work");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-pinned", 2, 300);
+
+    // Another passing test is not the check the binding names.
+    host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "other-test",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+    assert_eq!(
+        store.work_run_obligations(run_id).expect("obligations")[0].state,
+        WorkObligationState::Open
+    );
+
+    let exact = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "pinned-test",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        4,
+    );
+    let terminal = store.work_run_obligations(run_id).expect("obligations");
+    assert_eq!(terminal.len(), 1);
+    assert!(matches!(
+        terminal[0].resolution.as_ref().map(|event| &event.resolution),
+        Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &exact
+    ));
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn rewriting_a_bound_criterion_owes_its_verification_again() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let work = bound_root(&mut store, "project-rewritten-criterion");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-rewritten", 2, 300);
+    host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "test-before-rewrite",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        3,
+    );
+    assert_eq!(
+        store.work_run_obligations(run_id).expect("obligations")[0].state,
+        WorkObligationState::Satisfied
+    );
+
+    // The sentence at position 1 changes and the binding is restated as it
+    // was: the pass recorded for the old sentence does not carry over.
+    let revised = revise_bound(
+        &mut store,
+        &work,
+        &claim,
+        Some(vec!["run all tests twice", "write docs"]),
+        Some(vec![bound(1, VerificationKind::Test)]),
+        "rewrite-bound-criterion",
+        4,
+    );
+    let after = store.work_run_obligations(run_id).expect("obligations");
+    assert_eq!(after.len(), 2);
+    let reopened = after
+        .iter()
+        .find(|record| record.state == WorkObligationState::Open)
+        .expect("the rewritten criterion owes its verification again");
+    assert_eq!(reopened.obligation.work_revision, revised.revision);
+    assert_eq!(
+        reopened.obligation.rule.rule_id,
+        "acceptance_criterion_requires_verification:1"
+    );
+
+    let claim = store
+        .current_work_claim(revised.work_id)
+        .expect("claim")
+        .expect("live claim");
+    let fresh = host_verification(
+        &mut store,
+        &revised,
+        &claim,
+        "runner",
+        "test-after-rewrite",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        5,
+    );
+    let terminal = store.work_run_obligations(run_id).expect("obligations");
+    assert!(
+        terminal
+            .iter()
+            .all(|record| { record.state == WorkObligationState::Satisfied })
+    );
+    assert!(terminal.iter().any(|record| matches!(
+        record.resolution.as_ref().map(|event| &event.resolution),
+        Some(WorkObligationResolution::Satisfied { evidence, .. }) if evidence == &fresh
+    )));
+    assert!(store.verify_all().expect("doctor").is_healthy());
+}
+
+#[test]
+fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_criterion() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let mut request = root_request("project-stale-verification", "create-stale-work", 1);
+    request.acceptance = vec!["build is clean".into(), "write docs".into()];
+    request.acceptance_bindings = vec![bound(1, VerificationKind::Build)];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("create bound work");
+    let run_id = work.active_run_id.expect("active run");
+    let claim = claim(&mut store, &work, "runner", "claim-stale", 2, 300);
+    let build = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "build-before",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        3,
+    );
+
+    // The source then changes. The builtin rule asks for a test, which is
+    // given; nothing asks for the build again, yet the build on record
+    // certifies code that has since moved.
+    source_mutation(&mut store, &work, &claim, "runner", "change", 4);
+    host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "change",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        5,
+    );
+    assert!(
+        store
+            .work_run_obligations(run_id)
+            .expect("obligations")
+            .iter()
+            .all(|record| record.state == WorkObligationState::Satisfied)
+    );
+    let generic = evidence(&mut store, &work, &claim, "runner", "generic-stale", 6);
+    let all = store.work_run_evidence(run_id).expect("run evidence");
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "checkpoint-stale",
+        7,
+        &all,
+    );
+    let mut stale = completion_request(&work, &claim, "runner", &generic, "complete-stale", 8);
+    stale.evidence.push(build.clone());
+    let refused = store.complete_work(&stale, &DevelopmentNoopRedactor);
+    let Err(StoreError::WorkCompletionRefused { reason, .. }) = refused else {
+        panic!("a build older than the latest source change must not seal: {refused:?}");
+    };
+    assert!(
+        reason.contains("criterion 1 requires build verification")
+            && reason.contains("predates the run's latest source change"),
+        "{reason}"
+    );
+
+    let rebuilt = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "build-after",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        9,
+    );
+    let all = store.work_run_evidence(run_id).expect("run evidence");
+    checkpoint(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "checkpoint-rebuilt",
+        10,
+        &all,
+    );
+    let mut fresh = completion_request(&work, &claim, "runner", &generic, "complete-rebuilt", 11);
+    fresh.evidence.push(rebuilt);
+    store
+        .complete_work(&fresh, &DevelopmentNoopRedactor)
+        .expect("a build after the change carries the criterion");
+    assert!(store.verify_all().expect("doctor").is_healthy());
 }
 
 #[test]

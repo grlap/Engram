@@ -531,16 +531,24 @@ Rules that matter:
 - `--bind POSITION=KIND[:FINGERPRINT]` (MCP `bindings`) on `add` and `update`
   binds the criterion at that one-based position to host verification of
   that kind (`test`, `build`, `lint`, `review` or `acceptance`), optionally of
-  one exact check record. Positions count the list as typed; `show` numbers
-  the stored list and marks each bound criterion `[requires host KIND
-  verification]`. A bound criterion opens a typed obligation on the item's
-  run, so `done` refuses until the host has minted passing verification
-  evidence of that kind, a newer failed check of that kind contradicts it,
-  and under an evaluated policy its pass needs an `observed` basis citing
-  that evidence — never judgment or a gate record. Revision changes the
-  requirement: `--accept` without `--bind` drops the bindings and the receipt
-  says so; a dropped binding's obligation is waived in the revising actor's
-  name, a new one opens from that revision.
+  one exact check. `FINGERPRINT` is that check's command fingerprint: the
+  64-hex `check_fingerprint` the host records on its verification evidence,
+  never a record id, which no evidence could match and which is refused where
+  it is typed. Positions follow the call: with `--accept` in the same call
+  they count the acceptance list as typed and are carried to the stored
+  order; `--bind` alone on `update` counts the stored list, as `show` numbers
+  it. `show` marks each bound criterion `[requires host KIND verification]`
+  and counts bound criteria behind a clipped list. A bound criterion opens a
+  typed obligation on the item's run, so `done` refuses until the host has
+  minted passing verification evidence of that kind; a newer failed check of
+  that kind contradicts it, and a check older than the run's latest observed
+  source change no longer carries it. Under an evaluated policy its pass
+  needs an `observed` basis citing that evidence — never judgment or a gate
+  record. Revision changes the requirement: `--accept` without `--bind` drops
+  the bindings and the receipt says so; a dropped binding's obligation is
+  waived in the revising actor's name, a new one opens from that revision,
+  and a criterion rewritten under an unchanged binding owes its verification
+  again.
 - `update REF --accept "criterion"...` replaces the whole acceptance list in
   one attributed revision. Omission preserves it; empty lists and any blank
   criterion are refused. The core trims, sorts, and deduplicates criteria.

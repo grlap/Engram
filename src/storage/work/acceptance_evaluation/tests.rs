@@ -2262,6 +2262,120 @@ fn a_newer_non_passing_record_blocks_an_older_pass() {
     }
 }
 
+// A binding that pins one check is met only by verification of that check:
+// another passing check of the same kind is not the evidence it names.
+#[test]
+fn a_pinned_bound_criterion_passes_only_on_the_check_it_pins() {
+    let mut fixture = fixture("project-pinned-evaluation");
+    let claim = fixture.claim.clone();
+    let work = revise(
+        &mut fixture.store,
+        &fixture.work,
+        &claim,
+        WorkRevisionPatch {
+            acceptance: Some(vec!["run tests".into(), "write docs".into()]),
+            acceptance_bindings: Some(vec![crate::domain::AcceptanceBinding {
+                criterion: 1,
+                requirement: crate::domain::VerificationRequirement {
+                    check_kind: VerificationKind::Test,
+                    check_fingerprint: Some(check_fingerprint("pinned-check")),
+                    required_environment: None,
+                },
+            }]),
+            ..empty_patch()
+        },
+        "pin-criterion",
+        5,
+    )
+    .expect("pin the first criterion");
+    enable(
+        &mut fixture.store,
+        &[Mode::SameSession],
+        MechanicalBasis::Asserted,
+        false,
+        "enable-pinned-evaluation",
+        6,
+    );
+    let generic = fixture.evidence.clone();
+
+    let other = host_verification(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "other-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        7,
+    );
+    let through = cut(&fixture.store, &work);
+    let wrong_check = refusal(record(
+        &mut fixture.store,
+        &request(
+            &work,
+            through,
+            "runner",
+            Mode::SameSession,
+            vec![
+                verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Observed,
+                    std::slice::from_ref(&other),
+                ),
+                verdict(
+                    2,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&generic),
+                ),
+            ],
+            8,
+        ),
+    ));
+    assert!(
+        wrong_check.contains("is not passed host-minted verification evidence of that kind"),
+        "{wrong_check}"
+    );
+
+    let exact = host_verification(
+        &mut fixture.store,
+        &work,
+        &claim,
+        "runner",
+        "pinned-check",
+        VerificationKind::Test,
+        VerificationResult::Passed,
+        9,
+    );
+    let through = cut(&fixture.store, &work);
+    record(
+        &mut fixture.store,
+        &request(
+            &work,
+            through,
+            "runner",
+            Mode::SameSession,
+            vec![
+                verdict(
+                    1,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Observed,
+                    std::slice::from_ref(&exact),
+                ),
+                verdict(
+                    2,
+                    AcceptanceVerdict::Pass,
+                    AcceptanceBasis::Judgment,
+                    std::slice::from_ref(&generic),
+                ),
+            ],
+            10,
+        ),
+    )
+    .expect("the pinned check passes the bound criterion");
+}
+
 // A criterion bound to typed verification passes only on an observed basis
 // citing host-minted verification of that kind with a passed result; judgment
 // and an asserted gate are refused for it and stay available to the free-text

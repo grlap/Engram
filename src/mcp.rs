@@ -152,8 +152,10 @@ struct AddArgs {
     /// criterion "<title> is done".
     acceptance: Option<Vec<String>>,
     /// Bind criteria to typed host verification, as `POSITION=KIND[:FINGERPRINT]`
-    /// (kind: test, build, lint, review or acceptance); a bound criterion passes
-    /// only on host-observed verification of that kind, never on judgment.
+    /// (kind: test, build, lint, review or acceptance; positions count the
+    /// acceptance list as typed; FINGERPRINT is a check's 64-hex command
+    /// fingerprint, never a record id); a bound criterion passes only on
+    /// host-observed verification of that kind, never on judgment.
     bindings: Option<Vec<String>>,
     /// Add as a child of this item instead of a root.
     under: Option<String>,
@@ -223,8 +225,11 @@ struct UpdateArgs {
     /// an empty list or blank criterion is refused.
     acceptance: Option<Vec<String>>,
     /// Replace the criteria bound to typed host verification for revise, as
-    /// `POSITION=KIND[:FINGERPRINT]`. Omitted while acceptance is replaced, the
-    /// bindings are cleared; omitted otherwise, they are unchanged.
+    /// `POSITION=KIND[:FINGERPRINT]`. Positions count the acceptance list as
+    /// typed when it is replaced in the same call, otherwise the stored list
+    /// as show numbers it; FINGERPRINT is a check's 64-hex command
+    /// fingerprint, never a record id. Omitted while acceptance is replaced,
+    /// the bindings are cleared; omitted otherwise, they are unchanged.
     bindings: Option<Vec<String>>,
     assignee: Option<String>,
     /// 0 (highest) through 4.
@@ -489,7 +494,10 @@ impl McpServer {
                 },
                 Utc::now(),
             ),
-            _ => Err(crate::StoreError::InvalidWork(
+            (None, None) => {
+                Err(crate::StoreError::InvalidWork("claim needs work_ref or under".into()).into())
+            }
+            (Some(_), Some(_)) => Err(crate::StoreError::InvalidWork(
                 "claim takes work_ref or under, not both".into(),
             )
             .into()),

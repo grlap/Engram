@@ -286,6 +286,7 @@ fn create_root_with_validation_on<R: Redactor>(
             &run,
             &event_hash,
             position,
+            &[],
             request.created_at,
         )?;
     }
@@ -552,6 +553,7 @@ impl SqliteStore {
         if let Some(outcome) = request.patch.outcome.as_deref() {
             item.outcome = normalize_text(outcome, "outcome")?;
         }
+        let authored_before = (item.acceptance.clone(), item.acceptance_bindings.clone());
         match (
             request.patch.acceptance.as_ref(),
             request.patch.acceptance_bindings.as_ref(),
@@ -576,6 +578,21 @@ impl SqliteStore {
             }
             (None, None) => {}
         }
+        // A criterion rewritten under an unchanged binding owes its
+        // verification again: the old obligation answered the old sentence.
+        let reauthored =
+            item.acceptance_bindings
+                .iter()
+                .filter(|binding| {
+                    authored_before.1.iter().any(|before| {
+                        before.criterion == binding.criterion
+                            && before.requirement == binding.requirement
+                    }) && binding.criterion.checked_sub(1).is_some_and(|index| {
+                        authored_before.0.get(index) != item.acceptance.get(index)
+                    })
+                })
+                .map(|binding| binding.criterion)
+                .collect::<Vec<_>>();
         if let Some(kind) = request.patch.kind {
             item.kind = kind;
         }
@@ -650,6 +667,7 @@ impl SqliteStore {
                 &transaction,
                 &item,
                 run_id,
+                &reauthored,
                 &request.actor,
                 request.updated_at,
             )?;
@@ -664,6 +682,7 @@ impl SqliteStore {
                     run,
                     &event_hash,
                     position,
+                    &reauthored,
                     request.updated_at,
                 )?;
             }
@@ -1213,6 +1232,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
                 run,
                 &event_hash,
                 position,
+                &[],
                 request.created_at,
             )?;
         }

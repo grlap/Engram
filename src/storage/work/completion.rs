@@ -1272,8 +1272,8 @@ fn load_work_obligation_record_on(
             "SELECT EXISTS(
                  SELECT 1 FROM work_feed_entries
                  WHERE feed_kind = 'run_execution' AND feed_id = ?1
-                   AND position = ?2 AND object_kind = ?4
-                   AND object_hash = ?3
+                   AND position = ?2 AND object_hash = ?3
+                   AND object_kind = ?4
              )",
             params![
                 obligation.run_id.0.to_string(),
@@ -1814,13 +1814,17 @@ pub(super) use crate::control::{
 /// does not already hold an obligation for, triggered by the planning event
 /// (creation, claim or revision) at `trigger_position`. An obligation waived
 /// by an earlier revision does not count as held: the binding was re-authored
-/// and opens again from this trigger. Returns the definitions opened.
+/// and opens again from this trigger. `reauthored` names the positions whose
+/// criterion this revision rewrote under an unchanged binding: an obligation
+/// an earlier revision opened there answers for the old sentence, so it does
+/// not count as held either. Returns the definitions opened.
 pub(super) fn open_binding_obligations_on(
     transaction: &Transaction<'_>,
     item: &WorkItem,
     run: &WorkRun,
     trigger: &ObjectHash,
     trigger_position: &FeedPosition,
+    reauthored: &[usize],
     now: DateTime<Utc>,
 ) -> Result<Vec<ObjectHash>, StoreError> {
     if item.acceptance_bindings.is_empty() {
@@ -1835,6 +1839,8 @@ pub(super) fn open_binding_obligations_on(
             record.obligation.rule == rule
                 && record.obligation.requirement == binding.requirement
                 && record.state != WorkObligationState::Waived
+                && !(reauthored.contains(&binding.criterion)
+                    && record.obligation.work_revision < item.revision)
         });
         if held {
             continue;
@@ -1863,9 +1869,11 @@ pub(super) fn open_binding_obligations_on(
 /// Holds each bound criterion to its obligation at the completion cut. The
 /// obligation is resolved there, or completion refused before this; a
 /// satisfied one is contradicted when the newest verification of its kind at
-/// the cut did not pass, since a later failed check outranks an earlier pass;
-/// and the sealed result for the criterion cites the evidence that satisfied
-/// it, so the seal says what the pass rested on.
+/// the cut did not pass, since a later failed check outranks an earlier pass,
+/// and is stale when that verification predates the run's latest observed
+/// source change, since it certifies code that has since moved; and the
+/// sealed result for the criterion cites the evidence that satisfied it, so
+/// the seal says what the pass rested on.
 fn bind_acceptance_to_obligations_on(
     connection: &Connection,
     item: &WorkItem,
@@ -1878,17 +1886,27 @@ fn bind_acceptance_to_obligations_on(
         return Ok(acceptance);
     }
     let records = load_work_obligation_records_on(connection, run_id, None)?;
+    let latest_mutation =
+        latest_source_mutation_on(connection, run_id, cut.position)?.map(|(position, _)| position);
     for binding in &item.acceptance_bindings {
+        let Some(index) = binding.criterion.checked_sub(1) else {
+            return Err(StoreError::InvalidWorkProjection(format!(
+                "work {} binds criterion 0; positions count from 1",
+                item.work_id.0
+            )));
+        };
         let rule = binding_rule(binding.criterion);
-        let satisfied = records
+        // The newest obligation speaks for the binding: one a revision opened
+        // again supersedes the record an earlier sentence satisfied.
+        let newest = records
             .iter()
             .filter(|record| {
                 record.obligation.rule == rule
                     && record.obligation.requirement == binding.requirement
-                    && record.state == WorkObligationState::Satisfied
             })
             .max_by_key(|record| record.obligation.trigger_position.position);
-        let Some(record) = satisfied else {
+        let Some(record) = newest.filter(|record| record.state == WorkObligationState::Satisfied)
+        else {
             // Waived by an authority the obligation path admitted; the seal
             // binds that waiver where it binds every obligation.
             continue;
@@ -1900,24 +1918,34 @@ fn bind_acceptance_to_obligations_on(
         else {
             continue;
         };
-        if let Some((newest, result)) =
+        if let Some((position, newest, result)) =
             newest_verification_of_kind_on(connection, run_id, &binding.requirement, cut)?
-            && result != crate::domain::VerificationResult::Passed
         {
-            return Err(StoreError::WorkCompletionRefused {
-                work: item.work_id,
-                reason: format!(
-                    "criterion {} requires {} verification and is contradicted by newer verification evidence {newest} that did not pass; record a passing check after it, or revise the criterion",
-                    binding.criterion,
-                    encode_state(binding.requirement.check_kind)?
-                ),
-            });
+            let kind = encode_state(binding.requirement.check_kind)?;
+            if result != crate::domain::VerificationResult::Passed {
+                return Err(StoreError::WorkCompletionRefused {
+                    work: item.work_id,
+                    reason: format!(
+                        "criterion {} requires {kind} verification and is contradicted by newer verification evidence {newest} that did not pass; record a passing check after it, or revise the criterion",
+                        binding.criterion
+                    ),
+                });
+            }
+            if latest_mutation.is_some_and(|mutation| position < mutation) {
+                return Err(StoreError::WorkCompletionRefused {
+                    work: item.work_id,
+                    reason: format!(
+                        "criterion {} requires {kind} verification, and the newest one ({newest}) predates the run's latest source change; record a passing check after that change, or revise the criterion",
+                        binding.criterion
+                    ),
+                });
+            }
         }
         // The seal's obligation binding already names the satisfying record;
         // the criterion cites it too when the completion's evidence set holds
         // it, so the citation closure the checkpoint acknowledged still holds.
         if completion_evidence.contains(satisfying)
-            && let Some(result) = acceptance.get_mut(binding.criterion - 1)
+            && let Some(result) = acceptance.get_mut(index)
             && !result.evidence.contains(satisfying)
         {
             result.evidence.push(satisfying.clone());
@@ -1927,13 +1955,14 @@ fn bind_acceptance_to_obligations_on(
 }
 
 /// The newest host-minted verification of `requirement`'s kind (and pinned
-/// check, when it pins one) on the run at or before `cut`, with its result.
+/// check, when it pins one) on the run at or before `cut`, with its run-feed
+/// position and result.
 fn newest_verification_of_kind_on(
     connection: &Connection,
     run_id: WorkRunId,
     requirement: &crate::domain::VerificationRequirement,
     cut: &FeedPosition,
-) -> Result<Option<(ObjectHash, crate::domain::VerificationResult)>, StoreError> {
+) -> Result<Option<(i64, ObjectHash, crate::domain::VerificationResult)>, StoreError> {
     let stored: Vec<String> = connection
         .prepare(
             "SELECT evidence_hash FROM work_run_evidence
@@ -1966,17 +1995,19 @@ fn newest_verification_of_kind_on(
             newest = Some((position.position, hash, evidence.result));
         }
     }
-    Ok(newest.map(|(_, hash, result)| (hash, result)))
+    Ok(newest)
 }
 
 /// Resolves as waived, in the revising actor's name, every open obligation on
 /// `run_id` that an acceptance binding opened and the revised item no longer
-/// binds. Revision is how a requirement changes; the waiver is the audited
-/// record of that change on the obligation it retires.
+/// binds, or binds at a position in `reauthored`, whose criterion this
+/// revision rewrote. Revision is how a requirement changes; the waiver is the
+/// audited record of that change on the obligation it retires.
 pub(super) fn waive_unbound_obligations_on(
     transaction: &Transaction<'_>,
     item: &WorkItem,
     run_id: WorkRunId,
+    reauthored: &[usize],
     actor: &crate::domain::ActorContext,
     now: DateTime<Utc>,
 ) -> Result<Vec<ObjectHash>, StoreError> {
@@ -1987,12 +2018,21 @@ pub(super) fn waive_unbound_obligations_on(
         let Some(criterion) = binding_rule_criterion(&record.obligation.rule) else {
             continue;
         };
-        let still_bound = item.acceptance_bindings.iter().any(|binding| {
-            binding.criterion == criterion && binding.requirement == record.obligation.requirement
-        });
+        let rewritten =
+            reauthored.contains(&criterion) && record.obligation.work_revision < item.revision;
+        let still_bound = !rewritten
+            && item.acceptance_bindings.iter().any(|binding| {
+                binding.criterion == criterion
+                    && binding.requirement == record.obligation.requirement
+            });
         if still_bound {
             continue;
         }
+        let change = if rewritten {
+            "was rewritten, and its verification is owed again"
+        } else {
+            "no longer requires this verification"
+        };
         let event = WorkObligationResolutionEvent {
             schema_version: SCHEMA_VERSION,
             project_id: item.project_id.clone(),
@@ -2002,7 +2042,7 @@ pub(super) fn waive_unbound_obligations_on(
             resolution: WorkObligationResolution::Waived {
                 waived_by: actor.actor_id.clone(),
                 reason: format!(
-                    "acceptance revised at revision {}: criterion {criterion} no longer requires this verification",
+                    "acceptance revised at revision {}: criterion {criterion} {change}",
                     item.revision
                 ),
             },

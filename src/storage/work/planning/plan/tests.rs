@@ -50,6 +50,65 @@ fn request() -> ProposeWorkPlanRequest {
 }
 
 #[test]
+fn a_bound_plan_task_opens_its_obligation_and_a_record_id_pin_is_refused() {
+    let bind = |check_fingerprint: Option<String>| crate::domain::WorkPlanBinding {
+        criterion: 2,
+        check_kind: crate::domain::VerificationKind::Test,
+        check_fingerprint,
+    };
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let mut bound = request();
+    // Typed order: the bound criterion is second as typed and first as stored.
+    bound.plan.tasks[2].acceptance = vec!["write docs".into(), "run tests".into()];
+    bound.plan.tasks[2].bindings = vec![bind(None)];
+    let receipt = store
+        .propose_work_plan(&bound, &DevelopmentNoopRedactor)
+        .expect("plan with a bound child task");
+    let child = load_work_item(&store.connection, receipt.tasks[2].work_id).expect("child");
+    assert_eq!(child.acceptance, vec!["run tests", "write docs"]);
+    assert_eq!(child.acceptance_bindings.len(), 1);
+    assert_eq!(child.acceptance_bindings[0].criterion, 1);
+    let owed = store
+        .work_run_obligations(child.active_run_id.expect("child run"))
+        .expect("obligations");
+    assert_eq!(owed.len(), 1);
+    assert_eq!(
+        owed[0].obligation.rule.rule_id,
+        "acceptance_criterion_requires_verification:1"
+    );
+    assert!(store.verify_all().expect("doctor").is_healthy());
+
+    // A minted record id is not a command fingerprint: the whole plan refuses.
+    let mut other = SqliteStore::open_in_memory().expect("store");
+    let mut pinned = request();
+    pinned.plan.tasks[2].acceptance = vec!["write docs".into(), "run tests".into()];
+    pinned.plan.tasks[2].bindings = vec![bind(Some("a".repeat(32)))];
+    let refused = other
+        .propose_work_plan(&pinned, &DevelopmentNoopRedactor)
+        .expect_err("a record id pin");
+    let reason = refused.to_string();
+    assert!(
+        reason.contains("task child") && reason.contains("not a record id"),
+        "{reason}"
+    );
+    assert!(
+        other
+            .query_work_catalog(
+                &crate::ProjectId("atomic-plan".into()),
+                at(1),
+                &crate::domain::WorkCatalogQuery {
+                    limit: 10,
+                    ..crate::domain::WorkCatalogQuery::default()
+                },
+            )
+            .expect("catalog")
+            .items
+            .is_empty(),
+        "a refused plan creates nothing"
+    );
+}
+
+#[test]
 fn atomic_plan_two_levels_preserve_map_and_replay_without_writes() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let mut request = request();

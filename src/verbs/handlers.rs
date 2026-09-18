@@ -1245,7 +1245,7 @@ impl AgentVerbs {
                 "under": {
                     "parent_ref": parent_ref,
                     "position": position,
-                    "ready": ready,
+                    "ready_count": ready,
                     "renewed": renewed,
                 }
             }),

@@ -579,8 +579,11 @@ enum WorkCommand {
         #[arg(long = "accept", value_name = "CRITERION")]
         acceptance: Vec<String>,
         /// Bind a criterion to typed host verification: POSITION=KIND[:FINGERPRINT],
-        /// kind test, build, lint, review or acceptance; repeatable. A bound
-        /// criterion passes only on host-observed verification of that kind.
+        /// kind test, build, lint, review or acceptance; repeatable. POSITION
+        /// counts the --accept list as typed. FINGERPRINT pins one check by its
+        /// 64-hex command fingerprint (the evidence's `check_fingerprint`), never
+        /// a record id. A bound criterion passes only on host-observed
+        /// verification of that kind.
         #[arg(long = "bind", value_name = "POSITION=KIND")]
         bindings: Vec<String>,
         /// Add as a child of this item instead of a root.
@@ -1567,10 +1570,13 @@ fn run_work(context: WorkContext, json: bool, operation: WorkCommand) -> Result<
                 },
                 now,
             ),
-            _ => Err(
-                StoreError::InvalidWork("claim takes REF or --under PARENT, not both".into())
-                    .into(),
-            ),
+            (None, None) => {
+                Err(StoreError::InvalidWork("claim needs REF or --under PARENT".into()).into())
+            }
+            (Some(_), Some(_)) => Err(StoreError::InvalidWork(
+                "claim takes REF or --under PARENT, not both".into(),
+            )
+            .into()),
         },
         WorkCommand::Update(args) => {
             let WorkUpdateArgs {
@@ -2194,8 +2200,11 @@ struct WorkUpdateArgs {
     #[arg(long = "accept", value_name = "CRITERION", action = ArgAction::Append, num_args = 1)]
     acceptance: Option<Vec<String>>,
     /// Replace the criteria bound to typed host verification, as
-    /// POSITION=KIND[:FINGERPRINT]; repeatable. Omitted while --accept replaces
-    /// the list, the bindings are cleared; omitted otherwise, unchanged.
+    /// POSITION=KIND[:FINGERPRINT]; repeatable. POSITION counts the --accept
+    /// list as typed when given in the same call, otherwise the stored list as
+    /// show numbers it. FINGERPRINT is a check's 64-hex command fingerprint,
+    /// never a record id. Omitted while --accept replaces the list, the
+    /// bindings are cleared; omitted otherwise, unchanged.
     #[arg(long = "bind", value_name = "POSITION=KIND", action = ArgAction::Append, num_args = 1)]
     bindings: Option<Vec<String>>,
     /// Add a label; repeatable.

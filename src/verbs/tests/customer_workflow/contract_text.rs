@@ -122,6 +122,38 @@ fn show_drops_whole_criteria_from_the_end_with_exact_omission_counts() {
             criteria.len() - retained
         );
     }
+    // A bound criterion behind the fold is still counted: the terse reader
+    // must learn that a hidden criterion cannot pass on judgment.
+    let mut bound = source.clone();
+    bound.status.work.acceptance.truncate(3);
+    bound.status.work.acceptance_bindings = [
+        (2, crate::domain::VerificationKind::Build),
+        (5, crate::domain::VerificationKind::Test),
+    ]
+    .into_iter()
+    .map(|(criterion, check_kind)| crate::domain::AcceptanceBinding {
+        criterion,
+        requirement: crate::domain::VerificationRequirement {
+            check_kind,
+            check_fingerprint: None,
+            required_environment: None,
+        },
+    })
+    .collect();
+    let folded = verbs.render_show(&bound, at(2)).unwrap();
+    assert!(
+        folded.text().contains("[requires host build verification]"),
+        "{}",
+        folded.text()
+    );
+    assert!(
+        folded.text().contains(&format!(
+            "({} more not shown, 1 requiring host verification)",
+            criteria.len() - 3
+        )),
+        "{}",
+        folded.text()
+    );
     // A synthetic zero-criterion projection tests presentation without
     // manufacturing a native contract storage does not admit.
     source.status.work.acceptance.clear();

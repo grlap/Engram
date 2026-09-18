@@ -248,11 +248,12 @@ fn validate_plan(input: &WorkPlanInput) -> Result<ValidatedPlan, StoreError> {
                         check_kind: binding.check_kind,
                         check_fingerprint: binding
                             .check_fingerprint
-                            .clone()
-                            .map(|id| {
-                                crate::ObjectHash::from_stored(id).ok_or_else(|| {
-                                    invalid("a binding's check fingerprint must be a record id")
-                                })
+                            .as_deref()
+                            .map(|fingerprint| {
+                                crate::domain::AcceptanceBinding::check_fingerprint_from(
+                                    fingerprint,
+                                )
+                                .map_err(|reason| invalid(&format!("task {}: {reason}", task.key)))
                             })
                             .transpose()?,
                         required_environment: None,

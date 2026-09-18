@@ -69,9 +69,11 @@ is invalid. Title, outcome, and an acceptance array are explicit inputs. An
 empty acceptance array stays empty; Engram does not invent a criterion.
 Task options also include `kind`, `priority`, `labels`, `assigned_to`,
 `deferred_until`, `external_ref`, `notes`, and `bindings`: each
-`{ "criterion": N, "check_kind": "test", "check_fingerprint": ID? }` binds
-the criterion at one-based position `N` of `acceptance`, as typed, to host
-verification of that kind, exactly as `add --bind` does. Root priority defaults to 1;
+`{ "criterion": N, "check_kind": "test", "check_fingerprint": FINGERPRINT? }`
+binds the criterion at one-based position `N` of `acceptance`, as typed, to
+host verification of that kind, exactly as `add --bind` does; the optional
+`check_fingerprint` is the 64-hex command fingerprint the host records on its
+verification evidence, and a record id there refuses the whole plan. Root priority defaults to 1;
 children inherit their parent's priority when omitted. Child labels include
 the parent's labels, as in ordinary decomposition. Initial notes are
 attributed non-holder observations, not execution evidence.

@@ -213,6 +213,58 @@ fn a_ready_child_lapsed_under_another_holder_is_passed_over_without_a_recovery_r
 }
 
 #[test]
+fn a_blocked_child_the_caller_still_holds_is_renewed_instead_of_a_second_claim() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let (root, children) = planned_root(&mut store, "project-next-ready-held-blocked");
+    let early = titled(&children, "Early");
+    let late = titled(&children, "Late");
+
+    let first = store
+        .claim_next_ready_child(
+            &request(&root, "one", "", None, 2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("the first ready child is claimed");
+    assert_eq!(first.work_id, early.work_id);
+
+    // The holder blocks its own child. The projection now reports it blocked,
+    // ahead of the live claim, but it is still the child this holder holds.
+    let held = store.get_work_item(early.work_id).expect("held child");
+    store
+        .add_work_blocker(
+            &crate::domain::AddWorkBlockerRequest {
+                work_id: held.work_id,
+                expected_work_revision: held.revision,
+                kind: crate::domain::WorkBlockerKind::Manual,
+                detail: "waiting on a decision".into(),
+                authority: crate::domain::WorkPlanningAuthority::Claim {
+                    run_id: first.claim.run_id,
+                    holder: first.claim.holder.clone(),
+                    claim_id: first.claim.claim_id,
+                    claim_fence: first.claim.fence,
+                },
+                actor: actor("one"),
+                idempotency_key: "block-held-child".into(),
+                blocked_at: at(3),
+            },
+            &DevelopmentNoopRedactor,
+        )
+        .expect("block the held child");
+
+    let again = store
+        .claim_next_ready_child(
+            &request(&root, "one", "", None, 4),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("the repeat renews the held child");
+    assert!(again.renewed);
+    assert_eq!(again.work_id, early.work_id);
+    assert_eq!(again.claim.claim_id, first.claim.claim_id);
+    assert_eq!(again.ready_count, 1);
+    assert_eq!(store.current_work_claim(late.work_id).unwrap(), None);
+}
+
+#[test]
 fn concurrent_callers_never_receive_the_same_child() {
     let directory = crate::test_support::temp_home().expect("temporary directory");
     let path = directory.path().join("engram.sqlite3");

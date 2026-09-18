@@ -293,10 +293,26 @@ pub struct AcceptanceBinding {
 }
 
 impl AcceptanceBinding {
+    /// Reads a pinned check: the content fingerprint of the check's command,
+    /// which the host records as `check_fingerprint` on its verification
+    /// evidence. It is 64 hex digits. A record id names a stored record, can
+    /// never equal one, and would leave the binding unsatisfiable.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason when the text is not such a fingerprint.
+    pub fn check_fingerprint_from(text: &str) -> Result<ObjectHash, String> {
+        ObjectHash::from_stored(text.trim().to_owned())
+            .filter(|fingerprint| fingerprint.as_str().len() == 64)
+            .ok_or_else(|| {
+                "a pinned check is the 64-hex command fingerprint the host recorded as check_fingerprint on its verification evidence, not a record id".to_owned()
+            })
+    }
+
     /// Reads the shell form `POSITION=KIND[:FINGERPRINT]`: a one-based
     /// criterion position, a verification kind (`test`, `build`, `lint`,
-    /// `review` or `acceptance`), and optionally the id of the exact check
-    /// record to require.
+    /// `review` or `acceptance`), and optionally the command fingerprint of
+    /// the one exact check to require (see [`Self::check_fingerprint_from`]).
     ///
     /// # Errors
     ///
@@ -327,9 +343,8 @@ impl AcceptanceBinding {
             })?;
         let check_fingerprint = fingerprint
             .map(|fingerprint| {
-                ObjectHash::from_stored(fingerprint.to_owned()).ok_or_else(|| {
-                    format!("binding {text:?} names a check fingerprint that is not a record id")
-                })
+                Self::check_fingerprint_from(fingerprint)
+                    .map_err(|reason| format!("binding {text:?}: {reason}"))
             })
             .transpose()?;
         Ok(Self {

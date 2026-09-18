@@ -862,8 +862,19 @@ pub(super) fn show_lines(
         }
     }
     if work.acceptance_count > work.acceptance.len() {
+        // A bound criterion behind the fold still cannot pass on judgment.
+        let hidden_bound = work
+            .acceptance_bindings
+            .iter()
+            .filter(|binding| binding.criterion > work.acceptance.len())
+            .count();
+        let bound_note = if hidden_bound > 0 {
+            format!(", {hidden_bound} requiring host verification")
+        } else {
+            String::new()
+        };
         lines.push(format!(
-            "  ({} more not shown); hidden criteria continue from position {} in the same numbering; {}",
+            "  ({} more not shown{bound_note}); hidden criteria continue from position {} in the same numbering; {}",
             work.acceptance_count - work.acceptance.len(),
             work.acceptance.len() + 1,
             super::terminal_command(&super::mutation::full_contract(&work.short_ref))

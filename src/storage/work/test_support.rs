@@ -384,3 +384,64 @@ pub(super) fn host_verification(
     transaction.commit().expect("commit verification");
     verification
 }
+
+/// The command fingerprint `host_verification` records for the check `key`.
+pub(super) fn check_fingerprint(key: &str) -> ObjectHash {
+    ObjectHash::from_canonical_bytes(format!("check {key}").as_bytes())
+}
+
+/// Appends a host-observed source mutation on the claimed run, in the
+/// workspace and at the source revision `host_verification` uses for the same
+/// `key`, so a test verification under that key answers the builtin rule.
+pub(super) fn source_mutation(
+    store: &mut SqliteStore,
+    work: &WorkItem,
+    claim: &WorkClaim,
+    holder: &str,
+    key: &str,
+    second: i64,
+) -> ObjectHash {
+    use crate::domain::{
+        ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome,
+        ExecutionSourceBasis,
+    };
+    let run = super::query::load_work_run(&store.connection, claim.run_id).expect("claimed run");
+    let mut run_actor = actor(holder);
+    run_actor.run_id = Some(run.run_id.0.to_string());
+    let observation = ExecutionObservation {
+        schema_version: SCHEMA_VERSION,
+        project_id: work.project_id.clone(),
+        binding: ControlWorkBinding {
+            root_execution_id: run.root_execution_id,
+            work_id: work.work_id,
+            run_id: run.run_id,
+            work_revision: claim.accepted_work_revision,
+            claim_id: claim.claim_id,
+            claim_fence: claim.fence,
+        },
+        session_id: SessionId(holder.into()),
+        grant_id: format!("grant-write-{key}"),
+        observation_id: format!("write-{key}"),
+        action_fingerprint: ObjectHash::from_canonical_bytes(format!("write {key}").as_bytes()),
+        effect: EffectClass::MutateLocal,
+        outcome: ExecutionOutcome::Succeeded,
+        source_changed: true,
+        obligation_rule_set: active_rule_set_id(&store.connection),
+        source_basis: Some(ExecutionSourceBasis {
+            workspace_id: format!("workspace-{key}"),
+            source_revision: "revision-as-it-stands".into(),
+        }),
+        observed_at: Some(at(second)),
+        actor: run_actor.clone(),
+        recorded_at: at(second),
+    };
+    let transaction = store
+        .connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("mutation transaction");
+    let mutation =
+        super::completion::append_control_execution_observation_on(&transaction, &observation)
+            .expect("append the source mutation");
+    transaction.commit().expect("commit mutation");
+    mutation
+}

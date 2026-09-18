@@ -344,12 +344,18 @@ Rules that matter:
   bodies remain readable. See the
   [window/detail contract](../../../docs/features/cli-and-mcp.md#using-engram-as-an-agent).
 - `--bind POSITION=KIND[:FINGERPRINT]` on `add` and `update` binds the
-  criterion at that position (counted in the list as typed) to host
-  verification of that kind. A bound criterion opens a typed obligation on
-  the run: `done` refuses until the host minted passing verification of that
-  kind, a newer failed check contradicts it, and an evaluated pass needs an
-  `observed` basis citing that evidence, never judgment or a gate. `--accept`
-  without `--bind` drops the bindings and the receipt says so.
+  criterion at that position to host verification of that kind. Positions
+  count the list as typed when `--accept` is in the same call, and the stored
+  list `show` numbers when `--bind` is revised alone. `FINGERPRINT` pins one
+  check by its 64-hex command fingerprint (the evidence's
+  `check_fingerprint`), never a record id. A bound criterion opens a typed
+  obligation on the run: `done` refuses until the host minted passing
+  verification of that kind, a newer failed check contradicts it, a check
+  older than the run's latest observed source change no longer carries it,
+  and an evaluated pass needs an `observed` basis citing that evidence, never
+  judgment or a gate. `--accept` without `--bind` drops the bindings and the
+  receipt says so; a criterion rewritten under an unchanged binding owes its
+  verification again.
 - `update REF --accept "criterion"...` replaces the whole acceptance list;
   omitting it preserves the list. Empty or blank criteria are refused, and
   completed work cannot be revised. History names the revised fields.

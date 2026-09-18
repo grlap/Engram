@@ -477,17 +477,19 @@ impl SqliteStore {
             return Ok(selection);
         }
         let parent = load_work_item(&transaction, request.parent_id)?;
-        let mut ready = Vec::new();
+        let mut candidates = Vec::new();
         let mut held = None;
         let mut others = BTreeMap::new();
         for (child_id, availability) in
             open_children_by_ready_order_on(&transaction, parent.work_id, request.claimed_at)?
         {
             if availability == "ready" {
-                ready.push(child_id);
+                candidates.push(child_id);
                 continue;
             }
-            if held.is_none() && (availability == "claimed" || availability == "active") {
+            // The projection reports blocked and deferred ahead of a live
+            // claim, so the holder's own child is looked for under every word.
+            if held.is_none() {
                 let item = load_work_item(&transaction, child_id)?;
                 if let Some(run_id) = item.active_run_id
                     && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
@@ -500,6 +502,12 @@ impl SqliteStore {
             }
             *others.entry(availability).or_insert(0) += 1;
         }
+        let ready = Self::verified_ready_children_on(
+            &transaction,
+            candidates,
+            request.claimed_at,
+            &mut others,
+        )?;
         let claim_request = |item: &WorkItem, recovery_reason: Option<String>| ClaimWorkRequest {
             work_id: item.work_id,
             expected_work_revision: item.revision,
@@ -522,8 +530,8 @@ impl SqliteStore {
                 renewed: true,
             }
         } else {
-            let (item, position, ready_count) =
-                Self::select_next_ready_child_on(&transaction, ready, request, &mut others)?;
+            let (item, position) =
+                Self::select_next_ready_child_on(&transaction, &ready, request, &others)?;
             let claim = Self::claim_work_on(
                 &transaction,
                 &claim_request(&item, request.recovery_reason.clone()),
@@ -533,7 +541,7 @@ impl SqliteStore {
                 work_id: item.work_id,
                 claim,
                 position: Some(position),
-                ready_count,
+                ready_count: ready.len(),
                 renewed: false,
             }
         };
@@ -551,33 +559,43 @@ impl SqliteStore {
     }
 
     /// The projection narrows the candidates; the canonical basis decides, so
-    /// an entry it does not confirm is passed over. Returns the selected
-    /// child, its one-based place in the verified ready order, and that
-    /// order's length.
-    fn select_next_ready_child_on(
+    /// an entry it does not confirm is counted as not ready and left out.
+    /// Returns the verified ready children in their order.
+    fn verified_ready_children_on(
         transaction: &Transaction<'_>,
         candidates: Vec<WorkId>,
-        request: &ClaimNextReadyChildRequest,
+        now: DateTime<Utc>,
         others: &mut BTreeMap<String, usize>,
-    ) -> Result<(WorkItem, usize, usize), StoreError> {
+    ) -> Result<Vec<WorkItem>, StoreError> {
         let mut verified = Vec::new();
         for child_id in candidates {
-            let view = inspect_work_canonical_on(transaction, child_id, request.claimed_at)?;
+            let view = inspect_work_canonical_on(transaction, child_id, now)?;
             if matches!(view.availability, WorkAvailability::Ready) {
                 verified.push(load_work_item(transaction, child_id)?);
             } else {
                 *others.entry("not ready".to_owned()).or_insert(0) += 1;
             }
         }
+        Ok(verified)
+    }
+
+    /// Returns the first verified ready child this request may claim and its
+    /// one-based place in that order.
+    fn select_next_ready_child_on(
+        transaction: &Transaction<'_>,
+        ready: &[WorkItem],
+        request: &ClaimNextReadyChildRequest,
+        others: &BTreeMap<String, usize>,
+    ) -> Result<(WorkItem, usize), StoreError> {
         let mut lapsed = 0;
-        for (index, item) in verified.iter().enumerate() {
+        for (index, item) in ready.iter().enumerate() {
             if request.recovery_reason.is_none()
                 && Self::lapsed_under_unaccounted_holder_on(transaction, item, &request.holder)?
             {
                 lapsed += 1;
                 continue;
             }
-            return Ok((item.clone(), index + 1, verified.len()));
+            return Ok((item.clone(), index + 1));
         }
         Err(StoreError::InvalidWork(Self::no_ready_child_reason(
             others, lapsed,
@@ -811,6 +829,7 @@ impl SqliteStore {
                 &run,
                 &event_hash,
                 position,
+                &[],
                 request.claimed_at,
             )?;
         }
