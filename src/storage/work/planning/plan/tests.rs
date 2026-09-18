@@ -109,7 +109,7 @@ fn a_bound_plan_task_opens_its_obligation_and_a_record_id_pin_is_refused() {
         .propose_work_plan(&pinned, &DevelopmentNoopRedactor)
         .expect_err("a record id pin");
     let reason = refused.to_string();
-    assert!(reason.contains("is the id of a stored record"), "{reason}");
+    assert!(reason.contains("names a stored record"), "{reason}");
     assert_eq!(count(&store), before, "a refused plan creates nothing");
 
     // A value that is not hex at all refuses at validation, naming the task.
@@ -121,7 +121,10 @@ fn a_bound_plan_task_opens_its_obligation_and_a_record_id_pin_is_refused() {
         .propose_work_plan(&malformed, &DevelopmentNoopRedactor)
         .expect_err("a malformed pin")
         .to_string();
-    assert!(reason.contains("task child"), "{reason}");
+    assert!(
+        reason.contains("task child") && reason.contains("command fingerprint"),
+        "{reason}"
+    );
 }
 
 #[test]

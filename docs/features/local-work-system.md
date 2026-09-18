@@ -127,7 +127,9 @@ refuses when the newest verification of that kind at the completion cut did
 not pass, since a later failure outranks an earlier pass, or does not verify
 the run's latest observed source change under the same rule that matches
 verification evidence to a mutation (source revision, position and time, not
-recording order alone), since it certifies code that has since moved. Both
+recording order alone), since it certifies code that has since moved; a change
+the host recorded without a source revision offers only its recording order,
+and that is what is compared. Both
 checks belong to `done`; recording an evaluation does not apply them. The
 seal binds the obligation, and an asserted criterion cites the verification
 that carried it when the completion cites it. Under an evaluated policy a
@@ -341,7 +343,9 @@ advances the fence, preserves an active run, and needs no recovery reason.
 next ready direct child by the same derived readiness and the `ls --ready`
 order, then claims it inside that one write transaction under SQLite's single
 writer, so concurrent callers are served distinct children; a child this
-holder already holds under the parent is renewed instead, a ready child
+holder already holds under the parent is renewed instead, found from claim
+metadata without reading any sibling (so a renewal's ready count is the
+projection's and advisory, while a fresh selection's is verified), a ready child
 lapsed under an unaccounted holder is passed over without a recovery reason,
 and a call with nothing ready refuses and claims nothing.
 Every handoff offer expires no later than its source claim. Expired offers are

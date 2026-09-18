@@ -239,8 +239,10 @@ pub struct NextReadyChildClaim {
     /// order at selection; absent when the call renewed a child this holder
     /// already held.
     pub position: Option<usize>,
-    /// Verified ready direct children at the call. A fresh selection counts
-    /// the child it claimed; a renewed child is held, so it is not among them.
+    /// Ready direct children at the call. A fresh selection reports the
+    /// canonically verified ones, the child it claimed included. A renewal
+    /// reports the projection's count of ready siblings, which is advisory: a
+    /// renewal keeps a live claim alive and reads no sibling to do it.
     pub ready_count: usize,
     pub renewed: bool,
 }

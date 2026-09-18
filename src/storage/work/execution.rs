@@ -22,9 +22,9 @@ use super::planning::{
     validate_live_claim_for_item_on, validate_live_claim_on, waive_root_contributor,
 };
 use super::query::{
-    active_root_execution_optional, inspect_work_canonical_on, latest_restored_record,
-    load_root_execution, load_work_claim_optional, load_work_item, load_work_run,
-    open_children_by_ready_order_on, work_completed_by_restored_record_on,
+    active_root_execution_optional, held_open_child_on, inspect_work_canonical_on,
+    latest_restored_record, load_root_execution, load_work_claim_optional, load_work_item,
+    load_work_run, open_children_by_ready_order_on, work_completed_by_restored_record_on,
 };
 use super::session::begin_work_protocol_attempt_on;
 use super::{
@@ -477,30 +477,25 @@ impl SqliteStore {
             return Ok(selection);
         }
         let parent = load_work_item(&transaction, request.parent_id)?;
+        // The caller's own child is found from claim metadata alone, under
+        // whatever word the projection gives it: a renewal keeps a live claim
+        // alive and must not depend on reading any sibling.
+        let held = held_open_child_on(
+            &transaction,
+            parent.work_id,
+            &request.holder,
+            request.claimed_at,
+        )?;
         let mut candidates = Vec::new();
-        let mut held = None;
         let mut others = BTreeMap::new();
         for (child_id, availability) in
             open_children_by_ready_order_on(&transaction, parent.work_id, request.claimed_at)?
         {
             if availability == "ready" {
                 candidates.push(child_id);
-                continue;
+            } else {
+                *others.entry(availability).or_insert(0) += 1;
             }
-            // The projection reports blocked and deferred ahead of a live
-            // claim, so the holder's own child is looked for under every word.
-            if held.is_none() {
-                let item = load_work_item(&transaction, child_id)?;
-                if let Some(run_id) = item.active_run_id
-                    && let Some(claim) = load_work_claim_optional(&transaction, run_id)?
-                    && claim.holder == request.holder
-                    && claim.state == WorkClaimState::Active
-                    && claim.expires_at > request.claimed_at
-                {
-                    held = Some(item);
-                }
-            }
-            *others.entry(availability).or_insert(0) += 1;
         }
         let claim_request = |item: &WorkItem, recovery_reason: Option<String>| ClaimWorkRequest {
             work_id: item.work_id,
@@ -513,23 +508,17 @@ impl SqliteStore {
             idempotency_key: String::new(),
             claimed_at: request.claimed_at,
         };
-        let selection = if let Some(item) = held {
-            // A renewal keeps the caller's own claim alive, so a sibling whose
-            // basis cannot be read is counted as not ready, not as a failure.
-            let ready = Self::verified_ready_children_on(
-                &transaction,
-                candidates,
-                request.claimed_at,
-                &mut others,
-                true,
-            )?;
+        let selection = if let Some(child_id) = held {
+            // The claim body revalidates the child's canonical authority. No
+            // sibling is inspected, so the count is the projection's.
+            let item = load_work_item(&transaction, child_id)?;
             let claim = Self::claim_work_on(&transaction, &claim_request(&item, None))?;
             NextReadyChildClaim {
                 parent_id: parent.work_id,
                 work_id: item.work_id,
                 claim,
                 position: None,
-                ready_count: ready.len(),
+                ready_count: candidates.len(),
                 renewed: true,
             }
         } else {
@@ -538,7 +527,6 @@ impl SqliteStore {
                 candidates,
                 request.claimed_at,
                 &mut others,
-                false,
             )?;
             let (item, position) =
                 Self::select_next_ready_child_on(&transaction, &ready, request, &others)?;
@@ -570,24 +558,18 @@ impl SqliteStore {
 
     /// The projection narrows the candidates; the canonical basis decides, so
     /// an entry it does not confirm is counted as not ready and left out.
-    /// Returns the verified ready children's ids in their order. With
-    /// `tolerate_unreadable`, a candidate whose basis cannot be read is
-    /// counted as not ready too, instead of failing the caller.
+    /// Returns the verified ready children's ids in their order. A fresh
+    /// selection is strict: a candidate whose basis cannot be read fails it.
     fn verified_ready_children_on(
         transaction: &Transaction<'_>,
         candidates: Vec<WorkId>,
         now: DateTime<Utc>,
         others: &mut BTreeMap<String, usize>,
-        tolerate_unreadable: bool,
     ) -> Result<Vec<WorkId>, StoreError> {
         let mut verified = Vec::new();
         for child_id in candidates {
-            let ready = match inspect_work_canonical_on(transaction, child_id, now) {
-                Ok(view) => matches!(view.availability, WorkAvailability::Ready),
-                Err(_) if tolerate_unreadable => false,
-                Err(error) => return Err(error),
-            };
-            if ready {
+            let view = inspect_work_canonical_on(transaction, child_id, now)?;
+            if matches!(view.availability, WorkAvailability::Ready) {
                 verified.push(child_id);
             } else {
                 *others.entry("not ready".to_owned()).or_insert(0) += 1;

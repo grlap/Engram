@@ -610,7 +610,7 @@ fn a_verification_older_than_the_latest_source_change_no_longer_carries_its_crit
         "runner",
         "change",
         4,
-        "revision-after-change",
+        Some("revision-after-change"),
     );
     host_verification_of(
         &mut store,
@@ -877,9 +877,143 @@ fn a_pin_that_is_a_stored_record_id_is_refused_where_it_is_authored() {
         panic!("a stored record's id must not be admitted as a pin: {refused:?}");
     };
     assert!(
-        reason.contains("criterion 1 pins") && reason.contains("is the id of a stored record"),
+        reason.contains("criterion 1 pins") && reason.contains("names a stored record"),
         "{reason}"
     );
+}
+
+#[test]
+fn a_revision_cannot_pin_a_stored_record_with_or_without_a_new_list() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let work = bound_root(&mut store, "project-record-id-revision");
+    let claim = claim(
+        &mut store,
+        &work,
+        "runner",
+        "claim-record-id-revision",
+        2,
+        300,
+    );
+    let stored: String = store
+        .connection
+        .query_row("SELECT object_hash FROM objects LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("a stored record id");
+    let mut pinned = bound(1, VerificationKind::Test);
+    pinned.requirement.check_fingerprint =
+        Some(ObjectHash::from_stored(stored).expect("stored id shape"));
+    // Bindings authored with a replacement list, and bindings revised alone
+    // against the stored list, reach the guard by different routes.
+    for (acceptance, key) in [
+        (
+            Some(vec!["run tests".to_owned(), "write docs".to_owned()]),
+            "pin-with-a-list",
+        ),
+        (None, "pin-alone"),
+    ] {
+        let refused = store.revise_work(
+            &ReviseWorkRequest {
+                work_id: work.work_id,
+                expected_revision: work.revision,
+                patch: crate::domain::WorkRevisionPatch {
+                    acceptance,
+                    acceptance_bindings: Some(vec![pinned.clone()]),
+                    ..crate::domain::WorkRevisionPatch::default()
+                },
+                authority: WorkPlanningAuthority::Claim {
+                    run_id: claim.run_id,
+                    holder: claim.holder.clone(),
+                    claim_id: claim.claim_id,
+                    claim_fence: claim.fence,
+                },
+                actor: actor("runner"),
+                idempotency_key: key.into(),
+                updated_at: at(3),
+            },
+            &DevelopmentNoopRedactor,
+        );
+        let Err(StoreError::InvalidWork(reason)) = refused else {
+            panic!("{key}: a stored record must not be admitted as a pin: {refused:?}");
+        };
+        assert!(reason.contains("names a stored record"), "{key}: {reason}");
+    }
+    assert_eq!(
+        store.get_work_item(work.work_id).expect("item").revision,
+        work.revision,
+        "a refused revision changes nothing"
+    );
+}
+
+#[test]
+fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
+    use crate::domain::{ExecutionObservation, VerificationEvidenceMismatch};
+    use crate::storage::work::feeds::{load_typed_work_object, run_feed_position_for_object_on};
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let mut store = SqliteStore::open(directory.path().join("engram.sqlite3")).expect("store");
+    let mut request = root_request("project-bare-change", "create-bare-change-work", 1);
+    request.acceptance = vec!["build is clean".into()];
+    request.acceptance_bindings = vec![bound(1, VerificationKind::Build)];
+    let work = store
+        .create_work(&request, &DevelopmentNoopRedactor)
+        .expect("create bound work");
+    let claim = claim(&mut store, &work, "runner", "claim-bare-change", 2, 300);
+    let before = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "build-before-bare-change",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        3,
+    );
+    // A host that observed no source basis records the change with neither a
+    // revision nor a time. The matching rule has nothing to compare then, and
+    // would refuse every verification forever.
+    let change = source_mutation(&mut store, &work, &claim, "runner", "bare", 4, None);
+    let after = host_verification(
+        &mut store,
+        &work,
+        &claim,
+        "runner",
+        "build-after-bare-change",
+        VerificationKind::Build,
+        VerificationResult::Passed,
+        5,
+    );
+
+    let position = |hash: &ObjectHash| {
+        run_feed_position_for_object_on(&store.connection, claim.run_id, hash)
+            .expect("run-feed position")
+            .position
+    };
+    let mutation: ExecutionObservation =
+        load_typed_work_object(&store.connection, &change, "execution_observation")
+            .expect("the recorded change");
+    assert!(mutation.source_basis.is_none() && mutation.observed_at.is_none());
+    let judge = |hash: &ObjectHash| {
+        let evidence: VerificationEvidence =
+            load_typed_work_object(&store.connection, hash, "verification_evidence")
+                .expect("verification evidence");
+        let producer: ExecutionObservation = load_typed_work_object(
+            &store.connection,
+            &evidence.producer_observation,
+            "execution_observation",
+        )
+        .expect("producer observation");
+        super::super::binding_freshness_mismatch(
+            (&mutation, position(&change)),
+            (&evidence, position(hash)),
+            &producer,
+            &bound(1, VerificationKind::Build).requirement,
+        )
+    };
+    assert_eq!(
+        judge(&before),
+        Some(VerificationEvidenceMismatch::NotAfterMutation)
+    );
+    assert_eq!(judge(&after), None);
 }
 
 #[test]

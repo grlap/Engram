@@ -1724,10 +1724,13 @@ pub(in crate::storage) fn normalize_acceptance(
 }
 
 /// A pinned check is the fingerprint of a check's command, which the host
-/// records as `check_fingerprint` on its verification evidence. The id of a
-/// stored record is a different kind of value that no evidence can match, so a
+/// records as `check_fingerprint` on its verification evidence. A value that
+/// names a stored record (a minted id, or the fingerprint a frozen record is
+/// stored under) is a different kind of value that no evidence can match, so a
 /// binding pinned to one could never be satisfied: it is refused where it is
-/// authored, whatever its shape.
+/// authored, whatever its shape. This is a guard at authoring time against
+/// the likely mistake, not a proof: a value copied from another store is not
+/// known here and is admitted.
 fn refuse_record_id_pins_on(
     connection: &Connection,
     bindings: &[crate::domain::AcceptanceBinding],
@@ -1743,7 +1746,7 @@ fn refuse_record_id_pins_on(
         )?;
         if is_record {
             return Err(StoreError::InvalidWork(format!(
-                "criterion {} pins {pinned}, which is the id of a stored record; pin the check's command fingerprint, the check_fingerprint the host recorded on its verification evidence",
+                "criterion {} pins {pinned}, which names a stored record rather than a check's command; pin the check_fingerprint the host recorded on its verification evidence",
                 binding.criterion
             )));
         }

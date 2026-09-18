@@ -130,6 +130,37 @@ pub(super) fn projected_detach_admitted(
         |row| row.get(0)).map_err(StoreError::from)
 }
 
+/// The open direct child of `parent_id` on which `holder` has a live claim,
+/// first in the `ls --ready` order. Read from claim metadata alone, so no
+/// sibling's stored body is touched; the claim path revalidates the child.
+pub(in crate::storage::work) fn held_open_child_on(
+    connection: &Connection,
+    parent_id: WorkId,
+    holder: &crate::domain::SessionId,
+    now: DateTime<Utc>,
+) -> Result<Option<WorkId>, StoreError> {
+    connection
+        .query_row(
+            "SELECT candidate.work_id
+             FROM work_items candidate
+             JOIN work_claims claim ON claim.run_id = candidate.active_run_id
+             WHERE candidate.parent_id = ?1 AND candidate.lifecycle = 'open'
+               AND claim.holder_session_id = ?2
+               AND claim.state = 'active' AND claim.expires_at_ms > ?3
+             ORDER BY candidate.priority, candidate.work_id
+             LIMIT 1",
+            params![
+                parent_id.0.to_string(),
+                holder.0.as_str(),
+                now.timestamp_millis()
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .map(|work_id| parse_work_id(&work_id))
+        .transpose()
+}
+
 /// Open direct children of one parent in the `ls --ready` order, each with
 /// its projected availability word. Advisory like every projection: a claim
 /// path rechecks the canonical basis of the child it selects.

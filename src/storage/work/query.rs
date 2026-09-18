@@ -47,7 +47,9 @@ use super::{WORK_EVENT_DECODE_COUNT, WORK_ITEM_PROJECTION_DECODE_COUNT, WorkEven
 mod tests;
 
 mod catalog;
-pub(super) use catalog::{catalog_literal_fts_query, open_children_by_ready_order_on};
+pub(super) use catalog::{
+    catalog_literal_fts_query, held_open_child_on, open_children_by_ready_order_on,
+};
 
 mod readiness;
 pub(super) use readiness::current_required_child_waivers;

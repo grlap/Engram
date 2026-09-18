@@ -422,7 +422,8 @@ pub(super) fn check_fingerprint(key: &str) -> ObjectHash {
 
 /// Appends a host-observed source mutation on the claimed run that leaves
 /// the source at `source_revision`; a verification of that revision recorded
-/// afterwards answers it.
+/// afterwards answers it. `None` records the change the way a host that
+/// observed no source basis does: with neither a revision nor a time.
 pub(super) fn source_mutation(
     store: &mut SqliteStore,
     work: &WorkItem,
@@ -430,7 +431,7 @@ pub(super) fn source_mutation(
     holder: &str,
     key: &str,
     second: i64,
-    source_revision: &str,
+    source_revision: Option<&str>,
 ) -> ObjectHash {
     use crate::domain::{
         ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome,
@@ -458,11 +459,11 @@ pub(super) fn source_mutation(
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
         obligation_rule_set: active_rule_set_id(&store.connection),
-        source_basis: Some(ExecutionSourceBasis {
+        source_basis: source_revision.map(|revision| ExecutionSourceBasis {
             workspace_id: format!("workspace-{key}"),
-            source_revision: source_revision.into(),
+            source_revision: revision.into(),
         }),
-        observed_at: Some(at(second)),
+        observed_at: source_revision.map(|_| at(second)),
         actor: run_actor.clone(),
         recorded_at: at(second),
     };

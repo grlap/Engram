@@ -1936,36 +1936,41 @@ fn bind_acceptance_to_obligations_on(
                     ),
                 });
             }
-            // Recording order alone proves nothing about what was checked: a
-            // record appended after the change may still verify the older
-            // source. The rule that matches evidence to a mutation decides.
             if let Some((mutation_position, mutation)) = latest_mutation.as_ref() {
                 let producer = load_typed_work_object::<ExecutionObservation>(
                     connection,
                     &evidence.producer_observation,
                     "execution_observation",
                 )?;
-                if let Err(mismatch) = crate::control::match_verification_evidence(
-                    &crate::control::VerificationEvidenceMatchInput {
-                        candidate_kind: crate::domain::WorkEvidenceKind::Verification,
-                        evidence: Some(&evidence),
-                        producer: Some(&producer),
-                        latest_mutation: Some((mutation, *mutation_position)),
-                        evidence_position: position,
-                        requirement: &binding.requirement,
-                    },
+                if let Some(mismatch) = binding_freshness_mismatch(
+                    (mutation, *mutation_position),
+                    (&evidence, position),
+                    &producer,
+                    &binding.requirement,
                 ) {
+                    use crate::domain::VerificationEvidenceMismatch as Mismatch;
+                    let cause = match mismatch {
+                        Mismatch::StaleSourceRevision
+                        | Mismatch::NotAfterMutation
+                        | Mismatch::InvalidTime => "does not verify the run's latest source change",
+                        _ => {
+                            "is not admissible for it under the verification rule at the completion cut"
+                        }
+                    };
                     return Err(StoreError::WorkCompletionRefused {
                         work: item.work_id,
                         reason: format!(
-                            "criterion {} requires {kind} verification, and the newest one ({newest}) does not verify the run's latest source change ({}); record a passing check of the changed source, or drop the binding",
+                            "criterion {} requires {kind} verification, and the newest one ({newest}) {cause} ({}); record a passing check of the current source, or drop the binding",
                             binding.criterion,
                             encode_state(mismatch)?
                         ),
                     });
                 }
+                // The rule ran and accepted this record, so it is what the
+                // criterion rests on now. Without a source change no rule
+                // ran, and the record that satisfied the obligation stays.
+                carried_by = newest;
             }
-            carried_by = newest;
         }
         // An evaluation's citations are its own and are sealed as recorded.
         // An asserted criterion cites the verification that carried it when
@@ -1982,9 +1987,38 @@ fn bind_acceptance_to_obligations_on(
     Ok(acceptance)
 }
 
-/// The newest host-minted verification of `requirement`'s kind (and pinned
-/// check, when it pins one) on the run at or before `cut`, with its run-feed
-/// position.
+/// Why the newest verification of a bound kind does not carry its criterion
+/// past the run's latest source change, or `None` when it does. Recording
+/// order alone proves nothing about what was checked: a record appended after
+/// the change may still verify the older source, so the rule that matches
+/// verification evidence to a mutation decides. A change the host recorded
+/// with no source revision or time gives that rule nothing to compare, and
+/// would refuse every verification forever; recording order is then all that
+/// can be said, and it is what is asked.
+fn binding_freshness_mismatch(
+    (mutation, mutation_position): (&ExecutionObservation, i64),
+    (evidence, evidence_position): (&VerificationEvidence, i64),
+    producer: &ExecutionObservation,
+    requirement: &crate::domain::VerificationRequirement,
+) -> Option<crate::domain::VerificationEvidenceMismatch> {
+    if mutation.source_basis.is_none() || mutation.observed_at.is_none() {
+        return (evidence_position <= mutation_position)
+            .then_some(crate::domain::VerificationEvidenceMismatch::NotAfterMutation);
+    }
+    crate::control::match_verification_evidence(&crate::control::VerificationEvidenceMatchInput {
+        candidate_kind: crate::domain::WorkEvidenceKind::Verification,
+        evidence: Some(evidence),
+        producer: Some(producer),
+        latest_mutation: Some((mutation, mutation_position)),
+        evidence_position,
+        requirement,
+    })
+    .err()
+}
+
+/// The newest host-minted verification `requirement` recognizes (its kind,
+/// its pinned check and its required environment, when it names them) on the
+/// run at or before `cut`, with its run-feed position.
 fn newest_verification_of_kind_on(
     connection: &Connection,
     run_id: WorkRunId,
@@ -2013,6 +2047,10 @@ fn newest_verification_of_kind_on(
                 .check_fingerprint
                 .as_ref()
                 .is_some_and(|required| required != &evidence.check_fingerprint)
+            || requirement
+                .required_environment
+                .as_ref()
+                .is_some_and(|required| evidence.environment.as_ref() != Some(required))
         {
             continue;
         }

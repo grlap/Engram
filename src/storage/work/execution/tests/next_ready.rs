@@ -265,6 +265,68 @@ fn a_blocked_child_the_caller_still_holds_is_renewed_instead_of_a_second_claim()
 }
 
 #[test]
+fn a_renewal_reads_no_sibling_and_a_fresh_selection_stays_strict() {
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let (root, children) = planned_root(&mut store, "project-next-ready-unreadable");
+    let early = titled(&children, "Early");
+    let late = titled(&children, "Late");
+    let deferred = titled(&children, "Deferred");
+
+    let first = store
+        .claim_next_ready_child(
+            &request(&root, "one", "", None, 2),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("the first ready child is claimed");
+    assert_eq!(first.work_id, early.work_id);
+
+    // Two siblings' stored bodies become undecodable: one that is not ready
+    // and sorts before the held child, and the ready one after it.
+    for sibling in [deferred, late] {
+        let changed = store
+            .connection
+            .execute(
+                "UPDATE work_items SET item_json = X'7B7D' WHERE work_id = ?1",
+                [sibling.work_id.0.to_string()],
+            )
+            .expect("make the sibling's body undecodable");
+        assert_eq!(changed, 1);
+    }
+    assert!(store.get_work_item(late.work_id).is_err());
+
+    // The holder's renewal depends on neither of them.
+    let renewed = store
+        .claim_next_ready_child(
+            &request(&root, "one", "", None, 3),
+            &DevelopmentNoopRedactor,
+        )
+        .expect("a renewal reads no sibling");
+    assert!(renewed.renewed);
+    assert_eq!(renewed.work_id, early.work_id);
+    assert_eq!(renewed.claim.claim_id, first.claim.claim_id);
+    // The projection still counts the ready sibling; a renewal's count is
+    // advisory and says nothing of whether that sibling can be read.
+    assert_eq!(renewed.ready_count, 1);
+
+    // A fresh selection must read what it would hand out, so it fails rather
+    // than skip the damaged child, and claims nothing.
+    let refused = store.claim_next_ready_child(
+        &request(&root, "two", "", None, 4),
+        &DevelopmentNoopRedactor,
+    );
+    assert!(refused.is_err(), "{refused:?}");
+    let late_claimed: i64 = store
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM work_claims WHERE work_id = ?1",
+            [late.work_id.0.to_string()],
+            |row| row.get(0),
+        )
+        .expect("claims on the damaged child");
+    assert_eq!(late_claimed, 0);
+}
+
+#[test]
 fn concurrent_callers_never_receive_the_same_child() {
     let directory = crate::test_support::temp_home().expect("temporary directory");
     let path = directory.path().join("engram.sqlite3");
