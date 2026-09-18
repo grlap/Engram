@@ -94,6 +94,10 @@ pub(crate) fn doctor(
         control.issued_turns,
         control.begun_turns,
     );
+    println!(
+        "{}",
+        acceptance_evaluation_line(&control.acceptance_evaluation)
+    );
     match (stored_path_policy, identity) {
         (Some(stored), Some(_)) => println!(
             "Host path policy: {} (persisted; this opener resolved the same)",
@@ -419,6 +423,29 @@ fn assemble_doctor_json_report(
     })
 }
 
+/// One operator line saying whether completion needs a recorded evaluation,
+/// and under which modes; the JSON report carries the same policy.
+fn acceptance_evaluation_line(policy: &engram::AcceptanceEvaluationPolicy) -> String {
+    if policy.is_legacy() {
+        return "Acceptance evaluation: off; completion is self-asserted".to_owned();
+    }
+    let modes = policy
+        .allowed_modes
+        .iter()
+        .map(|mode| mode.word())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "Acceptance evaluation: required; modes={modes} mechanical_basis={} source_freshness={}",
+        policy.mechanical_basis.word(),
+        if policy.require_source_freshness {
+            "required"
+        } else {
+            "not required"
+        },
+    )
+}
+
 fn control_diagnostics_json(control: &engram::storage::ControlDiagnostics) -> serde_json::Value {
     serde_json::json!({
         "schema_version": control.control_schema_version,
@@ -426,6 +453,7 @@ fn control_diagnostics_json(control: &engram::storage::ControlDiagnostics) -> se
         "epoch": control.policy_epoch.0,
         "required_assurance": control.required_assurance,
         "obligation_rules": control.obligation_rule_set,
+        "acceptance_evaluation": control.acceptance_evaluation,
         "supported_effects": control.supported_effects,
         "sessions": control.active_sessions,
         "issued": control.issued_turns,

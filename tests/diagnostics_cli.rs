@@ -37,6 +37,58 @@ fn diagnosis(home: &Path) -> Value {
     serde_json::from_slice(&success(home, &["doctor", "--json"]).stdout).unwrap()
 }
 
+// A host selects an evaluator mode the store will admit, so doctor names the
+// active evaluation policy in the JSON it reads and in the operator text.
+#[test]
+fn doctor_reports_the_acceptance_evaluation_policy_in_json_and_text() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let home = directory.path();
+    success(home, &["init"]);
+    let legacy = diagnosis(home);
+    assert_eq!(
+        legacy["control"]["acceptance_evaluation"]["allowed_modes"],
+        json!([])
+    );
+    let text = String::from_utf8(success(home, &["doctor"]).stdout).unwrap();
+    assert!(
+        text.contains("Acceptance evaluation: off; completion is self-asserted"),
+        "{text}"
+    );
+    success(
+        home,
+        &[
+            "control-policy",
+            "set-acceptance-evaluation",
+            "--modes",
+            "same-session,independent-session",
+            "--mechanical-basis",
+            "asserted",
+            "--authorized-by",
+            "operator",
+            "--reason",
+            "evaluate before completion",
+            "--idempotency-key",
+            "doctor-reports-evaluation",
+        ],
+    );
+    let evaluated = diagnosis(home);
+    assert_eq!(
+        evaluated["control"]["acceptance_evaluation"],
+        json!({
+            "allowed_modes": ["same_session", "independent_session"],
+            "mechanical_basis": "asserted",
+            "require_source_freshness": false,
+        })
+    );
+    let text = String::from_utf8(success(home, &["doctor"]).stdout).unwrap();
+    assert!(
+        text.contains(
+            "Acceptance evaluation: required; modes=same_session, independent_session mechanical_basis=asserted source_freshness=not required"
+        ),
+        "{text}"
+    );
+}
+
 #[test]
 fn doctor_discloses_the_verified_snapshot_in_json_and_text() {
     let directory = crate::test_support::temp_home().unwrap();

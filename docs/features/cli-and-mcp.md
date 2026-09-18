@@ -801,7 +801,9 @@ Rules that matter:
   acceptance came from (`evaluated (<mode>, <assurance>) by <evaluator>` or
   `self-asserted (legacy)`); `add --evaluation-mode MODE` pins a task's mode
   from creation, `update REF --evaluation-mode MODE` pins it later, and
-  `--clear-evaluation-mode` releases it.
+  `--clear-evaluation-mode` releases it. `show` prints the pin as
+  `evaluation mode:` and its JSON carries it as `status.work.evaluation_mode`,
+  which is what a host reads to spawn the right evaluator.
 - `remember` stores a retrievable project note — an attributed
   observation, never a rule or a decision record, kept in full until an
   explicit `forget`. `next` only signals how many notes exist and whether
@@ -1092,7 +1094,10 @@ development no-op redactor provides no secret or PII protection.
 `engram doctor --json` performs the same checks and keeps those warnings on
 stderr while emitting a machine-readable report on stdout. Its `project_id`
 and canonical absolute `database` path give a host the stable pair used to key
-project-local authority queries. The database path is absolute with symlinks
+project-local authority queries. Its `control.acceptance_evaluation` names the
+evaluator modes the store admits, the mechanical basis, and whether completion
+needs a fresh source fingerprint; the text report prints the same policy on one
+`Acceptance evaluation:` line. The database path is absolute with symlinks
 resolved. On Windows it never exposes the verbatim-path prefix (`\\?\`), and
 UNC paths use their ordinary `\\server\share` form. When integrity is
 unhealthy and the active control envelope cannot be decoded, the report still

@@ -234,6 +234,10 @@ pub(super) struct ShowWorkSummary {
     pub(super) labels: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) assigned_to: Option<String>,
+    /// The evaluator mode this task pins, which a host reads to spawn the
+    /// right evaluator; absent when the project policy alone decides.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) evaluation_mode: Option<crate::domain::AcceptanceEvaluationMode>,
     pub(super) lifecycle: WorkLifecycle,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) restored: bool,
@@ -1155,6 +1159,7 @@ pub(super) fn show_receipt_value(
                     .assigned_to
                     .as_deref()
                     .map(|actor| identity.actor(actor)),
+                evaluation_mode: work.evaluation_mode,
                 lifecycle: work.lifecycle,
                 restored: work.restored,
                 superseded_by: work.superseded_by.map(short_ref_for_work_id),

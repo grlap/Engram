@@ -1047,6 +1047,9 @@ pub struct ControlDiagnostics {
     pub required_assurance: ControlAssurance,
     pub supported_effects: Vec<EffectClass>,
     pub obligation_rule_set: ObjectHash,
+    /// Which evaluator modes may record verdicts and what backs a pass; a
+    /// host reads this to select a mode the store will admit.
+    pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
     pub unenforced_effects: Vec<EffectClass>,
     pub active_sessions: usize,
     pub issued_turns: usize,

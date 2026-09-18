@@ -695,6 +695,8 @@ impl SqliteStore {
         }
         let obligation_rule_set = policy.obligation_rule_set.clone();
         Self::load_obligation_rule_set_on(&self.connection, &obligation_rule_set)?;
+        let acceptance_evaluation =
+            Self::load_acceptance_evaluation_policy_on(&self.connection)?.normalized();
         let active_sessions = self.connection.query_row(
             "SELECT COUNT(*) FROM control_sessions WHERE phase != 'exited'",
             [],
@@ -731,6 +733,7 @@ impl SqliteStore {
             policy_epoch: policy.epoch,
             required_assurance: policy.required_assurance,
             obligation_rule_set,
+            acceptance_evaluation,
             supported_effects: policy.supported_effects,
             unenforced_effects,
             active_sessions: Self::control_count(active_sessions, "active session")?,

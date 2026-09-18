@@ -465,6 +465,14 @@ planning revision that `show` history and peers' `next` deltas name as
 change`. A graph snapshot carries the pinned mode and restores it
 verbatim, so a transfer never widens which evaluator may accept a task.
 
+A host selects the evaluator from two reads. `show --json` carries the task's
+pin as `status.work.evaluation_mode`, omitted when the task pins nothing; the
+text form prints the same fact as `evaluation mode:`. `doctor --json` carries
+the active policy as `control.acceptance_evaluation` (`allowed_modes`,
+`mechanical_basis`, `require_source_freshness`), and the text form prints one
+`Acceptance evaluation:` line. An empty `allowed_modes` is the self-asserted
+path: no evaluator is needed.
+
 Scoped exceptions to the terse agent surface: receipts expose the evaluation
 hash, the run id, and the evaluated cut as opaque correlation identifiers for
 hosts that track evaluator attempts; they grant no authority and imply no

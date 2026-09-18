@@ -217,6 +217,10 @@ fn evaluate_word_records_verdicts_and_the_other_words_disclose_them() {
         "{}",
         shown.text()
     );
+    assert_eq!(
+        shown.value["status"]["work"]["evaluation_mode"], "same_session",
+        "a host selects the evaluator from the JSON, so the pin must be there too"
+    );
     let acceptance = shown.value["acceptance_basis"].as_i64().expect("basis");
     assert_eq!(acceptance, 2);
     assert_eq!(shown.value["evidence_basis"], basis());

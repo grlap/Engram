@@ -44,6 +44,14 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = open_with_assurance(&database, ControlAssurance::Advisory)
         .expect("initialize advisory policy");
+    assert!(
+        store
+            .control_diagnostics()
+            .expect("initial diagnostics")
+            .acceptance_evaluation
+            .is_legacy(),
+        "a new store reports the self-asserted path"
+    );
     let evaluated = AcceptanceEvaluationPolicy {
         allowed_modes: vec![
             AcceptanceEvaluationMode::SameSession,
@@ -117,6 +125,14 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
     assert_eq!(
         store.acceptance_evaluation_policy().expect("read"),
         evaluated
+    );
+    assert_eq!(
+        store
+            .control_diagnostics()
+            .expect("diagnostics")
+            .acceptance_evaluation,
+        evaluated,
+        "the diagnostics a host reads name the modes the store admits"
     );
     let report = store.verify_all().expect("scan");
     assert!(report.is_healthy(), "{report:?}");
