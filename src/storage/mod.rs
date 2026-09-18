@@ -1552,12 +1552,20 @@ pub fn install_store_copy_without_replacing(
 }
 
 /// The log sidecars SQLite may keep beside a store file.
-fn store_sidecars(path: &Path) -> [std::path::PathBuf; 3] {
-    let base = path.display().to_string();
+/// `database` with `suffix` appended to its file name, byte for byte.
+pub(crate) fn sidecar(database: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = database.as_os_str().to_os_string();
+    name.push(suffix);
+    std::path::PathBuf::from(name)
+}
+
+/// The write-ahead log, its shared-memory file and the rollback journal a
+/// database may have beside it.
+pub(crate) fn store_sidecars(path: &Path) -> [std::path::PathBuf; 3] {
     [
-        std::path::PathBuf::from(format!("{base}-wal")),
-        std::path::PathBuf::from(format!("{base}-shm")),
-        std::path::PathBuf::from(format!("{base}-journal")),
+        sidecar(path, "-wal"),
+        sidecar(path, "-shm"),
+        sidecar(path, "-journal"),
     ]
 }
 

@@ -201,29 +201,21 @@ fn publish_failure(destination: &Path, error: &std::io::Error) -> MigrationError
 
 impl Drop for Staged {
     fn drop(&mut self) {
-        for suffix in ["", "-journal", "-wal", "-shm"] {
-            let _ = fs::remove_file(sidecar(&self.path, suffix));
+        let _ = fs::remove_file(&self.path);
+        for sidecar in super::store_sidecars(&self.path) {
+            let _ = fs::remove_file(sidecar);
         }
     }
-}
-
-/// The SQLite sidecar files a database may have beside it.
-const SIDECARS: &[&str] = &["-wal", "-shm", "-journal"];
-
-/// `database` with `suffix` appended to its file name.
-fn sidecar(database: &Path, suffix: &str) -> PathBuf {
-    let mut name = database.as_os_str().to_os_string();
-    name.push(suffix);
-    PathBuf::from(name)
 }
 
 /// Refuses a destination that has a write-ahead log, its shared-memory file or
 /// a rollback journal beside it. Such a file belongs to the database it was
 /// written for; SQLite would apply it to whatever database it finds at that
-/// name, so one left behind by the old file must move with the old file.
+/// name, so one left behind by the old file must move with the old file. This
+/// runs once, before anything is staged: the swap of the old file for the new
+/// one is the operator's step and outside what any check here can see.
 fn refuse_sidecars(destination: &Path) -> Result<(), MigrationError> {
-    for suffix in SIDECARS {
-        let sidecar = sidecar(destination, suffix);
+    for sidecar in super::store_sidecars(destination) {
         if sidecar.try_exists()? {
             return Err(refused(format!(
                 "{} exists beside the destination; a write-ahead log or journal belongs to the database it was written for and must move with that file, never sit beside another",
@@ -252,17 +244,32 @@ const SUPPORTED_SEARCH_INDEXES: &[&str] = &["object_fts", "work_catalog_fts"];
 
 const SEARCH_INDEX: &str = "search index; import rebuilds it";
 const REBUILT_PROJECTION: &str =
-    "rebuilt projection; import starts it empty and repair rebuilds it";
+    "rebuilt projection; import starts it empty and repair derives it again";
+const DELIVERY_BOOKKEEPING: &str =
+    "delivery bookkeeping; import starts it empty and each session re-announces once";
 
 /// An ordinary table this build drops and recreates whenever it repairs a
-/// store, so its rows are derived state: export reports them, and import
-/// leaves them out rather than count rows the published store will not hold.
-/// A search index is classified by SQLite's own kind, not by this list.
+/// store, in the core schema or the work schema, so its rows are derived
+/// state: export reports them, and import starts them empty rather than count
+/// rows the published store will not hold. A search index is classified by
+/// SQLite's own kind, not by these lists.
 fn rebuilt_projection(name: &str) -> bool {
     !SUPPORTED_SEARCH_INDEXES.contains(&name)
-        && super::CORE_REBUILDABLE_SCHEMA_OBJECTS
+        && (super::CORE_REBUILDABLE_SCHEMA_OBJECTS
             .iter()
             .any(|(kind, object)| *kind == "table" && *object == name)
+            || super::work::is_rebuilt_projection_table(name))
+}
+
+/// Why a rebuilt projection is left out. Repair derives every such table
+/// again from the records it projects, except the delivery bookkeeping, which
+/// it starts empty and the sessions refill.
+fn rebuilt_reason(name: &str) -> &'static str {
+    if name == "project_memory_advertisements" {
+        DELIVERY_BOOKKEEPING
+    } else {
+        REBUILT_PROJECTION
+    }
 }
 
 /// Tables to copy, and the derived tables import rebuilds instead.
@@ -297,7 +304,7 @@ fn source_tables(
         match kind.as_str() {
             "table" if rebuilt_projection(name) => rebuilt.push(DerivedTable {
                 name: name.clone(),
-                reason: REBUILT_PROJECTION,
+                reason: rebuilt_reason(name),
             }),
             "table" => tables.push(ordinary_table(connection, name.clone())?),
             // A virtual table must be one of the search indexes by name. A name
@@ -639,7 +646,7 @@ pub fn export_json(database: &Path, out: &Path) -> Result<ExportReport, Migratio
     staged.publish(out)?;
     Ok(ExportReport {
         database_bytes: fs::metadata(database)?.len(),
-        wal_bytes: fs::metadata(sidecar(database, "-wal")).map_or(0, |wal| wal.len()),
+        wal_bytes: fs::metadata(super::sidecar(database, "-wal")).map_or(0, |wal| wal.len()),
         file_bytes,
         rows: total,
         tables: header.tables,
@@ -707,14 +714,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                 name: table.name.clone(),
                 rows: table.rows,
                 reason: "format marker; the new store keeps its own".into(),
-            });
-            continue;
-        }
-        if rebuilt_projection(&table.name) {
-            left_out.push(LeftOut {
-                name: table.name.clone(),
-                rows: table.rows,
-                reason: REBUILT_PROJECTION.into(),
             });
             continue;
         }
@@ -839,7 +838,6 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     checkpoint.close().map_err(|(_, error)| error)?;
 
     let database_bytes = fs::metadata(&staged.path)?.len();
-    refuse_sidecars(out)?;
     staged.publish(out)?;
     Ok(ImportReport {
         file_bytes: fs::metadata(file)?.len(),
@@ -990,9 +988,27 @@ fn admit_pending_deliveries(path: &Path) -> Result<u64, MigrationError> {
 
 /// What a refused pending delivery may say to the operator: the shape of the
 /// problem and where it is, never a value from the page, which carries work
-/// titles and actor context. A projection reason is this build's own fixed
-/// wording; a decoding error is reduced to its category and position.
+/// titles and actor context. Every string this returns is written here: a
+/// decoding error is reduced to its category and position, and a projection
+/// reason is recognised and restated, never repeated.
 fn admission_reason(error: &crate::StoreError) -> String {
+    const PROJECTION_REASONS: &[(&str, &str)] = &[
+        (
+            "present together",
+            "its cursor, delivery token and page are not present together",
+        ),
+        (
+            "attribution differs",
+            "its attribution differs from the receiving session",
+        ),
+        (
+            "dense source interval",
+            "it does not bind its exact dense source interval",
+        ),
+        ("schema", "its schema version is not one this build reads"),
+        ("is missing", "it names a record this store does not hold"),
+        ("timestamp", "its session timestamp is invalid"),
+    ];
     match error {
         crate::StoreError::Json(error) => {
             let category = match error.classify() {
@@ -1007,7 +1023,13 @@ fn admission_reason(error: &crate::StoreError) -> String {
                 error.column()
             )
         }
-        crate::StoreError::InvalidWorkProjection(reason) => reason.clone(),
+        crate::StoreError::InvalidWorkProjection(reason) => PROJECTION_REASONS
+            .iter()
+            .find(|(marker, _)| reason.contains(marker))
+            .map_or("the row cannot be read by this build", |(_, wording)| {
+                wording
+            })
+            .to_owned(),
         _ => "the row cannot be read by this build".into(),
     }
 }

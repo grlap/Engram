@@ -116,19 +116,93 @@ fn rows(path: &Path) -> BTreeMap<String, Vec<Vec<Value>>> {
         .collect()
 }
 
+/// `populated`, plus the derived state repair builds again: a project memory
+/// (the memory-state projection), one session's advertisement of it (delivery
+/// bookkeeping) and an observation on the work (the observation projection).
+/// Returns the source row count of each of those tables.
+fn with_derived_projections(path: &Path) -> BTreeMap<String, u64> {
+    populated(path);
+    let project = ProjectId("project-json-transfer".into());
+    let at = |second: i64| {
+        chrono::DateTime::parse_from_rfc3339("2026-09-17T10:00:00Z")
+            .expect("time")
+            .with_timezone(&Utc)
+            + chrono::Duration::seconds(second)
+    };
+    {
+        let mut store = SqliteStore::open_unresolved(path).expect("store");
+        store
+            .remember_project_memory(
+                &crate::domain::RememberProjectMemoryRequest {
+                    project_id: project.clone(),
+                    session_id: crate::SessionId("author".into()),
+                    key: Some("transfer-note".into()),
+                    revise: false,
+                    expected_revision: None,
+                    body: "a project note that travels".into(),
+                    actor: actor("author"),
+                    created_at: at(1),
+                },
+                &DevelopmentNoopRedactor,
+            )
+            .expect("a project memory");
+    }
+    let short_ref: String = Connection::open(path)
+        .expect("open")
+        .query_row("SELECT short_ref FROM work_items LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("the work item");
+    let observer = crate::work_service::LocalWorkService::new(
+        path.to_path_buf(),
+        project,
+        "observer".into(),
+        crate::SessionId("observer-session".into()),
+        None,
+    );
+    observer
+        .work_note_on(
+            Some(&short_ref),
+            "seen while the transfer fixture was built",
+            &[],
+            at(2),
+        )
+        .expect("an observation");
+    observer
+        .work_next(20, crate::work_service::WorkNextQuery::default(), at(3))
+        .expect("an advertisement of the memory");
+    let connection = Connection::open(path).expect("open");
+    [
+        "project_memory_state",
+        "project_memory_advertisements",
+        "work_observations",
+    ]
+    .into_iter()
+    .map(|table| {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        (table.to_owned(), u64::try_from(count).expect("count"))
+    })
+    .collect()
+}
+
 #[test]
 fn a_store_round_trips_row_for_row_and_is_healthy() {
     let directory = crate::test_support::temp_home().expect("directory");
     let source = directory.path().join("source.db");
-    populated(&source);
+    with_derived_projections(&source);
     let file = directory.path().join("export.jsonl");
     let exported = export_json(&source, &file).expect("export");
     assert!(exported.rows > 0);
     assert!(
-        exported
-            .left_out
-            .iter()
-            .all(|left| left.reason == SEARCH_INDEX || left.reason == REBUILT_PROJECTION),
+        exported.left_out.iter().all(|left| {
+            left.reason == SEARCH_INDEX
+                || left.reason == REBUILT_PROJECTION
+                || left.reason == DELIVERY_BOOKKEEPING
+        }),
         "{:?}",
         exported.left_out
     );
@@ -1618,21 +1692,39 @@ fn a_malformed_staged_page_is_refused_without_printing_it() {
     let sentinel = "a private title nobody else may read";
     let mut wrong_field = page.clone();
     wrong_field["changes"][0]["entry"]["position"] = Json::String(sentinel.into());
+    // A page that decodes but names a record the feed does not hold at that
+    // position fails in the verifier, whose reason is restated, not repeated:
+    // the id it named must not come back either.
+    let unknown_record = "f".repeat(32);
+    let mut wrong_record = page.clone();
+    wrong_record["changes"][0]["entry"]["object_hash"] = Json::String(unknown_record.clone());
     let shapes = [
         (
             "a page that is one string",
             serde_json::json!({ "json": sentinel }),
+            "not a delivery page",
+            sentinel,
         ),
         (
             "a page with a field of the wrong type",
             serde_json::json!({ "json": wrong_field }),
+            "not a delivery page",
+            sentinel,
         ),
         (
             "bytes that are not JSON",
             serde_json::json!({ "text": format!("{{ not json {sentinel}") }),
+            "not a delivery page",
+            sentinel,
+        ),
+        (
+            "a page naming a record the feed does not hold there",
+            serde_json::json!({ "json": wrong_record }),
+            "dense source interval",
+            unknown_record.as_str(),
         ),
     ];
-    for (label, value) in shapes {
+    for (label, value, expected, private) in shapes {
         fs::write(&file, &original).expect("restore file");
         with_row_cell(
             &file,
@@ -1646,10 +1738,10 @@ fn a_malformed_staged_page_is_refused_without_printing_it() {
         let text = error.to_string();
         assert!(
             matches!(&error, MigrationError::Refused(reason)
-                if reason.contains("pending-session") && reason.contains("not a delivery page")),
+                if reason.contains("pending-session") && reason.contains(expected)),
             "{label}: {text}"
         );
-        assert!(!text.contains(sentinel), "{label} printed the page: {text}");
+        assert!(!text.contains(private), "{label} printed the page: {text}");
         assert!(!target.exists(), "{label}: a store was published");
     }
 }
@@ -1658,11 +1750,33 @@ fn a_malformed_staged_page_is_refused_without_printing_it() {
 fn the_report_counts_only_rows_the_published_store_holds() {
     let directory = crate::test_support::temp_home().expect("directory");
     let source = directory.path().join("source.db");
-    populated(&source);
+    let derived = with_derived_projections(&source);
+    for (table, rows) in &derived {
+        assert!(*rows > 0, "the fixture needs rows in {table}");
+    }
     let file = directory.path().join("export.jsonl");
-    export_json(&source, &file).expect("export");
+    let exported = export_json(&source, &file).expect("export");
     let target = directory.path().join("target.db");
     let imported = import_json(&file, &target).expect("import");
+    // A derived table is named with the rows it held, never counted, on both
+    // sides of the transfer.
+    for (table, rows) in &derived {
+        for (report, named) in [
+            ("export", &exported.left_out),
+            ("import", &imported.left_out),
+        ] {
+            assert!(
+                named
+                    .iter()
+                    .any(|left| &left.name == table && left.rows == *rows),
+                "{report} does not name {table} with its {rows} rows: {named:?}"
+            );
+        }
+        assert!(
+            imported.tables.iter().all(|counted| &counted.name != table),
+            "{table} was counted as imported"
+        );
+    }
     let published = rows(&target);
     for table in &imported.tables {
         let held = u64::try_from(published.get(&table.name).map_or(0, Vec::len)).expect("count");
@@ -1676,13 +1790,18 @@ fn the_report_counts_only_rows_the_published_store_holds() {
         imported.rows,
         imported.tables.iter().map(|table| table.rows).sum::<u64>()
     );
-    // What the store will not hold is named instead of counted.
-    assert!(
-        imported
-            .left_out
-            .iter()
-            .any(|left| left.name == "project_memory_advertisements")
+    // Repair derived the projections again from the records that arrived; the
+    // delivery bookkeeping starts empty.
+    let source_rows = rows(&source);
+    assert_eq!(
+        published["project_memory_state"],
+        source_rows["project_memory_state"]
     );
+    assert_eq!(
+        published["work_observations"],
+        source_rows["work_observations"]
+    );
+    assert!(published["project_memory_advertisements"].is_empty());
 }
 
 #[test]

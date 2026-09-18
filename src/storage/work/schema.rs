@@ -53,6 +53,13 @@ pub(in crate::storage) fn is_rebuildable_schema_object(object_type: &str, name: 
         || REBUILDABLE_WORK_SCHEMA_OBJECTS.contains(&(object_type, name))
 }
 
+/// An ordinary table repair drops and derives again from the records it
+/// projects. A search index and its shadow tables are not in this list; they
+/// are classified by SQLite's own kind wherever that matters.
+pub(in crate::storage) fn is_rebuilt_projection_table(name: &str) -> bool {
+    REBUILDABLE_WORK_SCHEMA_OBJECTS.contains(&("table", name))
+}
+
 pub(in crate::storage) fn preflight_schema(
     connection: &Connection,
     allow_initialization: bool,

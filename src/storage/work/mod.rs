@@ -385,8 +385,9 @@ pub(super) use query::{
     load_prerequisite_projection_ids, load_work_item, verified_work_identity,
 };
 pub(super) use schema::{
-    initialize_schema, is_rebuildable_schema_object, owns_schema_object, preflight_schema,
-    repair_rebuildable_schema_on, require_work_schema_version, schema_version,
+    initialize_schema, is_rebuildable_schema_object, is_rebuilt_projection_table,
+    owns_schema_object, preflight_schema, repair_rebuildable_schema_on,
+    require_work_schema_version, schema_version,
 };
 
 #[derive(Debug)]

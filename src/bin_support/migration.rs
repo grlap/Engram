@@ -38,7 +38,7 @@ pub(crate) fn run(command: &MigrationCommand) -> Result<ExitCode> {
             let report = engram::storage::migration::export_json(database, out)?;
             if report.wal_bytes > 0 {
                 eprintln!(
-                    "WARNING: the source has a {}-byte write-ahead log beside it. The export read the committed frames it holds; a backup of the source is the database file together with its -wal and -shm files, and none of them may be left beside another database.",
+                    "WARNING: the source still has a {}-byte write-ahead log beside it; a cleanly closed store has none. The export read the committed frames it holds. A backup of the source is the database file together with its -wal and -shm files, and none of them may be left beside another database.",
                     report.wal_bytes
                 );
             }
