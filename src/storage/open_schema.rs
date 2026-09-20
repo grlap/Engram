@@ -69,6 +69,40 @@ impl SqliteStore {
         Self::from_connection(connection, None, None)
     }
 
+    /// Checks existing-store admission and current policy for host enablement.
+    /// Never initializes, repairs, binds paths, or audits work history. This
+    /// receipt confers neither full-store health nor execution authority.
+    ///
+    /// # Errors
+    /// Refuses missing stores, incompatible schemas, invalid policy/authority
+    /// bindings and a resolved host-path policy that disagrees with the store.
+    pub fn readiness(
+        path: &Path,
+        host_path_policy: Option<HostPathPolicy>,
+    ) -> Result<super::StoreReadiness, StoreError> {
+        let store = Self::open_existing_read_only(path)?;
+        let snapshot = store.connection.unchecked_transaction()?;
+        Self::preflight_host_path_policy(&snapshot, host_path_policy)?;
+        let policy = Self::verify_control_policy_history(&snapshot)?;
+        Self::load_obligation_rule_set_on(&snapshot, &policy.obligation_rule_set)?;
+        let acceptance_evaluation = Self::load_acceptance_evaluation_policy_on(&snapshot)?;
+        let result = super::StoreReadiness {
+            work_schema_version: work::schema_version(&snapshot)?,
+            stored_host_path_policy: Self::stored_host_path_policy_on(&snapshot)?,
+            control: super::ReadinessControlPolicy {
+                schema_version: CONTROL_SCHEMA_VERSION,
+                policy: policy.policy_hash,
+                epoch: policy.epoch.0,
+                required_assurance: policy.required_assurance,
+                obligation_rules: policy.obligation_rule_set,
+                acceptance_evaluation,
+                supported_effects: policy.supported_effects,
+            },
+        };
+        snapshot.commit()?;
+        Ok(result)
+    }
+
     /// Inspects only the control-policy family through a read-only connection.
     ///
     /// This entry point intentionally returns a report rather than a

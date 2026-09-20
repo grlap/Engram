@@ -11,7 +11,7 @@ use crate::{control_assurance_name, warn_if_action_gated};
 const MAX_DOCTOR_GRAPH_SNAPSHOT_AUDITS: usize = 32;
 const MAX_DOCTOR_GRAPH_SNAPSHOT_ACTOR_BYTES: usize = 256;
 
-mod refusals;
+pub(crate) mod refusals;
 use refusals::{Phase, report_error, with_build};
 
 pub(crate) fn doctor(
@@ -518,7 +518,7 @@ fn bounded_doctor_snapshot_actor(actor_id: &str) -> String {
     format!("{}{suffix}", &actor_id[..end])
 }
 
-fn canonical_database_path(database: &Path) -> Result<String> {
+pub(crate) fn canonical_database_path(database: &Path) -> Result<String> {
     let canonical = fs::canonicalize(database)
         .with_context(|| format!("failed to canonicalize {}", database.display()))?;
     Ok(path_without_windows_verbatim_prefix(&canonical))

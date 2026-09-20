@@ -888,6 +888,10 @@ words above never require it.
 
 ### Build identity and doctor refusals
 
+For host enablement, use [`readiness --json`](host-readiness.md) for scoped
+existing-store/schema/policy checks. Keep `doctor --json` as a separate explicit
+full audit; readiness is not full-store health and never returns `healthy`.
+
 `engram --version` prints `engram VERSION build FP12 (exe EXE12, schema
 SCHEMA12)`. Agent `next` ends its terminal text with one diagnostic line:
 `build: FP12; read cut: project POSITION observed_at INSTANT`, followed by
@@ -909,13 +913,14 @@ install to detect a stale, long-lived MCP child; restart the child to run the
 new executable. The token is diagnostic, not an execution hash to copy into
 commands, authenticated identity, or store-admission authority.
 
-Every `doctor --json` mode includes `build` and `build_fingerprint`. The build
+Every `doctor --json` mode and `readiness --json` includes `build` and
+`build_fingerprint`. The build
 object contains `package_version`, `executable_sha256` (SHA-256 of the running
 executable's bytes), and `schema_reference` (SHA-256 of the RFC 8785 canonical
 ordered, whitespace-normalized SQLite definitions used by ordinary schema
 admission). The fingerprint hashes the RFC 8785 canonical build object. These
 values are captured once per process: at MCP startup, or when a short-lived
-CLI process emits diagnostics. Help and words other than `next` do not compute
+CLI process emits diagnostics. Agent words other than `next` do not compute
 identity. There is no Git metadata, build script, capability catalog, or
 persisted last-writer row.
 Equal inputs produce equal fingerprints; different executable bytes or schema
@@ -981,6 +986,9 @@ engram init --required-assurance advisory \
   --authorized-by host-operator \
   --reason "bootstrap this project for an advisory host"
 engram doctor
+
+# Fast read-only store/policy admission; not a full audit or execution authority.
+engram readiness --json
 
 # When ordinary open refuses a corrupt control-policy chain, inspect only that
 # immutable family. This mode is read-only, enables no service/mutation API,
@@ -1075,8 +1083,11 @@ identity resolves to the same opaque SQLite path for every worktree and
 session on the host. Relative project-file paths resolve from the caller's
 current directory; Engram does not search ancestors or select another project.
 If that file is missing, unreadable, invalid UTF-8, or empty, every CLI work
-word refuses before store opening or session setup. Text and `--json` emit
+word refuses before store opening or session setup. For those work words,
+text and `--json` emit
 `project_resolution_failed` on stderr with exit status 1 and no stdout.
+The operator `readiness --json` command instead emits its structured refusal
+on stdout; see the [readiness receipt](host-readiness.md#refusals).
 The error details name the reason, attempted `project_file`,
 `searched_directory`, `cwd` (null if unavailable), selection rule and remedy.
 The `next` command uses `--project-file 'PROJECT_DIRECTORY/.engram-project'`
@@ -1697,13 +1708,15 @@ segments, for example:
 The matching `turn_evaluate` supplies exact or tree `resource_intents` beneath
 that subject. The core rejects a different embedded project id and
 NFC-normalizes every segment. Path-bearing host commands (`init`, `doctor`, `control`, `authority`,
-`control-policy`) resolve the project root's filesystem identity before
+`control-policy`, `readiness`) resolve the project root's filesystem identity before
 opening the store: `--host-path-policy case_fold|case_sensitive`
 (or `ENGRAM_HOST_PATH_POLICY`) when the host knows it, otherwise a probe that
 writes one uniquely named file into the project root and looks it up under
 the opposite case. Agent work words, MCP startup, graph, backup, restore and
 import do not run that probe; they still perform their ordinary store and
-file I/O. The first resolved opener persists that policy; later
+file I/O. The first resolved writable opener persists that policy;
+read-only [readiness](host-readiness.md) never binds it and explicitly reports
+an unbound or unresolved identity. Later
 resolved openers must present the same one, and a mismatch names both. An
 opener that could not resolve the identity (unwritable or missing root) still
 reads and tracks work, but every path lease is refused with

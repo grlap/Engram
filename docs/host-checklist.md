@@ -19,6 +19,20 @@ it requires the host to mediate turns or actions.
 
 ## Base tier — advisory
 
+Use [`engram readiness --json`](features/host-readiness.md) for fast, scoped
+Verify/Save checks on an existing store. Keep `doctor --json` behind a separate
+Full Audit action, with its own result. A readiness pass neither certifies the
+work history nor replaces the host's identity, assurance and configuration-race
+checks. Older binaries without readiness must report unsupported, not fall back.
+Without an override, readiness probes the project root with a temporary file;
+when the host already knows its filesystem identity, supply `--host-path-policy`
+or `ENGRAM_HOST_PATH_POLICY` to avoid that probe on each Verify/Save.
+Readiness does not emit Full Audit's development no-op-redactor warning or
+control-limitation warnings (including unsupported action gating). Those remain
+in `doctor --json`; their absence from readiness is not a protection or
+enforcement assurance. Hosts must still compare `control.required_assurance`
+with the mediation they actually implement.
+
 1. **One store per project on each host.** Ship a tracked `.engram-project`
    with the stable project id; every session and worktree of that project
    resolves the same SQLite store under an absolute `ENGRAM_HOME` (a

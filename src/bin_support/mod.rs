@@ -6,5 +6,6 @@ pub(crate) mod graph;
 pub(crate) mod import;
 pub(crate) mod migration;
 pub(crate) mod project;
+pub(crate) mod readiness;
 pub(crate) mod store_lifecycle;
 pub(crate) mod terminal_errors;

@@ -1164,6 +1164,27 @@ export function registerRootProbeTests(test) {
         `host doctor must demonstrate resolver warning: ${doctor.stderr}`,
       );
 
+      assert.equal(doctor.status, 0, doctor.stderr);
+      const audited = JSON.parse(doctor.stdout);
+      const before = readFileSync(audited.database);
+      const walPath = `${audited.database}-wal`;
+      // Compare WAL bytes, treating absence as empty; changed/nonempty bytes
+      // still fail. SQLite's separate read-coordination sidecar is -shm.
+      const walBefore = existsSync(walPath) ? readFileSync(walPath) : Buffer.alloc(0);
+      const readiness = run(home, projectFile, ["readiness", "--json"]);
+      assert.equal(readiness.status, 0, readiness.stderr);
+      assert.match(readiness.stderr, new RegExp(WARNING), readiness.stderr);
+      const ready = JSON.parse(readiness.stdout);
+      assert.equal(ready.ready, true);
+      assert.equal(ready.scope, "readiness");
+      assert.equal(ready.full_audit, "not_run");
+      assert.equal(ready.mutation_enabled, false);
+      assert.equal(ready.host_path_policy.status, "unresolved");
+      assert.equal(ready.host_path_policy.resolved, null);
+      assert.equal(ready.host_path_policy.stored, audited.host_path_policy);
+      assert.deepEqual(readFileSync(audited.database), before);
+      assert.deepEqual(existsSync(walPath) ? readFileSync(walPath) : Buffer.alloc(0), walBefore);
+
       const actor = "probe-denied";
       for (const args of [
         workArgs(actor, "next"),

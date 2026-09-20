@@ -9,7 +9,7 @@ use std::path::Path;
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Phase {
+pub(crate) enum Phase {
     Open,
     Verification,
     ControlDiagnostics,
@@ -17,14 +17,14 @@ pub(super) enum Phase {
     ProjectionRepair,
 }
 
-pub(super) fn with_build(mut value: Value) -> Value {
+pub(crate) fn with_build(mut value: Value) -> Value {
     let identity = build_identity::current();
     value["build"] = json!(identity.build);
     value["build_fingerprint"] = json!(identity.build_fingerprint);
     value
 }
 
-pub(super) fn refusal(
+pub(crate) fn refusal(
     database: &Path,
     project: &ProjectId,
     error: &StoreError,
@@ -117,14 +117,15 @@ fn operational_refusal(value: &mut Value, error: &StoreError, kind: &str, remedy
     value["remedy"] = Value::String(remedy);
 }
 
-/// Text escapes every value as JSON, so attacker-authored findings cannot
-/// impersonate top-level operator guidance. JSON and text expose the same fields.
-pub(super) fn emit(value: &Value, json: bool) -> anyhow::Result<()> {
+/// Text JSON-quotes values and frames unsafe terminal scalars. JSON output keeps
+/// the source values; terminal framing applies only to human-readable lines.
+pub(crate) fn emit(value: &Value, json: bool) -> anyhow::Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(value)?);
     } else if let Some(fields) = value.as_object() {
         for (key, value) in fields {
-            println!("{key}: {}", serde_json::to_string(value)?);
+            let line = format!("{key}: {}", serde_json::to_string(value)?);
+            println!("{}", engram::terminal_error_command(&line));
         }
     }
     Ok(())

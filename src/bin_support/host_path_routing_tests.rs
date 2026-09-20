@@ -47,6 +47,7 @@ fn core_next() -> WorkCommand {
 #[test]
 fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
     let rows = [
+        ("readiness", true, Command::Readiness { json: true }),
         (
             "init",
             true,
@@ -194,6 +195,10 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
 fn host_path_policy_help_names_path_bearing_host_commands() {
     let error = super::Cli::try_parse_from(["engram", "--help"]).unwrap_err();
     let help = error.to_string();
-    assert!(help.contains("init, doctor, control"), "{help}");
+    let normalized = help.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized.contains("init, doctor, control, authority, control-policy, readiness"),
+        "{help}"
+    );
     assert!(help.contains("do not probe"), "{help}");
 }

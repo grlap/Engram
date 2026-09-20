@@ -1059,6 +1059,26 @@ pub struct ControlDiagnostics {
     pub action_outcome_tracking_available: bool,
 }
 
+/// Validated policy facts for host readiness, without live-history counters.
+#[derive(Clone, Debug, Serialize)]
+pub struct ReadinessControlPolicy {
+    pub schema_version: u16,
+    pub policy: ObjectHash,
+    pub epoch: i64,
+    pub required_assurance: ControlAssurance,
+    pub obligation_rules: ObjectHash,
+    pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
+    pub supported_effects: Vec<EffectClass>,
+}
+
+/// Existing-store admission facts, not an exhaustive integrity report or grant.
+#[derive(Clone, Debug)]
+pub struct StoreReadiness {
+    pub work_schema_version: i64,
+    pub stored_host_path_policy: Option<HostPathPolicy>,
+    pub control: ReadinessControlPolicy,
+}
+
 /// Operator-facing receipt for one idempotent project control-policy update.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlPolicyUpdateReceipt {

@@ -50,9 +50,9 @@ struct Cli {
     #[arg(long)]
     home: Option<PathBuf>,
     /// Filesystem identity of the project root for host path-bearing commands
-    /// (init, doctor, control, authority, control-policy). Omit to probe the
-    /// root's real filesystem; supply it when probing is impossible or the
-    /// host knows better. Agent work, MCP, graph, backup, restore and import
+    /// (init, doctor, control, authority, control-policy, readiness). Omit to
+    /// probe the root's real filesystem; supply it when probing is impossible
+    /// or the host knows better. Agent work, MCP, graph, backup, restore and import
     /// do not probe. Unresolved identity refuses path leases instead of guessing.
     #[arg(long, env = "ENGRAM_HOST_PATH_POLICY", value_enum)]
     host_path_policy: Option<HostPathPolicyArg>,
@@ -129,6 +129,12 @@ enum Command {
         /// Auditable reason for an explicit bootstrap policy choice.
         #[arg(long, requires = "required_assurance")]
         reason: Option<String>,
+    },
+    /// Check existing-store compatibility and policy without a full history audit.
+    Readiness {
+        /// Emit the versioned, scoped host-readiness receipt.
+        #[arg(long)]
+        json: bool,
     },
     /// Verify every immutable object in the local database.
     Doctor {
@@ -980,6 +986,7 @@ fn main() -> ExitCode {
 fn command_resolves_host_path_identity(command: &Command) -> bool {
     match command {
         Command::Init { .. }
+        | Command::Readiness { .. }
         | Command::Doctor { .. }
         | Command::Control { .. }
         | Command::Authority { .. }
@@ -1016,6 +1023,10 @@ async fn run_cli() -> Result<ExitCode> {
     let (project_id, database, root) = match resolve_project(&cli.project_file, cli.home) {
         Ok(project) => project,
         Err(error) => {
+            if let Command::Readiness { json } = &cli.command {
+                bin_support::readiness::resolution_error(&error, *json)?;
+                return Ok(ExitCode::FAILURE);
+            }
             if let Command::Work {
                 json, operation, ..
             } = &cli.command
@@ -1064,6 +1075,9 @@ async fn run_cli() -> Result<ExitCode> {
             authorized_by,
             reason,
         )?,
+        Command::Readiness { json } => {
+            bin_support::readiness::run(&database, identity, &project_id, json)?;
+        }
         Command::Doctor {
             json,
             recover_policy,
