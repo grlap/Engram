@@ -103,6 +103,100 @@ impl SqliteStore {
         Ok(result)
     }
 
+    /// Inspects exact-session and retained-grant presence without establishing
+    /// a control connection, expiring grants, binding paths or changing rows.
+    /// This is snapshot evidence only; the host owns quiescence and reconciliation.
+    /// SQLite may maintain its shared-memory sidecar, never database/WAL bytes.
+    ///
+    /// # Errors
+    /// Refuses invalid selectors, incompatible stores, unavailable or mismatched
+    /// path policy, and uncertain reads. No refusal proves absence.
+    /// Invalid selectors and unresolved/unbound path policy use
+    /// [`StoreError::InvalidControlSession`]. The generic
+    /// [`super::store_open_refusal_kind`] classifier labels those validation
+    /// refusals as corrupt-store errors; that classification is not accurate
+    /// for them and must not be used as evidence to restore or reinitialize
+    /// the store. This diagnostic defines no per-cause retry/repair contract.
+    pub fn inspect_control_session(
+        path: &Path,
+        host_path_policy: Option<HostPathPolicy>,
+        session_id: &str,
+        retained_grant_id: &str,
+    ) -> Result<super::ControlSessionInspection, StoreError> {
+        for (name, value) in [
+            ("session", session_id),
+            ("retained grant", retained_grant_id),
+        ] {
+            if value.trim().is_empty()
+                || value.len() > crate::MAX_SESSION_ID_BYTES
+                || value.chars().any(char::is_control)
+            {
+                return Err(StoreError::InvalidControlSession(format!(
+                    "inspection {name} must be nonblank, control-free and at most {} UTF-8 bytes",
+                    crate::MAX_SESSION_ID_BYTES
+                )));
+            }
+        }
+        let requested = host_path_policy.ok_or_else(|| {
+            StoreError::InvalidControlSession(
+                "control inspection requires resolved host path policy".into(),
+            )
+        })?;
+        let store = Self::open_existing_read_only(path)?;
+        let snapshot = store.connection.unchecked_transaction()?;
+        // Admission and presence must describe the SAME snapshot, even if the
+        // schema/policy changed after the preliminary ordinary read-only open.
+        let result =
+            Self::inspect_control_session_on(&snapshot, requested, session_id, retained_grant_id)?;
+        snapshot.commit()?;
+        Ok(result)
+    }
+
+    pub(super) fn inspect_control_session_on(
+        snapshot: &rusqlite::Transaction<'_>,
+        requested: HostPathPolicy,
+        session_id: &str,
+        retained_grant_id: &str,
+    ) -> Result<super::ControlSessionInspection, StoreError> {
+        if Self::current_core_durable_schema_issue(snapshot)?.is_some() {
+            return Err(different_build_store_error());
+        }
+        if !Self::current_core_schema_is_complete(snapshot)? {
+            if let Some(issue) = Self::current_core_rebuildable_schema_issue(snapshot)? {
+                return Err(StoreError::InvalidControlProjection(format!(
+                    "{}{issue}; run `engram doctor --repair-projections` explicitly",
+                    super::schema_diagnostics::CORE_PROJECTION_REFUSAL_PREFIX
+                )));
+            }
+            return Err(StoreError::InvalidControlProjection(
+                "control inspection requires complete current schema".into(),
+            ));
+        }
+        work::preflight_schema(snapshot, false)?;
+        if current_schema_definition_issue(
+            snapshot,
+            SchemaOwner::Work,
+            SchemaDurability::Rebuildable,
+        )?
+        .is_some()
+        {
+            return Err(StoreError::InvalidWorkProjection(
+                super::schema_diagnostics::WORK_PROJECTION_REFUSAL.into(),
+            ));
+        }
+        Self::require_task_local_cursor_schema(snapshot)?;
+        Self::preflight_host_path_policy(snapshot, Some(requested))?;
+        let stored = Self::stored_host_path_policy_on(snapshot)?.ok_or_else(|| {
+            StoreError::InvalidControlSession(
+                "control inspection requires bound host path policy".into(),
+            )
+        })?;
+        let policy = Self::verify_control_policy_history(snapshot)?;
+        Self::load_obligation_rule_set_on(snapshot, &policy.obligation_rule_set)?;
+        Self::load_acceptance_evaluation_policy_on(snapshot)?;
+        Self::control_session_presence_on(snapshot, session_id, retained_grant_id, stored)
+    }
+
     /// Inspects only the control-policy family through a read-only connection.
     ///
     /// This entry point intentionally returns a report rather than a

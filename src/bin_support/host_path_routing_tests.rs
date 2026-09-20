@@ -49,6 +49,15 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
     let rows = [
         ("readiness", true, Command::Readiness { json: true }),
         (
+            "control-session-inspect",
+            true,
+            Command::ControlSessionInspect {
+                target_session_id: "target".into(),
+                retained_grant_id: "retained".into(),
+                json: true,
+            },
+        ),
+        (
             "init",
             true,
             Command::Init {
@@ -197,7 +206,9 @@ fn host_path_policy_help_names_path_bearing_host_commands() {
     let help = error.to_string();
     let normalized = help.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        normalized.contains("init, doctor, control, authority, control-policy, readiness"),
+        normalized.contains(
+            "init, doctor, control, authority, control-policy, readiness, control-session-inspect"
+        ),
         "{help}"
     );
     assert!(help.contains("do not probe"), "{help}");

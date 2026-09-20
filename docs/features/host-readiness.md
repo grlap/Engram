@@ -102,6 +102,10 @@ not a lease against subsequent policy or store changes.
 
 ## Refusals
 
+For stale checkpoint handles, use the separate
+[read-only session inspection](control-session-inspection.md) receipt.
+Readiness itself supplies no session or grant absence evidence.
+
 An admitted invocation that refuses emits one JSON object on stdout and exits 1.
 Required fields: `schema_version:1`, `scope:"readiness"`, `ready:false`,
 `full_audit:"not_run"`, `mutation_enabled:false`, `project_id`, `database`,

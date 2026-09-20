@@ -33,6 +33,11 @@ in `doctor --json`; their absence from readiness is not a protection or
 enforcement assurance. Hosts must still compare `control.required_assurance`
 with the mediation they actually implement.
 
+For stale checkpoint handles, use [control session inspection](features/control-session-inspection.md)
+only under the host's reset/quiescence and exact-store fences. A missing-binding
+error or stopped session is not proof that no grant exists; the read-only
+receipt supplies presence facts, never permission to clear recovery state.
+
 1. **One store per project on each host.** Ship a tracked `.engram-project`
    with the stable project id; every session and worktree of that project
    resolves the same SQLite store under an absolute `ENGRAM_HOME` (a

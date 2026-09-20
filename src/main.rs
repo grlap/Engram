@@ -50,7 +50,8 @@ struct Cli {
     #[arg(long)]
     home: Option<PathBuf>,
     /// Filesystem identity of the project root for host path-bearing commands
-    /// (init, doctor, control, authority, control-policy, readiness). Omit to
+    /// (init, doctor, control, authority, control-policy, readiness,
+    /// control-session-inspect). Omit to
     /// probe the root's real filesystem; supply it when probing is impossible
     /// or the host knows better. Agent work, MCP, graph, backup, restore and import
     /// do not probe. Unresolved identity refuses path leases instead of guessing.
@@ -133,6 +134,18 @@ enum Command {
     /// Check existing-store compatibility and policy without a full history audit.
     Readiness {
         /// Emit the versioned, scoped host-readiness receipt.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Inspect session/grant presence read-only; never reconcile or authorize.
+    ControlSessionInspect {
+        /// Exact session to inspect, not the ambient caller; at most 64 bytes.
+        #[arg(long, value_parser = bin_support::control_session_inspect::selector)]
+        target_session_id: String,
+        /// Host's retained grant id to check anywhere in this store; at most 64 bytes.
+        #[arg(long, value_parser = bin_support::control_session_inspect::selector)]
+        retained_grant_id: String,
+        /// Emit the versioned `control_session_inspect` host receipt.
         #[arg(long)]
         json: bool,
     },
@@ -987,6 +1000,7 @@ fn command_resolves_host_path_identity(command: &Command) -> bool {
     match command {
         Command::Init { .. }
         | Command::Readiness { .. }
+        | Command::ControlSessionInspect { .. }
         | Command::Doctor { .. }
         | Command::Control { .. }
         | Command::Authority { .. }
@@ -1025,6 +1039,10 @@ async fn run_cli() -> Result<ExitCode> {
         Err(error) => {
             if let Command::Readiness { json } = &cli.command {
                 bin_support::readiness::resolution_error(&error, *json)?;
+                return Ok(ExitCode::FAILURE);
+            }
+            if let Command::ControlSessionInspect { json, .. } = &cli.command {
+                bin_support::control_session_inspect::resolution_error(&error, *json)?;
                 return Ok(ExitCode::FAILURE);
             }
             if let Command::Work {
@@ -1077,6 +1095,20 @@ async fn run_cli() -> Result<ExitCode> {
         )?,
         Command::Readiness { json } => {
             bin_support::readiness::run(&database, identity, &project_id, json)?;
+        }
+        Command::ControlSessionInspect {
+            target_session_id,
+            retained_grant_id,
+            json,
+        } => {
+            bin_support::control_session_inspect::run(
+                &database,
+                identity,
+                &project_id,
+                &target_session_id,
+                &retained_grant_id,
+                json,
+            )?;
         }
         Command::Doctor {
             json,

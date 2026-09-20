@@ -892,6 +892,12 @@ For host enablement, use [`readiness --json`](host-readiness.md) for scoped
 existing-store/schema/policy checks. Keep `doctor --json` as a separate explicit
 full audit; readiness is not full-store health and never returns `healthy`.
 
+For missing-session reconciliation evidence, use
+[`control-session-inspect`](control-session-inspection.md). It reads exact
+session/grant presence in one admitted snapshot without checkpointing or
+changing state. The host retains its own quiescence and ownership fences;
+neither all-false presence nor a refusal authorizes clearing state.
+
 `engram --version` prints `engram VERSION build FP12 (exe EXE12, schema
 SCHEMA12)`. Agent `next` ends its terminal text with one diagnostic line:
 `build: FP12; read cut: project POSITION observed_at INSTANT`, followed by
@@ -990,6 +996,11 @@ engram doctor
 # Fast read-only store/policy admission; not a full audit or execution authority.
 engram readiness --json
 
+# Read-only snapshot evidence for exact retained handles; not reconciliation.
+# Any refusal supplies no absence evidence; the host must retain its own fences.
+engram control-session-inspect --target-session-id session-id \
+  --retained-grant-id grant-id --json
+
 # When ordinary open refuses a corrupt control-policy chain, inspect only that
 # immutable family. This mode is read-only, enables no service/mutation API,
 # and never selects or rewrites a policy head.
@@ -1086,9 +1097,15 @@ If that file is missing, unreadable, invalid UTF-8, or empty, every CLI work
 word refuses before store opening or session setup. For those work words,
 text and `--json` emit
 `project_resolution_failed` on stderr with exit status 1 and no stdout.
-The operator `readiness --json` command instead emits its structured refusal
-on stdout; see the [readiness receipt](host-readiness.md#refusals).
-The error details name the reason, attempted `project_file`,
+The operator commands `readiness --json` and `control-session-inspect --json`
+instead emit structured refusals on stdout and exit 1; see the
+[readiness receipt](host-readiness.md#refusals) and
+[inspection receipt](control-session-inspection.md#refusals).
+Inspection uses `control_session_inspection_refused` with `phase:"resolve"`,
+null `project_id`/`database`, and omitted selectors and presence fields for
+resolution failures, including a missing home. It does not use the work-word
+`project_resolution_failed` code or distinguish a separate `home_required` code.
+For the work words, error details name the reason, attempted `project_file`,
 `searched_directory`, `cwd` (null if unavailable), selection rule and remedy.
 The `next` command uses `--project-file 'PROJECT_DIRECTORY/.engram-project'`
 with `work next`; replace the placeholder with the intended absolute project
@@ -1708,7 +1725,7 @@ segments, for example:
 The matching `turn_evaluate` supplies exact or tree `resource_intents` beneath
 that subject. The core rejects a different embedded project id and
 NFC-normalizes every segment. Path-bearing host commands (`init`, `doctor`, `control`, `authority`,
-`control-policy`, `readiness`) resolve the project root's filesystem identity before
+`control-policy`, `readiness`, `control-session-inspect`) resolve the project root's filesystem identity before
 opening the store: `--host-path-policy case_fold|case_sensitive`
 (or `ENGRAM_HOST_PATH_POLICY`) when the host knows it, otherwise a probe that
 writes one uniquely named file into the project root and looks it up under

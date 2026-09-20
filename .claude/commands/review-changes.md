@@ -12,15 +12,16 @@ parent session.
 
 **Do not delegate `/review-changes` itself.** The parent owns build artifacts,
 quality gates, the worktree freeze, fan-in, and recording findings in
-Engram. Only the two `/review-code` children are delegated, both with
-`writePolicy: readOnly`.
+Engram. Delegate review only to the two `/review-code` children, both with
+`writePolicy: readOnly`. A bounded test worker may execute the parent's gate
+runner as described below; it does not become a reviewer or validation owner.
 
 **Never commit, push, rebase, or sync remotes without explicit user
 authority.**
 
-This workflow requires TermAl MCP delegation tools. Attempt exactly two child
-spawns: one Codex and one Claude. Do not substitute platform subagents, shell
-processes, raw HTTP, or nested TermAl review sessions.
+This workflow requires TermAl MCP delegation tools. Attempt exactly two review
+child spawns: one Codex and one Claude. Do not substitute platform subagents,
+shell processes, raw HTTP, or nested TermAl review sessions for those reviewers.
 
 ## 1. Confirm the target
 
@@ -54,6 +55,61 @@ node scripts/check-doc-links.mjs
 On Windows, run `pwsh -NoProfile -File scripts/test-rust.ps1` in place of
 `scripts/test-rust.sh`; it runs the same ordinary and scale-test
 phases without the Unix-only file-descriptor-limit adjustment.
+
+### Completion-driven execution: do not babysit tests
+
+Use an existing suitable runner or prepare a task-local runner for the exact
+commands above, including the Windows substitution. This is a runner contract,
+not a claim that `scripts/check.sh` supplies structured logging. Launch one
+batch, retaining each command's full output and its exit code, start/end times,
+and log path in a compact result file. Halt the remaining commands at the first
+failure so the parent can investigate. Inspect the summary at completion;
+read detailed logs for failures or a specific evidence question, not streams
+of passing tests.
+
+Keep the runner, logs and result files outside review input. Resolve a location
+with `git rev-parse --path-format=absolute --git-path review-runs`, then use a
+new run-specific subdirectory; never overwrite an earlier run's evidence.
+Record the exact runner command, execution owner, completion handle and artifact
+paths in the parent work status before yielding. A PID alone is not a durable
+completion handle; use the host job/session identity and recorded start time.
+
+Before launch, capture the current input with the existing freeze script's
+`--write` into that run directory and retain its printed fingerprint separately
+from the manifest. Record that literal and manifest path alongside the results.
+Hold source and index unchanged during execution. At completion, and before
+reusing recovered results, require `--check` to exit zero with stdout exactly
+that saved literal plus LF. A mismatch or missing identity is an evidence gap,
+not a current pass. These boundary checks do not prove the absence of transient
+edits; a known intervening edit invalidates the run. This gate-input snapshot
+is separate from the post-gate review freeze in section 3.
+
+Use a completion notification or supported resume-on-completion mechanism, then
+yield the turn. If none is available, wait on the same runner's completion using
+a blocking tool, choosing its timeout from the last comparable run's duration
+within the tool's and session's limits. Re-wait only when it returns unfinished;
+do not substitute sleep-and-status loops. Do not repeatedly read growing logs,
+narrate "still running", or spawn an agent merely to watch a process. Meaningful
+updates report an outcome, a failure, or a decision needed.
+
+The parent may ask a bounded execution worker to run the batch once and send
+a completion message with the result/log paths. This worker is not a reviewer.
+Specify the input and command, and prohibit source/index changes, duplicate
+runs, automatic retries, and tracker writes. The parent remains responsible
+for inspecting results, classifying failures, recording each gate once, and
+freezing the reviewed input. The two read-only `/review-code` leaves never run
+tests or gates.
+Record worker execution as attributed evidence, naming the worker and result
+file in a parent note and referencing its logs when recording the gates. Reading
+those results does not turn them into parent-executed or host-attested checks.
+
+After interruption or context recovery, recover the existing runner identity,
+result file and completion state before launching anything. Do not start a
+second batch because the first is quiet or its completion message was missed.
+If a run's outcome cannot be established, report the evidence gap; do not call
+it a pass. Rerun for a concrete correction, changed input, or stated diagnostic
+question, never merely to chase green. These execution rules do not remove any
+required gate or weaken assertions and failure investigation below.
 
 On any failure, do not spawn reviewers. A failed gate is an investigation,
 never a stop: classify every failing test or check in this same turn.

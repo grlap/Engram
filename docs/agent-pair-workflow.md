@@ -211,7 +211,11 @@ actually defines and verifies that boundary.
 For Engram, the parent follows the existing `/review-changes` contract: gates,
 freeze, exactly one Codex and one Claude `/review-code` child through TermAl with
 `writePolicy: readOnly`, then freeze verification and consolidated results.
-Only `/review-code` is delegated. The parent owns `/review-changes`.
+Only `/review-code` is delegated as review. The parent owns `/review-changes`;
+a separate bounded execution worker may run its logged gate batch once without
+becoming a reviewer or validation owner. Follow the command's completion-driven
+execution rules: retain input-bound results outside review input, attribute
+worker execution, and recover existing runs without polling or duplicate batches.
 
 Both children receive the same packet and acceptance. They inspect independently
 before seeing each other's conclusions. Their job is to test the change against

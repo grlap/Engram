@@ -1,5 +1,6 @@
 //! Local SQLite object store and integrity verification.
 
+mod control_inspection;
 mod control_runtime;
 mod control_support;
 mod doctor;
@@ -24,6 +25,7 @@ pub(crate) const DECOMPOSE_PROTOCOL_OPERATION: &str = "work_propose:decompose";
 
 pub(crate) const DECOMPOSITION_RETRY_REMEDY: &str = "inspect the parent and its existing children; reuse the already-created child when present; add new work only for a genuinely different child intent";
 
+pub use control_inspection::ControlSessionInspection;
 pub use schema_diagnostics::{
     StoreOpenRefusalKind, running_schema_reference, store_open_refusal_kind, store_schema_reference,
 };

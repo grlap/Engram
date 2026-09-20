@@ -24,6 +24,7 @@ references another.
 | [Security & trust](security-and-trust.md) | Asserted runtime identity with assurance levels; sensitivity labels; redaction; purge realism |
 | [CLI & MCP](cli-and-mcp.md) | Shipped agent-facing local-work tools and host-private turn channel over one core; material action mediation remains planned |
 | [Host readiness](host-readiness.md) | Scoped read-only enablement checks, separate from the explicit full-store doctor audit |
+| [Control session inspection](control-session-inspection.md) | Scoped read-only session/grant presence evidence for host-fenced reconciliation, not clearance to reset state |
 
 ## Conventions
 

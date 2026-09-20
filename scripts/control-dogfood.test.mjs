@@ -1203,6 +1203,74 @@ test("host control survives restart and gates turn dispatch", async (t) => {
   if (failure) throw failure;
 });
 
+test("control session inspection emits scoped absence and refuses uncertainty", (t) => {
+  const home = fixtureHome("engram-control-inspect-", t);
+  const invoke = (args) => spawnSync(binary, ["--home", home, ...args], {
+    cwd: root, encoding: "utf8", timeout: 30000,
+  });
+  const inspectArgs = ["control-session-inspect", "--target-session-id", "target",
+    "--retained-grant-id", "retained", "--json"];
+  const assertRefusal = (result) => {
+    assert.notEqual(result.status, 0, result.stdout);
+    const receipt = JSON.parse(result.stdout);
+    assert.equal(receipt.scope, "control_session_inspect");
+    assert.equal(receipt.schema_version, 1);
+    assert.equal(receipt.mutation_enabled, false);
+    assert.equal(receipt.code, "control_session_inspection_refused");
+    for (const key of ["session_present", "session_grants_present", "retained_grant_present"]) {
+      assert.equal(Object.hasOwn(receipt, key), false, key);
+    }
+  };
+  try {
+    const built = spawnSync("cargo", ["build", "--quiet", "--bin", "engram"], {
+      cwd: root, encoding: "utf8",
+    });
+    assert.equal(built.status, 0, built.stderr);
+    const help = invoke(["control-session-inspect", "--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /--target-session-id/);
+    assert.match(help.stdout, /--retained-grant-id/);
+    assertRefusal(invoke(inspectArgs));
+    const init = invoke(["init"]);
+    assert.equal(init.status, 0, init.stderr);
+    const database = join(home, "projects", fingerprint(projectId), "engram.db");
+    const before = readFileSync(database);
+    const result = invoke(inspectArgs);
+    assert.equal(result.status, 0, result.stderr);
+    const receipt = JSON.parse(result.stdout);
+    assert.equal(receipt.scope, "control_session_inspect");
+    assert.equal(receipt.schema_version, 1);
+    assert.equal(receipt.mutation_enabled, false);
+    assert.equal(receipt.project_id, projectId);
+    assert.equal(realpathSync(receipt.database), realpathSync(database));
+    assert.equal(receipt.session_id, "target");
+    assert.equal(receipt.retained_grant_id, "retained");
+    assert.equal(receipt.host_path_policy.status, "matched");
+    assert.equal(receipt.host_path_policy.stored, receipt.host_path_policy.resolved);
+    assert.equal(receipt.session_present, false);
+    assert.equal(receipt.session_grants_present, false);
+    assert.equal(receipt.retained_grant_present, false);
+    assert.equal(Object.hasOwn(receipt, "routing_token"), false);
+    assert.deepEqual(readFileSync(database), before);
+    const opposite = receipt.host_path_policy.stored.startsWith("case_fold") ? "case_sensitive" : "case_fold";
+    assertRefusal(invoke(["--host-path-policy", opposite, ...inspectArgs]));
+    assertRefusal(invoke(["--project-file", join(home, "absent-marker"), ...inspectArgs]));
+    const invalid = invoke(["control-session-inspect", "--target-session-id", "x".repeat(65),
+      "--retained-grant-id", "retained", "--json"]);
+    assert.equal(invalid.status, 2, invalid.stderr);
+    executeSql(database, "PRAGMA foreign_keys=OFF; INSERT INTO control_turn_grants " +
+      "(grant_id,session_id,task_id,request_key,grant_hash,grant_json,state,issued_at_ms,expires_at_ms) " +
+      "VALUES ('retained','elsewhere','missing','k','opaque',x'ff','invalid',0,1)");
+    const present = invoke(inspectArgs);
+    assert.equal(present.status, 0, present.stderr);
+    assert.equal(JSON.parse(present.stdout).retained_grant_present, true);
+    executeSql(database, "DROP TABLE control_turn_grants");
+    assertRefusal(invoke(inspectArgs));
+  } finally {
+    removeFixtureHomes(home);
+  }
+});
+
 test("doctor recovery reports a corrupt policy through a read-only surface", (t) => {
   const engramHome = fixtureHome("engram-control-policy-recovery-", t);
   try {

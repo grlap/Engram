@@ -257,6 +257,13 @@ waiting to integrate its documentation does not postpone it.
 - `/review-changes` runs parent-owned quality gates, freezes the worktree, and
   delegates exactly one Codex and one Claude `/review-code` reviewer through
   TermAl with `writePolicy: readOnly`.
+- A bounded execution worker may run the parent's logged gate batch once;
+  it is not a third reviewer. The parent retains validation ownership,
+  inspects and attributes results, and records gates. The worker must not
+  edit source/index, retry automatically, or write the tracker. Use completion
+  notifications and yield, not test-status polling; recover the existing run
+  and verify its input identity before reusing results or starting another.
+  See `/review-changes` for artifact locations and the execution contract.
 - `/review-code` is a read-only, non-nesting leaf. It does not edit files, run
   quality gates, or mutate the tracker.
 
