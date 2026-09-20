@@ -4,7 +4,7 @@ use super::{
     ControlPolicyRecoveryReport, ControlPolicyUpdateReceipt, ControlTurnDecision, IntegrityReport,
     IssuedTurnGrant, MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES,
     MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES, MemoryAssertionEvent, MemoryProjectionMode,
-    MemoryVersion, ObjectHash, ObligationRuleSetUpdateReceipt, ObservedTurnDecision,
+    MemoryVersion, ObjectId, ObligationRuleSetUpdateReceipt, ObservedTurnDecision,
     OptionalExtension, SCHEMA_VERSION, Scope, SessionId, SqliteStore, StoreError,
     StoredControlGrantRow, StoredControlObservation, StoredControlOperation,
     StoredControlPolicyOperation, StoredControlTurnResult, StoredTurnGrantSupersession,
@@ -40,7 +40,7 @@ impl SqliteStore {
         }
         let mut statement = self
             .connection
-            .prepare("SELECT object_hash, canonical_json FROM objects ORDER BY object_hash")?;
+            .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")?;
         let rows = statement.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
         })?;
@@ -49,7 +49,7 @@ impl SqliteStore {
         for row in rows {
             let (stored_hash, bytes) = row?;
             report.checked_objects += 1;
-            let valid = ObjectHash::from_stored(stored_hash.clone())
+            let valid = ObjectId::from_stored(stored_hash.clone())
                 .is_some_and(|expected| CanonicalObject::stored(&expected, bytes).is_ok());
             if !valid {
                 report.invalid_objects.push(stored_hash);
@@ -85,7 +85,7 @@ impl SqliteStore {
 
         let mut control_statement = self.connection.prepare(
             "SELECT sequence, session_id, task_id, idempotency_key, intent_hash,
-                    observed_at_ms, input_hash, input_json, decision_hash, decision_json
+                    observed_at_ms, input_json, decision_json
              FROM control_observations ORDER BY sequence",
         )?;
         let control_rows = control_statement.query_map([], |row| {
@@ -96,10 +96,8 @@ impl SqliteStore {
                 idempotency_key: row.get(3)?,
                 intent_hash: row.get(4)?,
                 observed_at_ms: row.get(5)?,
-                input_hash: row.get(6)?,
-                input_json: row.get(7)?,
-                decision_hash: row.get(8)?,
-                decision_json: row.get(9)?,
+                input_json: row.get(6)?,
+                decision_json: row.get(7)?,
             })
         })?;
         for row in control_rows {
@@ -157,8 +155,7 @@ impl SqliteStore {
 
         let grant_rows = {
             let mut grant_statement = self.connection.prepare(
-                "SELECT grant_id, session_id, task_id, request_key, grant_hash,
-                        grant_json, state, issued_at_ms, expires_at_ms
+                "SELECT grant_id, session_id, task_id, request_key, grant_json, state, issued_at_ms, expires_at_ms
                  FROM control_turn_grants ORDER BY issued_at_ms, grant_id",
             )?;
             grant_statement
@@ -168,11 +165,10 @@ impl SqliteStore {
                         session_id: row.get(1)?,
                         task_id: row.get(2)?,
                         request_key: row.get(3)?,
-                        grant_hash: row.get(4)?,
-                        grant_json: row.get(5)?,
-                        state: row.get(6)?,
-                        issued_at_ms: row.get(7)?,
-                        expires_at_ms: row.get(8)?,
+                        grant_json: row.get(4)?,
+                        state: row.get(5)?,
+                        issued_at_ms: row.get(6)?,
+                        expires_at_ms: row.get(7)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?
@@ -202,7 +198,7 @@ impl SqliteStore {
             let mut statement = self.connection.prepare(
                 "SELECT superseded_grant_id, session_id, task_id,
                         replacement_request_key, replacement_decision_hash,
-                        supersession_hash, supersession_json, superseded_at_ms
+                        supersession_json, superseded_at_ms
                  FROM control_turn_grant_supersessions
                  ORDER BY superseded_at_ms, superseded_grant_id",
             )?;
@@ -214,9 +210,8 @@ impl SqliteStore {
                         task_id: row.get(2)?,
                         replacement_request_key: row.get(3)?,
                         replacement_decision_hash: row.get(4)?,
-                        supersession_hash: row.get(5)?,
-                        supersession_json: row.get(6)?,
-                        superseded_at_ms: row.get(7)?,
+                        supersession_json: row.get(5)?,
+                        superseded_at_ms: row.get(6)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?
@@ -232,8 +227,7 @@ impl SqliteStore {
         }
 
         let mut lease_statement = self.connection.prepare(
-            "SELECT lease_id, task_id, holder_session_id, lease_hash,
-                    lease_json, state, expires_at_ms
+            "SELECT lease_id, task_id, holder_session_id, lease_json, state, expires_at_ms
              FROM control_work_leases ORDER BY lease_id",
         )?;
         let lease_rows = lease_statement.query_map([], |row| {
@@ -241,10 +235,9 @@ impl SqliteStore {
                 lease_id: row.get(0)?,
                 task_id: row.get(1)?,
                 holder_session_id: row.get(2)?,
-                lease_hash: row.get(3)?,
-                lease_json: row.get(4)?,
-                state: row.get(5)?,
-                expires_at_ms: row.get(6)?,
+                lease_json: row.get(3)?,
+                state: row.get(4)?,
+                expires_at_ms: row.get(5)?,
             })
         })?;
         for row in lease_rows {
@@ -259,7 +252,7 @@ impl SqliteStore {
 
         let mut operation_statement = self.connection.prepare(
             "SELECT sequence, session_id, operation, idempotency_key,
-                    intent_hash, intent_json, result_hash, result_json
+                    intent_hash, intent_json, result_json
              FROM control_operation_results ORDER BY sequence",
         )?;
         let operation_rows = operation_statement.query_map([], |row| {
@@ -270,8 +263,7 @@ impl SqliteStore {
                 idempotency_key: row.get(3)?,
                 intent_hash: row.get(4)?,
                 intent_json: row.get(5)?,
-                result_hash: row.get(6)?,
-                result_json: row.get(7)?,
+                result_json: row.get(6)?,
             })
         })?;
         for row in operation_rows {
@@ -285,7 +277,7 @@ impl SqliteStore {
         }
         let mut policy_operation_statement = self.connection.prepare(
             "SELECT sequence, operation, idempotency_key, intent_hash, intent_json,
-                    result_hash, result_json
+                    result_json
              FROM control_policy_operation_results ORDER BY sequence",
         )?;
         let policy_operation_rows = policy_operation_statement.query_map([], |row| {
@@ -295,8 +287,7 @@ impl SqliteStore {
                 idempotency_key: row.get(2)?,
                 intent_hash: row.get(3)?,
                 intent_json: row.get(4)?,
-                result_hash: row.get(5)?,
-                result_json: row.get(6)?,
+                result_json: row.get(5)?,
             })
         })?;
         for row in policy_operation_rows {
@@ -349,7 +340,7 @@ impl SqliteStore {
             .optional()?;
         let policy_rows = {
             let mut statement = connection.prepare(
-                "SELECT policy_hash, policy_epoch
+                "SELECT policy_id, policy_epoch
                  FROM control_policy_versions ORDER BY policy_epoch",
             )?;
             statement
@@ -360,8 +351,8 @@ impl SqliteStore {
         };
         for (stored_hash, projected_epoch) in policy_rows {
             report.checked_control_records += 1;
-            let valid = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
+            let valid = ObjectId::from_stored(stored_hash.clone())
+                .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.clone()))
                 .and_then(|hash| Self::load_control_policy_version(connection, &hash))
                 .and_then(|(policy, authority)| {
                     Self::load_obligation_rule_set_on(connection, &policy.obligation_rule_set)?;
@@ -417,7 +408,7 @@ impl SqliteStore {
                     ("required_assurance", "TEXT"),
                     ("supported_effects_json", "TEXT"),
                     ("grant_ttl_seconds", "INTEGER"),
-                    ("policy_hash", "TEXT"),
+                    ("policy_id", "TEXT"),
                 ],
                 &mut report,
             )?
@@ -429,9 +420,9 @@ impl SqliteStore {
                 connection,
                 "control_policy_versions",
                 &[
-                    ("policy_hash", "TEXT"),
+                    ("policy_id", "TEXT"),
                     ("policy_epoch", "INTEGER"),
-                    ("authority_hash", "TEXT"),
+                    ("authority_id", "TEXT"),
                     ("policy_json", "BLOB"),
                 ],
                 &mut report,
@@ -444,7 +435,7 @@ impl SqliteStore {
                 connection,
                 "objects",
                 &[
-                    ("object_hash", "TEXT"),
+                    ("object_id", "TEXT"),
                     ("object_kind", "TEXT"),
                     ("canonical_json", "BLOB"),
                 ],
@@ -518,8 +509,8 @@ impl SqliteStore {
         if versions_shape && objects_shape {
             let policy_rows = (|| -> Result<Vec<(String, i64)>, rusqlite::Error> {
                 let mut statement = connection.prepare(
-                    "SELECT policy_hash, policy_epoch
-                     FROM control_policy_versions ORDER BY policy_epoch, policy_hash",
+                    "SELECT policy_id, policy_epoch
+                     FROM control_policy_versions ORDER BY policy_epoch, policy_id",
                 )?;
                 statement
                     .query_map([], |row| {
@@ -541,8 +532,8 @@ impl SqliteStore {
             };
             for (stored_hash, projected_epoch) in policy_rows {
                 report.checked_control_records += 1;
-                let valid = ObjectHash::from_stored(stored_hash.clone())
-                    .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
+                let valid = ObjectId::from_stored(stored_hash.clone())
+                    .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.clone()))
                     .and_then(|hash| Self::load_control_policy_version(connection, &hash))
                     .and_then(|(policy, authority)| {
                         Self::load_obligation_rule_set_on(
@@ -605,23 +596,18 @@ impl SqliteStore {
     pub(super) fn decode_control_observation(
         stored: &StoredControlObservation,
     ) -> Result<ObservedTurnDecision, StoreError> {
-        let input_hash = ObjectHash::from_stored(stored.input_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(stored.input_hash.clone()))?;
-        let input: TurnEvaluationInput =
-            CanonicalObject::stored(&input_hash, stored.input_json.clone())?.decode()?;
+        let input: TurnEvaluationInput = CanonicalObject::decode_bytes(&stored.input_json)?;
         let expected_intent = CanonicalObject::freeze(&TurnObservationIntentFingerprint {
             control_schema_version: input.control_schema_version,
             session_id: &input.session_id,
             task_id: input.task_id,
             intent: &input.intent,
         })?;
-        let decision_hash = ObjectHash::from_stored(stored.decision_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(stored.decision_hash.clone()))?;
         let observation: ObservedTurnDecision =
-            CanonicalObject::stored(&decision_hash, stored.decision_json.clone())?.decode()?;
+            CanonicalObject::decode_bytes(&stored.decision_json)?;
 
         let input_task = input.task_id.map(|task_id| task_id.0.to_string());
-        let row_matches = expected_intent.hash().as_str() == stored.intent_hash
+        let row_matches = expected_intent.key().as_str() == stored.intent_hash
             && observation.control_schema_version == CONTROL_SCHEMA_VERSION
             && input.session_id.0 == stored.session_id
             && input_task == stored.task_id
@@ -701,8 +687,7 @@ impl SqliteStore {
     }
 
     fn verify_control_grant_row(stored: &StoredControlGrantRow) -> Result<(), StoreError> {
-        let grant: IssuedTurnGrant =
-            Self::decode_canonical_projection(&stored.grant_hash, stored.grant_json.clone())?;
+        let grant: IssuedTurnGrant = Self::decode_json_projection(&stored.grant_json)?;
         let state = parse_enum::<TurnGrantState>(&stored.state)?;
         let delivery_matches = crate::control::delivery_matches_grant(&grant);
         let row_matches = grant.control_schema_version == CONTROL_SCHEMA_VERSION
@@ -734,10 +719,8 @@ impl SqliteStore {
         connection: &Connection,
         stored: &StoredTurnGrantSupersession,
     ) -> Result<(), StoreError> {
-        let transition: TurnGrantSupersession = Self::decode_canonical_projection(
-            &stored.supersession_hash,
-            stored.supersession_json.clone(),
-        )?;
+        let transition: TurnGrantSupersession =
+            Self::decode_json_projection(&stored.supersession_json)?;
         let grant = connection
             .query_row(
                 "SELECT session_id, task_id, request_key, state
@@ -797,7 +780,7 @@ impl SqliteStore {
 
     fn verify_control_operation(stored: &StoredControlOperation) -> Result<(), StoreError> {
         let intent = Self::decode_canonical_value(&stored.intent_hash, stored.intent_json.clone())?;
-        let result = Self::decode_canonical_value(&stored.result_hash, stored.result_json.clone())?;
+        let result: serde_json::Value = Self::decode_json_projection(&stored.result_json)?;
         let row_matches = intent.get("session_id").and_then(serde_json::Value::as_str)
             == Some(stored.session_id.as_str())
             && intent
@@ -856,21 +839,17 @@ impl SqliteStore {
         }
         match stored.operation.as_str() {
             "set_required_assurance" => {
-                Self::decode_canonical_projection::<ControlPolicyUpdateReceipt>(
-                    &stored.result_hash,
-                    stored.result_json.clone(),
-                )?;
+                Self::decode_json_projection::<ControlPolicyUpdateReceipt>(&stored.result_json)?;
             }
             "set_obligation_rule_set" => {
-                Self::decode_canonical_projection::<ObligationRuleSetUpdateReceipt>(
-                    &stored.result_hash,
-                    stored.result_json.clone(),
+                Self::decode_json_projection::<ObligationRuleSetUpdateReceipt>(
+                    &stored.result_json,
                 )?;
             }
             "set_acceptance_evaluation" => {
-                Self::decode_canonical_projection::<
+                Self::decode_json_projection::<
                     crate::storage::AcceptanceEvaluationPolicyUpdateReceipt,
-                >(&stored.result_hash, stored.result_json.clone())?;
+                >(&stored.result_json)?;
             }
             _ => {
                 return Err(StoreError::InvalidControlProjection(format!(
@@ -896,8 +875,8 @@ impl SqliteStore {
     /// suppressed projection so callers never mistake a no-op for success.
     pub(super) fn apply_memory_projection(
         transaction: &Transaction<'_>,
-        version_hash: &ObjectHash,
-        assertion_hash: &ObjectHash,
+        version_id: &ObjectId,
+        assertion_id: &ObjectId,
         version: &MemoryVersion,
         assertion: &MemoryAssertionEvent,
         mode: MemoryProjectionMode,
@@ -905,7 +884,7 @@ impl SqliteStore {
         if version.schema_version != SCHEMA_VERSION
             || assertion.schema_version != SCHEMA_VERSION
             || version.memory_id != assertion.memory_id
-            || &assertion.version != version_hash
+            || &assertion.version != version_id
         {
             return Err(StoreError::InvalidMemoryProjection(
                 "version and assertion identities do not agree".into(),
@@ -918,7 +897,7 @@ impl SqliteStore {
                 super::project_memory::project_memory_history_on(transaction, project, key)?;
             if history
                 .last()
-                .is_none_or(|entry| &entry.version_hash != version_hash)
+                .is_none_or(|entry| &entry.version_id != version_id)
             {
                 if mode == MemoryProjectionMode::Replay {
                     return Ok(());
@@ -952,7 +931,7 @@ impl SqliteStore {
         };
         let changed = transaction.execute(
             "INSERT INTO memory_heads (
-                 memory_id, version_hash, assertion_hash, schema_version,
+                 memory_id, version_id, assertion_id, schema_version,
                  status, scope_kind, project_id, task_id, work_id, agent_id,
                  memory_kind, authority, delivery, sensitivity, title, body,
                  created_at_ms
@@ -961,8 +940,8 @@ impl SqliteStore {
                  ?14, ?15, ?16, ?17
              )
              ON CONFLICT(memory_id) DO UPDATE SET
-                 version_hash = excluded.version_hash,
-                 assertion_hash = excluded.assertion_hash,
+                 version_id = excluded.version_id,
+                 assertion_id = excluded.assertion_id,
                  schema_version = excluded.schema_version,
                  status = excluded.status,
                  scope_kind = excluded.scope_kind,
@@ -981,8 +960,8 @@ impl SqliteStore {
                 OR excluded.status IN ('retracted', 'expired', 'tombstoned')",
             params![
                 version.memory_id.0.to_string(),
-                version_hash.as_str(),
-                assertion_hash.as_str(),
+                version_id.as_str(),
+                assertion_id.as_str(),
                 i64::from(version.schema_version),
                 enum_name(assertion.status)?,
                 scope_kind,
@@ -1003,28 +982,28 @@ impl SqliteStore {
             if mode == MemoryProjectionMode::Replay {
                 // Rebuild order is not a lifecycle clock, so an older live
                 // assertion must never replace a terminal head merely because
-                // its object hash sorts later.
+                // its object id sorts later.
                 return Ok(());
             }
             return Err(StoreError::InvalidMemoryProjection(format!(
-                "live assertion {assertion_hash} cannot replace terminal memory head {}",
+                "live assertion {assertion_id} cannot replace terminal memory head {}",
                 version.memory_id.0
             )));
         }
         transaction.execute(
-            "DELETE FROM object_fts WHERE object_hash IN (?1, ?2)",
+            "DELETE FROM object_fts WHERE object_id IN (?1, ?2)",
             params![
-                version_hash.as_str(),
+                version_id.as_str(),
                 version
                     .project_key
                     .as_ref()
                     .and_then(|_| version.parents.first())
-                    .map(ObjectHash::as_str)
+                    .map(ObjectId::as_str)
             ],
         )?;
         transaction.execute(
-            "INSERT INTO object_fts (object_hash, title, body) VALUES (?1, ?2, ?3)",
-            params![version_hash.as_str(), version.title, version.body],
+            "INSERT INTO object_fts (object_id, title, body) VALUES (?1, ?2, ?3)",
+            params![version_id.as_str(), version.title, version.body],
         )?;
         Ok(())
     }

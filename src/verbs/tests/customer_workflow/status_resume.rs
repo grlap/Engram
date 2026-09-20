@@ -427,8 +427,8 @@ fn status_resume_absent_external_reference_preserves_canonical_bytes() {
     absent["external_ref"] = serde_json::Value::Null;
     let decoded: crate::WorkItem = serde_json::from_value(absent).unwrap();
     assert_eq!(
-        crate::CanonicalObject::freeze(&item).unwrap().hash(),
-        crate::CanonicalObject::freeze(&decoded).unwrap().hash()
+        crate::CanonicalObject::freeze(&item).unwrap().key(),
+        crate::CanonicalObject::freeze(&decoded).unwrap().key()
     );
     assert_eq!(serde_json::to_value(decoded).unwrap(), original);
 }

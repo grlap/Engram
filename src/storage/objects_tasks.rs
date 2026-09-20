@@ -1,7 +1,7 @@
 use super::{
     CanonicalObject, ChangeCursor, Connection, DateTime, DeltaItem, DeserializeOwned, LocalTask,
     MAX_CONTROL_DELIVERY_EVENTS, MAX_CONTROL_DELIVERY_OBJECT_BYTES, MAX_TASK_CHANGE_OBJECT_BYTES,
-    MemoryAssertionEvent, MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectHash,
+    MemoryAssertionEvent, MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectId,
     ObservedTurnDecision, OptionalExtension, ParticipantMembership, SCHEMA_VERSION, Scope,
     Serialize, SessionId, SqliteStore, StoreError, StoredControlObservation, TaskChange, TaskDelta,
     TaskId, TaskState, Transaction, TransactionBehavior, TurnEvaluationInput,
@@ -41,7 +41,7 @@ impl SqliteStore {
         let mut items = Vec::with_capacity(changes.len());
         for change in changes {
             let object: serde_json::Value = self
-                .get_typed_object(&change.object_hash, &change.object_kind)?
+                .get_typed_object(&change.object_id, &change.object_kind)?
                 .ok_or_else(|| {
                     StoreError::InvalidTaskProjection(format!(
                         "change {} references a missing object",
@@ -60,7 +60,7 @@ impl SqliteStore {
             items.push(DeltaItem {
                 cursor: change.cursor,
                 object_kind: change.object_kind,
-                object_hash: change.object_hash,
+                object_id: change.object_id,
                 memory,
                 object,
             });
@@ -104,7 +104,7 @@ impl SqliteStore {
         let existing = transaction
             .query_row(
                 "SELECT intent_hash, sequence, session_id, task_id, idempotency_key,
-                        observed_at_ms, input_hash, input_json, decision_hash, decision_json
+                        observed_at_ms, input_json, decision_json
                  FROM control_observations
                  WHERE session_id = ?1 AND idempotency_key = ?2",
                 params![input.session_id.0, input.intent.idempotency_key],
@@ -118,10 +118,8 @@ impl SqliteStore {
                             idempotency_key: row.get(4)?,
                             intent_hash: row.get(0)?,
                             observed_at_ms: row.get(5)?,
-                            input_hash: row.get(6)?,
-                            input_json: row.get(7)?,
-                            decision_hash: row.get(8)?,
-                            decision_json: row.get(9)?,
+                            input_json: row.get(6)?,
+                            decision_json: row.get(7)?,
                         },
                     ))
                 },
@@ -129,7 +127,7 @@ impl SqliteStore {
             .optional()?;
 
         if let Some((stored_intent_hash, stored)) = existing {
-            if stored_intent_hash != intent.hash().as_str() {
+            if stored_intent_hash != intent.key().as_str() {
                 return Err(StoreError::TurnObservationIdempotencyConflict(
                     input.intent.idempotency_key.clone(),
                 ));
@@ -143,17 +141,15 @@ impl SqliteStore {
         let decision_object = CanonicalObject::freeze(&observation)?;
         transaction.execute(
             "INSERT INTO control_observations (
-                 session_id, task_id, idempotency_key, intent_hash, input_hash,
-                 input_json, decision_hash, decision_json, observed_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 session_id, task_id, idempotency_key, intent_hash,
+                 input_json, decision_json, observed_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 evaluated_input.session_id.0,
                 evaluated_input.task_id.map(|task_id| task_id.0.to_string()),
                 evaluated_input.intent.idempotency_key,
-                intent.hash().as_str(),
-                input_object.hash().as_str(),
+                intent.key().as_str(),
                 input_object.bytes(),
-                decision_object.hash().as_str(),
                 decision_object.bytes(),
                 evaluated_input.evaluated_at.timestamp_millis(),
             ],
@@ -262,7 +258,7 @@ impl SqliteStore {
     /// # Errors
     ///
     /// Returns [`StoreError`] when SQLite cannot read the feed or a stored
-    /// object hash is invalid.
+    /// object id is invalid.
     pub fn task_changes_since(
         &self,
         task_id: TaskId,
@@ -270,7 +266,7 @@ impl SqliteStore {
         limit: u32,
     ) -> Result<Vec<TaskChange>, StoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT task_cursor, object_kind, object_hash
+            "SELECT task_cursor, object_kind, object_id
              FROM task_changes
              WHERE task_id = ?1 AND task_cursor > ?2
              ORDER BY task_cursor
@@ -293,13 +289,13 @@ impl SqliteStore {
 
         rows.map(|row| {
             let (cursor, object_kind, stored_hash) = row?;
-            let object_hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let object_id = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
             Ok(TaskChange {
                 cursor: ChangeCursor(cursor),
                 task_id,
                 object_kind,
-                object_hash,
+                object_id,
             })
         })
         .collect()
@@ -318,7 +314,7 @@ impl SqliteStore {
         }
         let raw = {
             let mut statement = transaction.prepare(
-                "SELECT task_cursor, object_kind, object_hash
+                "SELECT task_cursor, object_kind, object_id
                  FROM task_changes
                  WHERE task_id = ?1 AND task_cursor > ?2 AND task_cursor <= ?3
                  ORDER BY task_cursor",
@@ -335,12 +331,12 @@ impl SqliteStore {
         };
         let mut changes = Vec::with_capacity(raw.len());
         for (cursor, object_kind, stored_hash) in raw {
-            let object_hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let object_id = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
             let stored: Option<(String, Vec<u8>)> = transaction
                 .query_row(
-                    "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
-                    [object_hash.as_str()],
+                    "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
+                    [object_id.as_str()],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
@@ -351,16 +347,16 @@ impl SqliteStore {
             };
             if stored_kind != object_kind {
                 return Err(StoreError::ObjectKindMismatch {
-                    hash: object_hash,
+                    hash: object_id,
                     stored: stored_kind,
                     requested: object_kind,
                 });
             }
-            let object = CanonicalObject::stored(&object_hash, bytes)?.decode()?;
+            let object = CanonicalObject::stored(&object_id, bytes)?.decode()?;
             changes.push(DeltaItem {
                 cursor: ChangeCursor(cursor),
                 object_kind: stored_kind,
-                object_hash,
+                object_id,
                 memory: None,
                 object,
             });
@@ -402,7 +398,7 @@ impl SqliteStore {
         let mut statement = transaction.prepare(
             "SELECT change.task_cursor, LENGTH(object.canonical_json)
              FROM task_changes change
-             JOIN objects object ON object.object_hash = change.object_hash
+             JOIN objects object ON object.object_id = change.object_id
              WHERE change.task_id = ?1 AND change.task_cursor > ?2
              ORDER BY change.task_cursor
              LIMIT ?3",
@@ -438,11 +434,11 @@ impl SqliteStore {
     ///
     /// Returns [`StoreError`] when SQLite fails, stored bytes fail integrity
     /// verification, or the object cannot be decoded as `T`.
-    pub fn get<T: DeserializeOwned>(&self, hash: &ObjectHash) -> Result<Option<T>, StoreError> {
+    pub fn get<T: DeserializeOwned>(&self, hash: &ObjectId) -> Result<Option<T>, StoreError> {
         let bytes: Option<Vec<u8>> = self
             .connection
             .query_row(
-                "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+                "SELECT canonical_json FROM objects WHERE object_id = ?1",
                 [hash.as_str()],
                 |row| row.get(0),
             )
@@ -455,7 +451,7 @@ impl SqliteStore {
 
     pub(super) fn get_typed_object<T: DeserializeOwned>(
         &self,
-        hash: &ObjectHash,
+        hash: &ObjectId,
         object_kind: &str,
     ) -> Result<Option<T>, StoreError> {
         Self::get_typed_object_on(&self.connection, hash, object_kind)
@@ -463,7 +459,7 @@ impl SqliteStore {
 
     pub(super) fn get_typed_object_on<T: DeserializeOwned>(
         connection: &Connection,
-        hash: &ObjectHash,
+        hash: &ObjectId,
         object_kind: &str,
     ) -> Result<Option<T>, StoreError> {
         Self::get_canonical_object_on(connection, hash, object_kind)?
@@ -473,12 +469,12 @@ impl SqliteStore {
 
     pub(super) fn get_canonical_object_on(
         connection: &Connection,
-        hash: &ObjectHash,
+        hash: &ObjectId,
         object_kind: &str,
     ) -> Result<Option<CanonicalObject>, StoreError> {
         let stored: Option<(String, Vec<u8>)> = connection
             .query_row(
-                "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+                "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
                 [hash.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -601,8 +597,8 @@ impl SqliteStore {
         let memory_id = uuid::Uuid::parse_str(&memory_id)
             .map(MemoryId)
             .map_err(|error| StoreError::InvalidMemoryProjection(error.to_string()))?;
-        let version = ObjectHash::from_stored(version.clone())
-            .ok_or(StoreError::InvalidStoredHash(version))?;
+        let version =
+            ObjectId::from_stored(version.clone()).ok_or(StoreError::InvalidStoredKey(version))?;
         let project = crate::domain::ProjectId(project_id);
         let task = task_id
             .map(|value| {
@@ -674,8 +670,8 @@ impl SqliteStore {
     ) -> Result<(), StoreError> {
         let existing: Option<(String, Vec<u8>)> = connection
             .query_row(
-                "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
-                [object.hash().as_str()],
+                "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
+                [object.key().as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
@@ -685,17 +681,17 @@ impl SqliteStore {
             }
             Some((stored_kind, bytes)) if bytes == object.bytes() => {
                 Err(StoreError::ObjectKindMismatch {
-                    hash: object.hash().clone(),
+                    hash: object.key().clone(),
                     stored: stored_kind,
                     requested: object_kind.to_owned(),
                 })
             }
-            Some(_) => Err(StoreError::ImmutableCollision(object.hash().clone())),
+            Some(_) => Err(StoreError::ImmutableCollision(object.key().clone())),
             None => {
                 connection.execute(
-                    "INSERT INTO objects (object_hash, object_kind, canonical_json)
+                    "INSERT INTO objects (object_id, object_kind, canonical_json)
                      VALUES (?1, ?2, ?3)",
-                    params![object.hash().as_str(), object_kind, object.bytes()],
+                    params![object.key().as_str(), object_kind, object.bytes()],
                 )?;
                 Ok(())
             }
@@ -752,8 +748,8 @@ impl SqliteStore {
         if let Some(cursor) = transaction
             .query_row(
                 "SELECT task_cursor FROM task_changes
-             WHERE task_id = ?1 AND object_hash = ?2",
-                params![task_id_text, object.hash().as_str()],
+             WHERE task_id = ?1 AND object_id = ?2",
+                params![task_id_text, object.key().as_str()],
                 |row| row.get(0),
             )
             .optional()?
@@ -770,9 +766,9 @@ impl SqliteStore {
         })?;
         transaction.execute(
             "INSERT INTO task_changes (
-                 task_id, task_cursor, object_kind, object_hash
+                 task_id, task_cursor, object_kind, object_id
              ) VALUES (?1, ?2, ?3, ?4)",
-            params![task_id_text, cursor, object_kind, object.hash().as_str()],
+            params![task_id_text, cursor, object_kind, object.key().as_str()],
         )?;
         Ok(ChangeCursor(cursor))
     }

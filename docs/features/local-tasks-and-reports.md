@@ -73,14 +73,14 @@ not_requested → finalization_pending → report_ready → publishing → publi
   the current alpha.
   `completion_seal` atomically captures the dense run-feed cut, accepted work
   revision, run/claim fences, reconciled action outcomes, released/transferred
-  leases, acceptance results, and evidence hashes. A root seal also binds the
-  required child seal hashes and aggregate roster/decisions/waivers. Discovery
+  leases, acceptance results, and evidence ids. A root seal also binds the
+  required child seal ids and aggregate roster/decisions/waivers. Discovery
   of more work before the seal aborts to `open`. Reopen after completion
   creates a new run generation while preserving root-work memory.
 - **Finalize** is optional and consumes the immutable `CompletionSeal`; it
   never drains execution again. Engram creates a `ReportAssembly` anchored to
   the root seal and gives the designated holder a fenced
-  `ReportAssemblyClaim`. A narrow finalizer grant binds the seal hash, assembly
+  `ReportAssemblyClaim`. A narrow finalizer grant binds the seal id, assembly
   generation/revision, and claim fence, then deterministically buckets
   root-work memories and completion contributions into report sections for
   one polishing pass. It cannot authorize ordinary workspace mutation.
@@ -106,7 +106,7 @@ released or transferred. Root completion additionally consumes required
 child seals and the root contribution roster. Report freeze requires the
 completion seal plus a live `ReportAssemblyClaim` and matching finalizer grant;
 publication is a separately authorized external effect. `report_ready` is the
-irreversible bytes/hash boundary. A publication intent separately freezes
+irreversible bytes/fingerprint boundary. A publication intent separately freezes
 target and idempotency key; later corrections create a superseding report.
 
 ## The report contract
@@ -120,7 +120,7 @@ In order:
 5. Validation and evidence
 6. Unresolved risks, blockers, follow-ups
 7. Durable-memory promotion candidates
-8. Provenance: local root/work/run ids, memory/version and contribution hashes,
+8. Provenance: local root/work/run ids, memory/version and contribution ids,
    timestamps, actors, assurance, and any participant waivers
 
 The report cites the local memory and version IDs it was distilled from, so

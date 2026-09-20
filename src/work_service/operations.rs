@@ -1,7 +1,7 @@
 //! Six-operation protocol inputs, results, and receipts.
 
 use super::{
-    ChildRequirement, ControlWorkBinding, DateTime, Deserialize, JsonSchema, ObjectHash, Serialize,
+    ChildRequirement, ControlWorkBinding, DateTime, Deserialize, JsonSchema, ObjectId, Serialize,
     Utc, WorkBlockerKind, WorkCompletionRecovery, WorkFocusView, WorkId, WorkItemKind,
     WorkItemSummary, WorkObligationPage, WorkRevisionPatch,
 };
@@ -434,7 +434,7 @@ pub struct WorkEvaluateResult {
     pub operation: String,
     pub receipt: WorkMutationReceipt,
     /// Canonical hash of the evaluation object on the run feed.
-    pub evaluation: ObjectHash,
+    pub evaluation: ObjectId,
     /// True when an identical attempt was already recorded.
     pub replayed: bool,
     pub projection: WorkEvaluationProjection,
@@ -497,7 +497,7 @@ pub enum WorkCompleteResult {
 /// hash, while host-private waiver reasons never cross the protocol boundary.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkCompletedReceipt {
-    pub seal: ObjectHash,
+    pub seal: ObjectId,
     pub work_id: WorkId,
     pub run_id: crate::WorkRunId,
     pub completed_at: DateTime<Utc>,
@@ -531,7 +531,7 @@ pub enum WorkAcceptanceProvenance {
 /// The evaluation a seal binds, as read back from the seal and its record.
 #[derive(Clone, Debug)]
 pub struct WorkEvaluatedProvenance {
-    pub evaluation: ObjectHash,
+    pub evaluation: ObjectId,
     pub mode: crate::domain::AcceptanceEvaluationMode,
     pub assurance: crate::domain::AssuranceLevel,
     pub evaluator: crate::domain::ActorContext,

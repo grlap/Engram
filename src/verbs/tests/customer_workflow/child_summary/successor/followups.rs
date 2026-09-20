@@ -194,13 +194,13 @@ fn two_required_children_consolidate_into_one_successor_seal() {
         .resolve_work_ref(&project, &successor)
         .unwrap()
         .work_id;
-    let seal_hash = store
+    let seal_id = store
         .latest_work_run(parent_id)
         .unwrap()
         .unwrap()
         .completion_seal
         .unwrap();
-    let seal: crate::CompletionSeal = store.get(&seal_hash).unwrap().unwrap();
+    let seal: crate::CompletionSeal = store.get(&seal_id).unwrap().unwrap();
     let successor_hash = store
         .latest_work_run(successor_id)
         .unwrap()

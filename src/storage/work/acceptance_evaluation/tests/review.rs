@@ -7,7 +7,7 @@ use crate::domain::{
     OfferWorkHandoffRequest, ReopenWorkRequest,
 };
 
-fn pass_judgment(note: &ObjectHash) -> Vec<CriterionVerdictInput> {
+fn pass_judgment(note: &ObjectId) -> Vec<CriterionVerdictInput> {
     vec![verdict(
         1,
         AcceptanceVerdict::Pass,
@@ -65,14 +65,14 @@ fn forge_stored_seal(store: &SqliteStore, seal: &CompletionSeal, forged: &Comple
     let forged_object =
         CanonicalObject::identified(&store.stored_seal_id(seal), forged).expect("forged seal");
     for statement in [
-        "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
-        "UPDATE work_completion_seals SET seal_json = ?2 WHERE seal_hash = ?1",
+        "UPDATE objects SET canonical_json = ?2 WHERE object_id = ?1",
+        "UPDATE work_completion_seals SET seal_json = ?2 WHERE seal_id = ?1",
     ] {
         let changed = store
             .connection
             .execute(
                 statement,
-                params![forged_object.hash().as_str(), forged_object.bytes()],
+                params![forged_object.key().as_str(), forged_object.bytes()],
             )
             .expect("rewrite the stored seal");
         assert_eq!(changed, 1, "{statement}");
@@ -432,7 +432,7 @@ fn policy_history_refuses_an_authority_that_disagrees_on_acceptance_evaluation()
     let stored: Vec<u8> = store
         .connection
         .query_row(
-            "SELECT policy_json FROM control_policy_versions WHERE policy_hash = ?1",
+            "SELECT policy_json FROM control_policy_versions WHERE policy_id = ?1",
             [original_hash.as_str()],
             |row| row.get(0),
         )
@@ -443,10 +443,10 @@ fn policy_history_refuses_an_authority_that_disagrees_on_acceptance_evaluation()
     store
         .connection
         .execute(
-            "INSERT INTO objects (object_hash, object_kind, canonical_json, created_at)
-             SELECT ?1, object_kind, ?2, created_at FROM objects WHERE object_hash = ?3",
+            "INSERT INTO objects (object_id, object_kind, canonical_json, created_at)
+             SELECT ?1, object_kind, ?2, created_at FROM objects WHERE object_id = ?3",
             params![
-                forged.hash().as_str(),
+                forged.key().as_str(),
                 forged.bytes(),
                 original_hash.as_str()
             ],
@@ -455,27 +455,27 @@ fn policy_history_refuses_an_authority_that_disagrees_on_acceptance_evaluation()
     store
         .connection
         .execute(
-            "UPDATE control_policy_versions SET policy_hash = ?1, policy_json = ?2 WHERE policy_hash = ?3",
-            params![forged.hash().as_str(), forged.bytes(), original_hash.as_str()],
+            "UPDATE control_policy_versions SET policy_id = ?1, policy_json = ?2 WHERE policy_id = ?3",
+            params![forged.key().as_str(), forged.bytes(), original_hash.as_str()],
         )
         .expect("repoint the policy version");
     store
         .connection
         .execute(
-            "UPDATE control_policy_state SET policy_hash = ?1 WHERE policy_hash = ?2",
-            params![forged.hash().as_str(), original_hash.as_str()],
+            "UPDATE control_policy_state SET policy_id = ?1 WHERE policy_id = ?2",
+            params![forged.key().as_str(), original_hash.as_str()],
         )
         .expect("repoint the policy head");
     store
         .connection
         .execute(
-            "DELETE FROM objects WHERE object_hash = ?1",
+            "DELETE FROM objects WHERE object_id = ?1",
             [original_hash.as_str()],
         )
         .expect("remove the original policy object");
     // The version loader names the disagreement; doctor reports the version
     // and the head that rests on it, and nothing else.
-    let error = SqliteStore::load_control_policy_version(&store.connection, forged.hash())
+    let error = SqliteStore::load_control_policy_version(&store.connection, forged.key())
         .expect_err("a policy that disagrees with its authority does not load");
     assert!(
         error.to_string().contains("authority is invalid"),
@@ -485,7 +485,7 @@ fn policy_history_refuses_an_authority_that_disagrees_on_acceptance_evaluation()
     assert!(
         report
             .invalid_control_records
-            .contains(&format!("control_policy_version:{}", forged.hash())),
+            .contains(&format!("control_policy_version:{}", forged.key())),
         "{report:?}"
     );
     assert!(
@@ -605,7 +605,7 @@ fn seal_evaluation_binding_is_validated_per_relationship() {
     assert!(binding(store, &legacy).expect("legacy seal").is_none());
     // Missing object.
     let mut missing = seal.clone();
-    missing.acceptance_evaluation = Some(ObjectHash::from_canonical_bytes(b"no such evaluation"));
+    missing.acceptance_evaluation = Some(ObjectId::from_canonical_bytes(b"no such evaluation"));
     assert!(binding(store, &missing).is_err());
     // Another work item or run.
     let other = store
@@ -713,7 +713,7 @@ fn the_word_accepts_full_hashes_of_host_minted_verification_evidence() {
             },
             at(25),
         )
-        .expect("a typed evidence hash resolves through the word");
+        .expect("a typed evidence id resolves through the word");
     assert_eq!(recorded.value["evaluation"]["passed"], 1);
 }
 
@@ -950,7 +950,7 @@ fn legacy_policy_normalizes_its_other_fields_and_round_trips() {
     let stored: Vec<u8> = store
         .connection
         .query_row(
-            "SELECT policy_json FROM control_policy_versions WHERE policy_hash = ?1",
+            "SELECT policy_json FROM control_policy_versions WHERE policy_id = ?1",
             [back.active_policy.as_str()],
             |row| row.get(0),
         )
@@ -988,7 +988,7 @@ fn observed_passes_are_classified_from_canonical_verification_evidence() {
     store
         .connection
         .execute(
-            "UPDATE work_run_evidence SET verification_result = 'passed' WHERE evidence_hash = ?1",
+            "UPDATE work_run_evidence SET verification_result = 'passed' WHERE evidence_id = ?1",
             [failed[0].as_str()],
         )
         .expect("corrupt the projection column");
@@ -1045,7 +1045,7 @@ fn verification_projection_mismatches_refuse_exactly() {
         Some((VerificationKind::Build, ExecutionOutcome::Unknown)),
         30,
     );
-    let fail_citing = |cut: i64, hash: &ObjectHash, second: i64| {
+    let fail_citing = |cut: i64, hash: &ObjectId, second: i64| {
         request(
             &work,
             cut,
@@ -1089,7 +1089,7 @@ fn verification_projection_mismatches_refuse_exactly() {
         store
             .connection
             .execute(
-                "UPDATE work_run_evidence SET verification_result = ?1 WHERE evidence_hash = ?2",
+                "UPDATE work_run_evidence SET verification_result = ?1 WHERE evidence_id = ?2",
                 params![column, hash.as_str()],
             )
             .expect("set the projection column");
@@ -1106,7 +1106,7 @@ fn verification_projection_mismatches_refuse_exactly() {
         store
             .connection
             .execute(
-                "UPDATE work_run_evidence SET verification_result = ?1 WHERE evidence_hash = ?2",
+                "UPDATE work_run_evidence SET verification_result = ?1 WHERE evidence_id = ?2",
                 params![column, hash.as_str()],
             )
             .expect("restore the projection column");
@@ -1440,14 +1440,14 @@ fn a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused() {
             .rationale
             .push_str(" (appended after the cut)");
         let later_object = CanonicalObject::freeze(&later).expect("freeze the later evaluation");
-        assert_ne!(later_object.hash(), &newest.evaluation);
+        assert_ne!(later_object.key(), &newest.evaluation);
         store
             .connection
             .execute(
-                "INSERT INTO objects (object_hash, object_kind, canonical_json, created_at)
-                 SELECT ?1, object_kind, ?2, created_at FROM objects WHERE object_hash = ?3",
+                "INSERT INTO objects (object_id, object_kind, canonical_json, created_at)
+                 SELECT ?1, object_kind, ?2, created_at FROM objects WHERE object_id = ?3",
                 params![
-                    later_object.hash().as_str(),
+                    later_object.key().as_str(),
                     later_object.bytes(),
                     newest.evaluation.as_str()
                 ],
@@ -1468,12 +1468,12 @@ fn a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused() {
             .connection
             .execute(
                 "INSERT INTO work_feed_entries
-                     (feed_kind, feed_id, position, object_kind, object_hash, work_id)
+                     (feed_kind, feed_id, position, object_kind, object_id, work_id)
                  SELECT feed_kind, feed_id, ?1, object_kind, ?2, work_id FROM work_feed_entries
-                 WHERE feed_kind = 'run_execution' AND feed_id = ?3 AND object_hash = ?4",
+                 WHERE feed_kind = 'run_execution' AND feed_id = ?3 AND object_id = ?4",
                 params![
                     head + 1,
-                    later_object.hash().as_str(),
+                    later_object.key().as_str(),
                     run_feed,
                     newest.evaluation.as_str()
                 ],
@@ -1487,7 +1487,7 @@ fn a_seal_binding_an_older_pass_under_a_newer_blocking_evaluation_is_refused() {
                 params![head + 1, run_feed],
             )
             .expect("advance the run feed head");
-        assert_eq!(newest_through(head + 1), Some(later_object.hash().clone()));
+        assert_eq!(newest_through(head + 1), Some(later_object.key().clone()));
         let still_bound = store
             .completion_seal_evaluation(&seal)
             .expect("a later entry past the cut leaves the unforged seal valid")
@@ -1605,7 +1605,7 @@ fn a_broken_evaluated_seal_binding_is_disclosed_as_unavailable_provenance() {
     store
         .connection
         .execute(
-            "UPDATE objects SET canonical_json = X'7B7D' WHERE object_hash = ?1",
+            "UPDATE objects SET canonical_json = X'7B7D' WHERE object_id = ?1",
             [recorded.evaluation.as_str()],
         )
         .expect("corrupt the evaluation object");
@@ -1701,7 +1701,7 @@ fn a_corrupted_verification_projection_refuses_reads_and_completion_through_the_
     store
         .connection
         .execute(
-            "UPDATE work_run_evidence SET verification_result = 'indeterminate' WHERE evidence_hash = ?1",
+            "UPDATE work_run_evidence SET verification_result = 'indeterminate' WHERE evidence_id = ?1",
             [passed[0].as_str()],
         )
         .expect("corrupt the projection column");
@@ -1757,7 +1757,7 @@ fn a_corrupted_verification_projection_refuses_reads_and_completion_through_the_
     store
         .connection
         .execute(
-            "UPDATE work_run_evidence SET verification_result = 'passed' WHERE evidence_hash = ?1",
+            "UPDATE work_run_evidence SET verification_result = 'passed' WHERE evidence_id = ?1",
             [passed[0].as_str()],
         )
         .expect("restore the projection column");

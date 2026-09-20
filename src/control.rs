@@ -10,7 +10,7 @@ use chrono::TimeDelta;
 use serde::Serialize;
 
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectId,
     domain::{
         ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, BuiltinObligationRuleRef,
         BuiltinObligationTrigger, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextPacket,
@@ -381,10 +381,10 @@ struct ControlDeliveryContent<'a> {
 pub(crate) fn delivery_content_digest(
     context: Option<&ContextPacket>,
     delta: &TaskDelta,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     Ok(
         CanonicalObject::freeze(&ControlDeliveryContent { context, delta })?
-            .hash()
+            .key()
             .clone(),
     )
 }
@@ -1403,7 +1403,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        ObjectHash,
+        ObjectId,
         domain::{
             ActionBeginDecision, ActionBeginSnapshot, ActionGrantBasis, ActionGrantState,
             AuthorityState, ControlAssurance, ControlEpochs, DeliveryPage, ParentTurnState,
@@ -1412,8 +1412,8 @@ mod tests {
         },
     };
 
-    fn hash(seed: &str) -> ObjectHash {
-        ObjectHash::from_canonical_bytes(seed.as_bytes())
+    fn hash(seed: &str) -> ObjectId {
+        ObjectId::from_canonical_bytes(seed.as_bytes())
     }
 
     fn input() -> TurnEvaluationInput {
@@ -2216,7 +2216,7 @@ mod tests {
         };
         let environment_fingerprint = CanonicalObject::freeze(&components)
             .expect("freeze fixed environment components")
-            .hash()
+            .key()
             .clone();
         let run_id = WorkRunId(
             uuid::Uuid::parse_str("018f6d8c-3b10-7d6f-9a11-102030405060").expect("fixed run id"),
@@ -2263,19 +2263,19 @@ mod tests {
             },
             recorded_at: fixed_time,
         };
-        let evidence_hash = CanonicalObject::freeze(&evidence)
+        let evidence_id = CanonicalObject::freeze(&evidence)
             .expect("freeze fixed environment evidence")
-            .hash()
+            .key()
             .clone();
 
         let requirement = VerificationRequirement {
             check_kind: VerificationKind::Test,
             check_fingerprint: Some(hash("cargo test --workspace")),
-            required_environment: Some(evidence_hash.clone()),
+            required_environment: Some(evidence_id.clone()),
         };
         assert_eq!(
             requirement.required_environment.as_ref(),
-            Some(&evidence_hash)
+            Some(&evidence_id)
         );
     }
 }

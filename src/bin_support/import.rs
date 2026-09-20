@@ -4,7 +4,7 @@ use super::attribution::resolve_shell_work_attribution;
 use crate::ImportCommand;
 use anyhow::Result;
 use engram::domain::{WorkImportInput, WorkSourceKey};
-use engram::{LocalWorkService, ObjectHash, ProjectId, SessionId, StoreError, store_error_value};
+use engram::{LocalWorkService, ObjectId, ProjectId, SessionId, StoreError, store_error_value};
 use std::{
     fs::File,
     io::Read,
@@ -38,7 +38,7 @@ pub(crate) fn run(
                 .preview_work_import(&read_input(&file)?, now)
                 .and_then(|value| serde_json::to_value(value).map_err(StoreError::from)),
             ImportCommand::Apply { file, preview } => {
-                let token: ObjectHash = preview.parse().map_err(|_| {
+                let token: ObjectId = preview.parse().map_err(|_| {
                     StoreError::InvalidWork(
                         "--preview must be the complete token returned by preview".into(),
                     )

@@ -2,7 +2,7 @@
 //! These diagnostics do not introduce another store-admission scheme.
 
 use super::{
-    CanonicalObject, Connection, ObjectHash, Path, StoreError, current_schema_reference,
+    CanonicalObject, Connection, ObjectId, Path, StoreError, current_schema_reference,
     stored_schema_definitions,
 };
 
@@ -88,9 +88,9 @@ fn path_policy_mismatch(message: &str) -> Option<(&str, &str)> {
 ///
 /// # Errors
 /// Returns an error when the in-memory current schema cannot be constructed.
-pub fn running_schema_reference() -> Result<ObjectHash, StoreError> {
+pub fn running_schema_reference() -> Result<ObjectId, StoreError> {
     Ok(CanonicalObject::freeze(&current_schema_reference()?)?
-        .hash()
+        .key()
         .clone())
 }
 
@@ -99,12 +99,12 @@ pub fn running_schema_reference() -> Result<ObjectHash, StoreError> {
 ///
 /// # Errors
 /// Returns an error when the existing file or schema cannot be read.
-pub fn store_schema_reference(path: &Path) -> Result<ObjectHash, StoreError> {
+pub fn store_schema_reference(path: &Path) -> Result<ObjectId, StoreError> {
     let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     connection.busy_timeout(super::Duration::from_secs(5))?;
     Ok(
         CanonicalObject::freeze(&stored_schema_definitions(&connection)?)?
-            .hash()
+            .key()
             .clone(),
     )
 }

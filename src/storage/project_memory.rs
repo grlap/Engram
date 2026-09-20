@@ -4,7 +4,7 @@ use super::{
     MAX_PROJECT_MEMORY_ATTRIBUTION_BYTES, MAX_PROJECT_MEMORY_ATTRIBUTION_TEXT_BYTES,
     MAX_PROJECT_MEMORY_BODY_BYTES, MAX_PROJECT_MEMORY_KEY_BYTES,
     MAX_PROJECT_MEMORY_PROVENANCE_LINKS, MemoryAssertionEvent, MemoryHeadProjectionRow, MemoryId,
-    MemoryKind, MemoryProjectionMode, MemoryStatus, MemoryVersion, ObjectHash, OptionalExtension,
+    MemoryKind, MemoryProjectionMode, MemoryStatus, MemoryVersion, ObjectId, OptionalExtension,
     PROJECT_MEMORY_FIRST_LINE_BYTES, PROJECT_MEMORY_LIST_LIMIT, PreparedProjectMemory,
     ProjectMemoryAdvertisement, ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow,
     ProjectMemoryMutationReceipt, Redactor, RememberProjectMemoryRequest, SCHEMA_VERSION, Scope,
@@ -182,8 +182,8 @@ impl SqliteStore {
         )?;
         Self::apply_memory_projection(
             &transaction,
-            prepared.version_object.hash(),
-            prepared.assertion_object.hash(),
+            prepared.version_object.key(),
+            prepared.assertion_object.key(),
             &prepared.version,
             &prepared.assertion,
             MemoryProjectionMode::Live,
@@ -254,7 +254,7 @@ impl SqliteStore {
         let assertion = MemoryAssertionEvent {
             schema_version: SCHEMA_VERSION,
             memory_id: existing.version.memory_id,
-            version: existing.version_hash.clone(),
+            version: existing.version_id.clone(),
             status: MemoryStatus::Tombstoned,
             policy_reason: "explicit project-memory forget".into(),
             actor,
@@ -264,8 +264,8 @@ impl SqliteStore {
         Self::insert_object(&transaction, "memory_assertion_event", &assertion_object)?;
         Self::apply_memory_projection(
             &transaction,
-            &existing.version_hash,
-            assertion_object.hash(),
+            &existing.version_id,
+            assertion_object.key(),
             &existing.version,
             &assertion,
             MemoryProjectionMode::Live,
@@ -666,7 +666,7 @@ fn prepare_project_memory(
         memory_id,
         project_key: Some(key.to_owned()),
         parents: previous
-            .map(|entry| entry.version_hash.clone())
+            .map(|entry| entry.version_id.clone())
             .into_iter()
             .collect(),
         kind: MemoryKind::Episode,
@@ -697,7 +697,7 @@ fn prepare_project_memory(
     let assertion = MemoryAssertionEvent {
         schema_version: SCHEMA_VERSION,
         memory_id,
-        version: version_object.hash().clone(),
+        version: version_object.key().clone(),
         status: MemoryStatus::Active,
         policy_reason: "project episodes are active immediately".into(),
         actor: request.actor.clone(),
@@ -775,7 +775,7 @@ pub(super) fn validate_keyed_project_memory_shape(
     let restored = version.source_snapshot.as_ref().is_some_and(|source| {
         (source.source_ref == super::graph_snapshot::RESTORED_MEMORY_SOURCE
             || source.source_ref == super::graph_snapshot::RESTORED_REDACTED_MEMORY_SOURCE)
-            && ObjectHash::from_stored(source.fingerprint.clone()).is_some()
+            && ObjectId::from_stored(source.fingerprint.clone()).is_some()
     });
     if version.parents.len() <= 1
         && version.kind == MemoryKind::Episode
@@ -864,13 +864,13 @@ fn lookup_project_memory_history_on(
     // projection fail closed; open/doctor names the explicit repair command.
     let stored = connection
         .query_row(
-            "SELECT head.memory_id, head.version_hash, head.assertion_hash,
+            "SELECT head.memory_id, head.version_id, head.assertion_id,
                     head.schema_version, head.status, head.scope_kind,
                     head.project_id, head.task_id, head.work_id, head.agent_id,
                     head.memory_kind, head.authority, head.delivery,
                     head.sensitivity, head.title, head.body, head.created_at_ms
              FROM objects AS object INDEXED BY objects_project_memory_key
-             JOIN memory_heads AS head ON head.version_hash = object.object_hash
+             JOIN memory_heads AS head ON head.version_id = object.object_id
              WHERE object.object_kind = 'memory_version'
                AND json_extract(object.canonical_json, '$.scope.kind') = 'project'
                AND json_type(object.canonical_json, '$.project_key') = 'text'
@@ -880,8 +880,8 @@ fn lookup_project_memory_history_on(
             |row| {
                 Ok(MemoryHeadProjectionRow {
                     memory_id: row.get(0)?,
-                    version_hash: row.get(1)?,
-                    assertion_hash: row.get(2)?,
+                    version_id: row.get(1)?,
+                    assertion_id: row.get(2)?,
                     schema_version: row.get(3)?,
                     status: row.get(4)?,
                     scope_kind: row.get(5)?,
@@ -920,25 +920,25 @@ fn lookup_project_memory_history_on(
         }
         return Ok(Vec::new());
     };
-    let version_hash = ObjectHash::from_stored(stored.version_hash.clone())
-        .ok_or_else(|| StoreError::InvalidStoredHash(stored.version_hash.clone()))?;
-    let assertion_hash = ObjectHash::from_stored(stored.assertion_hash.clone())
-        .ok_or_else(|| StoreError::InvalidStoredHash(stored.assertion_hash.clone()))?;
+    let version_id = ObjectId::from_stored(stored.version_id.clone())
+        .ok_or_else(|| StoreError::InvalidStoredKey(stored.version_id.clone()))?;
+    let assertion_id = ObjectId::from_stored(stored.assertion_id.clone())
+        .ok_or_else(|| StoreError::InvalidStoredKey(stored.assertion_id.clone()))?;
     let version: MemoryVersion =
-        SqliteStore::get_typed_object_on(connection, &version_hash, "memory_version")?.ok_or_else(
+        SqliteStore::get_typed_object_on(connection, &version_id, "memory_version")?.ok_or_else(
             || StoreError::InvalidMemoryProjection("project memory version is missing".into()),
         )?;
     let assertion: MemoryAssertionEvent =
-        SqliteStore::get_typed_object_on(connection, &assertion_hash, "memory_assertion_event")?
+        SqliteStore::get_typed_object_on(connection, &assertion_id, "memory_assertion_event")?
             .ok_or_else(|| {
                 StoreError::InvalidMemoryProjection("project memory assertion is missing".into())
             })?;
     validate_keyed_project_memory_shape(&version, &assertion)?;
     let expected_status =
-        SqliteStore::expected_memory_head_status_on(connection, &version_hash, assertion.status)?;
+        SqliteStore::expected_memory_head_status_on(connection, &version_id, assertion.status)?;
     let expected = SqliteStore::expected_memory_head_projection(
-        &version_hash,
-        &assertion_hash,
+        &version_id,
+        &assertion_id,
         &version,
         &assertion,
         expected_status,
@@ -950,7 +950,7 @@ fn lookup_project_memory_history_on(
         && version.authority == Authority::Soft
         && version.delivery == Delivery::OnDemand
         && assertion.memory_id == version.memory_id
-        && assertion.version == version_hash;
+        && assertion.version == version_id;
     if !shape_matches {
         return Err(StoreError::InvalidMemoryProjection(
             "project memory key projection does not match its canonical objects".into(),
@@ -959,7 +959,7 @@ fn lookup_project_memory_history_on(
     let history = project_memory_history_on(connection, project_id, key)?;
     if history
         .last()
-        .is_none_or(|entry| entry.version_hash != version_hash || entry.assertion != assertion)
+        .is_none_or(|entry| entry.version_id != version_id || entry.assertion != assertion)
     {
         return Err(StoreError::InvalidMemoryProjection(
             "project memory head is not the current canonical revision".into(),
@@ -998,8 +998,8 @@ fn project_memory_rows_on(
             "SELECT json_extract(object.canonical_json, '$.project_key'),
                     COUNT(*) OVER()
              FROM object_fts AS f
-             JOIN memory_heads AS head ON head.version_hash = f.object_hash
-             JOIN objects AS object ON object.object_hash = head.version_hash
+             JOIN memory_heads AS head ON head.version_id = f.object_id
+             JOIN objects AS object ON object.object_id = head.version_id
              WHERE object.object_kind = 'memory_version'
                AND json_extract(object.canonical_json, '$.scope.kind') = 'project'
                AND json_extract(object.canonical_json, '$.scope.project') = ?1
@@ -1043,7 +1043,7 @@ fn project_memory_rows_on(
         let mut statement = connection.prepare(
             "SELECT json_extract(object.canonical_json, '$.project_key')
              FROM memory_heads AS head
-             JOIN objects AS object ON object.object_hash = head.version_hash
+             JOIN objects AS object ON object.object_id = head.version_id
              WHERE object.object_kind = 'memory_version'
                AND json_extract(object.canonical_json, '$.scope.kind') = 'project'
                AND json_extract(object.canonical_json, '$.scope.project') = ?1
@@ -1191,18 +1191,18 @@ pub(super) fn derived_project_memory_state_rows_on(
     Ok(connection
         .prepare(
             "WITH assertion_counts AS (
-                 SELECT json_extract(canonical_json, '$.version') AS version_hash,
+                 SELECT json_extract(canonical_json, '$.version') AS version_id,
                         COUNT(*) AS assertion_count
                  FROM objects
                  WHERE object_kind = 'memory_assertion_event'
-                 GROUP BY version_hash
+                 GROUP BY version_id
              )
              SELECT json_extract(version.canonical_json, '$.scope.project') AS project_id,
                     SUM(CASE WHEN head.status = 'active' THEN 1 ELSE 0 END),
                     SUM(COALESCE(assertion_counts.assertion_count, 0))
              FROM objects AS version
-             LEFT JOIN memory_heads AS head ON head.version_hash = version.object_hash
-             LEFT JOIN assertion_counts ON assertion_counts.version_hash = version.object_hash
+             LEFT JOIN memory_heads AS head ON head.version_id = version.object_id
+             LEFT JOIN assertion_counts ON assertion_counts.version_id = version.object_id
              WHERE version.object_kind = 'memory_version'
                AND json_extract(version.canonical_json, '$.scope.kind') = 'project'
                AND json_type(version.canonical_json, '$.project_key') = 'text'
@@ -1226,9 +1226,9 @@ pub(super) fn derived_project_memory_state_on(
     let heads = connection
         .prepare(
             "SELECT json_extract(version.canonical_json, '$.memory_id'),
-                    COALESCE(head.status, 'superseded'), version.object_hash
+                    COALESCE(head.status, 'superseded'), version.object_id
              FROM objects AS version INDEXED BY objects_project_memory_key
-             LEFT JOIN memory_heads AS head ON head.version_hash = version.object_hash
+             LEFT JOIN memory_heads AS head ON head.version_id = version.object_id
              WHERE version.object_kind = 'memory_version'
                AND json_extract(version.canonical_json, '$.scope.kind') = 'project'
                AND json_type(version.canonical_json, '$.project_key') = 'text'
@@ -1246,13 +1246,13 @@ pub(super) fn derived_project_memory_state_on(
     let mut active_count = 0_i64;
     let mut change_position = 0_i64;
     let mut assertion_statement = connection.prepare(
-        "SELECT object_hash
+        "SELECT object_id
          FROM objects INDEXED BY objects_memory_assertion_version
          WHERE object_kind = 'memory_assertion_event'
            AND json_extract(canonical_json, '$.version') = ?1
-         ORDER BY object_hash",
+         ORDER BY object_id",
     )?;
-    for (memory_id, status, version_hash) in heads {
+    for (memory_id, status, version_id) in heads {
         active_count = active_count
             .checked_add(i64::from(status == "active"))
             .ok_or_else(|| {
@@ -1261,27 +1261,27 @@ pub(super) fn derived_project_memory_state_on(
                 )
             })?;
         let assertion_hashes = assertion_statement
-            .query_map([version_hash.as_str()], |row| row.get::<_, String>(0))?
+            .query_map([version_id.as_str()], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for stored_hash in assertion_hashes {
-            let assertion_hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let assertion_id = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
             let assertion: MemoryAssertionEvent = SqliteStore::get_typed_object_on(
                 connection,
-                &assertion_hash,
+                &assertion_id,
                 "memory_assertion_event",
             )?
             .ok_or_else(|| {
                 StoreError::InvalidMemoryProjection(format!(
-                    "project memory assertion {assertion_hash} is missing"
+                    "project memory assertion {assertion_id} is missing"
                 ))
             })?;
             if assertion.schema_version != SCHEMA_VERSION
                 || assertion.memory_id.0.to_string() != memory_id
-                || assertion.version.as_str() != version_hash
+                || assertion.version.as_str() != version_id
             {
                 return Err(StoreError::InvalidMemoryProjection(format!(
-                    "project memory assertion {assertion_hash} disagrees with its head"
+                    "project memory assertion {assertion_id} disagrees with its head"
                 )));
             }
             change_position = change_position.checked_add(1).ok_or_else(|| {

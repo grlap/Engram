@@ -73,7 +73,7 @@ fn import_apply_checks_latest_capture_while_doctor_and_export_check_omitted_hist
         store
             .connection
             .execute(
-                "DELETE FROM objects WHERE object_hash = ?1",
+                "DELETE FROM objects WHERE object_id = ?1",
                 [older.snapshot.as_str()],
             )
             .unwrap();
@@ -95,7 +95,7 @@ fn import_apply_checks_latest_capture_while_doctor_and_export_check_omitted_hist
         store
             .connection
             .execute(
-                "DELETE FROM objects WHERE object_hash = ?1",
+                "DELETE FROM objects WHERE object_id = ?1",
                 [latest.snapshot.as_str()],
             )
             .unwrap();
@@ -150,11 +150,11 @@ fn import_graph_restore_refuses_keys_outside_the_lookup_contract() {
             document.body.sources[0].hash =
                 CanonicalObject::freeze(&document.body.sources[0].canonical_json)
                     .unwrap()
-                    .hash()
+                    .key()
                     .clone();
             document.manifest.body_sha256 = CanonicalObject::freeze(&document.body)
                 .unwrap()
-                .hash()
+                .key()
                 .clone();
             let mut destination = SqliteStore::open_in_memory().unwrap();
             let before =

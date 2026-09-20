@@ -16,7 +16,7 @@ use crate::domain::{
     WorkItemKind, WorkObservationBasis, WorkOrigin, WorkSourceKey, WorkSourceLookup,
     WorkSourceNotice, WorkSourceProposal, WorkSourceSnapshot,
 };
-use crate::{CanonicalObject, ObjectHash, RestoredRecord, memory::Redactor};
+use crate::{CanonicalObject, ObjectId, RestoredRecord, memory::Redactor};
 
 #[cfg(test)]
 mod tests;
@@ -84,8 +84,8 @@ fn source_item_on(
 ) -> Result<Option<WorkItem>, StoreError> {
     validate_key(source)?;
     let mut statement = connection.prepare(
-        "SELECT work.work_id, source.object_hash FROM work_items work
-         JOIN objects source ON source.object_hash = work.source_snapshot_hash
+        "SELECT work.work_id, source.object_id FROM work_items work
+         JOIN objects source ON source.object_id = work.source_snapshot_id
          WHERE work.project_id = ?1 AND source.object_kind = 'work_source_snapshot'
            AND json_extract(source.canonical_json, '$.adapter_kind') = ?2
            AND json_extract(source.canonical_json, '$.canonical_ref') = ?3
@@ -105,7 +105,7 @@ fn source_item_on(
     let Some((id, hash)) = rows.into_iter().next() else {
         return Ok(None);
     };
-    let hash = ObjectHash::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredHash(hash))?;
+    let hash = ObjectId::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredKey(hash))?;
     let snapshot =
         load_typed_work_object::<WorkSourceSnapshot>(connection, &hash, "work_source_snapshot")?;
     let item = load_work_item(connection, parse_work_id(&id)?)?;
@@ -126,8 +126,8 @@ pub(in crate::storage) fn native_source_notices_on(
     item: &WorkItem,
 ) -> Result<Vec<WorkSourceNotice>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object.object_hash FROM objects object
-         JOIN work_feed_entries feed ON feed.object_hash = object.object_hash
+        "SELECT object.object_id FROM objects object
+         JOIN work_feed_entries feed ON feed.object_id = object.object_id
          WHERE object.object_kind = 'work_source_proposal'
            AND json_extract(object.canonical_json, '$.work_id') = ?1
            AND feed.feed_kind = 'root_work' AND feed.feed_id = ?2
@@ -143,7 +143,7 @@ pub(in crate::storage) fn native_source_notices_on(
         .into_iter()
         .map(|hash| {
             let hash =
-                ObjectHash::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredHash(hash))?;
+                ObjectId::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredKey(hash))?;
             let proposal = load_typed_work_object::<WorkSourceProposal>(
                 connection,
                 &hash,
@@ -186,14 +186,14 @@ fn known_snapshot_on(
     item: &WorkItem,
     source: &WorkSourceKey,
     bytes: &[u8],
-) -> Result<Option<ObjectHash>, StoreError> {
+) -> Result<Option<ObjectId>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object_hash FROM objects INDEXED BY objects_work_source_key
+        "SELECT object_id FROM objects INDEXED BY objects_work_source_key
          WHERE object_kind = 'work_source_snapshot'
            AND json_extract(canonical_json, '$.adapter_kind') = ?1
            AND json_extract(canonical_json, '$.canonical_ref') = ?2
            AND canonical_json = ?3
-         ORDER BY object_hash",
+         ORDER BY object_id",
     )?;
     let ids = statement
         .query_map(
@@ -202,7 +202,7 @@ fn known_snapshot_on(
         )?
         .collect::<Result<Vec<_>, _>>()?;
     for id in ids {
-        let id = ObjectHash::from_stored(id.clone()).ok_or(StoreError::InvalidStoredHash(id))?;
+        let id = ObjectId::from_stored(id.clone()).ok_or(StoreError::InvalidStoredKey(id))?;
         if source_snapshot_known_on(connection, item, &id)? {
             return Ok(Some(id));
         }
@@ -213,7 +213,7 @@ fn known_snapshot_on(
 fn source_snapshot_known_on(
     connection: &Connection,
     item: &WorkItem,
-    snapshot: &ObjectHash,
+    snapshot: &ObjectId,
 ) -> Result<bool, StoreError> {
     if item.source_snapshot_id.as_ref() == Some(snapshot) {
         return Ok(true);
@@ -231,8 +231,8 @@ fn source_snapshot_known_on(
     }
     let hash: Option<String> = connection
         .query_row(
-            "SELECT record.record_hash FROM work_restored_records record
-         JOIN objects object ON object.object_hash = record.record_hash
+            "SELECT record.record_id FROM work_restored_records record
+         JOIN objects object ON object.object_id = record.record_id
          WHERE record.work_id = ?1 AND EXISTS (
            SELECT 1 FROM json_each(object.canonical_json, '$.history.source_notices') notice
            WHERE json_extract(notice.value, '$.proposed_snapshot') = ?2)
@@ -257,7 +257,7 @@ fn selected_restored_source_on(
     item: &WorkItem,
     hash: String,
 ) -> Result<RestoredRecord, StoreError> {
-    let hash = ObjectHash::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredHash(hash))?;
+    let hash = ObjectId::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredKey(hash))?;
     let record =
         load_typed_work_object::<RestoredRecord>(connection, &hash, "work_restored_record")?;
     if record.work_id != item.work_id
@@ -283,7 +283,7 @@ fn source_notice_summary_on(
 ) -> Result<(usize, Option<WorkSourceNotice>), StoreError> {
     let inherited_count: i64 = connection.query_row(
         "SELECT COALESCE(SUM(json_array_length(object.canonical_json, '$.history.source_notices')), 0)
-         FROM work_restored_records record JOIN objects object ON object.object_hash = record.record_hash
+         FROM work_restored_records record JOIN objects object ON object.object_id = record.record_id
          WHERE record.work_id = ?1",
         [item.work_id.0.to_string()], |row| row.get(0),
     )?;
@@ -291,7 +291,7 @@ fn source_notice_summary_on(
         .map_err(|_| invalid("source notice count exceeds the supported range"))?;
     let native_count: i64 = connection.query_row(
         "SELECT COUNT(*) FROM objects object
-         JOIN work_feed_entries feed ON feed.object_hash = object.object_hash
+         JOIN work_feed_entries feed ON feed.object_id = object.object_id
          WHERE object.object_kind = 'work_source_proposal'
            AND json_extract(object.canonical_json, '$.work_id') = ?1
            AND feed.feed_kind = 'root_work' AND feed.feed_id = ?2",
@@ -316,8 +316,8 @@ fn latest_source_notice_on(
     let mut latest = None;
     let hash: Option<String> = connection
         .query_row(
-            "SELECT object.object_hash FROM objects object
-         JOIN work_feed_entries feed ON feed.object_hash = object.object_hash
+            "SELECT object.object_id FROM objects object
+         JOIN work_feed_entries feed ON feed.object_id = object.object_id
          WHERE object.object_kind = 'work_source_proposal'
            AND json_extract(object.canonical_json, '$.work_id') = ?1
            AND feed.feed_kind = 'root_work' AND feed.feed_id = ?2
@@ -327,8 +327,7 @@ fn latest_source_notice_on(
         )
         .optional()?;
     if let Some(hash) = hash {
-        let hash =
-            ObjectHash::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredHash(hash))?;
+        let hash = ObjectId::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredKey(hash))?;
         let proposal = load_typed_work_object::<WorkSourceProposal>(
             connection,
             &hash,
@@ -339,8 +338,8 @@ fn latest_source_notice_on(
     } else {
         let hash: Option<String> = connection
             .query_row(
-                "SELECT record.record_hash FROM work_restored_records record
-             JOIN objects object ON object.object_hash = record.record_hash
+                "SELECT record.record_id FROM work_restored_records record
+             JOIN objects object ON object.object_id = record.record_id
              WHERE record.work_id = ?1
                AND json_array_length(object.canonical_json, '$.history.source_notices') > 0
              ORDER BY record.generation_index DESC LIMIT 1",
@@ -501,7 +500,7 @@ fn preview_on(
             draft.acceptance = normalize_strings(&draft.acceptance);
             draft
         }),
-        preview_token: token.hash().clone(),
+        preview_token: token.key().clone(),
     })
 }
 
@@ -620,7 +619,7 @@ impl SqliteStore {
         &mut self,
         project: &ProjectId,
         input: &WorkImportInput,
-        preview_token: &ObjectHash,
+        preview_token: &ObjectId,
         actor: &ActorContext,
         now: DateTime<Utc>,
         redactor: &R,
@@ -643,8 +642,8 @@ impl SqliteStore {
         if let Some(receipt) = replay_operation(
             &transaction,
             "import_work",
-            intent.hash().as_str(),
-            intent.hash(),
+            intent.key().as_str(),
+            intent.key(),
         )? {
             transaction.commit()?;
             return Ok(receipt);
@@ -688,9 +687,9 @@ impl SqliteStore {
                 external_ref: None,
                 notes: Vec::new(),
                 origin: WorkOrigin::Imported,
-                source_snapshot_id: Some(snapshot.hash().clone()),
+                source_snapshot_id: Some(snapshot.key().clone()),
                 actor: actor.clone(),
-                idempotency_key: intent.hash().as_str().into(),
+                idempotency_key: intent.key().as_str().into(),
                 created_at: now,
             };
             create_root_on(&transaction, &request, &[], redactor)?
@@ -701,14 +700,14 @@ impl SqliteStore {
             .ok_or_else(|| invalid("import has no cited snapshot"))?;
         let proposal = if preview.effect == WorkImportEffect::Notify {
             let event: Option<String> = transaction.query_row(
-                "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+                "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
                 [item.work_id.0.to_string()],
                 |row| row.get(0),
             )?;
             let basis = if let Some(hash) = event {
                 WorkObservationBasis::NativeEvent {
-                    event: ObjectHash::from_stored(hash.clone())
-                        .ok_or(StoreError::InvalidStoredHash(hash))?,
+                    event: ObjectId::from_stored(hash.clone())
+                        .ok_or(StoreError::InvalidStoredKey(hash))?,
                 }
             } else {
                 WorkObservationBasis::RestoredRecord {
@@ -726,7 +725,7 @@ impl SqliteStore {
                 notice: WorkSourceNotice {
                     work_revision: item.revision,
                     cited_snapshot: cited_snapshot.clone(),
-                    proposed_snapshot: snapshot.hash().clone(),
+                    proposed_snapshot: snapshot.key().clone(),
                     actor: actor.clone(),
                     recorded_at: now,
                 },
@@ -743,14 +742,14 @@ impl SqliteStore {
                 "work_source_proposal",
                 &object,
             )?;
-            Some(object.hash().clone())
+            Some(object.key().clone())
         } else {
             None
         };
         let receipt = WorkImportReceipt {
             effect: preview.effect,
             source_key: preview.source_key,
-            snapshot: snapshot.hash().clone(),
+            snapshot: snapshot.key().clone(),
             cited_snapshot,
             work_id: item.work_id,
             work_ref: item.short_ref,
@@ -760,8 +759,8 @@ impl SqliteStore {
         persist_operation_result(
             &transaction,
             "import_work",
-            intent.hash().as_str(),
-            intent.hash(),
+            intent.key().as_str(),
+            intent.key(),
             &receipt,
         )?;
         transaction.commit()?;

@@ -251,7 +251,7 @@ Neither authorizes resource mutation.
 
 A `RootExecution` is one aggregate execution generation for a root. It owns
 the contributor roster, current child-run membership, required child
-`CompletionSeal` hashes, root decisions/waivers, and the root completion
+`CompletionSeal` ids, root decisions/waivers, and the root completion
 barrier. The shipped
 [work-graph snapshot](features/work-graph-snapshot.md) adds the one
 completion proof that is not a seal: an item loaded completed carries an
@@ -279,7 +279,7 @@ nonempty drain until controlled `completion_pending` ships. Availability
 (`ready`, `claimed`, `active`, `blocked`, `deferred`,
 `waiting`) is a derived projection. Completion binds the accepted work
 revision, run generation, claim fence, checkpoint position, acceptance
-results, and evidence hashes. Required children and prerequisites must be
+results, and evidence ids. Required children and prerequisites must be
 complete or an explicit reason-attributed waiver must account for them. Root
 completion additionally binds required child seals or reason-attributed waivers for
 disposed required children, plus the `RootExecution`
@@ -323,7 +323,7 @@ third admissible proof), plus contributions or attributed, audited waivers by
 a project-bound session.
 `completion_seal` captures one dense run-feed cut
 plus the accepted work revision, run/claim fences, action reconciliation,
-acceptance results, and evidence hashes; a root seal also binds those child
+acceptance results, and evidence ids; a root seal also binds those child
 seals and aggregate contributions. The seal makes the work `completed`; an
 attributed abort before it returns to `open`. Reopen preserves root-work
 memory but creates a clean run generation.
@@ -364,7 +364,7 @@ host creates a `ReportAssembly` anchored to the root seal and acquires a
 fenced `ReportAssemblyClaim` for its designated finalizer. This post-completion
 claim is neither a `WorkClaim` nor a `ResourceLease`, requires no live work
 claim, and permits no ordinary workspace mutation. The narrow finalizer grant
-binds the seal hash, assembly generation/revision, and assembly-claim fence
+binds the seal id, assembly generation/revision, and assembly-claim fence
 for deterministic assembly and one polishing pass. Handoff or recovery bumps
 that fence. Reaching `report_ready` terminalizes the claim and freezes
 immutable bytes and a report hash. A publication intent and idempotency key
@@ -506,7 +506,7 @@ lag count. `turn_begin` and action authorization recheck the watermark. A
 reported context compaction invalidates packet delivery and forces pinned
 re-injection even when the cursor did not change.
 
-The packet hash reproduces content; the event cursor orders behaviorally
+The packet fingerprint reproduces content; the event cursor orders behaviorally
 relevant work/run changes; a project policy epoch invalidates grants after global
 control/mediation changes; a work admission epoch invalidates grants after
 applicable pinned-rule, participant-access, work-revision, claim, or run-state
@@ -544,13 +544,13 @@ authenticated policy administration is deferred. The implicit bootstrap
 default uses synthetic system attribution; an explicit initial assurance
 requires and records an asserted operator plus reason. Selecting the new policy
 and advancing the project epoch is one transaction.
-The active policy also selects one canonical `ObligationRuleSet` hash.
+The active policy also selects one canonical `ObligationRuleSet` id.
 Assurance-only transitions preserve the selected set. A host/operator-only
 activation may append a validated
-`set_obligation_rule_set` successor under the same epoch/hash compare-and-swap.
+`set_obligation_rule_set` successor under the same epoch/id compare-and-swap.
 The shipped operator CLI accepts at most 64 KiB of strict nested V1 JSON inline
 or through `@file`; rollback re-supplies the desired typed JSON and never
-activates a hash alone. No MCP or model-turn operation can administer it.
+activates an id alone. No MCP or model-turn operation can administer it.
 Unknown schemas, unknown fields or triggers, duplicate rule identities, and
 missing selected objects fail closed.
 Every active run rechecks that shared epoch at turn/action boundaries—no
@@ -1178,7 +1178,7 @@ For a work-bound begun turn, the private checkpoint may atomically append up to
 64 host execution observations, mint up to 16 typed verification objects, and
 mint up to four source-bound environment identities. Verification derives its
 source/run/session/check/result/time binding from a producer observation and
-may link an environment by object hash or same-request index. Environment
+may link an environment by object id or same-request index. Environment
 evidence may use an opaque fingerprint or supply a bounded closed
 component identity: toolchain, optional sandbox/image, workspace id, and the
 bound session's capability-map revision. Engram derives the component
@@ -1190,19 +1190,19 @@ satisfies verification; the work protocol may only attach an existing typed
 hash to the focused run.
 
 Every checkpoint resolves the obligation rule set selected by the begun
-grant's frozen project-policy epoch and records its hash on the canonical
+grant's frozen project-policy epoch and records its id on the canonical
 `ExecutionObservation`. The built-in set maps every observation with
 `source_changed=true` to one immutable test obligation regardless of outcome
-or source-basis presence. Each definition binds the same rule-set hash, rule
+or source-basis presence. Each definition binds the same rule-set id, rule
 identity/version, trigger, and requirement. A later policy activation applies
 only to later observations and cannot reinterpret existing history. Every
-observation and obligation definition carries its exact rule-set hash.
+observation and obligation definition carries its exact rule-set id.
 Obligation definitions
 and terminal satisfaction/waiver events are direct project, root-work, and
 run-execution feed objects; query rows are verified projections.
 A typed V1 requirement may leave the verification command and environment
 open, as the stock set does, or pin an exact `check_fingerprint` and previously
-recorded `EnvironmentEvidence` object hash. A mismatched command, environment,
+recorded `EnvironmentEvidence` object id. A mismatched command, environment,
 or source basis leaves the obligation open; only exact passed evidence at the
 post-mutation cut satisfies it.
 A passed test satisfies open definitions only against the latest mutation at
@@ -1225,9 +1225,9 @@ declares obligation schema V1 and binds every applicable definition to its
 satisfied/waived resolution; success and fresh-session focus reconstruct their
 pages from canonical history, and the final checkpoint acknowledges the
 matching typed verification evidence.
-The current built-in requirement does not pin an environment hash. New seals
+The current built-in requirement does not pin an environment id. New seals
 nevertheless declare environment schema V1 and bind the sorted, distinct
-environment-evidence hashes at or before the exact dense cut, with a maximum
+environment-evidence ids at or before the exact dense cut, with a maximum
 of 64 and without copying component bytes. Required child seals are decoded
 and checked recursively; every accepted seal carries the current obligation
 and environment schema bindings.
@@ -1312,7 +1312,7 @@ An import creates immutable `source_snapshot` evidence and a local work
 revision. The local item then evolves independently. An explicit refresh
 creates another snapshot and a proposed revision; it never overwrites local
 priority, graph edges, claims, evidence, or completion. Memories derived from
-mutable external state cite the relevant snapshot hash so their basis remains
+mutable external state cite the relevant snapshot id so their basis remains
 reproducible after the source changes or disappears.
 
 ### 9.4 Adapters & phasing
@@ -1340,7 +1340,7 @@ outcome, released or transferred resource leases, contributed, and satisfied
 acceptance, and closed every obligation applicable at the exact completion cut
 with a bound terminal resolution—or an attributed, audited waiver by a
 project-bound session records the omission. New seals also cite the exact
-bounded environment-evidence hash set
+bounded environment-evidence id set
 at that cut; the component objects remain separate canonical evidence. A
 root whose completion transitively rests on a restored completion from the
 shipped work-graph snapshot is refused here with `report_input_restored`.
@@ -1352,7 +1352,7 @@ After the barrier, Engram creates a `ReportAssembly` anchored to the root
 `CompletionSeal`. The designated finalizer holds a fenced
 `ReportAssemblyClaim`; this authority is distinct from the terminalized work
 claim and released execution/resource leases. Its finalizer grant binds the
-seal hash, assembly generation/revision, and assembly-claim fence and is
+seal id, assembly generation/revision, and assembly-claim fence and is
 restricted to deterministic report assembly and polishing. It cannot
 authorize ordinary execution mutation. Only then is the report **frozen at
 `report_ready`**—an immutable object with a `report_hash`—and the assembly
@@ -1407,7 +1407,7 @@ evaluation harness:
   memory rate, cited-in-answer rate, packet bytes. **Precision before
   recall:** a plausible wrong memory silently corrupts work; a visible miss
   just prompts a search.
-- **Retrieval decision logs** without sensitive bodies: packet hash,
+- **Retrieval decision logs** without sensitive bodies: packet fingerprint,
   candidate ids considered and included, scores and reasons, budget
   exclusions, and whether the agent used or cited each item. This is the data
   that turns budget defaults (§4.4) from guesses into tuned values.
@@ -1471,7 +1471,7 @@ outcomes:
 | Typing | Four species, behavior bound to type | Orthogonal kind / authority / delivery axes; `decision` first-class | **Codex**, plus Fable's derived-default mapping so the simple mental model survives (§2.2) |
 | Identity | Single record, edited via supersedes | Stable id + immutable content-addressed versions with parents | **Codex** (§2.1, §2.4). *Superseded 2026-09-17: a version's id is a random UUID minted when it is stored, never derived from its bytes; hashes remain content fingerprints only (§3.1.1).* |
 | Storage | SQLite canonical, JSONL export | Git object store canonical; SQLite as disposable derived index | **Codex** (Draft 0.2); superseded by Greg's local-first V1 (SQLite canonical, Git deferred, §3) |
-| Retrieval shape | Three rungs, hard budgets, titles index | Agree; add fail-closed pinned tier, omission manifest, packet hash/explain | **Fable** structure + **Codex** hardening (§4) |
+| Retrieval shape | Three rungs, hard budgets, titles index | Agree; add fail-closed pinned tier, omission manifest, packet fingerprint/explain | **Fable** structure + **Codex** hardening (§4) |
 | Write policy | Trust follows priority; distillation proposes only | Refine by origin × authority; evidence-backed agent writes activate | **Both** — merged matrix (§5) |
 | Lifecycle clocks | Single `review_by` | Separate `review_by` from `valid_until`; stale ≠ expired | **Codex** (§6.1) |
 | Conflicts | Supersedes chains | Contested state, `contradicts` edges, multi-parent resolution; no LWW | **Codex** (§6.3) |
@@ -1483,7 +1483,7 @@ outcomes:
 | Greg's decisions | Round 3 — name Engram; Rust; proprietary tracker → `DummyTrackerAdapter` in V1; runtime-context identity, no SSO/LDAP; no DLP backend selected; no team scope in V1 (Greg, relayed via Codex::AgentMemory) | | Recorded (§12) → Draft 0.3. *Publication scaffolding superseded 2026-09-20: the unwired dummy adapter is removed; publication remains a deferred optional capability (§9.2).* |
 | Dual memory / report model | Greg: local working memory while work runs; polished final report published to the tracker at finalization. Codex elaboration: SQLite canonical in V1; Git store deferred, not rejected; finalization state machine; report contract with cited memory/version IDs; configurable post-publication retention | | Adopted (§1, §2.6, §3, §9.5) → Draft 0.3 |
 | Round-4 correction | Failure transition returned to `finalization_pending` | Freeze the report at `report_ready`: immutable report + hash bound to the idempotency key; failure retries identical bytes, never re-enters distillation; revision = superseding version + new intent. Endorsed keeping §3.1.1/JCS in V1 | **Codex**, adopted (§2.6, §9.5) → Draft 0.4, final ACK by both authors |
-| Round-5 product test | Greg asked whether the authors would actually use Engram and clarified that multi-session work is normal. Fable identified capture ceremony, double entry, claims, and peer visibility as adoption blockers. | Codex separated packet hash from ordered event cursor, added leases/recovery, finalization barrier, and stable project identity across worktrees. | **Both**, joint position confirmed: narrow Engram to concurrent execution memory with three visibility rings, one-write-many-views, deterministic report assembly, and the backlog/execution seam (§1–5, §8–9) → Draft 0.5 |
+| Round-5 product test | Greg asked whether the authors would actually use Engram and clarified that multi-session work is normal. Fable identified capture ceremony, double entry, claims, and peer visibility as adoption blockers. | Codex separated packet fingerprint from ordered event cursor, added leases/recovery, finalization barrier, and stable project identity across worktrees. | **Both**, joint position confirmed: narrow Engram to concurrent execution memory with three visibility rings, one-write-many-views, deterministic report assembly, and the backlog/execution seam (§1–5, §8–9) → Draft 0.5 |
 | Round-6 control correction | Greg identified the missing behavioral and coordination layer and asked Engram to control it. Engram::Opus independently argued that the hot path should mediate by inlining fresh context, with refusal as a narrow tail; semantic capture must not gate edits; enforcement needs observe/replay evidence and honest coverage. | A voluntary memory loop is not control. Separate deterministic decisions from host enforcement; add recovery/finalizer grants and a stable quiescence cut to avoid refusal/finalization deadlocks; mediate declared material capabilities with scoped fenced leases, checkpoints, and crash-safe receipts. | **Adopted:** Engram becomes the task-bound behavioral/coordination decision plane while the host remains actuator/reference monitor. Normal pre-turn grants inline delivery; capability-specific failure policy, observe-first rollout, and advisory/turn-gated/action-gated assurance keep the claim honest (§2.7, §8.3) → Draft 0.6 |
 | Round-7 local-work correction | Greg required Engram to replace Beads for local work: external injection and publication are both optional because heavy external systems do not scale to execution-time decomposition. Engram::Opus endorsed local ownership, claim/lease separation, derived readiness, and optional boundaries, while challenging durability, assignment, agent ceremony, root memory scope, and authority escalation. | Add a first-class work graph and six-operation ambient model protocol; keep assignment, claim, and resource lease distinct; bind grants to work/claim/lease/context fences; make completion evidence-based; separate publication; expose explicit durability modes. | **Adopted with Greg's clarification:** SQLite is immediately authoritative in valid `local` mode; optional durability improves over time but is never a prerequisite for local execution. Honest mode claims, restore/integrity tooling, and round-trip Beads compatibility bound the replacement promise (§2.6, §3.4, §8, §9) → Draft 0.7. |
 | Round-7 independent rereview | Engram::Opus accepted Greg's optional-storage clarification but found stale durability-gate prose, run-owned memory that would disappear on reopen, ambiguous sparse/global cursors in safety CAS, focus/claim coupling, and completion/report drain ordering. | Preserve memory on the root work item across runs; use dense named project/root/run source feeds plus a separate per-session delivery sequence; make focus navigation-only; put draining in `CompletionSeal` and make optional report assembly consume it. | **Adopted before implementation.** The rereview identified no additional P0/P1 category beyond these exact corrections (§1.2, §2.6–2.7, §3.1, §8–9). |

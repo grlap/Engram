@@ -6,7 +6,7 @@ use super::{
     ControlPolicyRecoveryReport, Duration, EffectClass, HashMap, HashSet, HostPathPolicy,
     InitialControlPolicy, IntegrityReport, MAX_CONTROL_POLICY_AUTHORITY_BYTES,
     MemoryAssertionEvent, MemoryHeadProjectionRow, MemoryStatus, MemoryVersion,
-    OBLIGATION_RULE_SET_SCHEMA_VERSION, ObjectHash, ObligationRuleSet, OpenWriteNeed,
+    OBLIGATION_RULE_SET_SCHEMA_VERSION, ObjectId, ObligationRuleSet, OpenWriteNeed,
     OptionalExtension, Path, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
     ProjectPolicyOperation, Redactor, SCHEMA_VERSION, SchemaDurability, SchemaOwner, Scope,
     SqliteStore, StoreError, TransactionBehavior, Utc, current_schema_definition_issue,
@@ -91,7 +91,7 @@ impl SqliteStore {
             stored_host_path_policy: Self::stored_host_path_policy_on(&snapshot)?,
             control: super::ReadinessControlPolicy {
                 schema_version: CONTROL_SCHEMA_VERSION,
-                policy: policy.policy_hash,
+                policy: policy.policy_id,
                 epoch: policy.epoch.0,
                 required_assurance: policy.required_assurance,
                 obligation_rules: policy.obligation_rule_set,
@@ -655,13 +655,13 @@ impl SqliteStore {
             connection.execute_batch("BEGIN IMMEDIATE;")?;
             connection.execute_batch(
                 "CREATE TABLE IF NOT EXISTS objects (
-                 object_hash TEXT PRIMARY KEY,
+                 object_id TEXT PRIMARY KEY,
                  object_kind TEXT NOT NULL,
                  canonical_json BLOB NOT NULL,
                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              ) STRICT;
              CREATE VIRTUAL TABLE IF NOT EXISTS object_fts USING fts5(
-                 object_hash UNINDEXED,
+                 object_id UNINDEXED,
                  title,
                  body
              );
@@ -689,20 +689,20 @@ impl SqliteStore {
                  ON objects(
                      json_extract(canonical_json, '$.project_id'),
                      json_extract(canonical_json, '$.attempt_id'),
-                     object_hash
+                     object_id
                  )
                  WHERE object_kind = 'work_graph_snapshot_saved';
              CREATE INDEX IF NOT EXISTS objects_graph_snapshot_load_audit
                  ON objects(
                      json_extract(canonical_json, '$.project_id'),
                      json_extract(canonical_json, '$.attempt_id'),
-                     object_hash
+                     object_id
                  )
                  WHERE object_kind = 'work_graph_snapshot_loaded';
              CREATE TABLE IF NOT EXISTS memory_heads (
                  memory_id TEXT PRIMARY KEY,
-                 version_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 assertion_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                 version_id TEXT NOT NULL REFERENCES objects(object_id),
+                 assertion_id TEXT NOT NULL REFERENCES objects(object_id),
                  schema_version INTEGER NOT NULL,
                  status TEXT NOT NULL,
                  scope_kind TEXT NOT NULL,
@@ -748,24 +748,24 @@ impl SqliteStore {
                  change_position INTEGER NOT NULL CHECK(change_position >= 0)
              ) STRICT;
              CREATE TABLE IF NOT EXISTS memory_contradictions (
-                 contradiction_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+                 contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
                  task_id TEXT NOT NULL REFERENCES tasks(task_id),
-                 left_version_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 right_version_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 UNIQUE(left_version_hash, right_version_hash),
-                 CHECK(left_version_hash < right_version_hash)
+                 left_version_id TEXT NOT NULL REFERENCES objects(object_id),
+                 right_version_id TEXT NOT NULL REFERENCES objects(object_id),
+                 UNIQUE(left_version_id, right_version_id),
+                 CHECK(left_version_id < right_version_id)
              ) STRICT;
              CREATE INDEX IF NOT EXISTS memory_contradictions_versions
-                 ON memory_contradictions(left_version_hash, right_version_hash);
+                 ON memory_contradictions(left_version_id, right_version_id);
              CREATE TABLE IF NOT EXISTS memory_contradiction_edges (
-                 contradiction_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+                 contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
                  project_id TEXT NOT NULL,
                  task_id TEXT,
                  work_root_id TEXT,
-                 left_version_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 right_version_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 UNIQUE(left_version_hash, right_version_hash),
-                 CHECK(left_version_hash < right_version_hash)
+                 left_version_id TEXT NOT NULL REFERENCES objects(object_id),
+                 right_version_id TEXT NOT NULL REFERENCES objects(object_id),
+                 UNIQUE(left_version_id, right_version_id),
+                 CHECK(left_version_id < right_version_id)
              ) STRICT;
              CREATE INDEX IF NOT EXISTS memory_contradiction_edges_context
                  ON memory_contradiction_edges(project_id, task_id, work_root_id);
@@ -801,9 +801,9 @@ impl SqliteStore {
                   task_id TEXT NOT NULL,
                   task_cursor INTEGER NOT NULL CHECK(task_cursor > 0),
                   object_kind TEXT NOT NULL,
-                  object_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                  object_id TEXT NOT NULL REFERENCES objects(object_id),
                   UNIQUE(task_id, task_cursor),
-                  UNIQUE(task_id, object_hash)
+                  UNIQUE(task_id, object_id)
               ) STRICT;
              CREATE TABLE IF NOT EXISTS control_observations (
                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -811,9 +811,7 @@ impl SqliteStore {
                  task_id TEXT,
                  idempotency_key TEXT NOT NULL,
                  intent_hash TEXT NOT NULL,
-                 input_hash TEXT NOT NULL,
                  input_json BLOB NOT NULL,
-                 decision_hash TEXT NOT NULL,
                  decision_json BLOB NOT NULL,
                  observed_at_ms INTEGER NOT NULL,
                  UNIQUE(session_id, idempotency_key)
@@ -827,12 +825,12 @@ impl SqliteStore {
                  required_assurance TEXT NOT NULL,
                  supported_effects_json TEXT NOT NULL,
                  grant_ttl_seconds INTEGER NOT NULL,
-                 policy_hash TEXT REFERENCES objects(object_hash)
+                 policy_id TEXT REFERENCES objects(object_id)
              ) STRICT;
              CREATE TABLE IF NOT EXISTS control_policy_versions (
-                 policy_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+                 policy_id TEXT PRIMARY KEY REFERENCES objects(object_id),
                  policy_epoch INTEGER NOT NULL UNIQUE CHECK(policy_epoch > 0),
-                 authority_hash TEXT NOT NULL REFERENCES objects(object_hash),
+                 authority_id TEXT NOT NULL REFERENCES objects(object_id),
                  policy_json BLOB NOT NULL
              ) STRICT;
              CREATE TABLE IF NOT EXISTS control_policy_operation_results (
@@ -841,7 +839,6 @@ impl SqliteStore {
                  idempotency_key TEXT NOT NULL,
                  intent_hash TEXT NOT NULL,
                  intent_json BLOB NOT NULL,
-                 result_hash TEXT NOT NULL,
                  result_json BLOB NOT NULL,
                  created_at_ms INTEGER NOT NULL,
                  UNIQUE(operation, idempotency_key)
@@ -906,7 +903,6 @@ impl SqliteStore {
                  session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
                  task_id TEXT NOT NULL REFERENCES tasks(task_id),
                  request_key TEXT NOT NULL,
-                 grant_hash TEXT NOT NULL,
                  grant_json BLOB NOT NULL,
                  state TEXT NOT NULL,
                  issued_at_ms INTEGER NOT NULL,
@@ -922,7 +918,6 @@ impl SqliteStore {
                  task_id TEXT NOT NULL REFERENCES tasks(task_id),
                  replacement_request_key TEXT NOT NULL,
                  replacement_decision_hash TEXT NOT NULL,
-                 supersession_hash TEXT NOT NULL,
                  supersession_json BLOB NOT NULL,
                  superseded_at_ms INTEGER NOT NULL,
                  UNIQUE(session_id, replacement_request_key),
@@ -933,7 +928,6 @@ impl SqliteStore {
                  lease_id TEXT PRIMARY KEY,
                  task_id TEXT NOT NULL REFERENCES tasks(task_id),
                  holder_session_id TEXT NOT NULL REFERENCES control_sessions(session_id),
-                 lease_hash TEXT NOT NULL,
                  lease_json BLOB NOT NULL,
                  state TEXT NOT NULL,
                  expires_at_ms INTEGER NOT NULL,
@@ -948,7 +942,6 @@ impl SqliteStore {
                  idempotency_key TEXT NOT NULL,
                  intent_hash TEXT NOT NULL,
                  intent_json BLOB NOT NULL,
-                 result_hash TEXT NOT NULL,
                  result_json BLOB NOT NULL,
                  created_at_ms INTEGER NOT NULL,
                  UNIQUE(session_id, operation, idempotency_key)
@@ -1172,7 +1165,6 @@ impl SqliteStore {
             "idempotency_key",
             "intent_hash",
             "intent_json",
-            "result_hash",
             "result_json",
             "created_at_ms",
         ]
@@ -1204,7 +1196,7 @@ impl SqliteStore {
             "required_assurance",
             "supported_effects_json",
             "grant_ttl_seconds",
-            "policy_hash",
+            "policy_id",
         ] {
             if !columns.contains(required) {
                 return Err(StoreError::InvalidControlProjection(format!(
@@ -1366,26 +1358,26 @@ impl SqliteStore {
             grant_ttl_seconds: BUILTIN_CONTROL_GRANT_TTL_SECONDS,
             obligation_rule_set,
             acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy::default(),
-            authority: authority_object.hash().clone(),
+            authority: authority_object.key().clone(),
             activated_at: now,
         };
         let policy_object = CanonicalObject::mint(&policy)?;
         Self::insert_object(connection, "control_policy", &policy_object)?;
         connection.execute(
             "INSERT INTO control_policy_versions (
-                 policy_hash, policy_epoch, authority_hash, policy_json
+                 policy_id, policy_epoch, authority_id, policy_json
              ) VALUES (?1, ?2, ?3, ?4)",
             params![
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
                 policy.policy_epoch.0,
-                authority_object.hash().as_str(),
+                authority_object.key().as_str(),
                 policy_object.bytes(),
             ],
         )?;
         connection.execute(
             "INSERT INTO control_policy_state (
                  singleton, schema_version, policy_epoch, required_assurance,
-                 supported_effects_json, grant_ttl_seconds, policy_hash
+                 supported_effects_json, grant_ttl_seconds, policy_id
              ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 CONTROL_POLICY_STATE_SCHEMA_VERSION,
@@ -1393,7 +1385,7 @@ impl SqliteStore {
                 enum_name(policy.required_assurance)?,
                 serde_json::to_string(&policy.supported_effects)?,
                 policy.grant_ttl_seconds,
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
             ],
         )?;
         Self::verify_control_policy_history(connection)?;
@@ -1409,19 +1401,17 @@ impl SqliteStore {
         ]
     }
 
-    fn insert_builtin_obligation_rule_set(
-        connection: &Connection,
-    ) -> Result<ObjectHash, StoreError> {
+    fn insert_builtin_obligation_rule_set(connection: &Connection) -> Result<ObjectId, StoreError> {
         let rule_set = crate::control::builtin_obligation_rule_set();
         Self::validate_obligation_rule_set(&rule_set)?;
         let object = CanonicalObject::mint(&rule_set)?;
         Self::insert_object(connection, "obligation_rule_set", &object)?;
-        Ok(object.hash().clone())
+        Ok(object.key().clone())
     }
 
     pub(crate) fn load_obligation_rule_set_on(
         connection: &Connection,
-        hash: &ObjectHash,
+        hash: &ObjectId,
     ) -> Result<ObligationRuleSet, StoreError> {
         let bytes = Self::load_control_object_bytes(connection, hash, "obligation_rule_set")?;
         let rule_set: ObligationRuleSet = CanonicalObject::stored(hash, bytes)?.decode()?;
@@ -1431,9 +1421,9 @@ impl SqliteStore {
 
     pub(crate) fn obligation_rule_set_for_policy_on(
         connection: &Connection,
-        policy_hash: &ObjectHash,
-    ) -> Result<(ObjectHash, ObligationRuleSet), StoreError> {
-        let (policy, _) = Self::load_control_policy_version(connection, policy_hash)?;
+        policy_id: &ObjectId,
+    ) -> Result<(ObjectId, ObligationRuleSet), StoreError> {
+        let (policy, _) = Self::load_control_policy_version(connection, policy_id)?;
         let hash = policy.obligation_rule_set;
         let rule_set = Self::load_obligation_rule_set_on(connection, &hash)?;
         Ok((hash, rule_set))
@@ -1442,10 +1432,10 @@ impl SqliteStore {
     pub(super) fn obligation_rule_set_for_policy_epoch_on(
         connection: &Connection,
         epoch: ProjectPolicyEpoch,
-    ) -> Result<(ObjectHash, ObligationRuleSet), StoreError> {
+    ) -> Result<(ObjectId, ObligationRuleSet), StoreError> {
         let stored_hash = connection
             .query_row(
-                "SELECT policy_hash FROM control_policy_versions WHERE policy_epoch = ?1",
+                "SELECT policy_id FROM control_policy_versions WHERE policy_epoch = ?1",
                 [epoch.0],
                 |row| row.get::<_, String>(0),
             )
@@ -1456,9 +1446,9 @@ impl SqliteStore {
                     epoch.0
                 ))
             })?;
-        let policy_hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-        Self::obligation_rule_set_for_policy_on(connection, &policy_hash)
+        let policy_id = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
+        Self::obligation_rule_set_for_policy_on(connection, &policy_id)
     }
 
     pub(super) fn validate_obligation_rule_set(
@@ -1513,7 +1503,7 @@ impl SqliteStore {
         }
         connection.execute_batch(
             "CREATE VIRTUAL TABLE IF NOT EXISTS object_fts USING fts5(
-                 object_hash UNINDEXED,
+                 object_id UNINDEXED,
                  title,
                  body
              );
@@ -1541,14 +1531,14 @@ impl SqliteStore {
                  ON objects(
                      json_extract(canonical_json, '$.project_id'),
                      json_extract(canonical_json, '$.attempt_id'),
-                     object_hash
+                     object_id
                  )
                  WHERE object_kind = 'work_graph_snapshot_saved';
              CREATE INDEX IF NOT EXISTS objects_graph_snapshot_load_audit
                  ON objects(
                      json_extract(canonical_json, '$.project_id'),
                      json_extract(canonical_json, '$.attempt_id'),
-                     object_hash
+                     object_id
                  )
                  WHERE object_kind = 'work_graph_snapshot_loaded';
              CREATE INDEX IF NOT EXISTS memory_heads_scope
@@ -1556,7 +1546,7 @@ impl SqliteStore {
              CREATE INDEX IF NOT EXISTS memory_heads_work_scope
                  ON memory_heads(project_id, work_id, agent_id, status);
              CREATE INDEX IF NOT EXISTS memory_contradictions_versions
-                 ON memory_contradictions(left_version_hash, right_version_hash);
+                 ON memory_contradictions(left_version_id, right_version_id);
              CREATE INDEX IF NOT EXISTS memory_contradiction_edges_context
                  ON memory_contradiction_edges(project_id, task_id, work_root_id);
              CREATE UNIQUE INDEX IF NOT EXISTS task_changes_task_cursor
@@ -1619,7 +1609,7 @@ impl SqliteStore {
         invalid: &mut Vec<String>,
     ) -> Result<(), StoreError> {
         let mut statement = connection.prepare(
-            "SELECT memory_id, version_hash, assertion_hash, schema_version,
+            "SELECT memory_id, version_id, assertion_id, schema_version,
                     status, scope_kind, project_id, task_id, work_id, agent_id,
                     memory_kind, authority, delivery, sensitivity, title, body,
                     created_at_ms
@@ -1629,8 +1619,8 @@ impl SqliteStore {
             .query_map([], |row| {
                 Ok(MemoryHeadProjectionRow {
                     memory_id: row.get(0)?,
-                    version_hash: row.get(1)?,
-                    assertion_hash: row.get(2)?,
+                    version_id: row.get(1)?,
+                    assertion_id: row.get(2)?,
                     schema_version: row.get(3)?,
                     status: row.get(4)?,
                     scope_kind: row.get(5)?,
@@ -1654,37 +1644,34 @@ impl SqliteStore {
             *checked += 1;
             let record = format!("memory_head:{}", stored.memory_id);
             let valid = (|| {
-                let version_hash = ObjectHash::from_stored(stored.version_hash.clone())
-                    .ok_or_else(|| StoreError::InvalidStoredHash(stored.version_hash.clone()))?;
-                let assertion_hash = ObjectHash::from_stored(stored.assertion_hash.clone())
-                    .ok_or_else(|| StoreError::InvalidStoredHash(stored.assertion_hash.clone()))?;
+                let version_id = ObjectId::from_stored(stored.version_id.clone())
+                    .ok_or_else(|| StoreError::InvalidStoredKey(stored.version_id.clone()))?;
+                let assertion_id = ObjectId::from_stored(stored.assertion_id.clone())
+                    .ok_or_else(|| StoreError::InvalidStoredKey(stored.assertion_id.clone()))?;
                 let version: MemoryVersion =
-                    Self::get_typed_object_on(connection, &version_hash, "memory_version")?
+                    Self::get_typed_object_on(connection, &version_id, "memory_version")?
                         .ok_or_else(|| {
                             StoreError::InvalidMemoryProjection(format!(
                                 "memory head {} references missing version {}",
-                                stored.memory_id, version_hash
+                                stored.memory_id, version_id
                             ))
                         })?;
-                let assertion: MemoryAssertionEvent = Self::get_typed_object_on(
-                    connection,
-                    &assertion_hash,
-                    "memory_assertion_event",
-                )?
-                .ok_or_else(|| {
-                    StoreError::InvalidMemoryProjection(format!(
-                        "memory head {} references missing assertion {}",
-                        stored.memory_id, assertion_hash
-                    ))
-                })?;
+                let assertion: MemoryAssertionEvent =
+                    Self::get_typed_object_on(connection, &assertion_id, "memory_assertion_event")?
+                        .ok_or_else(|| {
+                            StoreError::InvalidMemoryProjection(format!(
+                                "memory head {} references missing assertion {}",
+                                stored.memory_id, assertion_id
+                            ))
+                        })?;
                 let status = Self::expected_memory_head_status_on(
                     connection,
-                    &version_hash,
+                    &version_id,
                     assertion.status,
                 )?;
                 let expected = Self::expected_memory_head_projection(
-                    &version_hash,
-                    &assertion_hash,
+                    &version_id,
+                    &assertion_id,
                     &version,
                     &assertion,
                     status,
@@ -1711,7 +1698,7 @@ impl SqliteStore {
 
     pub(super) fn expected_memory_head_status_on(
         connection: &Connection,
-        version_hash: &ObjectHash,
+        version_id: &ObjectId,
         asserted: MemoryStatus,
     ) -> Result<MemoryStatus, StoreError> {
         if !matches!(asserted, MemoryStatus::Active | MemoryStatus::Stale) {
@@ -1720,9 +1707,9 @@ impl SqliteStore {
         let contradicted = connection.query_row(
             "SELECT EXISTS(
                  SELECT 1 FROM memory_contradiction_edges
-                 WHERE left_version_hash = ?1 OR right_version_hash = ?1
+                 WHERE left_version_id = ?1 OR right_version_id = ?1
              )",
-            [version_hash.as_str()],
+            [version_id.as_str()],
             |row| row.get::<_, bool>(0),
         )?;
         Ok(if contradicted {
@@ -1733,16 +1720,16 @@ impl SqliteStore {
     }
 
     pub(super) fn expected_memory_head_projection(
-        version_hash: &ObjectHash,
-        assertion_hash: &ObjectHash,
+        version_id: &ObjectId,
+        assertion_id: &ObjectId,
         version: &MemoryVersion,
         assertion: &MemoryAssertionEvent,
         status: MemoryStatus,
     ) -> Result<MemoryHeadProjectionRow, StoreError> {
         validate_keyed_project_memory_shape(version, assertion)?;
         Self::expected_memory_head_projection_from_canonical(
-            version_hash,
-            assertion_hash,
+            version_id,
+            assertion_id,
             version,
             assertion,
             status,
@@ -1750,8 +1737,8 @@ impl SqliteStore {
     }
 
     pub(super) fn expected_memory_head_projection_from_canonical(
-        version_hash: &ObjectHash,
-        assertion_hash: &ObjectHash,
+        version_id: &ObjectId,
+        assertion_id: &ObjectId,
         version: &MemoryVersion,
         assertion: &MemoryAssertionEvent,
         status: MemoryStatus,
@@ -1759,7 +1746,7 @@ impl SqliteStore {
         if version.schema_version != SCHEMA_VERSION
             || assertion.schema_version != SCHEMA_VERSION
             || version.memory_id != assertion.memory_id
-            || &assertion.version != version_hash
+            || &assertion.version != version_id
         {
             return Err(StoreError::InvalidMemoryProjection(
                 "version and assertion identities do not agree".into(),
@@ -1796,8 +1783,8 @@ impl SqliteStore {
         };
         Ok(MemoryHeadProjectionRow {
             memory_id: version.memory_id.0.to_string(),
-            version_hash: version_hash.as_str().to_owned(),
-            assertion_hash: assertion_hash.as_str().to_owned(),
+            version_id: version_id.as_str().to_owned(),
+            assertion_id: assertion_id.as_str().to_owned(),
             schema_version: i64::from(version.schema_version),
             status: enum_name(status)?,
             scope_kind: scope_kind.into(),
@@ -1820,8 +1807,8 @@ impl SqliteStore {
     ) -> Result<(), StoreError> {
         connection.execute("DELETE FROM object_fts", [])?;
         connection.execute(
-            "INSERT INTO object_fts (object_hash, title, body)
-             SELECT version_hash, title, body FROM memory_heads ORDER BY version_hash",
+            "INSERT INTO object_fts (object_id, title, body)
+             SELECT version_id, title, body FROM memory_heads ORDER BY version_id",
             [],
         )?;
         Ok(())
@@ -1876,7 +1863,7 @@ impl SqliteStore {
         invalid: &mut Vec<String>,
     ) -> Result<(), StoreError> {
         let mut statement = connection
-            .prepare("SELECT version_hash, title, body FROM memory_heads ORDER BY version_hash")?;
+            .prepare("SELECT version_id, title, body FROM memory_heads ORDER BY version_id")?;
         let rows = statement.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -1885,17 +1872,17 @@ impl SqliteStore {
             ))
         })?;
         for row in rows {
-            let (version_hash, title, body) = row?;
+            let (version_id, title, body) = row?;
             *checked += 1;
             let mut fts_statement =
-                connection.prepare("SELECT title, body FROM object_fts WHERE object_hash = ?1")?;
+                connection.prepare("SELECT title, body FROM object_fts WHERE object_id = ?1")?;
             let stored = fts_statement
-                .query_map([version_hash.as_str()], |row| {
+                .query_map([version_id.as_str()], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             if stored.as_slice() != [(title.clone(), body.clone())] {
-                invalid.push(format!("object_fts:{version_hash}:projection_binding"));
+                invalid.push(format!("object_fts:{version_id}:projection_binding"));
                 continue;
             }
             let query = fts_query(&format!("{title} {body}"));
@@ -1904,21 +1891,21 @@ impl SqliteStore {
                     .query_row(
                         "SELECT EXISTS(
                              SELECT 1 FROM object_fts
-                             WHERE object_hash = ?1 AND object_fts MATCH ?2
+                             WHERE object_id = ?1 AND object_fts MATCH ?2
                          )",
-                        params![version_hash, query],
+                        params![version_id, query],
                         |row| row.get::<_, bool>(0),
                     )
                     .unwrap_or(false)
             {
-                invalid.push(format!("object_fts:{version_hash}:fts_index"));
+                invalid.push(format!("object_fts:{version_id}:fts_index"));
             }
         }
         drop(statement);
         let orphaned = connection.query_row(
             "SELECT COUNT(*) FROM object_fts fts
              WHERE NOT EXISTS (
-                 SELECT 1 FROM memory_heads head WHERE head.version_hash = fts.object_hash
+                 SELECT 1 FROM memory_heads head WHERE head.version_id = fts.object_id
              )",
             [],
             |row| row.get::<_, i64>(0),
@@ -1953,13 +1940,13 @@ impl SqliteStore {
              FROM memory_contradictions contradiction
              JOIN tasks task ON task.task_id = contradiction.task_id
              LEFT JOIN memory_contradiction_edges edge
-               ON edge.contradiction_hash = contradiction.contradiction_hash
+               ON edge.contradiction_id = contradiction.contradiction_id
               AND edge.project_id = task.project_id
               AND edge.task_id = contradiction.task_id
               AND edge.work_root_id IS NULL
-              AND edge.left_version_hash = contradiction.left_version_hash
-              AND edge.right_version_hash = contradiction.right_version_hash
-             WHERE edge.contradiction_hash IS NULL",
+              AND edge.left_version_id = contradiction.left_version_id
+              AND edge.right_version_id = contradiction.right_version_id
+             WHERE edge.contradiction_id IS NULL",
             [],
             |row| row.get::<_, i64>(0),
         )?;

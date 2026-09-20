@@ -9,7 +9,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use crate::domain::{
     RootExecutionDelta, RootExecutionHeader, RootExecutionMember, RootExecutionRef,
 };
-use crate::{CanonicalObject, ObjectHash, RootExecution, RootExecutionId, SqliteStore, StoreError};
+use crate::{CanonicalObject, ObjectId, RootExecution, RootExecutionId, SqliteStore, StoreError};
 
 use super::feeds::load_typed_work_object;
 use crate::domain::{
@@ -80,27 +80,27 @@ fn empty(value: &RootExecutionHeader) -> RootExecution {
     }
 }
 
-fn member_hash(value: &RootExecutionMember) -> Result<ObjectHash, StoreError> {
+fn member_hash(value: &RootExecutionMember) -> Result<ObjectId, StoreError> {
     let object = CanonicalObject::freeze(value)?;
     #[cfg(test)]
     COST.with_borrow_mut(|cost| {
         cost.member_hashes += 1;
         cost.member_bytes += object.bytes().len();
     });
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
-fn checksum(value: &RootExecution) -> Result<ObjectHash, StoreError> {
+fn checksum(value: &RootExecution) -> Result<ObjectId, StoreError> {
     let object = CanonicalObject::freeze(value)?;
     #[cfg(test)]
     COST.with_borrow_mut(|cost| {
         cost.checksums += 1;
         cost.checksum_bytes += object.bytes().len();
     });
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
-fn members(value: &RootExecution) -> Result<BTreeMap<ObjectHash, RootExecutionMember>, StoreError> {
+fn members(value: &RootExecution) -> Result<BTreeMap<ObjectId, RootExecutionMember>, StoreError> {
     let values = value
         .run_ids
         .iter()
@@ -153,7 +153,7 @@ fn members(value: &RootExecution) -> Result<BTreeMap<ObjectHash, RootExecutionMe
 pub(super) fn compare_runs(a: &WorkRunId, b: &WorkRunId) -> Ordering {
     a.0.cmp(&b.0)
 }
-pub(super) fn compare_seals(a: &ObjectHash, b: &ObjectHash) -> Ordering {
+pub(super) fn compare_seals(a: &ObjectId, b: &ObjectId) -> Ordering {
     a.cmp(b)
 }
 pub(super) fn compare_child_waivers(a: &RequiredChildWaiver, b: &RequiredChildWaiver) -> Ordering {
@@ -234,7 +234,7 @@ fn require_order(value: &RootExecution) -> Result<(), StoreError> {
 
 fn assemble(
     metadata: &RootExecutionHeader,
-    values: &BTreeMap<ObjectHash, RootExecutionMember>,
+    values: &BTreeMap<ObjectId, RootExecutionMember>,
 ) -> Result<RootExecution, StoreError> {
     #[cfg(test)]
     COST.with_borrow_mut(|cost| cost.assemblies += 1);
@@ -265,7 +265,7 @@ fn assemble(
     Ok(result)
 }
 
-fn reference(value: &RootExecutionHeader, hash: ObjectHash) -> RootExecutionRef {
+fn reference(value: &RootExecutionHeader, hash: ObjectId) -> RootExecutionRef {
     RootExecutionRef {
         root_execution_id: value.root_execution_id,
         project_id: value.project_id.clone(),
@@ -313,7 +313,7 @@ struct LoadedRoot {
     value: RootExecution,
     address: RootExecutionRef,
     head: RootExecutionDelta,
-    members: BTreeMap<ObjectHash, RootExecutionMember>,
+    members: BTreeMap<ObjectId, RootExecutionMember>,
 }
 
 /// A validated, persisted head borrowed from its writer connection.
@@ -343,7 +343,7 @@ impl WrittenRoot<'_> {
         }
         let current: Option<String> = connection
             .query_row(
-                "SELECT head_hash FROM work_root_executions WHERE root_execution_id = ?1",
+                "SELECT head_id FROM work_root_executions WHERE root_execution_id = ?1",
                 [self.address.root_execution_id.0.to_string()],
                 |row| row.get(0),
             )
@@ -361,7 +361,7 @@ fn projected_with_head(
 ) -> Result<LoadedRoot, StoreError> {
     let (bytes, stored_hash, scalars): (Vec<u8>, String, bool) = connection
         .query_row(
-            "SELECT header_json, head_hash,
+            "SELECT header_json, head_id,
              root_execution_id = json_extract(header_json, '$.root_execution_id') AND
              project_id = json_extract(header_json, '$.project_id') AND
              root_id = json_extract(header_json, '$.root_id') AND
@@ -378,8 +378,8 @@ fn projected_with_head(
     if serde_json::to_value(&metadata)? != serde_json::from_slice::<serde_json::Value>(&bytes)? {
         return Err(invalid("unexpected header fields"));
     }
-    let hash = ObjectHash::from_stored(stored_hash.clone())
-        .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    let hash = ObjectId::from_stored(stored_hash.clone())
+        .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
     let address = reference(&metadata, hash);
     let head = load_head(connection, &address)?;
     if !scalars || metadata.root_execution_id != id || head.header != metadata {
@@ -635,7 +635,7 @@ pub(super) fn initialize(
     transaction.execute(
         "INSERT INTO work_root_executions (
              root_execution_id, project_id, root_id, generation, state, revision,
-             created_at_ms, updated_at_ms, header_json, head_hash
+             created_at_ms, updated_at_ms, header_json, head_id
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             value.root_execution_id.0.to_string(),
@@ -647,7 +647,7 @@ pub(super) fn initialize(
             value.created_at.timestamp_millis(),
             value.updated_at.timestamp_millis(),
             serde_json::to_vec(&metadata)?,
-            object.hash().as_str()
+            object.key().as_str()
         ],
     )?;
     persist(transaction, value)
@@ -787,14 +787,14 @@ fn persist_loaded(
             params![value.root_execution_id.0.to_string(), hash.as_str(), serde_json::to_vec(member)?])?;
     }
     let changed = transaction.execute(
-        "UPDATE work_root_executions SET state = ?2, revision = ?3, updated_at_ms = ?4, header_json = ?5, head_hash = ?6 WHERE root_execution_id = ?1",
+        "UPDATE work_root_executions SET state = ?2, revision = ?3, updated_at_ms = ?4, header_json = ?5, head_id = ?6 WHERE root_execution_id = ?1",
         params![value.root_execution_id.0.to_string(), super::planning::encode_state(value.state)?, value.revision,
-            value.updated_at.timestamp_millis(), serde_json::to_vec(&metadata)?, object.hash().as_str()],
+            value.updated_at.timestamp_millis(), serde_json::to_vec(&metadata)?, object.key().as_str()],
     )?;
     if changed != 1 {
         return Err(invalid("head update lost its row"));
     }
-    Ok(reference(&metadata, object.hash().clone()))
+    Ok(reference(&metadata, object.key().clone()))
 }
 
 /// The exhaustive audit uses canonical history, never the projection as its
@@ -874,11 +874,11 @@ pub(super) fn verify_projections(
         }
     }
     let mut statement = connection
-        .prepare("SELECT object_hash FROM objects WHERE object_kind = 'work_root_delta'")?;
+        .prepare("SELECT object_id FROM objects WHERE object_kind = 'work_root_delta'")?;
     for row in statement.query_map([], |row| row.get::<_, String>(0))? {
         let stored = row?;
         *checked += 1;
-        if !ObjectHash::from_stored(stored.clone()).is_some_and(|hash| reachable.contains(&hash)) {
+        if !ObjectId::from_stored(stored.clone()).is_some_and(|hash| reachable.contains(&hash)) {
             failures.push(format!("work_root_delta:{stored}:unbound_history"));
         }
     }

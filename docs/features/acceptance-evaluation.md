@@ -81,7 +81,7 @@ acceptance_evaluation {
 - Policy changes affect later evaluations and completions; an existing
   evaluation whose mode the new policy no longer allows is not fresh.
 - The field lives in the canonical policy object. Existing policy versions keep
-  their bytes and hashes; no durable table changes.
+  their bytes and ids; no durable table changes.
 
 ### Task mode
 
@@ -104,14 +104,14 @@ AcceptanceEvaluation {
   work_revision, work_revision_hash          # exact criteria list evaluated
   criteria: [text]                           # copied verbatim at record time
   evaluated_cut: FeedPosition                # run-feed position the evaluator read through, supplied by the submission
-  evidence_basis: [hash]                     # run evidence at or before that cut
+  evidence_basis: [id]                       # run evidence at or before that cut
   source_basis: { workspace_id?, fingerprint }?   # host-measured, asserted
   mode: same_session | sub_agent | independent_session
   evaluator: ActorContext                    # session, actor, source tool, provenance
   execution_identity?: text                  # sub-agent: distinct evaluator identity
   parent_session?: SessionId                 # sub-agent: attested parent
   evaluator_model?: { provider, model, version? }
-  verdicts: [ { criterion, verdict, basis, rationale, evidence: [hash] } ]
+  verdicts: [ { criterion, verdict, basis, rationale, evidence: [id] } ]
   attempt_key                                # explicit or content-derived
   created_at
 }
@@ -164,9 +164,9 @@ Every rule refuses the write before any effect; nothing is appended on refusal.
   gate locator exactly as `show --notes --gates` prints it, resolved by the
   same resolver as `done --link` (a non-holder observation, an inherited
   record member, another item's or an earlier run's record, and an artifact
-  path or URL all refuse, naming the locator and the reason), or the full hash
+  path or URL all refuse, naming the locator and the reason), or the full id
   of host-minted verification or environment evidence on the run, which no
-  locator window prints. The record keeps the resolved full hashes.
+  locator window prints. The record keeps the resolved full ids.
 - **R8 attempt identity.** With an explicit attempt key, the same key with the
   same payload replays the same object; the same key with a different payload
   refuses; a new key records a new object even for an identical payload.
@@ -278,7 +278,7 @@ Under an evaluated policy `done`:
 3. requires a fresh evaluation whose every verdict is `pass`;
 4. derives the sealed `AcceptanceResult` vector from that evaluation
    (`satisfied: true`, evidence = the verdict citations, note = the rationale)
-   and binds the evaluation hash into the seal as `acceptance_evaluation`;
+   and binds the evaluation id into the seal as `acceptance_evaluation`;
    the verdict citations join the completion evidence set the capture
    checkpoints, so the seal names them, and the core refuses a seal whose
    citations fall outside its evidence, the same closure the self-asserted
@@ -335,10 +335,10 @@ evaluation on that feed at the cut (an older pass cannot be bound around a
 newer record, whatever its verdict; anything appended after the cut is
 outside the selection), passes every criterion, and derives exactly the
 sealed acceptance vector. Doctor reports a failure as
-`completion_seal:<hash>:acceptance_evaluation_binding`. A policy
+`completion_seal:<id>:acceptance_evaluation_binding`. A policy
 version whose authority decision disagrees with it on the
 acceptance-evaluation settings does not load at all, so policy history, store
-opening, and doctor (`control_policy_version:<hash>`) refuse it alike, and
+opening, and doctor (`control_policy_version:<id>`) refuse it alike, and
 doctor decodes the audited `set_acceptance_evaluation` operation receipts like
 the other policy operations.
 
@@ -402,19 +402,19 @@ tests cite the row identifier in a nearby comment.
 | B33 | `pass` cites gate `cargo-test`; a newer `cargo-test` record (any result) lands after the cut; an unrelated gate lands after another passing evaluation | `done` refuses `AcceptanceEvaluationStale { evidence }` / the unrelated gate leaves the evaluation fresh |
 | B34 | passing evaluation followed by a newer `fail`, `insufficient_evidence`, or `needs_human` record | `done` refuses with the newer verdict's cause; the older pass is never selected |
 | B35 | `independent_session` pass, then the evaluator takes the run by handoff or by recovery and runs `done`; a never-holding session then evaluates; the original holder completes on an independent pass; the evaluator holds a different run | refuse `AcceptanceEvaluationStale { identity }` / seal / seal / independent, seal |
-| B36 | seal re-frozen to bind another run's evaluation, with its completion event and run projection re-frozen too | doctor reports `completion_seal:<hash>:acceptance_evaluation_binding`; an evaluated completion is healthy end to end before the forgery |
-| B37 | policy version re-frozen to disagree with its authority decision on `acceptance_evaluation` | the version does not load ("authority is invalid"); doctor reports `control_policy_version:<hash>` and leaves the audited operation receipt healthy |
+| B36 | seal re-frozen to bind another run's evaluation, with its completion event and run projection re-frozen too | doctor reports `completion_seal:<id>:acceptance_evaluation_binding`; an evaluated completion is healthy end to end before the forgery |
+| B37 | policy version re-frozen to disagree with its authority decision on `acceptance_evaluation` | the version does not load ("authority is invalid"); doctor reports `control_policy_version:<id>` and leaves the audited operation receipt healthy |
 | B38 | evaluator model segment blank, over 128 bytes, or with a control character, submitted to the core | refuse at write; run feed unchanged |
 | B39 | `set-acceptance-evaluation` with an empty mode list and non-default other fields, from legacy and from an evaluated policy | normalizes to the legacy policy; requested, stored (bytes omit the field), and read policies agree; `changed: false` when already legacy |
 | B40 | `work_run_evidence.verification_result` disagrees with the canonical `VerificationEvidence` | `evaluate` refuses with an invalid-projection error; nothing is admitted from the column |
-| B41 | citations as `show --notes --gates` prints them: a gate and a holder note together (judgment); a non-holder observation; another item's note; an artifact path | accepted, the record keeps the full hashes / refused naming the locator and "observation" / refused ("not a note/gate on this item") / refused ("not the recorded evidence identity") |
+| B41 | citations as `show --notes --gates` prints them: a gate and a holder note together (judgment); a non-holder observation; another item's note; an artifact path | accepted, the record keeps the full ids / refused naming the locator and "observation" / refused ("not a note/gate on this item") / refused ("not the recorded evidence identity") |
 | B42 | `require_source_freshness`; `show` after an evaluation with a fingerprint; `done` without one | `show` reports the fingerprint as checked at `done`, not stale; `done` refuses `source` and the remedy names `--source-fingerprint` |
 | B43 | legacy and evaluated completions read through `done`, completed `show`, and `next --peek` on the focused evaluated item | `acceptance: self-asserted (legacy)` in `done` and `show` text with `provenance: self_asserted` in `done` JSON and no `acceptance` key in the legacy `show` JSON / `acceptance: evaluated (same_session, asserted) by <evaluator>` with the JSON `acceptance` block in both; `next` prints `evaluation: <mode> P/N pass, fresh` under the focus |
 | B44 | `update --evaluation-mode same_session`, then `--clear-evaluation-mode`, then a clear on the already unpinned item | `show` history and a peer's `next` deltas carry two `revised` entries naming `evaluation mode` and one reading `no planning change` |
 | B45 | `add` with an empty or whitespace `--evaluation-mode` for a root and for a `--under` child; omitted; a valid word | refused before any effect (no item, project feed and focus unchanged) / created without a pin / created pinned |
 | B46 | completed evaluated item whose bound evaluation object no longer decodes | `show` still reads: text `acceptance: provenance unavailable (…)` with `diagnostic class: <class>`, JSON `acceptance: {provenance: unavailable, error_class}`; `doctor` reports the store unhealthy; a legacy `show` keeps no `acceptance` key |
 | B47 | direct core completion under an evaluated policy whose evidence set omits a cited object / carries it; the service `done` with a narrower explicit evidence set while the fresh pass cites a note and host-minted verification evidence | refused ("cites evidence outside the completion evidence set"), item stays open / seals with the citation in `seal.evidence`; the service unions the citations, so the seal names them and the completion checkpoint acknowledges them |
-| B48 | seal re-frozen to bind an older pass while a newer `fail` or `needs_human` evaluation sits before the completion cut; the unforged seal; the bounded newest read with a cut before the newest record | doctor reports `completion_seal:<hash>:acceptance_evaluation_binding`, the shared check refuses ("is not the newest evaluation … at the completion cut"), `show` reads with `provenance: unavailable` / healthy / returns the older record, excluding anything after the cut |
+| B48 | seal re-frozen to bind an older pass while a newer `fail` or `needs_human` evaluation sits before the completion cut; the unforged seal; the bounded newest read with a cut before the newest record | doctor reports `completion_seal:<id>:acceptance_evaluation_binding`, the shared check refuses ("is not the newest evaluation … at the completion cut"), `show` reads with `provenance: unavailable` / healthy / returns the older record, excluding anything after the cut |
 | B49 | MCP `update` with action `revise` and a supplied `evaluation_mode` (valid or blank); action `evaluation_mode` with a word, then omitted | `invalid_argument` on `evaluation_mode` before any effect, item, feed, and focus unchanged / pinned, then cleared, both named in history |
 
 ## Agent surface
@@ -433,12 +433,12 @@ engram work evaluate [REF] --mode MODE --acceptance-basis N --evidence-basis M \
 revision from `show` (exactly as `done --link`), `--evidence-basis` the
 run-feed position `show` prints beside it under an evaluated policy, which the
 evaluator read through, and `LOCATOR` a note/gate locator from `show --notes
---gates` or the full hash of host-minted verification or environment evidence
+--gates` or the full id of host-minted verification or environment evidence
 (R7). Legacy projects keep their unchanged `show` shape. MCP `evaluate` takes
 the same data as `mode`, `acceptance_basis`, `evidence_basis`, `verdicts:
 [{criterion, verdict, basis, rationale, evidence: [locator]}]`, and the
 optional fields. The receipt is a bounded projection of the immutable record,
-not the record: the evaluation hash, mode, revision, run, evaluated cut,
+not the record: the evaluation id, mode, revision, run, evaluated cut,
 `passed`, the first blocking verdict with its criterion compacted,
 `verdicts_total`, a prefix of verdict rows (position, verdict, basis, citation
 count), `verdicts_omitted`, which counts exactly the rows left out to fit the
@@ -470,7 +470,7 @@ pin as `status.work.evaluation_mode`, omitted when the task pins nothing; the
 text form prints the same fact as `evaluation mode:`. `control-policy show`
 prints the active policy as JSON, with `acceptance_evaluation`
 (`allowed_modes`, `mechanical_basis`, `require_source_freshness`) beside the
-policy hash, epoch, required assurance, rule set and supported effects. It
+policy id, epoch, required assurance, rule set and supported effects. It
 reads the policy head only, so a host can ask it on every evaluation request;
 `doctor --json` carries the same keys under `control` and the text report one
 `Acceptance evaluation:` line, but `doctor` audits the whole store and can
@@ -478,7 +478,7 @@ take minutes on a large one. An empty `allowed_modes` is the self-asserted
 path: no evaluator is needed.
 
 Scoped exceptions to the terse agent surface: receipts expose the evaluation
-hash, the run id, and the evaluated cut as opaque correlation identifiers for
+id, the run id, and the evaluated cut as opaque correlation identifiers for
 hosts that track evaluator attempts; they grant no authority and imply no
 identity assurance beyond the recorded one.
 

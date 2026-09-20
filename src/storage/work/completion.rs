@@ -41,7 +41,7 @@ use super::{
     WorkRelationBlockerBasis, empty_work_relation_basis,
 };
 use crate::{
-    CanonicalObject, ObjectHash, RestoredRecord,
+    CanonicalObject, ObjectId, RestoredRecord,
     domain::{
         AcceptanceResult, COMPLETION_ENVIRONMENT_SCHEMA_VERSION,
         COMPLETION_OBLIGATION_SCHEMA_VERSION, ChildRequirement, CompleteWorkRequest,
@@ -112,7 +112,7 @@ impl SqliteStore {
             &transaction,
             "complete_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(CompleteWorkStorageResult::Completed(Box::new(seal)));
@@ -207,7 +207,7 @@ impl SqliteStore {
             )?;
             // A fresh, all-pass evaluation is the only path to a sealed vector;
             // everything else is a recovery cause the evaluator must resolve.
-            let outcome: Result<(Vec<AcceptanceResult>, ObjectHash), WorkCompletionRecoveryCause> =
+            let outcome: Result<(Vec<AcceptanceResult>, ObjectId), WorkCompletionRecoveryCause> =
                 match assessment {
                     super::acceptance_evaluation::AcceptanceEvaluationAssessment::Absent => {
                         Err(WorkCompletionRecoveryCause::MissingAcceptanceEvaluation {
@@ -509,7 +509,7 @@ impl SqliteStore {
             run_id: run.run_id,
             run_generation: run.generation,
             accepted_work_revision: item.revision,
-            accepted_work_revision_hash: accepted_work_revision.hash().clone(),
+            accepted_work_revision_hash: accepted_work_revision.key().clone(),
             claim_id: claim.claim_id,
             claim_fence: claim.fence,
             completion_cut,
@@ -542,10 +542,10 @@ impl SqliteStore {
         SqliteStore::insert_object(&transaction, "completion_seal", &seal_object)?;
         transaction.execute(
             "INSERT INTO work_completion_seals (
-                 seal_hash, work_id, run_id, root_execution_id, seal_json
+                 seal_id, work_id, run_id, root_execution_id, seal_json
              ) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
-                seal_object.hash().as_str(),
+                seal_object.key().as_str(),
                 item.work_id.0.to_string(),
                 run.run_id.0.to_string(),
                 run.root_execution_id.0.to_string(),
@@ -558,7 +558,7 @@ impl SqliteStore {
         claim.fence += 1;
         claim.expires_at = request.completed_at;
         run.state = WorkRunState::Completed;
-        run.completion_seal = Some(seal_object.hash().clone());
+        run.completion_seal = Some(seal_object.key().clone());
         run.revision += 1;
         run.updated_at = request.completed_at;
         item.lifecycle = WorkLifecycle::Completed;
@@ -582,7 +582,7 @@ impl SqliteStore {
         } else if item.child_requirement == ChildRequirement::Required {
             root_execution
                 .required_child_seals
-                .push(seal_object.hash().clone());
+                .push(seal_object.key().clone());
             root_execution
                 .required_child_seals
                 .sort_by(super::root_state::compare_seals);
@@ -606,7 +606,7 @@ impl SqliteStore {
             handoff_offer: None,
             blocker: None,
             transition: WorkTransition::Completed {
-                seal: seal_object.hash().clone(),
+                seal: seal_object.key().clone(),
             },
             actor: request.actor.clone(),
             created_at: request.completed_at,
@@ -616,7 +616,7 @@ impl SqliteStore {
             &transaction,
             "complete_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &seal,
         )?;
         transaction.commit()?;
@@ -639,7 +639,7 @@ impl SqliteStore {
         connection_token: &str,
         routing_token: &str,
         obligation_id: WorkObligationId,
-        expected_definition: &ObjectHash,
+        expected_definition: &ObjectId,
         waived_by: &str,
         reason: &str,
         actor: &crate::domain::ActorContext,
@@ -685,7 +685,7 @@ impl SqliteStore {
             session_id,
             "obligation_waive",
             idempotency_key,
-            intent.hash(),
+            intent.key(),
         )? {
             transaction.commit()?;
             return Ok(replay);
@@ -700,7 +700,7 @@ impl SqliteStore {
             let decision = WorkObligationWaiverDecision::Refused {
                 code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
                 obligation_id,
-                current_definition: Some(record.definition_hash),
+                current_definition: Some(record.definition_id),
                 remedy: "bind the host control session to the live claim for this obligation run"
                     .into(),
             };
@@ -732,7 +732,7 @@ impl SqliteStore {
                 let decision = WorkObligationWaiverDecision::Refused {
                     code: WorkObligationWaiverRefusalCode::WaiverNotAdmitted,
                     obligation_id,
-                    current_definition: Some(record.definition_hash),
+                    current_definition: Some(record.definition_id),
                     remedy: "reread the live claim, then bind the current work generation".into(),
                 };
                 Self::persist_control_operation(
@@ -749,11 +749,11 @@ impl SqliteStore {
             }
             return Err(error);
         }
-        if record.definition_hash != *expected_definition {
+        if record.definition_id != *expected_definition {
             let decision = WorkObligationWaiverDecision::Refused {
                 code: WorkObligationWaiverRefusalCode::DefinitionChanged,
                 obligation_id,
-                current_definition: Some(record.definition_hash),
+                current_definition: Some(record.definition_id),
                 remedy:
                     "reread obligation_page and retry only after reviewing the current definition"
                         .into(),
@@ -774,7 +774,7 @@ impl SqliteStore {
             let decision = WorkObligationWaiverDecision::Refused {
                 code: WorkObligationWaiverRefusalCode::ObligationNotOpen,
                 obligation_id,
-                current_definition: Some(record.definition_hash),
+                current_definition: Some(record.definition_id),
                 remedy: "reread obligation_page; this obligation already has a terminal resolution"
                     .into(),
             };
@@ -794,7 +794,7 @@ impl SqliteStore {
             schema_version: SCHEMA_VERSION,
             project_id: record.obligation.project_id.clone(),
             obligation_id,
-            definition: record.definition_hash.clone(),
+            definition: record.definition_id.clone(),
             run_id: record.obligation.run_id,
             resolution: WorkObligationResolution::Waived {
                 waived_by: waived_by.clone(),
@@ -807,7 +807,7 @@ impl SqliteStore {
         let decision = WorkObligationWaiverDecision::Waived {
             receipt: WorkObligationWaiverReceipt {
                 obligation_id,
-                definition: record.definition_hash,
+                definition: record.definition_id,
                 resolution,
                 state: WorkObligationState::Waived,
                 waived_by,
@@ -856,16 +856,16 @@ impl SqliteStore {
             &transaction,
             "waive_work_obligation",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(event);
         }
         let record = load_work_obligation_by_id_on(&transaction, request.obligation_id)?;
-        if record.definition_hash != request.expected_definition {
+        if record.definition_id != request.expected_definition {
             return Err(StoreError::InvalidWork(format!(
                 "obligation {} definition changed: expected {}, current {}",
-                request.obligation_id.0, request.expected_definition, record.definition_hash
+                request.obligation_id.0, request.expected_definition, record.definition_id
             )));
         }
         if record.state != WorkObligationState::Open {
@@ -878,7 +878,7 @@ impl SqliteStore {
             schema_version: SCHEMA_VERSION,
             project_id: record.obligation.project_id.clone(),
             obligation_id: record.obligation.obligation_id,
-            definition: record.definition_hash.clone(),
+            definition: record.definition_id.clone(),
             run_id: record.obligation.run_id,
             resolution: WorkObligationResolution::Waived { waived_by, reason },
             actor: request.actor.clone(),
@@ -889,7 +889,7 @@ impl SqliteStore {
             &transaction,
             "waive_work_obligation",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &event,
         )?;
         transaction.commit()?;
@@ -919,7 +919,7 @@ pub(super) fn applicable_work_obligations_at_cut_on(
             continue;
         }
         let definition_position =
-            run_feed_position_for_object_on(connection, run_id, &record.definition_hash)?;
+            run_feed_position_for_object_on(connection, run_id, &record.definition_id)?;
         if definition_position.position > cut.position {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "run-feed cut {} splits mutation obligation {} from its trigger",
@@ -942,7 +942,7 @@ fn completion_obligation_basis_on(
     let mut bindings = Vec::new();
     for record in records {
         let terminal_at_cut = record
-            .resolution_hash
+            .resolution_id
             .as_ref()
             .map(|hash| run_feed_position_for_object_on(connection, run_id, hash))
             .transpose()?
@@ -950,7 +950,7 @@ fn completion_obligation_basis_on(
         let Some(resolution_position) = terminal_at_cut else {
             open.push(OpenWorkObligation {
                 obligation_id: record.obligation.obligation_id,
-                definition: record.definition_hash,
+                definition: record.definition_id,
                 required_check: record.obligation.requirement.check_kind,
             });
             continue;
@@ -962,8 +962,8 @@ fn completion_obligation_basis_on(
         }
         bindings.push(CompletionObligationBinding {
             obligation_id: record.obligation.obligation_id,
-            definition: record.definition_hash,
-            resolution: record.resolution_hash.ok_or_else(|| {
+            definition: record.definition_id,
+            resolution: record.resolution_id.ok_or_else(|| {
                 StoreError::InvalidWorkProjection(
                     "terminal work obligation has no resolution hash".into(),
                 )
@@ -999,7 +999,7 @@ fn completion_environment_basis_on(
     connection: &Connection,
     run_id: WorkRunId,
     cut: &FeedPosition,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     if cut.feed != FeedId::RunExecution(run_id) {
         return Err(StoreError::InvalidWorkProjection(
             "environment cut does not name the requested run feed".into(),
@@ -1011,10 +1011,10 @@ fn completion_environment_basis_on(
         ));
     }
     let mut statement = connection.prepare(
-        "SELECT DISTINCT object_hash FROM work_feed_entries
+        "SELECT DISTINCT object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1
            AND position <= ?2 AND object_kind = 'environment_evidence'
-         ORDER BY object_hash LIMIT ?3",
+         ORDER BY object_id LIMIT ?3",
     )?;
     let limit = i64::try_from(MAX_COMPLETION_ENVIRONMENT_EVIDENCE + 1).map_err(|_| {
         StoreError::InvalidWorkProjection("completion environment limit does not fit SQLite".into())
@@ -1027,7 +1027,7 @@ fn completion_environment_basis_on(
     let mut environment = Vec::with_capacity(rows.len());
     for stored in rows {
         let hash =
-            ObjectHash::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredHash(stored))?;
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
         expected_environment_projection(connection, &hash)?;
         environment.push(hash);
     }
@@ -1091,11 +1091,11 @@ pub(super) fn load_work_obligation_records_on(
 ) -> Result<Vec<WorkObligationRecord>, StoreError> {
     let state = state.map(encode_state).transpose()?;
     let mut statement = connection.prepare(
-        "SELECT obligation_id, definition_hash, project_id, root_execution_id,
-                root_id, work_id, run_id, work_revision, rule_set_hash, rule_id, rule_version,
-                triggering_observation_hash, trigger_position, check_kind,
-                check_fingerprint, state, resolution_hash, resolution_kind,
-                evidence_hash, opened_at_ms, resolved_at_ms
+        "SELECT obligation_id, definition_id, project_id, root_execution_id,
+                root_id, work_id, run_id, work_revision, rule_set_id, rule_id, rule_version,
+                triggering_observation_id, trigger_position, check_kind,
+                check_fingerprint, state, resolution_id, resolution_kind,
+                evidence_id, opened_at_ms, resolved_at_ms
          FROM work_run_obligations
          WHERE run_id = ?1 AND (?2 IS NULL OR state = ?2)
          ORDER BY trigger_position, obligation_id",
@@ -1104,24 +1104,24 @@ pub(super) fn load_work_obligation_records_on(
         .query_map(params![run_id.0.to_string(), state], |row| {
             Ok(ObligationProjectionRow {
                 obligation_id: row.get(0)?,
-                definition_hash: row.get(1)?,
+                definition_id: row.get(1)?,
                 project_id: row.get(2)?,
                 root_execution_id: row.get(3)?,
                 root_id: row.get(4)?,
                 work_id: row.get(5)?,
                 run_id: row.get(6)?,
                 work_revision: row.get(7)?,
-                rule_set_hash: row.get(8)?,
+                rule_set_id: row.get(8)?,
                 rule_id: row.get(9)?,
                 rule_version: row.get(10)?,
-                triggering_observation_hash: row.get(11)?,
+                triggering_observation_id: row.get(11)?,
                 trigger_position: row.get(12)?,
                 check_kind: row.get(13)?,
                 check_fingerprint: row.get(14)?,
                 state: row.get(15)?,
-                resolution_hash: row.get(16)?,
+                resolution_id: row.get(16)?,
                 resolution_kind: row.get(17)?,
-                evidence_hash: row.get(18)?,
+                evidence_id: row.get(18)?,
                 opened_at_ms: row.get(19)?,
                 resolved_at_ms: row.get(20)?,
             })
@@ -1144,9 +1144,9 @@ fn require_expected_obligations_on(
 ) -> Result<(), StoreError> {
     let expected = connection
         .prepare(
-            "SELECT entry.position, entry.object_hash, object.canonical_json
+            "SELECT entry.position, entry.object_id, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
                AND entry.object_kind = 'execution_observation'
                AND json_extract(object.canonical_json, '$.source_changed') = 1
@@ -1161,8 +1161,8 @@ fn require_expected_obligations_on(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     for (position, stored_hash, bytes) in expected {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let observation: ExecutionObservation = CanonicalObject::stored(&hash, bytes)?.decode()?;
         let rule_set = obligation_rule_set_for_observation_on(connection, &observation)?;
         for (rule, requirement) in
@@ -1222,10 +1222,10 @@ fn load_work_obligation_record_on(
     connection: &Connection,
     row: &ObligationProjectionRow,
 ) -> Result<WorkObligationRecord, StoreError> {
-    let definition_hash = ObjectHash::from_stored(row.definition_hash.clone())
-        .ok_or(StoreError::InvalidStoredHash(row.definition_hash.clone()))?;
+    let definition_id = ObjectId::from_stored(row.definition_id.clone())
+        .ok_or(StoreError::InvalidStoredKey(row.definition_id.clone()))?;
     let obligation =
-        load_typed_work_object::<WorkObligation>(connection, &definition_hash, "work_obligation")?;
+        load_typed_work_object::<WorkObligation>(connection, &definition_id, "work_obligation")?;
     let state: WorkObligationState =
         serde_json::from_value(serde_json::Value::String(row.state.clone()))?;
     let check_kind: crate::domain::VerificationKind =
@@ -1234,14 +1234,14 @@ fn load_work_obligation_record_on(
         .check_fingerprint
         .as_ref()
         .map(|value| {
-            ObjectHash::from_stored(value.clone())
-                .ok_or_else(|| StoreError::InvalidStoredHash(value.clone()))
+            ObjectId::from_stored(value.clone())
+                .ok_or_else(|| StoreError::InvalidStoredKey(value.clone()))
         })
         .transpose()?;
-    let expected_rule_set = ObjectHash::from_stored(row.rule_set_hash.clone())
-        .ok_or_else(|| StoreError::InvalidStoredHash(row.rule_set_hash.clone()))?;
-    let expected_trigger = ObjectHash::from_stored(row.triggering_observation_hash.clone()).ok_or(
-        StoreError::InvalidStoredHash(row.triggering_observation_hash.clone()),
+    let expected_rule_set = ObjectId::from_stored(row.rule_set_id.clone())
+        .ok_or_else(|| StoreError::InvalidStoredKey(row.rule_set_id.clone()))?;
+    let expected_trigger = ObjectId::from_stored(row.triggering_observation_id.clone()).ok_or(
+        StoreError::InvalidStoredKey(row.triggering_observation_id.clone()),
     )?;
     let scalar_matches = obligation.obligation_id.0.to_string() == row.obligation_id
         && obligation.project_id.0 == row.project_id
@@ -1273,7 +1273,7 @@ fn load_work_obligation_record_on(
             "SELECT EXISTS(
                  SELECT 1 FROM work_feed_entries
                  WHERE feed_kind = 'run_execution' AND feed_id = ?1
-                   AND position = ?2 AND object_hash = ?3
+                   AND position = ?2 AND object_id = ?3
                    AND object_kind = ?4
              )",
             params![
@@ -1289,8 +1289,8 @@ fn load_work_obligation_record_on(
         .query_row(
             "SELECT position FROM work_feed_entries
              WHERE feed_kind = 'run_execution' AND feed_id = ?1
-               AND object_kind = 'work_obligation' AND object_hash = ?2",
-            params![obligation.run_id.0.to_string(), definition_hash.as_str()],
+               AND object_kind = 'work_obligation' AND object_id = ?2",
+            params![obligation.run_id.0.to_string(), definition_id.as_str()],
             |query| query.get(0),
         )
         .optional()?;
@@ -1337,15 +1337,15 @@ fn load_work_obligation_record_on(
             obligation.obligation_id.0
         )));
     }
-    let resolution_hash = row
-        .resolution_hash
+    let resolution_id = row
+        .resolution_id
         .as_ref()
         .map(|value| {
-            ObjectHash::from_stored(value.clone())
-                .ok_or_else(|| StoreError::InvalidStoredHash(value.clone()))
+            ObjectId::from_stored(value.clone())
+                .ok_or_else(|| StoreError::InvalidStoredKey(value.clone()))
         })
         .transpose()?;
-    let resolution = resolution_hash
+    let resolution = resolution_id
         .as_ref()
         .map(|hash| {
             load_typed_work_object::<WorkObligationResolutionEvent>(
@@ -1357,20 +1357,20 @@ fn load_work_obligation_record_on(
         .transpose()?;
     let resolution_position = validate_obligation_resolution_projection(
         connection,
-        &definition_hash,
+        &definition_id,
         &obligation,
         state,
-        resolution_hash.as_ref(),
+        resolution_id.as_ref(),
         resolution.as_ref(),
         row.resolution_kind.as_deref(),
-        row.evidence_hash.as_deref(),
+        row.evidence_id.as_deref(),
         row.resolved_at_ms,
     )?;
     Ok(WorkObligationRecord {
-        definition_hash,
+        definition_id,
         obligation,
         state,
-        resolution_hash,
+        resolution_id,
         resolution,
         resolution_position,
     })
@@ -1382,17 +1382,17 @@ fn load_work_obligation_record_on(
 )]
 fn validate_obligation_resolution_projection(
     connection: &Connection,
-    definition_hash: &ObjectHash,
+    definition_id: &ObjectId,
     obligation: &WorkObligation,
     state: WorkObligationState,
-    resolution_hash: Option<&ObjectHash>,
+    resolution_id: Option<&ObjectId>,
     event: Option<&WorkObligationResolutionEvent>,
     projected_kind: Option<&str>,
     projected_evidence: Option<&str>,
     resolved_at_ms: Option<i64>,
 ) -> Result<Option<FeedPosition>, StoreError> {
     if state == WorkObligationState::Open {
-        if resolution_hash.is_some()
+        if resolution_id.is_some()
             || event.is_some()
             || projected_kind.is_some()
             || projected_evidence.is_some()
@@ -1405,7 +1405,7 @@ fn validate_obligation_resolution_projection(
         }
         return Ok(None);
     }
-    let (resolution_hash, event, resolved_at_ms) = resolution_hash
+    let (resolution_id, event, resolved_at_ms) = resolution_id
         .zip(event)
         .zip(resolved_at_ms)
         .map(|((hash, event), at)| (hash, event, at))
@@ -1417,16 +1417,16 @@ fn validate_obligation_resolution_projection(
         })?;
     if event.project_id != obligation.project_id
         || event.obligation_id != obligation.obligation_id
-        || event.definition != *definition_hash
+        || event.definition != *definition_id
         || event.run_id != obligation.run_id
         || event.created_at.timestamp_millis() != resolved_at_ms
     {
         return Err(StoreError::InvalidWorkProjection(format!(
-            "obligation resolution {resolution_hash} crosses its definition binding"
+            "obligation resolution {resolution_id} crosses its definition binding"
         )));
     }
     let resolution_position =
-        run_feed_position_for_object_on(connection, obligation.run_id, resolution_hash)?;
+        run_feed_position_for_object_on(connection, obligation.run_id, resolution_id)?;
     match &event.resolution {
         WorkObligationResolution::Satisfied {
             evidence,
@@ -1500,22 +1500,22 @@ struct TypedEvidenceProjection<'a> {
     workspace_id: &'a str,
     source_revision: &'a str,
     producer_session_id: &'a SessionId,
-    producer_observation: Option<&'a ObjectHash>,
-    check_fingerprint: Option<&'a ObjectHash>,
+    producer_observation: Option<&'a ObjectId>,
+    check_fingerprint: Option<&'a ObjectId>,
     verification_result: Option<String>,
     observed_at: DateTime<Utc>,
-    environment_fingerprint: Option<&'a ObjectHash>,
-    environment_evidence: Option<&'a ObjectHash>,
+    environment_fingerprint: Option<&'a ObjectId>,
+    environment_evidence: Option<&'a ObjectId>,
     components_json: Option<Vec<u8>>,
 }
 
 pub(in crate::storage) fn append_control_verification_evidence_on(
     transaction: &Transaction<'_>,
     evidence: &VerificationEvidence,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     let object = CanonicalObject::mint(evidence)?;
     let result = encode_state(evidence.result)?;
-    let evidence_hash = append_control_typed_evidence_on(
+    let evidence_id = append_control_typed_evidence_on(
         transaction,
         &evidence.project_id,
         &evidence.binding,
@@ -1537,14 +1537,14 @@ pub(in crate::storage) fn append_control_verification_evidence_on(
             components_json: None,
         },
     )?;
-    satisfy_open_obligations_on(transaction, evidence, &evidence_hash)?;
-    Ok(evidence_hash)
+    satisfy_open_obligations_on(transaction, evidence, &evidence_id)?;
+    Ok(evidence_id)
 }
 
 pub(in crate::storage) fn append_control_environment_evidence_on(
     transaction: &Transaction<'_>,
     evidence: &EnvironmentEvidence,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     let object = CanonicalObject::mint(evidence)?;
     append_control_typed_evidence_on(
         transaction,
@@ -1587,7 +1587,7 @@ fn append_control_typed_evidence_on(
     recorded_at: DateTime<Utc>,
     object: &CanonicalObject,
     projection: &TypedEvidenceProjection<'_>,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     let item = load_work_item(transaction, binding.work_id)?;
     let run = load_work_run(transaction, binding.run_id)?;
     let mut root_execution = load_root_execution(transaction, binding.root_execution_id)?;
@@ -1613,26 +1613,26 @@ fn append_control_typed_evidence_on(
     SqliteStore::insert_object(transaction, object_kind, object)?;
     transaction.execute(
         "INSERT INTO work_run_evidence (
-             evidence_hash, work_id, run_id, evidence_kind,
+             evidence_id, work_id, run_id, evidence_kind,
              workspace_id, source_revision, producer_session_id,
-             producer_observation_hash, check_fingerprint,
+             producer_observation_id, check_fingerprint,
              verification_result, observed_at_ms, environment_fingerprint,
-             environment_evidence_hash, components_json
+             environment_evidence_id, components_json
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
-            object.hash().as_str(),
+            object.key().as_str(),
             item.work_id.0.to_string(),
             run.run_id.0.to_string(),
             encode_state(projection.kind)?,
             projection.workspace_id,
             projection.source_revision,
             projection.producer_session_id.0,
-            projection.producer_observation.map(ObjectHash::as_str),
-            projection.check_fingerprint.map(ObjectHash::as_str),
+            projection.producer_observation.map(ObjectId::as_str),
+            projection.check_fingerprint.map(ObjectId::as_str),
             projection.verification_result.as_deref(),
             projection.observed_at.timestamp_millis(),
-            projection.environment_fingerprint.map(ObjectHash::as_str),
-            projection.environment_evidence.map(ObjectHash::as_str),
+            projection.environment_fingerprint.map(ObjectId::as_str),
+            projection.environment_evidence.map(ObjectId::as_str),
             projection.components_json.as_deref(),
         ],
     )?;
@@ -1646,7 +1646,7 @@ fn append_control_typed_evidence_on(
         object,
     )?;
     let root_changed = expect_root_contributor(&mut root_execution, session_id)
-        | add_root_contribution(&mut root_execution, session_id, object.hash());
+        | add_root_contribution(&mut root_execution, session_id, object.key());
     if root_changed {
         root_execution.revision += 1;
         root_execution.updated_at = recorded_at;
@@ -1667,20 +1667,20 @@ fn append_control_typed_evidence_on(
         handoff_offer: None,
         blocker: None,
         transition: WorkTransition::TypedEvidenceAdded {
-            evidence: object.hash().clone(),
+            evidence: object.key().clone(),
             evidence_kind: projection.kind,
         },
         actor: actor.clone(),
         created_at: recorded_at,
     };
     append_work_event(transaction, &event)?;
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
 pub(in crate::storage) fn append_control_execution_observation_on(
     transaction: &Transaction<'_>,
     observation: &ExecutionObservation,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     let item = load_work_item(transaction, observation.binding.work_id)?;
     let run = load_work_run(transaction, observation.binding.run_id)?;
     let root_execution = load_root_execution(transaction, observation.binding.root_execution_id)?;
@@ -1714,8 +1714,8 @@ pub(in crate::storage) fn append_control_execution_observation_on(
                 "execution observation did not receive a run-feed position".into(),
             )
         })?;
-    append_builtin_obligations_on(transaction, observation, object.hash(), &trigger_position)?;
-    Ok(object.hash().clone())
+    append_builtin_obligations_on(transaction, observation, object.key(), &trigger_position)?;
+    Ok(object.key().clone())
 }
 
 pub(super) fn obligation_rule_set_for_observation_on(
@@ -1728,9 +1728,9 @@ pub(super) fn obligation_rule_set_for_observation_on(
 fn append_builtin_obligations_on(
     transaction: &Transaction<'_>,
     observation: &ExecutionObservation,
-    observation_hash: &ObjectHash,
+    observation_id: &ObjectId,
     trigger_position: &FeedPosition,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     let item = load_work_item(transaction, observation.binding.work_id)?;
     let mut definitions = Vec::new();
     let rule_set = obligation_rule_set_for_observation_on(transaction, observation)?;
@@ -1746,7 +1746,7 @@ fn append_builtin_obligations_on(
             work_revision: observation.binding.work_revision,
             rule_set: observation.obligation_rule_set.clone(),
             rule,
-            triggering_observation: observation_hash.clone(),
+            triggering_observation: observation_id.clone(),
             trigger_position: trigger_position.clone(),
             requirement,
             opened_at: observation.recorded_at,
@@ -1761,7 +1761,7 @@ fn append_builtin_obligations_on(
 fn persist_obligation_on(
     transaction: &Transaction<'_>,
     obligation: &WorkObligation,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     let object = CanonicalObject::mint(obligation)?;
     SqliteStore::insert_object(transaction, "work_obligation", &object)?;
     append_to_work_feeds(
@@ -1775,14 +1775,14 @@ fn persist_obligation_on(
     )?;
     transaction.execute(
         "INSERT INTO work_run_obligations (
-             obligation_id, definition_hash, project_id, root_execution_id,
-             root_id, work_id, run_id, work_revision, rule_set_hash, rule_id, rule_version,
-             triggering_observation_hash, trigger_position, check_kind,
+             obligation_id, definition_id, project_id, root_execution_id,
+             root_id, work_id, run_id, work_revision, rule_set_id, rule_id, rule_version,
+             triggering_observation_id, trigger_position, check_kind,
              check_fingerprint, state, opened_at_ms
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         params![
             obligation.obligation_id.0.to_string(),
-            object.hash().as_str(),
+            object.key().as_str(),
             obligation.project_id.0,
             obligation.root_execution_id.0.to_string(),
             obligation.root_id.0.to_string(),
@@ -1799,12 +1799,12 @@ fn persist_obligation_on(
                 .requirement
                 .check_fingerprint
                 .as_ref()
-                .map(ObjectHash::as_str),
+                .map(ObjectId::as_str),
             encode_state(WorkObligationState::Open)?,
             obligation.opened_at.timestamp_millis(),
         ],
     )?;
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
 pub(super) use crate::control::{
@@ -1823,11 +1823,11 @@ pub(super) fn open_binding_obligations_on(
     transaction: &Transaction<'_>,
     item: &WorkItem,
     run: &WorkRun,
-    trigger: &ObjectHash,
+    trigger: &ObjectId,
     trigger_position: &FeedPosition,
     reauthored: &[usize],
     now: DateTime<Utc>,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     if item.acceptance_bindings.is_empty() {
         return Ok(Vec::new());
     }
@@ -1883,7 +1883,7 @@ fn bind_acceptance_to_obligations_on(
     item: &WorkItem,
     run_id: WorkRunId,
     cut: &FeedPosition,
-    completion_evidence: &[ObjectHash],
+    completion_evidence: &[ObjectId],
     evaluated: bool,
     mut acceptance: Vec<AcceptanceResult>,
 ) -> Result<Vec<AcceptanceResult>, StoreError> {
@@ -2024,18 +2024,18 @@ fn newest_verification_of_kind_on(
     run_id: WorkRunId,
     requirement: &crate::domain::VerificationRequirement,
     cut: &FeedPosition,
-) -> Result<Option<(i64, ObjectHash, VerificationEvidence)>, StoreError> {
+) -> Result<Option<(i64, ObjectId, VerificationEvidence)>, StoreError> {
     let stored: Vec<String> = connection
         .prepare(
-            "SELECT evidence_hash FROM work_run_evidence
+            "SELECT evidence_id FROM work_run_evidence
              WHERE run_id = ?1 AND evidence_kind = 'verification'",
         )?
         .query_map([run_id.0.to_string()], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
-    let mut newest: Option<(i64, ObjectHash, VerificationEvidence)> = None;
+    let mut newest: Option<(i64, ObjectId, VerificationEvidence)> = None;
     for stored_hash in stored {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let position = run_feed_position_for_object_on(connection, run_id, &hash)?;
         if position.position > cut.position {
             continue;
@@ -2076,7 +2076,7 @@ pub(super) fn waive_unbound_obligations_on(
     reauthored: &[usize],
     actor: &crate::domain::ActorContext,
     now: DateTime<Utc>,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     let mut resolutions = Vec::new();
     for record in
         load_work_obligation_records_on(transaction, run_id, Some(WorkObligationState::Open))?
@@ -2103,7 +2103,7 @@ pub(super) fn waive_unbound_obligations_on(
             schema_version: SCHEMA_VERSION,
             project_id: item.project_id.clone(),
             obligation_id: record.obligation.obligation_id,
-            definition: record.definition_hash.clone(),
+            definition: record.definition_id.clone(),
             run_id,
             resolution: WorkObligationResolution::Waived {
                 waived_by: actor.actor_id.clone(),
@@ -2127,10 +2127,10 @@ pub(super) fn waive_unbound_obligations_on(
 fn satisfy_open_obligations_on(
     transaction: &Transaction<'_>,
     evidence: &VerificationEvidence,
-    evidence_hash: &ObjectHash,
-) -> Result<Vec<ObjectHash>, StoreError> {
+    evidence_id: &ObjectId,
+) -> Result<Vec<ObjectId>, StoreError> {
     let evidence_position =
-        run_feed_position_for_object_on(transaction, evidence.binding.run_id, evidence_hash)?;
+        run_feed_position_for_object_on(transaction, evidence.binding.run_id, evidence_id)?;
     let evaluated_cut = current_run_feed_cut_on(transaction, evidence.binding.run_id)?;
     let latest =
         latest_source_mutation_on(transaction, evidence.binding.run_id, evaluated_cut.position)?;
@@ -2174,10 +2174,10 @@ fn satisfy_open_obligations_on(
             schema_version: SCHEMA_VERSION,
             project_id: evidence.project_id.clone(),
             obligation_id,
-            definition: record.definition_hash.clone(),
+            definition: record.definition_id.clone(),
             run_id: evidence.binding.run_id,
             resolution: WorkObligationResolution::Satisfied {
-                evidence: evidence_hash.clone(),
+                evidence: evidence_id.clone(),
                 evaluated_cut: evaluated_cut.clone(),
             },
             actor: evidence.actor.clone(),
@@ -2193,8 +2193,8 @@ fn append_obligation_resolution_on(
     transaction: &Transaction<'_>,
     record: &WorkObligationRecord,
     event: &WorkObligationResolutionEvent,
-) -> Result<ObjectHash, StoreError> {
-    let (state, kind, evidence_hash) = match &event.resolution {
+) -> Result<ObjectId, StoreError> {
+    let (state, kind, evidence_id) = match &event.resolution {
         WorkObligationResolution::Satisfied { evidence, .. } => (
             WorkObligationState::Satisfied,
             "satisfied",
@@ -2215,17 +2215,17 @@ fn append_obligation_resolution_on(
     )?;
     let changed = transaction.execute(
         "UPDATE work_run_obligations SET
-             state = ?3, resolution_hash = ?4, resolution_kind = ?5,
-             evidence_hash = ?6, resolved_at_ms = ?7
-         WHERE obligation_id = ?1 AND definition_hash = ?2
-           AND state = 'open' AND resolution_hash IS NULL",
+             state = ?3, resolution_id = ?4, resolution_kind = ?5,
+             evidence_id = ?6, resolved_at_ms = ?7
+         WHERE obligation_id = ?1 AND definition_id = ?2
+           AND state = 'open' AND resolution_id IS NULL",
         params![
             event.obligation_id.0.to_string(),
-            record.definition_hash.as_str(),
+            record.definition_id.as_str(),
             encode_state(state)?,
-            object.hash().as_str(),
+            object.key().as_str(),
             kind,
-            evidence_hash,
+            evidence_id,
             event.created_at.timestamp_millis(),
         ],
     )?;
@@ -2235,14 +2235,14 @@ fn append_obligation_resolution_on(
             event.obligation_id.0
         )));
     }
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
 /// Empty criterion evidence is an asserted result without a linked artifact.
 /// Any explicit citation must still belong to the completion evidence set.
 fn validate_acceptance(
     item: &WorkItem,
-    completion_evidence: &[ObjectHash],
+    completion_evidence: &[ObjectId],
     results: &[AcceptanceResult],
     actor_assurance: crate::domain::AssuranceLevel,
 ) -> Result<Vec<AcceptanceResult>, StoreError> {
@@ -2262,12 +2262,12 @@ fn validate_acceptance(
 /// it.
 fn ensure_acceptance_citations_within(
     item: &WorkItem,
-    completion_evidence: &[ObjectHash],
+    completion_evidence: &[ObjectId],
     results: &[AcceptanceResult],
 ) -> Result<(), StoreError> {
     let completion_evidence = completion_evidence
         .iter()
-        .map(ObjectHash::as_str)
+        .map(ObjectId::as_str)
         .collect::<HashSet<_>>();
     for result in results {
         if result
@@ -2401,18 +2401,18 @@ pub(super) fn validate_completion_seal_children_on(
         validate_completion_seal_children_on(connection, &child_seal, depth + 1)?;
         transitively_restored |= child_seal.restored;
     }
-    for record_hash in &seal.restored_child_completions {
-        if !seen.insert(record_hash.clone()) {
+    for record_id in &seal.restored_child_completions {
+        if !seen.insert(record_id.clone()) {
             return Err(StoreError::InvalidWorkProjection(format!(
-                "completion seal for run {} repeats restored child record {record_hash}",
+                "completion seal for run {} repeats restored child record {record_id}",
                 seal.run_id.0
             )));
         }
         let record: RestoredRecord =
-            load_typed_work_object(connection, record_hash, "work_restored_record")?;
+            load_typed_work_object(connection, record_id, "work_restored_record")?;
         let child = load_work_item(connection, record.work_id)?;
         let latest = super::query::latest_restored_record_hash(connection, child.work_id)?;
-        if latest.as_ref() != Some(record_hash)
+        if latest.as_ref() != Some(record_id)
             || record.history.completion.is_none()
             || !seen_children.insert(child.work_id)
             || child.parent_id != Some(seal.work_id)
@@ -2421,7 +2421,7 @@ pub(super) fn validate_completion_seal_children_on(
             || child.lifecycle != WorkLifecycle::Completed
         {
             return Err(StoreError::InvalidWorkProjection(format!(
-                "completion seal for run {} cites unrelated restored child record {record_hash}",
+                "completion seal for run {} cites unrelated restored child record {record_id}",
                 seal.run_id.0
             )));
         }
@@ -2440,7 +2440,7 @@ pub(super) fn validate_completion_seal_children_on(
 fn required_restored_child_completions(
     connection: &Connection,
     parent_id: WorkId,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     let child_ids = connection
         .prepare(
             "SELECT child.work_id FROM work_items child
@@ -2478,9 +2478,9 @@ pub(super) fn required_child_seals(
     connection: &Connection,
     parent_id: WorkId,
     root_execution_id: RootExecutionId,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT child.work_id, run.run_id, seals.seal_hash
+        "SELECT child.work_id, run.run_id, seals.seal_id
          FROM work_items child
          JOIN work_runs run ON run.work_id = child.work_id
          JOIN work_completion_seals seals ON seals.run_id = run.run_id
@@ -2510,8 +2510,8 @@ pub(super) fn required_child_seals(
     drop(statement);
     let mut hashes = Vec::with_capacity(rows.len());
     for (child_work, child_run, stored_hash) in rows {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let seal: CompletionSeal = load_typed_work_object(connection, &hash, "completion_seal")?;
         validate_stored_seal_root(connection, &seal, &hash)?;
         if seal.work_id.0.to_string() != child_work
@@ -2558,7 +2558,7 @@ fn required_child_waivers_on(
         return Ok(Vec::new());
     }
     let mut statement = connection.prepare(
-        "SELECT object_hash FROM work_feed_entries
+        "SELECT object_id FROM work_feed_entries
          WHERE feed_kind = 'root_work' AND feed_id = ?1
            AND object_kind = 'work_event'
          ORDER BY position",
@@ -2573,8 +2573,8 @@ fn required_child_waivers_on(
     let mut events = HashMap::new();
     let mut witnesses = Vec::new();
     for stored_hash in hashes {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let event: WorkEvent = load_typed_work_object(connection, &hash, "work_event")?;
         let Some(event_execution) = event.root_execution.as_ref() else {
             continue;
@@ -2759,7 +2759,7 @@ fn live_descendant_execution_authority(
         }
         let offers = {
             let mut statement = connection.prepare(
-                "SELECT offer_hash, offer_json FROM work_handoff_offers
+                "SELECT offer_object_id, offer_json FROM work_handoff_offers
                  WHERE run_id = ?1 ORDER BY offer_id",
             )?;
             statement

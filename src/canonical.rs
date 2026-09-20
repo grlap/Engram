@@ -41,11 +41,15 @@ pub(crate) fn canonical_decode_count() -> usize {
 /// under; it is an opaque id like any other and is never recomputed or
 /// compared with their bytes. A content fingerprint is the 64-digit SHA-256 of
 /// canonical bytes and is used only to compare content.
+/// This shared scalar representation does not make those two roles equivalent;
+/// the owning field or constructor determines the role. Renaming the record-id
+/// API does not change existing serialized ids. Fingerprints of definitions
+/// that include Rust type names, such as the graph snapshot schema, can change.
 #[derive(Clone, Debug, Eq, Hash, JsonSchema, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub struct ObjectHash(String);
+pub struct ObjectId(String);
 
-impl ObjectHash {
+impl ObjectId {
     /// Fingerprints bytes that are already canonical. Not an identity.
     #[must_use]
     pub fn from_canonical_bytes(bytes: &[u8]) -> Self {
@@ -80,13 +84,13 @@ impl ObjectHash {
     }
 }
 
-impl fmt::Display for ObjectHash {
+impl fmt::Display for ObjectId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
     }
 }
 
-impl FromStr for ObjectHash {
+impl FromStr for ObjectId {
     type Err = &'static str;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -94,7 +98,7 @@ impl FromStr for ObjectHash {
     }
 }
 
-impl<'de> Deserialize<'de> for ObjectHash {
+impl<'de> Deserialize<'de> for ObjectId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -109,7 +113,7 @@ impl<'de> Deserialize<'de> for ObjectHash {
 /// record or the fingerprint of compared content.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalObject {
-    hash: ObjectHash,
+    key: ObjectId,
     bytes: Vec<u8>,
 }
 
@@ -123,7 +127,7 @@ impl CanonicalObject {
     /// fails.
     pub fn mint<T: Serialize>(value: &T) -> Result<Self, StoreError> {
         Ok(Self {
-            hash: ObjectHash::mint(),
+            key: ObjectId::mint(),
             bytes: serde_json_canonicalizer::to_vec(value)?,
         })
     }
@@ -135,9 +139,9 @@ impl CanonicalObject {
     ///
     /// Returns [`StoreError`] when JSON serialization or canonicalization
     /// fails.
-    pub fn identified<T: Serialize>(id: &ObjectHash, value: &T) -> Result<Self, StoreError> {
+    pub fn identified<T: Serialize>(id: &ObjectId, value: &T) -> Result<Self, StoreError> {
         Ok(Self {
-            hash: id.clone(),
+            key: id.clone(),
             bytes: serde_json_canonicalizer::to_vec(value)?,
         })
     }
@@ -151,8 +155,8 @@ impl CanonicalObject {
     /// fails.
     pub fn freeze<T: Serialize>(value: &T) -> Result<Self, StoreError> {
         let bytes = serde_json_canonicalizer::to_vec(value)?;
-        let hash = ObjectHash::from_canonical_bytes(&bytes);
-        Ok(Self { hash, bytes })
+        let key = ObjectId::from_canonical_bytes(&bytes);
+        Ok(Self { key, bytes })
     }
 
     /// The bytes stored under `id`, as they are. They are checked to be JSON
@@ -163,18 +167,18 @@ impl CanonicalObject {
     /// # Errors
     ///
     /// Returns [`StoreError`] when the bytes are not valid JSON.
-    pub fn stored(id: &ObjectHash, bytes: Vec<u8>) -> Result<Self, StoreError> {
+    pub fn stored(id: &ObjectId, bytes: Vec<u8>) -> Result<Self, StoreError> {
         serde_json::from_slice::<serde::de::IgnoredAny>(&bytes)?;
         Ok(Self {
-            hash: id.clone(),
+            key: id.clone(),
             bytes,
         })
     }
 
     /// Returns the record id, or the fingerprint of compared content.
     #[must_use]
-    pub fn hash(&self) -> &ObjectHash {
-        &self.hash
+    pub fn key(&self) -> &ObjectId {
+        &self.key
     }
 
     /// Returns the immutable canonical representation.
@@ -191,9 +195,14 @@ impl CanonicalObject {
     /// Returns [`StoreError`] when the canonical bytes cannot be deserialized
     /// into `T`.
     pub fn decode<T: DeserializeOwned>(&self) -> Result<T, StoreError> {
+        Self::decode_bytes(&self.bytes)
+    }
+
+    /// Decodes stored JSON without inventing a record id or a checksum for it.
+    pub(crate) fn decode_bytes<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, StoreError> {
         #[cfg(test)]
         CANONICAL_DECODE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
-        Ok(serde_json::from_slice(&self.bytes)?)
+        Ok(serde_json::from_slice(bytes)?)
     }
 }
 
@@ -210,11 +219,11 @@ mod tests {
     }
 
     #[test]
-    fn canonical_identity_is_independent_of_struct_field_order() {
+    fn canonical_content_is_independent_of_struct_field_order() {
         let object = CanonicalObject::freeze(&OutOfOrder { z: 2, a: "first" }).unwrap();
 
         assert_eq!(object.bytes(), br#"{"a":"first","z":2}"#);
-        assert_eq!(object.hash().as_str().len(), 64);
+        assert_eq!(object.key().as_str().len(), 64);
     }
 
     // Identity is minted, not derived: the same value is two records with two
@@ -225,14 +234,14 @@ mod tests {
         let first = CanonicalObject::mint(&value).unwrap();
         let second = CanonicalObject::mint(&value).unwrap();
         assert_eq!(first.bytes(), second.bytes());
-        assert_ne!(first.hash(), second.hash());
-        assert_eq!(first.hash().as_str().len(), 32);
+        assert_ne!(first.key(), second.key());
+        assert_eq!(first.key().as_str().len(), 32);
 
         let reshaped = br#"{"z":2,"a":"first","added":true}"#.to_vec();
-        let loaded = CanonicalObject::stored(first.hash(), reshaped.clone()).unwrap();
-        assert_eq!(loaded.hash(), first.hash());
+        let loaded = CanonicalObject::stored(first.key(), reshaped.clone()).unwrap();
+        assert_eq!(loaded.key(), first.key());
         assert_eq!(loaded.bytes(), reshaped.as_slice());
-        assert!(CanonicalObject::stored(first.hash(), b"not json".to_vec()).is_err());
+        assert!(CanonicalObject::stored(first.key(), b"not json".to_vec()).is_err());
     }
 
     // A fingerprint compares content and is stable; it is not an identity.
@@ -240,18 +249,18 @@ mod tests {
     fn a_fingerprint_is_stable_for_equal_content() {
         let left = CanonicalObject::freeze(&OutOfOrder { z: 2, a: "first" }).unwrap();
         let right = CanonicalObject::freeze(&OutOfOrder { z: 2, a: "first" }).unwrap();
-        assert_eq!(left.hash(), right.hash());
-        assert_eq!(left.hash().as_str().len(), 64);
+        assert_eq!(left.key(), right.key());
+        assert_eq!(left.key().as_str().len(), 64);
     }
 
     #[test]
     fn id_deserialization_accepts_minted_and_earlier_ids_and_rejects_other_text() {
-        assert!(serde_json::from_str::<ObjectHash>(r#""bogus""#).is_err());
-        assert!(serde_json::from_str::<ObjectHash>(&format!(r#""{}""#, "A".repeat(64))).is_err());
-        assert!(serde_json::from_str::<ObjectHash>(&format!(r#""{}""#, "a".repeat(64))).is_ok());
-        let minted = ObjectHash::mint();
+        assert!(serde_json::from_str::<ObjectId>(r#""bogus""#).is_err());
+        assert!(serde_json::from_str::<ObjectId>(&format!(r#""{}""#, "A".repeat(64))).is_err());
+        assert!(serde_json::from_str::<ObjectId>(&format!(r#""{}""#, "a".repeat(64))).is_ok());
+        let minted = ObjectId::mint();
         assert_eq!(
-            serde_json::from_str::<ObjectHash>(&format!(r#""{minted}""#)).unwrap(),
+            serde_json::from_str::<ObjectId>(&format!(r#""{minted}""#)).unwrap(),
             minted
         );
     }

@@ -7,7 +7,7 @@ use crate::domain::{
     AcceptWorkHandoffRequest, AcceptanceSourceBasis, EvaluatorModel, OfferWorkHandoffRequest,
 };
 
-fn pass_judgment(note: &ObjectHash) -> Vec<CriterionVerdictInput> {
+fn pass_judgment(note: &ObjectId) -> Vec<CriterionVerdictInput> {
     vec![verdict(
         1,
         AcceptanceVerdict::Pass,
@@ -16,7 +16,7 @@ fn pass_judgment(note: &ObjectHash) -> Vec<CriterionVerdictInput> {
     )]
 }
 
-fn passes(count: usize, note: &ObjectHash) -> Vec<CriterionVerdictInput> {
+fn passes(count: usize, note: &ObjectId) -> Vec<CriterionVerdictInput> {
     (1..=count)
         .map(|position| {
             verdict(

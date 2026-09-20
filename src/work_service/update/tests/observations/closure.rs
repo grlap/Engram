@@ -40,7 +40,7 @@ fn phoenix_note_marker_collisions_preserve_authority_and_restored_classification
         assert_eq!(observed.value["non_holder"], true);
         assert!(observed.text().contains("(observation, no run credit)"));
         assert!(observed.value.get("checkpoint").is_none());
-        let observed_hash: ObjectHash =
+        let observed_hash: ObjectId =
             serde_json::from_value(observed.value["evidence"].clone()).unwrap();
         let store = SqliteStore::open(&database).unwrap();
         let (_, observations) = store.work_observation_tail(root.work_id, 8).unwrap();
@@ -59,18 +59,18 @@ fn phoenix_note_marker_collisions_preserve_authority_and_restored_classification
         let executed = words.note(&note("execution"), at(3)).unwrap();
         assert!(executed.value.get("non_holder").is_none());
         assert!(!executed.text().contains("no run credit"));
-        let checkpoint_hash: ObjectHash =
+        let checkpoint_hash: ObjectId =
             serde_json::from_value(executed.value["checkpoint"].clone()).unwrap();
-        let evidence_hash: ObjectHash =
+        let evidence_id: ObjectId =
             serde_json::from_value(executed.value["evidence"].clone()).unwrap();
-        assert_ne!(checkpoint_hash, evidence_hash);
+        assert_ne!(checkpoint_hash, evidence_id);
         let store = SqliteStore::open(&database).unwrap();
         let checkpoint = store
             .get::<crate::WorkCheckpoint>(&checkpoint_hash)
             .unwrap()
             .unwrap();
         assert_eq!(checkpoint.work_id, root.work_id);
-        assert_eq!(checkpoint.evidence, vec![evidence_hash]);
+        assert_eq!(checkpoint.evidence, vec![evidence_id]);
         let (_, observations) = store.work_observation_tail(root.work_id, 8).unwrap();
         assert_eq!(
             observations[0]
@@ -223,11 +223,10 @@ fn phoenix_lapsed_holder_note_receipt_explicitly_has_no_run_credit() {
         .unwrap();
     assert_eq!(noted.value["non_holder"], true);
     assert!(noted.value.get("checkpoint").is_none());
-    let evidence_hash: ObjectHash =
-        serde_json::from_value(noted.value["evidence"].clone()).unwrap();
+    let evidence_id: ObjectId = serde_json::from_value(noted.value["evidence"].clone()).unwrap();
     let store = SqliteStore::open(&database).unwrap();
     let (_, observations) = store.work_observation_tail(root.work_id, 8).unwrap();
-    assert_eq!(evidence_hash, observations[0].0);
+    assert_eq!(evidence_id, observations[0].0);
     assert!(noted.text().contains("(observation, no run credit)"));
     assert_eq!(execution_inventory(&database), before);
 }
@@ -281,13 +280,13 @@ fn phoenix_observation_integrity_rejects_coordinated_parent_feed_reordering() {
     }
 }
 
-fn swap_parent_feed_positions(database: &std::path::Path, first: &ObjectHash, other: &ObjectHash) {
+fn swap_parent_feed_positions(database: &std::path::Path, first: &ObjectId, other: &ObjectId) {
     let mut connection = rusqlite::Connection::open(database).unwrap();
     let transaction = connection.transaction().unwrap();
     for kind in ["project", "root_work"] {
-        let position = |hash: &ObjectHash| {
+        let position = |hash: &ObjectId| {
             transaction.query_row(
-            "SELECT position FROM work_feed_entries WHERE feed_kind = ?1 AND object_hash = ?2",
+            "SELECT position FROM work_feed_entries WHERE feed_kind = ?1 AND object_id = ?2",
             rusqlite::params![kind, hash.as_str()], |row| row.get::<_, i64>(0),
         ).unwrap()
         };
@@ -306,7 +305,7 @@ fn swap_parent_feed_positions(database: &std::path::Path, first: &ObjectHash, ot
             (first, other_position),
         ] {
             assert_eq!(transaction.execute(
-                "UPDATE work_feed_entries SET position = ?3 WHERE feed_kind = ?1 AND object_hash = ?2",
+                "UPDATE work_feed_entries SET position = ?3 WHERE feed_kind = ?1 AND object_id = ?2",
                 rusqlite::params![kind, hash.as_str(), position],
             ).unwrap(), 1);
         }

@@ -45,7 +45,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         session_id: SessionId("runner".into()),
         grant_id: "completion-obligation-grant".into(),
         observation_id: "completion-source-mutation".into(),
-        action_fingerprint: ObjectHash::from_canonical_bytes(b"write src/lib.rs"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"write src/lib.rs"),
         effect: EffectClass::MutateLocal,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
@@ -111,7 +111,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         obligations[0].obligation_id,
         opened[0].obligation.obligation_id
     );
-    assert_eq!(obligations[0].definition, opened[0].definition_hash);
+    assert_eq!(obligations[0].definition, opened[0].definition_id);
     assert_eq!(obligations[0].required_check, VerificationKind::Test);
 
     let verification_observation = ExecutionObservation {
@@ -121,7 +121,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         session_id: SessionId("runner".into()),
         grant_id: "completion-obligation-grant".into(),
         observation_id: "completion-verification".into(),
-        action_fingerprint: ObjectHash::from_canonical_bytes(b"cargo test --workspace"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"cargo test --workspace"),
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
@@ -139,7 +139,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
     };
     let environment_fingerprint = CanonicalObject::freeze(&environment_components)
         .expect("freeze completion environment components")
-        .hash()
+        .key()
         .clone();
     let (verification_hash, environment_hash) = {
         let transaction = store
@@ -238,9 +238,9 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         seal.obligations,
         vec![CompletionObligationBinding {
             obligation_id: terminal[0].obligation.obligation_id,
-            definition: terminal[0].definition_hash.clone(),
+            definition: terminal[0].definition_id.clone(),
             resolution: terminal[0]
-                .resolution_hash
+                .resolution_id
                 .clone()
                 .expect("terminal resolution hash"),
         }]
@@ -266,7 +266,7 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
         .expect("reconstruct exact completion basis");
     let report = store.verify_all().expect("integrity report");
     assert!(report.is_healthy(), "{report:?}");
-    let seal_hash = store.stored_seal_id(&seal);
+    let seal_id = store.stored_seal_id(&seal);
     let mut forged_seal = seal.clone();
     forged_seal.obligations.clear();
     store
@@ -276,9 +276,9 @@ fn completion_refuses_open_obligations_then_seals_the_exact_terminal_basis() {
     store
         .connection
         .execute(
-            "UPDATE work_completion_seals SET seal_json = ?2 WHERE seal_hash = ?1",
+            "UPDATE work_completion_seals SET seal_json = ?2 WHERE seal_id = ?1",
             params![
-                seal_hash.as_str(),
+                seal_id.as_str(),
                 serde_json::to_vec(&forged_seal).expect("forged seal JSON")
             ],
         )
@@ -352,7 +352,7 @@ fn completion_refuses_more_than_the_bounded_environment_basis() {
             };
             let environment_fingerprint = CanonicalObject::freeze(&components)
                 .expect("freeze bounded environment components")
-                .hash()
+                .key()
                 .clone();
             hashes.push(
                 append_control_environment_evidence_on(
@@ -467,7 +467,7 @@ fn open_completion_obligation_refusal_is_bounded_and_counts_omissions() {
                 session_id: SessionId("runner".into()),
                 grant_id: "bounded-obligation-grant".into(),
                 observation_id: format!("bounded-source-mutation-{index}"),
-                action_fingerprint: ObjectHash::from_canonical_bytes(
+                action_fingerprint: ObjectId::from_canonical_bytes(
                     format!("write source {index}").as_bytes(),
                 ),
                 effect: EffectClass::MutateLocal,
@@ -565,7 +565,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 session_id: session.clone(),
                 grant_id: "protocol-obligation-grant".into(),
                 observation_id: "protocol-source-mutation".into(),
-                action_fingerprint: ObjectHash::from_canonical_bytes(b"write protocol source"),
+                action_fingerprint: ObjectId::from_canonical_bytes(b"write protocol source"),
                 effect: EffectClass::MutateLocal,
                 outcome: ExecutionOutcome::Succeeded,
                 source_changed: true,
@@ -633,7 +633,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
     );
     assert_eq!(
         refusal.obligation_page.items[0].definition,
-        expected_obligation.definition_hash
+        expected_obligation.definition_id
     );
     assert_eq!(
         refusal.obligation_page.items[0].requirement.check_kind,
@@ -648,7 +648,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
             definition,
             required_check: VerificationKind::Test,
         } if *obligation_id == expected_obligation.obligation.obligation_id
-            && *definition == expected_obligation.definition_hash
+            && *definition == expected_obligation.definition_id
     ));
     assert_eq!(recovery.item.work_id, work.work_id);
     assert_eq!(recovery.item.title, work.title);
@@ -739,7 +739,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
         .connection
         .query_row(
             "SELECT COUNT(*) FROM work_protocol_attempts
-             WHERE operation = 'work_complete' AND result_hash IS NULL",
+             WHERE operation = 'work_complete' AND result_id IS NULL",
             [],
             |row| row.get(0),
         )
@@ -765,7 +765,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 session_id: SessionId("runner".into()),
                 grant_id: "protocol-obligation-grant".into(),
                 observation_id: "protocol-obligation-verification".into(),
-                action_fingerprint: ObjectHash::from_canonical_bytes(
+                action_fingerprint: ObjectId::from_canonical_bytes(
                     b"cargo test protocol obligation",
                 ),
                 effect: EffectClass::Observe,
@@ -790,7 +790,7 @@ fn ambient_completion_recomputes_a_typed_open_obligation_result() {
                 source_basis,
                 environment: None,
                 check_kind: VerificationKind::Test,
-                check_fingerprint: ObjectHash::from_canonical_bytes(
+                check_fingerprint: ObjectId::from_canonical_bytes(
                     b"cargo test protocol obligation",
                 ),
                 result: VerificationResult::Passed,
@@ -857,7 +857,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         session_id: SessionId("runner".into()),
         grant_id: "direct-test-grant".into(),
         observation_id: id.into(),
-        action_fingerprint: ObjectHash::from_canonical_bytes(action.as_bytes()),
+        action_fingerprint: ObjectId::from_canonical_bytes(action.as_bytes()),
         effect: if source_changed {
             EffectClass::MutateLocal
         } else {
@@ -1024,7 +1024,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         store.waive_work_obligation(
             &WaiveWorkObligationRequest {
                 obligation_id: waiver_target.obligation.obligation_id,
-                expected_definition: waiver_target.definition_hash.clone(),
+                expected_definition: waiver_target.definition_id.clone(),
                 waived_by: "operator".into(),
                 reason: "already terminal must not be waived".into(),
                 actor: actor("operator"),
@@ -1059,7 +1059,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         .expect("one open waiver target");
     let waiver_request = WaiveWorkObligationRequest {
         obligation_id: waiver_target.obligation.obligation_id,
-        expected_definition: waiver_target.definition_hash.clone(),
+        expected_definition: waiver_target.definition_id.clone(),
         waived_by: "operator".into(),
         reason: "operator accepted the unverified final mutation".into(),
         actor: actor("operator"),
@@ -1109,9 +1109,9 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
         .find(|record| record.obligation.obligation_id == waiver_request.obligation_id)
         .expect("waived corruption target");
     let obligation_id = target.obligation.obligation_id.0.to_string();
-    let definition = target.definition_hash.as_str();
+    let definition = target.definition_id.as_str();
     let resolution = target
-        .resolution_hash
+        .resolution_id
         .as_ref()
         .expect("waiver resolution")
         .as_str();
@@ -1121,7 +1121,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
             "UPDATE work_run_obligations SET obligation_id = '{forged_uuid}' WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
-            "UPDATE work_run_obligations SET definition_hash = '{resolution}' WHERE obligation_id = '{obligation_id}'"
+            "UPDATE work_run_obligations SET definition_id = '{resolution}' WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
             "UPDATE work_run_obligations SET project_id = 'forged-project' WHERE obligation_id = '{obligation_id}'"
@@ -1148,7 +1148,7 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
             "UPDATE work_run_obligations SET rule_version = rule_version + 1 WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
-            "UPDATE work_run_obligations SET triggering_observation_hash = '{definition}' WHERE obligation_id = '{obligation_id}'"
+            "UPDATE work_run_obligations SET triggering_observation_id = '{definition}' WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
             "UPDATE work_run_obligations SET trigger_position = trigger_position + 1 WHERE obligation_id = '{obligation_id}'"
@@ -1163,13 +1163,13 @@ fn basisless_mutation_is_waiver_only_until_a_later_verified_source_state() {
             "UPDATE work_run_obligations SET state = 'satisfied' WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
-            "UPDATE work_run_obligations SET resolution_hash = '{definition}' WHERE obligation_id = '{obligation_id}'"
+            "UPDATE work_run_obligations SET resolution_id = '{definition}' WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
             "UPDATE work_run_obligations SET resolution_kind = 'satisfied' WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
-            "UPDATE work_run_obligations SET evidence_hash = '{definition}' WHERE obligation_id = '{obligation_id}'"
+            "UPDATE work_run_obligations SET evidence_id = '{definition}' WHERE obligation_id = '{obligation_id}'"
         ),
         format!(
             "UPDATE work_run_obligations SET opened_at_ms = opened_at_ms + 1 WHERE obligation_id = '{obligation_id}'"
@@ -1254,7 +1254,7 @@ fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
         session_id: SessionId("runner".into()),
         grant_id: "host-waiver-test-turn".into(),
         observation_id: "host-waiver-mutation".into(),
-        action_fingerprint: ObjectHash::from_canonical_bytes(b"host waiver mutation"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"host waiver mutation"),
         effect: EffectClass::MutateLocal,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,
@@ -1305,7 +1305,7 @@ fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
             &unbound_connection,
             &unbound.routing_token,
             open.obligation.obligation_id,
-            &open.definition_hash,
+            &open.definition_id,
             "human-operator",
             "reviewed the exact obligation",
             &unbound_actor,
@@ -1348,7 +1348,7 @@ fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
             &connection_token,
             &bound.routing_token,
             open.obligation.obligation_id,
-            &ObjectHash::from_canonical_bytes(b"wrong definition"),
+            &ObjectId::from_canonical_bytes(b"wrong definition"),
             "human-operator",
             "reviewed the exact obligation",
             &host_actor,
@@ -1371,7 +1371,7 @@ fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
             &connection_token,
             &bound.routing_token,
             open.obligation.obligation_id,
-            &open.definition_hash,
+            &open.definition_id,
             "human-operator",
             "reviewed the exact obligation",
             &host_actor,
@@ -1387,7 +1387,7 @@ fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
             &connection_token,
             &bound.routing_token,
             open.obligation.obligation_id,
-            &open.definition_hash,
+            &open.definition_id,
             "human-operator",
             "reviewed the exact obligation",
             &host_actor,
@@ -1421,7 +1421,7 @@ fn bound_host_obligation_waiver_is_typed_human_attributed_and_replayable() {
             &connection_token,
             &bound.routing_token,
             open.obligation.obligation_id,
-            &open.definition_hash,
+            &open.definition_id,
             "human-operator",
             "reviewed the exact obligation",
             &host_actor,

@@ -42,8 +42,8 @@ open; export from a coherent copy when the store is in use.
 The file is JSON Lines:
 
 ```text
-{"engram_export":{"format":"engram-json-export","exported_at":"…","tables":[{"name":"objects","columns":["object_hash","object_kind","canonical_json","created_at"],"rows":3}],"sequences":{"task_changes":48},"left_out":[…]}}
-{"row":{"table":"objects","values":{"object_hash":"…","object_kind":"work_event","canonical_json":{"json":{…}},"created_at":"…"}}}
+{"engram_export":{"format":"engram-json-export","exported_at":"…","tables":[{"name":"objects","columns":["object_id","object_kind","canonical_json","created_at"],"rows":3}],"sequences":{"task_changes":48},"left_out":[…]}}
+{"row":{"table":"objects","values":{"object_id":"…","object_kind":"work_event","canonical_json":{"json":{…}},"created_at":"…"}}}
 {"end":{"rows":3}}
 ```
 
@@ -100,6 +100,15 @@ for is never dropped in silence. Explicit retirement is limited to:
 - `work_session_state.tentative_delivery_payload_hash`: reported under
   `retired_fields` with its non-null value count; the rest of each row is
   imported.
+- Uncompared control checksums: `control_observations.input_hash` and
+  `.decision_hash`, `control_turn_grants.grant_hash`,
+  `control_work_leases.lease_hash`,
+  `control_turn_grant_supersessions.supersession_hash`, and `result_hash` in
+  `control_operation_results` and `control_policy_operation_results`.
+  Each is reported under `retired_fields` with its non-null value count.
+  Their JSON payloads, replay intents and semantic validation are retained.
+  The turn-result decision and replacement-decision fingerprints are not
+  retired: supersession validation still compares those bindings.
 - `task_claims`, `task_claim_intents`, and `publication_intents`: obsolete
   whole-task advisory claims and unwired publication scaffolding. Import reports
   each table under `left_out` with its row count and retirement reason. It does
@@ -115,7 +124,30 @@ unknown table or column still refuses by name. A store written by a design
 this build no longer knows is refused the same way; the build that still
 reads it is kept beside its backups.
 
-The store's own format marker is not imported; the new store keeps its own.
+The record-id cleanup explicitly maps the previous record-link column names
+from `*_hash` to `*_id`, including `objects.object_hash` to `object_id`.
+The handoff record link becomes `offer_object_id`, distinct from the existing
+operational `offer_id`. Only the per-table mappings in the importer are
+accepted; arbitrary suffix substitutions are not. Declaring both old and new
+names for one destination column refuses. Id values and canonical JSON bytes
+are unchanged, and missing required destination columns refuse by name.
+The Rust record-reference type is `ObjectId`. Existing serialized host/record
+fields such as `object_hash` retain their exact wire spelling, explicitly
+through Serde, so this database conversion does not change TermAl's protocol
+or reinterpret pending delivery pages.
+
+That wire-field preservation does not preserve the separate work-graph snapshot
+format fingerprint. The generated JSON Schema includes the renamed Rust type's
+definition name and references, so this cleanup deliberately changes that
+fingerprint and the new build refuses older graph snapshot files. Use the
+whole-store conversion here, then save a new graph file. For recovery when only
+an old graph file remains, see the matching-old-build procedure in the
+[snapshot format contract](work-graph-snapshot.md#file-layout). Never edit the
+file's fingerprint to bypass the different-build refusal.
+
+The work schema marker is not imported; the new store keeps its own.
+`control_policy_state.schema_version` is checked explicitly and a mismatch
+refuses by its named format-marker field, before publishing a destination.
 A table this build drops and recreates whenever it repairs a store — the
 project-memory state, the restored-record and observation projections of the
 work schema, and the delivery bookkeeping — is derived state: export names

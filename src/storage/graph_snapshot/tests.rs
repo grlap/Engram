@@ -185,7 +185,7 @@ fn create_imported_root(
         canonical_url: Some("https://tracker.invalid/SNAP-1".into()),
         payload_hash: CanonicalObject::freeze(&serde_json::json!({"source": "SNAP-1"}))
             .expect("freeze source payload")
-            .hash()
+            .key()
             .clone(),
         raw: std::collections::BTreeMap::new(),
     };
@@ -213,7 +213,7 @@ fn create_imported_root(
                 assigned_to: None,
                 deferred_until: None,
                 origin: WorkOrigin::Imported,
-                source_snapshot_id: Some(object.hash().clone()),
+                source_snapshot_id: Some(object.key().clone()),
                 actor: actor("import-session"),
                 idempotency_key: "imported-snapshot-root".into(),
                 created_at: at(2),
@@ -290,7 +290,7 @@ fn insert_project_memory_version(
     let assertion = crate::domain::MemoryAssertionEvent {
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id: version.memory_id,
-        version: version_object.hash().clone(),
+        version: version_object.key().clone(),
         status: MemoryStatus::Active,
         policy_reason: "restored project episode is active immediately".into(),
         actor: actor("memory-session"),
@@ -305,7 +305,7 @@ fn insert_project_memory_version(
     transaction
         .execute(
             "INSERT INTO memory_heads (
-                 memory_id, version_hash, assertion_hash, schema_version,
+                 memory_id, version_id, assertion_id, schema_version,
                  status, scope_kind, project_id, task_id, work_id, agent_id,
                  memory_kind, authority, delivery, sensitivity, title, body,
                  created_at_ms
@@ -315,8 +315,8 @@ fn insert_project_memory_version(
              )",
             rusqlite::params![
                 version.memory_id.0.to_string(),
-                version_object.hash().as_str(),
-                assertion_object.hash().as_str(),
+                version_object.key().as_str(),
+                assertion_object.key().as_str(),
                 i64::from(crate::schema::SCHEMA_VERSION),
                 project.0,
                 serde_json::to_value(sensitivity)
@@ -331,8 +331,8 @@ fn insert_project_memory_version(
         .expect("insert memory head");
     transaction
         .execute(
-            "INSERT INTO object_fts (object_hash, title, body) VALUES (?1, ?2, ?3)",
-            rusqlite::params![version_object.hash().as_str(), version.title, version.body],
+            "INSERT INTO object_fts (object_id, title, body) VALUES (?1, ?2, ?3)",
+            rusqlite::params![version_object.key().as_str(), version.title, version.body],
         )
         .expect("insert memory search projection");
     transaction
@@ -356,7 +356,7 @@ fn rebind_snapshot_body(document: &mut WorkGraphSnapshotDocument) {
     document.manifest.summary = document.body.summary.clone();
     document.manifest.body_sha256 = CanonicalObject::freeze(&document.body)
         .expect("freeze changed snapshot body")
-        .hash()
+        .key()
         .clone();
 }
 
@@ -446,7 +446,7 @@ fn consecutive_idle_saves_keep_body_cut_digest_and_order() {
     assert_eq!(
         CanonicalObject::freeze(&first.document.body)
             .expect("canonical body")
-            .hash(),
+            .key(),
         &first.body_sha256
     );
     assert_eq!(first.document.manifest.body_sha256, first.body_sha256);
@@ -861,7 +861,7 @@ fn load_uses_body_semantics_and_exact_typed_source_bytes() {
         mutate(&mut source.canonical_json);
         source.hash = CanonicalObject::freeze(&source.canonical_json)
             .expect("freeze mutated source")
-            .hash()
+            .key()
             .clone();
         document.body.items[0].source_snapshot_id = Some(source.hash.clone());
         rebind_snapshot_body(&mut document);
@@ -1031,7 +1031,7 @@ fn graph_save_and_doctor_reject_invalid_keyed_memory_shape() {
                 integrity
                     .invalid_objects
                     .iter()
-                    .all(|entry| ObjectHash::from_stored(entry.clone()).is_none()),
+                    .all(|entry| ObjectId::from_stored(entry.clone()).is_none()),
                 "{case}: canonical hashes must remain valid: {integrity:?}"
             );
             assert!(
@@ -1786,7 +1786,7 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
     let prerequisite_anchor = restored
         .connection
         .query_row(
-            "SELECT event_hash FROM work_prerequisites
+            "SELECT event_id FROM work_prerequisites
              WHERE work_id = ?1 AND prerequisite_id = ?2",
             rusqlite::params![
                 root.work_id.0.to_string(),
@@ -1809,7 +1809,7 @@ fn save_load_save_recreates_inert_work_and_preserves_restored_records() {
     restored
         .connection
         .execute(
-            "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
+            "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_id)
              VALUES (?1, ?2, ?3)",
             rusqlite::params![
                 root.work_id.0.to_string(),

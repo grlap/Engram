@@ -16,7 +16,7 @@ use super::feeds::{
 use super::planning::{normalize_note_text, persist_operation_result};
 use super::query::{load_work_claim_optional, load_work_item, load_work_run};
 use super::{
-    CanonicalObject, FeedPosition, ObjectHash, SCHEMA_VERSION, SessionId,
+    CanonicalObject, FeedPosition, ObjectId, SCHEMA_VERSION, SessionId,
     WorkCompletionRecoveryCause, WorkId, WorkItem, WorkRunId,
 };
 use crate::domain::{
@@ -48,7 +48,7 @@ const MUTATION_KINDS: &[&str] = &[
 /// Result of recording one acceptance evaluation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AcceptanceEvaluationReceipt {
-    pub evaluation: ObjectHash,
+    pub evaluation: ObjectId,
     /// True when an identical attempt was already recorded.
     pub replayed: bool,
     pub record: AcceptanceEvaluation,
@@ -57,7 +57,7 @@ pub struct AcceptanceEvaluationReceipt {
 /// Newest evaluation on a run and whether completion may still consume it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AcceptanceEvaluationStatus {
-    pub evaluation: ObjectHash,
+    pub evaluation: ObjectId,
     pub record: AcceptanceEvaluation,
     /// `None` when fresh; otherwise why completion treats it as absent.
     pub stale: Option<AcceptanceStaleReason>,
@@ -95,7 +95,7 @@ pub(super) enum SourceCheck<'a> {
 /// recorded one.
 pub(crate) struct AttemptIdentity {
     pub key: String,
-    pub fingerprint: ObjectHash,
+    pub fingerprint: ObjectId,
 }
 
 /// Completion-side view of the newest evaluation.
@@ -104,7 +104,7 @@ pub(super) enum AcceptanceEvaluationAssessment {
     Absent,
     Stale(AcceptanceStaleReason),
     Fresh {
-        hash: ObjectHash,
+        hash: ObjectId,
         evaluation: Box<AcceptanceEvaluation>,
     },
 }
@@ -133,7 +133,7 @@ struct AttemptFingerprint<'a> {
 enum Citation {
     VerificationPassed {
         kind: crate::domain::VerificationKind,
-        check_fingerprint: ObjectHash,
+        check_fingerprint: ObjectId,
     },
     VerificationOther,
     Environment,
@@ -252,7 +252,7 @@ impl SqliteStore {
             position: cut,
         };
         let evidence_basis = run_evidence_through(&transaction, run_id, cut)?;
-        let work_revision_hash = CanonicalObject::freeze(&item)?.hash().clone();
+        let work_revision_hash = CanonicalObject::freeze(&item)?.key().clone();
         let record = AcceptanceEvaluation {
             schema_version: SCHEMA_VERSION,
             project_id: item.project_id.clone(),
@@ -297,7 +297,7 @@ impl SqliteStore {
             &object,
         )?;
         let receipt = AcceptanceEvaluationReceipt {
-            evaluation: object.hash().clone(),
+            evaluation: object.key().clone(),
             replayed: false,
             record,
         };
@@ -404,12 +404,12 @@ impl SqliteStore {
     pub(crate) fn host_minted_run_evidence(
         &self,
         run_id: WorkRunId,
-        hash: &ObjectHash,
+        hash: &ObjectId,
     ) -> Result<bool, StoreError> {
         Ok(self.connection.query_row(
             "SELECT EXISTS(
                  SELECT 1 FROM work_run_evidence
-                 WHERE run_id = ?1 AND evidence_hash = ?2
+                 WHERE run_id = ?1 AND evidence_id = ?2
                    AND evidence_kind IN ('verification', 'environment')
              )",
             params![run_id.0.to_string(), hash.as_str()],
@@ -497,11 +497,11 @@ pub(crate) fn attempt_identity(
             ));
         }
         Some(key) => format!("explicit:{}:{}:{key}", request.work_id.0, run_id.0),
-        None => format!("content:{}", fingerprint.hash()),
+        None => format!("content:{}", fingerprint.key()),
     };
     Ok(AttemptIdentity {
         key,
-        fingerprint: fingerprint.hash().clone(),
+        fingerprint: fingerprint.key().clone(),
     })
 }
 
@@ -707,7 +707,7 @@ fn run_holder_history(
     run_id: WorkRunId,
 ) -> Result<Vec<SessionId>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object_hash FROM work_feed_entries
+        "SELECT object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_kind = 'work_event'
          ORDER BY position",
     )?;
@@ -717,7 +717,7 @@ fn run_holder_history(
     let mut holders = Vec::new();
     for stored in rows {
         let hash =
-            ObjectHash::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredHash(stored))?;
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
         let event: WorkEvent = load_typed_work_object(connection, &hash, "work_event")?;
         if event.run_id != Some(run_id) {
             continue;
@@ -982,12 +982,12 @@ fn admit_pass_citation(
 fn classify_citation(
     connection: &Connection,
     run_id: WorkRunId,
-    hash: &ObjectHash,
+    hash: &ObjectId,
 ) -> Result<Option<Citation>, StoreError> {
     let row: Option<(String, Option<String>)> = connection
         .query_row(
             "SELECT evidence_kind, verification_result FROM work_run_evidence
-             WHERE run_id = ?1 AND evidence_hash = ?2",
+             WHERE run_id = ?1 AND evidence_id = ?2",
             params![run_id.0.to_string(), hash.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -1035,12 +1035,12 @@ fn classify_citation(
 fn citation_position(
     connection: &Connection,
     run_id: WorkRunId,
-    hash: &ObjectHash,
+    hash: &ObjectId,
 ) -> Result<Option<i64>, StoreError> {
     Ok(connection
         .query_row(
             "SELECT position FROM work_feed_entries
-             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_hash = ?2
+             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_id = ?2
              ORDER BY position LIMIT 1",
             params![run_id.0.to_string(), hash.as_str()],
             |row| row.get(0),
@@ -1054,9 +1054,9 @@ fn run_evidence_through(
     connection: &Connection,
     run_id: WorkRunId,
     cut: i64,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object_hash FROM work_feed_entries
+        "SELECT object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position <= ?2
            AND object_kind IN ('work_evidence', 'verification_evidence', 'environment_evidence')
          ORDER BY position",
@@ -1068,7 +1068,7 @@ fn run_evidence_through(
         .collect::<Result<Vec<_>, _>>()?;
     rows.into_iter()
         .map(|stored| {
-            ObjectHash::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredHash(stored))
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))
         })
         .collect()
 }
@@ -1110,7 +1110,7 @@ fn gate_superseded_after(
         return Ok(false);
     }
     let mut statement = connection.prepare(
-        "SELECT object_hash FROM work_feed_entries
+        "SELECT object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position > ?2
            AND object_kind = 'work_evidence'
          ORDER BY position",
@@ -1122,7 +1122,7 @@ fn gate_superseded_after(
         .collect::<Result<Vec<_>, _>>()?;
     for stored in rows {
         let hash =
-            ObjectHash::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredHash(stored))?;
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
         let evidence: WorkEvidence = load_typed_work_object(connection, &hash, "work_evidence")?;
         if evidence.gate.is_some_and(|gate| names.contains(&gate.name)) {
             return Ok(true);
@@ -1135,10 +1135,10 @@ fn gate_superseded_after(
 pub(super) fn latest_on(
     connection: &Connection,
     run_id: WorkRunId,
-) -> Result<Option<(ObjectHash, AcceptanceEvaluation)>, StoreError> {
+) -> Result<Option<(ObjectId, AcceptanceEvaluation)>, StoreError> {
     let stored: Option<String> = connection
         .query_row(
-            "SELECT object_hash FROM work_feed_entries
+            "SELECT object_id FROM work_feed_entries
              WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_kind = ?2
              ORDER BY position DESC LIMIT 1",
             params![run_id.0.to_string(), KIND],
@@ -1148,8 +1148,7 @@ pub(super) fn latest_on(
     let Some(stored) = stored else {
         return Ok(None);
     };
-    let hash =
-        ObjectHash::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredHash(stored))?;
+    let hash = ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))?;
     let record: AcceptanceEvaluation = load_typed_work_object(connection, &hash, KIND)?;
     if record.run_id != run_id {
         return Err(StoreError::InvalidWorkProjection(
@@ -1165,10 +1164,10 @@ pub(super) fn newest_evaluation_through(
     connection: &Connection,
     run_id: WorkRunId,
     cut: i64,
-) -> Result<Option<ObjectHash>, StoreError> {
+) -> Result<Option<ObjectId>, StoreError> {
     let stored: Option<String> = connection
         .query_row(
-            "SELECT object_hash FROM work_feed_entries
+            "SELECT object_id FROM work_feed_entries
              WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_kind = ?2
                AND position <= ?3
              ORDER BY position DESC LIMIT 1",
@@ -1178,7 +1177,7 @@ pub(super) fn newest_evaluation_through(
         .optional()?;
     stored
         .map(|stored| {
-            ObjectHash::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredHash(stored))
+            ObjectId::from_stored(stored.clone()).ok_or(StoreError::InvalidStoredKey(stored))
         })
         .transpose()
 }
@@ -1190,7 +1189,7 @@ fn mutation_after(
     position: i64,
 ) -> Result<bool, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object_kind, object_hash FROM work_feed_entries
+        "SELECT object_kind, object_id FROM work_feed_entries
          WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND position > ?2
          ORDER BY position",
     )?;
@@ -1204,8 +1203,8 @@ fn mutation_after(
             continue;
         }
         if kind == "execution_observation" {
-            let hash = ObjectHash::from_stored(stored.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored))?;
+            let hash = ObjectId::from_stored(stored.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored))?;
             let observation: ExecutionObservation =
                 load_typed_work_object(connection, &hash, "execution_observation")?;
             if !observation.source_changed {
@@ -1229,7 +1228,7 @@ fn staleness(
         return Ok(Some(AcceptanceStaleReason::Run));
     }
     if record.work_revision != item.revision
-        || record.work_revision_hash != *CanonicalObject::freeze(item)?.hash()
+        || record.work_revision_hash != *CanonicalObject::freeze(item)?.key()
         || record.criteria != item.acceptance
     {
         return Ok(Some(AcceptanceStaleReason::Revision));

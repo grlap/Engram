@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ObjectHash;
+use crate::ObjectId;
 
 use super::{
     ActorContext, Authority, ChangeCursor, FeedPosition, MemoryAssertionEvent, MemoryId,
@@ -42,7 +42,7 @@ pub struct ContextPacketHeader {
     /// identity and is scoped to the packet's project and agent.
     #[serde(default)]
     pub private_context_revision: i64,
-    pub packet_hash: ObjectHash,
+    pub packet_hash: ObjectId,
     pub event_cursor: ChangeCursor,
     pub proposed_count: u32,
     pub stale_count: u32,
@@ -52,7 +52,7 @@ pub struct ContextPacketHeader {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ContextItem {
     pub memory_id: MemoryId,
-    pub version: ObjectHash,
+    pub version: ObjectId,
     pub kind: MemoryKind,
     pub authority: Authority,
     pub status: MemoryStatus,
@@ -65,7 +65,7 @@ pub struct ContextItem {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ContextOmission {
     pub memory_id: MemoryId,
-    pub version: ObjectHash,
+    pub version: ObjectId,
     pub reason: String,
 }
 
@@ -116,8 +116,10 @@ pub struct ContextPacket {
 /// Authorized full-memory view with its initial activation event.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MemoryRecord {
-    pub version_hash: ObjectHash,
-    pub assertion_hash: ObjectHash,
+    #[serde(rename = "version_hash")]
+    pub version_id: ObjectId,
+    #[serde(rename = "assertion_hash")]
+    pub assertion_id: ObjectId,
     pub version: MemoryVersion,
     pub assertion: MemoryAssertionEvent,
 }
@@ -127,7 +129,8 @@ pub struct MemoryRecord {
 pub struct DeltaItem {
     pub cursor: ChangeCursor,
     pub object_kind: String,
-    pub object_hash: ObjectHash,
+    #[serde(rename = "object_hash")]
+    pub object_id: ObjectId,
     pub memory: Option<MemorySummary>,
     pub object: Value,
 }

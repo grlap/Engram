@@ -191,7 +191,7 @@ fn evaluate_accepts_the_locators_show_prints_and_refuses_observations() {
         .to_owned();
 
     // A judgment pass may rest on a gate and a note together; the record
-    // keeps the full evidence hashes those locators name.
+    // keeps the full evidence ides those locators name.
     let recorded = verbs
         .evaluate(
             evaluate_input(
@@ -880,7 +880,7 @@ fn the_minimal_evaluate_receipt_is_bounded() {
         "w-000000000000",
         i64::MAX,
         &projection,
-        &crate::ObjectHash::from_canonical_bytes(b"minimal"),
+        &crate::ObjectId::from_canonical_bytes(b"minimal"),
         true,
     )
     .with_effective_session_id(&SessionId("\u{0001}".repeat(crate::MAX_SESSION_ID_BYTES)));

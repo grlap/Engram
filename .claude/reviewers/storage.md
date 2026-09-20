@@ -23,8 +23,8 @@ and explicitly rebuildable indexes.
 - Multi-step writes that define one domain transition are atomic.
 - Concurrent local processes use WAL/busy handling deliberately; claims are
   lease/CAS operations and exact idempotent retries return the original result.
-- Event cursors are monotonic ordering positions, not content identities;
-  packet hashes are content identities, not delta cursors.
+- Event cursors are monotonic ordering positions, not record ids;
+  packet fingerprints compare content and are not delta cursors.
 - Safety-relevant mutable transitions remain auditable through immutable events;
   exact-current operational tables are restored from a verified backup.
 - SQLite foreign keys and required uniqueness constraints are enabled.

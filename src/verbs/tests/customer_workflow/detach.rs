@@ -250,8 +250,8 @@ fn detached_origin_requires_reciprocal_canonical_history() {
     let connection = rusqlite::Connection::open(&database).expect("connection");
     let (hash, bytes): (String, Vec<u8>) = connection
         .query_row(
-            "SELECT object.object_hash, object.canonical_json FROM objects object
-         JOIN work_feed_entries entry ON entry.object_hash = object.object_hash
+            "SELECT object.object_id, object.canonical_json FROM objects object
+         JOIN work_feed_entries entry ON entry.object_id = object.object_id
          WHERE entry.feed_kind = 'project' AND entry.work_id = ?1
            AND json_extract(object.canonical_json, '$.transition.kind') = 'disposed'
          ORDER BY entry.position DESC LIMIT 1",
@@ -261,7 +261,7 @@ fn detached_origin_requires_reciprocal_canonical_history() {
         .expect("source event");
     connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
             rusqlite::params![b"{}".as_slice(), hash],
         )
         .expect("damage source proof");
@@ -275,7 +275,7 @@ fn detached_origin_requires_reciprocal_canonical_history() {
     }
     connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
             rusqlite::params![bytes, hash],
         )
         .expect("restore exact bytes");

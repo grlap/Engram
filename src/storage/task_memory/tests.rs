@@ -16,7 +16,7 @@ fn context_omissions_are_exact_then_losslessly_aggregated() {
     let memories = (0..200)
         .map(|index| MemorySummary {
             memory_id: MemoryId::new(),
-            version: ObjectHash::from_canonical_bytes(format!("memory-{index}").as_bytes()),
+            version: ObjectId::from_canonical_bytes(format!("memory-{index}").as_bytes()),
             status: MemoryStatus::Active,
             kind: crate::domain::MemoryKind::Fact,
             authority: crate::domain::Authority::Soft,
@@ -823,7 +823,7 @@ fn generic_memory_search_excludes_terminal_head_statuses() {
         SqliteStore::apply_memory_projection(
             &transaction,
             &receipt.version,
-            object.hash(),
+            object.key(),
             &version,
             &assertion,
             MemoryProjectionMode::Live,
@@ -1138,7 +1138,7 @@ fn refuse_capture_note_before_effects(live: &SessionId) {
     );
 }
 
-fn seed_contradiction_pair(store: &mut SqliteStore) -> (crate::TaskId, ObjectHash, ObjectHash) {
+fn seed_contradiction_pair(store: &mut SqliteStore) -> (crate::TaskId, ObjectId, ObjectId) {
     let project = ProjectId("project-a".into());
     let session = SessionId("agent-a".into());
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();

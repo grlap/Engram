@@ -34,7 +34,7 @@ fn root_delta_collection_order_errors_name_each_collection() {
     let (mut value, address) = projected(&transaction, id).unwrap();
     let hash = CanonicalObject::freeze(&"second member")
         .unwrap()
-        .hash()
+        .key()
         .clone();
     value.run_ids = vec![WorkRunId::new(), WorkRunId::new()];
     value.required_child_seals = vec![address.head.clone(), hash.clone()];

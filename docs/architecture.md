@@ -166,7 +166,7 @@ values never enter any shared history—vault references only.
    [write policy & review](features/write-policy-and-review.md).
 5. **Read**: session start (or explicit request) builds a **context packet**
    — pinned constraints (complete or fail-closed), a titles-only index, an
-   omission manifest, a packet hash for reproducibility, and named dense feed
+   omission manifest, a packet fingerprint for reproducibility, and named dense feed
    positions. Later turns request only peer deltas after those positions. See
    [context packets](features/context-packets.md).
 6. **Coordinate and complete**: each session claims its own child `WorkRun`,

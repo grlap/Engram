@@ -1259,8 +1259,8 @@ test("control session inspection emits scoped absence and refuses uncertainty", 
       "--retained-grant-id", "retained", "--json"]);
     assert.equal(invalid.status, 2, invalid.stderr);
     executeSql(database, "PRAGMA foreign_keys=OFF; INSERT INTO control_turn_grants " +
-      "(grant_id,session_id,task_id,request_key,grant_hash,grant_json,state,issued_at_ms,expires_at_ms) " +
-      "VALUES ('retained','elsewhere','missing','k','opaque',x'ff','invalid',0,1)");
+      "(grant_id,session_id,task_id,request_key,grant_json,state,issued_at_ms,expires_at_ms) " +
+      "VALUES ('retained','elsewhere','missing','k',x'ff','invalid',0,1)");
     const present = invoke(inspectArgs);
     assert.equal(present.status, 0, present.stderr);
     assert.equal(JSON.parse(present.stdout).retained_grant_present, true);
@@ -1300,7 +1300,7 @@ test("doctor recovery reports a corrupt policy through a read-only surface", (t)
     executeSql(
       database,
       "UPDATE control_policy_versions SET policy_json = X'7B7D' " +
-        `WHERE policy_hash = '${activePolicy}'`,
+        `WHERE policy_id = '${activePolicy}'`,
     );
     const before = readFileSync(database);
 

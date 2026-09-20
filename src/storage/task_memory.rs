@@ -6,7 +6,7 @@ use super::{
     MAX_PROJECT_MEMORY_QUERY_BYTES, MAX_PROJECT_MEMORY_QUERY_TOKENS, MemoryAssertionEvent,
     MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId, MemoryProjectionMode,
     MemoryRecord, MemoryStatus, MemorySummary, MemoryVersion, NoteIntentFingerprint, NoteIntentKey,
-    NoteReceipt, NoteRequest, NoteVisibility, ObjectHash, OptionalExtension, PINNED_CONTEXT_BUDGET,
+    NoteReceipt, NoteRequest, NoteVisibility, ObjectId, OptionalExtension, PINNED_CONTEXT_BUDGET,
     PreparedNote, Redactor, SCHEMA_VERSION, Scope, Sensitivity, SessionId, SqliteStore, StoreError,
     TaskId, Transaction, TransactionBehavior, Utc, activation_policy, classify_note, params, work,
 };
@@ -53,7 +53,7 @@ impl SqliteStore {
             )
             .optional()?
         {
-            if stored_request != request_object.hash().as_str() {
+            if stored_request != request_object.key().as_str() {
                 return Err(StoreError::NoteIdempotencyConflict(
                     request.idempotency_key.clone(),
                 ));
@@ -86,8 +86,8 @@ impl SqliteStore {
         };
         Self::apply_memory_projection(
             &transaction,
-            prepared.version_object.hash(),
-            prepared.assertion_object.hash(),
+            prepared.version_object.key(),
+            prepared.assertion_object.key(),
             &prepared.version,
             &prepared.assertion,
             MemoryProjectionMode::Live,
@@ -120,8 +120,8 @@ impl SqliteStore {
         let receipt = NoteReceipt {
             idempotency_key: request.idempotency_key.clone(),
             memory_id: prepared.version.memory_id,
-            version: prepared.version_object.hash().clone(),
-            assertion: prepared.assertion_object.hash().clone(),
+            version: prepared.version_object.key().clone(),
+            assertion: prepared.assertion_object.key().clone(),
             status: prepared.assertion.status,
             kind: prepared.version.kind,
             authority: prepared.version.authority,
@@ -138,7 +138,7 @@ impl SqliteStore {
               VALUES (?1, ?2, ?3)",
             params![
                 intent_key,
-                request_object.hash().as_str(),
+                request_object.key().as_str(),
                 serde_json::to_vec(&receipt)?,
             ],
         )?;
@@ -201,8 +201,8 @@ impl SqliteStore {
         work_id: Option<crate::domain::WorkId>,
         session_id: &SessionId,
         agent_id: &str,
-        first_version: &ObjectHash,
-        second_version: &ObjectHash,
+        first_version: &ObjectId,
+        second_version: &ObjectId,
         reason: &str,
     ) -> Result<AuthorizedContradiction, StoreError> {
         if let Some(task_id) = task_id {
@@ -355,8 +355,8 @@ impl SqliteStore {
         work_id: Option<crate::domain::WorkId>,
         session_id: &SessionId,
         agent_id: &str,
-        first_version: &ObjectHash,
-        second_version: &ObjectHash,
+        first_version: &ObjectId,
+        second_version: &ObjectId,
         reason: &str,
         idempotency_key: &str,
         actor: ActorContext,
@@ -405,7 +405,7 @@ impl SqliteStore {
             )
             .optional()?
         {
-            if stored_request != request.hash().as_str() {
+            if stored_request != request.key().as_str() {
                 return Err(StoreError::ContradictionIdempotencyConflict(
                     idempotency_key.to_owned(),
                 ));
@@ -416,15 +416,15 @@ impl SqliteStore {
         }
         let existing: Option<String> = transaction
             .query_row(
-                "SELECT contradiction_hash FROM memory_contradiction_edges
-                 WHERE left_version_hash = ?1 AND right_version_hash = ?2",
+                "SELECT contradiction_id FROM memory_contradiction_edges
+                 WHERE left_version_id = ?1 AND right_version_id = ?2",
                 params![authorized.left.as_str(), authorized.right.as_str()],
                 |row| row.get(0),
             )
             .optional()?;
         if let Some(existing) = existing {
-            let hash = ObjectHash::from_stored(existing.clone())
-                .ok_or(StoreError::InvalidStoredHash(existing))?;
+            let hash = ObjectId::from_stored(existing.clone())
+                .ok_or(StoreError::InvalidStoredKey(existing))?;
             return Err(StoreError::ContradictionAlreadyRecorded(hash));
         }
 
@@ -443,11 +443,11 @@ impl SqliteStore {
         Self::insert_object(&transaction, "memory_contradiction_event", &object)?;
         transaction.execute(
             "INSERT INTO memory_contradiction_edges (
-                 contradiction_hash, project_id, task_id, work_root_id,
-                 left_version_hash, right_version_hash
+                 contradiction_id, project_id, task_id, work_root_id,
+                 left_version_id, right_version_id
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
-                object.hash().as_str(),
+                object.key().as_str(),
                 project_id.0,
                 authorized.task_id.map(|task| task.0.to_string()),
                 authorized.work_root_id.map(|work| work.0.to_string()),
@@ -460,10 +460,10 @@ impl SqliteStore {
         {
             transaction.execute(
                 "INSERT INTO memory_contradictions (
-                     contradiction_hash, task_id, left_version_hash, right_version_hash
+                     contradiction_id, task_id, left_version_id, right_version_id
                  ) VALUES (?1, ?2, ?3, ?4)",
                 params![
-                    object.hash().as_str(),
+                    object.key().as_str(),
                     task_id.0.to_string(),
                     authorized.left.as_str(),
                     authorized.right.as_str(),
@@ -472,7 +472,7 @@ impl SqliteStore {
         }
         transaction.execute(
             "UPDATE memory_heads SET status = 'contested'
-             WHERE version_hash IN (?1, ?2) AND status IN ('active', 'stale')",
+             WHERE version_id IN (?1, ?2) AND status IN ('active', 'stale')",
             params![authorized.left.as_str(), authorized.right.as_str()],
         )?;
         // A contradiction can change the globally visible status of a
@@ -504,7 +504,7 @@ impl SqliteStore {
         )?;
         let receipt = MemoryContradictionReceipt {
             idempotency_key: idempotency_key.into(),
-            contradiction: object.hash().clone(),
+            contradiction: object.key().clone(),
             left_version: authorized.left,
             right_version: authorized.right,
             cursor,
@@ -517,7 +517,7 @@ impl SqliteStore {
              ) VALUES (?1, ?2, ?3)",
             params![
                 idempotency_key,
-                request.hash().as_str(),
+                request.key().as_str(),
                 serde_json::to_vec(&receipt)?,
             ],
         )?;
@@ -625,12 +625,12 @@ impl SqliteStore {
         let rows = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
             let fts_query = fts_query(query);
             let sql = format!(
-                "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
+                "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
                         h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
                  FROM object_fts f JOIN memory_heads h
-                   ON h.version_hash = f.object_hash
+                   ON h.version_id = f.object_id
                  WHERE {visibility} AND object_fts MATCH ?5
                  ORDER BY bm25(object_fts), h.created_at_ms DESC LIMIT ?6"
             );
@@ -649,7 +649,7 @@ impl SqliteStore {
             mapped.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
+                "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
                         h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
@@ -697,7 +697,7 @@ impl SqliteStore {
              h.status IN ('active', 'proposed', 'contested', 'stale') AND
              NOT (h.scope_kind = 'project' AND EXISTS (
                  SELECT 1 FROM objects AS keyed
-                 WHERE keyed.object_hash = h.version_hash
+                 WHERE keyed.object_id = h.version_id
                    AND keyed.object_kind = 'memory_version'
                    AND json_type(keyed.canonical_json, '$.project_key') = 'text'
              )) AND
@@ -714,12 +714,12 @@ impl SqliteStore {
         let rows = if let Some(query) = query.filter(|value| !value.trim().is_empty()) {
             let fts_query = fts_query(query);
             let sql = format!(
-                "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
+                "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
                         h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
                  FROM object_fts f JOIN memory_heads h
-                   ON h.version_hash = f.object_hash
+                   ON h.version_id = f.object_id
                  WHERE {visibility} AND object_fts MATCH ?6
                  ORDER BY bm25(object_fts), h.created_at_ms DESC LIMIT ?7"
             );
@@ -739,7 +739,7 @@ impl SqliteStore {
             mapped.collect::<Result<Vec<_>, _>>()?
         } else {
             let sql = format!(
-                "SELECT h.memory_id, h.version_hash, h.status, h.memory_kind,
+                "SELECT h.memory_id, h.version_id, h.status, h.memory_kind,
                         h.authority, h.delivery, h.scope_kind, h.project_id,
                         h.task_id, h.work_id, h.agent_id, h.title, h.body, h.sensitivity,
                         h.created_at_ms
@@ -775,9 +775,9 @@ impl SqliteStore {
     pub(super) fn rebuild_memory_index(&mut self) -> Result<usize, StoreError> {
         let assertions = {
             let mut statement = self.connection.prepare(
-                "SELECT object_hash, canonical_json FROM objects
+                "SELECT object_id, canonical_json FROM objects
                  WHERE object_kind = 'memory_assertion_event'
-                 ORDER BY created_at, object_hash",
+                 ORDER BY created_at, object_id",
             )?;
             let mapped = statement.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -786,9 +786,9 @@ impl SqliteStore {
         };
         let contradictions = {
             let mut statement = self.connection.prepare(
-                "SELECT object_hash, canonical_json FROM objects
+                "SELECT object_id, canonical_json FROM objects
                  WHERE object_kind = 'memory_contradiction_event'
-                 ORDER BY created_at, object_hash",
+                 ORDER BY created_at, object_id",
             )?;
             let mapped = statement.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -809,9 +809,9 @@ impl SqliteStore {
         // ordinary per-assertion validation below still applies to every row.
         let mut project_heads = HashMap::new();
         for (stored_hash, bytes) in assertions {
-            let assertion_hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-            let assertion_object = CanonicalObject::stored(&assertion_hash, bytes)?;
+            let assertion_id = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
+            let assertion_object = CanonicalObject::stored(&assertion_id, bytes)?;
             let value: serde_json::Value = serde_json::from_slice(assertion_object.bytes())?;
             if value
                 .get("schema_version")
@@ -824,14 +824,14 @@ impl SqliteStore {
             let version_bytes: Option<Vec<u8>> = transaction
                 .query_row(
                     "SELECT canonical_json FROM objects
-                     WHERE object_hash = ?1 AND object_kind = 'memory_version'",
+                     WHERE object_id = ?1 AND object_kind = 'memory_version'",
                     [assertion.version.as_str()],
                     |row| row.get(0),
                 )
                 .optional()?;
             let Some(version_bytes) = version_bytes else {
                 return Err(StoreError::InvalidMemoryProjection(format!(
-                    "assertion {assertion_hash} references missing version {}",
+                    "assertion {assertion_id} references missing version {}",
                     assertion.version
                 )));
             };
@@ -859,7 +859,7 @@ impl SqliteStore {
                             "rebuilt project memory has no canonical head".into(),
                         )
                     })?;
-                    project_heads.insert(identity.clone(), head.version_hash.clone());
+                    project_heads.insert(identity.clone(), head.version_id.clone());
                 }
                 if project_heads.get(&identity) != Some(&assertion.version) {
                     activated += 1;
@@ -869,7 +869,7 @@ impl SqliteStore {
             Self::apply_memory_projection(
                 &transaction,
                 &assertion.version,
-                &assertion_hash,
+                &assertion_id,
                 &version,
                 &assertion,
                 MemoryProjectionMode::Replay,
@@ -890,9 +890,9 @@ impl SqliteStore {
         contradictions: Vec<(String, Vec<u8>)>,
     ) -> Result<(), StoreError> {
         for (stored_hash, bytes) in contradictions {
-            let contradiction_hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
-            let object = CanonicalObject::stored(&contradiction_hash, bytes)?;
+            let contradiction_id = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
+            let object = CanonicalObject::stored(&contradiction_id, bytes)?;
             let value: serde_json::Value = serde_json::from_slice(object.bytes())?;
             if value
                 .get("schema_version")
@@ -904,11 +904,11 @@ impl SqliteStore {
             let edge: MemoryContradictionEvent = object.decode()?;
             transaction.execute(
                 "INSERT INTO memory_contradiction_edges (
-                     contradiction_hash, project_id, task_id, work_root_id,
-                     left_version_hash, right_version_hash
+                     contradiction_id, project_id, task_id, work_root_id,
+                     left_version_id, right_version_id
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
-                    contradiction_hash.as_str(),
+                    contradiction_id.as_str(),
                     edge.project_id.0,
                     edge.task_id.map(|task| task.0.to_string()),
                     edge.work_root_id.map(|work| work.0.to_string()),
@@ -921,11 +921,11 @@ impl SqliteStore {
             {
                 transaction.execute(
                     "INSERT INTO memory_contradictions (
-                         contradiction_hash, task_id,
-                         left_version_hash, right_version_hash
+                         contradiction_id, task_id,
+                         left_version_id, right_version_id
                      ) VALUES (?1, ?2, ?3, ?4)",
                     params![
-                        contradiction_hash.as_str(),
+                        contradiction_id.as_str(),
                         task_id.0.to_string(),
                         edge.left_version.as_str(),
                         edge.right_version.as_str(),
@@ -935,9 +935,9 @@ impl SqliteStore {
         }
         transaction.execute(
             "UPDATE memory_heads SET status = 'contested'
-             WHERE status IN ('active', 'stale') AND version_hash IN (
-                 SELECT left_version_hash FROM memory_contradiction_edges
-                 UNION SELECT right_version_hash FROM memory_contradiction_edges
+             WHERE status IN ('active', 'stale') AND version_id IN (
+                 SELECT left_version_id FROM memory_contradiction_edges
+                 UNION SELECT right_version_id FROM memory_contradiction_edges
              )",
             [],
         )?;
@@ -1141,7 +1141,7 @@ impl SqliteStore {
                 work_feed_heads,
                 project_context_revision,
                 private_context_revision,
-                packet_hash: object.hash().clone(),
+                packet_hash: object.key().clone(),
                 event_cursor,
                 proposed_count: assembly.proposed_count,
                 stale_count: assembly.stale_count,
@@ -1196,7 +1196,7 @@ impl SqliteStore {
     /// current-context mismatch.
     pub fn explain_context(
         &self,
-        packet_hash: &ObjectHash,
+        packet_hash: &ObjectId,
         project_id: &crate::domain::ProjectId,
         session_id: &SessionId,
         agent_id: &str,
@@ -1247,13 +1247,13 @@ impl SqliteStore {
         let visible: std::collections::HashSet<_> =
             memories.iter().map(|memory| &memory.version).collect();
         let mut statement = connection.prepare(
-            "SELECT contradiction_hash, task_id, work_root_id,
-                    left_version_hash, right_version_hash
+            "SELECT contradiction_id, task_id, work_root_id,
+                    left_version_id, right_version_id
              FROM memory_contradiction_edges
              WHERE project_id = ?1
                AND (task_id IS NULL OR task_id = ?2)
                AND (work_root_id IS NULL OR work_root_id = ?3)
-             ORDER BY contradiction_hash",
+             ORDER BY contradiction_id",
         )?;
         let rows = statement.query_map(
             params![
@@ -1274,12 +1274,12 @@ impl SqliteStore {
         rows.filter_map(|row| match row {
             Ok((contradiction, stored_task, stored_root, left, right)) => {
                 let parsed = (|| {
-                    let contradiction = ObjectHash::from_stored(contradiction.clone())
-                        .ok_or(StoreError::InvalidStoredHash(contradiction))?;
-                    let left = ObjectHash::from_stored(left.clone())
-                        .ok_or(StoreError::InvalidStoredHash(left))?;
-                    let right = ObjectHash::from_stored(right.clone())
-                        .ok_or(StoreError::InvalidStoredHash(right))?;
+                    let contradiction = ObjectId::from_stored(contradiction.clone())
+                        .ok_or(StoreError::InvalidStoredKey(contradiction))?;
+                    let left = ObjectId::from_stored(left.clone())
+                        .ok_or(StoreError::InvalidStoredKey(left))?;
+                    let right = ObjectId::from_stored(right.clone())
+                        .ok_or(StoreError::InvalidStoredKey(right))?;
                     let stored_task = stored_task
                         .map(|task| {
                             uuid::Uuid::parse_str(&task).map(TaskId).map_err(|_| {
@@ -1359,7 +1359,7 @@ impl SqliteStore {
     /// when a valid hash crosses a scope boundary.
     pub fn show_memory(
         &self,
-        version_hash: &ObjectHash,
+        version_id: &ObjectId,
         project_id: &crate::domain::ProjectId,
         task_id: Option<TaskId>,
         work_id: Option<crate::domain::WorkId>,
@@ -1369,7 +1369,7 @@ impl SqliteStore {
         let transaction = self.connection.unchecked_transaction()?;
         let record = Self::show_memory_on(
             &transaction,
-            version_hash,
+            version_id,
             project_id,
             task_id,
             work_id,
@@ -1386,7 +1386,7 @@ impl SqliteStore {
     )]
     fn show_memory_on(
         connection: &Connection,
-        version_hash: &ObjectHash,
+        version_id: &ObjectId,
         project_id: &crate::domain::ProjectId,
         task_id: Option<TaskId>,
         work_id: Option<crate::domain::WorkId>,
@@ -1396,23 +1396,23 @@ impl SqliteStore {
         let (focused_work_id, focused_root_id) =
             Self::focused_work_for_session_on(connection, project_id, session_id)?;
         if work_id.is_some() && work_id != focused_work_id {
-            return Err(StoreError::MemoryAccessDenied(version_hash.clone()));
+            return Err(StoreError::MemoryAccessDenied(version_id.clone()));
         }
-        let assertion_hash: Option<String> = connection
+        let assertion_id: Option<String> = connection
             .query_row(
-                "SELECT assertion_hash FROM memory_heads WHERE version_hash = ?1",
-                [version_hash.as_str()],
+                "SELECT assertion_id FROM memory_heads WHERE version_id = ?1",
+                [version_id.as_str()],
                 |row| row.get(0),
             )
             .optional()?;
-        let Some(assertion_hash) = assertion_hash else {
-            return Err(StoreError::MemoryNotFound(version_hash.clone()));
+        let Some(assertion_id) = assertion_id else {
+            return Err(StoreError::MemoryNotFound(version_id.clone()));
         };
-        let assertion_hash = ObjectHash::from_stored(assertion_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(assertion_hash))?;
+        let assertion_id = ObjectId::from_stored(assertion_id.clone())
+            .ok_or(StoreError::InvalidStoredKey(assertion_id))?;
         let version: MemoryVersion =
-            Self::get_typed_object_on(connection, version_hash, "memory_version")?
-                .ok_or_else(|| StoreError::MemoryNotFound(version_hash.clone()))?;
+            Self::get_typed_object_on(connection, version_id, "memory_version")?
+                .ok_or_else(|| StoreError::MemoryNotFound(version_id.clone()))?;
         let authorized = match &version.scope {
             Scope::Project { project } => project == project_id,
             Scope::Task { project, task } => {
@@ -1448,14 +1448,14 @@ impl SqliteStore {
             }
         };
         if !authorized || version.sensitivity == Sensitivity::Restricted {
-            return Err(StoreError::MemoryAccessDenied(version_hash.clone()));
+            return Err(StoreError::MemoryAccessDenied(version_id.clone()));
         }
         let assertion: MemoryAssertionEvent =
-            Self::get_typed_object_on(connection, &assertion_hash, "memory_assertion_event")?
-                .ok_or_else(|| StoreError::MemoryNotFound(version_hash.clone()))?;
+            Self::get_typed_object_on(connection, &assertion_id, "memory_assertion_event")?
+                .ok_or_else(|| StoreError::MemoryNotFound(version_id.clone()))?;
         Ok(MemoryRecord {
-            version_hash: version_hash.clone(),
-            assertion_hash,
+            version_id: version_id.clone(),
+            assertion_id,
             version,
             assertion,
         })
@@ -1487,7 +1487,7 @@ fn note_intent_key(request: &NoteRequest) -> Result<String, StoreError> {
         session_id: request.actor.session_id.as_ref(),
         caller_key: &request.idempotency_key,
     })?
-    .hash()
+    .key()
     .as_str()
     .to_owned())
 }
@@ -1588,7 +1588,7 @@ fn prepare_note(request: &NoteRequest) -> Result<PreparedNote, StoreError> {
     let assertion = MemoryAssertionEvent {
         schema_version: SCHEMA_VERSION,
         memory_id,
-        version: version_object.hash().clone(),
+        version: version_object.key().clone(),
         status,
         policy_reason,
         actor: request.actor.clone(),

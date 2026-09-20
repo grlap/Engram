@@ -32,7 +32,7 @@ use super::{
     StoredWorkEvidenceSelectionRow, WorkEventDraft, WorkEvidenceProjectionSummary, WorkNoteCapture,
 };
 use crate::{
-    CanonicalObject, ObjectHash, RestoredWorkEvidence, WorkId,
+    CanonicalObject, ObjectId, RestoredWorkEvidence, WorkId,
     domain::{
         AcceptWorkHandoffRequest, ActorContext, AppendRestoredWorkGateRequest,
         CancelWorkHandoffRequest, ClaimNextReadyChildRequest, ClaimWorkRequest, CompletionSeal,
@@ -60,13 +60,13 @@ fn latest_restored_gate_evidence_on(
     connection: &Connection,
     work_id: WorkId,
     name: &str,
-) -> Result<Option<ObjectHash>, StoreError> {
+) -> Result<Option<ObjectId>, StoreError> {
     let stored = connection
         .prepare(
-            "SELECT evidence_hash, sequence
+            "SELECT evidence_id, sequence
              FROM work_restored_evidence INDEXED BY work_restored_evidence_gate
              WHERE work_id = ?1 AND gate_name = ?2
-             ORDER BY sequence, evidence_hash",
+             ORDER BY sequence, evidence_id",
         )?
         .query_map(params![work_id.0.to_string(), name], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
@@ -78,8 +78,8 @@ fn latest_restored_gate_evidence_on(
     let mut evidence = HashMap::with_capacity(stored.len());
     let mut referenced = HashSet::with_capacity(stored.len());
     for (stored_hash, sequence) in stored {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let value: RestoredWorkEvidence =
             load_typed_work_object(connection, &hash, "work_restored_evidence")?;
         if value.work_id != work_id
@@ -204,7 +204,7 @@ pub(super) fn ensure_restored_execution_state(
         "INSERT INTO work_runs (
              run_id, root_execution_id, work_id, generation,
              executor_session_id, state, revision, claim_fence_head,
-             last_checkpoint_hash, completion_seal_hash,
+             last_checkpoint_id, completion_seal_id,
              created_at_ms, updated_at_ms, run_json
          ) VALUES (?1, ?2, ?3, ?4, NULL, 'open', 1, 0, NULL, NULL, ?5, ?6, ?7)",
         params![
@@ -230,7 +230,7 @@ fn append_restored_work_evidence_on(
     input: &RestoredWorkEvidenceInput,
     actor: &ActorContext,
     recorded_at: DateTime<Utc>,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     let item = load_work_item(transaction, work_id)?;
     assert_revision(&item, expected_work_revision)?;
     if !work_completed_by_restored_record_on(transaction, &item)? {
@@ -238,7 +238,7 @@ fn append_restored_work_evidence_on(
             "restored late findings require completed-by-record work".into(),
         ));
     }
-    let (record_hash, record) =
+    let (record_id, record) =
         latest_restored_record(transaction, item.work_id)?.ok_or_else(|| {
             StoreError::InvalidWorkProjection(
                 "restored completed work has no history record".into(),
@@ -291,7 +291,7 @@ fn append_restored_work_evidence_on(
     let evidence = RestoredWorkEvidence {
         schema_version: SCHEMA_VERSION,
         work_id: item.work_id,
-        restored_record: record_hash,
+        restored_record: record_id,
         sequence,
         summary,
         refs,
@@ -307,10 +307,10 @@ fn append_restored_work_evidence_on(
     SqliteStore::insert_object(transaction, "work_restored_evidence", &object)?;
     transaction.execute(
         "INSERT INTO work_restored_evidence (
-              evidence_hash, work_id, record_hash, sequence, gate_name, created_at_ms
+              evidence_id, work_id, record_id, sequence, gate_name, created_at_ms
           ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
-            object.hash().as_str(),
+            object.key().as_str(),
             item.work_id.0.to_string(),
             evidence.restored_record.as_str(),
             evidence.sequence,
@@ -327,7 +327,7 @@ fn append_restored_work_evidence_on(
         "work_restored_evidence",
         &object,
     )?;
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
 impl SqliteStore {
@@ -336,7 +336,7 @@ impl SqliteStore {
         &mut self,
         request: &AppendRestoredWorkGateRequest,
         redactor: &R,
-    ) -> Result<ObjectHash, StoreError> {
+    ) -> Result<ObjectId, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         validate_evidence_phase_marker(WorkLifecycle::Completed, &request.actor)?;
@@ -363,17 +363,17 @@ impl SqliteStore {
         &mut self,
         request: &RecordRestoredWorkEvidenceRequest,
         redactor: &R,
-    ) -> Result<ObjectHash, StoreError> {
+    ) -> Result<ObjectId, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         validate_evidence_phase_marker(WorkLifecycle::Completed, &request.actor)?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
-        if let Some(hash) = replay_operation::<ObjectHash>(
+        if let Some(hash) = replay_operation::<ObjectId>(
             &transaction,
             "record_restored_work_evidence",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(hash);
@@ -390,7 +390,7 @@ impl SqliteStore {
             &transaction,
             "record_restored_work_evidence",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &hash,
         )?;
         transaction.commit()?;
@@ -420,7 +420,7 @@ impl SqliteStore {
                 &transaction,
                 "claim_work",
                 &request.idempotency_key,
-                request_object.hash(),
+                request_object.key(),
             )?
         {
             transaction.commit()?;
@@ -432,7 +432,7 @@ impl SqliteStore {
                 &transaction,
                 "claim_work",
                 &request.idempotency_key,
-                request_object.hash(),
+                request_object.key(),
                 &claim,
             )?;
         }
@@ -470,7 +470,7 @@ impl SqliteStore {
                 &transaction,
                 "claim_next_ready_child",
                 &request.idempotency_key,
-                request_object.hash(),
+                request_object.key(),
             )?
         {
             transaction.commit()?;
@@ -548,7 +548,7 @@ impl SqliteStore {
                 &transaction,
                 "claim_next_ready_child",
                 &request.idempotency_key,
-                request_object.hash(),
+                request_object.key(),
                 &selection,
             )?;
         }
@@ -816,7 +816,7 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.claimed_at,
         };
-        let (event_hash, positions) = append_work_event(transaction, &event)?;
+        let (event_id, positions) = append_work_event(transaction, &event)?;
         // A run this claim is the first to hold may still owe the obligations
         // its bound criteria open; a run that already holds them keeps them.
         if let Some(position) = positions
@@ -827,7 +827,7 @@ impl SqliteStore {
                 transaction,
                 &item,
                 &run,
-                &event_hash,
+                &event_id,
                 position,
                 &[],
                 request.claimed_at,
@@ -856,7 +856,7 @@ impl SqliteStore {
             &transaction,
             "release_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(claim);
@@ -933,7 +933,7 @@ impl SqliteStore {
             &transaction,
             "release_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &claim,
         )?;
         transaction.commit()?;
@@ -950,17 +950,17 @@ impl SqliteStore {
         &mut self,
         request: &crate::domain::CheckpointWorkRequest,
         redactor: &R,
-    ) -> Result<ObjectHash, StoreError> {
+    ) -> Result<ObjectId, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = normalize_text(&request.summary, "checkpoint summary")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
-        if let Some(hash) = replay_operation::<ObjectHash>(
+        if let Some(hash) = replay_operation::<ObjectId>(
             &transaction,
             "checkpoint_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(hash);
@@ -1005,7 +1005,7 @@ impl SqliteStore {
             &transaction,
             "checkpoint_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &checkpoint,
         )?;
         transaction.commit()?;
@@ -1027,7 +1027,7 @@ impl SqliteStore {
         request: &crate::domain::CheckpointWorkRequest,
         mut key_for_cut: F,
         redactor: &R,
-    ) -> Result<(ObjectHash, FeedPosition), StoreError>
+    ) -> Result<(ObjectId, FeedPosition), StoreError>
     where
         R: Redactor,
         F: FnMut(&FeedPosition) -> Result<String, StoreError>,
@@ -1093,9 +1093,9 @@ impl SqliteStore {
                     )
                     .optional()?;
                 if let Some((stored_request_hash, result_json)) = stored
-                    && stored_request_hash == request_object.hash().as_str()
+                    && stored_request_hash == request_object.key().as_str()
                 {
-                    let stored_checkpoint: ObjectHash = serde_json::from_slice(&result_json)?;
+                    let stored_checkpoint: ObjectId = serde_json::from_slice(&result_json)?;
                     if &stored_checkpoint != checkpoint_hash {
                         return Err(StoreError::InvalidWorkProjection(
                             "completion checkpoint result does not name the current checkpoint"
@@ -1150,7 +1150,7 @@ impl SqliteStore {
             &transaction,
             "checkpoint_work",
             &persisted_request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &checkpoint,
         )?;
         transaction.commit()?;
@@ -1167,17 +1167,17 @@ impl SqliteStore {
         &mut self,
         request: &RecordWorkEvidenceRequest,
         redactor: &R,
-    ) -> Result<ObjectHash, StoreError> {
+    ) -> Result<ObjectId, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let summary = super::planning::normalize_note_text(&request.summary, "evidence summary")?;
         let request_object = request_object(request)?;
         let transaction = self.begin_work_mutation()?;
-        if let Some(hash) = replay_operation::<ObjectHash>(
+        if let Some(hash) = replay_operation::<ObjectId>(
             &transaction,
             "record_work_evidence",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(hash);
@@ -1212,16 +1212,16 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.recorded_at,
         };
-        let evidence_hash = persist_work_evidence_on(&transaction, &item, &run, claim, &evidence)?;
+        let evidence_id = persist_work_evidence_on(&transaction, &item, &run, claim, &evidence)?;
         persist_operation_result(
             &transaction,
             "record_work_evidence",
             &request.idempotency_key,
-            request_object.hash(),
-            &evidence_hash,
+            request_object.key(),
+            &evidence_id,
         )?;
         transaction.commit()?;
-        Ok(evidence_hash)
+        Ok(evidence_id)
     }
 
     /// Captures one note as evidence and the checkpoint that acknowledges the
@@ -1245,7 +1245,7 @@ impl SqliteStore {
             &transaction,
             "record_work_note",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(capture);
@@ -1277,7 +1277,7 @@ impl SqliteStore {
                 ),
                 created_at: request.recorded_at,
             };
-            let evidence_hash = persist_post_completion_work_evidence_on(
+            let evidence_id = persist_post_completion_work_evidence_on(
                 &transaction,
                 &item,
                 &run,
@@ -1286,14 +1286,14 @@ impl SqliteStore {
             )?;
             let capture = WorkNoteCapture {
                 non_holder: false,
-                evidence: evidence_hash,
+                evidence: evidence_id,
                 checkpoint: None,
             };
             persist_operation_result(
                 &transaction,
                 "record_work_note",
                 &request.idempotency_key,
-                request_object.hash(),
+                request_object.key(),
                 &capture,
             )?;
             transaction.commit()?;
@@ -1329,7 +1329,7 @@ impl SqliteStore {
             actor: crate::domain::captured_note_actor(&request.actor, request.status, true),
             created_at: request.recorded_at,
         };
-        let evidence_hash =
+        let evidence_id =
             persist_work_evidence_on(&transaction, &item, &run, claim.clone(), &evidence)?;
         let acknowledged_evidence = work_run_evidence_on(&transaction, run.run_id)?;
         let checkpoint_hash = persist_work_checkpoint_on(
@@ -1344,14 +1344,14 @@ impl SqliteStore {
         )?;
         let capture = WorkNoteCapture {
             non_holder: false,
-            evidence: evidence_hash,
+            evidence: evidence_id,
             checkpoint: Some(checkpoint_hash),
         };
         persist_operation_result(
             &transaction,
             "record_work_note",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &capture,
         )?;
         transaction.commit()?;
@@ -1372,7 +1372,7 @@ impl SqliteStore {
         &mut self,
         request: &RecordGateEvidenceRequest,
         redactor: &R,
-    ) -> Result<ObjectHash, StoreError> {
+    ) -> Result<ObjectId, StoreError> {
         inspect_work_request(redactor, request, &request.actor)?;
         assert_actor_session(&request.actor, &request.holder)?;
         let normalized = normalize_gate_evidence_input(
@@ -1393,7 +1393,7 @@ impl SqliteStore {
             return Ok(hash.clone());
         }
 
-        let evidence_hash = append_gate_evidence_on(
+        let evidence_id = append_gate_evidence_on(
             &transaction,
             request,
             name,
@@ -1402,7 +1402,7 @@ impl SqliteStore {
             previous.as_ref().map(|(hash, _)| hash.clone()),
         )?;
         transaction.commit()?;
-        Ok(evidence_hash)
+        Ok(evidence_id)
     }
 
     /// Atomically reserves the gate transition's caller-visible protocol
@@ -1456,7 +1456,7 @@ impl SqliteStore {
             previous,
         };
         let intent_object = CanonicalObject::freeze(&intent)?;
-        let idempotency_key = format!("gate:{}", intent_object.hash().as_str());
+        let idempotency_key = format!("gate:{}", intent_object.key().as_str());
         let attempt = begin_work_protocol_attempt_on(
             &transaction,
             &BeginWorkProtocolAttempt {
@@ -1506,16 +1506,16 @@ impl SqliteStore {
 pub(super) fn work_run_evidence_on(
     connection: &Connection,
     run_id: WorkRunId,
-) -> Result<Vec<ObjectHash>, StoreError> {
+) -> Result<Vec<ObjectId>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT evidence_hash FROM work_run_evidence
-         WHERE run_id = ?1 ORDER BY evidence_hash",
+        "SELECT evidence_id FROM work_run_evidence
+         WHERE run_id = ?1 ORDER BY evidence_id",
     )?;
     statement
         .query_map([run_id.0.to_string()], |row| row.get::<_, String>(0))?
         .map(|row| {
             let value = row?;
-            ObjectHash::from_stored(value.clone()).ok_or(StoreError::InvalidStoredHash(value))
+            ObjectId::from_stored(value.clone()).ok_or(StoreError::InvalidStoredKey(value))
         })
         .collect()
 }
@@ -1530,10 +1530,10 @@ fn persist_work_checkpoint_on(
     mut run: WorkRun,
     claim: WorkClaim,
     summary: String,
-    evidence: Vec<ObjectHash>,
+    evidence: Vec<ObjectId>,
     actor: &crate::domain::ActorContext,
     checkpointed_at: DateTime<Utc>,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     validate_evidence_phase_marker(WorkLifecycle::Open, actor)?;
     let acknowledged_run_position = FeedPosition {
         feed: FeedId::RunExecution(run.run_id),
@@ -1562,14 +1562,14 @@ fn persist_work_checkpoint_on(
         "work_checkpoint",
         &object,
     )?;
-    run.last_checkpoint = Some(object.hash().clone());
+    run.last_checkpoint = Some(object.key().clone());
     run.state = WorkRunState::Active;
     run.revision += 1;
     run.updated_at = checkpointed_at;
     persist_work_run(transaction, &run, claim.fence)?;
     let root_execution = super::root_state::update(transaction, run.root_execution_id, |root| {
         let changed = expect_root_contributor(root, &claim.holder)
-            | add_root_contribution(root, &claim.holder, object.hash());
+            | add_root_contribution(root, &claim.holder, object.key());
         if changed {
             root.revision += 1;
             root.updated_at = checkpointed_at;
@@ -1591,14 +1591,14 @@ fn persist_work_checkpoint_on(
             handoff_offer: None,
             blocker: None,
             transition: WorkTransition::Checkpointed {
-                checkpoint: object.hash().clone(),
+                checkpoint: object.key().clone(),
             },
             actor: actor.clone(),
             created_at: checkpointed_at,
         },
         &root_execution,
     )?;
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
 fn persist_work_evidence_on(
@@ -1607,15 +1607,15 @@ fn persist_work_evidence_on(
     run: &WorkRun,
     claim: WorkClaim,
     evidence: &WorkEvidence,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     validate_evidence_phase_marker(WorkLifecycle::Open, &evidence.actor)?;
     let object = CanonicalObject::mint(evidence)?;
     SqliteStore::insert_object(transaction, "work_evidence", &object)?;
     transaction.execute(
-        "INSERT INTO work_run_evidence (evidence_hash, work_id, run_id)
+        "INSERT INTO work_run_evidence (evidence_id, work_id, run_id)
          VALUES (?1, ?2, ?3)",
         params![
-            object.hash().as_str(),
+            object.key().as_str(),
             item.work_id.0.to_string(),
             run.run_id.0.to_string()
         ],
@@ -1631,7 +1631,7 @@ fn persist_work_evidence_on(
     )?;
     let root_execution = super::root_state::update(transaction, run.root_execution_id, |root| {
         let changed = expect_root_contributor(root, &claim.holder)
-            | add_root_contribution(root, &claim.holder, object.hash());
+            | add_root_contribution(root, &claim.holder, object.key());
         if changed {
             root.revision += 1;
             root.updated_at = evidence.created_at;
@@ -1653,14 +1653,14 @@ fn persist_work_evidence_on(
             handoff_offer: None,
             blocker: None,
             transition: WorkTransition::EvidenceAdded {
-                evidence: object.hash().clone(),
+                evidence: object.key().clone(),
             },
             actor: evidence.actor.clone(),
             created_at: evidence.created_at,
         },
         &root_execution,
     )?;
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
 fn append_gate_evidence_on(
@@ -1669,8 +1669,8 @@ fn append_gate_evidence_on(
     name: String,
     failed: Vec<String>,
     refs: Vec<String>,
-    previous: Option<ObjectHash>,
-) -> Result<ObjectHash, StoreError> {
+    previous: Option<ObjectId>,
+) -> Result<ObjectId, StoreError> {
     let item = load_work_item(transaction, request.work_id)?;
     if item.lifecycle == WorkLifecycle::Completed {
         let (item, run, claim) = validate_post_completion_evidence_basis_on(
@@ -1789,7 +1789,7 @@ pub(super) fn validate_evidence_phase_marker(
 
 pub(super) fn validate_work_evidence_event_phase_on(
     connection: &Connection,
-    evidence_hash: &ObjectHash,
+    evidence_id: &ObjectId,
     evidence: &WorkEvidence,
     event: &WorkEvent,
 ) -> Result<(), StoreError> {
@@ -1807,13 +1807,13 @@ pub(super) fn validate_work_evidence_event_phase_on(
             "post-completion evidence event has no historical claim".into(),
         )
     })?;
-    let seal_hash = run.completion_seal.as_ref().ok_or_else(|| {
+    let seal_id = run.completion_seal.as_ref().ok_or_else(|| {
         StoreError::InvalidWorkProjection(
             "post-completion evidence event run has no completion seal".into(),
         )
     })?;
-    let seal: CompletionSeal = load_typed_work_object(connection, seal_hash, "completion_seal")?;
-    let evidence_position = run_feed_position_for_object_on(connection, run.run_id, evidence_hash)?;
+    let seal: CompletionSeal = load_typed_work_object(connection, seal_id, "completion_seal")?;
+    let evidence_position = run_feed_position_for_object_on(connection, run.run_id, evidence_id)?;
     let completed_claim_fence = seal.claim_fence.checked_add(1).ok_or_else(|| {
         StoreError::InvalidWorkProjection(
             "completed claim fence overflowed its sealed basis".into(),
@@ -1822,7 +1822,7 @@ pub(super) fn validate_work_evidence_event_phase_on(
     let bound = event.work.active_run_id.is_none()
         && run.work_id == event.work_id
         && run.state == WorkRunState::Completed
-        && run.completion_seal.as_ref() == Some(seal_hash)
+        && run.completion_seal.as_ref() == Some(seal_id)
         && claim.work_id == event.work_id
         && claim.run_id == run.run_id
         && claim.claim_id == seal.claim_id
@@ -1869,12 +1869,12 @@ fn validate_post_completion_evidence_basis_on(
             "post-completion evidence does not bind the completed work run".into(),
         ));
     }
-    let seal_hash = run.completion_seal.as_ref().ok_or_else(|| {
+    let seal_id = run.completion_seal.as_ref().ok_or_else(|| {
         StoreError::InvalidWorkProjection(
             "post-completion evidence run has no completion seal".into(),
         )
     })?;
-    let seal: CompletionSeal = load_typed_work_object(connection, seal_hash, "completion_seal")?;
+    let seal: CompletionSeal = load_typed_work_object(connection, seal_id, "completion_seal")?;
     if seal.work_id != item.work_id || seal.run_id != run.run_id {
         return Err(StoreError::InvalidWorkProjection(
             "post-completion evidence seal crosses its work or run binding".into(),
@@ -1924,15 +1924,15 @@ fn persist_post_completion_work_evidence_on(
     run: &WorkRun,
     claim: WorkClaim,
     evidence: &WorkEvidence,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     validate_evidence_phase_marker(WorkLifecycle::Completed, &evidence.actor)?;
     let object = CanonicalObject::mint(evidence)?;
     SqliteStore::insert_object(transaction, "work_evidence", &object)?;
     transaction.execute(
-        "INSERT INTO work_run_evidence (evidence_hash, work_id, run_id)
+        "INSERT INTO work_run_evidence (evidence_id, work_id, run_id)
          VALUES (?1, ?2, ?3)",
         params![
-            object.hash().as_str(),
+            object.key().as_str(),
             item.work_id.0.to_string(),
             run.run_id.0.to_string()
         ],
@@ -1963,16 +1963,16 @@ fn persist_post_completion_work_evidence_on(
             handoff_offer: None,
             blocker: None,
             transition: WorkTransition::EvidenceAdded {
-                evidence: object.hash().clone(),
+                evidence: object.key().clone(),
             },
             actor: evidence.actor.clone(),
             created_at: evidence.created_at,
         },
     )?;
-    Ok(object.hash().clone())
+    Ok(object.key().clone())
 }
 
-const LATEST_GATE_EVIDENCE_SQL: &str = "SELECT entry.object_hash
+const LATEST_GATE_EVIDENCE_SQL: &str = "SELECT entry.object_id
      FROM work_feed_entries entry
      WHERE entry.feed_kind = 'run_execution'
        AND entry.feed_id = ?1
@@ -1982,11 +1982,11 @@ const LATEST_GATE_EVIDENCE_SQL: &str = "SELECT entry.object_hash
            FROM objects object INDEXED BY objects_work_evidence_gate_name
            JOIN work_run_evidence evidence
              ON evidence.run_id = ?1
-            AND evidence.evidence_hash = object.object_hash
+            AND evidence.evidence_id = object.object_id
            JOIN work_feed_entries candidate
              ON candidate.feed_kind = 'run_execution'
             AND candidate.feed_id = evidence.run_id
-            AND candidate.object_hash = evidence.evidence_hash
+            AND candidate.object_id = evidence.evidence_id
            WHERE object.object_kind = 'work_evidence'
              AND json_extract(object.canonical_json, '$.run_id') = ?1
              AND json_type(object.canonical_json, '$.gate') = 'object'
@@ -1997,7 +1997,7 @@ fn latest_gate_evidence_on(
     connection: &Connection,
     run_id: WorkRunId,
     name: &str,
-) -> Result<Option<(ObjectHash, WorkEvidence)>, StoreError> {
+) -> Result<Option<(ObjectId, WorkEvidence)>, StoreError> {
     // The canonical run feed is the sole source of the previous transition.
     // The rebuildable expression index narrows candidates, but a mutable head
     // must never redirect an immutable `previous` link.
@@ -2010,8 +2010,8 @@ fn latest_gate_evidence_on(
         .optional()?;
     stored
         .map(|stored| {
-            let hash = ObjectHash::from_stored(stored.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored))?;
+            let hash = ObjectId::from_stored(stored.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored))?;
             let evidence =
                 load_typed_work_object::<WorkEvidence>(connection, &hash, "work_evidence")?;
             let gate = evidence.gate.as_ref().ok_or_else(|| {
@@ -2031,32 +2031,32 @@ fn latest_gate_evidence_on(
 }
 
 fn validate_gate_evidence(
-    evidence_hash: &ObjectHash,
+    evidence_id: &ObjectId,
     evidence: &WorkEvidence,
 ) -> Result<(), StoreError> {
     validate_gate_evidence_payload(evidence).map_err(|detail| {
         StoreError::InvalidWorkProjection(format!(
-            "gate evidence {evidence_hash} has an invalid typed payload: {detail}"
+            "gate evidence {evidence_id} has an invalid typed payload: {detail}"
         ))
     })
 }
 
 pub(super) fn validate_gate_evidence_chain(
-    evidence_hash: &ObjectHash,
+    evidence_id: &ObjectId,
     evidence: &WorkEvidence,
-    gate_heads: &mut HashMap<(WorkRunId, String), ObjectHash>,
+    gate_heads: &mut HashMap<(WorkRunId, String), ObjectId>,
 ) -> Result<(), StoreError> {
-    validate_gate_evidence(evidence_hash, evidence)?;
+    validate_gate_evidence(evidence_id, evidence)?;
     let Some(gate) = &evidence.gate else {
         return Ok(());
     };
     let key = (evidence.run_id, gate.name.clone());
     if gate.previous.as_ref() != gate_heads.get(&key) {
         return Err(StoreError::InvalidWorkProjection(format!(
-            "gate evidence {evidence_hash} does not name the prior same-run, same-name observation"
+            "gate evidence {evidence_id} does not name the prior same-run, same-name observation"
         )));
     }
-    gate_heads.insert(key, evidence_hash.clone());
+    gate_heads.insert(key, evidence_id.clone());
     Ok(())
 }
 
@@ -2106,7 +2106,7 @@ fn is_optional_actor_context_link(reference: Option<&str>) -> bool {
 pub(super) fn work_run_evidence_projection_on(
     connection: &Connection,
     run_id: WorkRunId,
-    required_environments: &[ObjectHash],
+    required_environments: &[ObjectId],
     limit: usize,
 ) -> Result<Vec<WorkEvidenceProjectionSummary>, StoreError> {
     let mut selected =
@@ -2157,34 +2157,34 @@ pub(super) fn work_run_evidence_projection_on(
 fn load_work_evidence_selection_rows_on(
     connection: &Connection,
     run_id: WorkRunId,
-    required: &[ObjectHash],
+    required: &[ObjectId],
     limit: usize,
 ) -> Result<Vec<WorkEvidenceProjectionSummary>, StoreError> {
     let required_json =
-        serde_json::to_string(&required.iter().map(ObjectHash::as_str).collect::<Vec<_>>())?;
+        serde_json::to_string(&required.iter().map(ObjectId::as_str).collect::<Vec<_>>())?;
     let limit = i64::try_from(limit).map_err(|_| {
         StoreError::InvalidWorkProjection("focus evidence limit does not fit SQLite".into())
     })?;
     let mut statement = connection.prepare(
-        "WITH recent(evidence_hash) AS (
-             SELECT evidence_hash FROM work_run_evidence
-             WHERE run_id = ?1 ORDER BY evidence_hash DESC LIMIT ?2
-         ), requested(evidence_hash) AS (
+        "WITH recent(evidence_id) AS (
+             SELECT evidence_id FROM work_run_evidence
+             WHERE run_id = ?1 ORDER BY evidence_id DESC LIMIT ?2
+         ), requested(evidence_id) AS (
              SELECT value FROM json_each(?3)
-         ), candidates(evidence_hash) AS (
-             SELECT evidence_hash FROM recent
+         ), candidates(evidence_id) AS (
+             SELECT evidence_id FROM recent
              UNION
-             SELECT evidence_hash FROM requested
+             SELECT evidence_id FROM requested
          )
-         SELECT projection.evidence_hash, projection.work_id, projection.run_id,
-                projection.evidence_kind, projection.environment_evidence_hash,
+         SELECT projection.evidence_id, projection.work_id, projection.run_id,
+                projection.evidence_kind, projection.environment_evidence_id,
                 object.object_kind, object.canonical_json
          FROM candidates candidate
          JOIN work_run_evidence projection
            ON projection.run_id = ?1
-          AND projection.evidence_hash = candidate.evidence_hash
-         LEFT JOIN objects object ON object.object_hash = projection.evidence_hash
-         ORDER BY projection.evidence_hash",
+          AND projection.evidence_id = candidate.evidence_id
+         LEFT JOIN objects object ON object.object_id = projection.evidence_id
+         ORDER BY projection.evidence_id",
     )?;
     let rows = statement
         .query_map(params![run_id.0.to_string(), limit, required_json], |row| {
@@ -2201,8 +2201,8 @@ fn load_work_evidence_selection_rows_on(
         .collect::<Result<Vec<_>, _>>()?;
     rows.into_iter()
         .map(|row| {
-            let hash = ObjectHash::from_stored(row.hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(row.hash))?;
+            let hash = ObjectId::from_stored(row.hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(row.hash))?;
             let object_kind = row.object_kind.ok_or_else(|| {
                 StoreError::InvalidWorkProjection(format!(
                     "run evidence projection names missing object {hash}"
@@ -2266,8 +2266,8 @@ fn load_work_evidence_selection_rows_on(
             let projected_environment = row
                 .projected_environment
                 .map(|stored| {
-                    ObjectHash::from_stored(stored.clone())
-                        .ok_or(StoreError::InvalidStoredHash(stored))
+                    ObjectId::from_stored(stored.clone())
+                        .ok_or(StoreError::InvalidStoredKey(stored))
                 })
                 .transpose()?;
             let expected_kind = match kind {
@@ -2297,18 +2297,18 @@ fn load_work_evidence_selection_rows_on(
 pub(super) fn work_evidence_kind_on(
     connection: &Connection,
     run_id: WorkRunId,
-    evidence_hash: &ObjectHash,
+    evidence_id: &ObjectId,
 ) -> Result<WorkEvidenceKind, StoreError> {
     let projected = connection
         .query_row(
             "SELECT work_id, run_id, evidence_kind,
                     workspace_id, source_revision, producer_session_id,
-                    producer_observation_hash, check_fingerprint,
+                    producer_observation_id, check_fingerprint,
                     verification_result, observed_at_ms, environment_fingerprint,
-                    environment_evidence_hash, components_json
+                    environment_evidence_id, components_json
              FROM work_run_evidence
-             WHERE run_id = ?1 AND evidence_hash = ?2",
-            params![run_id.0.to_string(), evidence_hash.as_str()],
+             WHERE run_id = ?1 AND evidence_id = ?2",
+            params![run_id.0.to_string(), evidence_id.as_str()],
             |row| {
                 Ok(EvidenceProjectionRow {
                     work_id: row.get(0)?,
@@ -2317,12 +2317,12 @@ pub(super) fn work_evidence_kind_on(
                     workspace_id: row.get(3)?,
                     source_revision: row.get(4)?,
                     producer_session_id: row.get(5)?,
-                    producer_observation_hash: row.get(6)?,
+                    producer_observation_id: row.get(6)?,
                     check_fingerprint: row.get(7)?,
                     verification_result: row.get(8)?,
                     observed_at_ms: row.get(9)?,
                     environment_fingerprint: row.get(10)?,
-                    environment_evidence_hash: row.get(11)?,
+                    environment_evidence_id: row.get(11)?,
                     components_json: row.get(12)?,
                 })
             },
@@ -2330,19 +2330,19 @@ pub(super) fn work_evidence_kind_on(
         .optional()?
         .ok_or_else(|| {
             StoreError::InvalidWork(format!(
-                "evidence object {evidence_hash} does not belong to run {run_id:?}"
+                "evidence object {evidence_id} does not belong to run {run_id:?}"
             ))
         })?;
     let (kind, expected) = match projected.evidence_kind.as_str() {
         "generic" => {
             let evidence =
-                load_typed_work_object::<WorkEvidence>(connection, evidence_hash, "work_evidence")?;
+                load_typed_work_object::<WorkEvidence>(connection, evidence_id, "work_evidence")?;
             if evidence.schema_version != SCHEMA_VERSION {
                 return Err(StoreError::InvalidWorkProjection(format!(
-                    "generic evidence {evidence_hash} has an unsupported schema"
+                    "generic evidence {evidence_id} has an unsupported schema"
                 )));
             }
-            validate_gate_evidence(evidence_hash, &evidence)?;
+            validate_gate_evidence(evidence_id, &evidence)?;
             (
                 WorkEvidenceKind::Generic,
                 EvidenceProjectionRow {
@@ -2352,33 +2352,33 @@ pub(super) fn work_evidence_kind_on(
                     workspace_id: None,
                     source_revision: None,
                     producer_session_id: None,
-                    producer_observation_hash: None,
+                    producer_observation_id: None,
                     check_fingerprint: None,
                     verification_result: None,
                     observed_at_ms: None,
                     environment_fingerprint: None,
-                    environment_evidence_hash: None,
+                    environment_evidence_id: None,
                     components_json: None,
                 },
             )
         }
         "verification" => (
             WorkEvidenceKind::Verification,
-            expected_verification_projection(connection, evidence_hash)?,
+            expected_verification_projection(connection, evidence_id)?,
         ),
         "environment" => (
             WorkEvidenceKind::Environment,
-            expected_environment_projection(connection, evidence_hash)?,
+            expected_environment_projection(connection, evidence_id)?,
         ),
         kind => {
             return Err(StoreError::InvalidWorkProjection(format!(
-                "evidence object {evidence_hash} has unknown kind {kind:?}"
+                "evidence object {evidence_id} has unknown kind {kind:?}"
             )));
         }
     };
     if projected != expected {
         return Err(StoreError::InvalidWorkProjection(format!(
-            "evidence object {evidence_hash} disagrees with its redundant run projection"
+            "evidence object {evidence_id} disagrees with its redundant run projection"
         )));
     }
     Ok(kind)
@@ -2387,7 +2387,7 @@ pub(super) fn work_evidence_kind_on(
 pub(super) fn ensure_run_evidence(
     connection: &Connection,
     run_id: WorkRunId,
-    evidence: &[ObjectHash],
+    evidence: &[ObjectId],
 ) -> Result<(), StoreError> {
     // Evidence attach establishes the indexed run-membership fact in the same
     // transaction as its canonical object. Lifecycle mutations trust that
@@ -2397,19 +2397,19 @@ pub(super) fn ensure_run_evidence(
         return Ok(());
     }
     let evidence_json =
-        serde_json::to_string(&evidence.iter().map(ObjectHash::as_str).collect::<Vec<_>>())?;
+        serde_json::to_string(&evidence.iter().map(ObjectId::as_str).collect::<Vec<_>>())?;
     let missing = connection
         .query_row(
-            "WITH requested(evidence_hash) AS (
+            "WITH requested(evidence_id) AS (
                  SELECT value FROM json_each(?2)
              )
-             SELECT requested.evidence_hash
+             SELECT requested.evidence_id
              FROM requested
              LEFT JOIN work_run_evidence projection
                ON projection.run_id = ?1
-              AND projection.evidence_hash = requested.evidence_hash
-             WHERE projection.evidence_hash IS NULL
-             ORDER BY requested.evidence_hash
+              AND projection.evidence_id = requested.evidence_id
+             WHERE projection.evidence_id IS NULL
+             ORDER BY requested.evidence_id
              LIMIT 1",
             params![run_id.0.to_string(), evidence_json],
             |row| row.get::<_, String>(0),

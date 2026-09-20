@@ -999,7 +999,7 @@ fn work_scoped_contradiction_drains_through_work_next_and_doctor() {
             if change.entry.object_kind == "memory_contradiction_event"
                 && matches!(change.delivery, WorkChangeProjection::Visible(_))
             {
-                visible.insert(change.entry.object_hash.clone());
+                visible.insert(change.entry.object_id.clone());
             }
         }
         let delivered = page.delivered_through.expect("delivered cursor");
@@ -1235,15 +1235,15 @@ fn work_next_redacts_restricted_and_out_of_root_memory_without_cursor_gaps() {
         if expected_hashes.iter().all(|hash| {
             changes
                 .iter()
-                .any(|change| &change.entry.object_hash == *hash)
+                .any(|change| &change.entry.object_id == *hash)
         }) {
             break;
         }
     }
-    let projection_for = |hash: &ObjectHash| {
+    let projection_for = |hash: &ObjectId| {
         &changes
             .iter()
-            .find(|change| &change.entry.object_hash == hash)
+            .find(|change| &change.entry.object_id == hash)
             .expect("feed object")
             .delivery
     };
@@ -1461,7 +1461,7 @@ fn work_next_is_byte_bounded_dense_and_section_selective_at_project_scale() {
         .pop()
         .expect("base event");
     let base = event_store
-        .get::<WorkEvent>(&entry.object_hash)
+        .get::<WorkEvent>(&entry.object_id)
         .expect("load base event")
         .expect("base event object");
     for event_index in 0..9 {
@@ -1584,7 +1584,7 @@ fn work_next_is_byte_bounded_dense_and_section_selective_at_project_scale() {
         .as_ref()
         .expect("default changes")
         .iter()
-        .map(|change| change.entry.object_hash.clone())
+        .map(|change| change.entry.object_id.clone())
         .collect::<Vec<_>>();
 
     crate::storage::reset_work_event_decode_count();
@@ -1660,7 +1660,7 @@ fn work_next_is_byte_bounded_dense_and_section_selective_at_project_scale() {
     assert_ne!(
         following_changes
             .iter()
-            .map(|change| change.entry.object_hash.clone())
+            .map(|change| change.entry.object_id.clone())
             .collect::<Vec<_>>(),
         first_hashes
     );

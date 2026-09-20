@@ -53,7 +53,7 @@ impl SqliteStore {
             &transaction,
             "detach_work",
             &request.idempotency_key,
-            object.hash(),
+            object.key(),
         )? {
             transaction.commit()?;
             return Ok(root);
@@ -175,7 +175,7 @@ impl SqliteStore {
             &transaction,
             "detach_work",
             &request.idempotency_key,
-            object.hash(),
+            object.key(),
             &root,
         )?;
         transaction.commit()?;

@@ -7,7 +7,9 @@ cross-platform coverage.
 
 - New behavior has a test that fails without it; assertions verify exact state
   or output rather than merely “does not throw.”
-- Canonical JSON/hash tests cover key ordering and noncanonical/corrupt input.
+- Canonical JSON tests cover key ordering and malformed input; identity tests
+  preserve minted ids independently of bytes, and fingerprint tests compare
+  content without treating a fingerprint as a record id or corruption check.
 - Storage tests cover idempotent insert, immutable collision, transaction
   rollback, unknown schema handling, and index rebuild where implemented.
 - When implementing the deferred publication capability, tests cover identical

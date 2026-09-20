@@ -9,19 +9,17 @@ use std::{
 
 use serde_json::Value;
 
-fn child_visible_canonical_path(path: &Path) -> std::path::PathBuf {
-    let canonical = path.canonicalize().unwrap();
-    #[cfg(windows)]
-    {
-        let path = canonical.to_string_lossy();
-        if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
-            return format!(r"\\{rest}").into();
-        }
-        if let Some(rest) = path.strip_prefix(r"\\?\") {
-            return rest.into();
-        }
-    }
-    canonical
+fn assert_reported_cwd<'a>(value: &'a Value, expected: &Path) -> &'a Path {
+    let reported = Path::new(value["error"]["details"]["cwd"].as_str().unwrap());
+    assert!(reported.is_absolute());
+    // current_dir may retain a Windows 8.3 alias, while canonicalize expands
+    // it. Check the existing directory's identity, not its display spelling.
+    assert_eq!(
+        reported.canonicalize().unwrap(),
+        expected.canonicalize().unwrap(),
+        "reported cwd must identify the fixture directory"
+    );
+    reported
 }
 
 fn run(cwd: &Path, home: &Path, project_file: Option<&Path>, args: &[&str], json: bool) -> Output {
@@ -80,7 +78,6 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
     .unwrap();
     let cwd = directory.path().join("wrong-cwd");
     fs::create_dir(&cwd).unwrap();
-    let resolved_cwd = child_visible_canonical_path(&cwd);
     let home = directory.path().join("uncreated-store");
     let words: &[&[&str]] = &[
         &["next"],
@@ -100,17 +97,14 @@ fn every_word_refuses_missing_cwd_project_without_search_or_store_creation() {
     for args in words {
         let value = refused(&run(&cwd, &home, None, args, true));
         assert_eq!(value["error"]["details"]["kind"], "unreadable");
-        assert_eq!(
-            value["error"]["details"]["cwd"],
-            resolved_cwd.to_string_lossy().as_ref()
-        );
+        let reported_cwd = assert_reported_cwd(&value, &cwd);
         assert_eq!(
             value["error"]["details"]["searched_directory"],
-            resolved_cwd.to_string_lossy().as_ref()
+            reported_cwd.to_string_lossy().as_ref()
         );
         assert_eq!(
             value["error"]["details"]["project_file"],
-            resolved_cwd
+            reported_cwd
                 .join(".engram-project")
                 .to_string_lossy()
                 .as_ref()
@@ -154,7 +148,7 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
         "missing\nnext:\n  injected\u{1b}[31m\u{009b}\u{202e}\u{2028}\u{2029}\u{2066}\u{e000}\u{fe0f}\u{e0100}",
     );
     let value = refused(&run(directory.path(), &home, Some(hostile), &["ls"], true));
-    let resolved_directory = child_visible_canonical_path(directory.path());
+    let reported_cwd = assert_reported_cwd(&value, directory.path());
     assert!(
         value["error"]["details"]["project_file"]
             .as_str()
@@ -163,7 +157,9 @@ fn invalid_project_files_are_typed_and_control_characters_cannot_forge_guidance(
     );
     assert_eq!(
         value["error"]["details"]["project_file"],
-        resolved_directory.join(hostile).to_string_lossy().as_ref()
+        // The missing/hostile suffix cannot be canonicalized. It must remain
+        // byte-for-byte intact after the independently checked cwd prefix.
+        reported_cwd.join(hostile).to_string_lossy().as_ref()
     );
     let text = run(directory.path(), &home, Some(hostile), &["ls"], false);
     let text = String::from_utf8(text.stderr).unwrap();

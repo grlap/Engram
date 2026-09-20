@@ -20,7 +20,7 @@ use crate::domain::{
     AcceptanceVerdict, CriterionVerdictInput, EvaluatorModel, MAX_EVALUATOR_MODEL_SEGMENT_BYTES,
     RecordAcceptanceEvaluationRequest, SessionId, WorkItem, WorkRunId,
 };
-use crate::{DevelopmentNoopRedactor, ObjectHash, SqliteStore, StoreError};
+use crate::{DevelopmentNoopRedactor, ObjectId, SqliteStore, StoreError};
 
 /// Bytes the service preflight leaves free for the `evaluate` word's own
 /// JSON envelope on top of the fitted service result, so the word never
@@ -100,8 +100,8 @@ impl LocalWorkService {
             work.work_id,
             crate::storage::WorkRecordKind::NotesWithGates,
         )?;
-        let resolve_citation = |criterion: usize, value: &str| -> Result<ObjectHash, StoreError> {
-            if let Ok(hash) = value.parse::<ObjectHash>()
+        let resolve_citation = |criterion: usize, value: &str| -> Result<ObjectId, StoreError> {
+            if let Ok(hash) = value.parse::<ObjectId>()
                 && store.host_minted_run_evidence(run_id, &hash)?
             {
                 return Ok(hash);
@@ -217,7 +217,7 @@ impl LocalWorkService {
             });
         }
         let preview = preview_projection(&request, &work, run_id, full_detail.clone(), attempt.key);
-        let placeholder = ObjectHash::from_canonical_bytes(b"acceptance evaluation preflight");
+        let placeholder = ObjectId::from_canonical_bytes(b"acceptance evaluation preflight");
         let mut preflight = self.assemble(&store, &work, placeholder, false, preview, now)?;
         if !fit_projection(&mut preflight)? {
             return Err(StoreError::InvalidWorkProjection(
@@ -250,7 +250,7 @@ impl LocalWorkService {
         &self,
         store: &SqliteStore,
         work: &WorkItem,
-        evaluation: ObjectHash,
+        evaluation: ObjectId,
         replayed: bool,
         projection: WorkEvaluationProjection,
         now: DateTime<Utc>,

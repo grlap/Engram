@@ -1,7 +1,7 @@
 use super::*;
 use crate::domain::{CompletionSeal, RootExecutionRef, WorkClaim, WorkEvent};
 
-fn ready(prior: u32) -> (SqliteStore, crate::WorkItem, WorkClaim, ObjectHash) {
+fn ready(prior: u32) -> (SqliteStore, crate::WorkItem, WorkClaim, ObjectId) {
     let (mut store, root, _) = fixture();
     let held = claim(&mut store, &root, "holder", "claim", 1, 3600);
     let root = store.get_work_item(root.work_id).unwrap();
@@ -44,12 +44,12 @@ fn remove_accounting(store: &mut SqliteStore, root: &crate::WorkItem, contributo
     let old: String = store
         .connection
         .query_row(
-            "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+            "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
             [root.work_id.0.to_string()],
             |row| row.get(0),
         )
         .unwrap();
-    let old = ObjectHash::from_stored(old).unwrap();
+    let old = ObjectId::from_stored(old).unwrap();
     let mut event: WorkEvent =
         load_typed_work_object(&store.connection, &old, "work_event").unwrap();
     event.root_execution = Some(address);
@@ -58,20 +58,20 @@ fn remove_accounting(store: &mut SqliteStore, root: &crate::WorkItem, contributo
     store
         .connection
         .execute(
-            "UPDATE work_feed_entries SET object_hash = ?2 WHERE object_hash = ?1",
-            params![old.as_str(), new.hash().as_str()],
+            "UPDATE work_feed_entries SET object_id = ?2 WHERE object_id = ?1",
+            params![old.as_str(), new.key().as_str()],
         )
         .unwrap();
     store
         .connection
         .execute(
-            "UPDATE work_items SET latest_event_hash = ?2 WHERE latest_event_hash = ?1",
-            params![old.as_str(), new.hash().as_str()],
+            "UPDATE work_items SET latest_event_id = ?2 WHERE latest_event_id = ?1",
+            params![old.as_str(), new.key().as_str()],
         )
         .unwrap();
     store
         .connection
-        .execute("DELETE FROM objects WHERE object_hash = ?1", [old.as_str()])
+        .execute("DELETE FROM objects WHERE object_id = ?1", [old.as_str()])
         .unwrap();
     // In particular, failure must not come from checksum, ancestry or binding.
     let loaded =
@@ -166,7 +166,7 @@ fn root_delta_seal_keeps_exact_predecessor_and_history_after_later_changes() {
         let mut altered = seal.clone();
         altered.root_execution = wrong;
         let mut altered_event = event.clone();
-        let new_hash = CanonicalObject::freeze(&altered).unwrap().hash().clone();
+        let new_hash = CanonicalObject::freeze(&altered).unwrap().key().clone();
         altered_event.transition = crate::domain::WorkTransition::Completed {
             seal: new_hash.clone(),
         };
@@ -274,7 +274,7 @@ fn root_delta_seal_accounting_address_does_not_copy_growing_collections() {
         );
         sizes.push(frozen.bytes().len());
     }
-    // UUIDs and object hashes have fixed spellings. These otherwise identical
+    // UUIDs and object ides have fixed spellings. These otherwise identical
     // seals keep all per-item fields fixed while only root history grows.
     assert_eq!(sizes[0], sizes[1]);
     assert_eq!(cuts[0], cuts[1]);

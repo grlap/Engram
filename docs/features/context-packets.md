@@ -53,7 +53,7 @@ exactly what was included, omitted, and why. Every packet item carries its
 retrieval reason and evidence pointers, so an agent can cite — and a human
 can audit — the chain from context back to source.
 
-The packet hash is a receipt, not an access capability. Explanation returns
+The packet fingerprint is a receipt, not an access capability. Explanation returns
 packet bodies only to the same project and owning agent while every task or
 exact work-item anchor in the packet remains active for the requesting
 session. Rebinding a task or changing work focus makes the old anchored packet

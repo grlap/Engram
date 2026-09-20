@@ -527,11 +527,11 @@ fn current_waiver_guards_reject_invalid_child_shapes() {
 fn advisory_child_readiness_requires_execution_seal_membership() {
     let fixture = Fixture::new();
     let execution = current_execution(&fixture);
-    let seal_hash: String = fixture
+    let seal_id: String = fixture
         .store
         .connection
         .query_row(
-            "SELECT seal_hash FROM work_completion_seals WHERE run_id = ?1",
+            "SELECT seal_id FROM work_completion_seals WHERE run_id = ?1",
             [fixture.sealed_child.run_id.0.to_string()],
             |row| row.get(0),
         )
@@ -539,7 +539,7 @@ fn advisory_child_readiness_requires_execution_seal_membership() {
     let altered = altered_execution(&execution, |value| {
         value
             .required_child_seals
-            .retain(|hash| hash.as_str() != seal_hash);
+            .retain(|hash| hash.as_str() != seal_id);
     });
     assert_eq!(
         altered.required_child_seals.len() + 1,
@@ -614,7 +614,7 @@ fn advisory_entrypoints_refuse_projection_only_waiver_drift() {
                  AND json_extract(member_json, '$.collection') = 'child_waiver'",
                         params![
                             fixture.sealed_child.root_execution_id.0.to_string(),
-                            object.hash().as_str(),
+                            object.key().as_str(),
                             object.bytes()
                         ],
                     )
@@ -654,12 +654,12 @@ fn advisory_child_readiness_does_not_replace_completion_proof_validation() {
         let root_id = fixture.root.work_id.0.to_string();
         let (sql, parameter) = match damage {
             ProofDamage::SealBytes => (
-                "SELECT seal_hash FROM work_completion_seals WHERE run_id = ?1",
+                "SELECT seal_id FROM work_completion_seals WHERE run_id = ?1",
                 fixture.sealed_child.run_id.0.to_string(),
             ),
             ProofDamage::MissingWaiverEvent => (
-                "SELECT entry.object_hash FROM work_feed_entries entry
-                 JOIN objects object ON object.object_hash = entry.object_hash
+                "SELECT entry.object_id FROM work_feed_entries entry
+                 JOIN objects object ON object.object_id = entry.object_id
                  WHERE entry.feed_kind = 'root_work' AND entry.feed_id = ?1
                    AND object.object_kind = 'work_event'
                    AND json_extract(object.canonical_json, '$.transition.kind') = 'required_child_waived'",
@@ -671,7 +671,7 @@ fn advisory_child_readiness_does_not_replace_completion_proof_validation() {
             .expect("retained proof hash");
         let bytes: Vec<u8> = connection
             .query_row(
-                "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+                "SELECT canonical_json FROM objects WHERE object_id = ?1",
                 [&hash],
                 |row| row.get(0),
             )
@@ -681,7 +681,7 @@ fn advisory_child_readiness_does_not_replace_completion_proof_validation() {
                 connection
                     .query_row(
                         "SELECT position, object_kind, work_id FROM work_feed_entries
-                 WHERE feed_kind = 'root_work' AND feed_id = ?1 AND object_hash = ?2",
+                 WHERE feed_kind = 'root_work' AND feed_id = ?1 AND object_id = ?2",
                         params![root_id, hash],
                         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                     )
@@ -691,11 +691,11 @@ fn advisory_child_readiness_does_not_replace_completion_proof_validation() {
         // would make BEGIN IMMEDIATE fail before the proof checks under test.
         let affected = match damage {
             ProofDamage::SealBytes => connection.execute(
-                "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_hash = ?1",
+                "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_id = ?1",
                 [&hash],
             ),
             ProofDamage::MissingWaiverEvent => connection.execute(
-                "DELETE FROM work_feed_entries WHERE feed_kind = 'root_work' AND feed_id = ?1 AND object_hash = ?2",
+                "DELETE FROM work_feed_entries WHERE feed_kind = 'root_work' AND feed_id = ?1 AND object_id = ?2",
                 params![root_id, hash],
             ),
         }.expect("damage retained proof");
@@ -746,13 +746,13 @@ fn advisory_child_readiness_does_not_replace_completion_proof_validation() {
         let connection = &fixture.store.connection;
         let restored = match damage {
             ProofDamage::SealBytes => connection.execute(
-                "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+                "UPDATE objects SET canonical_json = ?2 WHERE object_id = ?1",
                 params![hash, bytes],
             ),
             ProofDamage::MissingWaiverEvent => {
                 let (position, kind, work_id) = feed_row.expect("saved waiver feed row");
                 connection.execute(
-                "INSERT INTO work_feed_entries (feed_kind, feed_id, position, object_kind, object_hash, work_id)
+                "INSERT INTO work_feed_entries (feed_kind, feed_id, position, object_kind, object_id, work_id)
                  VALUES ('root_work', ?1, ?2, ?3, ?4, ?5)",
                 params![root_id, position, kind, hash, work_id],
                 )

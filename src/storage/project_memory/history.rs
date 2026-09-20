@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    Connection, MemoryAssertionEvent, MemoryStatus, MemoryVersion, ObjectHash, ProjectMemoryFull,
+    Connection, MemoryAssertionEvent, MemoryStatus, MemoryVersion, ObjectId, ProjectMemoryFull,
     SCHEMA_VERSION, Scope, SqliteStore, StoreError, StoredProjectMemory, params,
     validate_keyed_project_memory_shape,
 };
@@ -16,7 +16,7 @@ pub(in crate::storage) fn project_memory_history_on(
 ) -> Result<Vec<StoredProjectMemory>, StoreError> {
     let hashes = connection
         .prepare(
-            "SELECT object_hash FROM objects INDEXED BY objects_project_memory_key
+            "SELECT object_id FROM objects INDEXED BY objects_project_memory_key
          WHERE object_kind = 'memory_version'
            AND json_extract(canonical_json, '$.scope.kind') = 'project'
            AND json_type(canonical_json, '$.project_key') = 'text'
@@ -34,8 +34,8 @@ pub(in crate::storage) fn project_memory_history_on(
     let mut children = BTreeMap::new();
     let mut roots = Vec::new();
     for stored_hash in hashes {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let version: MemoryVersion =
             SqliteStore::get_typed_object_on(connection, &hash, "memory_version")?
                 .ok_or_else(&invalid)?;
@@ -46,7 +46,7 @@ pub(in crate::storage) fn project_memory_history_on(
         }
         let assertions = connection
             .prepare(
-                "SELECT object_hash FROM objects INDEXED BY objects_memory_assertion_version
+                "SELECT object_id FROM objects INDEXED BY objects_memory_assertion_version
              WHERE object_kind = 'memory_assertion_event'
                AND json_extract(canonical_json, '$.version') = ?1",
             )?
@@ -55,11 +55,11 @@ pub(in crate::storage) fn project_memory_history_on(
         let mut active = None;
         let mut terminal = None;
         for stored_assertion in assertions {
-            let assertion_hash = ObjectHash::from_stored(stored_assertion.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_assertion))?;
+            let assertion_id = ObjectId::from_stored(stored_assertion.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_assertion))?;
             let assertion: MemoryAssertionEvent = SqliteStore::get_typed_object_on(
                 connection,
-                &assertion_hash,
+                &assertion_id,
                 "memory_assertion_event",
             )?
             .ok_or_else(&invalid)?;
@@ -98,7 +98,7 @@ pub(in crate::storage) fn project_memory_history_on(
         versions.insert(
             hash.clone(),
             StoredProjectMemory {
-                version_hash: hash,
+                version_id: hash,
                 version,
                 assertion,
             },

@@ -517,7 +517,7 @@ fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
         .connection
         .execute(
             "UPDATE control_policy_versions SET policy_json = ?1
-             WHERE policy_hash = ?2",
+             WHERE policy_id = ?2",
             params![b"{}".as_slice(), changed.active_policy.as_str()],
         )
         .expect("corrupt active policy projection");
@@ -777,7 +777,7 @@ fn current_policy_with_null_selector_returns_a_typed_projection_error() {
     store
         .connection
         .execute(
-            "UPDATE control_policy_state SET policy_hash = NULL WHERE singleton = 1",
+            "UPDATE control_policy_state SET policy_id = NULL WHERE singleton = 1",
             [],
         )
         .expect("clear active selector");
@@ -830,8 +830,8 @@ fn partial_control_table_family_prevents_policy_rebootstrap() {
     );
     assert_eq!(
         raw.query_row(
-            "SELECT object_kind FROM objects WHERE object_hash = ?1",
-            [ordinary.hash().as_str()],
+            "SELECT object_kind FROM objects WHERE object_id = ?1",
+            [ordinary.key().as_str()],
             |row| row.get::<_, String>(0),
         )
         .expect("ordinary object identity remains"),
@@ -885,7 +885,7 @@ fn active_policy_must_be_the_unique_maximal_history_head() {
             "UPDATE control_policy_state SET
                  policy_epoch = ?1, required_assurance = ?2,
                  supported_effects_json = ?3, grant_ttl_seconds = ?4,
-                 policy_hash = ?5
+                 policy_id = ?5
              WHERE singleton = 1",
             params![
                 initial_policy.policy_epoch.0,
@@ -951,7 +951,7 @@ fn control_diagnostics_counts_issued_grants_at_the_injected_instant() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "diagnostic-issued".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"diagnostic-issued"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"diagnostic-issued"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -1018,11 +1018,11 @@ fn set_required_assurance_history_cannot_change_effects_or_ttl() {
     historical_policy.grant_ttl_seconds -= 1;
     let historical_object =
         CanonicalObject::freeze(&historical_policy).expect("freeze corrupted history");
-    active_authority.previous_policy = Some(historical_object.hash().clone());
+    active_authority.previous_policy = Some(historical_object.key().clone());
     let active_authority_object =
         CanonicalObject::freeze(&active_authority).expect("freeze rebound authority");
-    active_policy.previous_policy = Some(historical_object.hash().clone());
-    active_policy.authority = active_authority_object.hash().clone();
+    active_policy.previous_policy = Some(historical_object.key().clone());
+    active_policy.authority = active_authority_object.key().clone();
     let active_policy_object =
         CanonicalObject::freeze(&active_policy).expect("freeze rebound active policy");
 
@@ -1046,24 +1046,24 @@ fn set_required_assurance_history_cannot_change_effects_or_ttl() {
     transaction
         .execute(
             "INSERT INTO control_policy_versions (
-                 policy_hash, policy_epoch, authority_hash, policy_json
+                 policy_id, policy_epoch, authority_id, policy_json
              ) VALUES (?1, ?2, ?3, ?4), (?5, ?6, ?7, ?8)",
             params![
-                historical_object.hash().as_str(),
+                historical_object.key().as_str(),
                 historical_policy.policy_epoch.0,
                 historical_policy.authority.as_str(),
                 historical_object.bytes(),
-                active_policy_object.hash().as_str(),
+                active_policy_object.key().as_str(),
                 active_policy.policy_epoch.0,
-                active_authority_object.hash().as_str(),
+                active_authority_object.key().as_str(),
                 active_policy_object.bytes(),
             ],
         )
         .expect("install corrupt history");
     transaction
         .execute(
-            "UPDATE control_policy_state SET policy_hash = ?1 WHERE singleton = 1",
-            [active_policy_object.hash().as_str()],
+            "UPDATE control_policy_state SET policy_id = ?1 WHERE singleton = 1",
+            [active_policy_object.key().as_str()],
         )
         .expect("select corrupt active head");
     transaction.commit().expect("commit corrupt history");
@@ -1255,7 +1255,7 @@ fn policy_epoch_change_expires_issued_grants_but_not_begun_checkpoints() {
                     &binding.routing_token,
                     &TurnIntent {
                         idempotency_key: key.into(),
-                        intent_fingerprint: ObjectHash::from_canonical_bytes(key.as_bytes()),
+                        intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
                         purpose: TurnPurpose::Ordinary,
                         requested_effects: vec![EffectClass::Observe],
                         resource_intents: Vec::new(),
@@ -1466,7 +1466,7 @@ fn action_gated_requirement_refuses_every_v1_host_fail_closed() {
                 &turn_gated.routing_token,
                 &TurnIntent {
                     idempotency_key: "turn-under-action-policy".into(),
-                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                    intent_fingerprint: ObjectId::from_canonical_bytes(
                         b"turn-under-action-policy",
                     ),
                     purpose: TurnPurpose::Ordinary,
@@ -1725,7 +1725,7 @@ fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
             &advisory.routing_token,
             &TurnIntent {
                 idempotency_key: "mutate-under-advisory-assurance".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(
+                intent_fingerprint: ObjectId::from_canonical_bytes(
                     b"mutate-under-advisory-assurance",
                 ),
                 purpose: TurnPurpose::Ordinary,
@@ -1790,7 +1790,7 @@ fn advisory_effect_floor_refuses_mutation_and_execution_lease() {
                 &turn_gated.routing_token,
                 &TurnIntent {
                     idempotency_key: "mutate-under-turn-gated-assurance".into(),
-                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                    intent_fingerprint: ObjectId::from_canonical_bytes(
                         b"mutate-under-turn-gated-assurance",
                     ),
                     purpose: TurnPurpose::Ordinary,

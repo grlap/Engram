@@ -24,7 +24,7 @@ fn criterion_disclosure_empty_links_are_admitted_but_foreign_citations_still_ref
         assurance: AssuranceLevel::Asserted,
         note: "asserted independently of evidence".into(),
     };
-    let basis = vec![first.hash().clone()];
+    let basis = vec![first.key().clone()];
     assert!(
         validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted).unwrap()[0]
             .evidence
@@ -36,7 +36,7 @@ fn criterion_disclosure_empty_links_are_admitted_but_foreign_citations_still_ref
             .evidence,
         basis
     );
-    result.evidence = vec![other.hash().clone()];
+    result.evidence = vec![other.key().clone()];
     assert!(
         matches!(validate_acceptance(&work, &basis, &[result.clone()], AssuranceLevel::Asserted),
         Err(StoreError::WorkCompletionRefused { reason, .. }) if reason.contains("outside the completion evidence set"))
@@ -104,7 +104,7 @@ fn completed_gate_attempt_mismatch_refuses_before_appending() {
         previous: Some(&pass_hash),
     };
     let intent_object = CanonicalObject::freeze(&intent).expect("gate intent");
-    let idempotency_key = format!("gate:{}", intent_object.hash().as_str());
+    let idempotency_key = format!("gate:{}", intent_object.key().as_str());
     assert!(
         store
             .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
@@ -188,7 +188,7 @@ fn completion_checkpoint_holds_the_writer_slot_across_cut_selection_and_append()
         )
         .expect("completion work");
     let claim = claim(&mut store, &work, "holder", "checkpoint-cut-claim", 1, 300);
-    let evidence_hash = evidence(
+    let evidence_id = evidence(
         &mut store,
         &work,
         &claim,
@@ -204,7 +204,7 @@ fn completion_checkpoint_holds_the_writer_slot_across_cut_selection_and_append()
         claim_id: claim.claim_id,
         claim_fence: claim.fence,
         summary: "atomic completion checkpoint".into(),
-        evidence: Some(vec![evidence_hash]),
+        evidence: Some(vec![evidence_id]),
         actor: actor("holder"),
         idempotency_key: "completion-checkpoint-template".into(),
         checkpointed_at: at(3),
@@ -353,7 +353,7 @@ fn expired_handoff_is_swept_before_progress_and_terminal_completion() {
         .expect("events after refused completion")
         .into_iter()
         .filter_map(|entry| {
-            load_typed_work_object::<WorkEvent>(&store.connection, &entry.object_hash, "work_event")
+            load_typed_work_object::<WorkEvent>(&store.connection, &entry.object_id, "work_event")
                 .ok()
         })
         .filter(|event| matches!(event.transition, WorkTransition::HandoffExpired { .. }))
@@ -401,7 +401,7 @@ fn expired_handoff_is_swept_before_progress_and_terminal_completion() {
         .expect("events after terminal completion")
         .into_iter()
         .filter_map(|entry| {
-            load_typed_work_object::<WorkEvent>(&store.connection, &entry.object_hash, "work_event")
+            load_typed_work_object::<WorkEvent>(&store.connection, &entry.object_id, "work_event")
                 .ok()
         })
         .filter(|event| matches!(event.transition, WorkTransition::HandoffExpired { .. }))

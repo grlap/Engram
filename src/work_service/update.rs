@@ -424,10 +424,10 @@ impl LocalWorkService {
                 "completed work has no historical execution run".into(),
             )
         })?;
-        let seal_hash = run.completion_seal.as_ref().ok_or_else(|| {
+        let seal_id = run.completion_seal.as_ref().ok_or_else(|| {
             StoreError::InvalidWorkProjection("completed work has no completion seal".into())
         })?;
-        let seal: CompletionSeal = store.get(seal_hash)?.ok_or_else(|| {
+        let seal: CompletionSeal = store.get(seal_id)?.ok_or_else(|| {
             StoreError::InvalidWorkProjection(
                 "completed work has no canonical completion seal".into(),
             )

@@ -17,7 +17,7 @@ use super::{
     *,
 };
 use crate::{
-    BuiltinObligationRuleRef, ObjectHash, SqliteStore, VerificationRequirement,
+    BuiltinObligationRuleRef, ObjectId, SqliteStore, VerificationRequirement,
     WorkObligationGuidance,
     domain::{
         MAX_GATE_FAILURE_BYTES, MAX_GATE_FAILURE_INPUTS, MAX_GATE_FAILURE_TOTAL_BYTES,
@@ -63,8 +63,8 @@ fn root_input(title: &str, key: &str) -> WorkProposeInput {
     }
 }
 
-fn hash(fill: char) -> ObjectHash {
-    ObjectHash::from_str(&fill.to_string().repeat(64)).expect("hash")
+fn hash(fill: char) -> ObjectId {
+    ObjectId::from_str(&fill.to_string().repeat(64)).expect("hash")
 }
 
 fn compact_test_row(index: usize) -> CompactWorkRow {

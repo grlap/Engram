@@ -1075,7 +1075,7 @@ fn release_requires_nonempty_waiver_reason_and_persists_audit_reasons() {
         .pop()
         .expect("release tail");
     let event: WorkEvent =
-        load_typed_work_object(&store.connection, &entry.object_hash, "work_event")
+        load_typed_work_object(&store.connection, &entry.object_id, "work_event")
             .expect("canonical release event");
     assert!(matches!(
         event.transition,

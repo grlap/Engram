@@ -8,7 +8,7 @@ Focus on capability boundaries, report freezing, idempotency, and receipts.
   extension map or adapter layer.
 - External tickets are referenced or read on demand, never mirrored as local
   task truth.
-- `report_ready` freezes report bytes and their hash. A separately requested
+- `report_ready` freezes report bytes and fingerprint. A separately requested
   publication creates an immutable intent binding those bytes to its target
   and durable idempotency key before publication begins.
 - Retry sends identical bytes under the same key. Same key with a different

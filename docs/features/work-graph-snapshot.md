@@ -84,17 +84,34 @@ pinned `schemars` dependency. Its generator version is therefore part of the
 format definition: dependency upgrades are deliberate format changes, not
 routine semver drift.
 
+The record-id cleanup (`ObjectHash` to `ObjectId`) also changes this format
+fingerprint: generated schema definition names and references participate in
+the fingerprint even when the serialized field names and values stay the same.
+This is a deliberate pre-release format boundary. This build refuses snapshot
+files saved before that rename; keeping schema version 1 does not make them
+compatible. Do not edit a saved fingerprint or digest to bypass admission.
+
+For this boundary, use [full-store migration](full-store-migration.md) on the
+source database, then save a new graph snapshot with the new build. If only an
+old graph file remains, first load it into a disposable, empty store with the
+matching old build and the project's explicitly chosen bootstrap policy; export
+that store and import it into the current format, then save a new graph file.
+That recovers only what the old graph carried, not omitted execution state or
+redacted bodies. Keep the old build and original file until recovery is verified;
+an unsupported file still requires its matching build, not a guessed migration
+chain. None of these steps authorizes a live store swap or concurrent consumers.
+
 | Section | Carried | Not carried |
 | --- | --- | --- |
 | `items` | work id, short ref, title, outcome, acceptance, kind, priority, labels, origin, source snapshot id, lifecycle, child requirement, parent, prerequisites, supersession, assignment, defer-until, the pinned [acceptance-evaluation mode](acceptance-evaluation.md) when the task has one, disposal reason | runs, root executions, claims, fences, checkpoints, seals, required-child waivers (execution-generation state, kept in records as history), obligation pages, control bindings; the project's control policy and obligation rule sets, which the operator re-applies at `init` |
 | `blockers` | per item, every active `WorkBlocker`: blocker id, kind, detail, creator, time | cleared blockers (they remain in records) |
 | `sources` | every `WorkSourceSnapshot` cited by an item or its retained source notices, verbatim canonical JSON | nothing; no source bears a label today, and the build that first labels sources defines their exclusion |
-| `records` | per item, an ordered list of history layers, oldest first, each restored layer binding its project, full planning-item cut, relations, and generation index: every `RestoredRecord` the item already carries, verbatim, then the store's own **native layer** — notes (evidence kind, summary, gate name / failures / opaque ref, recorded-at), compact events (transition kind, time, reason, including waivers with the child's exact disposed revision), and for a completed item its completion summary and time — each entry carrying the original `ActorContext` verbatim (actor id, kind, assurance, session, context), so asserted and stronger attribution stay distinguishable | evidence object hashes as authority (they may appear as provenance strings), verification and environment evidence bodies, delivery cursors, session focus, handoff offers |
+| `records` | per item, an ordered list of history layers, oldest first, each restored layer binding its project, full planning-item cut, relations, and generation index: every `RestoredRecord` the item already carries, verbatim, then the store's own **native layer** — notes (evidence kind, summary, gate name / failures / opaque ref, recorded-at), compact events (transition kind, time, reason, including waivers with the child's exact disposed revision), and for a completed item its completion summary and time — each entry carrying the original `ActorContext` verbatim (actor id, kind, assurance, session, context), so asserted and stronger attribution stay distinguishable | evidence object ids as authority (they may appear as provenance strings), verification and environment evidence bodies, delivery cursors, session focus, handoff offers |
 | `memories` | every permanent project-memory key, body, sensitivity label, remembered-at, and the original `ActorContext` verbatim; retired keys as tombstones with their retiring `ActorContext` and time | unkeyed typed project-scope observations and agent-private scratch; `restricted` bodies unless widened; the store-side `restored` link, which is write-only |
 
 Items are ordered by short ref, blockers by item then blocker id, sources by
 hash, records by item then generation index, memories by key. Work ids,
-short refs, blocker ids, and source snapshot hashes are Engram's own and are
+short refs, blocker ids, and source snapshot ids are Engram's own and are
 preserved; nothing in the file is a foreign identifier.
 
 Each live memory also carries `history`: its superseded attributed versions
@@ -107,7 +124,7 @@ independently to each live historical body; the memory redaction count counts
 keys with any redacted version, not individual versions.
 
 [Source-change notices](source-intake.md) are carried in each item's history,
-in recorded order, with original attribution and both source snapshot hashes.
+in recorded order, with original attribution and both source snapshot ids.
 The source section includes those snapshots as well as the item's citation.
 Load refuses missing, duplicate or mismatched notice bindings and retains the
 notices as inert history, never native proposal feeds or execution authority.

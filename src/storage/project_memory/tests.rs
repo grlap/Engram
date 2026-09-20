@@ -443,8 +443,8 @@ fn keyed_project_memories_refuse_contradiction_lifecycle_transitions() {
             None,
             &session,
             "project-memory-agent",
-            &first.version_hash,
-            &second.version_hash,
+            &first.version_id,
+            &second.version_id,
             "these statements conflict",
             "project-memory-contradiction",
             actor(&session.0),
@@ -711,7 +711,7 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
     let tombstone = MemoryAssertionEvent {
         schema_version: SCHEMA_VERSION,
         memory_id: prepared.version.memory_id,
-        version: prepared.version_object.hash().clone(),
+        version: prepared.version_object.key().clone(),
         status: MemoryStatus::Tombstoned,
         policy_reason: "explicit project-memory forget".into(),
         actor: request.actor.clone(),
@@ -734,8 +734,8 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
         .expect("insert tombstone assertion");
     SqliteStore::apply_memory_projection(
         &transaction,
-        prepared.version_object.hash(),
-        tombstone_object.hash(),
+        prepared.version_object.key(),
+        tombstone_object.key(),
         &prepared.version,
         &tombstone,
         MemoryProjectionMode::Replay,
@@ -743,8 +743,8 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
     .expect("apply tombstone first");
     SqliteStore::apply_memory_projection(
         &transaction,
-        prepared.version_object.hash(),
-        prepared.assertion_object.hash(),
+        prepared.version_object.key(),
+        prepared.assertion_object.key(),
         &prepared.version,
         &prepared.assertion,
         MemoryProjectionMode::Replay,
@@ -758,8 +758,8 @@ fn terminal_project_memory_tombstone_dominates_projection_replay_order() {
     assert!(matches!(
         SqliteStore::apply_memory_projection(
             &live_transaction,
-            prepared.version_object.hash(),
-            prepared.assertion_object.hash(),
+            prepared.version_object.key(),
+            prepared.assertion_object.key(),
             &prepared.version,
             &prepared.assertion,
             MemoryProjectionMode::Live,
@@ -1184,7 +1184,7 @@ fn keyed_project_memory_shape_is_rechecked_from_canonical_bytes() {
     for version in invalid_versions {
         let version_object = CanonicalObject::freeze(&version).expect("freeze invalid version");
         let mut assertion = prepared.assertion.clone();
-        assertion.version = version_object.hash().clone();
+        assertion.version = version_object.key().clone();
         assert!(matches!(
             validate_keyed_project_memory_shape(&version, &assertion),
             Err(StoreError::InvalidMemoryProjection(message))
@@ -1208,7 +1208,7 @@ fn project_memory_rebuild_refuses_a_hash_consistent_unsafe_key() {
     version.project_key = Some("Unsafe Key".into());
     let version_object = CanonicalObject::freeze(&version).expect("freeze malformed version");
     let mut assertion = prepared.assertion;
-    assertion.version = version_object.hash().clone();
+    assertion.version = version_object.key().clone();
     let assertion_object = CanonicalObject::freeze(&assertion).expect("freeze bound assertion");
     let transaction = store
         .connection
@@ -1221,8 +1221,8 @@ fn project_memory_rebuild_refuses_a_hash_consistent_unsafe_key() {
     assert!(matches!(
         SqliteStore::apply_memory_projection(
             &transaction,
-            version_object.hash(),
-            assertion_object.hash(),
+            version_object.key(),
+            assertion_object.key(),
             &version,
             &assertion,
             MemoryProjectionMode::Replay,
@@ -1282,17 +1282,17 @@ fn project_memory_reads_reject_projection_and_canonical_drift() {
             [project.0.as_str()],
         )
         .expect("restore projected status");
-    let version_hash = store
+    let version_id = store
         .connection
         .query_row(
-            "SELECT version_hash FROM memory_heads WHERE project_id = ?1",
+            "SELECT version_id FROM memory_heads WHERE project_id = ?1",
             [project.0.as_str()],
             |row| row.get::<_, String>(0),
         )
         .expect("version hash");
     let mut version: MemoryVersion = store
         .get_typed_object(
-            &ObjectHash::from_stored(version_hash.clone()).expect("stored hash"),
+            &ObjectId::from_stored(version_id.clone()).expect("stored hash"),
             "memory_version",
         )
         .expect("load version")
@@ -1302,8 +1302,8 @@ fn project_memory_reads_reject_projection_and_canonical_drift() {
     store
         .connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
-            params![forged_version.bytes(), version_hash],
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+            params![forged_version.bytes(), version_id],
         )
         .expect("corrupt canonical key without changing its hash");
     let drifted =
@@ -1331,10 +1331,10 @@ fn project_memory_reads_and_forget_verify_the_complete_head_projection() {
             &DevelopmentNoopRedactor,
         )
         .expect("remember fixture");
-    let (version_hash, memory_id) = store
+    let (version_id, memory_id) = store
         .connection
         .query_row(
-            "SELECT version_hash, memory_id FROM memory_heads WHERE project_id = ?1",
+            "SELECT version_id, memory_id FROM memory_heads WHERE project_id = ?1",
             [project.0.as_str()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
@@ -1344,8 +1344,8 @@ fn project_memory_reads_and_forget_verify_the_complete_head_projection() {
         .connection
         .execute(
             "UPDATE memory_heads SET memory_id = '00000000-0000-7000-8000-000000000001'
-             WHERE version_hash = ?1",
-            [version_hash.as_str()],
+             WHERE version_id = ?1",
+            [version_id.as_str()],
         )
         .expect("corrupt projected memory id");
     assert!(matches!(
@@ -1374,8 +1374,8 @@ fn project_memory_reads_and_forget_verify_the_complete_head_projection() {
     store
         .connection
         .execute(
-            "UPDATE memory_heads SET memory_id = ?1 WHERE version_hash = ?2",
-            params![memory_id, version_hash],
+            "UPDATE memory_heads SET memory_id = ?1 WHERE version_id = ?2",
+            params![memory_id, version_id],
         )
         .expect("restore projected memory id");
 
@@ -1383,8 +1383,8 @@ fn project_memory_reads_and_forget_verify_the_complete_head_projection() {
         .connection
         .execute(
             "UPDATE memory_heads SET project_id = 'forged-project', scope_kind = 'task'
-             WHERE version_hash = ?1",
-            [version_hash.as_str()],
+             WHERE version_id = ?1",
+            [version_id.as_str()],
         )
         .expect("corrupt projected project scope");
     assert!(matches!(
@@ -1396,8 +1396,8 @@ fn project_memory_reads_and_forget_verify_the_complete_head_projection() {
         .execute(
             "UPDATE memory_heads SET project_id = ?1, scope_kind = 'project',
                     title = 'forged title', delivery = 'pinned'
-             WHERE version_hash = ?2",
-            params![project.0, version_hash],
+             WHERE version_id = ?2",
+            params![project.0, version_id],
         )
         .expect("corrupt projected metadata");
     assert!(matches!(
@@ -1961,8 +1961,8 @@ fn insert_historical_project_memory(store: &mut SqliteStore, session: &str, key:
     .expect("insert assertion");
     SqliteStore::apply_memory_projection(
         &transaction,
-        prepared.version_object.hash(),
-        prepared.assertion_object.hash(),
+        prepared.version_object.key(),
+        prepared.assertion_object.key(),
         &prepared.version,
         &prepared.assertion,
         MemoryProjectionMode::Live,

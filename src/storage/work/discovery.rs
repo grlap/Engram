@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::feeds::load_typed_work_object;
 use super::notes::load_note;
 use super::query::{load_work_claim_optional, load_work_item, parse_work_id};
-use crate::ObjectHash;
+use crate::ObjectId;
 use crate::domain::{ProjectId, SessionId, WorkClaim, WorkEvent, WorkId, WorkItem, WorkTransition};
 use crate::storage::{SqliteStore, StoreError};
 
@@ -44,30 +44,30 @@ const DISCOVERY_SQL: &str = "
         FROM work_items item
         WHERE item.project_id = ?1 AND item.lifecycle = 'open' {candidate_filter}
     ), note_bindings AS MATERIALIZED (
-        SELECT c.work_id, evidence.evidence_hash AS hash, 'run' AS family
+        SELECT c.work_id, evidence.evidence_id AS hash, 'run' AS family
         FROM candidates c CROSS JOIN work_run_evidence evidence ON evidence.work_id = c.work_id
         UNION ALL
-        SELECT c.work_id, evidence.evidence_hash, 'restored'
+        SELECT c.work_id, evidence.evidence_id, 'restored'
         FROM candidates c CROSS JOIN work_restored_evidence evidence ON evidence.work_id = c.work_id
         UNION ALL
-        SELECT c.work_id, observation.observation_hash, 'observation'
+        SELECT c.work_id, observation.observation_id, 'observation'
         FROM candidates c CROSS JOIN work_observations observation ON observation.work_id = c.work_id
     ), sources AS MATERIALIZED (
-        SELECT note.work_id, entry.position, note.hash AS object_hash,
+        SELECT note.work_id, entry.position, note.hash AS object_id,
                entry.object_kind, note.family
         FROM note_bindings note
         CROSS JOIN work_feed_entries entry ON entry.feed_kind = 'project' AND entry.feed_id = ?1
-            AND entry.object_hash = note.hash
-        CROSS JOIN objects object ON object.object_hash = note.hash
+            AND entry.object_id = note.hash
+        CROSS JOIN objects object ON object.object_id = note.hash
         WHERE entry.object_kind IN ('work_evidence', 'work_observation', 'work_restored_evidence')
           AND json_extract(object.canonical_json, '$.actor.session_id') = ?2
         UNION ALL
-        SELECT c.work_id, entry.position, entry.object_hash, entry.object_kind, 'handoff'
+        SELECT c.work_id, entry.position, entry.object_id, entry.object_kind, 'handoff'
         FROM candidates c CROSS JOIN work_feed_entries entry
             ON entry.feed_kind = 'project' AND entry.feed_id = ?1
               AND entry.work_id = c.work_id AND entry.work_id IS NOT NULL
               AND entry.object_kind = 'work_event'
-        CROSS JOIN objects object ON object.object_hash = entry.object_hash
+        CROSS JOIN objects object ON object.object_id = entry.object_id
         WHERE json_extract(object.canonical_json, '$.transition.kind') = 'handoff_offered'
           AND json_extract(object.canonical_json, '$.handoff_offer.to') = ?2
     ), positions AS (
@@ -81,7 +81,7 @@ const DISCOVERY_SQL: &str = "
         UNION ALL
         SELECT note.work_id, entry.position FROM note_bindings note
         CROSS JOIN work_feed_entries entry ON entry.feed_kind = 'project' AND entry.feed_id = ?1
-            AND entry.object_hash = note.hash
+            AND entry.object_id = note.hash
         UNION ALL
         SELECT c.work_id, project_entry.position
         FROM candidates c CROSS JOIN work_runs run ON run.work_id = c.work_id
@@ -89,7 +89,7 @@ const DISCOVERY_SQL: &str = "
         CROSS JOIN work_feed_entries tail ON tail.feed_kind = head.feed_kind
             AND tail.feed_id = head.feed_id AND tail.position = head.position
         CROSS JOIN work_feed_entries project_entry ON project_entry.feed_kind = 'project'
-            AND project_entry.feed_id = ?1 AND project_entry.object_hash = tail.object_hash
+            AND project_entry.feed_id = ?1 AND project_entry.object_id = tail.object_id
     ), latest AS (
         SELECT work_id, MAX(position) AS latest_position FROM positions GROUP BY work_id
     ), selected AS MATERIALIZED (
@@ -99,7 +99,7 @@ const DISCOVERY_SQL: &str = "
         ORDER BY latest.latest_position DESC, c.work_id LIMIT ?4
     )
     SELECT work_id, total,
-           (SELECT object_hash FROM sources WHERE sources.work_id = selected.work_id
+           (SELECT object_id FROM sources WHERE sources.work_id = selected.work_id
             ORDER BY (family = 'handoff'), position DESC LIMIT 1),
            (SELECT family FROM sources WHERE sources.work_id = selected.work_id
             ORDER BY (family = 'handoff'), position DESC LIMIT 1),
@@ -251,8 +251,8 @@ impl SqliteStore {
                 let raw: Option<String> = store
                     .connection
                     .query_row(
-                        "SELECT entry.object_hash FROM work_feed_entries entry
-                     JOIN objects object ON object.object_hash = entry.object_hash
+                        "SELECT entry.object_id FROM work_feed_entries entry
+                     JOIN objects object ON object.object_id = entry.object_id
                      WHERE entry.feed_kind = 'project' AND entry.feed_id = ?1
                        AND entry.work_id = ?2 AND entry.object_kind = 'work_event'
                        AND json_extract(object.canonical_json, '$.transition.kind') = 'disposed'
@@ -335,8 +335,8 @@ fn own_summary(
     )))
 }
 
-fn stored_hash(raw: String) -> Result<ObjectHash, StoreError> {
-    ObjectHash::from_stored(raw.clone()).ok_or(StoreError::InvalidStoredHash(raw))
+fn stored_hash(raw: String) -> Result<ObjectId, StoreError> {
+    ObjectId::from_stored(raw.clone()).ok_or(StoreError::InvalidStoredKey(raw))
 }
 
 fn invalid(message: &str) -> StoreError {

@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     ActorContext, Authority, CanonicalObject, Delivery, MemoryId, MemoryKind, MemoryStatus,
-    MemoryVersion, ObjectHash, ProjectId, Redactor, RestoredRecord, RestoredRelationBasis, Scope,
+    MemoryVersion, ObjectId, ProjectId, Redactor, RestoredRecord, RestoredRelationBasis, Scope,
     Sensitivity, WorkBlocker, WorkGraphSnapshotDocument, WorkGraphSnapshotHistory,
     WorkGraphSnapshotLifecycleCounts, WorkGraphSnapshotLoadPreview, WorkGraphSnapshotLoadResult,
     WorkGraphSnapshotLoadedEvent, WorkGraphSnapshotMemoryState, WorkGraphSnapshotRecordPayload,
@@ -111,7 +111,7 @@ fn prepare_load(
         return Err(corrupt("widening flag and reason disagree"));
     }
     let body_object = CanonicalObject::freeze(&document.body)?;
-    if document.manifest.body_sha256 != *body_object.hash() {
+    if document.manifest.body_sha256 != *body_object.key() {
         return Err(corrupt(
             "manifest body digest differs from the canonical body",
         ));
@@ -176,7 +176,7 @@ fn prepare_load(
         .map(|item| item.short_ref.clone())
         .collect();
     let preview = WorkGraphSnapshotLoadPreview {
-        body_sha256: body_object.hash().clone(),
+        body_sha256: body_object.key().clone(),
         summary: document.body.summary.clone(),
         lifecycle_counts,
         refs,
@@ -589,10 +589,10 @@ fn validate_and_materialize_records(
         }
         let (restored, object) = match &record.payload {
             WorkGraphSnapshotRecordPayload::Restored {
-                object_hash,
+                object_id,
                 canonical_json,
             } => {
-                let object = CanonicalObject::identified(object_hash, canonical_json)?;
+                let object = CanonicalObject::identified(object_id, canonical_json)?;
                 let restored: RestoredRecord = object
                     .decode()
                     .map_err(|_| corrupt("restored record canonical JSON has an invalid shape"))?;
@@ -1135,7 +1135,7 @@ fn insert_prepared_load_on(
                  work_id, project_id, short_ref, root_id, parent_id,
                  child_requirement, lifecycle, priority, assigned_to,
                  deferred_until_ms, revision, active_run_id, superseded_by,
-                 source_snapshot_hash, latest_event_hash, created_at_ms,
+                 source_snapshot_id, latest_event_id, created_at_ms,
                  updated_at_ms, item_json
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, NULL,
                        ?11, ?12, NULL, ?13, ?13, ?14)",
@@ -1151,7 +1151,7 @@ fn insert_prepared_load_on(
                 item.assigned_to,
                 item.deferred_until.map(|value| value.timestamp_millis()),
                 item.superseded_by.map(|id| id.0.to_string()),
-                item.source_snapshot_id.as_ref().map(ObjectHash::as_str),
+                item.source_snapshot_id.as_ref().map(ObjectId::as_str),
                 loaded_at.timestamp_millis(),
                 serde_json::to_vec(&item)?,
             ],
@@ -1165,20 +1165,20 @@ fn insert_prepared_load_on(
         super::super::work::refresh_work_catalog_for_restore(transaction, &item)?;
     }
 
-    let mut newest_record = HashMap::<WorkId, ObjectHash>::new();
+    let mut newest_record = HashMap::<WorkId, ObjectId>::new();
     for (record, object) in &prepared.records {
         SqliteStore::insert_object(transaction, "work_restored_record", object)?;
         transaction.execute(
-            "INSERT INTO work_restored_records (work_id, generation_index, record_hash)
+            "INSERT INTO work_restored_records (work_id, generation_index, record_id)
              VALUES (?1, ?2, ?3)",
             params![
                 record.work_id.0.to_string(),
                 i64::try_from(record.generation_index)
                     .map_err(|_| corrupt("record generation exceeds SQLite range"))?,
-                object.hash().as_str(),
+                object.key().as_str(),
             ],
         )?;
-        newest_record.insert(record.work_id, object.hash().clone());
+        newest_record.insert(record.work_id, object.key().clone());
     }
     for item in &prepared.document.body.items {
         let anchor = newest_record
@@ -1186,7 +1186,7 @@ fn insert_prepared_load_on(
             .ok_or_else(|| corrupt("work item has no restored-record anchor"))?;
         for prerequisite in &item.prerequisites {
             transaction.execute(
-                "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
+                "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_id)
                  VALUES (?1, ?2, ?3)",
                 params![
                     item.work_id.0.to_string(),
@@ -1211,7 +1211,7 @@ fn insert_prepared_load_on(
         transaction.execute(
             "INSERT INTO work_blockers (
                  blocker_id, work_id, state, blocker_json,
-                 created_event_hash, cleared_event_hash
+                 created_event_id, cleared_event_id
              ) VALUES (?1, ?2, 'active', ?3, ?4, NULL)",
             params![
                 restored.blocker_id,
@@ -1233,7 +1233,7 @@ fn insert_prepared_load_on(
         insert_memory_on(
             transaction,
             project_id,
-            prepared.body_object.hash(),
+            prepared.body_object.key(),
             memory,
             loaded_at,
         )?;
@@ -1252,7 +1252,7 @@ fn insert_prepared_load_on(
             memories: prepared.preview.placeholder_memories.len(),
             ..WorkGraphSnapshotRedactedCounts::default()
         },
-        body_sha256: prepared.body_object.hash().clone(),
+        body_sha256: prepared.body_object.key().clone(),
         actor: actor.clone(),
         loaded_at,
     };
@@ -1279,7 +1279,7 @@ fn restored_memory_body(
 fn insert_memory_on(
     transaction: &Transaction<'_>,
     project_id: &ProjectId,
-    body_hash: &ObjectHash,
+    body_hash: &ObjectId,
     memory: &crate::WorkGraphSnapshotMemory,
     loaded_at: DateTime<Utc>,
 ) -> Result<(), StoreError> {
@@ -1320,12 +1320,12 @@ fn insert_memory_on(
 fn insert_memory_version_on(
     transaction: &Transaction<'_>,
     project_id: &ProjectId,
-    body_hash: &ObjectHash,
+    body_hash: &ObjectId,
     memory: &crate::WorkGraphSnapshotMemory,
     loaded_at: DateTime<Utc>,
-    previous: Option<&ObjectHash>,
+    previous: Option<&ObjectId>,
     project_head: bool,
-) -> Result<ObjectHash, StoreError> {
+) -> Result<ObjectId, StoreError> {
     let (body, sensitivity, remembered_at, actor, status, assertion_at, source_ref) =
         match &memory.state {
             WorkGraphSnapshotMemoryState::Active {
@@ -1393,7 +1393,7 @@ fn insert_memory_version_on(
     let assertion = MemoryAssertionEvent {
         schema_version: crate::schema::SCHEMA_VERSION,
         memory_id,
-        version: version_object.hash().clone(),
+        version: version_object.key().clone(),
         status,
         policy_reason: match status {
             MemoryStatus::Active => "restored project episode is active immediately",
@@ -1417,17 +1417,17 @@ fn insert_memory_version_on(
     if project_head {
         SqliteStore::apply_memory_projection(
             transaction,
-            version_object.hash(),
-            assertion_object.hash(),
+            version_object.key(),
+            assertion_object.key(),
             &version,
             &assertion,
             super::super::MemoryProjectionMode::Live,
         )?;
     }
-    Ok(version_object.hash().clone())
+    Ok(version_object.key().clone())
 }
 
-fn restored_memory_id(body_hash: &ObjectHash, key: &str) -> MemoryId {
+fn restored_memory_id(body_hash: &ObjectId, key: &str) -> MemoryId {
     let mut digest = Sha256::new();
     digest.update(b"engram-restored-project-memory-v1\0");
     digest.update(body_hash.as_str().as_bytes());

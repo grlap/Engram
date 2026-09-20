@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ObjectHash;
+use crate::ObjectId;
 
 use super::{
     AcceptanceResult, ActorContext, ChildRequirement, CompletionDrainAttestation, ProjectId,
@@ -39,7 +39,7 @@ pub struct CreateWorkRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation_mode: Option<super::AcceptanceEvaluationMode>,
     pub origin: WorkOrigin,
-    pub source_snapshot_id: Option<ObjectHash>,
+    pub source_snapshot_id: Option<ObjectId>,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub created_at: DateTime<Utc>,
@@ -277,7 +277,7 @@ pub struct CheckpointWorkRequest {
     /// already attached to the run inside the checkpoint transaction, while
     /// `Some([])` deliberately acknowledges none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub evidence: Option<Vec<ObjectHash>>,
+    pub evidence: Option<Vec<ObjectId>>,
     pub actor: ActorContext,
     pub idempotency_key: String,
     pub checkpointed_at: DateTime<Utc>,
@@ -430,7 +430,7 @@ pub struct CompleteWorkRequest {
     pub expected_work_revision: i64,
     pub claim_id: WorkClaimId,
     pub claim_fence: i64,
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
     pub acceptance: Vec<AcceptanceResult>,
     pub drain: CompletionDrainAttestation,
     /// Host-measured source fingerprint at completion time; required when the
@@ -522,7 +522,7 @@ pub struct WaiveRequiredChildRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WaiveWorkObligationRequest {
     pub obligation_id: WorkObligationId,
-    pub expected_definition: ObjectHash,
+    pub expected_definition: ObjectId,
     /// Human/operator identity asserted for immutable audit attribution.
     /// This text is not authenticated and does not itself grant permission.
     pub waived_by: String,
@@ -545,8 +545,8 @@ pub enum WorkObligationWaiverRefusalCode {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WorkObligationWaiverReceipt {
     pub obligation_id: WorkObligationId,
-    pub definition: ObjectHash,
-    pub resolution: ObjectHash,
+    pub definition: ObjectId,
+    pub resolution: ObjectId,
     pub state: WorkObligationState,
     pub waived_by: String,
     pub waived_at: DateTime<Utc>,
@@ -564,7 +564,7 @@ pub enum WorkObligationWaiverDecision {
         code: WorkObligationWaiverRefusalCode,
         obligation_id: WorkObligationId,
         #[serde(skip_serializing_if = "Option::is_none")]
-        current_definition: Option<ObjectHash>,
+        current_definition: Option<ObjectId>,
         remedy: String,
     },
 }

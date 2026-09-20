@@ -110,7 +110,7 @@ fn explicit_agent_words_keep_their_resolved_target_after_focus_changes() {
         .work_run_evidence(target_run)
         .expect("target evidence");
     assert_eq!(evidence.len(), 1);
-    let checkpoint_hash = ObjectHash::from_stored(
+    let checkpoint_hash = ObjectId::from_stored(
         first_note.value["checkpoint"]
             .as_str()
             .expect("checkpoint hash")

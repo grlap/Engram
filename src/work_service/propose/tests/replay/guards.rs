@@ -175,7 +175,7 @@ fn decomposition_retry_guard_preserves_non_revision_work_and_authority_fields() 
         (
             "focused_work",
             "source_snapshot_id",
-            serde_json::json!(source_hash.hash()),
+            serde_json::json!(source_hash.key()),
         ),
         ("focused_work", "created_by", actor),
         ("focused_work", "created_at", serde_json::json!(at(900))),

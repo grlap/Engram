@@ -60,9 +60,9 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO control_turn_grants
-             (grant_id, session_id, task_id, request_key, grant_hash, grant_json,
+             (grant_id, session_id, task_id, request_key, grant_json,
               state, issued_at_ms, expires_at_ms)
-             VALUES (?1, ?2, 'missing-task', ?1, 'opaque', x'ff', ?3, 0, 1)",
+             VALUES (?1, ?2, 'missing-task', ?1, x'ff', ?3, 0, 1)",
                 [id, session, state],
             )
             .unwrap();

@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ObjectHash;
+use crate::ObjectId;
 
 use super::{ActorContext, FeedPosition, ProjectId, SessionId, WorkId, WorkRunId};
 
@@ -287,7 +287,7 @@ pub struct CriterionVerdict {
     pub rationale: String,
     /// Run evidence the verdict rests on: note/gate/verification/environment
     /// objects on the evaluated run.
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
 }
 
 /// Immutable acceptance evaluation appended to the run execution feed.
@@ -300,7 +300,7 @@ pub struct AcceptanceEvaluation {
     pub run_id: WorkRunId,
     pub work_revision: i64,
     /// Canonical identity of the exact work revision whose criteria were judged.
-    pub work_revision_hash: ObjectHash,
+    pub work_revision_hash: ObjectId,
     /// The criteria evaluated, copied verbatim at record time.
     pub criteria: Vec<String>,
     /// The run-feed position the evaluator read through, exactly as the
@@ -309,7 +309,7 @@ pub struct AcceptanceEvaluation {
     pub evaluated_cut: FeedPosition,
     /// Every run evidence object on the feed at or before `evaluated_cut`:
     /// the selection the evaluator could have read.
-    pub evidence_basis: Vec<ObjectHash>,
+    pub evidence_basis: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_basis: Option<AcceptanceSourceBasis>,
     pub mode: AcceptanceEvaluationMode,
@@ -402,7 +402,7 @@ pub struct CriterionVerdictInput {
     pub basis: AcceptanceBasis,
     pub rationale: String,
     #[serde(default)]
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
 }
 
 /// Request to record one acceptance evaluation.

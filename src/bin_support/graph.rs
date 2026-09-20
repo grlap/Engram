@@ -177,7 +177,7 @@ fn run_graph(context: WorkContext, operation: GraphCommand) -> Result<()> {
 fn graph_snapshot_default_path(
     database: &Path,
     cut: &WorkGraphSnapshotCut,
-    body_sha256: &engram::ObjectHash,
+    body_sha256: &engram::ObjectId,
 ) -> Result<PathBuf> {
     let (home, digest) = engram_home_and_project_digest(database)?;
     let body_prefix = body_sha256
@@ -335,7 +335,7 @@ mod tests {
             "derived": "snapshot body"
         }))
         .expect("canonical fixture")
-        .hash()
+        .key()
         .clone();
         let body_prefix = body_sha256.as_str().get(..12).expect("body hash prefix");
         assert_eq!(

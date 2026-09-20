@@ -52,7 +52,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use super::{BeginGateWorkProtocolAttempt, BeginWorkProtocolAttempt, SqliteStore, StoreError};
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectId,
     domain::{
         ActorContext, CompletionSeal, FeedPosition, RootExecution, SCHEMA_VERSION, SessionId,
         TaskId, WorkBlocker, WorkClaim, WorkClaimId, WorkCompletionRecovery,
@@ -139,36 +139,36 @@ struct EvidenceProjectionRow {
     workspace_id: Option<String>,
     source_revision: Option<String>,
     producer_session_id: Option<String>,
-    producer_observation_hash: Option<String>,
+    producer_observation_id: Option<String>,
     check_fingerprint: Option<String>,
     verification_result: Option<String>,
     observed_at_ms: Option<i64>,
     environment_fingerprint: Option<String>,
-    environment_evidence_hash: Option<String>,
+    environment_evidence_id: Option<String>,
     components_json: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug)]
 struct ObligationProjectionRow {
     obligation_id: String,
-    definition_hash: String,
+    definition_id: String,
     project_id: String,
     root_execution_id: String,
     root_id: String,
     work_id: String,
     run_id: String,
     work_revision: i64,
-    rule_set_hash: String,
+    rule_set_id: String,
     rule_id: String,
     rule_version: i64,
-    triggering_observation_hash: String,
+    triggering_observation_id: String,
     trigger_position: i64,
     check_kind: String,
     check_fingerprint: Option<String>,
     state: String,
-    resolution_hash: Option<String>,
+    resolution_id: Option<String>,
     resolution_kind: Option<String>,
-    evidence_hash: Option<String>,
+    evidence_id: Option<String>,
     opened_at_ms: i64,
     resolved_at_ms: Option<i64>,
 }
@@ -176,7 +176,7 @@ struct ObligationProjectionRow {
 #[derive(Serialize)]
 struct WorkObligationWaiverFingerprint<'a> {
     obligation_id: WorkObligationId,
-    expected_definition: &'a ObjectHash,
+    expected_definition: &'a ObjectId,
     waived_by: &'a str,
     reason: &'a str,
     actor: &'a crate::domain::ActorContext,
@@ -189,7 +189,7 @@ struct ControlWorkObligationWaiverFingerprint<'a> {
     session_id: &'a SessionId,
     bind_intent_hash: &'a str,
     obligation_id: WorkObligationId,
-    expected_definition: &'a ObjectHash,
+    expected_definition: &'a ObjectId,
     waived_by: &'a str,
     reason: &'a str,
     idempotency_key: &'a str,
@@ -205,7 +205,7 @@ struct WorkRelationBasis {
 #[derive(Clone, Debug, Serialize)]
 struct WorkRelationBlockerBasis {
     blocker_id: String,
-    blocker_hash: ObjectHash,
+    blocker_hash: ObjectId,
 }
 
 #[derive(Clone, Debug)]
@@ -230,7 +230,7 @@ struct WorkEventDraft {
 impl WorkEventDraft {
     fn finalize(
         self,
-        relation_fingerprint: ObjectHash,
+        relation_fingerprint: ObjectId,
         root_execution: Option<crate::domain::RootExecutionRef>,
     ) -> WorkEvent {
         WorkEvent {
@@ -289,10 +289,10 @@ fn empty_work_relation_basis() -> WorkRelationBasis {
 /// terminal-state projection that must agree with it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkObligationRecord {
-    pub definition_hash: ObjectHash,
+    pub definition_id: ObjectId,
     pub obligation: WorkObligation,
     pub state: WorkObligationState,
-    pub resolution_hash: Option<ObjectHash>,
+    pub resolution_id: Option<ObjectId>,
     pub resolution: Option<WorkObligationResolutionEvent>,
     pub resolution_position: Option<FeedPosition>,
 }
@@ -302,9 +302,9 @@ pub(crate) struct WorkObligationRecord {
 /// with the durable run projection before selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkEvidenceProjectionSummary {
-    pub hash: ObjectHash,
+    pub hash: ObjectId,
     pub kind: WorkEvidenceKind,
-    pub environment: Option<ObjectHash>,
+    pub environment: Option<ObjectId>,
 }
 
 struct StoredWorkEvidenceSelectionRow {
@@ -327,7 +327,7 @@ thread_local! {
 #[cfg(test)]
 impl SqliteStore {
     /// The id under which a run's completion seal is stored.
-    pub(crate) fn stored_seal_id(&self, seal: &CompletionSeal) -> ObjectHash {
+    pub(crate) fn stored_seal_id(&self, seal: &CompletionSeal) -> ObjectId {
         self.get_work_run(seal.run_id)
             .expect("sealed run")
             .completion_seal
@@ -399,7 +399,7 @@ pub(crate) struct WorkProtocolAttempt {
 
 #[derive(Debug)]
 pub(crate) struct GateWorkProtocolAttempt {
-    pub(crate) evidence: ObjectHash,
+    pub(crate) evidence: ObjectId,
     pub(crate) idempotency_key: String,
     pub(crate) result: Option<serde_json::Value>,
 }
@@ -408,9 +408,9 @@ pub(crate) struct GateWorkProtocolAttempt {
 pub(crate) struct WorkNoteCapture {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) non_holder: bool,
-    pub(crate) evidence: ObjectHash,
+    pub(crate) evidence: ObjectId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) checkpoint: Option<ObjectHash>,
+    pub(crate) checkpoint: Option<ObjectId>,
 }
 
 pub(crate) struct WorkPrerequisitePage {
@@ -432,7 +432,7 @@ struct GateWorkProtocolIntent<'a> {
     name: &'a str,
     failed: &'a [String],
     refs: &'a [String],
-    previous: Option<&'a ObjectHash>,
+    previous: Option<&'a ObjectId>,
 }
 
 #[derive(Clone, Debug)]

@@ -8,7 +8,7 @@ Focus on error handling, type safety, portability, and maintainable APIs.
   paths without a documented invariant.
 - Errors retain useful context and do not discard SQLite, serialization, I/O,
   adapter, or validation failures.
-- Serde representations are stable and explicit; hashes and large identifiers
+- Serde representations are stable and explicit; fingerprints and record ids
   are strings rather than lossy JSON numbers.
 - Match statements make new lifecycle variants visible instead of hiding them
   behind broad wildcard arms.

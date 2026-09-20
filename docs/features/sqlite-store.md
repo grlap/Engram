@@ -105,8 +105,10 @@ The host-private alpha adds `control_sessions`, `control_turn_results`,
 `control_turn_grants`, `control_turn_grant_supersessions`,
 `control_work_leases`, and
 `control_operation_results`. Their intent and result payloads use canonical
-bytes and hashes even though live grants and leases are operational rather
-than durable memory. Acquisition/release emits a canonical
+bytes even though live grants and leases are operational rather than durable
+memory. Intent fingerprints enforce retry equality; the replacement-decision
+fingerprint binds a grant supersession. Uncompared payload checksums are not
+stored. Acquisition/release emits a canonical
 `work_lease_event`; a successful checkpoint emits a canonical
 `turn_checkpoint_event`. Superseding an issued grant records exactly one
 immutable transition binding the old grant and request to the replacement
@@ -123,7 +125,7 @@ the exact stored receipt, and commits it in the same transaction as policy
 activation.
 The caller's wall-clock retry time is attribution rather than intent, so a
 lost-response retry can replay the original receipt after restart even when
-the original compare-and-swap hash is no longer the active head.
+the original compare-and-swap policy id is no longer the active head.
 `doctor` checks that the redundant row bindings of all these tiers agree with
 the records they project, and that each stored record decodes. It derives no
 record id from bytes and treats no checksum as a corruption check. The
@@ -131,7 +133,7 @@ fingerprints it does recompute and compare are of content: a stored control
 observation's intent is re-fingerprinted from its input and must match the
 intent fingerprint the row carries, which is the same comparison a retried
 operation makes before it replays the stored receipt. Context contents,
-pinned-safety evaluation, packet hash, and the
+pinned-safety evaluation, packet fingerprint, and the
 stamped task head are read in one immediate transaction before a grant is
 persisted.
 
@@ -249,14 +251,14 @@ focused work id, and bound task. The current schema also requires verified
 work-id and relation-fingerprint bindings on every work-event feed entry,
 normalized catalog projections, typed verification/environment evidence, and
 obligation state. Operational reads
-verify the item head, relation hash, and active projection rows before decoding
+verify the item head, relation fingerprint, and active projection rows before decoding
 them. Every work mutation rechecks inside its write transaction that durable
 schema metadata still names the generation understood by that opener.
 
 Projection blobs have an explicit per-column convention. Mutable
 work/run/item/seal projection blobs are semantic serde projections; their
 canonical source object is stored in `objects`, and integrity checks compare
-decoded meaning plus the bound object hash. Changing that convention requires
+decoded meaning plus the bound object id. Changing that convention requires
 changing its verifier at the same time.
 
 ## Rebuildable and durable projections
@@ -306,7 +308,7 @@ corrupt target projection therefore cannot be promoted into fresh canonical
 history, while unrelated project history does not make every mutation slower.
 The exhaustive reconstruction remains an operator `doctor` and recovery check.
 
-Completed `work_protocol_attempts` retain their request hash and exact bounded
+Completed `work_protocol_attempts` retain their request fingerprint and exact bounded
 caller-visible response, but discard the inferred basis. The 12 KiB protocol
 ceiling keeps exact lost-response replay bounded without retaining unbounded
 history or memory bodies. The `local-process-` prefix is reserved for generated
@@ -328,7 +330,7 @@ retention indexes are declared rebuildable projections repaired by
 `doctor --repair-projections`; staged delivery, pending attempts, explicit task
 bindings, and live claim or handoff authority are fail-closed exclusions.
 
-A refused completion retains one pending attempt row with its request hash,
+A refused completion retains one pending attempt row with its request fingerprint,
 work target, and current live basis, but no result. Recovery guidance and its
 bounded obligation page are rebuilt in one read transaction. A retry may
 compare-and-swap that basis to a later claim epoch for the same target; it

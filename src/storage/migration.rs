@@ -31,6 +31,92 @@ const FORMAT: &str = "engram-json-export";
 /// The new store keeps its own.
 const FORMAT_MARKER_TABLES: &[&str] = &["work_schema_metadata"];
 
+/// One explicit format conversion: record links keep their values while their
+/// column names stop calling those values hashes. This is not an open-ended
+/// alias rule: an unlisted table/column still refuses.
+const RENAMED_COLUMNS: &[(&str, &str, &str)] = &[
+    ("objects", "object_hash", "object_id"),
+    ("memory_heads", "version_hash", "version_id"),
+    ("memory_heads", "assertion_hash", "assertion_id"),
+    (
+        "memory_contradictions",
+        "contradiction_hash",
+        "contradiction_id",
+    ),
+    (
+        "memory_contradictions",
+        "left_version_hash",
+        "left_version_id",
+    ),
+    (
+        "memory_contradictions",
+        "right_version_hash",
+        "right_version_id",
+    ),
+    (
+        "memory_contradiction_edges",
+        "contradiction_hash",
+        "contradiction_id",
+    ),
+    (
+        "memory_contradiction_edges",
+        "left_version_hash",
+        "left_version_id",
+    ),
+    (
+        "memory_contradiction_edges",
+        "right_version_hash",
+        "right_version_id",
+    ),
+    ("task_changes", "object_hash", "object_id"),
+    ("control_policy_state", "policy_hash", "policy_id"),
+    ("control_policy_versions", "policy_hash", "policy_id"),
+    ("control_policy_versions", "authority_hash", "authority_id"),
+    ("work_items", "source_snapshot_hash", "source_snapshot_id"),
+    ("work_items", "latest_event_hash", "latest_event_id"),
+    ("work_root_executions", "head_hash", "head_id"),
+    ("work_runs", "last_checkpoint_hash", "last_checkpoint_id"),
+    ("work_runs", "completion_seal_hash", "completion_seal_id"),
+    ("work_handoff_offers", "offer_hash", "offer_object_id"),
+    ("work_prerequisites", "event_hash", "event_id"),
+    ("work_blockers", "created_event_hash", "created_event_id"),
+    ("work_blockers", "cleared_event_hash", "cleared_event_id"),
+    ("work_restored_records", "record_hash", "record_id"),
+    ("work_restored_evidence", "evidence_hash", "evidence_id"),
+    ("work_restored_evidence", "record_hash", "record_id"),
+    ("work_run_evidence", "evidence_hash", "evidence_id"),
+    (
+        "work_run_evidence",
+        "producer_observation_hash",
+        "producer_observation_id",
+    ),
+    (
+        "work_run_evidence",
+        "environment_evidence_hash",
+        "environment_evidence_id",
+    ),
+    ("work_run_obligations", "definition_hash", "definition_id"),
+    ("work_run_obligations", "rule_set_hash", "rule_set_id"),
+    (
+        "work_run_obligations",
+        "triggering_observation_hash",
+        "triggering_observation_id",
+    ),
+    ("work_run_obligations", "resolution_hash", "resolution_id"),
+    ("work_run_obligations", "evidence_hash", "evidence_id"),
+    ("work_completion_seals", "seal_hash", "seal_id"),
+    ("work_feed_entries", "object_hash", "object_id"),
+    ("work_protocol_attempts", "result_hash", "result_id"),
+    ("work_observations", "observation_hash", "observation_id"),
+];
+
+fn destination_column<'a>(table: &str, column: &'a str) -> &'a str {
+    RENAMED_COLUMNS
+        .iter()
+        .find(|(source_table, source_column, _)| *source_table == table && *source_column == column)
+        .map_or(column, |(_, _, destination)| *destination)
+}
+
 /// Columns the current format retired, as (table, column). Export writes them
 /// as the source holds them; import names each one it met, with the number of
 /// values it carried, and stores nothing for it. Any other column the current
@@ -39,6 +125,13 @@ const RETIRED_COLUMNS: &[(&str, &str)] = &[
     // A fingerprint of the staged delivery page that nothing ever compared;
     // the page itself and its delivery token are what a session needs.
     ("work_session_state", "tentative_delivery_payload_hash"),
+    ("control_observations", "input_hash"),
+    ("control_observations", "decision_hash"),
+    ("control_turn_grants", "grant_hash"),
+    ("control_turn_grant_supersessions", "supersession_hash"),
+    ("control_work_leases", "lease_hash"),
+    ("control_operation_results", "result_hash"),
+    ("control_policy_operation_results", "result_hash"),
 ];
 
 fn is_retired_column(table: &str, column: &str) -> bool {
@@ -823,12 +916,25 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                 values: 0,
             });
         }
-        admit_destination(&transaction, &table.name, &columns)?;
+        let destination_columns: Vec<String> = columns
+            .iter()
+            .map(|column| destination_column(&table.name, column).to_owned())
+            .collect();
+        let mut mapped = std::collections::HashSet::new();
+        for column in &destination_columns {
+            if !mapped.insert(column) {
+                return Err(refused(format!(
+                    "multiple source columns map to column {column} of table {}",
+                    table.name
+                )));
+            }
+        }
+        admit_destination(&transaction, &table.name, &destination_columns)?;
         transaction.execute(&format!("DELETE FROM {}", quoted(&table.name)), [])?;
         let insert = format!(
             "INSERT INTO {} ({}) VALUES ({})",
             quoted(&table.name),
-            columns
+            destination_columns
                 .iter()
                 .map(|column| quoted(column))
                 .collect::<Vec<_>>()
@@ -842,7 +948,11 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
             table.name.clone(),
             (transaction.prepare(&insert)?, columns, retired, 0_u64),
         );
-        tables.push(table.clone());
+        tables.push(TableRows {
+            name: table.name.clone(),
+            columns: destination_columns,
+            rows: table.rows,
+        });
     }
 
     let mut seen = 0_u64;
@@ -870,7 +980,17 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                     )));
                 };
                 for column in retired.iter() {
-                    if values.remove(column).is_some_and(|value| !value.is_null())
+                    let value = values.remove(column).ok_or_else(|| {
+                        refused(format!("a row of table {table} lacks column {column}"))
+                    })?;
+                    let non_null = !value.is_null();
+                    decode(value).map_err(|error| match error {
+                        MigrationError::Refused(reason) => refused(format!(
+                            "column {column} of a row of table {table}: {reason}"
+                        )),
+                        other => other,
+                    })?;
+                    if non_null
                         && let Some(field) = retired_fields
                             .iter_mut()
                             .find(|field| field.table == table && &field.column == column)
@@ -883,12 +1003,21 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
                     let value = values.remove(column).ok_or_else(|| {
                         refused(format!("a row of table {table} lacks column {column}"))
                     })?;
-                    row.push(decode(value).map_err(|error| match error {
+                    let decoded = decode(value).map_err(|error| match error {
                         MigrationError::Refused(reason) => refused(format!(
                             "column {column} of a row of table {table}: {reason}"
                         )),
                         other => other,
-                    })?);
+                    })?;
+                    if table == "control_policy_state"
+                        && column == "schema_version"
+                        && decoded != SqlValue::Integer(super::CONTROL_POLICY_STATE_SCHEMA_VERSION)
+                    {
+                        return Err(refused(
+                            "format marker control_policy_state.schema_version does not match the current format",
+                        ));
+                    }
+                    row.push(decoded);
                 }
                 if let Some(extra) = values.keys().next() {
                     return Err(refused(format!(
@@ -989,16 +1118,28 @@ fn admit_destination(
         }
     }
     let mut known = Vec::new();
+    let mut required = Vec::new();
     let mut info = transaction.prepare(&format!("PRAGMA table_xinfo({})", quoted(table)))?;
     let mut rows = info.query([])?;
     while let Some(row) = rows.next()? {
         if row.get::<_, i64>(6)? == 0 {
-            known.push(row.get::<_, String>(1)?);
+            let name = row.get::<_, String>(1)?;
+            let not_null = row.get::<_, i64>(3)? != 0;
+            let default = row.get::<_, Option<String>>(4)?;
+            if not_null && default.is_none() {
+                required.push(name.clone());
+            }
+            known.push(name);
         }
     }
     if let Some(column) = columns.iter().find(|column| !known.contains(column)) {
         return Err(refused(format!(
             "column {column} of table {table} has no place in the current format"
+        )));
+    }
+    if let Some(column) = required.iter().find(|column| !columns.contains(column)) {
+        return Err(refused(format!(
+            "table {table} lacks required destination column {column}"
         )));
     }
     Ok(())

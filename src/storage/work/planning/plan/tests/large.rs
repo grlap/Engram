@@ -39,7 +39,7 @@ fn atomic_plan_admission_decodes_stay_bounded_for_sparse_and_dense_plans() {
 #[test]
 fn atomic_plan_final_relation_audit_refuses_corrupt_edge_proofs_and_projection() {
     for corruption in [
-        "UPDATE work_prerequisites SET event_hash = (SELECT latest_event_hash FROM work_items WHERE work_id = NEW.prerequisite_id) WHERE work_id = NEW.work_id AND prerequisite_id = NEW.prerequisite_id;",
+        "UPDATE work_prerequisites SET event_id = (SELECT latest_event_id FROM work_items WHERE work_id = NEW.prerequisite_id) WHERE work_id = NEW.work_id AND prerequisite_id = NEW.prerequisite_id;",
         "DELETE FROM work_prerequisites WHERE work_id = NEW.work_id AND prerequisite_id = NEW.prerequisite_id;",
     ] {
         let mut store = SqliteStore::open_in_memory().expect("store");
@@ -137,7 +137,7 @@ fn atomic_plan_existing_prerequisite_retains_canonical_relation_validation() {
     store
         .propose_work_plan(&input, &DevelopmentNoopRedactor)
         .expect("healthy external prerequisite");
-    store.connection.execute("UPDATE work_prerequisites SET event_hash = (SELECT latest_event_hash FROM work_items WHERE work_id = ?1) WHERE work_id = ?2", rusqlite::params![existing.tasks[2].work_id.0.to_string(), existing.tasks[0].work_id.0.to_string()]).expect("corrupt existing edge proof");
+    store.connection.execute("UPDATE work_prerequisites SET event_id = (SELECT latest_event_id FROM work_items WHERE work_id = ?1) WHERE work_id = ?2", rusqlite::params![existing.tasks[2].work_id.0.to_string(), existing.tasks[0].work_id.0.to_string()]).expect("corrupt existing edge proof");
     let before = test_database_shape_snapshot(&store.connection).expect("before");
     input.plan.idempotency_key = "corrupt-existing".into();
     assert!(matches!(

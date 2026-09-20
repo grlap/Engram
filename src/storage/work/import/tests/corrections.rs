@@ -156,7 +156,7 @@ fn import_restored_required_shape_refuses_at_use_and_before_repair_writes() {
     let orientation_decodes = crate::canonical::canonical_decode_count();
     let connection = rusqlite::Connection::open(&database).unwrap();
     let (old_hash, bytes): (String, Vec<u8>) = connection.query_row(
-        "SELECT object_hash, canonical_json FROM objects WHERE object_kind = 'work_restored_record'",
+        "SELECT object_id, canonical_json FROM objects WHERE object_kind = 'work_restored_record'",
         [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
     let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let healthy = CanonicalObject::freeze(&value).unwrap();
@@ -198,14 +198,14 @@ fn import_restored_required_shape_refuses_at_use_and_before_repair_writes() {
         .unwrap();
     connection
         .execute(
-            "UPDATE objects SET object_hash = ?1, canonical_json = ?2 WHERE object_hash = ?3",
-            rusqlite::params![incompatible.hash().as_str(), incompatible.bytes(), old_hash],
+            "UPDATE objects SET object_id = ?1, canonical_json = ?2 WHERE object_id = ?3",
+            rusqlite::params![incompatible.key().as_str(), incompatible.bytes(), old_hash],
         )
         .unwrap();
     connection
         .execute(
-            "UPDATE work_restored_records SET record_hash = ?1 WHERE record_hash = ?2",
-            rusqlite::params![incompatible.hash().as_str(), old_hash],
+            "UPDATE work_restored_records SET record_id = ?1 WHERE record_id = ?2",
+            rusqlite::params![incompatible.key().as_str(), old_hash],
         )
         .unwrap();
     let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
@@ -390,7 +390,7 @@ fn terminal_refresh(disposition: crate::WorkDisposition) {
         )
         .unwrap();
     store = recover(&mut store, &project, 4);
-    let inherited_before: Vec<(String, Vec<u8>)> = store.connection.prepare("SELECT object_hash, canonical_json FROM objects WHERE object_kind = 'work_restored_record' ORDER BY object_hash").unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+    let inherited_before: Vec<(String, Vec<u8>)> = store.connection.prepare("SELECT object_id, canonical_json FROM objects WHERE object_kind = 'work_restored_record' ORDER BY object_id").unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
     original.draft = None;
     original.snapshot.source_revision = Some("2".into());
     let before = store.get_work_item(receipt.work_id).unwrap();
@@ -402,7 +402,7 @@ fn terminal_refresh(disposition: crate::WorkDisposition) {
         let retained: Vec<u8> = store
             .connection
             .query_row(
-                "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+                "SELECT canonical_json FROM objects WHERE object_id = ?1",
                 [hash],
                 |row| row.get(0),
             )
@@ -583,7 +583,7 @@ fn import_doctor_detects_missing_inherited_source() {
     store
         .connection
         .execute(
-            "DELETE FROM objects WHERE object_hash = ?1",
+            "DELETE FROM objects WHERE object_id = ?1",
             [older.snapshot.as_str()],
         )
         .unwrap();
@@ -677,7 +677,7 @@ fn import_preview_membership_is_bounded() {
     store
         .connection
         .execute(
-            "DELETE FROM objects WHERE object_hash = ?1",
+            "DELETE FROM objects WHERE object_id = ?1",
             [older.unwrap().as_str()],
         )
         .unwrap();
@@ -760,7 +760,7 @@ fn import_corrupt_notice_preserves_show_context() {
     store
         .connection
         .execute(
-            "DELETE FROM objects WHERE object_hash = ?1",
+            "DELETE FROM objects WHERE object_id = ?1",
             [notice.snapshot.as_str()],
         )
         .unwrap();

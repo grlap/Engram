@@ -31,12 +31,12 @@ fn execution_inventory(database: &std::path::Path) -> Vec<(String, String, Strin
     let connection = rusqlite::Connection::open(database).unwrap();
     connection.prepare("SELECT 'item', work_id, hex(item_json) FROM work_items
         UNION ALL SELECT 'run', run_id, hex(run_json) FROM work_runs
-        UNION ALL SELECT 'root', root_execution_id, hex(header_json) || head_hash FROM work_root_executions
+        UNION ALL SELECT 'root', root_execution_id, hex(header_json) || head_id FROM work_root_executions
         UNION ALL SELECT 'root_member', root_execution_id || member_hash, hex(member_json) FROM work_root_members
         UNION ALL SELECT 'claim', run_id, hex(claim_json) FROM work_claims
-        UNION ALL SELECT 'evidence', evidence_hash, run_id FROM work_run_evidence
+        UNION ALL SELECT 'evidence', evidence_id, run_id FROM work_run_evidence
         UNION ALL SELECT 'run_feed', feed_id, CAST(position AS TEXT) FROM work_feed_heads WHERE feed_kind = 'run_execution'
-        UNION ALL SELECT object_kind, object_hash, '' FROM objects
+        UNION ALL SELECT object_kind, object_id, '' FROM objects
             WHERE object_kind IN ('work_event', 'work_root_delta', 'work_checkpoint', 'work_evidence', 'completion_seal')
         ORDER BY 1, 2, 3").unwrap()
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap()
@@ -190,7 +190,7 @@ fn phoenix_note_under_completed_parent_survives_snapshot_and_rebuild() {
         )
         .unwrap();
     assert_eq!(execution_inventory(&database), before);
-    let hash: ObjectHash = serde_json::from_value(result.evidence.result).unwrap();
+    let hash: ObjectId = serde_json::from_value(result.evidence.result).unwrap();
     let store = SqliteStore::open(&database).unwrap();
     let recorded: WorkObservation = store.get(&hash).unwrap().unwrap();
     assert_eq!(recorded.work_id, child.work_id);
@@ -230,7 +230,7 @@ fn phoenix_note_under_completed_parent_survives_snapshot_and_rebuild() {
 
 fn assert_observation_repair(
     database: &std::path::Path,
-    hash: ObjectHash,
+    hash: ObjectId,
     recorded: WorkObservation,
 ) {
     let store = SqliteStore::open(database).unwrap();
@@ -276,8 +276,8 @@ fn phoenix_non_holder_note_recovers_core_commit_without_appending_again() {
     connection
         .execute_batch(
             "CREATE TRIGGER interrupt_note_receipt
-        BEFORE UPDATE OF result_hash ON work_protocol_attempts
-        WHEN NEW.operation = 'work_update:note' AND NEW.result_hash IS NOT NULL
+        BEFORE UPDATE OF result_id ON work_protocol_attempts
+        WHEN NEW.operation = 'work_update:note' AND NEW.result_id IS NOT NULL
         BEGIN SELECT RAISE(ABORT, 'test receipt interruption'); END;",
         )
         .unwrap();

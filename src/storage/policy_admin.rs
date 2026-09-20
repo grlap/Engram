@@ -4,7 +4,7 @@ use super::{
     CONTROL_POLICY_STATE_SCHEMA_VERSION, CONTROL_SCHEMA_VERSION, CanonicalObject, ControlAssurance,
     ControlDiagnostics, ControlPolicy, ControlPolicyOperationFingerprint,
     ControlPolicyUpdateReceipt, DateTime, EffectClass, MAX_CONTROL_POLICY_AUTHORITY_BYTES,
-    MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES, ObjectHash, ObligationRuleSet,
+    MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES, ObjectId, ObligationRuleSet,
     ObligationRuleSetUpdateReceipt, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
     ProjectPolicyOperation, Redactor, SqliteStore, StoreError, TransactionBehavior, Utc, enum_name,
     normalize_control_policy_actor, normalize_control_policy_idempotency_key,
@@ -19,7 +19,7 @@ impl SqliteStore {
     /// Activates a new immutable project control-policy version.
     ///
     /// Reapplying the active assurance is an idempotent no-op. Callers may
-    /// provide the policy hash they observed to prevent a concurrent operator
+    /// provide the policy id they observed to prevent a concurrent operator
     /// update from being overwritten.
     ///
     /// # Errors
@@ -38,7 +38,7 @@ impl SqliteStore {
         authorized_by: &ActorContext,
         reason: &str,
         idempotency_key: &str,
-        expected_policy: Option<&ObjectHash>,
+        expected_policy: Option<&ObjectId>,
         now: DateTime<Utc>,
         redactor: &R,
     ) -> Result<ControlPolicyUpdateReceipt, StoreError> {
@@ -82,21 +82,21 @@ impl SqliteStore {
         }
         let current = Self::verify_control_policy_history(&transaction)?;
         if let Some(expected) = expected_policy
-            && expected != &current.policy_hash
+            && expected != &current.policy_id
         {
             return Err(StoreError::ControlPolicyConflict {
                 expected: expected.clone(),
-                current: current.policy_hash,
+                current: current.policy_id,
             });
         }
         let (active_policy, _) =
-            Self::load_control_policy_version(&transaction, &current.policy_hash)?;
+            Self::load_control_policy_version(&transaction, &current.policy_id)?;
         if required_assurance == current.required_assurance {
             let receipt = ControlPolicyUpdateReceipt {
                 changed: false,
-                active_policy: current.policy_hash,
+                active_policy: current.policy_id,
                 previous_policy: active_policy.previous_policy,
-                authority: current.authority_hash,
+                authority: current.authority_id,
                 policy_epoch: current.epoch,
                 previous_required_assurance: current.required_assurance,
                 required_assurance: current.required_assurance,
@@ -121,7 +121,7 @@ impl SqliteStore {
             schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
             operation: ProjectPolicyOperation::SetRequiredAssurance,
             policy_epoch: ProjectPolicyEpoch(next_epoch),
-            previous_policy: Some(current.policy_hash.clone()),
+            previous_policy: Some(current.policy_id.clone()),
             required_assurance,
             obligation_rule_set: current.obligation_rule_set.clone(),
             acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
@@ -144,13 +144,13 @@ impl SqliteStore {
             schema_version: CONTROL_POLICY_SCHEMA_VERSION,
             control_schema_version: CONTROL_SCHEMA_VERSION,
             policy_epoch: ProjectPolicyEpoch(next_epoch),
-            previous_policy: Some(current.policy_hash.clone()),
+            previous_policy: Some(current.policy_id.clone()),
             required_assurance,
             supported_effects: current.supported_effects,
             grant_ttl_seconds: current.grant_ttl_seconds,
             obligation_rule_set: current.obligation_rule_set,
             acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
-            authority: authority_object.hash().clone(),
+            authority: authority_object.key().clone(),
             activated_at: now,
         };
         Self::validate_control_policy_shape(&policy)?;
@@ -158,12 +158,12 @@ impl SqliteStore {
         Self::insert_object(&transaction, "control_policy", &policy_object)?;
         transaction.execute(
             "INSERT INTO control_policy_versions (
-                 policy_hash, policy_epoch, authority_hash, policy_json
+                 policy_id, policy_epoch, authority_id, policy_json
              ) VALUES (?1, ?2, ?3, ?4)",
             params![
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
                 policy.policy_epoch.0,
-                authority_object.hash().as_str(),
+                authority_object.key().as_str(),
                 policy_object.bytes(),
             ],
         )?;
@@ -171,17 +171,17 @@ impl SqliteStore {
             "UPDATE control_policy_state SET
                  schema_version = ?1, policy_epoch = ?2,
                  required_assurance = ?3, supported_effects_json = ?4,
-                 grant_ttl_seconds = ?5, policy_hash = ?6
-             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+                 grant_ttl_seconds = ?5, policy_id = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_id = ?8",
             params![
                 CONTROL_POLICY_STATE_SCHEMA_VERSION,
                 policy.policy_epoch.0,
                 enum_name(policy.required_assurance)?,
                 serde_json::to_string(&policy.supported_effects)?,
                 policy.grant_ttl_seconds,
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
                 current.epoch.0,
-                current.policy_hash.as_str(),
+                current.policy_id.as_str(),
             ],
         )?;
         if changed != 1 {
@@ -190,17 +190,16 @@ impl SqliteStore {
             ));
         }
         let activated = Self::verify_control_policy_history(&transaction)?;
-        if activated.policy_hash != *policy_object.hash() || activated.epoch != policy.policy_epoch
-        {
+        if activated.policy_id != *policy_object.key() || activated.epoch != policy.policy_epoch {
             return Err(StoreError::InvalidControlProjection(
                 "activated control policy failed post-CAS integrity validation".into(),
             ));
         }
         let receipt = ControlPolicyUpdateReceipt {
             changed: true,
-            active_policy: policy_object.hash().clone(),
+            active_policy: policy_object.key().clone(),
             previous_policy: policy.previous_policy,
-            authority: authority_object.hash().clone(),
+            authority: authority_object.key().clone(),
             policy_epoch: policy.policy_epoch,
             previous_required_assurance: current.required_assurance,
             required_assurance: policy.required_assurance,
@@ -238,7 +237,7 @@ impl SqliteStore {
         authorized_by: &ActorContext,
         reason: &str,
         idempotency_key: &str,
-        expected_policy: Option<&ObjectHash>,
+        expected_policy: Option<&ObjectId>,
         now: DateTime<Utc>,
         redactor: &R,
     ) -> Result<ObligationRuleSetUpdateReceipt, StoreError> {
@@ -259,7 +258,7 @@ impl SqliteStore {
             CanonicalObject::freeze(&ControlPolicyOperationFingerprint::SetObligationRuleSet {
                 fingerprint_schema_version: CONTROL_POLICY_OPERATION_FINGERPRINT_SCHEMA_VERSION,
                 idempotency_key,
-                obligation_rule_set: requested.hash(),
+                obligation_rule_set: requested.key(),
                 authorized_by: &authorized_by,
                 reason: &reason,
                 expected_policy,
@@ -286,15 +285,15 @@ impl SqliteStore {
         }
         let current = Self::verify_control_policy_history(&transaction)?;
         if let Some(expected) = expected_policy
-            && expected != &current.policy_hash
+            && expected != &current.policy_id
         {
             return Err(StoreError::ControlPolicyConflict {
                 expected: expected.clone(),
-                current: current.policy_hash,
+                current: current.policy_id,
             });
         }
         let (active_policy, _) =
-            Self::load_control_policy_version(&transaction, &current.policy_hash)?;
+            Self::load_control_policy_version(&transaction, &current.policy_id)?;
         let current_rule_set = current.obligation_rule_set.clone();
         let current_bytes = Self::load_control_object_bytes(
             &transaction,
@@ -302,13 +301,12 @@ impl SqliteStore {
             "obligation_rule_set",
         )?;
         if current_bytes == requested.bytes() {
-            let (policy, _) =
-                Self::load_control_policy_version(&transaction, &current.policy_hash)?;
+            let (policy, _) = Self::load_control_policy_version(&transaction, &current.policy_id)?;
             let receipt = ObligationRuleSetUpdateReceipt {
                 changed: false,
-                active_policy: current.policy_hash,
+                active_policy: current.policy_id,
                 previous_policy: policy.previous_policy,
-                authority: current.authority_hash,
+                authority: current.authority_id,
                 policy_epoch: current.epoch,
                 previous_rule_set: Some(current_rule_set.clone()),
                 obligation_rule_set: current_rule_set,
@@ -330,10 +328,10 @@ impl SqliteStore {
         // equal content is found by comparing the stored bytes.
         let earlier: Option<String> = transaction
             .query_row(
-                "SELECT rule_set.object_hash
+                "SELECT rule_set.object_id
                  FROM control_policy_versions version
                  JOIN objects rule_set
-                   ON rule_set.object_hash =
+                   ON rule_set.object_id =
                       json_extract(version.policy_json, '$.obligation_rule_set')
                  WHERE rule_set.object_kind = 'obligation_rule_set'
                    AND rule_set.canonical_json = ?1
@@ -344,7 +342,7 @@ impl SqliteStore {
             .optional()?;
         let rule_set_object = match earlier {
             Some(id) => CanonicalObject::identified(
-                &ObjectHash::from_stored(id.clone()).ok_or(StoreError::InvalidStoredHash(id))?,
+                &ObjectId::from_stored(id.clone()).ok_or(StoreError::InvalidStoredKey(id))?,
                 rule_set,
             )?,
             None => CanonicalObject::mint(rule_set)?,
@@ -357,9 +355,9 @@ impl SqliteStore {
             schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
             operation: ProjectPolicyOperation::SetObligationRuleSet,
             policy_epoch: ProjectPolicyEpoch(next_epoch),
-            previous_policy: Some(current.policy_hash.clone()),
+            previous_policy: Some(current.policy_id.clone()),
             required_assurance: current.required_assurance,
-            obligation_rule_set: rule_set_object.hash().clone(),
+            obligation_rule_set: rule_set_object.key().clone(),
             acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
             authorized_by,
             reason,
@@ -380,13 +378,13 @@ impl SqliteStore {
             schema_version: CONTROL_POLICY_SCHEMA_VERSION,
             control_schema_version: CONTROL_SCHEMA_VERSION,
             policy_epoch: ProjectPolicyEpoch(next_epoch),
-            previous_policy: Some(current.policy_hash.clone()),
+            previous_policy: Some(current.policy_id.clone()),
             required_assurance: current.required_assurance,
             supported_effects: current.supported_effects,
             grant_ttl_seconds: current.grant_ttl_seconds,
-            obligation_rule_set: rule_set_object.hash().clone(),
+            obligation_rule_set: rule_set_object.key().clone(),
             acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
-            authority: authority_object.hash().clone(),
+            authority: authority_object.key().clone(),
             activated_at: now,
         };
         Self::validate_control_policy_shape(&policy)?;
@@ -394,12 +392,12 @@ impl SqliteStore {
         Self::insert_object(&transaction, "control_policy", &policy_object)?;
         transaction.execute(
             "INSERT INTO control_policy_versions (
-                 policy_hash, policy_epoch, authority_hash, policy_json
+                 policy_id, policy_epoch, authority_id, policy_json
              ) VALUES (?1, ?2, ?3, ?4)",
             params![
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
                 policy.policy_epoch.0,
-                authority_object.hash().as_str(),
+                authority_object.key().as_str(),
                 policy_object.bytes(),
             ],
         )?;
@@ -407,17 +405,17 @@ impl SqliteStore {
             "UPDATE control_policy_state SET
                  schema_version = ?1, policy_epoch = ?2,
                  required_assurance = ?3, supported_effects_json = ?4,
-                 grant_ttl_seconds = ?5, policy_hash = ?6
-             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+                 grant_ttl_seconds = ?5, policy_id = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_id = ?8",
             params![
                 CONTROL_POLICY_STATE_SCHEMA_VERSION,
                 policy.policy_epoch.0,
                 enum_name(policy.required_assurance)?,
                 serde_json::to_string(&policy.supported_effects)?,
                 policy.grant_ttl_seconds,
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
                 current.epoch.0,
-                current.policy_hash.as_str(),
+                current.policy_id.as_str(),
             ],
         )?;
         if changed != 1 {
@@ -426,8 +424,7 @@ impl SqliteStore {
             ));
         }
         let activated = Self::load_active_control_policy(&transaction)?;
-        if activated.policy_hash != *policy_object.hash() || activated.epoch != policy.policy_epoch
-        {
+        if activated.policy_id != *policy_object.key() || activated.epoch != policy.policy_epoch {
             return Err(StoreError::InvalidControlProjection(
                 "activated obligation rule-set policy failed post-CAS integrity validation".into(),
             ));
@@ -435,12 +432,12 @@ impl SqliteStore {
         Self::verify_control_policy_history(&transaction)?;
         let receipt = ObligationRuleSetUpdateReceipt {
             changed: true,
-            active_policy: policy_object.hash().clone(),
+            active_policy: policy_object.key().clone(),
             previous_policy: policy.previous_policy,
-            authority: authority_object.hash().clone(),
+            authority: authority_object.key().clone(),
             policy_epoch: policy.policy_epoch,
             previous_rule_set: Some(current_rule_set),
-            obligation_rule_set: rule_set_object.hash().clone(),
+            obligation_rule_set: rule_set_object.key().clone(),
             activated_at: policy.activated_at,
         };
         Self::persist_control_policy_operation(
@@ -475,7 +472,7 @@ impl SqliteStore {
         authorized_by: &ActorContext,
         reason: &str,
         idempotency_key: &str,
-        expected_policy: Option<&ObjectHash>,
+        expected_policy: Option<&ObjectId>,
         now: DateTime<Utc>,
         redactor: &R,
     ) -> Result<crate::storage::AcceptanceEvaluationPolicyUpdateReceipt, StoreError> {
@@ -523,22 +520,22 @@ impl SqliteStore {
         }
         let current = Self::verify_control_policy_history(&transaction)?;
         if let Some(expected) = expected_policy
-            && expected != &current.policy_hash
+            && expected != &current.policy_id
         {
             return Err(StoreError::ControlPolicyConflict {
                 expected: expected.clone(),
-                current: current.policy_hash,
+                current: current.policy_id,
             });
         }
         let (active_policy, _) =
-            Self::load_control_policy_version(&transaction, &current.policy_hash)?;
+            Self::load_control_policy_version(&transaction, &current.policy_id)?;
         let previous_acceptance_evaluation = active_policy.acceptance_evaluation.normalized();
         if previous_acceptance_evaluation == acceptance_evaluation {
             let receipt = crate::storage::AcceptanceEvaluationPolicyUpdateReceipt {
                 changed: false,
-                active_policy: current.policy_hash,
+                active_policy: current.policy_id,
                 previous_policy: active_policy.previous_policy,
-                authority: current.authority_hash,
+                authority: current.authority_id,
                 policy_epoch: current.epoch,
                 previous_acceptance_evaluation,
                 acceptance_evaluation,
@@ -563,7 +560,7 @@ impl SqliteStore {
             schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
             operation: ProjectPolicyOperation::SetAcceptanceEvaluation,
             policy_epoch: ProjectPolicyEpoch(next_epoch),
-            previous_policy: Some(current.policy_hash.clone()),
+            previous_policy: Some(current.policy_id.clone()),
             required_assurance: current.required_assurance,
             obligation_rule_set: current.obligation_rule_set.clone(),
             acceptance_evaluation: acceptance_evaluation.clone(),
@@ -586,13 +583,13 @@ impl SqliteStore {
             schema_version: CONTROL_POLICY_SCHEMA_VERSION,
             control_schema_version: CONTROL_SCHEMA_VERSION,
             policy_epoch: ProjectPolicyEpoch(next_epoch),
-            previous_policy: Some(current.policy_hash.clone()),
+            previous_policy: Some(current.policy_id.clone()),
             required_assurance: current.required_assurance,
             supported_effects: current.supported_effects,
             grant_ttl_seconds: current.grant_ttl_seconds,
             obligation_rule_set: current.obligation_rule_set.clone(),
             acceptance_evaluation: acceptance_evaluation.clone(),
-            authority: authority_object.hash().clone(),
+            authority: authority_object.key().clone(),
             activated_at: now,
         };
         Self::validate_control_policy_shape(&policy)?;
@@ -600,12 +597,12 @@ impl SqliteStore {
         Self::insert_object(&transaction, "control_policy", &policy_object)?;
         transaction.execute(
             "INSERT INTO control_policy_versions (
-                 policy_hash, policy_epoch, authority_hash, policy_json
+                 policy_id, policy_epoch, authority_id, policy_json
              ) VALUES (?1, ?2, ?3, ?4)",
             params![
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
                 policy.policy_epoch.0,
-                authority_object.hash().as_str(),
+                authority_object.key().as_str(),
                 policy_object.bytes(),
             ],
         )?;
@@ -613,17 +610,17 @@ impl SqliteStore {
             "UPDATE control_policy_state SET
                  schema_version = ?1, policy_epoch = ?2,
                  required_assurance = ?3, supported_effects_json = ?4,
-                 grant_ttl_seconds = ?5, policy_hash = ?6
-             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_hash = ?8",
+                 grant_ttl_seconds = ?5, policy_id = ?6
+             WHERE singleton = 1 AND policy_epoch = ?7 AND policy_id = ?8",
             params![
                 CONTROL_POLICY_STATE_SCHEMA_VERSION,
                 policy.policy_epoch.0,
                 enum_name(policy.required_assurance)?,
                 serde_json::to_string(&policy.supported_effects)?,
                 policy.grant_ttl_seconds,
-                policy_object.hash().as_str(),
+                policy_object.key().as_str(),
                 current.epoch.0,
-                current.policy_hash.as_str(),
+                current.policy_id.as_str(),
             ],
         )?;
         if changed != 1 {
@@ -632,8 +629,7 @@ impl SqliteStore {
             ));
         }
         let activated = Self::load_active_control_policy(&transaction)?;
-        if activated.policy_hash != *policy_object.hash() || activated.epoch != policy.policy_epoch
-        {
+        if activated.policy_id != *policy_object.key() || activated.epoch != policy.policy_epoch {
             return Err(StoreError::InvalidControlProjection(
                 "activated acceptance evaluation policy failed post-CAS integrity validation"
                     .into(),
@@ -642,9 +638,9 @@ impl SqliteStore {
         Self::verify_control_policy_history(&transaction)?;
         let receipt = crate::storage::AcceptanceEvaluationPolicyUpdateReceipt {
             changed: true,
-            active_policy: policy_object.hash().clone(),
+            active_policy: policy_object.key().clone(),
             previous_policy: policy.previous_policy,
-            authority: authority_object.hash().clone(),
+            authority: authority_object.key().clone(),
             policy_epoch: policy.policy_epoch,
             previous_acceptance_evaluation,
             acceptance_evaluation,
@@ -729,7 +725,7 @@ impl SqliteStore {
             .collect();
         Ok(ControlDiagnostics {
             control_schema_version: CONTROL_SCHEMA_VERSION,
-            active_policy: policy.policy_hash,
+            active_policy: policy.policy_id,
             policy_epoch: policy.epoch,
             required_assurance: policy.required_assurance,
             obligation_rule_set,

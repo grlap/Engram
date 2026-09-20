@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
-    ActorContext, CanonicalObject, ChildRequirement, GateEvidenceRecord, ObjectHash, ProjectId,
+    ActorContext, CanonicalObject, ChildRequirement, GateEvidenceRecord, ObjectId, ProjectId,
     Sensitivity, WorkBlockerKind, WorkEvidenceKind, WorkId, WorkItem, WorkItemKind, WorkLifecycle,
     WorkOrigin, WorkSourceSnapshot, storage::StoreError,
 };
@@ -56,7 +56,7 @@ pub struct WorkGraphSnapshotSectionCounts {
 #[serde(deny_unknown_fields)]
 pub struct WorkGraphSnapshotSummary {
     pub schema_version: u16,
-    pub format_fingerprint: ObjectHash,
+    pub format_fingerprint: ObjectId,
     pub project_id: ProjectId,
     pub as_of: WorkGraphSnapshotCut,
     pub widened: bool,
@@ -85,7 +85,7 @@ pub struct WorkGraphSnapshotItem {
     pub priority: i32,
     pub labels: Vec<String>,
     pub origin: WorkOrigin,
-    pub source_snapshot_id: Option<ObjectHash>,
+    pub source_snapshot_id: Option<ObjectId>,
     pub lifecycle: WorkLifecycle,
     pub prerequisites: Vec<WorkId>,
     pub superseded_by: Option<WorkId>,
@@ -144,7 +144,7 @@ pub struct WorkGraphSnapshotBlocker {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkGraphSnapshotSource {
-    pub hash: ObjectHash,
+    pub hash: ObjectId,
     pub canonical_json: Value,
 }
 
@@ -210,7 +210,8 @@ pub struct WorkGraphSnapshotHistory {
 pub enum WorkGraphSnapshotRecordPayload {
     /// Canonical restored records will be carried verbatim once load ships.
     Restored {
-        object_hash: ObjectHash,
+        #[serde(rename = "object_hash")]
+        object_id: ObjectId,
         canonical_json: Value,
     },
     Native {
@@ -284,7 +285,7 @@ pub struct RestoredRelationBasis {
 pub struct RestoredWorkEvidence {
     pub schema_version: u16,
     pub work_id: WorkId,
-    pub restored_record: ObjectHash,
+    pub restored_record: ObjectId,
     pub sequence: i64,
     pub summary: String,
     pub refs: Vec<String>,
@@ -357,7 +358,7 @@ pub struct WorkGraphSnapshotBody {
 pub struct WorkGraphSnapshotManifest {
     pub exported_at: DateTime<Utc>,
     pub exporting_build: String,
-    pub body_sha256: ObjectHash,
+    pub body_sha256: ObjectId,
     #[serde(flatten)]
     pub summary: WorkGraphSnapshotSummary,
 }
@@ -391,7 +392,7 @@ pub struct WorkGraphSnapshotSavedEvent {
     pub widened: bool,
     pub widening_reason: Option<String>,
     pub redacted: WorkGraphSnapshotRedactedCounts,
-    pub body_sha256: ObjectHash,
+    pub body_sha256: ObjectId,
     pub destination_kind: WorkGraphSnapshotDestinationKind,
     pub actor: ActorContext,
     pub attempted_at: DateTime<Utc>,
@@ -409,7 +410,7 @@ pub struct WorkGraphSnapshotLoadedEvent {
     pub widened: bool,
     pub widening_reason: Option<String>,
     pub redacted: WorkGraphSnapshotRedactedCounts,
-    pub body_sha256: ObjectHash,
+    pub body_sha256: ObjectId,
     pub actor: ActorContext,
     pub loaded_at: DateTime<Utc>,
 }
@@ -417,7 +418,7 @@ pub struct WorkGraphSnapshotLoadedEvent {
 /// Exact validation result shared by dry-run and committed load receipts.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WorkGraphSnapshotLoadPreview {
-    pub body_sha256: ObjectHash,
+    pub body_sha256: ObjectId,
     pub summary: WorkGraphSnapshotSummary,
     pub lifecycle_counts: WorkGraphSnapshotLifecycleCounts,
     pub refs: Vec<String>,
@@ -446,7 +447,7 @@ pub struct WorkGraphSnapshotLoadResult {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkGraphSnapshotExport {
     pub document: WorkGraphSnapshotDocument,
-    pub body_sha256: ObjectHash,
+    pub body_sha256: ObjectId,
     pub redactor_status: String,
 }
 
@@ -508,7 +509,7 @@ pub(crate) fn preflight_work_graph_snapshot_build(bytes: &[u8]) -> Result<(), St
         .ok_or_else(|| {
             StoreError::InvalidGraphSnapshot("snapshot schema version is invalid".into())
         })?;
-    let format_fingerprint: ObjectHash =
+    let format_fingerprint: ObjectId =
         serde_json::from_value(body.get("format_fingerprint").cloned().ok_or_else(|| {
             StoreError::InvalidGraphSnapshot("snapshot format fingerprint is missing".into())
         })?)
@@ -532,7 +533,7 @@ struct StrictDocument {
 #[serde(deny_unknown_fields)]
 struct StrictBody {
     schema_version: u16,
-    format_fingerprint: ObjectHash,
+    format_fingerprint: ObjectId,
     project_id: ProjectId,
     as_of: WorkGraphSnapshotCut,
     widened: bool,
@@ -552,9 +553,9 @@ struct StrictBody {
 struct StrictManifest {
     exported_at: DateTime<Utc>,
     exporting_build: String,
-    body_sha256: ObjectHash,
+    body_sha256: ObjectId,
     schema_version: u16,
-    format_fingerprint: ObjectHash,
+    format_fingerprint: ObjectId,
     project_id: ProjectId,
     as_of: WorkGraphSnapshotCut,
     widened: bool,
@@ -570,7 +571,8 @@ enum StrictRecord {
     Restored {
         work_id: WorkId,
         generation_index: usize,
-        object_hash: ObjectHash,
+        #[serde(rename = "object_hash")]
+        object_id: ObjectId,
         canonical_json: Value,
     },
     Native {
@@ -637,13 +639,13 @@ impl From<StrictRecord> for WorkGraphSnapshotRecord {
             StrictRecord::Restored {
                 work_id,
                 generation_index,
-                object_hash,
+                object_id,
                 canonical_json,
             } => Self {
                 work_id,
                 generation_index,
                 payload: WorkGraphSnapshotRecordPayload::Restored {
-                    object_hash,
+                    object_id,
                     canonical_json,
                 },
             },
@@ -728,10 +730,10 @@ pub fn work_graph_snapshot_exporting_build() -> String {
 /// # Errors
 ///
 /// Returns [`StoreError`] if the compiled definition cannot be canonicalized.
-pub fn work_graph_snapshot_format_fingerprint() -> Result<ObjectHash, StoreError> {
+pub fn work_graph_snapshot_format_fingerprint() -> Result<ObjectId, StoreError> {
     Ok(
         CanonicalObject::freeze(&compiled_work_graph_snapshot_format()?)?
-            .hash()
+            .key()
             .clone(),
     )
 }
@@ -849,10 +851,10 @@ mod tests {
         title: String,
     }
 
-    fn schema_hash<T: JsonSchema>() -> ObjectHash {
+    fn schema_hash<T: JsonSchema>() -> ObjectId {
         let mut schema = serde_json::to_value(schemars::schema_for!(T)).unwrap();
         strip_schema_annotations(&mut schema);
-        CanonicalObject::freeze(&schema).unwrap().hash().clone()
+        CanonicalObject::freeze(&schema).unwrap().key().clone()
     }
 
     #[test]

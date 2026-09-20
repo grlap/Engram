@@ -1094,7 +1094,7 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::Sqlite(_)
         | StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
-        | StoreError::InvalidStoredHash(_)
+        | StoreError::InvalidStoredKey(_)
         | StoreError::InvalidMemoryProjection(_)
         | StoreError::InvalidTaskBinding
         | StoreError::InvalidTaskProjection(_)

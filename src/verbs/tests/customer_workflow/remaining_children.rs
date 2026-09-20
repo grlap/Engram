@@ -495,8 +495,8 @@ fn done_retains_success_when_real_child_diagnostics_find_damaged_canonical_data(
     let connection = rusqlite::Connection::open(&path).unwrap();
     let (hash, original): (String, Vec<u8>) = connection
         .query_row(
-            "SELECT object.object_hash, object.canonical_json
-         FROM work_feed_entries entry JOIN objects object USING (object_hash)
+            "SELECT object.object_id, object.canonical_json
+         FROM work_feed_entries entry JOIN objects object USING (object_id)
          WHERE entry.feed_kind = 'project' AND entry.work_id = ?1
            AND entry.object_kind = 'work_event' ORDER BY entry.position DESC LIMIT 1",
             [child_id.0.to_string()],
@@ -512,7 +512,7 @@ fn done_retains_success_when_real_child_diagnostics_find_damaged_canonical_data(
             "CREATE TRIGGER damage_optional_event AFTER UPDATE ON work_items
          WHEN NEW.work_id = '{}' AND NEW.lifecycle = 'completed'
          BEGIN UPDATE objects SET canonical_json = CAST('{{}}' AS BLOB)
-         WHERE object_hash = '{hash}'; END;",
+         WHERE object_id = '{hash}'; END;",
             parent_id.0,
         ))
         .unwrap();
@@ -528,7 +528,7 @@ fn done_retains_success_when_real_child_diagnostics_find_damaged_canonical_data(
     assert!(!receipt.text().contains(&hash));
     let damaged: Vec<u8> = connection
         .query_row(
-            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
             [&hash],
             |row| row.get(0),
         )
@@ -545,7 +545,7 @@ fn done_retains_success_when_real_child_diagnostics_find_damaged_canonical_data(
         .unwrap();
     connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
             rusqlite::params![original, hash],
         )
         .unwrap();

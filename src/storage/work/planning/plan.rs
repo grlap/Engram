@@ -73,7 +73,7 @@ impl SqliteStore {
             &transaction,
             "propose_work_plan",
             &scoped_key,
-            intent.hash(),
+            intent.key(),
         )? {
             admit(&receipt)?;
             transaction.commit()?;
@@ -100,7 +100,7 @@ impl SqliteStore {
             &transaction,
             "propose_work_plan",
             &scoped_key,
-            intent.hash(),
+            intent.key(),
             &receipt,
         )?;
         transaction.commit()?;
@@ -130,7 +130,7 @@ fn plan_operation_key(
 ) -> Result<String, StoreError> {
     Ok(
         CanonicalObject::freeze(&("work_propose:plan", project, session, key))?
-            .hash()
+            .key()
             .as_str()
             .to_owned(),
     )

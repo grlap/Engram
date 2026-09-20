@@ -10,7 +10,7 @@ use super::{
     LeasePolicyInput, MAX_CONTROL_DELIVERY_BYTES, MAX_ENVIRONMENT_EVIDENCE_PER_CHECKPOINT,
     MAX_EXECUTION_OBSERVATIONS_PER_CHECKPOINT, MAX_TYPED_EVIDENCE_REF_BYTES,
     MAX_TYPED_EVIDENCE_REFS, MAX_TYPED_EVIDENCE_SUMMARY_BYTES,
-    MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, ObjectHash, OptionalExtension, PacketSafety,
+    MAX_VERIFICATION_EVIDENCE_PER_CHECKPOINT, ObjectId, OptionalExtension, PacketSafety,
     ParticipantMembership, Redactor, SCHEMA_VERSION, SessionId, SessionPhase, SqliteStore,
     StoreError, StoredControlSession, StoredWorkLeaseRow, TaskAdmissionEpoch, TaskBindReceipt,
     TaskId, TaskJoinedEvent, TaskStartedEvent, TaskState, Transaction, TransactionBehavior,
@@ -367,7 +367,7 @@ impl SqliteStore {
         if let Some(existing) = &existing
             && existing.bind_key == idempotency_key
         {
-            if existing.bind_intent_hash != bind_intent.hash().as_str() {
+            if existing.bind_intent_hash != bind_intent.key().as_str() {
                 return Err(StoreError::ControlSessionBindConflict(
                     idempotency_key.into(),
                 ));
@@ -507,7 +507,7 @@ impl SqliteStore {
                 routing_token,
                 serde_json::to_vec(actor)?,
                 idempotency_key,
-                bind_intent.hash().as_str(),
+                bind_intent.key().as_str(),
                 bind_intent.bytes(),
                 enum_name(assurance)?,
                 serde_json::to_string(mediated_effects)?,
@@ -673,7 +673,7 @@ impl SqliteStore {
             session_id,
             "lease_acquire",
             idempotency_key,
-            intent.hash(),
+            intent.key(),
         )? {
             transaction.commit()?;
             return Ok(replay);
@@ -818,14 +818,13 @@ impl SqliteStore {
         let lease_object = CanonicalObject::freeze(&lease)?;
         transaction.execute(
             "INSERT INTO control_work_leases (
-                 lease_id, task_id, holder_session_id, lease_hash, lease_json,
+                 lease_id, task_id, holder_session_id, lease_json,
                  state, expires_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)",
+             ) VALUES (?1, ?2, ?3, ?4, 'active', ?5)",
             params![
                 lease.lease_id,
                 lease.task_id.0.to_string(),
                 lease.holder.0,
-                lease_object.hash().as_str(),
                 lease_object.bytes(),
                 lease.expires_at.timestamp_millis(),
             ],
@@ -915,7 +914,7 @@ impl SqliteStore {
             session_id,
             "lease_release",
             idempotency_key,
-            intent.hash(),
+            intent.key(),
         )? {
             transaction.commit()?;
             return Ok(replay);
@@ -1024,7 +1023,7 @@ impl SqliteStore {
     ) -> Result<Vec<ChangeCursor>, StoreError> {
         let rows = {
             let mut statement = transaction.prepare(
-                "SELECT lease_id, task_id, holder_session_id, lease_hash, lease_json,
+                "SELECT lease_id, task_id, holder_session_id, lease_json,
                         state, expires_at_ms
                  FROM control_work_leases
                  WHERE holder_session_id = ?1 AND state = 'active'
@@ -1043,10 +1042,9 @@ impl SqliteStore {
                             lease_id: row.get(0)?,
                             task_id: row.get(1)?,
                             holder_session_id: row.get(2)?,
-                            lease_hash: row.get(3)?,
-                            lease_json: row.get(4)?,
-                            state: row.get(5)?,
-                            expires_at_ms: row.get(6)?,
+                            lease_json: row.get(3)?,
+                            state: row.get(4)?,
+                            expires_at_ms: row.get(5)?,
                         })
                     },
                 )?
@@ -1105,14 +1103,9 @@ impl SqliteStore {
         lease.revision += 1;
         let lease_object = CanonicalObject::freeze(&lease)?;
         let changed = transaction.execute(
-            "UPDATE control_work_leases SET lease_hash = ?2, lease_json = ?3, state = ?4
+            "UPDATE control_work_leases SET lease_json = ?2, state = ?3
              WHERE lease_id = ?1 AND state = 'active'",
-            params![
-                lease.lease_id,
-                lease_object.hash().as_str(),
-                lease_object.bytes(),
-                state
-            ],
+            params![lease.lease_id, lease_object.bytes(), state],
         )?;
         if changed != 1 {
             return Err(StoreError::InvalidControlProjection(format!(
@@ -1205,7 +1198,7 @@ impl SqliteStore {
             )
             .optional()?
         {
-            if stored_intent_hash != intent_object.hash().as_str() {
+            if stored_intent_hash != intent_object.key().as_str() {
                 return Err(StoreError::ControlTurnIdempotencyConflict(
                     intent.idempotency_key.clone(),
                 ));
@@ -1382,15 +1375,14 @@ impl SqliteStore {
                 let grant_object = CanonicalObject::freeze(&grant)?;
                 transaction.execute(
                     "INSERT INTO control_turn_grants (
-                         grant_id, session_id, task_id, request_key, grant_hash,
+                         grant_id, session_id, task_id, request_key,
                          grant_json, state, issued_at_ms, expires_at_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'issued', ?7, ?8)",
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, 'issued', ?6, ?7)",
                     params![
                         grant.grant_id,
                         session_id.0,
                         session.task_id.0.to_string(),
                         intent.idempotency_key,
-                        grant_object.hash().as_str(),
                         grant_object.bytes(),
                         now.timestamp_millis(),
                         grant.basis.expires_at.timestamp_millis(),
@@ -1431,9 +1423,9 @@ impl SqliteStore {
                 session_id.0,
                 session.task_id.0.to_string(),
                 intent.idempotency_key,
-                intent_object.hash().as_str(),
+                intent_object.key().as_str(),
                 intent_object.bytes(),
-                decision_object.hash().as_str(),
+                decision_object.key().as_str(),
                 decision_object.bytes(),
                 now.timestamp_millis(),
             ],
@@ -1446,7 +1438,7 @@ impl SqliteStore {
                 superseded_grant_id: superseded.grant_id,
                 superseded_request_key: superseded.request_key,
                 replacement_request_key: intent.idempotency_key.clone(),
-                replacement_decision: decision_object.hash().clone(),
+                replacement_decision: decision_object.key().clone(),
                 reason: TurnGrantSupersessionReason::FreshEvaluation,
                 superseded_at: now,
             };
@@ -1455,15 +1447,14 @@ impl SqliteStore {
                 "INSERT INTO control_turn_grant_supersessions (
                      superseded_grant_id, session_id, task_id,
                      replacement_request_key, replacement_decision_hash,
-                     supersession_hash, supersession_json, superseded_at_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                     supersession_json, superseded_at_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     transition.superseded_grant_id,
                     transition.session_id.0,
                     transition.task_id.0.to_string(),
                     transition.replacement_request_key,
                     transition.replacement_decision.as_str(),
-                    transition_object.hash().as_str(),
                     transition_object.bytes(),
                     transition.superseded_at.timestamp_millis(),
                 ],
@@ -1530,7 +1521,7 @@ impl SqliteStore {
             session_id,
             "turn_begin",
             idempotency_key,
-            intent_object.hash(),
+            intent_object.key(),
         )? {
             transaction.commit()?;
             return Ok(replay);
@@ -1858,7 +1849,7 @@ impl SqliteStore {
             session_id,
             "turn_checkpoint",
             idempotency_key,
-            intent_object.hash(),
+            intent_object.key(),
         )? {
             transaction.commit()?;
             return Ok(replay);
@@ -1970,14 +1961,14 @@ impl SqliteStore {
                 let mut verification_hashes = Vec::with_capacity(verification_evidence.len());
                 for input in verification_evidence {
                     let (producer_hash, producer) = match &input.producer_observation {
-                        ExecutionObservationReference::ObjectHash { object_hash } => (
-                            object_hash.clone(),
-                            work::load_control_execution_observation_on(&transaction, object_hash)?
+                        ExecutionObservationReference::ObjectId { object_id } => (
+                            object_id.clone(),
+                            work::load_control_execution_observation_on(&transaction, object_id)?
                                 .ok_or_else(|| {
-                                    StoreError::VerificationProducerObservationNotFound(
-                                        object_hash.to_string(),
-                                    )
-                                })?,
+                                StoreError::VerificationProducerObservationNotFound(
+                                    object_id.to_string(),
+                                )
+                            })?,
                         ),
                         ExecutionObservationReference::ObservationId { observation_id } => {
                             observation_records
@@ -2107,7 +2098,7 @@ impl SqliteStore {
                 ControlTurnCheckpointDecision::Checkpointed {
                     receipt: TurnCheckpointReceipt {
                         grant_id: grant_id.into(),
-                        checkpoint: event_object.hash().clone(),
+                        checkpoint: event_object.key().clone(),
                         execution_observations,
                         verification_evidence: verification_hashes,
                         environment_evidence: environment_hashes,
@@ -2205,7 +2196,7 @@ fn validate_typed_evidence_inputs<R: Redactor>(
     }
     for input in verification {
         match &input.producer_observation {
-            ExecutionObservationReference::ObjectHash { .. } => {}
+            ExecutionObservationReference::ObjectId { .. } => {}
             ExecutionObservationReference::ObservationId { observation_id } => {
                 let trimmed = observation_id.trim();
                 if trimmed.is_empty() || trimmed != observation_id || observation_id.len() > 256 {
@@ -2247,8 +2238,8 @@ fn validate_typed_evidence_inputs<R: Redactor>(
 
 fn environment_components_fingerprint(
     components: &EnvironmentComponents,
-) -> Result<ObjectHash, StoreError> {
-    Ok(CanonicalObject::freeze(components)?.hash().clone())
+) -> Result<ObjectId, StoreError> {
+    Ok(CanonicalObject::freeze(components)?.key().clone())
 }
 
 fn validate_environment_components<R: Redactor>(
@@ -2291,11 +2282,11 @@ fn validate_environment_components<R: Redactor>(
 pub(super) fn resolve_verification_environment_on(
     connection: &Connection,
     reference: Option<&EnvironmentEvidenceReference>,
-    same_checkpoint: &[(ObjectHash, EnvironmentEvidence)],
+    same_checkpoint: &[(ObjectId, EnvironmentEvidence)],
     project_id: &crate::domain::ProjectId,
     binding: &ControlWorkBinding,
     source_basis: &crate::domain::ExecutionSourceBasis,
-) -> Result<Option<ObjectHash>, StoreError> {
+) -> Result<Option<ObjectId>, StoreError> {
     let Some(reference) = reference else {
         return Ok(None);
     };
@@ -2304,10 +2295,10 @@ pub(super) fn resolve_verification_environment_on(
             .get(*index)
             .cloned()
             .ok_or_else(|| StoreError::EnvironmentEvidenceNotFound(index.to_string()))?,
-        EnvironmentEvidenceReference::ObjectHash { object_hash } => {
-            let evidence = work::load_control_environment_evidence_on(connection, object_hash)?
-                .ok_or_else(|| StoreError::EnvironmentEvidenceNotFound(object_hash.to_string()))?;
-            (object_hash.clone(), evidence)
+        EnvironmentEvidenceReference::ObjectId { object_id } => {
+            let evidence = work::load_control_environment_evidence_on(connection, object_id)?
+                .ok_or_else(|| StoreError::EnvironmentEvidenceNotFound(object_id.to_string()))?;
+            (object_id.clone(), evidence)
         }
     };
     let same_run = &evidence.project_id == project_id

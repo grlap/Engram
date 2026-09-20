@@ -1,7 +1,7 @@
 //! Exact pre-seal root addresses and their canonical completion-event binding.
 
 use super::{
-    CompletionSeal, Connection, ObjectHash, RootExecution, SqliteStore, StoreError, WorkEvent,
+    CompletionSeal, Connection, ObjectId, RootExecution, SqliteStore, StoreError, WorkEvent,
     WorkRunState, WorkTransition, load_typed_work_object, params,
 };
 
@@ -14,11 +14,11 @@ fn invalid() -> StoreError {
 pub(in crate::storage::work) fn validate_seal_root_event(
     connection: &Connection,
     seal: &CompletionSeal,
-    seal_hash: &ObjectHash,
+    seal_id: &ObjectId,
     event: &WorkEvent,
 ) -> Result<(), StoreError> {
     let after = event.root_execution.as_ref().ok_or_else(invalid)?;
-    if !matches!(&event.transition, WorkTransition::Completed { seal } if seal == seal_hash)
+    if !matches!(&event.transition, WorkTransition::Completed { seal } if seal == seal_id)
         || event.work_id != seal.work_id
         || event.root_id != seal.root_id
         || event.project_id != seal.root_execution.project_id
@@ -33,7 +33,7 @@ pub(in crate::storage::work) fn validate_seal_root_event(
                 && run.root_execution_id == seal.root_execution_id
                 && run.generation == seal.run_generation
                 && run.state == WorkRunState::Completed
-                && run.completion_seal.as_ref() == Some(seal_hash)
+                && run.completion_seal.as_ref() == Some(seal_id)
         })
     {
         return Err(invalid());
@@ -47,12 +47,12 @@ pub(in crate::storage::work) fn validate_seal_root_event(
 pub(in crate::storage::work) fn validate_stored_seal_root(
     connection: &Connection,
     seal: &CompletionSeal,
-    seal_hash: &ObjectHash,
+    seal_id: &ObjectId,
 ) -> Result<(), StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object.object_hash
+        "SELECT object.object_id
          FROM objects object INDEXED BY objects_work_event_work_id
-         JOIN work_feed_entries entry ON entry.object_hash = object.object_hash
+         JOIN work_feed_entries entry ON entry.object_id = object.object_id
          WHERE object.object_kind = 'work_event'
            AND json_extract(object.canonical_json, '$.work_id') = ?1
            AND json_extract(object.canonical_json, '$.transition.kind') = 'completed'
@@ -65,7 +65,7 @@ pub(in crate::storage::work) fn validate_stored_seal_root(
         .query_map(
             params![
                 seal.work_id.0.to_string(),
-                seal_hash.as_str(),
+                seal_id.as_str(),
                 seal.root_id.0.to_string()
             ],
             |row| row.get::<_, String>(0),
@@ -74,10 +74,10 @@ pub(in crate::storage::work) fn validate_stored_seal_root(
     let [stored] = hashes.as_slice() else {
         return Err(invalid());
     };
-    let event_hash = ObjectHash::from_stored(stored.clone())
-        .ok_or_else(|| StoreError::InvalidStoredHash(stored.clone()))?;
-    let event = load_typed_work_object(connection, &event_hash, "work_event")?;
-    validate_seal_root_event(connection, seal, seal_hash, &event)
+    let event_id = ObjectId::from_stored(stored.clone())
+        .ok_or_else(|| StoreError::InvalidStoredKey(stored.clone()))?;
+    let event = load_typed_work_object(connection, &event_id, "work_event")?;
+    validate_seal_root_event(connection, seal, seal_id, &event)
 }
 
 impl SqliteStore {
@@ -91,13 +91,13 @@ impl SqliteStore {
     /// missing, corrupt or bound to a different state.
     pub fn completion_root_execution(
         &self,
-        seal_hash: &ObjectHash,
+        seal_id: &ObjectId,
     ) -> Result<RootExecution, StoreError> {
         self.work_read_snapshot(|store| {
             let connection = &store.connection;
             let seal: CompletionSeal =
-                load_typed_work_object(connection, seal_hash, "completion_seal")?;
-            validate_stored_seal_root(connection, &seal, seal_hash)?;
+                load_typed_work_object(connection, seal_id, "completion_seal")?;
+            validate_stored_seal_root(connection, &seal, seal_id)?;
             super::super::root_state::resolve(connection, &seal.root_execution)
         })
     }

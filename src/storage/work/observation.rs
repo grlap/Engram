@@ -19,12 +19,12 @@ use crate::domain::{
     RecordWorkObservationRequest, SCHEMA_VERSION, WorkClaimState, WorkEvent, WorkId, WorkLifecycle,
     WorkObservation, WorkObservationBasis, is_non_holder_note_marker,
 };
-use crate::{CanonicalObject, ObjectHash, RestoredRecord, memory::Redactor};
+use crate::{CanonicalObject, ObjectId, RestoredRecord, memory::Redactor};
 
 pub(super) fn create_schema(connection: &Connection) -> Result<(), StoreError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS work_observations (
-             observation_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+             observation_id TEXT PRIMARY KEY REFERENCES objects(object_id),
              work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
              sequence INTEGER NOT NULL CHECK(sequence > 0),
              created_at_ms INTEGER NOT NULL,
@@ -52,7 +52,7 @@ impl SqliteStore {
             &transaction,
             "record_work_note",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(capture);
@@ -62,7 +62,7 @@ impl SqliteStore {
             &transaction,
             "record_work_note",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &capture,
         )?;
         transaction.commit()?;
@@ -73,7 +73,7 @@ impl SqliteStore {
         &self,
         work_id: WorkId,
         limit: usize,
-    ) -> Result<(usize, Vec<(ObjectHash, WorkObservation)>), StoreError> {
+    ) -> Result<(usize, Vec<(ObjectId, WorkObservation)>), StoreError> {
         let total: i64 = self.connection.query_row(
             "SELECT COUNT(*) FROM work_observations WHERE work_id = ?1",
             [work_id.0.to_string()],
@@ -123,12 +123,12 @@ fn prepare_work_observation_on(
     }
     // load_work_item verified this projected hash against the canonical
     // feed head. Keep its original bytes' identity, never re-freeze it.
-    let event_hash: Option<String> = transaction.query_row(
-        "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+    let event_id: Option<String> = transaction.query_row(
+        "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
         [item.work_id.0.to_string()],
         |row| row.get(0),
     )?;
-    let basis = if let Some(hash) = event_hash {
+    let basis = if let Some(hash) = event_id {
         WorkObservationBasis::NativeEvent {
             event: parse_hash(hash)?,
         }
@@ -173,7 +173,7 @@ fn persist_work_observation_on(
 ) -> Result<WorkNoteCapture, StoreError> {
     let object = CanonicalObject::mint(observation)?;
     SqliteStore::insert_object(transaction, "work_observation", &object)?;
-    insert_projection(transaction, object.hash(), observation)?;
+    insert_projection(transaction, object.key(), observation)?;
     append_to_work_feeds(
         transaction,
         &observation.project_id,
@@ -185,7 +185,7 @@ fn persist_work_observation_on(
     )?;
     Ok(WorkNoteCapture {
         non_holder: true,
-        evidence: object.hash().clone(),
+        evidence: object.key().clone(),
         checkpoint: None,
     })
 }
@@ -244,10 +244,10 @@ pub(in crate::storage) fn observations_on(
     connection: &Connection,
     work_id: WorkId,
     limit: usize,
-) -> Result<Vec<(ObjectHash, WorkObservation)>, StoreError> {
+) -> Result<Vec<(ObjectId, WorkObservation)>, StoreError> {
     let rows = connection
         .prepare(
-            "SELECT observation_hash, sequence, created_at_ms FROM work_observations
+            "SELECT observation_id, sequence, created_at_ms FROM work_observations
          WHERE work_id = ?1 ORDER BY sequence DESC LIMIT ?2",
         )?
         .query_map(
@@ -341,12 +341,12 @@ fn validate_basis(connection: &Connection, value: &WorkObservation) -> Result<()
 
 fn insert_projection(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     value: &WorkObservation,
 ) -> Result<(), StoreError> {
     connection.execute(
         "INSERT INTO work_observations
-        (observation_hash, work_id, sequence, created_at_ms) VALUES (?1, ?2, ?3, ?4)",
+        (observation_id, work_id, sequence, created_at_ms) VALUES (?1, ?2, ?3, ?4)",
         params![
             hash.as_str(),
             value.work_id.0.to_string(),
@@ -360,8 +360,8 @@ fn insert_projection(
 pub(super) fn rebuild(connection: &Connection) -> Result<(), StoreError> {
     let rows = connection
         .prepare(
-            "SELECT object_hash, canonical_json FROM objects
-        WHERE object_kind = 'work_observation' ORDER BY object_hash",
+            "SELECT object_id, canonical_json FROM objects
+        WHERE object_kind = 'work_observation' ORDER BY object_id",
         )?
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -383,8 +383,8 @@ pub(super) fn verify_rows(
 ) -> Result<(), StoreError> {
     let rows = connection
         .prepare(
-            "SELECT object_hash FROM objects WHERE object_kind = 'work_observation'
-        UNION SELECT observation_hash FROM work_observations ORDER BY 1",
+            "SELECT object_id FROM objects WHERE object_kind = 'work_observation'
+        UNION SELECT observation_id FROM work_observations ORDER BY 1",
         )?
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -402,7 +402,7 @@ pub(super) fn verify_rows(
                 .or_default()
                 .insert(value.sequence, positions);
             connection.query_row("SELECT EXISTS(SELECT 1 FROM work_observations
-                WHERE observation_hash = ?1 AND work_id = ?2 AND sequence = ?3 AND created_at_ms = ?4)",
+                WHERE observation_id = ?1 AND work_id = ?2 AND sequence = ?3 AND created_at_ms = ?4)",
                 params![hash.as_str(), value.work_id.0.to_string(), value.sequence, value.created_at.timestamp_millis()],
                 |row| row.get(0)).map_err(StoreError::from)
         })();
@@ -434,7 +434,7 @@ pub(super) fn verify_rows(
 
 fn observation_feed_positions(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     value: &WorkObservation,
 ) -> Result<[i64; 2], StoreError> {
     let mut positions = [0; 2];
@@ -445,11 +445,11 @@ fn observation_feed_positions(
     .into_iter()
     .enumerate()
     {
-        let position = |hash: &ObjectHash| -> Result<i64, StoreError> {
+        let position = |hash: &ObjectId| -> Result<i64, StoreError> {
             connection
                 .query_row(
                     "SELECT position FROM work_feed_entries
-                 WHERE feed_kind = ?1 AND feed_id = ?2 AND object_hash = ?3",
+                 WHERE feed_kind = ?1 AND feed_id = ?2 AND object_id = ?3",
                     params![kind, id, hash.as_str()],
                     |row| row.get(0),
                 )
@@ -465,8 +465,8 @@ fn observation_feed_positions(
     Ok(positions)
 }
 
-fn parse_hash(value: String) -> Result<ObjectHash, StoreError> {
-    ObjectHash::from_stored(value.clone()).ok_or(StoreError::InvalidStoredHash(value))
+fn parse_hash(value: String) -> Result<ObjectId, StoreError> {
+    ObjectId::from_stored(value.clone()).ok_or(StoreError::InvalidStoredKey(value))
 }
 
 fn invalid(message: &str) -> StoreError {

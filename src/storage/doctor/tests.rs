@@ -23,7 +23,7 @@ fn integrity_scanner_covers_enforced_control_records() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "integrity-turn-a".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"integrity-turn-a"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"integrity-turn-a"),
                 purpose: crate::domain::TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -190,21 +190,21 @@ fn diagnostics_only_policy_recovery_reports_missing_and_malformed_columns_withou
                      required_assurance TEXT NOT NULL,
                      supported_effects_json TEXT NOT NULL,
                      grant_ttl_seconds INTEGER NOT NULL,
-                     policy_hash TEXT REFERENCES objects(object_hash)
+                     policy_id TEXT REFERENCES objects(object_id)
                  ) STRICT;"
             ))
             .expect("create malformed policy state");
         let (insert_columns, select_columns) = policy_epoch_projection.map_or_else(
             || {
                 (
-                    "singleton, schema_version, required_assurance, supported_effects_json, grant_ttl_seconds, policy_hash".to_owned(),
-                    "singleton, schema_version, required_assurance, supported_effects_json, grant_ttl_seconds, policy_hash".to_owned(),
+                    "singleton, schema_version, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id".to_owned(),
+                    "singleton, schema_version, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id".to_owned(),
                 )
             },
             |projection| {
                 (
-                    "singleton, schema_version, policy_epoch, required_assurance, supported_effects_json, grant_ttl_seconds, policy_hash".to_owned(),
-                    format!("singleton, schema_version, {projection}, required_assurance, supported_effects_json, grant_ttl_seconds, policy_hash"),
+                    "singleton, schema_version, policy_epoch, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id".to_owned(),
+                    format!("singleton, schema_version, {projection}, required_assurance, supported_effects_json, grant_ttl_seconds, policy_id"),
                 )
             },
         );
@@ -258,7 +258,7 @@ fn missing_policy_rows_are_reported_as_integrity_records() {
     version_store
         .connection
         .execute(
-            "DELETE FROM control_policy_versions WHERE policy_hash = ?1",
+            "DELETE FROM control_policy_versions WHERE policy_id = ?1",
             [active.as_str()],
         )
         .expect("delete projected version row");
@@ -283,7 +283,7 @@ fn missing_policy_rows_are_reported_as_integrity_records() {
     object_store
         .connection
         .execute(
-            "DELETE FROM objects WHERE object_hash = ?1",
+            "DELETE FROM objects WHERE object_id = ?1",
             [active.as_str()],
         )
         .expect("delete canonical policy object");

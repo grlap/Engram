@@ -79,7 +79,7 @@ contract and keep the change narrow.
   state, or agent-private scratch. Portable executable shared state must be
   transitively closed; excluded provenance uses explicit stubs/placeholders,
   never dangling references or rewritten canonical bytes.
-- `report_ready` freezes report bytes and hash. A separately requested
+- `report_ready` freezes report bytes and fingerprint. A separately requested
   publication freezes target and idempotency key. Failed publication returns
   to the same frozen report; revision creates a superseding report and intent.
 - No adapter receipt means the task is not published.
@@ -91,7 +91,8 @@ contract and keep the change narrow.
 ## Ownership Boundaries
 
 - `domain`: substrate-neutral meaning and state transitions.
-- `canonical`: serialization and content identity only.
+- `canonical`: serialization, minted record ids (`ObjectId`), and compared
+  content fingerprints; never derive a record id from content.
 - `storage`: the façade and shared persistence types, with open/schema guards,
   canonical objects/task feeds, task memory/notes, project memory, control
   runtime/support, policy administration, and doctor/integrity split into
@@ -429,7 +430,7 @@ Rules that matter:
   with "no evidence linked to this criterion", with exact omissions when
   bounded. This is not a claim that the work has no evidence. Summary and
   shared acceptance notes do not link artifacts to individual criteria;
-  absence does not refuse completion, and no new hash obligation is imposed.
+  absence does not refuse completion, and no new identity obligation is imposed.
   Old frozen bindings remain exactly as recorded. Do not replace rejection
   with false completion.
 - To link existing evidence, read `show REF` for one-based acceptance positions

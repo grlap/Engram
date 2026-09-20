@@ -23,7 +23,7 @@ use crate::{
     ClaimWorkRequest, ClearWorkBlockerRequest, CompleteWorkRequest, CompletionDrainAttestation,
     CompletionSeal, ControlWorkBinding, CreateWorkRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS,
     DecomposeWorkRequest, DevelopmentNoopRedactor, DisposeWorkRequest, EnvironmentEvidence,
-    ExecutionObservation, FeedId, FeedPosition, MemorySummary, MemoryVersion, ObjectHash,
+    ExecutionObservation, FeedId, FeedPosition, MemorySummary, MemoryVersion, ObjectId,
     OfferWorkHandoffRequest, ProjectId, ReadyWork, RecordWorkEvidenceRequest, ReleaseWorkRequest,
     ReopenWorkRequest, RestoredWorkEvidence, ReviseWorkRequest, SessionId, SqliteStore, TaskId,
     VerificationEvidence, VerificationKind, VerificationResult, WaiveRequiredChildRequest,
@@ -393,13 +393,13 @@ struct CompletionEvidencePlan<'a> {
     work: &'a WorkItem,
     claim: &'a WorkClaim,
     capture: Option<&'a WorkCompletionCaptureInput>,
-    evidence: Vec<ObjectHash>,
+    evidence: Vec<ObjectId>,
     base_key: &'a str,
     now: DateTime<Utc>,
 }
 
 struct PreparedCompletionEvidence {
-    evidence: Vec<ObjectHash>,
+    evidence: Vec<ObjectId>,
     attempt_key: String,
 }
 
@@ -487,12 +487,12 @@ struct WorkDerivedKey<'a> {
     focused_work_id: Option<WorkId>,
     /// Hash of the focused work/claim/handoff basis, excluding sliding claim
     /// expiry and claim revision, so renewal does not defeat exact replay.
-    basis: &'a ObjectHash,
+    basis: &'a ObjectId,
     /// Whether the basis claim is still live at call time, so a repeated
     /// call after expiry is a new attempt even though the projection bytes
     /// did not change.
     claim_live: Option<bool>,
-    intent: &'a ObjectHash,
+    intent: &'a ObjectId,
 }
 
 /// Generates the reserved, time-bearing identity used when the shell did not
@@ -727,7 +727,7 @@ fn completion_attempt_key(
         base_key,
         run_feed_cut,
     })?;
-    Ok(format!("attempt:{}", key.hash().as_str()))
+    Ok(format!("attempt:{}", key.key().as_str()))
 }
 
 fn completion_capture_key(
@@ -743,7 +743,7 @@ fn completion_capture_key(
         claim_id: claim.claim_id,
         claim_fence: claim.fence,
     })?;
-    Ok(format!("capture:{}", key.hash().as_str()))
+    Ok(format!("capture:{}", key.key().as_str()))
 }
 
 fn ensure_completion_replay_target(
@@ -847,18 +847,17 @@ fn completion_command_ref_from_resolution(
     }
 }
 
-fn parse_hashes(values: &[String]) -> Result<Vec<ObjectHash>, StoreError> {
+fn parse_hashes(values: &[String]) -> Result<Vec<ObjectId>, StoreError> {
     values
         .iter()
         .map(|value| {
-            ObjectHash::from_str(value)
-                .map_err(|message| StoreError::InvalidWork(message.to_owned()))
+            ObjectId::from_str(value).map_err(|message| StoreError::InvalidWork(message.to_owned()))
         })
         .collect()
 }
 
-fn parse_hash(value: &str) -> Result<ObjectHash, StoreError> {
-    ObjectHash::from_str(value).map_err(|message| StoreError::InvalidWork(message.to_owned()))
+fn parse_hash(value: &str) -> Result<ObjectId, StoreError> {
+    ObjectId::from_str(value).map_err(|message| StoreError::InvalidWork(message.to_owned()))
 }
 
 fn work_delivery_boundary(
@@ -916,11 +915,11 @@ fn verified_bounded_work_changes(
             )));
         }
         let object = store
-            .get::<serde_json::Value>(&entry.object_hash)?
+            .get::<serde_json::Value>(&entry.object_id)?
             .ok_or_else(|| {
                 StoreError::InvalidWorkProjection(format!(
                     "project-feed object {} is missing",
-                    entry.object_hash
+                    entry.object_id
                 ))
             })?;
         let from_current_session = source_is_from_session(&entry.object_kind, &object, session_id);
@@ -1020,7 +1019,7 @@ fn verify_staged_work_change_page(
     for (entry, change) in entries.iter().zip(&page.changes) {
         if entry.position != change.entry.position
             || entry.object_kind != change.entry.object_kind
-            || entry.object_hash != change.entry.object_hash
+            || entry.object_id != change.entry.object_id
         {
             return Err(StoreError::InvalidWorkProjection(
                 "staged work delivery payload does not bind its exact dense source interval".into(),
@@ -1029,11 +1028,11 @@ fn verify_staged_work_change_page(
     }
     for (entry, change) in entries.into_iter().zip(&mut page.changes) {
         let object = store
-            .get::<serde_json::Value>(&entry.object_hash)?
+            .get::<serde_json::Value>(&entry.object_id)?
             .ok_or_else(|| {
                 StoreError::InvalidWorkProjection(format!(
                     "staged project-feed object {} is missing",
-                    entry.object_hash
+                    entry.object_id
                 ))
             })?;
         let expected = matches!(&change.delivery, WorkChangeProjection::Visible(_))
@@ -1366,7 +1365,7 @@ fn agent_change_object(
                     evidence
                         .environment
                         .as_ref()
-                        .map_or("none", ObjectHash::as_str)
+                        .map_or("none", ObjectId::as_str)
                 )),
                 actor_id: Some(compact_text(&evidence.actor.actor_id)),
                 actor_context: projected_actor_context(&evidence.actor),
@@ -1609,11 +1608,11 @@ fn obligation_resolution_change_summary(
 
 fn load_contradiction_version(
     store: &SqliteStore,
-    version_hash: &ObjectHash,
+    version_id: &ObjectId,
 ) -> Result<MemoryVersion, StoreError> {
-    store.get::<MemoryVersion>(version_hash)?.ok_or_else(|| {
+    store.get::<MemoryVersion>(version_id)?.ok_or_else(|| {
         StoreError::InvalidWorkProjection(format!(
-            "memory contradiction references missing version {version_hash}"
+            "memory contradiction references missing version {version_id}"
         ))
     })
 }

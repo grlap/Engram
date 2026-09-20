@@ -151,7 +151,7 @@ Free-text criteria are judged as before.
 
 A `RootExecution` is the aggregate execution generation for one root work
 item. It owns the expected contributor roster, membership of current child
-runs, required child `CompletionSeal` hashes, reason-attributed waivers for
+runs, required child `CompletionSeal` ids, reason-attributed waivers for
 cancelled or superseded required children, root-level decisions and other
 waivers, and the root completion barrier. It does not own working memory.
 Each capture retains its focused `WorkItem` as the provenance subject, while
@@ -398,13 +398,13 @@ but never enters the old seal, mutates root contributions, adds a completion
 barrier, or makes completed work active again.
 
 New seals also declare environment schema V1 and bind the exact sorted,
-distinct set of environment-evidence hashes visible at the same dense cut.
-The set is capped at 64 and contains hashes only: canonical toolchain,
+distinct set of environment-evidence ids visible at the same dense cut.
+The set is capped at 64 and contains ids only: canonical toolchain,
 sandbox/image, workspace, and capability-map components remain in their own
 evidence objects. Every accepted seal carries the current environment-schema
 binding. Environment identity is currently audit
 evidence; the built-in test obligation does not yet require a particular
-environment hash.
+environment id.
 
 Optional report assembly therefore uses a distinct post-completion authority:
 
@@ -539,8 +539,8 @@ when actual completion accepts their restored completion proofs.
 Every completed run has a `CompletionSeal`: accepted work revision, run and
 claim fences, dense completion-cut position, executor checkpoint state,
 reconciled action outcomes, released/transferred resource leases, acceptance
-results, evidence hashes, and the exact terminal obligation basis. The shipped
-seal also carries the exact bounded environment-evidence hash set at that cut.
+results, evidence ids, and the exact terminal obligation basis. The shipped
+seal also carries the exact bounded environment-evidence id set at that cut.
 `work_complete` requires the linked
 action-outcome and resource-lease drain sets to be empty, terminalizes the work
 claim, and seals atomically. A root seal also consumes each required child seal
@@ -619,7 +619,7 @@ revision and idempotency key.
   The transaction checks lifecycle before creating any child; existing
   children, claims, and completion fences are unchanged.
 - A completion binds the accepted work revision, run generation, claim fence,
-  latest checkpoint cursor, acceptance results, and evidence hashes. Any
+  latest checkpoint cursor, acceptance results, and evidence ids. Any
   change to those facts makes an unconsumed completion decision stale.
 - A run has one ordinary executor and at most one live ordinary work claim. A
   session may inspect or hold claims on multiple items under policy, but each
@@ -657,7 +657,7 @@ claim-validated mutation can verify the current relation projection without
 replaying the item's whole history. Project, root-work, and run-execution
 feeds each allocate a dense per-feed position in the event transaction; their
 work-event entries carry a verified item id for bounded exact-item lookup. The
-item projection also retains the latest event hash; operational reads require
+item projection also retains the latest event id; operational reads require
 it to equal the newest indexed feed entry, and a schema trigger prevents any
 work-event append without an item id. Delivery pages have their own dense
 per-session sequence. A position is always carried with its feed kind and id.
@@ -1018,7 +1018,7 @@ revisions and fences, and host-only run, claim, control, obligation, seal, and
 memory-version fields. Active core
 blockers include their id, type, and compact detail; when exactly one blocker
 is active the agent word infers it for `unblock`. Authorized memory bodies
-remain available on demand through their version hash on host-only reads.
+remain available on demand through their version id on host-only reads.
 An explicit `show REF --notes` / MCP `notes: true` substitutes complete note
 bodies and references in a newest-selected window, rendered oldest to newest
 within the window. Structured gate evidence is excluded by default so later
@@ -1149,8 +1149,8 @@ and each is bound to the exact root/work/run/claim fence and source revision.
 Verification derives its result, check fingerprint, producer session, and
 timestamps from a canonical execution observation; agent prose cannot promote
 itself into verification. The agent protocol can only attach an existing typed
-hash through
-`work_update { kind: "evidence", attach: { evidence: <hash> }, ... }`.
+id through
+`work_update { kind: "evidence", attach: { evidence: <id> }, ... }`.
 Attach is a validated reference operation and never duplicates the canonical
 object or its project/root/run feed entries. Focus and delta summaries expose
 the typed kind and compact binding fields without granting the agent a minting
@@ -1158,11 +1158,11 @@ surface. A later mutation at the evaluated run-feed cut makes older
 verification stale even when it came from another workspace with the same
 previous content fingerprint.
 
-Every execution observation freezes the canonical obligation-rule-set hash
+Every execution observation freezes the canonical obligation-rule-set id
 selected by the begun grant's project-policy epoch. The built-in set turns each
 source-changing observation into one immutable test obligation on the run,
 independent of action outcome and source-basis availability. Each definition
-repeats the exact rule-set hash, rule identity/version, trigger, and requirement;
+repeats the exact rule-set id, rule identity/version, trigger, and requirement;
 changing the active policy affects only later observations and never
 reinterprets an existing definition. Definitions and their later
 satisfied/waived resolutions
@@ -1173,7 +1173,7 @@ earlier open definitions, but a basisless latest mutation makes the open set
 waiver-only until a newer basis-bearing mutation and passed test arrive.
 
 The page exposes immutable obligation and definition identities, the required
-selected rule-set hash, rule, requirement, trigger, state, terminal
+selected rule-set id, rule, requirement, trigger, state, terminal
 evidence/resolution, and deterministic typed guidance. Neither MCP nor
 `work_update` accepts a waiver. The `engram authority waive-obligation` shell
 command is an operator-intended convention, not an authenticated boundary: it
@@ -1188,7 +1188,7 @@ have a satisfied or waived resolution at or before that cut. Otherwise
 `work_complete` returns the typed `open_work_obligations` result with the
 shared page and remedy: record matching host verification, checkpoint it, then
 complete; or request a host/operator waiver. A successful seal stores only
-canonical hashes; its page and a fresh session's later focus are reconstructed
+canonical ids; its page and a fresh session's later focus are reconstructed
 from that immutable basis.
 
 Every recoverable completion refusal also carries a typed `recovery` object.
@@ -1428,7 +1428,7 @@ Required sibling under the same parent and root-execution generation, with a
 native completion seal. The shared resolution rule drives `done`, readiness,
 and safe inspection. Parent seals record sparse `required_child_resolutions`
 entries tagged `resolved_by_successor`, binding the original child id/revision,
-canonical attributed supersession event, and successor id/seal hash. This is
+canonical attributed supersession event, and successor id/seal id. This is
 derived accounting, never a synthesized waiver; existing seals remain frozen
 and gain no retroactive entries. `show CHILD`, parent child rows, and
 `ls --under PARENT --required --all` say “resolved by successor”; resolved
@@ -1918,7 +1918,7 @@ Before Engram claims Beads-equivalent off-host durability, it should ship:
   shipped [work-graph snapshot](work-graph-snapshot.md);
 - manifest hashes and a previewed restore path, exercised in CI;
 - referential-integrity verification for work/events/edges/evidence plus
-  projection rebuild-and-compare checks, not only canonical object hashes;
+  projection rebuild-and-compare checks, not only canonical object ids;
 - crash tests proving event/cursor ordering and atomic packet/head snapshots;
 - configured-backup/portable freshness surfaced by `engram doctor`; and
 - a documented recovery-point objective for each durability mode, with no

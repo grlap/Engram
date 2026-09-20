@@ -742,8 +742,8 @@ mod tests {
         corruptor
             .execute(
                 "UPDATE control_policy_versions SET policy_json = X'7B7D'
-                 WHERE policy_hash = (
-                     SELECT policy_hash FROM control_policy_state WHERE singleton = 1
+                 WHERE policy_id = (
+                     SELECT policy_id FROM control_policy_state WHERE singleton = 1
                  )",
                 [],
             )

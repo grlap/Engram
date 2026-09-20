@@ -32,10 +32,10 @@ fn task_cursor_arithmetic_refuses_overflow() {
         transaction.rollback().expect("rollback cursor snapshot");
     }
 
-    let (object_kind, object_hash) = store
+    let (object_kind, object_id) = store
         .connection
         .query_row(
-            "SELECT object_kind, object_hash FROM objects ORDER BY object_hash LIMIT 1",
+            "SELECT object_kind, object_id FROM objects ORDER BY object_id LIMIT 1",
             [],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
@@ -50,13 +50,13 @@ fn task_cursor_arithmetic_refuses_overflow() {
     store
         .connection
         .execute(
-            "INSERT INTO task_changes (task_id, task_cursor, object_kind, object_hash)
+            "INSERT INTO task_changes (task_id, task_cursor, object_kind, object_id)
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 binding.status.task_id.0.to_string(),
                 i64::MAX,
                 object_kind,
-                object_hash
+                object_id
             ],
         )
         .expect("install maximum cursor");
@@ -84,9 +84,9 @@ fn append_mints_a_record_per_call_and_round_trips_content() {
 
     let first = store.append("memory_version", &value).unwrap();
     let second = store.append("memory_version", &value).unwrap();
-    let loaded: Example = store.get(first.hash()).unwrap().unwrap();
+    let loaded: Example = store.get(first.key()).unwrap().unwrap();
 
-    assert_ne!(first.hash(), second.hash());
+    assert_ne!(first.key(), second.key());
     assert_eq!(first.bytes(), second.bytes());
     assert_eq!(loaded, value);
     assert_eq!(
@@ -124,7 +124,7 @@ fn a_stored_id_keeps_its_kind_and_bytes() {
         Err(StoreError::ObjectKindMismatch { .. })
     ));
     let other = CanonicalObject::identified(
-        stored.hash(),
+        stored.key(),
         &Example {
             title: "Decision".into(),
             body: "Different content under a taken id.".into(),
@@ -166,10 +166,10 @@ fn task_changes_are_ordered() {
             cursor: second_cursor,
             task_id,
             object_kind: "memory_version".into(),
-            object_hash: second_object.hash().clone(),
+            object_id: second_object.key().clone(),
         }]
     );
-    assert_ne!(first_object.hash(), second_object.hash());
+    assert_ne!(first_object.key(), second_object.key());
 }
 
 #[test]
@@ -232,7 +232,7 @@ fn task_local_cursors_keep_exact_host_delivery_dense_across_interleaved_tasks() 
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "interleaved-turn-a".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"interleaved-turn-a"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"interleaved-turn-a"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -299,7 +299,7 @@ fn host_delivery_refuses_a_gap_in_the_task_local_feed() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "gapped-turn".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"gapped-turn"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"gapped-turn"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -333,7 +333,7 @@ fn another_agents_private_capture_does_not_invalidate_or_enter_a_grant() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "owner-scoped-private-grant".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"owner-scoped-private-grant"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"owner-scoped-private-grant"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -411,7 +411,7 @@ fn recovery_turns_drain_a_bounded_backlog_before_ordinary_work_resumes() {
                 &binding.routing_token,
                 &TurnIntent {
                     idempotency_key: "ordinary-before-recovery".into(),
-                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                    intent_fingerprint: ObjectId::from_canonical_bytes(
                         b"ordinary-before-recovery",
                     ),
                     purpose: TurnPurpose::Ordinary,
@@ -438,7 +438,7 @@ fn recovery_turns_drain_a_bounded_backlog_before_ordinary_work_resumes() {
                 &binding.routing_token,
                 &TurnIntent {
                     idempotency_key: format!("recovery-page-{pages}"),
-                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                    intent_fingerprint: ObjectId::from_canonical_bytes(
                         format!("recovery-page-{pages}").as_bytes(),
                     ),
                     purpose: TurnPurpose::Recovery,
@@ -506,7 +506,7 @@ fn recovery_turns_drain_a_bounded_backlog_before_ordinary_work_resumes() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "ordinary-after-recovery".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"ordinary-after-recovery"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"ordinary-after-recovery"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -571,7 +571,7 @@ fn begun_partial_recovery_is_exactly_redeliverable_after_host_restart() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "restart-recovery-page".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"restart-recovery-page"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"restart-recovery-page"),
                 purpose: TurnPurpose::Recovery,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),

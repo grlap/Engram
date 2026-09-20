@@ -33,7 +33,7 @@ conflicting parents. Conflicts between different memories get explicit
 `contradicts` edges — never last-writer-wins.
 
 Engram represents that edge as a canonical contradiction event carrying two
-shared version hashes plus an attributed reason. The current agent MCP surface
+shared version ids plus an attributed reason. The current agent MCP surface
 does not expose general-purpose version, contradiction, merge, or resolution
 mutation. Its constrained `remember`/`forget` exception creates attributed
 project-scoped Episodes under permanent safe keys. `remember --revise` appends

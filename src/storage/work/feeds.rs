@@ -18,7 +18,7 @@ use super::query::{
 };
 use super::{CHECKPOINT_APPEND_COUNT, MAX_WORK_SOURCE_SNAPSHOT_BYTES, WorkEventDraft};
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectId,
     domain::{
         ActorContext, EnvironmentEvidence, ExecutionObservation, FeedId, FeedPosition,
         MemoryAssertionEvent, MemoryVersion, SCHEMA_VERSION, SessionId, WorkHandoffOffer,
@@ -36,12 +36,12 @@ impl SqliteStore {
     pub(crate) fn work_root_object_position(
         &self,
         root_id: WorkId,
-        hash: &ObjectHash,
+        hash: &ObjectId,
     ) -> Result<i64, StoreError> {
         self.connection
             .query_row(
                 "SELECT position FROM work_feed_entries
-             WHERE feed_kind = 'root_work' AND feed_id = ?1 AND object_hash = ?2",
+             WHERE feed_kind = 'root_work' AND feed_id = ?1 AND object_id = ?2",
                 params![root_id.0.to_string(), hash.as_str()],
                 |row| row.get(0),
             )
@@ -111,14 +111,14 @@ fn insert_reserved_feed_entry(
     let (feed_kind, feed_id) = feed_parts(&position.feed);
     transaction.execute(
         "INSERT INTO work_feed_entries (
-             feed_kind, feed_id, position, object_kind, object_hash, work_id
+             feed_kind, feed_id, position, object_kind, object_id, work_id
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             feed_kind,
             feed_id,
             position.position,
             object_kind,
-            object.hash().as_str(),
+            object.key().as_str(),
             work_id.map(|work_id| work_id.0.to_string())
         ],
     )?;
@@ -173,7 +173,7 @@ pub(in crate::storage) fn append_memory_capture_to_work_feeds(
     };
     if *work != work_id
         || assertion.memory_id != version.memory_id
-        || assertion.version != *version_object.hash()
+        || assertion.version != *version_object.key()
         || version.actor != *actor
         || assertion.actor != *actor
         || version.created_at != captured_at
@@ -240,8 +240,8 @@ pub(in crate::storage) fn append_memory_capture_to_work_feeds(
         handoff_offer: None,
         blocker: None,
         transition: WorkTransition::MemoryCaptured {
-            version: version_object.hash().clone(),
-            assertion: assertion_object.hash().clone(),
+            version: version_object.key().clone(),
+            assertion: assertion_object.key().clone(),
         },
         actor: actor.clone(),
         created_at: captured_at,
@@ -271,11 +271,11 @@ pub(in crate::storage) fn append_context_object_to_work_feeds(
 
 pub(in crate::storage) fn load_control_execution_observation_on(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
 ) -> Result<Option<ExecutionObservation>, StoreError> {
     let stored = connection
         .query_row(
-            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
@@ -291,11 +291,11 @@ pub(in crate::storage) fn load_control_execution_observation_on(
 
 pub(in crate::storage) fn load_control_environment_evidence_on(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
 ) -> Result<Option<EnvironmentEvidence>, StoreError> {
     let stored = connection
         .query_row(
-            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
@@ -316,22 +316,22 @@ pub(super) fn verify_anchored_memory_feeds(
     checked: &mut usize,
     invalid: &mut Vec<String>,
 ) -> Result<(), StoreError> {
-    let feed_has = |object_hash: &ObjectHash, feed_kind: &str, feed_id: &str| {
+    let feed_has = |object_id: &ObjectId, feed_kind: &str, feed_id: &str| {
         connection
             .query_row(
                 "SELECT EXISTS(
                      SELECT 1 FROM work_feed_entries
-                     WHERE feed_kind = ?1 AND feed_id = ?2 AND object_hash = ?3
+                     WHERE feed_kind = ?1 AND feed_id = ?2 AND object_id = ?3
                  )",
-                params![feed_kind, feed_id, object_hash.as_str()],
+                params![feed_kind, feed_id, object_id.as_str()],
                 |row| row.get::<_, bool>(0),
             )
             .map_err(StoreError::from)
     };
     let mut statement = connection.prepare(
-        "SELECT object_hash, object_kind, canonical_json FROM objects
+        "SELECT object_id, object_kind, canonical_json FROM objects
          WHERE object_kind IN ('memory_contradiction_event', 'memory_version')
-         ORDER BY object_hash",
+         ORDER BY object_id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -343,7 +343,7 @@ pub(super) fn verify_anchored_memory_feeds(
     for row in rows {
         let (stored_hash, object_kind, bytes) = row?;
         let label = format!("{object_kind}:{stored_hash}:work-feed");
-        let Some(hash) = ObjectHash::from_stored(stored_hash) else {
+        let Some(hash) = ObjectId::from_stored(stored_hash) else {
             invalid.push(label);
             continue;
         };
@@ -402,19 +402,19 @@ pub(super) fn verify_anchored_memory_feeds(
 pub(super) fn run_feed_position_for_object_on(
     connection: &Connection,
     run_id: WorkRunId,
-    object_hash: &ObjectHash,
+    object_id: &ObjectId,
 ) -> Result<FeedPosition, StoreError> {
     let position = connection
         .query_row(
             "SELECT position FROM work_feed_entries
-             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_hash = ?2",
-            params![run_id.0.to_string(), object_hash.as_str()],
+             WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_id = ?2",
+            params![run_id.0.to_string(), object_id.as_str()],
             |row| row.get::<_, i64>(0),
         )
         .optional()?
         .ok_or_else(|| {
             StoreError::InvalidWorkProjection(format!(
-                "object {object_hash} is missing from run {run_id:?} feed"
+                "object {object_id} is missing from run {run_id:?} feed"
             ))
         })?;
     Ok(FeedPosition {
@@ -446,9 +446,9 @@ pub(super) fn latest_source_mutation_on(
 ) -> Result<Option<(i64, ExecutionObservation)>, StoreError> {
     let stored = connection
         .query_row(
-            "SELECT entry.position, entry.object_hash, object.canonical_json
+            "SELECT entry.position, entry.object_id, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
                AND entry.position <= ?2
                AND entry.object_kind = 'execution_observation'
@@ -466,8 +466,8 @@ pub(super) fn latest_source_mutation_on(
         .optional()?;
     stored
         .map(|(position, stored_hash, bytes)| {
-            let hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let hash = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
             let observation = CanonicalObject::stored(&hash, bytes)?.decode()?;
             Ok((position, observation))
         })
@@ -477,7 +477,7 @@ pub(super) fn latest_source_mutation_on(
 pub(super) fn append_work_event(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
-) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
     append_work_event_on(transaction, event, None, None)
 }
 
@@ -485,7 +485,7 @@ pub(super) fn append_work_event_with_root(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
     root: &super::root_state::WrittenRoot<'_>,
-) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
     append_work_event_on(transaction, event, Some(root), None)
 }
 
@@ -495,7 +495,7 @@ pub(super) fn append_planned_prerequisite_event(
     transaction: &Transaction<'_>,
     event: &WorkEventDraft,
     basis: &super::WorkRelationBasis,
-) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
     if !matches!(
         event.transition,
         crate::domain::WorkTransition::PrerequisiteAdded { .. }
@@ -512,7 +512,7 @@ fn append_work_event_on(
     event: &WorkEventDraft,
     written_root: Option<&super::root_state::WrittenRoot<'_>>,
     planned_relations: Option<&super::WorkRelationBasis>,
-) -> Result<(ObjectHash, Vec<FeedPosition>), StoreError> {
+) -> Result<(ObjectId, Vec<FeedPosition>), StoreError> {
     if event.actor.actor_id.trim().is_empty()
         || event
             .actor
@@ -559,8 +559,8 @@ fn append_work_event_on(
         &object,
     )?;
     let changed = transaction.execute(
-        "UPDATE work_items SET latest_event_hash = ?2 WHERE work_id = ?1",
-        params![event.work_id.0.to_string(), object.hash().as_str()],
+        "UPDATE work_items SET latest_event_id = ?2 WHERE work_id = ?1",
+        params![event.work_id.0.to_string(), object.key().as_str()],
     )?;
     if changed != 1 {
         return Err(StoreError::InvalidWorkProjection(format!(
@@ -568,7 +568,7 @@ fn append_work_event_on(
             event.work_id
         )));
     }
-    Ok((object.hash().clone(), positions))
+    Ok((object.key().clone(), positions))
 }
 
 pub(super) fn request_object<T: Serialize>(request: &T) -> Result<CanonicalObject, StoreError> {
@@ -577,12 +577,12 @@ pub(super) fn request_object<T: Serialize>(request: &T) -> Result<CanonicalObjec
 
 pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     object_kind: &str,
 ) -> Result<T, StoreError> {
     let stored: Option<(String, Vec<u8>)> = connection
         .query_row(
-            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -630,13 +630,11 @@ pub(super) fn load_handoff_offer_projection(
     row: (Option<String>, Vec<u8>),
 ) -> Result<WorkHandoffOffer, StoreError> {
     let (stored_hash, projection_bytes) = row;
-    let stored_hash = stored_hash
-        .and_then(ObjectHash::from_stored)
-        .ok_or_else(|| {
-            StoreError::InvalidWorkProjection(
-                "handoff offer projection has no valid canonical hash".into(),
-            )
-        })?;
+    let stored_hash = stored_hash.and_then(ObjectId::from_stored).ok_or_else(|| {
+        StoreError::InvalidWorkProjection(
+            "handoff offer projection has no valid canonical hash".into(),
+        )
+    })?;
     let canonical =
         load_typed_work_object::<WorkHandoffOffer>(connection, &stored_hash, "work_handoff_offer")?;
     let projection: WorkHandoffOffer = serde_json::from_slice(&projection_bytes)?;
@@ -861,7 +859,7 @@ pub(super) fn expire_handoff_offers(
     actor: &crate::domain::ActorContext,
 ) -> Result<Vec<WorkHandoffOffer>, StoreError> {
     let mut statement = transaction.prepare(
-        "SELECT offer_hash, offer_json FROM work_handoff_offers
+        "SELECT offer_object_id, offer_json FROM work_handoff_offers
          WHERE run_id = ?1 AND state = 'offered' AND expires_at_ms <= ?2
          ORDER BY offer_id",
     )?;
@@ -889,11 +887,11 @@ pub(super) fn expire_handoff_offers(
         SqliteStore::insert_object(transaction, "work_handoff_offer", &offer_object)?;
         let changed = transaction.execute(
             "UPDATE work_handoff_offers
-             SET state = 'expired', offer_hash = ?2, offer_json = ?3
+             SET state = 'expired', offer_object_id = ?2, offer_json = ?3
               WHERE offer_id = ?1 AND state = 'offered'",
             params![
                 offer.offer_id.0.to_string(),
-                offer_object.hash().as_str(),
+                offer_object.key().as_str(),
                 serde_json::to_vec(&offer)?
             ],
         )?;
@@ -919,7 +917,7 @@ pub(super) fn expire_handoff_offers(
                 blocker: None,
                 transition: WorkTransition::HandoffExpired {
                     offer_id: offer.offer_id,
-                    offer: offer_object.hash().clone(),
+                    offer: offer_object.key().clone(),
                 },
                 actor: actor.clone(),
                 created_at: now,
@@ -935,7 +933,7 @@ pub(super) fn replay_operation<T: DeserializeOwned>(
     transaction: &Transaction<'_>,
     operation: &str,
     key: &str,
-    request_hash: &ObjectHash,
+    request_hash: &ObjectId,
 ) -> Result<Option<T>, StoreError> {
     let stored: Option<(String, Vec<u8>)> = transaction
         .query_row(

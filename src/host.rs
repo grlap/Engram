@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::{
     ActorContext, ControlAssurance, ControlWorkBinding, DevelopmentNoopRedactor, EffectClass,
     EnvironmentEvidenceInput, ExecutionObservationInput, HostPathPolicy, LeaseKind, LeaseMode,
-    ObjectHash, ProjectId, ResourceSubject, SessionId, SqliteStore, TurnIntent, TurnPurpose,
+    ObjectId, ProjectId, ResourceSubject, SessionId, SqliteStore, TurnIntent, TurnPurpose,
     VerificationEvidenceInput, WorkObligationId,
     domain::{AssuranceLevel, ProvenanceLink, ProvenanceRelation, TurnNextIntent},
     storage::StoreError,
@@ -290,7 +290,7 @@ impl HostControlServer {
                         StoreError::InvalidControlSession("obligation_id must be a UUID".into())
                     })?);
                 let expected_definition =
-                    ObjectHash::from_str(&expected_definition).map_err(|_| {
+                    ObjectId::from_str(&expected_definition).map_err(|_| {
                         StoreError::InvalidControlSession(
                             "expected_definition must be a lowercase SHA-256 digest".into(),
                         )
@@ -323,12 +323,11 @@ impl HostControlServer {
                 requested_effects,
                 resource_intents,
             } => {
-                let intent_fingerprint =
-                    ObjectHash::from_str(&intent_fingerprint).map_err(|_| {
-                        StoreError::InvalidControlSession(
-                            "intent_fingerprint must be a lowercase SHA-256 digest".into(),
-                        )
-                    })?;
+                let intent_fingerprint = ObjectId::from_str(&intent_fingerprint).map_err(|_| {
+                    StoreError::InvalidControlSession(
+                        "intent_fingerprint must be a lowercase SHA-256 digest".into(),
+                    )
+                })?;
                 serde_json::to_value(self.store.evaluate_control_turn(
                     &self.project_id,
                     &self.session_id,
@@ -603,7 +602,7 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::Sqlite(_)
         | StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
-        | StoreError::InvalidStoredHash(_)
+        | StoreError::InvalidStoredKey(_)
         | StoreError::ContradictionIdempotencyConflict(_)
         | StoreError::InvalidContradiction(_)
         | StoreError::ContradictionAlreadyRecorded(_)

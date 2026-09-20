@@ -4,7 +4,7 @@ use super::{DateTime, LocalWorkService, SqliteStore, StoreError, Utc};
 use crate::domain::{
     WorkImportInput, WorkImportPreview, WorkImportReceipt, WorkSourceDetail, WorkSourceKey,
 };
-use crate::{DevelopmentNoopRedactor, ObjectHash};
+use crate::{DevelopmentNoopRedactor, ObjectId};
 
 /// Maximum UTF-8 JSON input size for both direct parsing and the file reader.
 pub const MAX_WORK_IMPORT_INPUT_BYTES: usize = 1024 * 1024;
@@ -79,7 +79,7 @@ impl LocalWorkService {
     pub fn apply_work_import(
         &self,
         input: &WorkImportInput,
-        token: &ObjectHash,
+        token: &ObjectId,
         now: DateTime<Utc>,
     ) -> Result<WorkImportReceipt, StoreError> {
         self.store_at(now)?.apply_work_import(

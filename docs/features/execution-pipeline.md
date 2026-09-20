@@ -37,7 +37,7 @@ attributed, immutable policy update. Table rows and diagram nodes marked
 **planned** are exactly the remaining items.
 
 The shipped **obligation** substrate is deliberately small and typed. An
-immutable policy version selects a canonical rule-set hash; the built-in set
+immutable policy version selects a canonical rule-set id; the built-in set
 implements `source_changed observation → test obligation → passed matching
 verification | attributed audited waiver → CompletionSeal`. The observation and
 definition freeze that selection, so activating another validated set affects
@@ -74,7 +74,7 @@ frozen artifact back.
 | **Engram** | work graph, turn admission, exact bounded delivery, claims and leases, typed evidence, policy-selected typed obligations, obligation-gated seals, report freeze (**planned**) | — | — |
 | **Hosting environment** (TermAl under integration) | agent runtime, workspace (worktree or sandbox), tools and skills, credentials, resource limits; enforcing Engram's decisions | `session_bind` with assurance, mediated effects, capability-map revision, and an exact live `WorkRun` binding; evidence from execution | — |
 | **Decomposition** (admitted by Engram) | splitting the root once the code is visible, under the holder's claim or the ordinary project-bound planning path | child `WorkItem`s and their `WorkRun`s, registered in the existing `RootExecution`; each run is separately claimable, owns a dense run feed, and receives a seal on completion | under Engram admission |
-| **Obligations** (Engram; typed canonical rule sets shipped) | selecting a bounded immutable rule set through project policy and turning matching host observations into concrete duties on their runs | a canonical `ObligationRuleSet` hash frozen into each observation and immutable `WorkObligation` definition (run, rule-set hash, rule version, triggering observation, required evidence kind), immutable resolution events (`satisfied` by matching verification evidence, `waived` by an attributed host-authorized decision), and exact definition/resolution bindings in `CompletionSeal`; a rebuildable projection holds current state | no — a policy successor affects only later observations and obligation state advances only by appending a resolution through an Engram transaction |
+| **Obligations** (Engram; typed canonical rule sets shipped) | selecting a bounded immutable rule set through project policy and turning matching host observations into concrete duties on their runs | a canonical `ObligationRuleSet` id frozen into each observation and immutable `WorkObligation` definition (run, rule-set id, rule version, triggering observation, required evidence kind), immutable resolution events (`satisfied` by matching verification evidence, `waived` by an attributed host-authorized decision), and exact definition/resolution bindings in `CompletionSeal`; a rebuildable projection holds current state | no — a policy successor affects only later observations and obligation state advances only by appending a resolution through an Engram transaction |
 | **Capability & context assignment** (fine pass, under a claim; **planned**) | what each run needs delivered | per-run context packets (packets carry `work_id` and feed heads today, not `run_id`) | yes, per run |
 | **Publication** (adapter) | returning the report to the ticket source | a frozen report, a publication intent with an idempotency key, a receipt (**planned**) | no |
 
@@ -286,7 +286,7 @@ capability requirements and packet assignment do not.
 - **Environment policy beyond exact typed pins.** Environment components,
   verification links, the seal's exact bounded environment-hash set, and an
   operator-selected V1 obligation requirement for one previously recorded
-  environment hash ship. Conditions over component families, signed
+  environment id ship. Conditions over component families, signed
   attestation, or project-wide environment predicates remain planned.
 - **General obligation policies.** Canonical policy-selected rule sets, the
   stock source-change/test rule, immutable definitions and resolutions, host

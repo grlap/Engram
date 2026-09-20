@@ -6,7 +6,7 @@ use super::{
     ControlSessionStatus, ControlWorkBinding, DateTime, DeserializeOwned, EffectClass, HashSet,
     MAX_CONTROL_POLICY_ATTRIBUTION_BYTES, MAX_CONTROL_POLICY_AUTHORITY_BYTES,
     MAX_CONTROL_POLICY_IDEMPOTENCY_KEY_BYTES, MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES,
-    MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES, MAX_CONTROL_POLICY_PROVENANCE_LINKS, ObjectHash,
+    MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES, MAX_CONTROL_POLICY_PROVENANCE_LINKS, ObjectId,
     OptionalExtension, PendingTurnGrantSupersession, ProjectPolicyAuthorityDecision,
     ProjectPolicyEpoch, ProjectPolicyOperation, RawControlSession, Redactor, Serialize, SessionId,
     SessionPhase, SqliteStore, StoreError, StoredControlSession, StoredTurnGrant,
@@ -87,7 +87,7 @@ impl SqliteStore {
             Self::load_control_policy_head(connection)?;
         Self::verify_control_policy_chain(
             connection,
-            &projection.policy_hash,
+            &projection.policy_id,
             &active_policy,
             active_authority,
         )?;
@@ -104,17 +104,17 @@ impl SqliteStore {
         ),
         StoreError,
     > {
-        let (
-            schema_version,
-            epoch,
-            required_assurance,
-            supported_effects,
-            grant_ttl,
-            policy_hash,
-        ): (i64, i64, String, String, i64, Option<String>) = connection
+        let (schema_version, epoch, required_assurance, supported_effects, grant_ttl, policy_id): (
+            i64,
+            i64,
+            String,
+            String,
+            i64,
+            Option<String>,
+        ) = connection
             .query_row(
                 "SELECT schema_version, policy_epoch, required_assurance,
-                        supported_effects_json, grant_ttl_seconds, policy_hash
+                        supported_effects_json, grant_ttl_seconds, policy_id
                  FROM control_policy_state WHERE singleton = 1",
                 [],
                 |row| {
@@ -139,13 +139,13 @@ impl SqliteStore {
                 "active control policy has an unknown state schema or invalid bounds".into(),
             ));
         }
-        let policy_hash = policy_hash.ok_or_else(|| {
+        let policy_id = policy_id.ok_or_else(|| {
             StoreError::InvalidControlProjection(
                 "active control policy has no selected version".into(),
             )
         })?;
-        let active_hash = ObjectHash::from_stored(policy_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(policy_hash))?;
+        let active_hash = ObjectId::from_stored(policy_id.clone())
+            .ok_or(StoreError::InvalidStoredKey(policy_id))?;
         let (policy, authority) = Self::load_control_policy_version(connection, &active_hash)?;
         Self::validate_control_policy_shape(&policy)?;
         if authority.schema_version != CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION {
@@ -178,8 +178,8 @@ impl SqliteStore {
         }
         let projection = ControlPolicyProjection {
             state_schema_version: schema_version,
-            policy_hash: active_hash,
-            authority_hash: policy.authority.clone(),
+            policy_id: active_hash,
+            authority_id: policy.authority.clone(),
             epoch: policy.policy_epoch,
             required_assurance: policy.required_assurance,
             supported_effects: policy.supported_effects.clone(),
@@ -192,36 +192,36 @@ impl SqliteStore {
 
     pub(super) fn load_control_policy_version(
         connection: &Connection,
-        policy_hash: &ObjectHash,
+        policy_id: &ObjectId,
     ) -> Result<(ControlPolicy, ProjectPolicyAuthorityDecision), StoreError> {
         #[cfg(test)]
         CONTROL_POLICY_VERSION_LOAD_COUNT.set(CONTROL_POLICY_VERSION_LOAD_COUNT.get() + 1);
-        let (projected_epoch, authority_hash, projected_json): (i64, String, Vec<u8>) = connection
+        let (projected_epoch, authority_id, projected_json): (i64, String, Vec<u8>) = connection
             .query_row(
-                "SELECT policy_epoch, authority_hash, policy_json
-                 FROM control_policy_versions WHERE policy_hash = ?1",
-                [policy_hash.as_str()],
+                "SELECT policy_epoch, authority_id, policy_json
+                 FROM control_policy_versions WHERE policy_id = ?1",
+                [policy_id.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?
             .ok_or_else(|| {
                 StoreError::InvalidControlProjection(format!(
-                    "control policy version {policy_hash} is missing"
+                    "control policy version {policy_id} is missing"
                 ))
             })?;
         let policy_bytes =
-            Self::load_control_object_bytes(connection, policy_hash, "control_policy")?;
+            Self::load_control_object_bytes(connection, policy_id, "control_policy")?;
         if policy_bytes != projected_json {
             return Err(StoreError::InvalidControlProjection(format!(
-                "control policy {policy_hash} projection bytes do not match the canonical object"
+                "control policy {policy_id} projection bytes do not match the canonical object"
             )));
         }
-        let policy: ControlPolicy = CanonicalObject::stored(policy_hash, policy_bytes)?.decode()?;
-        let stored_authority = ObjectHash::from_stored(authority_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(authority_hash))?;
+        let policy: ControlPolicy = CanonicalObject::stored(policy_id, policy_bytes)?.decode()?;
+        let stored_authority = ObjectId::from_stored(authority_id.clone())
+            .ok_or(StoreError::InvalidStoredKey(authority_id))?;
         if policy.policy_epoch.0 != projected_epoch || policy.authority != stored_authority {
             return Err(StoreError::InvalidControlProjection(format!(
-                "control policy {policy_hash} is not bound to its version row"
+                "control policy {policy_id} is not bound to its version row"
             )));
         }
         Self::validate_control_policy_shape(&policy)?;
@@ -234,7 +234,7 @@ impl SqliteStore {
             CanonicalObject::stored(&policy.authority, authority_bytes.clone())?.decode()?;
         if authority_bytes.len() > MAX_CONTROL_POLICY_AUTHORITY_BYTES {
             return Err(StoreError::InvalidControlProjection(format!(
-                "control policy {policy_hash} authority exceeds its canonical byte limit"
+                "control policy {policy_id} authority exceeds its canonical byte limit"
             )));
         }
         if authority.schema_version != CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION
@@ -247,7 +247,7 @@ impl SqliteStore {
             || authority.authorized_by.assurance != AssuranceLevel::Asserted
         {
             return Err(StoreError::InvalidControlProjection(format!(
-                "control policy {policy_hash} authority is invalid"
+                "control policy {policy_id} authority is invalid"
             )));
         }
         validate_control_policy_actor_shape(&authority.authorized_by)?;
@@ -255,7 +255,7 @@ impl SqliteStore {
             != authority.reason
         {
             return Err(StoreError::InvalidControlProjection(format!(
-                "control policy {policy_hash} authority reason is not normalized"
+                "control policy {policy_id} authority reason is not normalized"
             )));
         }
         Ok((policy, authority))
@@ -263,12 +263,12 @@ impl SqliteStore {
 
     pub(super) fn load_control_object_bytes(
         connection: &Connection,
-        hash: &ObjectHash,
+        hash: &ObjectId,
         expected_kind: &str,
     ) -> Result<Vec<u8>, StoreError> {
         let (stored_kind, bytes): (String, Vec<u8>) = connection
             .query_row(
-                "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+                "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
                 [hash.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -397,7 +397,7 @@ impl SqliteStore {
 
     fn verify_control_policy_chain(
         connection: &Connection,
-        active_hash: &ObjectHash,
+        active_hash: &ObjectId,
         active_policy: &ControlPolicy,
         active_authority: ProjectPolicyAuthorityDecision,
     ) -> Result<(), StoreError> {
@@ -520,8 +520,8 @@ impl SqliteStore {
             let actor: ActorContext = serde_json::from_slice(&raw.actor_json)?;
             let mediated_effects: Vec<EffectClass> =
                 serde_json::from_str(&raw.mediated_effects_json)?;
-            let bind_hash = ObjectHash::from_stored(raw.bind_intent_hash.clone())
-                .ok_or_else(|| StoreError::InvalidStoredHash(raw.bind_intent_hash.clone()))?;
+            let bind_hash = ObjectId::from_stored(raw.bind_intent_hash.clone())
+                .ok_or_else(|| StoreError::InvalidStoredKey(raw.bind_intent_hash.clone()))?;
             let bind_value: serde_json::Value =
                 CanonicalObject::stored(&bind_hash, raw.bind_intent_json.clone())?.decode()?;
             let work_binding = match (
@@ -841,8 +841,7 @@ impl SqliteStore {
         task_id: TaskId,
     ) -> Result<Vec<StoredWorkLeaseRow>, StoreError> {
         let mut statement = connection.prepare(
-            "SELECT lease_id, task_id, holder_session_id, lease_hash,
-                    lease_json, state, expires_at_ms
+            "SELECT lease_id, task_id, holder_session_id, lease_json, state, expires_at_ms
              FROM control_work_leases WHERE task_id = ?1 ORDER BY lease_id",
         )?;
         let rows = statement.query_map([task_id.0.to_string()], |row| {
@@ -850,10 +849,9 @@ impl SqliteStore {
                 lease_id: row.get(0)?,
                 task_id: row.get(1)?,
                 holder_session_id: row.get(2)?,
-                lease_hash: row.get(3)?,
-                lease_json: row.get(4)?,
-                state: row.get(5)?,
-                expires_at_ms: row.get(6)?,
+                lease_json: row.get(3)?,
+                state: row.get(4)?,
+                expires_at_ms: row.get(5)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>()
@@ -866,7 +864,7 @@ impl SqliteStore {
     ) -> Result<Vec<StoredWorkLeaseRow>, StoreError> {
         let mut statement = connection.prepare(
             "SELECT lease.lease_id, lease.task_id, lease.holder_session_id,
-                    lease.lease_hash, lease.lease_json, lease.state, lease.expires_at_ms
+                    lease.lease_json, lease.state, lease.expires_at_ms
              FROM control_work_leases lease
              JOIN tasks task ON task.task_id = lease.task_id
              WHERE task.project_id = ?1
@@ -877,10 +875,9 @@ impl SqliteStore {
                 lease_id: row.get(0)?,
                 task_id: row.get(1)?,
                 holder_session_id: row.get(2)?,
-                lease_hash: row.get(3)?,
-                lease_json: row.get(4)?,
-                state: row.get(5)?,
-                expires_at_ms: row.get(6)?,
+                lease_json: row.get(3)?,
+                state: row.get(4)?,
+                expires_at_ms: row.get(5)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>()
@@ -893,8 +890,7 @@ impl SqliteStore {
     ) -> Result<Option<StoredWorkLeaseRow>, StoreError> {
         connection
             .query_row(
-                "SELECT lease_id, task_id, holder_session_id, lease_hash,
-                        lease_json, state, expires_at_ms
+                "SELECT lease_id, task_id, holder_session_id, lease_json, state, expires_at_ms
                  FROM control_work_leases WHERE lease_id = ?1",
                 [lease_id],
                 |row| {
@@ -902,10 +898,9 @@ impl SqliteStore {
                         lease_id: row.get(0)?,
                         task_id: row.get(1)?,
                         holder_session_id: row.get(2)?,
-                        lease_hash: row.get(3)?,
-                        lease_json: row.get(4)?,
-                        state: row.get(5)?,
-                        expires_at_ms: row.get(6)?,
+                        lease_json: row.get(3)?,
+                        state: row.get(4)?,
+                        expires_at_ms: row.get(5)?,
                     })
                 },
             )
@@ -914,8 +909,7 @@ impl SqliteStore {
     }
 
     pub(super) fn decode_work_lease_row(row: &StoredWorkLeaseRow) -> Result<WorkLease, StoreError> {
-        let lease: WorkLease =
-            Self::decode_canonical_projection(&row.lease_hash, row.lease_json.clone())?;
+        let lease: WorkLease = Self::decode_json_projection(&row.lease_json)?;
         if lease.control_schema_version != CONTROL_SCHEMA_VERSION
             || lease.lease_id != row.lease_id
             || lease.task_id.0.to_string() != row.task_id
@@ -1054,21 +1048,15 @@ impl SqliteStore {
     ) -> Result<Option<StoredTurnGrant>, StoreError> {
         let row = connection
             .query_row(
-                "SELECT grant_hash, grant_json, state
+                "SELECT grant_json, state
                  FROM control_turn_grants
                  WHERE grant_id = ?1 AND session_id = ?2",
                 params![grant_id, session_id.0],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Vec<u8>>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                },
+                |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
-        row.map(|(hash, bytes, state)| {
-            let grant = Self::decode_canonical_projection(&hash, bytes)?;
+        row.map(|(bytes, state)| {
+            let grant = Self::decode_json_projection(&bytes)?;
             Ok(StoredTurnGrant {
                 grant,
                 state: parse_enum(&state)?,
@@ -1081,9 +1069,15 @@ impl SqliteStore {
         stored_hash: &str,
         bytes: Vec<u8>,
     ) -> Result<T, StoreError> {
-        let hash = ObjectHash::from_stored(stored_hash.to_owned())
-            .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.to_owned()))?;
+        let hash = ObjectId::from_stored(stored_hash.to_owned())
+            .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.to_owned()))?;
         CanonicalObject::stored(&hash, bytes)?.decode()
+    }
+
+    pub(super) fn decode_json_projection<T: DeserializeOwned>(
+        bytes: &[u8],
+    ) -> Result<T, StoreError> {
+        CanonicalObject::decode_bytes(bytes)
     }
 
     pub(super) fn replay_control_operation<T: DeserializeOwned>(
@@ -1091,24 +1085,18 @@ impl SqliteStore {
         session_id: &SessionId,
         operation: &str,
         idempotency_key: &str,
-        intent_hash: &ObjectHash,
+        intent_hash: &ObjectId,
     ) -> Result<Option<T>, StoreError> {
         let stored = connection
             .query_row(
-                "SELECT intent_hash, result_hash, result_json
+                "SELECT intent_hash, result_json
                  FROM control_operation_results
                  WHERE session_id = ?1 AND operation = ?2 AND idempotency_key = ?3",
                 params![session_id.0, operation, idempotency_key],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Vec<u8>>(2)?,
-                    ))
-                },
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
             )
             .optional()?;
-        let Some((stored_intent, result_hash, result_json)) = stored else {
+        let Some((stored_intent, result_json)) = stored else {
             return Ok(None);
         };
         if stored_intent != intent_hash.as_str() {
@@ -1117,7 +1105,7 @@ impl SqliteStore {
                 key: idempotency_key.into(),
             });
         }
-        Self::decode_canonical_projection(&result_hash, result_json).map(Some)
+        Self::decode_json_projection(&result_json).map(Some)
     }
 
     pub(super) fn replay_control_policy_operation<T: DeserializeOwned>(
@@ -1128,7 +1116,7 @@ impl SqliteStore {
     ) -> Result<Option<T>, StoreError> {
         let stored = connection
             .query_row(
-                "SELECT sequence, intent_hash, intent_json, result_hash, result_json
+                "SELECT sequence, intent_hash, intent_json, result_json
                  FROM control_policy_operation_results
                  WHERE operation = ?1 AND idempotency_key = ?2",
                 params![operation, idempotency_key],
@@ -1137,21 +1125,18 @@ impl SqliteStore {
                         row.get::<_, i64>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, Vec<u8>>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, Vec<u8>>(4)?,
+                        row.get::<_, Vec<u8>>(3)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((sequence, stored_intent_hash, stored_intent_json, result_hash, result_json)) =
-            stored
-        else {
+        let Some((sequence, stored_intent_hash, stored_intent_json, result_json)) = stored else {
             return Ok(None);
         };
-        let stored_intent = ObjectHash::from_stored(stored_intent_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(stored_intent_hash))?;
+        let stored_intent = ObjectId::from_stored(stored_intent_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredKey(stored_intent_hash))?;
         CanonicalObject::stored(&stored_intent, stored_intent_json.clone())?;
-        if stored_intent != *intent.hash() || stored_intent_json != intent.bytes() {
+        if stored_intent != *intent.key() || stored_intent_json != intent.bytes() {
             return Err(StoreError::ControlOperationIdempotencyConflict {
                 operation: operation.into(),
                 key: idempotency_key.into(),
@@ -1162,7 +1147,7 @@ impl SqliteStore {
                 "control policy operation result {sequence} exceeds its canonical byte limit"
             )));
         }
-        Self::decode_canonical_projection(&result_hash, result_json).map(Some)
+        Self::decode_json_projection(&result_json).map(Some)
     }
 
     pub(super) fn persist_control_policy_operation<T: Serialize>(
@@ -1187,14 +1172,13 @@ impl SqliteStore {
         transaction.execute(
             "INSERT INTO control_policy_operation_results (
                  operation, idempotency_key, intent_hash, intent_json,
-                 result_hash, result_json, created_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 result_json, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 operation,
                 idempotency_key,
-                intent.hash().as_str(),
+                intent.key().as_str(),
                 intent.bytes(),
-                result.hash().as_str(),
                 result.bytes(),
                 now.timestamp_millis(),
             ],
@@ -1245,15 +1229,14 @@ impl SqliteStore {
         transaction.execute(
             "INSERT INTO control_operation_results (
                  session_id, operation, idempotency_key, intent_hash, intent_json,
-                 result_hash, result_json, created_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 result_json, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 session_id.0,
                 operation,
                 idempotency_key,
-                intent.hash().as_str(),
+                intent.key().as_str(),
                 intent.bytes(),
-                result.hash().as_str(),
                 result.bytes(),
                 now.timestamp_millis(),
             ],

@@ -171,7 +171,7 @@ fn phoenix_revision_fields_derive_from_adjacent_native_and_restored_snapshots() 
             .expect("events")
         {
             let event = store
-                .get::<crate::domain::WorkEvent>(&entry.object_hash)
+                .get::<crate::domain::WorkEvent>(&entry.object_id)
                 .expect("canonical event")
                 .expect("event");
             assert!(
@@ -253,8 +253,8 @@ fn phoenix_acceptance_replacement_is_presence_aware_audited_and_terminal_safe() 
     let connection = rusqlite::Connection::open(&database).expect("read fixture");
     let bytes: Vec<u8> = connection
         .query_row(
-            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
-            [history[0].object_hash.as_str()],
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [history[0].object_id.as_str()],
             |row| row.get(0),
         )
         .expect("original event");

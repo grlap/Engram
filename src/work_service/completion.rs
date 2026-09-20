@@ -52,7 +52,7 @@ impl LocalWorkService {
                 "operation": "work_complete", "work": basis.focused_work.as_ref().map(|work| work.work_id),
                 "intent": intent,
             }))?;
-            format!("linked-completion:{}", identity.hash())
+            format!("linked-completion:{}", identity.key())
         } else {
             self.effective_idempotency_key(
                 &input.idempotency_key,
@@ -141,8 +141,8 @@ impl LocalWorkService {
                         "pending completion run crosses its focused work binding".into(),
                     ));
                 }
-                if let Some(seal_hash) = run.completion_seal {
-                    let seal: CompletionSeal = store.get(&seal_hash)?.ok_or_else(|| {
+                if let Some(seal_id) = run.completion_seal {
+                    let seal: CompletionSeal = store.get(&seal_id)?.ok_or_else(|| {
                         StoreError::InvalidWorkProjection(
                             "completed pending run has no canonical completion seal".into(),
                         )
@@ -239,10 +239,10 @@ impl LocalWorkService {
             && let Some(work) = basis.focused_work.as_ref()
             && work.lifecycle == WorkLifecycle::Completed
             && let Some(run) = store.latest_work_run(work.work_id)?
-            && let Some(seal_hash) = run.completion_seal
+            && let Some(seal_id) = run.completion_seal
         {
             links::frozen(&input)?;
-            let seal: CompletionSeal = store.get(&seal_hash)?.ok_or_else(|| {
+            let seal: CompletionSeal = store.get(&seal_id)?.ok_or_else(|| {
                 StoreError::InvalidWorkProjection(
                     "completed work has no canonical completion seal".into(),
                 )
@@ -476,7 +476,7 @@ impl LocalWorkService {
         store: &SqliteStore,
         claim: &WorkClaim,
         supplied: &[String],
-    ) -> Result<Vec<ObjectHash>, StoreError> {
+    ) -> Result<Vec<ObjectId>, StoreError> {
         let available = store.work_run_evidence(claim.run_id)?;
         let mut requested = parse_hashes(supplied)?;
         if requested.is_empty() {
@@ -497,7 +497,7 @@ impl LocalWorkService {
         work: &WorkItem,
         supplied: Option<&[WorkAcceptanceInput]>,
         note: Option<&str>,
-        evidence_basis: &[ObjectHash],
+        evidence_basis: &[ObjectId],
         assurance: AssuranceLevel,
         actor_id: &str,
     ) -> Result<Vec<AcceptanceResult>, StoreError> {

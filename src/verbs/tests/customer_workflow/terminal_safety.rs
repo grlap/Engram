@@ -25,7 +25,7 @@ fn import_source_navigation_has_one_sanitized_value_in_both_renderings() {
         work_revision: core.status.work.revision,
         cited_snapshot: crate::CanonicalObject::freeze(&"fixture citation")
             .unwrap()
-            .hash()
+            .key()
             .clone(),
         notice_count: 0,
         latest_notice: None,

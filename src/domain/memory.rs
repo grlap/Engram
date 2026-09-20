@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ObjectHash;
+use crate::ObjectId;
 
 use super::{
     ActorContext, ChangeCursor, FeedPosition, MemoryId, ProjectId, SessionId, SourceSnapshot,
@@ -138,8 +138,8 @@ pub enum Sensitivity {
     SecretRef,
 }
 
-/// Immutable content of one memory version. Its object hash is stored outside
-/// this payload so identity is computed over canonical content only.
+/// Immutable content of one memory version. Its independently minted object id
+/// is stored outside this payload and is not derived from its canonical content.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct MemoryVersion {
     pub schema_version: u16,
@@ -148,7 +148,7 @@ pub struct MemoryVersion {
     /// their canonical bytes; project episodes reserve it permanently.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_key: Option<String>,
-    pub parents: Vec<ObjectHash>,
+    pub parents: Vec<ObjectId>,
     pub kind: MemoryKind,
     pub authority: Authority,
     pub delivery: Delivery,
@@ -157,7 +157,7 @@ pub struct MemoryVersion {
     pub body: String,
     pub structured_value: Option<Value>,
     pub tags: Vec<String>,
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
     pub refs: Vec<String>,
     pub source_snapshot: Option<SourceSnapshot>,
     pub confidence: Option<f64>,
@@ -178,7 +178,7 @@ pub struct MemoryVersion {
 pub struct MemoryAssertionEvent {
     pub schema_version: u16,
     pub memory_id: MemoryId,
-    pub version: ObjectHash,
+    pub version: ObjectId,
     pub status: MemoryStatus,
     pub policy_reason: String,
     pub actor: ActorContext,
@@ -299,7 +299,7 @@ pub struct NoteRequest {
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
     #[serde(default)]
     pub refs: Vec<String>,
     pub actor: ActorContext,
@@ -312,8 +312,8 @@ pub struct NoteRequest {
 pub struct NoteReceipt {
     pub idempotency_key: String,
     pub memory_id: MemoryId,
-    pub version: ObjectHash,
-    pub assertion: ObjectHash,
+    pub version: ObjectId,
+    pub assertion: ObjectId,
     pub status: MemoryStatus,
     pub kind: MemoryKind,
     pub authority: Authority,
@@ -337,8 +337,8 @@ pub struct MemoryContradictionEvent {
     pub task_id: Option<TaskId>,
     #[serde(default)]
     pub work_root_id: Option<WorkId>,
-    pub left_version: ObjectHash,
-    pub right_version: ObjectHash,
+    pub left_version: ObjectId,
+    pub right_version: ObjectId,
     pub reason: String,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
@@ -348,9 +348,9 @@ pub struct MemoryContradictionEvent {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MemoryContradictionReceipt {
     pub idempotency_key: String,
-    pub contradiction: ObjectHash,
-    pub left_version: ObjectHash,
-    pub right_version: ObjectHash,
+    pub contradiction: ObjectId,
+    pub left_version: ObjectId,
+    pub right_version: ObjectId,
     #[serde(default)]
     pub cursor: Option<ChangeCursor>,
     #[serde(default)]
@@ -362,7 +362,7 @@ pub struct MemoryContradictionReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MemorySummary {
     pub memory_id: MemoryId,
-    pub version: ObjectHash,
+    pub version: ObjectId,
     pub status: MemoryStatus,
     pub kind: MemoryKind,
     pub authority: Authority,

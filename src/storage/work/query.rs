@@ -24,7 +24,7 @@ use super::{
     WorkPrerequisitePage,
 };
 use crate::{
-    CanonicalObject, ObjectHash, RestoredRecord, RestoredWorkEvidence,
+    CanonicalObject, ObjectId, RestoredRecord, RestoredWorkEvidence,
     domain::{
         CompletionSeal, EnvironmentEvidence, FeedId, FeedPosition, ReadyWork, RootExecution,
         RootExecutionId, SessionId, VerificationEvidence, WorkAvailability, WorkBlocker,
@@ -75,7 +75,7 @@ impl SqliteStore {
     pub(crate) fn restored_work_evidence(
         &self,
         work_id: WorkId,
-    ) -> Result<Vec<(ObjectHash, RestoredWorkEvidence)>, StoreError> {
+    ) -> Result<Vec<(ObjectId, RestoredWorkEvidence)>, StoreError> {
         restored_work_evidence_for_item(&self.connection, work_id)
     }
 
@@ -89,7 +89,7 @@ impl SqliteStore {
         work_id: WorkId,
     ) -> Result<Vec<WorkHandoffOffer>, StoreError> {
         let mut statement = self.connection.prepare(
-            "SELECT offer_hash, offer_json FROM work_handoff_offers
+            "SELECT offer_object_id, offer_json FROM work_handoff_offers
              WHERE work_id = ?1 ORDER BY offer_id",
         )?;
         let rows = statement
@@ -129,12 +129,12 @@ impl SqliteStore {
         Ok(())
     }
 
-    /// Returns canonical evidence hashes recorded for one run.
+    /// Returns canonical evidence ides recorded for one run.
     ///
     /// # Errors
     ///
     /// Returns [`StoreError`] when a stored hash is invalid.
-    pub fn work_run_evidence(&self, run_id: WorkRunId) -> Result<Vec<ObjectHash>, StoreError> {
+    pub fn work_run_evidence(&self, run_id: WorkRunId) -> Result<Vec<ObjectId>, StoreError> {
         work_run_evidence_on(&self.connection, run_id)
     }
 
@@ -145,7 +145,7 @@ impl SqliteStore {
     pub(crate) fn work_run_evidence_projection(
         &self,
         run_id: WorkRunId,
-        required_environments: &[ObjectHash],
+        required_environments: &[ObjectId],
         limit: usize,
     ) -> Result<Vec<WorkEvidenceProjectionSummary>, StoreError> {
         work_run_evidence_projection_on(&self.connection, run_id, required_environments, limit)
@@ -167,11 +167,11 @@ impl SqliteStore {
     pub(crate) fn latest_work_run_evidence(
         &self,
         run_id: WorkRunId,
-    ) -> Result<Option<ObjectHash>, StoreError> {
+    ) -> Result<Option<ObjectId>, StoreError> {
         let stored = self
             .connection
             .query_row(
-                "SELECT object_hash
+                "SELECT object_id
                  FROM work_feed_entries
                  WHERE feed_kind = 'run_execution'
                    AND feed_id = ?1
@@ -188,9 +188,9 @@ impl SqliteStore {
             .optional()?;
         stored
             .map(|stored_hash| {
-                ObjectHash::from_stored(stored_hash).ok_or_else(|| {
+                ObjectId::from_stored(stored_hash).ok_or_else(|| {
                     StoreError::InvalidWorkProjection(
-                        "latest run evidence has an invalid object hash".into(),
+                        "latest run evidence has an invalid object id".into(),
                     )
                 })
             })
@@ -233,7 +233,7 @@ impl SqliteStore {
         let mut open = Vec::new();
         for record in records {
             let terminal_at_cut = record
-                .resolution_hash
+                .resolution_id
                 .as_ref()
                 .map(|hash| run_feed_position_for_object_on(&self.connection, run_id, hash))
                 .transpose()?
@@ -254,25 +254,25 @@ impl SqliteStore {
     pub fn work_evidence_kind(
         &self,
         run_id: WorkRunId,
-        evidence_hash: &ObjectHash,
+        evidence_id: &ObjectId,
     ) -> Result<WorkEvidenceKind, StoreError> {
-        work_evidence_kind_on(&self.connection, run_id, evidence_hash)
+        work_evidence_kind_on(&self.connection, run_id, evidence_id)
     }
 
     pub(crate) fn load_verification_evidence(
         &self,
-        evidence_hash: &ObjectHash,
+        evidence_id: &ObjectId,
     ) -> Result<VerificationEvidence, StoreError> {
-        expected_verification_projection(&self.connection, evidence_hash)?;
-        load_typed_work_object(&self.connection, evidence_hash, "verification_evidence")
+        expected_verification_projection(&self.connection, evidence_id)?;
+        load_typed_work_object(&self.connection, evidence_id, "verification_evidence")
     }
 
     pub(crate) fn load_environment_evidence(
         &self,
-        evidence_hash: &ObjectHash,
+        evidence_id: &ObjectId,
     ) -> Result<EnvironmentEvidence, StoreError> {
-        expected_environment_projection(&self.connection, evidence_hash)?;
-        load_typed_work_object(&self.connection, evidence_hash, "environment_evidence")
+        expected_environment_projection(&self.connection, evidence_id)?;
+        load_typed_work_object(&self.connection, evidence_id, "environment_evidence")
     }
 
     /// Reads the current head for an exact work feed.
@@ -415,7 +415,7 @@ impl SqliteStore {
     ) -> Result<Vec<WorkFeedEntry>, StoreError> {
         let (feed_kind, feed_id) = feed_parts(feed);
         let mut statement = self.connection.prepare(
-            "SELECT position, object_kind, object_hash
+            "SELECT position, object_kind, object_id
              FROM work_feed_entries
              WHERE feed_kind = ?1 AND feed_id = ?2 AND position > ?3
              ORDER BY position LIMIT ?4",
@@ -437,15 +437,15 @@ impl SqliteStore {
         )?;
         rows.map(|row| {
             let (position, object_kind, hash) = row?;
-            let object_hash =
-                ObjectHash::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredHash(hash))?;
+            let object_id =
+                ObjectId::from_stored(hash.clone()).ok_or(StoreError::InvalidStoredKey(hash))?;
             Ok(WorkFeedEntry {
                 position: FeedPosition {
                     feed: feed.clone(),
                     position,
                 },
                 object_kind,
-                object_hash,
+                object_id,
             })
         })
         .collect()
@@ -474,7 +474,7 @@ impl SqliteStore {
         }
         let (feed_kind, feed_id) = feed_parts(feed);
         let mut statement = self.connection.prepare(
-            "SELECT position, object_kind, object_hash
+            "SELECT position, object_kind, object_id
              FROM work_feed_entries
              WHERE feed_kind = ?1 AND feed_id = ?2
                AND position > ?3 AND position <= ?4
@@ -519,15 +519,15 @@ impl SqliteStore {
         }
         rows.into_iter()
             .map(|(position, object_kind, hash)| {
-                let object_hash = ObjectHash::from_stored(hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(hash))?;
+                let object_id = ObjectId::from_stored(hash.clone())
+                    .ok_or(StoreError::InvalidStoredKey(hash))?;
                 Ok(WorkFeedEntry {
                     position: FeedPosition {
                         feed: feed.clone(),
                         position,
                     },
                     object_kind,
-                    object_hash,
+                    object_id,
                 })
             })
             .collect()
@@ -538,7 +538,7 @@ impl SqliteStore {
     ///
     /// # Errors
     ///
-    /// Returns [`StoreError`] when the feed projection or an object hash is
+    /// Returns [`StoreError`] when the feed projection or an object id is
     /// invalid.
     pub fn work_feed_tail(
         &self,
@@ -547,8 +547,8 @@ impl SqliteStore {
     ) -> Result<Vec<WorkFeedEntry>, StoreError> {
         let (feed_kind, feed_id) = feed_parts(feed);
         let mut statement = self.connection.prepare(
-            "SELECT position, object_kind, object_hash FROM (
-                 SELECT position, object_kind, object_hash
+            "SELECT position, object_kind, object_id FROM (
+                 SELECT position, object_kind, object_id
                  FROM work_feed_entries
                  WHERE feed_kind = ?1 AND feed_id = ?2
                  ORDER BY position DESC LIMIT ?3
@@ -573,8 +573,8 @@ impl SqliteStore {
                         position,
                     },
                     object_kind,
-                    object_hash: ObjectHash::from_stored(hash.clone())
-                        .ok_or(StoreError::InvalidStoredHash(hash))?,
+                    object_id: ObjectId::from_stored(hash.clone())
+                        .ok_or(StoreError::InvalidStoredKey(hash))?,
                 })
             })
             .collect()
@@ -593,10 +593,10 @@ impl SqliteStore {
     ) -> Result<Vec<WorkFeedEntry>, StoreError> {
         let item = self.get_work_item(work_id)?;
         let mut statement = self.connection.prepare(
-            "SELECT position, object_hash FROM (
-                 SELECT entry.position, entry.object_hash
+            "SELECT position, object_id FROM (
+                 SELECT entry.position, entry.object_id
                  FROM work_feed_entries entry
-                 JOIN objects object ON object.object_hash = entry.object_hash
+                 JOIN objects object ON object.object_id = entry.object_id
                  WHERE entry.feed_kind = 'root_work'
                    AND entry.feed_id = ?1
                    AND entry.object_kind = 'work_event'
@@ -615,15 +615,15 @@ impl SqliteStore {
             )?
             .map(|row| {
                 let (position, hash) = row?;
-                let object_hash = ObjectHash::from_stored(hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(hash))?;
+                let object_id = ObjectId::from_stored(hash.clone())
+                    .ok_or(StoreError::InvalidStoredKey(hash))?;
                 Ok(WorkFeedEntry {
                     position: FeedPosition {
                         feed: FeedId::RootWork(item.root_id),
                         position,
                     },
                     object_kind: "work_event".into(),
-                    object_hash,
+                    object_id,
                 })
             })
             .collect()
@@ -647,9 +647,9 @@ impl SqliteStore {
         let row = self
             .connection
             .query_row(
-                "SELECT object.object_hash, object.canonical_json
+                "SELECT object.object_id, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = ?1 AND entry.feed_id = ?2
                AND entry.work_id = ?3 AND entry.object_kind = 'work_event'
                AND object.object_kind = 'work_event' AND entry.position < ?4
@@ -694,7 +694,7 @@ impl SqliteStore {
         let count: i64 = self.connection.query_row(
             "SELECT COUNT(*)
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'root_work'
                AND entry.feed_id = ?1
                AND entry.object_kind = 'work_event'
@@ -1280,7 +1280,7 @@ fn projected_claim_availability(
     })?;
     let row: Option<(Option<String>, Option<String>, Option<i64>)> = connection
         .query_row(
-            "SELECT run.last_checkpoint_hash, claim.state, claim.expires_at_ms
+            "SELECT run.last_checkpoint_id, claim.state, claim.expires_at_ms
              FROM work_runs run
              LEFT JOIN work_claims claim ON claim.run_id = run.run_id
              WHERE run.run_id = ?1 AND run.work_id = ?2",
@@ -1326,16 +1326,16 @@ pub(super) fn latest_canonical_work_event_for_item_optional(
 ) -> Result<Option<WorkEvent>, StoreError> {
     let projected_hash = connection
         .query_row(
-            "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+            "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
             [work_id.0.to_string()],
             |row| row.get::<_, Option<String>>(0),
         )
         .optional()?;
     let latest = connection
         .query_row(
-            "SELECT object.object_hash, object.canonical_json
+            "SELECT object.object_id, object.canonical_json
              FROM objects object
-             JOIN work_feed_entries entry ON entry.object_hash = object.object_hash
+             JOIN work_feed_entries entry ON entry.object_id = object.object_id
              WHERE object.object_kind = 'work_event'
                AND entry.feed_kind = 'project'
                AND entry.object_kind = 'work_event'
@@ -1348,10 +1348,10 @@ pub(super) fn latest_canonical_work_event_for_item_optional(
     match (projected_hash.flatten(), latest) {
         (None, None) => Ok(None),
         (Some(projected_hash), Some((stored_hash, bytes))) => {
-            let projected_hash = ObjectHash::from_stored(projected_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(projected_hash))?;
-            let stored_hash_value = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash.clone()))?;
+            let projected_hash = ObjectId::from_stored(projected_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(projected_hash))?;
+            let stored_hash_value = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash.clone()))?;
             if projected_hash != stored_hash_value {
                 return Err(StoreError::InvalidWorkProjection(format!(
                     "work item {work_id:?} latest-event binding differs from its indexed feed head"
@@ -1376,9 +1376,9 @@ pub(in crate::storage) fn canonical_work_events_for_item(
     work_id: WorkId,
 ) -> Result<Vec<WorkEvent>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object.object_hash, object.canonical_json
+        "SELECT object.object_id, object.canonical_json
          FROM objects object
-         JOIN work_feed_entries entry ON entry.object_hash = object.object_hash
+         JOIN work_feed_entries entry ON entry.object_id = object.object_id
          WHERE object.object_kind = 'work_event'
            AND entry.feed_kind = 'project'
            AND entry.object_kind = 'work_event'
@@ -1401,9 +1401,9 @@ fn latest_canonical_work_event_on_feed(
 ) -> Result<WorkEvent, StoreError> {
     let stored = connection
         .query_row(
-            "SELECT object.object_hash, object.canonical_json
+            "SELECT object.object_id, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = ?1 AND entry.feed_id = ?2
                AND entry.object_kind = 'work_event'
                AND object.object_kind = 'work_event'
@@ -1426,8 +1426,8 @@ fn decode_canonical_work_event(stored: (String, Vec<u8>)) -> Result<WorkEvent, S
     #[cfg(test)]
     WORK_EVENT_DECODE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
     let (stored_hash, bytes) = stored;
-    let hash = ObjectHash::from_stored(stored_hash.clone())
-        .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    let hash = ObjectId::from_stored(stored_hash.clone())
+        .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
     CanonicalObject::stored(&hash, bytes)?.decode()
 }
 
@@ -1462,7 +1462,7 @@ pub(super) fn load_work_item_projection(
                     revision = json_extract(item_json, '$.revision') AND
                     COALESCE(active_run_id, '') = COALESCE(json_extract(item_json, '$.active_run_id'), '') AND
                     COALESCE(superseded_by, '') = COALESCE(json_extract(item_json, '$.superseded_by'), '') AND
-                    COALESCE(source_snapshot_hash, '') = COALESCE(json_extract(item_json, '$.source_snapshot_id'), '') AND
+                    COALESCE(source_snapshot_id, '') = COALESCE(json_extract(item_json, '$.source_snapshot_id'), '') AND
                     created_at_ms = CAST(strftime('%s', json_extract(item_json, '$.created_at')) AS INTEGER) * 1000
                         + CASE WHEN instr(json_extract(item_json, '$.created_at'), '.') > 0
                             THEN CAST(substr(
@@ -1560,23 +1560,22 @@ pub(super) fn work_completed_by_restored_record_on(
         let run = event.run.as_ref().ok_or_else(|| {
             StoreError::InvalidWorkProjection("native completed work has no canonical run".into())
         })?;
-        let seal_hash = run.completion_seal.as_ref().ok_or_else(|| {
+        let seal_id = run.completion_seal.as_ref().ok_or_else(|| {
             StoreError::InvalidWorkProjection("native completed work has no canonical seal".into())
         })?;
         let projected = connection.query_row(
             "SELECT EXISTS(
                  SELECT 1 FROM work_completion_seals
-                 WHERE work_id = ?1 AND run_id = ?2 AND seal_hash = ?3
+                 WHERE work_id = ?1 AND run_id = ?2 AND seal_id = ?3
              )",
             params![
                 item.work_id.0.to_string(),
                 run.run_id.0.to_string(),
-                seal_hash.as_str()
+                seal_id.as_str()
             ],
             |row| row.get::<_, bool>(0),
         )?;
-        let seal: CompletionSeal =
-            load_typed_work_object(connection, seal_hash, "completion_seal")?;
+        let seal: CompletionSeal = load_typed_work_object(connection, seal_id, "completion_seal")?;
         if event.work != *item
             || run.work_id != item.work_id
             || run.state != WorkRunState::Completed
@@ -1620,17 +1619,17 @@ pub(super) fn work_completed_by_restored_record_on(
 pub(in crate::storage) fn latest_restored_record_hash(
     connection: &Connection,
     work_id: WorkId,
-) -> Result<Option<ObjectHash>, StoreError> {
+) -> Result<Option<ObjectId>, StoreError> {
     Ok(latest_restored_record(connection, work_id)?.map(|(hash, _)| hash))
 }
 
 pub(super) fn latest_restored_record(
     connection: &Connection,
     work_id: WorkId,
-) -> Result<Option<(ObjectHash, RestoredRecord)>, StoreError> {
+) -> Result<Option<(ObjectId, RestoredRecord)>, StoreError> {
     let row = connection
         .query_row(
-            "SELECT generation_index, record_hash
+            "SELECT generation_index, record_id
              FROM work_restored_records WHERE work_id = ?1
              ORDER BY generation_index DESC LIMIT 1",
             [work_id.0.to_string()],
@@ -1638,8 +1637,8 @@ pub(super) fn latest_restored_record(
         )
         .optional()?;
     row.map(|(generation_index, stored_hash)| {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let record: RestoredRecord =
             load_typed_work_object(connection, &hash, "work_restored_record")?;
         if record.work_id != work_id
@@ -1667,10 +1666,10 @@ pub(super) fn restored_records_for_item(
 pub(super) fn restored_records_with_hash_for_item(
     connection: &Connection,
     work_id: WorkId,
-) -> Result<Vec<(ObjectHash, RestoredRecord)>, StoreError> {
+) -> Result<Vec<(ObjectId, RestoredRecord)>, StoreError> {
     let rows = connection
         .prepare(
-            "SELECT generation_index, record_hash FROM work_restored_records
+            "SELECT generation_index, record_id FROM work_restored_records
              WHERE work_id = ?1 ORDER BY generation_index",
         )?
         .query_map([work_id.0.to_string()], |row| {
@@ -1685,8 +1684,8 @@ pub(super) fn restored_records_with_hash_for_item(
                     "restored history for {work_id:?} is not dense"
                 )));
             }
-            let hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let hash = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
             let record: RestoredRecord =
                 load_typed_work_object(connection, &hash, "work_restored_record")?;
             if record.work_id != work_id || record.generation_index != expected {
@@ -1701,32 +1700,32 @@ pub(super) fn restored_records_with_hash_for_item(
 
 fn restored_record_binds_work(
     connection: &Connection,
-    record_hash: &ObjectHash,
+    record_id: &ObjectId,
     work_id: WorkId,
 ) -> Result<bool, StoreError> {
     let projected: bool = connection.query_row(
         "SELECT EXISTS(
              SELECT 1 FROM work_restored_records
-             WHERE work_id = ?1 AND record_hash = ?2
+             WHERE work_id = ?1 AND record_id = ?2
          )",
-        params![work_id.0.to_string(), record_hash.as_str()],
+        params![work_id.0.to_string(), record_id.as_str()],
         |row| row.get(0),
     )?;
     if !projected {
         return Ok(false);
     }
     let record: RestoredRecord =
-        load_typed_work_object(connection, record_hash, "work_restored_record")?;
+        load_typed_work_object(connection, record_id, "work_restored_record")?;
     Ok(record.work_id == work_id)
 }
 
 fn native_work_event_optional(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
 ) -> Result<Option<WorkEvent>, StoreError> {
     let stored = connection
         .query_row(
-            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
@@ -1745,13 +1744,13 @@ fn native_work_event_optional(
 fn restored_work_evidence_for_item(
     connection: &Connection,
     work_id: WorkId,
-) -> Result<Vec<(ObjectHash, RestoredWorkEvidence)>, StoreError> {
+) -> Result<Vec<(ObjectId, RestoredWorkEvidence)>, StoreError> {
     let rows = connection
         .prepare(
-            "SELECT evidence_hash, record_hash, sequence, gate_name, created_at_ms
+            "SELECT evidence_id, record_id, sequence, gate_name, created_at_ms
              FROM work_restored_evidence INDEXED BY work_restored_evidence_work
              WHERE work_id = ?1
-             ORDER BY sequence, evidence_hash",
+             ORDER BY sequence, evidence_id",
         )?
         .query_map([work_id.0.to_string()], |row| {
             Ok((
@@ -1770,8 +1769,8 @@ fn restored_work_evidence_for_item(
                 let expected_sequence = i64::try_from(index)
                     .ok()
                     .and_then(|value| value.checked_add(1));
-                let hash = ObjectHash::from_stored(stored_hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+                let hash = ObjectId::from_stored(stored_hash.clone())
+                    .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
                 let evidence: RestoredWorkEvidence =
                     load_typed_work_object(connection, &hash, "work_restored_evidence")?;
                 let scalar_bound = evidence.work_id == work_id
@@ -1850,8 +1849,8 @@ pub(super) fn load_work_run(
                     COALESCE(executor_session_id, '') = COALESCE(json_extract(run_json, '$.executor'), '') AND
                     state = json_extract(run_json, '$.state') AND
                     revision = json_extract(run_json, '$.revision') AND
-                    COALESCE(last_checkpoint_hash, '') = COALESCE(json_extract(run_json, '$.last_checkpoint'), '') AND
-                    COALESCE(completion_seal_hash, '') = COALESCE(json_extract(run_json, '$.completion_seal'), '')
+                    COALESCE(last_checkpoint_id, '') = COALESCE(json_extract(run_json, '$.last_checkpoint'), '') AND
+                    COALESCE(completion_seal_id, '') = COALESCE(json_extract(run_json, '$.completion_seal'), '')
              FROM work_runs WHERE run_id = ?1",
             [run_id.0.to_string()],
             |row| Ok((row.get(0)?, row.get(1)?)),
@@ -1927,9 +1926,9 @@ pub(super) fn load_retained_root_execution(
     let (execution, address) = super::root_state::projected(connection, root_execution_id)?;
     let stored = connection
         .query_row(
-            "SELECT object.object_hash, object.canonical_json
+            "SELECT object.object_id, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'root_work' AND entry.feed_id = ?1
                AND entry.object_kind = 'work_event'
                AND object.object_kind = 'work_event'
@@ -2068,7 +2067,7 @@ pub(in crate::storage) fn load_active_blocker_projections(
     work_id: WorkId,
 ) -> Result<Vec<WorkBlocker>, StoreError> {
     let mut statement = connection.prepare(
-        "SELECT blocker_json, created_event_hash,
+        "SELECT blocker_json, created_event_id,
                 blocker_id = json_extract(blocker_json, '$.blocker_id') AND
                 work_id = json_extract(blocker_json, '$.work_id')
          FROM work_blockers
@@ -2084,12 +2083,12 @@ pub(in crate::storage) fn load_active_blocker_projections(
             ))
         })?
         .map(|row| {
-            let (bytes, event_hash, scalar_bound) = row?;
+            let (bytes, event_id, scalar_bound) = row?;
             let blocker: WorkBlocker = serde_json::from_slice(&bytes)?;
-            let event_hash = ObjectHash::from_stored(event_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(event_hash))?;
+            let event_id = ObjectId::from_stored(event_id.clone())
+                .ok_or(StoreError::InvalidStoredKey(event_id))?;
             let native_binding =
-                native_work_event_optional(connection, &event_hash)?.is_some_and(|event| {
+                native_work_event_optional(connection, &event_id)?.is_some_and(|event| {
                     event.work_id == work_id
                         && event.blocker.as_ref() == Some(&blocker)
                         && matches!(
@@ -2098,7 +2097,7 @@ pub(in crate::storage) fn load_active_blocker_projections(
                                 if blocker_id == &blocker.blocker_id
                         )
                 });
-            let restored_binding = restored_record_binds_work(connection, &event_hash, work_id)?;
+            let restored_binding = restored_record_binds_work(connection, &event_id, work_id)?;
             if !scalar_bound || blocker.work_id != work_id || !(native_binding || restored_binding)
             {
                 return Err(StoreError::InvalidWorkProjection(format!(
@@ -2145,7 +2144,7 @@ pub(in crate::storage) fn load_prerequisite_projection_ids(
 ) -> Result<Vec<WorkId>, StoreError> {
     let prerequisite_ids = {
         let mut statement = connection.prepare(
-            "SELECT prerequisite_id, event_hash FROM work_prerequisites
+            "SELECT prerequisite_id, event_id FROM work_prerequisites
              WHERE work_id = ?1 ORDER BY prerequisite_id",
         )?;
         statement
@@ -2153,19 +2152,19 @@ pub(in crate::storage) fn load_prerequisite_projection_ids(
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .map(|row| {
-                let (prerequisite_id, event_hash) = row?;
+                let (prerequisite_id, event_id) = row?;
                 Ok((
                     parse_work_id(&prerequisite_id)?,
-                    ObjectHash::from_stored(event_hash.clone())
-                        .ok_or(StoreError::InvalidStoredHash(event_hash))?,
+                    ObjectId::from_stored(event_id.clone())
+                        .ok_or(StoreError::InvalidStoredKey(event_id))?,
                 ))
             })
             .collect::<Result<Vec<_>, StoreError>>()?
     };
     let mut bound = Vec::with_capacity(prerequisite_ids.len());
-    for (prerequisite_id, event_hash) in prerequisite_ids {
+    for (prerequisite_id, event_id) in prerequisite_ids {
         let event_binds_edge =
-            native_work_event_optional(connection, &event_hash)?.is_some_and(|event| {
+            native_work_event_optional(connection, &event_id)?.is_some_and(|event| {
                 event.work_id == work_id
                     && match &event.transition {
                         WorkTransition::Created { prerequisites, .. } => {
@@ -2177,7 +2176,7 @@ pub(in crate::storage) fn load_prerequisite_projection_ids(
                         } => *added == prerequisite_id,
                         _ => false,
                     }
-            }) || restored_record_binds_work(connection, &event_hash, work_id)?;
+            }) || restored_record_binds_work(connection, &event_id, work_id)?;
         if !event_binds_edge {
             return Err(StoreError::InvalidWorkProjection(format!(
                 "prerequisite edge {work_id:?}->{prerequisite_id:?} differs from its event binding"

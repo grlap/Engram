@@ -223,7 +223,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectId,
     control::{LeasePolicyInput, effective_mediated_effects, evaluate_lease_policy},
     domain::{
         ActorContext, AssuranceLevel, Authority, CONTROL_SCHEMA_VERSION, ChangeCursor, ContextItem,
@@ -568,7 +568,7 @@ struct NoteIntentFingerprint<'a> {
     sensitivity: Option<Sensitivity>,
     title: Option<&'a str>,
     tags: &'a [String],
-    evidence: &'a [ObjectHash],
+    evidence: &'a [ObjectId],
     refs: &'a [String],
     actor: &'a ActorContext,
 }
@@ -604,8 +604,8 @@ struct ContradictionIntentFingerprint<'a> {
     task_id: Option<TaskId>,
     work_id: Option<crate::domain::WorkId>,
     work_root_id: Option<crate::domain::WorkId>,
-    left_version: &'a ObjectHash,
-    right_version: &'a ObjectHash,
+    left_version: &'a ObjectId,
+    right_version: &'a ObjectId,
     reason: &'a str,
     actor: &'a ActorContext,
 }
@@ -703,15 +703,15 @@ enum ControlPolicyOperationFingerprint<'a> {
         required_assurance: ControlAssurance,
         authorized_by: &'a ActorContext,
         reason: &'a str,
-        expected_policy: Option<&'a ObjectHash>,
+        expected_policy: Option<&'a ObjectId>,
     },
     SetObligationRuleSet {
         fingerprint_schema_version: u16,
         idempotency_key: &'a str,
-        obligation_rule_set: &'a ObjectHash,
+        obligation_rule_set: &'a ObjectId,
         authorized_by: &'a ActorContext,
         reason: &'a str,
-        expected_policy: Option<&'a ObjectHash>,
+        expected_policy: Option<&'a ObjectId>,
     },
     SetAcceptanceEvaluation {
         fingerprint_schema_version: u16,
@@ -719,7 +719,7 @@ enum ControlPolicyOperationFingerprint<'a> {
         acceptance_evaluation: &'a crate::domain::AcceptanceEvaluationPolicy,
         authorized_by: &'a ActorContext,
         reason: &'a str,
-        expected_policy: Option<&'a ObjectHash>,
+        expected_policy: Option<&'a ObjectId>,
     },
 }
 
@@ -735,28 +735,28 @@ pub enum StoreError {
     #[error("{DIFFERENT_BUILD_STORE_MESSAGE}")]
     DifferentBuildSchema,
     #[error("immutable object collision at {0}")]
-    ImmutableCollision(ObjectHash),
+    ImmutableCollision(ObjectId),
     #[error("object {hash} is stored as kind {stored:?}, not {requested:?}")]
     ObjectKindMismatch {
-        hash: ObjectHash,
+        hash: ObjectId,
         stored: String,
         requested: String,
     },
-    #[error("stored object hash is invalid: {0}")]
-    InvalidStoredHash(String),
+    #[error("stored record id or content fingerprint is invalid: {0}")]
+    InvalidStoredKey(String),
     #[error("contradiction idempotency key {0:?} was reused for different content")]
     ContradictionIdempotencyConflict(String),
     #[error("memory contradiction is invalid: {0}")]
     InvalidContradiction(String),
     #[error("these versions are already linked by contradiction object {0}")]
-    ContradictionAlreadyRecorded(ObjectHash),
+    ContradictionAlreadyRecorded(ObjectId),
     #[error(
         "pinned context is unsafe: contradiction {contradiction} links applicable versions {left} and {right}"
     )]
     PinnedContradiction {
-        contradiction: ObjectHash,
-        left: ObjectHash,
-        right: ObjectHash,
+        contradiction: ObjectId,
+        left: ObjectId,
+        right: ObjectId,
     },
     #[error("note idempotency key {0:?} was reused for different content")]
     NoteIdempotencyConflict(String),
@@ -777,9 +777,9 @@ pub enum StoreError {
     #[error("session {session:?} is not a participant of task {task:?}")]
     TaskAccessDenied { task: TaskId, session: String },
     #[error("memory {0} does not exist or its schema is not active")]
-    MemoryNotFound(ObjectHash),
+    MemoryNotFound(ObjectId),
     #[error("caller is not authorized to read memory {0}")]
-    MemoryAccessDenied(ObjectHash),
+    MemoryAccessDenied(ObjectId),
     #[error("project memory key {0:?} already exists")]
     ProjectMemoryExists(String),
     #[error(
@@ -805,7 +805,7 @@ pub enum StoreError {
     #[error("project memory input is invalid: {0}")]
     InvalidProjectMemory(String),
     #[error("caller is not authorized to explain context packet {0}")]
-    PacketAccessDenied(ObjectHash),
+    PacketAccessDenied(ObjectId),
     #[error("turn observation idempotency key {0:?} was reused for a different intent")]
     TurnObservationIdempotencyConflict(String),
     #[error("control observation projection contains invalid data: {0}")]
@@ -857,8 +857,8 @@ pub enum StoreError {
     InvalidControlProjection(String),
     #[error("active control policy changed: expected {expected}, current policy is {current}")]
     ControlPolicyConflict {
-        expected: ObjectHash,
-        current: ObjectHash,
+        expected: ObjectId,
+        current: ObjectId,
     },
     #[error("acceptance evaluation for {work:?} was refused: {reason}")]
     AcceptanceEvaluationRefused {
@@ -1038,11 +1038,11 @@ pub struct ControlPolicyRecoveryReport {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ControlDiagnostics {
     pub control_schema_version: u16,
-    pub active_policy: ObjectHash,
+    pub active_policy: ObjectId,
     pub policy_epoch: ProjectPolicyEpoch,
     pub required_assurance: ControlAssurance,
     pub supported_effects: Vec<EffectClass>,
-    pub obligation_rule_set: ObjectHash,
+    pub obligation_rule_set: ObjectId,
     /// Which evaluator modes may record verdicts and what backs a pass; a
     /// host reads this to select a mode the store will admit.
     pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
@@ -1059,10 +1059,10 @@ pub struct ControlDiagnostics {
 #[derive(Clone, Debug, Serialize)]
 pub struct ReadinessControlPolicy {
     pub schema_version: u16,
-    pub policy: ObjectHash,
+    pub policy: ObjectId,
     pub epoch: i64,
     pub required_assurance: ControlAssurance,
-    pub obligation_rules: ObjectHash,
+    pub obligation_rules: ObjectId,
     pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
     pub supported_effects: Vec<EffectClass>,
 }
@@ -1079,9 +1079,9 @@ pub struct StoreReadiness {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ControlPolicyUpdateReceipt {
     pub changed: bool,
-    pub active_policy: ObjectHash,
-    pub previous_policy: Option<ObjectHash>,
-    pub authority: ObjectHash,
+    pub active_policy: ObjectId,
+    pub previous_policy: Option<ObjectId>,
+    pub authority: ObjectId,
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_required_assurance: ControlAssurance,
     pub required_assurance: ControlAssurance,
@@ -1092,9 +1092,9 @@ pub struct ControlPolicyUpdateReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AcceptanceEvaluationPolicyUpdateReceipt {
     pub changed: bool,
-    pub active_policy: ObjectHash,
-    pub previous_policy: Option<ObjectHash>,
-    pub authority: ObjectHash,
+    pub active_policy: ObjectId,
+    pub previous_policy: Option<ObjectId>,
+    pub authority: ObjectId,
     pub policy_epoch: ProjectPolicyEpoch,
     pub previous_acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
     pub acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy,
@@ -1105,12 +1105,12 @@ pub struct AcceptanceEvaluationPolicyUpdateReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObligationRuleSetUpdateReceipt {
     pub changed: bool,
-    pub active_policy: ObjectHash,
-    pub previous_policy: Option<ObjectHash>,
-    pub authority: ObjectHash,
+    pub active_policy: ObjectId,
+    pub previous_policy: Option<ObjectId>,
+    pub authority: ObjectId,
     pub policy_epoch: ProjectPolicyEpoch,
-    pub previous_rule_set: Option<ObjectHash>,
-    pub obligation_rule_set: ObjectHash,
+    pub previous_rule_set: Option<ObjectId>,
+    pub obligation_rule_set: ObjectId,
     pub activated_at: DateTime<Utc>,
 }
 
@@ -1120,7 +1120,7 @@ pub struct TaskChange {
     pub cursor: ChangeCursor,
     pub task_id: TaskId,
     pub object_kind: String,
-    pub object_hash: ObjectHash,
+    pub object_id: ObjectId,
 }
 
 type MemorySummaryRow = (
@@ -1144,8 +1144,8 @@ type MemorySummaryRow = (
 #[derive(Debug, Eq, PartialEq)]
 struct MemoryHeadProjectionRow {
     memory_id: String,
-    version_hash: String,
-    assertion_hash: String,
+    version_id: String,
+    assertion_id: String,
     schema_version: i64,
     status: String,
     scope_kind: String,
@@ -1170,7 +1170,7 @@ struct PreparedNote {
 }
 
 struct StoredProjectMemory {
-    version_hash: ObjectHash,
+    version_id: ObjectId,
     version: MemoryVersion,
     assertion: MemoryAssertionEvent,
 }
@@ -1262,9 +1262,7 @@ struct StoredControlObservation {
     idempotency_key: String,
     intent_hash: String,
     observed_at_ms: i64,
-    input_hash: String,
     input_json: Vec<u8>,
-    decision_hash: String,
     decision_json: Vec<u8>,
 }
 
@@ -1318,13 +1316,13 @@ struct RawControlSession {
 
 struct ControlPolicyProjection {
     state_schema_version: i64,
-    policy_hash: ObjectHash,
-    authority_hash: ObjectHash,
+    policy_id: ObjectId,
+    authority_id: ObjectId,
     epoch: ProjectPolicyEpoch,
     required_assurance: ControlAssurance,
     supported_effects: Vec<EffectClass>,
     grant_ttl_seconds: i64,
-    obligation_rule_set: ObjectHash,
+    obligation_rule_set: ObjectId,
     activated_at: DateTime<Utc>,
 }
 
@@ -1376,7 +1374,6 @@ struct StoredControlGrantRow {
     session_id: String,
     task_id: String,
     request_key: String,
-    grant_hash: String,
     grant_json: Vec<u8>,
     state: String,
     issued_at_ms: i64,
@@ -1394,7 +1391,6 @@ struct StoredTurnGrantSupersession {
     task_id: String,
     replacement_request_key: String,
     replacement_decision_hash: String,
-    supersession_hash: String,
     supersession_json: Vec<u8>,
     superseded_at_ms: i64,
 }
@@ -1406,7 +1402,6 @@ struct StoredControlOperation {
     idempotency_key: String,
     intent_hash: String,
     intent_json: Vec<u8>,
-    result_hash: String,
     result_json: Vec<u8>,
 }
 
@@ -1416,7 +1411,6 @@ struct StoredControlPolicyOperation {
     idempotency_key: String,
     intent_hash: String,
     intent_json: Vec<u8>,
-    result_hash: String,
     result_json: Vec<u8>,
 }
 
@@ -1424,7 +1418,6 @@ struct StoredWorkLeaseRow {
     lease_id: String,
     task_id: String,
     holder_session_id: String,
-    lease_hash: String,
     lease_json: Vec<u8>,
     state: String,
     expires_at_ms: i64,
@@ -1432,14 +1425,14 @@ struct StoredWorkLeaseRow {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ApplicableContradiction {
-    contradiction: ObjectHash,
-    left: ObjectHash,
-    right: ObjectHash,
+    contradiction: ObjectId,
+    left: ObjectId,
+    right: ObjectId,
 }
 
 struct AuthorizedContradiction {
-    left: ObjectHash,
-    right: ObjectHash,
+    left: ObjectId,
+    right: ObjectId,
     reason: String,
     task_id: Option<TaskId>,
     /// The caller's own work anchor, kept for the idempotency fingerprint so a

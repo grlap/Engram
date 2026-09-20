@@ -70,7 +70,7 @@ fn expired_handoff_is_audited_and_does_not_block_a_new_offer() {
         .into_iter()
         .filter(|entry| entry.object_kind == "work_event")
         .filter_map(|entry| {
-            load_typed_work_object::<WorkEvent>(&store.connection, &entry.object_hash, "work_event")
+            load_typed_work_object::<WorkEvent>(&store.connection, &entry.object_id, "work_event")
                 .ok()
         })
         .filter(|event| matches!(event.transition, WorkTransition::HandoffExpired { .. }))
@@ -131,12 +131,9 @@ fn outgoing_holder_can_cancel_a_handoff_and_resume_progress() {
         .expect("handoff cancellation event")
         .pop()
         .expect("handoff cancellation tail");
-    let cancelled_event: WorkEvent = load_typed_work_object(
-        &store.connection,
-        &cancelled_entry.object_hash,
-        "work_event",
-    )
-    .expect("canonical handoff cancellation event");
+    let cancelled_event: WorkEvent =
+        load_typed_work_object(&store.connection, &cancelled_entry.object_id, "work_event")
+            .expect("canonical handoff cancellation event");
     assert!(matches!(
         cancelled_event.transition,
         WorkTransition::HandoffCancelled { reason, .. }

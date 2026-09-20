@@ -12,7 +12,7 @@ fn omit_native_restore_defaults(store: &SqliteStore, work: WorkId) {
     let (old_seal, seal_bytes): (String, Vec<u8>) = store
         .connection
         .query_row(
-            "SELECT seal_hash, seal_json FROM work_completion_seals WHERE work_id = ?1",
+            "SELECT seal_id, seal_json FROM work_completion_seals WHERE work_id = ?1",
             [work.0.to_string()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -31,11 +31,15 @@ fn omit_native_restore_defaults(store: &SqliteStore, work: WorkId) {
     let seal = CanonicalObject::freeze(&seal_json).expect("canonical omitted-default seal");
     SqliteStore::insert_object(&store.connection, "completion_seal", &seal).expect("seed seal");
 
-    let (old_event, event_bytes): (String, Vec<u8>) = store.connection.query_row(
-        "SELECT item.latest_event_hash, object.canonical_json FROM work_items item
-         JOIN objects object ON object.object_hash = item.latest_event_hash WHERE item.work_id = ?1",
-        [work.0.to_string()], |row| Ok((row.get(0)?, row.get(1)?)),
-    ).expect("latest native event");
+    let (old_event, event_bytes): (String, Vec<u8>) = store
+        .connection
+        .query_row(
+            "SELECT item.latest_event_id, object.canonical_json FROM work_items item
+         JOIN objects object ON object.object_id = item.latest_event_id WHERE item.work_id = ?1",
+            [work.0.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("latest native event");
     let mut event_json: serde_json::Value =
         serde_json::from_slice(&event_bytes).expect("event JSON");
     assert_eq!(
@@ -45,23 +49,23 @@ fn omit_native_restore_defaults(store: &SqliteStore, work: WorkId) {
             .remove("restored"),
         Some(serde_json::json!(false))
     );
-    event_json["transition"]["seal"] = serde_json::json!(seal.hash());
-    event_json["run"]["completion_seal"] = serde_json::json!(seal.hash());
+    event_json["transition"]["seal"] = serde_json::json!(seal.key());
+    event_json["run"]["completion_seal"] = serde_json::json!(seal.key());
     let event = CanonicalObject::freeze(&event_json).expect("canonical omitted-default event");
     SqliteStore::insert_object(&store.connection, "work_event", &event).expect("seed event");
     store
         .connection
         .execute(
-            "UPDATE work_completion_seals SET seal_hash = ?1, seal_json = ?2 WHERE work_id = ?3",
-            params![seal.hash().as_str(), seal.bytes(), work.0.to_string()],
+            "UPDATE work_completion_seals SET seal_id = ?1, seal_json = ?2 WHERE work_id = ?3",
+            params![seal.key().as_str(), seal.bytes(), work.0.to_string()],
         )
         .expect("bind seal projection");
     store
         .connection
         .execute(
-            "UPDATE work_runs SET completion_seal_hash = ?1, run_json = ?2 WHERE work_id = ?3",
+            "UPDATE work_runs SET completion_seal_id = ?1, run_json = ?2 WHERE work_id = ?3",
             params![
-                seal.hash().as_str(),
+                seal.key().as_str(),
                 serde_json::to_vec(&event_json["run"]).expect("run bytes"),
                 work.0.to_string()
             ],
@@ -70,25 +74,25 @@ fn omit_native_restore_defaults(store: &SqliteStore, work: WorkId) {
     store
         .connection
         .execute(
-            "UPDATE work_items SET latest_event_hash = ?1, item_json = ?2 WHERE work_id = ?3",
+            "UPDATE work_items SET latest_event_id = ?1, item_json = ?2 WHERE work_id = ?3",
             params![
-                event.hash().as_str(),
+                event.key().as_str(),
                 serde_json::to_vec(&event_json["work"]).expect("item bytes"),
                 work.0.to_string()
             ],
         )
         .expect("bind item projection");
-    for (old, new) in [(&old_seal, seal.hash()), (&old_event, event.hash())] {
+    for (old, new) in [(&old_seal, seal.key()), (&old_event, event.key())] {
         store
             .connection
             .execute(
-                "UPDATE work_feed_entries SET object_hash = ?1 WHERE object_hash = ?2",
+                "UPDATE work_feed_entries SET object_id = ?1 WHERE object_id = ?2",
                 params![new.as_str(), old],
             )
             .expect("bind canonical feed entry");
         store
             .connection
-            .execute("DELETE FROM objects WHERE object_hash = ?1", [old])
+            .execute("DELETE FROM objects WHERE object_id = ?1", [old])
             .expect("discard replaced synthetic object");
     }
 }
@@ -237,7 +241,7 @@ fn native_projection_refresh_materializes_defaults_without_changing_canonical_hi
         let after: Vec<u8> = store
             .connection
             .query_row(
-                "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+                "SELECT canonical_json FROM objects WHERE object_id = ?1",
                 [hash],
                 |row| row.get(0),
             )
@@ -249,7 +253,7 @@ fn native_projection_refresh_materializes_defaults_without_changing_canonical_hi
 fn canonical_inventory(store: &SqliteStore) -> Vec<(String, Vec<u8>)> {
     store
         .connection
-        .prepare("SELECT object_hash, canonical_json FROM objects ORDER BY object_hash")
+        .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")
         .expect("canonical inventory")
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
         .expect("canonical rows")
@@ -326,7 +330,7 @@ fn typed_projection_checks_reject_drift_in_every_work_snapshot_family() {
             "work_runs",
             "run_json",
             "completion_seal",
-            serde_json::json!(unrelated.hash()),
+            serde_json::json!(unrelated.key()),
         ),
         (
             "work_root_executions",
@@ -409,7 +413,7 @@ fn exact_projection_labels(store: &SqliteStore, table: &str) -> Vec<String> {
         "work_claims" => ("run_id", "work_claim", ""),
         "work_handoff_offers" => ("offer_id", "work_handoff_offer", ""),
         "work_blockers" => ("blocker_id", "work_blocker", ""),
-        "work_completion_seals" => ("seal_hash", "completion_seal", ":projection_binding"),
+        "work_completion_seals" => ("seal_id", "completion_seal", ":projection_binding"),
         _ => panic!("unexpected fixture table {table}"),
     };
     let mut labels = store
@@ -422,9 +426,9 @@ fn exact_projection_labels(store: &SqliteStore, table: &str) -> Vec<String> {
         .collect::<Vec<_>>();
     if table == "work_completion_seals" || table == "work_handoff_offers" {
         let hash = if table == "work_completion_seals" {
-            "seal_hash"
+            "seal_id"
         } else {
-            "offer_hash"
+            "offer_object_id"
         };
         labels.extend(
             store
@@ -767,7 +771,7 @@ fn native_only_repair_preserves_canonical_defaults_and_detects_projection_drift(
     assert!(report.is_healthy(), "{report:?}");
     let canonical_before = store
         .connection
-        .prepare("SELECT object_hash, canonical_json FROM objects ORDER BY object_hash")
+        .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")
         .expect("canonical inventory")
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -790,7 +794,7 @@ fn native_only_repair_preserves_canonical_defaults_and_detects_projection_drift(
     let store = SqliteStore::open(&database).expect("ordinary open after repair");
     let canonical_after = store
         .connection
-        .prepare("SELECT object_hash, canonical_json FROM objects ORDER BY object_hash")
+        .prepare("SELECT object_id, canonical_json FROM objects ORDER BY object_id")
         .expect("canonical inventory")
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))

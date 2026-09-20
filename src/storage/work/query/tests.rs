@@ -531,12 +531,12 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
     assert!(
         project_feed
             .iter()
-            .any(|entry| entry.object_hash == shared.version)
+            .any(|entry| entry.object_id == shared.version)
     );
     assert!(
         project_feed
             .iter()
-            .all(|entry| entry.object_hash != private.version)
+            .all(|entry| entry.object_id != private.version)
     );
 
     let decomposition = store
@@ -654,7 +654,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
             &control_binding.routing_token,
             &TurnIntent {
                 idempotency_key: "sync-work-context".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"sync-work-context"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"sync-work-context"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -710,7 +710,7 @@ fn focused_work_memory_is_shared_once_while_private_scratch_stays_actor_local() 
             &control_binding.routing_token,
             &TurnIntent {
                 idempotency_key: "guard-work-context".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"guard-work-context"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"guard-work-context"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),

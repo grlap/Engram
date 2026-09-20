@@ -144,7 +144,7 @@ fn phoenix_keyless_claim_renews_but_explicit_key_replays_without_shortening() {
         .filter(|entry| {
             matches!(
                 store
-                    .get::<WorkEvent>(&entry.object_hash)
+                    .get::<WorkEvent>(&entry.object_id)
                     .unwrap()
                     .unwrap()
                     .transition,

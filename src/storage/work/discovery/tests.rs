@@ -62,7 +62,7 @@ fn discovery_orders_nested_binding_observations_by_run_head() {
         session_id: SessionId("runner".into()),
         grant_id: "context-read".into(),
         observation_id: "standalone-read".into(),
-        action_fingerprint: ObjectHash::from_canonical_bytes(b"read workspace"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"read workspace"),
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,

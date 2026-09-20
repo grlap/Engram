@@ -151,7 +151,7 @@ fn gate_replay_never_reuses_another_actors_attribution() {
         previous: None,
     };
     let pending_object = CanonicalObject::freeze(&pending_intent).expect("actor A intent");
-    let actor_a_key = format!("gate:{}", pending_object.hash().as_str());
+    let actor_a_key = format!("gate:{}", pending_object.key().as_str());
     assert!(
         store
             .begin_work_protocol_attempt(&BeginWorkProtocolAttempt {
@@ -331,7 +331,7 @@ fn gate_integrity_requires_a_valid_payload_and_prior_same_name_head() {
     let work_id = WorkId(uuid::Uuid::now_v7());
     let run_id = WorkRunId(uuid::Uuid::now_v7());
     let claim_id = WorkClaimId(uuid::Uuid::now_v7());
-    let make = |previous: Option<ObjectHash>, passed: bool| WorkEvidence {
+    let make = |previous: Option<ObjectId>, passed: bool| WorkEvidence {
         schema_version: SCHEMA_VERSION,
         work_id,
         run_id,
@@ -353,7 +353,7 @@ fn gate_integrity_requires_a_valid_payload_and_prior_same_name_head() {
     let first = make(None, true);
     let first_hash = CanonicalObject::freeze(&first)
         .expect("first gate object")
-        .hash()
+        .key()
         .clone();
     let mut heads = HashMap::new();
     validate_gate_evidence_chain(&first_hash, &first, &mut heads)
@@ -367,26 +367,26 @@ fn gate_integrity_requires_a_valid_payload_and_prior_same_name_head() {
     let second = make(Some(first_hash.clone()), true);
     let second_hash = CanonicalObject::freeze(&second)
         .expect("second gate object")
-        .hash()
+        .key()
         .clone();
     validate_gate_evidence_chain(&second_hash, &second, &mut heads)
         .expect("the exact prior head advances the chain");
 
     let dangling_target = CanonicalObject::freeze(&"dangling")
         .expect("dangling target")
-        .hash()
+        .key()
         .clone();
     let dangling = make(Some(dangling_target), true);
     let dangling_hash = CanonicalObject::freeze(&dangling)
         .expect("dangling gate object")
-        .hash()
+        .key()
         .clone();
     assert!(validate_gate_evidence_chain(&dangling_hash, &dangling, &mut heads).is_err());
 
     let malformed = make(Some(second_hash), false);
     let malformed_hash = CanonicalObject::freeze(&malformed)
         .expect("malformed gate object")
-        .hash()
+        .key()
         .clone();
     assert!(validate_gate_evidence_chain(&malformed_hash, &malformed, &mut heads).is_err());
 }

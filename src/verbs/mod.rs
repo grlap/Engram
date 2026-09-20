@@ -252,7 +252,7 @@ fn collapsed_changes(
             line: format!("{subject} {verb}{actor}: {}", short(text)),
             attribution: format!("{subject} {verb}{actor}"),
             note: matches!(kind.as_str(), "evidence" | "checkpoint")
-                .then(|| (subject.clone(), change.entry.object_hash.as_str().into())),
+                .then(|| (subject.clone(), change.entry.object_id.as_str().into())),
         });
     }
     lines

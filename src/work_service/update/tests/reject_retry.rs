@@ -416,7 +416,7 @@ fn hygiene_correction_reject_service_guards_seeded_core_receipts() {
             assert_eq!(connection.execute("UPDATE work_operation_results SET result_json = ?1 WHERE operation = ?2 AND idempotency_key = ?3", rusqlite::params![encoded.bytes(), "reject_required_child", scoped_key]).unwrap(), 1);
             if stage == 0 {
                 let encoded_basis = CanonicalObject::freeze(&original_basis).unwrap();
-                assert_eq!(connection.execute("UPDATE work_protocol_attempts SET result_hash = NULL, result_json = NULL, basis_hash = ?1, basis_json = ?2 WHERE project_id = ?3 AND session_id = ?4 AND operation = ?5 AND idempotency_key = ?6", rusqlite::params![encoded_basis.hash().as_str(), encoded_basis.bytes(), project.0, session.0, "work_update:reject", key]).unwrap(), 1);
+                assert_eq!(connection.execute("UPDATE work_protocol_attempts SET result_id = NULL, result_json = NULL, basis_hash = ?1, basis_json = ?2 WHERE project_id = ?3 AND session_id = ?4 AND operation = ?5 AND idempotency_key = ?6", rusqlite::params![encoded_basis.key().as_str(), encoded_basis.bytes(), project.0, session.0, "work_update:reject", key]).unwrap(), 1);
             }
         }
         service

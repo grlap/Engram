@@ -126,7 +126,7 @@ fn atomic_plan_single_root_round_trip_and_restore_limit_refusal() {
     item.root_id = receipt.tasks[0].work_id;
     saved.manifest.body_sha256 = CanonicalObject::freeze(&saved.body)
         .expect("body")
-        .hash()
+        .key()
         .clone();
     let bytes = serde_json::to_vec(&saved).expect("oversized bytes");
     let mut destination = SqliteStore::open_in_memory().expect("empty destination");

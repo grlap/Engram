@@ -3,7 +3,7 @@
 //! treats a changed child as the still-current cancelled result.
 
 use super::{
-    CanonicalObject, LocalWorkService, ObjectHash, ProjectId, REJECT_PROTOCOL_OPERATION, Serialize,
+    CanonicalObject, LocalWorkService, ObjectId, ProjectId, REJECT_PROTOCOL_OPERATION, Serialize,
     SessionId, SqliteStore, StoreError, WorkId, WorkLifecycle, WorkProtocolBasis,
 };
 
@@ -13,14 +13,14 @@ struct RejectionKey<'a> {
     session_id: &'a SessionId,
     protocol_operation: &'static str,
     child_id: WorkId,
-    intent: &'a ObjectHash,
+    intent: &'a ObjectId,
 }
 
 impl LocalWorkService {
     pub(in crate::work_service) fn rejection_idempotency_key(
         &self,
         basis: &WorkProtocolBasis,
-        intent: &ObjectHash,
+        intent: &ObjectId,
     ) -> Result<String, StoreError> {
         let child = basis.focused_work.as_ref().ok_or_else(|| {
             StoreError::InvalidWorkProjection("rejection has no bound child".into())
@@ -32,7 +32,7 @@ impl LocalWorkService {
             child_id: child.work_id,
             intent,
         })?;
-        Ok(format!("auto:{}", key.hash().as_str()))
+        Ok(format!("auto:{}", key.key().as_str()))
     }
 }
 

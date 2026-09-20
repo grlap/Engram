@@ -3,7 +3,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use super::super::{SchemaDurability, SchemaOwner, StoreError};
 use super::CURRENT_WORK_SCHEMA_VERSION;
 use super::integrity::verify_work_catalog_projections;
-use crate::{CanonicalObject, ObjectHash, RestoredRecord, RestoredWorkEvidence};
+use crate::{CanonicalObject, ObjectId, RestoredRecord, RestoredWorkEvidence};
 
 #[cfg(test)]
 mod tests;
@@ -199,8 +199,8 @@ pub(in crate::storage) fn initialize_schema(
              revision INTEGER NOT NULL,
              active_run_id TEXT,
              superseded_by TEXT REFERENCES work_items(work_id),
-             source_snapshot_hash TEXT REFERENCES objects(object_hash),
-             latest_event_hash TEXT REFERENCES objects(object_hash),
+             source_snapshot_id TEXT REFERENCES objects(object_id),
+             latest_event_id TEXT REFERENCES objects(object_id),
              created_at_ms INTEGER NOT NULL,
              updated_at_ms INTEGER NOT NULL,
              item_json BLOB NOT NULL,
@@ -236,7 +236,7 @@ pub(in crate::storage) fn initialize_schema(
              created_at_ms INTEGER NOT NULL,
              updated_at_ms INTEGER NOT NULL,
              header_json BLOB NOT NULL,
-             head_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             head_id TEXT NOT NULL REFERENCES objects(object_id),
              UNIQUE(root_id, generation)
          ) STRICT;
          CREATE TABLE IF NOT EXISTS work_root_members (
@@ -256,8 +256,8 @@ pub(in crate::storage) fn initialize_schema(
              state TEXT NOT NULL,
              revision INTEGER NOT NULL,
              claim_fence_head INTEGER NOT NULL DEFAULT 0,
-             last_checkpoint_hash TEXT REFERENCES objects(object_hash),
-             completion_seal_hash TEXT REFERENCES objects(object_hash),
+             last_checkpoint_id TEXT REFERENCES objects(object_id),
+             completion_seal_id TEXT REFERENCES objects(object_id),
              created_at_ms INTEGER NOT NULL,
              updated_at_ms INTEGER NOT NULL,
              run_json BLOB NOT NULL,
@@ -290,7 +290,7 @@ pub(in crate::storage) fn initialize_schema(
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              state TEXT NOT NULL,
              expires_at_ms INTEGER NOT NULL,
-             offer_hash TEXT REFERENCES objects(object_hash),
+             offer_object_id TEXT REFERENCES objects(object_id),
              offer_json BLOB NOT NULL
          ) STRICT;
          CREATE UNIQUE INDEX IF NOT EXISTS work_handoff_offer_active
@@ -306,7 +306,7 @@ pub(in crate::storage) fn initialize_schema(
          CREATE TABLE IF NOT EXISTS work_prerequisites (
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              prerequisite_id TEXT NOT NULL REFERENCES work_items(work_id),
-             event_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             event_id TEXT NOT NULL REFERENCES objects(object_id),
              PRIMARY KEY(work_id, prerequisite_id),
              CHECK(work_id != prerequisite_id)
          ) STRICT;
@@ -317,22 +317,22 @@ pub(in crate::storage) fn initialize_schema(
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              state TEXT NOT NULL,
              blocker_json BLOB NOT NULL,
-             created_event_hash TEXT NOT NULL REFERENCES objects(object_hash),
-             cleared_event_hash TEXT REFERENCES objects(object_hash)
+             created_event_id TEXT NOT NULL REFERENCES objects(object_id),
+             cleared_event_id TEXT REFERENCES objects(object_id)
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_blockers_active
              ON work_blockers(work_id, state);
          CREATE TABLE IF NOT EXISTS work_restored_records (
              work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
              generation_index INTEGER NOT NULL,
-             record_hash TEXT NOT NULL UNIQUE REFERENCES objects(object_hash),
+             record_id TEXT NOT NULL UNIQUE REFERENCES objects(object_id),
              PRIMARY KEY(work_id, generation_index),
              CHECK(generation_index >= 0)
          ) STRICT;
          CREATE TABLE IF NOT EXISTS work_restored_evidence (
-             evidence_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+             evidence_id TEXT PRIMARY KEY REFERENCES objects(object_id),
              work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
-             record_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             record_id TEXT NOT NULL REFERENCES objects(object_id),
              sequence INTEGER NOT NULL,
              gate_name TEXT,
              created_at_ms INTEGER NOT NULL,
@@ -340,53 +340,53 @@ pub(in crate::storage) fn initialize_schema(
              CHECK(sequence > 0)
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_restored_evidence_work
-             ON work_restored_evidence(work_id, sequence, evidence_hash);
+             ON work_restored_evidence(work_id, sequence, evidence_id);
          CREATE INDEX IF NOT EXISTS work_restored_evidence_gate
-             ON work_restored_evidence(work_id, gate_name, sequence, evidence_hash)
+             ON work_restored_evidence(work_id, gate_name, sequence, evidence_id)
              WHERE gate_name IS NOT NULL;
          CREATE TABLE IF NOT EXISTS work_run_evidence (
-             evidence_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+             evidence_id TEXT PRIMARY KEY REFERENCES objects(object_id),
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              run_id TEXT NOT NULL REFERENCES work_runs(run_id),
              evidence_kind TEXT NOT NULL DEFAULT 'generic',
              workspace_id TEXT,
              source_revision TEXT,
              producer_session_id TEXT,
-             producer_observation_hash TEXT REFERENCES objects(object_hash),
+             producer_observation_id TEXT REFERENCES objects(object_id),
              check_fingerprint TEXT,
              verification_result TEXT,
              observed_at_ms INTEGER,
              environment_fingerprint TEXT,
-             environment_evidence_hash TEXT REFERENCES objects(object_hash),
+             environment_evidence_id TEXT REFERENCES objects(object_id),
              components_json BLOB
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_run_evidence_run
-             ON work_run_evidence(run_id, evidence_hash);
+             ON work_run_evidence(run_id, evidence_id);
          CREATE INDEX IF NOT EXISTS work_run_evidence_work
-             ON work_run_evidence(work_id, evidence_hash);
+             ON work_run_evidence(work_id, evidence_id);
          CREATE TABLE IF NOT EXISTS work_run_obligations (
              obligation_id TEXT PRIMARY KEY,
-             definition_hash TEXT NOT NULL UNIQUE REFERENCES objects(object_hash),
+             definition_id TEXT NOT NULL UNIQUE REFERENCES objects(object_id),
              project_id TEXT NOT NULL,
              root_execution_id TEXT NOT NULL REFERENCES work_root_executions(root_execution_id),
              root_id TEXT NOT NULL REFERENCES work_items(work_id),
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              run_id TEXT NOT NULL REFERENCES work_runs(run_id),
              work_revision INTEGER NOT NULL,
-             rule_set_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             rule_set_id TEXT NOT NULL REFERENCES objects(object_id),
              rule_id TEXT NOT NULL,
              rule_version INTEGER NOT NULL,
-             triggering_observation_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             triggering_observation_id TEXT NOT NULL REFERENCES objects(object_id),
              trigger_position INTEGER NOT NULL,
              check_kind TEXT NOT NULL,
              check_fingerprint TEXT,
              state TEXT NOT NULL,
-             resolution_hash TEXT UNIQUE REFERENCES objects(object_hash),
+             resolution_id TEXT UNIQUE REFERENCES objects(object_id),
              resolution_kind TEXT,
-             evidence_hash TEXT REFERENCES objects(object_hash),
+             evidence_id TEXT REFERENCES objects(object_id),
              opened_at_ms INTEGER NOT NULL,
              resolved_at_ms INTEGER,
-             UNIQUE(run_id, rule_id, rule_version, triggering_observation_hash),
+             UNIQUE(run_id, rule_id, rule_version, triggering_observation_id),
              CHECK(work_revision > 0),
              CHECK(rule_version > 0),
              CHECK(trigger_position > 0)
@@ -394,7 +394,7 @@ pub(in crate::storage) fn initialize_schema(
          CREATE INDEX IF NOT EXISTS work_run_obligations_run
              ON work_run_obligations(run_id, state, trigger_position, obligation_id);
          CREATE TABLE IF NOT EXISTS work_completion_seals (
-             seal_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+             seal_id TEXT PRIMARY KEY REFERENCES objects(object_id),
              work_id TEXT NOT NULL REFERENCES work_items(work_id),
              run_id TEXT NOT NULL UNIQUE REFERENCES work_runs(run_id),
              root_execution_id TEXT NOT NULL REFERENCES work_root_executions(root_execution_id),
@@ -412,10 +412,10 @@ pub(in crate::storage) fn initialize_schema(
              feed_id TEXT NOT NULL,
              position INTEGER NOT NULL,
              object_kind TEXT NOT NULL,
-             object_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             object_id TEXT NOT NULL REFERENCES objects(object_id),
              work_id TEXT REFERENCES work_items(work_id),
              PRIMARY KEY(feed_kind, feed_id, position),
-             UNIQUE(feed_kind, feed_id, object_hash),
+             UNIQUE(feed_kind, feed_id, object_id),
              FOREIGN KEY(feed_kind, feed_id)
                  REFERENCES work_feed_heads(feed_kind, feed_id)
          ) STRICT;
@@ -426,7 +426,7 @@ pub(in crate::storage) fn initialize_schema(
              ON objects(json_extract(canonical_json, '$.adapter_kind'), json_extract(canonical_json, '$.canonical_ref'))
              WHERE object_kind = 'work_source_snapshot';
          CREATE INDEX IF NOT EXISTS work_items_source_snapshot
-             ON work_items(source_snapshot_hash, project_id);
+             ON work_items(source_snapshot_id, project_id);
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
@@ -464,7 +464,7 @@ pub(in crate::storage) fn initialize_schema(
              basis_hash TEXT,
              basis_json BLOB,
              initiated_at_ms INTEGER NOT NULL,
-             result_hash TEXT REFERENCES objects(object_hash),
+             result_id TEXT REFERENCES objects(object_id),
              result_json BLOB,
              PRIMARY KEY(project_id, session_id, operation, idempotency_key)
          ) STRICT;",
@@ -479,7 +479,7 @@ pub(in crate::storage) fn initialize_schema(
              ON work_feed_entries(feed_kind, work_id, position DESC)
              WHERE object_kind = 'work_event' AND work_id IS NOT NULL;
          CREATE INDEX IF NOT EXISTS work_feed_entries_environment_cut
-             ON work_feed_entries(feed_id, position, object_hash)
+             ON work_feed_entries(feed_id, position, object_id)
              WHERE feed_kind = 'run_execution'
                AND object_kind = 'environment_evidence';
          CREATE TRIGGER IF NOT EXISTS work_feed_entries_require_work_id
@@ -551,14 +551,14 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
          CREATE TABLE IF NOT EXISTS work_restored_records (
              work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
              generation_index INTEGER NOT NULL,
-             record_hash TEXT NOT NULL UNIQUE REFERENCES objects(object_hash),
+             record_id TEXT NOT NULL UNIQUE REFERENCES objects(object_id),
              PRIMARY KEY(work_id, generation_index),
              CHECK(generation_index >= 0)
          ) STRICT;
          CREATE TABLE IF NOT EXISTS work_restored_evidence (
-             evidence_hash TEXT PRIMARY KEY REFERENCES objects(object_hash),
+             evidence_id TEXT PRIMARY KEY REFERENCES objects(object_id),
              work_id TEXT NOT NULL REFERENCES work_items(work_id) ON DELETE CASCADE,
-             record_hash TEXT NOT NULL REFERENCES objects(object_hash),
+             record_id TEXT NOT NULL REFERENCES objects(object_id),
              sequence INTEGER NOT NULL,
              gate_name TEXT,
              created_at_ms INTEGER NOT NULL,
@@ -566,14 +566,14 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              CHECK(sequence > 0)
          ) STRICT;
          CREATE INDEX IF NOT EXISTS work_restored_evidence_work
-             ON work_restored_evidence(work_id, sequence, evidence_hash);
+             ON work_restored_evidence(work_id, sequence, evidence_id);
          CREATE INDEX IF NOT EXISTS work_restored_evidence_gate
-             ON work_restored_evidence(work_id, gate_name, sequence, evidence_hash)
+             ON work_restored_evidence(work_id, gate_name, sequence, evidence_id)
              WHERE gate_name IS NOT NULL;
          CREATE INDEX IF NOT EXISTS work_run_evidence_run
-             ON work_run_evidence(run_id, evidence_hash);
+             ON work_run_evidence(run_id, evidence_id);
          CREATE INDEX IF NOT EXISTS work_run_evidence_work
-             ON work_run_evidence(work_id, evidence_hash);
+             ON work_run_evidence(work_id, evidence_id);
          CREATE INDEX IF NOT EXISTS work_run_obligations_run
              ON work_run_obligations(run_id, state, trigger_position, obligation_id);
          CREATE INDEX IF NOT EXISTS objects_work_source_proposal_work
@@ -583,7 +583,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON objects(json_extract(canonical_json, '$.adapter_kind'), json_extract(canonical_json, '$.canonical_ref'))
              WHERE object_kind = 'work_source_snapshot';
          CREATE INDEX IF NOT EXISTS work_items_source_snapshot
-             ON work_items(source_snapshot_hash, project_id);
+             ON work_items(source_snapshot_id, project_id);
          CREATE INDEX IF NOT EXISTS objects_work_event_work_id
              ON objects(json_extract(canonical_json, '$.work_id'))
              WHERE object_kind = 'work_event';
@@ -598,7 +598,7 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
              ON work_feed_entries(feed_kind, work_id, position DESC)
              WHERE object_kind = 'work_event' AND work_id IS NOT NULL;
          CREATE INDEX IF NOT EXISTS work_feed_entries_environment_cut
-             ON work_feed_entries(feed_id, position, object_hash)
+             ON work_feed_entries(feed_id, position, object_id)
              WHERE feed_kind = 'run_execution'
                AND object_kind = 'environment_evidence';
          CREATE INDEX IF NOT EXISTS work_session_state_retention
@@ -642,8 +642,8 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
 
 fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreError> {
     let mut statement = connection.prepare(
-        "SELECT object_hash, canonical_json FROM objects
-         WHERE object_kind = ?1 ORDER BY object_hash",
+        "SELECT object_id, canonical_json FROM objects
+         WHERE object_kind = ?1 ORDER BY object_id",
     )?;
     let restored_records = statement
         .query_map(["work_restored_record"], |row| {
@@ -651,14 +651,14 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
         })?
         .collect::<Result<Vec<_>, _>>()?;
     for (stored_hash, bytes) in restored_records {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let record: RestoredRecord = super::feeds::decode_work_object(
             "work_restored_record",
             &CanonicalObject::stored(&hash, bytes)?,
         )?;
         connection.execute(
-            "INSERT INTO work_restored_records (work_id, generation_index, record_hash)
+            "INSERT INTO work_restored_records (work_id, generation_index, record_id)
              VALUES (?1, ?2, ?3)",
             params![
                 record.work_id.0.to_string(),
@@ -677,12 +677,12 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
         })?
         .collect::<Result<Vec<_>, _>>()?;
     for (stored_hash, bytes) in restored_evidence {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let evidence: RestoredWorkEvidence = CanonicalObject::stored(&hash, bytes)?.decode()?;
         connection.execute(
             "INSERT INTO work_restored_evidence (
-                 evidence_hash, work_id, record_hash, sequence, gate_name, created_at_ms
+                 evidence_id, work_id, record_id, sequence, gate_name, created_at_ms
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 hash.as_str(),

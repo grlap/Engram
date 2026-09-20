@@ -1,5 +1,5 @@
 use super::{
-    CanonicalObject, DateTime, LocalWorkService, ObjectHash, ProjectId, Serialize, SessionId,
+    CanonicalObject, DateTime, LocalWorkService, ObjectId, ProjectId, Serialize, SessionId,
     StoreError, Utc, WorkDecomposition, WorkId, WorkProtocolBasis,
 };
 
@@ -9,7 +9,7 @@ struct DecompositionKey<'a> {
     session_id: &'a SessionId,
     protocol_operation: &'static str,
     parent_id: WorkId,
-    intent: &'a ObjectHash,
+    intent: &'a ObjectId,
 }
 
 impl LocalWorkService {
@@ -41,7 +41,7 @@ impl LocalWorkService {
     pub(in crate::work_service) fn decomposition_idempotency_key(
         &self,
         basis: &WorkProtocolBasis,
-        intent: &ObjectHash,
+        intent: &ObjectId,
     ) -> Result<String, StoreError> {
         let parent = basis.focused_work.as_ref().ok_or_else(|| {
             StoreError::InvalidWorkProjection("decomposition has no parent".into())
@@ -53,7 +53,7 @@ impl LocalWorkService {
             parent_id: parent.work_id,
             intent,
         })?;
-        Ok(format!("auto:{}", key.hash().as_str()))
+        Ok(format!("auto:{}", key.key().as_str()))
     }
 }
 

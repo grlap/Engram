@@ -484,7 +484,7 @@ fn record_windows_read_legacy_large_members_and_reject_new_large_restored_notes(
     history.notes[0].summary = body.clone();
     document.manifest.body_sha256 = crate::CanonicalObject::freeze(&document.body)
         .unwrap()
-        .hash()
+        .key()
         .clone();
     let (restored, store, _) = super::review::load(directory.path(), &document);
     let rows = traverse(&restored, &work, false, 102);
@@ -574,14 +574,14 @@ fn record_windows_refuse_expired_fractional_cuts_and_keep_detail_canonical() {
     let connection = rusqlite::Connection::open(&path).unwrap();
     let original: Vec<u8> = connection
         .query_row(
-            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
             [locator],
             |row| row.get(0),
         )
         .unwrap();
     connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
             rusqlite::params![b"{}".as_slice(), locator],
         )
         .unwrap();
@@ -604,7 +604,7 @@ fn record_windows_refuse_expired_fractional_cuts_and_keep_detail_canonical() {
     );
     connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
             rusqlite::params![original, locator],
         )
         .unwrap();

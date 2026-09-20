@@ -207,7 +207,7 @@ fn failing_gate_evidence_does_not_create_a_completion_barrier() {
         )
         .expect("record failing gate");
     let gate_evidence =
-        serde_json::from_value::<ObjectHash>(gate.receipt.result).expect("gate evidence hash");
+        serde_json::from_value::<ObjectId>(gate.receipt.result).expect("gate evidence id");
 
     let completed = service
         .work_complete(
@@ -341,7 +341,7 @@ fn obligation_page_keeps_every_open_item_that_fits_under_byte_trimming() {
 fn focus_evidence_keeps_required_environment_and_verification_closure() {
     for prefix in ["fixture-a", "fixture-b"] {
         let hash =
-            |label: &str| ObjectHash::from_canonical_bytes(format!("{prefix}:{label}").as_bytes());
+            |label: &str| ObjectId::from_canonical_bytes(format!("{prefix}:{label}").as_bytes());
         let required = hash("required-environment");
         let environment_a = hash("environment-a");
         let environment_b = hash("environment-b");
@@ -418,7 +418,7 @@ fn focus_evidence_prioritizes_environments_from_the_visible_obligation_page() {
         } else {
             identity - 8
         };
-        ObjectHash::from_stored(format!("{value:064x}")).expect("valid environment hash")
+        ObjectId::from_stored(format!("{value:064x}")).expect("valid environment hash")
     };
     let count_records = (1..=10_i64)
         .rev()
@@ -592,11 +592,11 @@ fn execution_observation_has_a_compact_agent_work_projection() {
         session_id: SessionId("session".into()),
         grant_id: "grant".into(),
         observation_id: "observation".into(),
-        action_fingerprint: ObjectHash::from_canonical_bytes(b"write source"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"write source"),
         effect: crate::EffectClass::MutateLocal,
         outcome: crate::ExecutionOutcome::Succeeded,
         source_changed: true,
-        obligation_rule_set: ObjectHash::from_canonical_bytes(b"obligation-rule-set"),
+        obligation_rule_set: ObjectId::from_canonical_bytes(b"obligation-rule-set"),
         source_basis: Some(crate::ExecutionSourceBasis {
             workspace_id: "workspace-a".into(),
             source_revision: "revision-a".into(),
@@ -709,7 +709,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
         claim: Some(claim.clone()),
         handoff_offer: None,
         blocker: None,
-        relation_fingerprint: ObjectHash::from_canonical_bytes(b"relations"),
+        relation_fingerprint: ObjectId::from_canonical_bytes(b"relations"),
         transition: WorkTransition::Claimed {
             claim: claim.clone(),
             recovered: false,
@@ -727,8 +727,8 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
     assert!(!claimed.contains("123e4567-e89b-42d3-a456-426614174000"));
     assert!(!claimed.contains("\"fence\""));
 
-    let checkpoint = ObjectHash::from_canonical_bytes(b"private-checkpoint-marker");
-    let offer = ObjectHash::from_canonical_bytes(b"private-offer-marker");
+    let checkpoint = ObjectId::from_canonical_bytes(b"private-checkpoint-marker");
+    let offer = ObjectId::from_canonical_bytes(b"private-offer-marker");
     event.transition = WorkTransition::HandoffOffered {
         offer_id: crate::WorkHandoffOfferId(uuid::Uuid::from_u128(14)),
         to: SessionId("next-session".into()),
@@ -755,7 +755,7 @@ fn work_event_projection_does_not_expose_transition_fences_or_hashes() {
     assert!(long_claim.len() <= MAX_SUMMARY_BYTES);
 
     event.transition = WorkTransition::TypedEvidenceAdded {
-        evidence: ObjectHash::from_canonical_bytes(b"verification"),
+        evidence: ObjectId::from_canonical_bytes(b"verification"),
         evidence_kind: WorkEvidenceKind::Verification,
     };
     assert!(

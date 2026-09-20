@@ -32,7 +32,7 @@ fn claimed_root(
     database: &Path,
     project: &ProjectId,
     criteria: Vec<String>,
-) -> (String, i64, ObjectHash) {
+) -> (String, i64, ObjectId) {
     let mut store = SqliteStore::open(database).expect("store");
     let work = store
         .create_work(

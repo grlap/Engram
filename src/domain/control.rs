@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use unicode_casefold::UnicodeCaseFold;
 use unicode_normalization::UnicodeNormalization;
 
-use crate::ObjectHash;
+use crate::ObjectId;
 
 use super::{
     AcceptanceEvaluationPolicy, ActorContext, ChangeCursor, ContextPacket, ProjectId,
@@ -67,9 +67,9 @@ pub struct ProjectPolicyAuthorityDecision {
     pub schema_version: u16,
     pub operation: ProjectPolicyOperation,
     pub policy_epoch: ProjectPolicyEpoch,
-    pub previous_policy: Option<ObjectHash>,
+    pub previous_policy: Option<ObjectId>,
     pub required_assurance: ControlAssurance,
-    pub obligation_rule_set: ObjectHash,
+    pub obligation_rule_set: ObjectId,
     /// Acceptance-evaluation policy in force after this decision; omitted
     /// bytes mean the legacy self-asserted path.
     #[serde(default, skip_serializing_if = "AcceptanceEvaluationPolicy::is_legacy")]
@@ -85,17 +85,17 @@ pub struct ControlPolicy {
     pub schema_version: u16,
     pub control_schema_version: u16,
     pub policy_epoch: ProjectPolicyEpoch,
-    pub previous_policy: Option<ObjectHash>,
+    pub previous_policy: Option<ObjectId>,
     pub required_assurance: ControlAssurance,
     pub supported_effects: Vec<EffectClass>,
     pub grant_ttl_seconds: i64,
-    pub obligation_rule_set: ObjectHash,
+    pub obligation_rule_set: ObjectId,
     /// Per-project acceptance-evaluation policy; omitted bytes mean the
     /// legacy self-asserted completion path, so earlier policy objects keep
     /// their exact bytes and hashes.
     #[serde(default, skip_serializing_if = "AcceptanceEvaluationPolicy::is_legacy")]
     pub acceptance_evaluation: AcceptanceEvaluationPolicy,
-    pub authority: ObjectHash,
+    pub authority: ObjectId,
     pub activated_at: DateTime<Utc>,
 }
 
@@ -267,7 +267,7 @@ pub struct DeliveryPage {
     pub to_cursor: ChangeCursor,
     pub head_cursor: ChangeCursor,
     pub has_more: bool,
-    pub content_digest: ObjectHash,
+    pub content_digest: ObjectId,
     pub delivery_token: String,
 }
 
@@ -387,7 +387,7 @@ pub struct WorkLeaseReleaseReceipt {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TurnIntent {
     pub idempotency_key: String,
-    pub intent_fingerprint: ObjectHash,
+    pub intent_fingerprint: ObjectId,
     pub purpose: TurnPurpose,
     pub requested_effects: Vec<EffectClass>,
     #[serde(default)]
@@ -439,7 +439,7 @@ pub struct ExecutionSourceBasis {
 #[serde(deny_unknown_fields)]
 pub struct ExecutionObservationInput {
     pub observation_id: String,
-    pub action_fingerprint: ObjectHash,
+    pub action_fingerprint: ObjectId,
     pub effect: EffectClass,
     pub outcome: ExecutionOutcome,
     pub source_changed: bool,
@@ -463,12 +463,12 @@ pub struct ExecutionObservation {
     pub session_id: SessionId,
     pub grant_id: String,
     pub observation_id: String,
-    pub action_fingerprint: ObjectHash,
+    pub action_fingerprint: ObjectId,
     pub effect: EffectClass,
     pub outcome: ExecutionOutcome,
     pub source_changed: bool,
     /// Exact immutable rule set selected by the frozen turn-policy basis.
-    pub obligation_rule_set: ObjectHash,
+    pub obligation_rule_set: ObjectId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_basis: Option<ExecutionSourceBasis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -482,8 +482,14 @@ pub struct ExecutionObservation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionObservationReference {
-    ObjectHash { object_hash: ObjectHash },
-    ObservationId { observation_id: String },
+    #[serde(rename = "object_hash")]
+    ObjectId {
+        #[serde(rename = "object_hash")]
+        object_id: ObjectId,
+    },
+    ObservationId {
+        observation_id: String,
+    },
 }
 
 /// Host-declared class of one verification command or check.
@@ -544,8 +550,14 @@ pub struct EnvironmentComponents {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EnvironmentEvidenceReference {
-    ObjectHash { object_hash: ObjectHash },
-    Index { index: usize },
+    #[serde(rename = "object_hash")]
+    ObjectId {
+        #[serde(rename = "object_hash")]
+        object_id: ObjectId,
+    },
+    Index {
+        index: usize,
+    },
 }
 
 /// Host-private request to capture the environment identity used for one exact
@@ -556,7 +568,7 @@ pub enum EnvironmentEvidenceReference {
 #[serde(deny_unknown_fields)]
 pub struct EnvironmentEvidenceInput {
     pub source_basis: ExecutionSourceBasis,
-    pub environment_fingerprint: ObjectHash,
+    pub environment_fingerprint: ObjectId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub components: Option<EnvironmentComponents>,
     pub observed_at: DateTime<Utc>,
@@ -571,12 +583,12 @@ pub struct VerificationEvidence {
     pub project_id: ProjectId,
     pub binding: ControlWorkBinding,
     pub session_id: SessionId,
-    pub producer_observation: ObjectHash,
+    pub producer_observation: ObjectId,
     pub source_basis: ExecutionSourceBasis,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub environment: Option<ObjectHash>,
+    pub environment: Option<ObjectId>,
     pub check_kind: VerificationKind,
-    pub check_fingerprint: ObjectHash,
+    pub check_fingerprint: ObjectId,
     pub result: VerificationResult,
     pub completed_at: DateTime<Utc>,
     pub summary: String,
@@ -595,9 +607,9 @@ pub struct VerificationEvidence {
 pub struct VerificationRequirement {
     pub check_kind: VerificationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub check_fingerprint: Option<ObjectHash>,
+    pub check_fingerprint: Option<ObjectId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub required_environment: Option<ObjectHash>,
+    pub required_environment: Option<ObjectId>,
 }
 
 /// Immutable identity of one builtin obligation rule version.
@@ -644,7 +656,7 @@ pub struct EnvironmentEvidence {
     pub binding: ControlWorkBinding,
     pub session_id: SessionId,
     pub source_basis: ExecutionSourceBasis,
-    pub environment_fingerprint: ObjectHash,
+    pub environment_fingerprint: ObjectId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub components: Option<EnvironmentComponents>,
     pub observed_at: DateTime<Utc>,
@@ -768,7 +780,7 @@ pub struct TurnGrantBasis {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_binding: Option<ControlWorkBinding>,
     pub purpose: TurnPurpose,
-    pub intent_fingerprint: ObjectHash,
+    pub intent_fingerprint: ObjectId,
     pub project_policy_epoch: ProjectPolicyEpoch,
     pub task_admission_epoch: TaskAdmissionEpoch,
     pub confirmed_cursor: ChangeCursor,
@@ -919,7 +931,7 @@ pub struct TurnGrantSupersession {
     pub superseded_grant_id: String,
     pub superseded_request_key: String,
     pub replacement_request_key: String,
-    pub replacement_decision: ObjectHash,
+    pub replacement_decision: ObjectId,
     pub reason: TurnGrantSupersessionReason,
     pub superseded_at: DateTime<Utc>,
 }
@@ -1017,11 +1029,11 @@ pub struct TurnCheckpointEvent {
     pub delivered_cursor: ChangeCursor,
     pub next_intent: TurnNextIntent,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub execution_observations: Vec<ObjectHash>,
+    pub execution_observations: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub verification_evidence: Vec<ObjectHash>,
+    pub verification_evidence: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub environment_evidence: Vec<ObjectHash>,
+    pub environment_evidence: Vec<ObjectId>,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
 }
@@ -1030,16 +1042,16 @@ pub struct TurnCheckpointEvent {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TurnCheckpointReceipt {
     pub grant_id: String,
-    pub checkpoint: ObjectHash,
+    pub checkpoint: ObjectId,
     pub cursor: ChangeCursor,
     pub confirmed_cursor: ChangeCursor,
     pub phase: SessionPhase,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub execution_observations: Vec<ObjectHash>,
+    pub execution_observations: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub verification_evidence: Vec<ObjectHash>,
+    pub verification_evidence: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub environment_evidence: Vec<ObjectHash>,
+    pub environment_evidence: Vec<ObjectId>,
     pub session_revision: i64,
     pub checkpointed_at: DateTime<Utc>,
 }
@@ -1301,13 +1313,13 @@ pub struct ActionGrantBasis {
     pub turn_purpose: TurnPurpose,
     pub effect: EffectClass,
     pub resource_subjects: Vec<ResourceSubject>,
-    pub request_fingerprint: ObjectHash,
+    pub request_fingerprint: ObjectId,
     pub authority_references: Vec<String>,
     pub epochs: ControlEpochs,
     pub blocking_watermark: ChangeCursor,
     pub capability_map_revision: i64,
     pub leases: Vec<LeaseBasis>,
-    pub resolution_binding_digest: Option<ObjectHash>,
+    pub resolution_binding_digest: Option<ObjectId>,
     pub expires_at: DateTime<Utc>,
 }
 
@@ -1357,14 +1369,14 @@ pub struct ActionBeginSnapshot {
     pub turn_purpose: TurnPurpose,
     pub effect: EffectClass,
     pub resource_subjects: Vec<ResourceSubject>,
-    pub request_fingerprint: ObjectHash,
+    pub request_fingerprint: ObjectId,
     pub authority_references: Vec<String>,
     pub authority_state: AuthorityState,
     pub current_epochs: ControlEpochs,
     pub acknowledged_blocking_watermark: ChangeCursor,
     pub capability_map_revision: i64,
     pub leases: Vec<LeaseBasis>,
-    pub resolution_binding_digest: Option<ObjectHash>,
+    pub resolution_binding_digest: Option<ObjectId>,
     pub resolution_assurance: ResolutionAssurance,
     pub observed_at: DateTime<Utc>,
 }

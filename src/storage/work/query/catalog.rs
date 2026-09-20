@@ -71,7 +71,7 @@ const PROJECTED_WORK_AVAILABILITY_SQL: &str = r"
         ) THEN CASE WHEN EXISTS (
             SELECT 1 FROM work_runs run
             WHERE run.run_id = candidate.active_run_id
-              AND run.last_checkpoint_hash IS NOT NULL
+              AND run.last_checkpoint_id IS NOT NULL
         ) THEN 'active' ELSE 'claimed' END
         ELSE 'ready'
     END

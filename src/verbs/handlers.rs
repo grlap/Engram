@@ -2407,7 +2407,7 @@ pub(super) fn minimal_evaluate_receipt(
     work_ref: &str,
     revision: i64,
     projection: &crate::work_service::WorkEvaluationProjection,
-    evaluation: &crate::ObjectHash,
+    evaluation: &crate::ObjectId,
     replayed: bool,
 ) -> Receipt {
     let detail = super::mutation::full_contract(work_ref);

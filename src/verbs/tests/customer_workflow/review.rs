@@ -303,7 +303,7 @@ fn phoenix_proposed_parent_refusal_names_inspection_not_terminal_followup() {
     document.body.items[0].lifecycle = WorkLifecycle::Proposed;
     document.manifest.body_sha256 = crate::CanonicalObject::freeze(&document.body)
         .expect("body")
-        .hash()
+        .key()
         .clone();
     let (restored, mut store, path) = load(directory.path(), &document);
     let parent = store
@@ -450,12 +450,12 @@ fn phoenix_full_notes_independently_refuse_inconsistent_restored_gates() {
     let connection = rusqlite::Connection::open(path).expect("inspect");
     let raw: String = connection
         .query_row(
-            "SELECT evidence_hash FROM work_restored_evidence ORDER BY sequence LIMIT 1",
+            "SELECT evidence_id FROM work_restored_evidence ORDER BY sequence LIMIT 1",
             [],
             |row| row.get(0),
         )
         .expect("gate hash");
-    let hash = ObjectHash::from_str(&raw).expect("hash");
+    let hash = ObjectId::from_str(&raw).expect("hash");
     let original: crate::RestoredWorkEvidence = store.get(&hash).expect("read gate").expect("gate");
     for bad_version in [false, true] {
         let mut invalid = original.clone();
@@ -469,8 +469,8 @@ fn phoenix_full_notes_independently_refuse_inconsistent_restored_gates() {
         connection
             .execute_batch("SAVEPOINT bad_gate")
             .expect("savepoint");
-        connection.execute("INSERT INTO objects(object_hash, object_kind, canonical_json) VALUES (?1, 'work_restored_evidence', ?2)", rusqlite::params![object.hash().as_str(), object.bytes()]).expect("object");
-        rebind_restored_evidence(&connection, &hash, object.hash());
+        connection.execute("INSERT INTO objects(object_id, object_kind, canonical_json) VALUES (?1, 'work_restored_evidence', ?2)", rusqlite::params![object.key().as_str(), object.bytes()]).expect("object");
+        rebind_restored_evidence(&connection, &hash, object.key());
         connection
             .execute_batch("RELEASE bad_gate")
             .expect("publish fixture corruption");
@@ -486,7 +486,7 @@ fn phoenix_full_notes_independently_refuse_inconsistent_restored_gates() {
             .unwrap();
         let entry = index
             .iter()
-            .find(|entry| entry.address.hash == *object.hash())
+            .find(|entry| entry.address.hash == *object.key())
             .unwrap();
         let error = store
             .work_record_content(&project, item.work_id, entry)
@@ -501,11 +501,11 @@ fn phoenix_full_notes_independently_refuse_inconsistent_restored_gates() {
         assert!(
             matches!(error.error, StoreError::InvalidWorkProjection(message) if message == "inconsistent normalized gate fields")
         );
-        rebind_restored_evidence(&connection, object.hash(), &hash);
+        rebind_restored_evidence(&connection, object.key(), &hash);
         connection
             .execute(
-                "DELETE FROM objects WHERE object_hash = ?1",
-                [object.hash().as_str()],
+                "DELETE FROM objects WHERE object_id = ?1",
+                [object.key().as_str()],
             )
             .expect("remove malformed fixture object");
     }
@@ -514,18 +514,18 @@ fn phoenix_full_notes_independently_refuse_inconsistent_restored_gates() {
 
 fn rebind_restored_evidence(
     connection: &rusqlite::Connection,
-    previous: &ObjectHash,
-    replacement: &ObjectHash,
+    previous: &ObjectId,
+    replacement: &ObjectId,
 ) {
     connection
         .execute(
-            "UPDATE work_restored_evidence SET evidence_hash = ?1 WHERE evidence_hash = ?2",
+            "UPDATE work_restored_evidence SET evidence_id = ?1 WHERE evidence_id = ?2",
             rusqlite::params![replacement.as_str(), previous.as_str()],
         )
         .expect("rebind projection");
     connection
         .execute(
-            "UPDATE work_feed_entries SET object_hash = ?1 WHERE object_hash = ?2",
+            "UPDATE work_feed_entries SET object_id = ?1 WHERE object_id = ?2",
             rusqlite::params![replacement.as_str(), previous.as_str()],
         )
         .expect("rebind feeds");

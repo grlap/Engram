@@ -870,7 +870,7 @@ fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
             "fingerprint": fingerprint
         }))
         .expect("payload")
-        .hash()
+        .key()
         .clone(),
         raw: std::collections::BTreeMap::default(),
     };
@@ -886,7 +886,7 @@ fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
     transaction.commit().expect("commit valid snapshot");
     let mut request = root_request("project-import", "valid-import", 1);
     request.origin = WorkOrigin::Imported;
-    request.source_snapshot_id = Some(valid_object.hash().clone());
+    request.source_snapshot_id = Some(valid_object.key().clone());
     store
         .create_work(&request, &DevelopmentNoopRedactor)
         .expect("verified imported work");
@@ -902,7 +902,7 @@ fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
     transaction.commit().expect("commit wrong kind");
     let mut request = root_request("project-import", "wrong-kind", 2);
     request.origin = WorkOrigin::Imported;
-    request.source_snapshot_id = Some(wrong_kind.hash().clone());
+    request.source_snapshot_id = Some(wrong_kind.key().clone());
     assert!(matches!(
         store.create_work(&request, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidWork(_))
@@ -919,7 +919,7 @@ fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
     transaction.commit().expect("commit malformed snapshot");
     let mut request = root_request("project-import", "malformed", 3);
     request.origin = WorkOrigin::Imported;
-    request.source_snapshot_id = Some(malformed.hash().clone());
+    request.source_snapshot_id = Some(malformed.key().clone());
     assert!(matches!(
         store.create_work(&request, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidWork(_))
@@ -930,14 +930,14 @@ fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
     store
         .connection
         .execute(
-            "INSERT INTO objects (object_hash, object_kind, canonical_json)
+            "INSERT INTO objects (object_id, object_kind, canonical_json)
              VALUES (?1, 'work_source_snapshot', CAST('{}' AS BLOB))",
-            [corrupt.hash().as_str()],
+            [corrupt.key().as_str()],
         )
         .expect("store corrupt snapshot bytes");
     let mut request = root_request("project-import", "corrupt", 4);
     request.origin = WorkOrigin::Imported;
-    request.source_snapshot_id = Some(corrupt.hash().clone());
+    request.source_snapshot_id = Some(corrupt.key().clone());
     assert!(matches!(
         store.create_work(&request, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidWork(_))
@@ -954,7 +954,7 @@ fn imported_work_requires_a_hash_verified_typed_source_snapshot() {
     transaction.commit().expect("commit invalid snapshot");
     let mut request = root_request("project-import", "invalid-shape", 5);
     request.origin = WorkOrigin::Imported;
-    request.source_snapshot_id = Some(invalid_object.hash().clone());
+    request.source_snapshot_id = Some(invalid_object.key().clone());
     assert!(matches!(
         store.create_work(&request, &DevelopmentNoopRedactor),
         Err(StoreError::InvalidWork(_))

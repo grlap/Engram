@@ -254,7 +254,7 @@ impl LocalWorkService {
             caller_key,
             core_operation,
         })?;
-        Ok(format!("work:{}", object.hash().as_str()))
+        Ok(format!("work:{}", object.key().as_str()))
     }
 
     /// Uses the caller's key when one was supplied; otherwise derives one from
@@ -274,10 +274,10 @@ impl LocalWorkService {
         }
         let intent = CanonicalObject::freeze(intent)?;
         if protocol_operation == crate::storage::DECOMPOSE_PROTOCOL_OPERATION {
-            return self.decomposition_idempotency_key(basis, intent.hash());
+            return self.decomposition_idempotency_key(basis, intent.key());
         }
         if protocol_operation == REJECT_PROTOCOL_OPERATION {
-            return self.rejection_idempotency_key(basis, intent.hash());
+            return self.rejection_idempotency_key(basis, intent.key());
         }
         if protocol_operation == "work_complete" {
             // Unlinked keyless completion belongs to one run: sealing keeps
@@ -289,9 +289,9 @@ impl LocalWorkService {
                 "operation": protocol_operation,
                 "work": basis.focused_work.as_ref().map(|work| work.work_id),
                 "run": basis.completion_run_id(),
-                "intent": intent.hash(),
+                "intent": intent.key(),
             }))?;
-            return Ok(format!("completion:{}", identity.hash()));
+            return Ok(format!("completion:{}", identity.key()));
         }
         let basis_object = CanonicalObject::freeze(&basis.retry_stable())?;
         let object = CanonicalObject::freeze(&WorkDerivedKey {
@@ -299,14 +299,14 @@ impl LocalWorkService {
             session_id: &self.session_id,
             protocol_operation,
             focused_work_id: basis.focused_work.as_ref().map(|work| work.work_id),
-            basis: basis_object.hash(),
+            basis: basis_object.key(),
             claim_live: basis
                 .claim
                 .as_ref()
                 .map(|claim| claim.state == WorkClaimState::Active && claim.expires_at > now),
-            intent: intent.hash(),
+            intent: intent.key(),
         })?;
-        Ok(format!("auto:{}", object.hash().as_str()))
+        Ok(format!("auto:{}", object.key().as_str()))
     }
 
     /// Resolves an optional caller-supplied target, makes it the ambient
@@ -639,11 +639,11 @@ impl LocalWorkService {
         let mut history = Vec::new();
         for entry in store.work_event_tail(work_id, MAX_FOCUS_HISTORY)? {
             let event = store
-                .get::<crate::WorkEvent>(&entry.object_hash)?
+                .get::<crate::WorkEvent>(&entry.object_id)?
                 .ok_or_else(|| {
                     StoreError::InvalidWorkProjection(format!(
                         "root-work feed object {} is missing",
-                        entry.object_hash
+                        entry.object_id
                     ))
                 })?;
             if event.work_id != work_id {

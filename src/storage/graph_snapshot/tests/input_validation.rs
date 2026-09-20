@@ -210,7 +210,7 @@ fn terminal_snapshot_layers_bind_their_latest_disposal_event() {
                     }
                     WorkGraphSnapshotRecordPayload::Restored {
                         canonical_json,
-                        object_hash,
+                        object_id,
                     } => {
                         let mut restored: RestoredRecord =
                             serde_json::from_value(canonical_json.clone())
@@ -218,9 +218,9 @@ fn terminal_snapshot_layers_bind_their_latest_disposal_event() {
                         restored.history = history;
                         *canonical_json =
                             serde_json::to_value(&restored).expect("changed inherited record");
-                        *object_hash = CanonicalObject::freeze(&restored)
+                        *object_id = CanonicalObject::freeze(&restored)
                             .expect("rehash inherited record")
-                            .hash()
+                            .key()
                             .clone();
                     }
                 }
@@ -359,7 +359,7 @@ fn nonterminal_snapshot_layers_refuse_a_latest_disposal_event() {
                 match &mut corrupt.body.records[0].payload {
                     WorkGraphSnapshotRecordPayload::Native { history } => change_history(history),
                     WorkGraphSnapshotRecordPayload::Restored {
-                        object_hash,
+                        object_id,
                         canonical_json,
                     } => {
                         let mut restored: RestoredRecord =
@@ -369,9 +369,9 @@ fn nonterminal_snapshot_layers_refuse_a_latest_disposal_event() {
                         change_history(&mut restored.history);
                         *canonical_json =
                             serde_json::to_value(&restored).expect("changed inherited record");
-                        *object_hash = CanonicalObject::freeze(&restored)
+                        *object_id = CanonicalObject::freeze(&restored)
                             .expect("rehash record")
-                            .hash()
+                            .key()
                             .clone();
                     }
                 }
@@ -471,7 +471,7 @@ fn load_validates_exact_and_internal_shape_of_every_restored_generation() {
 
     let mut nonpreserved_scalar = carried.document.clone();
     let crate::WorkGraphSnapshotRecordPayload::Restored {
-        object_hash,
+        object_id,
         canonical_json,
     } = &mut nonpreserved_scalar.body.records[0].payload
     else {
@@ -485,9 +485,9 @@ fn load_validates_exact_and_internal_shape_of_every_restored_generation() {
         .to_owned()
         + "+00:00";
     canonical_json["history"]["events"][0]["occurred_at"] = serde_json::json!(created_at);
-    *object_hash = CanonicalObject::freeze(canonical_json)
+    *object_id = CanonicalObject::freeze(canonical_json)
         .expect("freeze nonpreserved scalar")
-        .hash()
+        .key()
         .clone();
     rebind_snapshot_body(&mut nonpreserved_scalar);
     let mut destination =
@@ -504,16 +504,16 @@ fn load_validates_exact_and_internal_shape_of_every_restored_generation() {
 
     let mut invalid_old_lifecycle = carried.document.clone();
     let crate::WorkGraphSnapshotRecordPayload::Restored {
-        object_hash,
+        object_id,
         canonical_json,
     } = &mut invalid_old_lifecycle.body.records[0].payload
     else {
         panic!("first generation must be restored");
     };
     canonical_json["item"]["lifecycle"] = serde_json::json!("completed");
-    *object_hash = CanonicalObject::freeze(canonical_json)
+    *object_id = CanonicalObject::freeze(canonical_json)
         .expect("freeze invalid old generation")
-        .hash()
+        .key()
         .clone();
     rebind_snapshot_body(&mut invalid_old_lifecycle);
     let mut destination =
@@ -679,7 +679,7 @@ fn load_refuses_incompatible_and_corrupt_documents_without_partial_state() {
     ));
 
     let mut different_build = saved.document.clone();
-    let different_fingerprint = ObjectHash::from_stored("0".repeat(64)).expect("valid hash");
+    let different_fingerprint = ObjectId::from_stored("0".repeat(64)).expect("valid hash");
     different_build.body.summary.format_fingerprint = different_fingerprint.clone();
     different_build.manifest.summary.format_fingerprint = different_fingerprint;
     assert!(matches!(
@@ -728,7 +728,7 @@ fn load_refuses_incompatible_and_corrupt_documents_without_partial_state() {
         .insert("unexpected".into(), serde_json::json!(true));
     let changed_body = CanonicalObject::freeze(&unknown_actor_member["body"])
         .expect("freeze body with nested unknown member")
-        .hash()
+        .key()
         .to_string();
     unknown_actor_member["manifest"]["body_sha256"] = serde_json::json!(changed_body);
     assert!(matches!(

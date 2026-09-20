@@ -160,7 +160,7 @@ fn populated_memory_repair_restores_missing_indexes_and_rolls_back_invalid_heads
                         .unwrap();
                 let identities = history
                     .iter()
-                    .map(|entry| entry.version_hash.clone())
+                    .map(|entry| entry.version_id.clone())
                     .collect::<Vec<_>>();
                 if damaged {
                     store
@@ -211,7 +211,7 @@ fn populated_memory_repair_restores_missing_indexes_and_rolls_back_invalid_heads
                     assert_eq!(
                         after
                             .iter()
-                            .map(|entry| entry.version_hash.clone())
+                            .map(|entry| entry.version_id.clone())
                             .collect::<Vec<_>>(),
                         identities
                     );

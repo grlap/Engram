@@ -42,7 +42,7 @@ fn hygiene_clear_absent_external_reference_is_an_audited_revision() {
         events_before.as_slice()
     );
     let event = store
-        .get::<crate::WorkEvent>(&events_after.last().unwrap().object_hash)
+        .get::<crate::WorkEvent>(&events_after.last().unwrap().object_id)
         .unwrap()
         .unwrap();
     assert_eq!(event.work, after);

@@ -169,7 +169,7 @@ fn version_next_and_doctor_share_runtime_identity_across_processes() {
         "executable_sha256": format!("{:x}", Sha256::digest(executable)),
         "schema_reference": running_schema_reference().unwrap(),
     });
-    let fingerprint = CanonicalObject::freeze(&build).unwrap().hash().clone();
+    let fingerprint = CanonicalObject::freeze(&build).unwrap().key().clone();
     assert_eq!(doctor["build"], build);
     assert_eq!(doctor["build_fingerprint"], json!(fingerprint));
     assert_eq!(diagnosis(home)["build_fingerprint"], json!(fingerprint));

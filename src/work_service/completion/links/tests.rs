@@ -77,7 +77,7 @@ fn criterion_links_bound_index_work_and_input_count() {
             at(1),
         )
         .unwrap();
-    let hash: ObjectHash = serde_json::from_value(
+    let hash: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Evidence {

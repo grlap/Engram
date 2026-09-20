@@ -59,25 +59,25 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
         attach: None,
         idempotency_key: key.into(),
     };
-    let first_evidence: ObjectHash = serde_json::from_value(
+    let first_evidence: ObjectId = serde_json::from_value(
         service
             .work_update(evidence("first finding", "defaults-evidence-1"), at(2))
             .expect("first evidence")
             .receipt
             .result,
     )
-    .expect("evidence hash");
-    let second_evidence: ObjectHash = serde_json::from_value(
+    .expect("evidence id");
+    let second_evidence: ObjectId = serde_json::from_value(
         service
             .work_update(evidence("second finding", "defaults-evidence-2"), at(3))
             .expect("second evidence")
             .receipt
             .result,
     )
-    .expect("evidence hash");
+    .expect("evidence id");
 
     // Omitted evidence snapshots everything already on the run.
-    let checkpoint: ObjectHash = serde_json::from_value(
+    let checkpoint: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Checkpoint {
@@ -102,7 +102,7 @@ fn omitted_checkpoint_evidence_and_acceptance_take_safe_defaults() {
     assert_eq!(stored_checkpoint.evidence, expected);
 
     // Explicit empty still acknowledges none.
-    let empty: ObjectHash = serde_json::from_value(
+    let empty: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Checkpoint {

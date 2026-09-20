@@ -438,7 +438,7 @@ fn doctor_reconstructs_safety_rows_and_typed_feed_membership() {
     let prerequisite_event = store
         .connection
         .query_row(
-            "SELECT event_hash FROM work_prerequisites
+            "SELECT event_id FROM work_prerequisites
              WHERE work_id = ?1 AND prerequisite_id = ?2",
             params![second.work_id.0.to_string(), first.work_id.0.to_string()],
             |row| row.get::<_, String>(0),
@@ -447,8 +447,8 @@ fn doctor_reconstructs_safety_rows_and_typed_feed_membership() {
     let other_event = store
         .connection
         .query_row(
-            "SELECT object_hash FROM objects
-             WHERE object_kind = 'work_event' AND object_hash != ?1 LIMIT 1",
+            "SELECT object_id FROM objects
+             WHERE object_kind = 'work_event' AND object_id != ?1 LIMIT 1",
             [&prerequisite_event],
             |row| row.get::<_, String>(0),
         )
@@ -460,7 +460,7 @@ fn doctor_reconstructs_safety_rows_and_typed_feed_membership() {
     store
         .connection
         .execute(
-            "UPDATE work_prerequisites SET event_hash = ?3
+            "UPDATE work_prerequisites SET event_id = ?3
              WHERE work_id = ?1 AND prerequisite_id = ?2",
             params![
                 second.work_id.0.to_string(),
@@ -506,7 +506,7 @@ fn doctor_reconstructs_safety_rows_and_typed_feed_membership() {
         .connection
         .execute(
             "UPDATE work_run_evidence SET work_id = ?2, run_id = ?3
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             params![
                 evidence.as_str(),
                 root.work_id.0.to_string(),

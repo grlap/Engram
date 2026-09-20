@@ -862,7 +862,7 @@ fn a_pin_that_is_a_stored_record_id_is_refused_where_it_is_authored() {
         .expect("a first root, so the store holds records");
     let stored: String = store
         .connection
-        .query_row("SELECT object_hash FROM objects LIMIT 1", [], |row| {
+        .query_row("SELECT object_id FROM objects LIMIT 1", [], |row| {
             row.get(0)
         })
         .expect("a stored record id");
@@ -870,7 +870,7 @@ fn a_pin_that_is_a_stored_record_id_is_refused_where_it_is_authored() {
     request.acceptance = vec!["run tests".into()];
     let mut pinned = bound(1, VerificationKind::Test);
     pinned.requirement.check_fingerprint =
-        Some(ObjectHash::from_stored(stored).expect("stored id shape"));
+        Some(ObjectId::from_stored(stored).expect("stored id shape"));
     request.acceptance_bindings = vec![pinned];
     let refused = store.create_work(&request, &DevelopmentNoopRedactor);
     let Err(StoreError::InvalidWork(reason)) = refused else {
@@ -896,13 +896,13 @@ fn a_revision_cannot_pin_a_stored_record_with_or_without_a_new_list() {
     );
     let stored: String = store
         .connection
-        .query_row("SELECT object_hash FROM objects LIMIT 1", [], |row| {
+        .query_row("SELECT object_id FROM objects LIMIT 1", [], |row| {
             row.get(0)
         })
         .expect("a stored record id");
     let mut pinned = bound(1, VerificationKind::Test);
     pinned.requirement.check_fingerprint =
-        Some(ObjectHash::from_stored(stored).expect("stored id shape"));
+        Some(ObjectId::from_stored(stored).expect("stored id shape"));
     // Bindings authored with a replacement list, and bindings revised alone
     // against the stored list, reach the guard by different routes.
     for (acceptance, key) in [
@@ -983,7 +983,7 @@ fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
         5,
     );
 
-    let position = |hash: &ObjectHash| {
+    let position = |hash: &ObjectId| {
         run_feed_position_for_object_on(&store.connection, claim.run_id, hash)
             .expect("run-feed position")
             .position
@@ -992,7 +992,7 @@ fn a_source_change_recorded_without_a_revision_is_judged_by_recording_order() {
         load_typed_work_object(&store.connection, &change, "execution_observation")
             .expect("the recorded change");
     assert!(mutation.source_basis.is_none() && mutation.observed_at.is_none());
-    let judge = |hash: &ObjectHash| {
+    let judge = |hash: &ObjectId| {
         let evidence: VerificationEvidence =
             load_typed_work_object(&store.connection, hash, "verification_evidence")
                 .expect("verification evidence");

@@ -5,7 +5,7 @@ use super::{
     ActorContext, AgentWorkSession, CompletionRecoverySnapshot, CompletionSeal, ControlWorkBinding,
     DateTime, MAX_ACCEPTANCE_ITEMS, MAX_ACTOR_CONTEXT_BYTES, MAX_AGENT_WORK_RESPONSE_BYTES,
     MAX_FOCUS_RELATIONS, MAX_LABEL_ITEMS, MAX_OBLIGATION_PAGE_BYTES, MAX_SUMMARY_BYTES,
-    MemorySummary, ObjectHash, ReadyWork, ReadyWorkSummary, RequiredChildWaiverCandidate,
+    MemorySummary, ObjectId, ReadyWork, ReadyWorkSummary, RequiredChildWaiverCandidate,
     RestoredWorkEvidence, Serialize, SessionId, SqliteStore, StoreError, Utc, WorkClaim,
     WorkClaimState, WorkCompletionRecoveryCause, WorkDecomposition, WorkDecompositionChildSummary,
     WorkDecompositionSummary, WorkEvidence, WorkEvidenceKind, WorkEvidenceProjectionSummary,
@@ -27,7 +27,7 @@ pub(crate) fn advisory_error_class(error: &StoreError) -> &'static str {
         StoreError::Json(_) => "stored_json_invalid",
         StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
-        | StoreError::InvalidStoredHash(_) => "canonical_object_invalid",
+        | StoreError::InvalidStoredKey(_) => "canonical_object_invalid",
         // Unclassified failures stay unavailable, not a corruption claim.
         _ => "store_error",
     }
@@ -493,7 +493,7 @@ pub(super) fn count_omission(
 pub(super) fn prioritized_focus_evidence(
     candidates: Vec<WorkEvidenceProjectionSummary>,
     obligation_page: &WorkObligationPage,
-) -> Vec<ObjectHash> {
+) -> Vec<ObjectId> {
     let required_environments = obligation_page
         .items
         .iter()
@@ -505,8 +505,8 @@ pub(super) fn prioritized_focus_evidence(
 
 pub(super) fn prioritized_focus_evidence_hashes(
     mut candidates: Vec<WorkEvidenceProjectionSummary>,
-    mut required_environments: Vec<ObjectHash>,
-) -> Vec<ObjectHash> {
+    mut required_environments: Vec<ObjectId>,
+) -> Vec<ObjectId> {
     candidates.sort_by(|left, right| left.hash.as_str().cmp(right.hash.as_str()));
     required_environments.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     required_environments.dedup();
@@ -557,7 +557,7 @@ pub(super) fn prioritized_focus_evidence_hashes(
     selected
 }
 
-fn push_focus_evidence(selected: &mut Vec<ObjectHash>, hash: &ObjectHash) {
+fn push_focus_evidence(selected: &mut Vec<ObjectId>, hash: &ObjectId) {
     if selected.len() < MAX_FOCUS_RELATIONS && !selected.contains(hash) {
         selected.push(hash.clone());
     }
@@ -630,7 +630,7 @@ fn gate_evidence_summary(gate: &crate::GateEvidenceRecord, compact: bool) -> Str
 pub(super) fn work_evidence_summary(
     store: &SqliteStore,
     run_id: WorkRunId,
-    hash: &ObjectHash,
+    hash: &ObjectId,
 ) -> Result<WorkEvidenceSummary, StoreError> {
     match store.work_evidence_kind(run_id, hash)? {
         WorkEvidenceKind::Generic => {
@@ -719,7 +719,7 @@ pub(super) fn work_evidence_summary(
 }
 
 pub(super) fn restored_work_evidence_summary(
-    hash: ObjectHash,
+    hash: ObjectId,
     evidence: &RestoredWorkEvidence,
 ) -> Result<WorkEvidenceSummary, StoreError> {
     let summary = compact_restored_work_evidence(evidence)?;
@@ -752,7 +752,7 @@ pub(super) fn restored_work_evidence_summary(
 }
 
 pub(super) fn work_observation_summary(
-    hash: ObjectHash,
+    hash: ObjectId,
     observation: &crate::domain::WorkObservation,
 ) -> WorkEvidenceSummary {
     WorkEvidenceSummary {
@@ -803,13 +803,13 @@ fn work_obligation_summary(record: &crate::storage::WorkObligationRecord) -> Wor
     };
     WorkObligationSummary {
         obligation_id: record.obligation.obligation_id,
-        definition: record.definition_hash.clone(),
+        definition: record.definition_id.clone(),
         rule_set: record.obligation.rule_set.clone(),
         state: record.state,
         rule: record.obligation.rule.clone(),
         requirement: record.obligation.requirement.clone(),
         triggering_observation: record.obligation.triggering_observation.clone(),
-        resolution: record.resolution_hash.clone(),
+        resolution: record.resolution_id.clone(),
         evidence,
         waived_by,
         guidance,
@@ -851,7 +851,7 @@ pub(super) fn sealed_work_obligation_page(
     let mut bindings = records
         .iter()
         .map(|record| {
-            let resolution = record.resolution_hash.clone().ok_or_else(|| {
+            let resolution = record.resolution_id.clone().ok_or_else(|| {
                 StoreError::InvalidWorkProjection(format!(
                     "sealed obligation {} has no terminal resolution",
                     record.obligation.obligation_id.0
@@ -859,7 +859,7 @@ pub(super) fn sealed_work_obligation_page(
             })?;
             Ok(crate::CompletionObligationBinding {
                 obligation_id: record.obligation.obligation_id,
-                definition: record.definition_hash.clone(),
+                definition: record.definition_id.clone(),
                 resolution,
             })
         })

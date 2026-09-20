@@ -7,7 +7,7 @@ use std::{fs::File, io, sync::OnceLock};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::{CanonicalObject, ObjectHash, StoreError};
+use crate::{CanonicalObject, ObjectId, StoreError};
 
 /// Inputs visible to operators when comparing two running processes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -16,7 +16,7 @@ pub struct BuildComponents {
     pub executable_sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executable: Option<&'static str>,
-    pub schema_reference: Option<ObjectHash>,
+    pub schema_reference: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<&'static str>,
 }
@@ -25,15 +25,15 @@ pub struct BuildComponents {
 #[derive(Clone, Debug, Serialize)]
 pub struct BuildIdentity {
     pub build: BuildComponents,
-    pub build_fingerprint: Option<ObjectHash>,
+    pub build_fingerprint: Option<ObjectId>,
 }
 
 /// Hashes precisely the visible component object, without persisting it.
 ///
 /// # Errors
 /// Returns an error if the diagnostic object cannot be canonicalized.
-pub fn fingerprint(build: &BuildComponents) -> Result<ObjectHash, StoreError> {
-    Ok(CanonicalObject::freeze(build)?.hash().clone())
+pub fn fingerprint(build: &BuildComponents) -> Result<ObjectId, StoreError> {
+    Ok(CanonicalObject::freeze(build)?.key().clone())
 }
 
 /// Latches executable bytes and the in-memory schema reference once per process.
@@ -76,14 +76,14 @@ pub fn version() -> &'static str {
         format!(
             "{} build {} (exe {}, schema {})",
             identity.build.package_version,
-            short_hash(identity.build_fingerprint.as_ref().map(ObjectHash::as_str)),
+            short_hash(identity.build_fingerprint.as_ref().map(ObjectId::as_str)),
             short_hash(identity.build.executable_sha256.as_deref()),
             short_hash(
                 identity
                     .build
                     .schema_reference
                     .as_ref()
-                    .map(ObjectHash::as_str)
+                    .map(ObjectId::as_str)
             ),
         )
     })
@@ -108,7 +108,7 @@ mod tests {
             Some(crate::storage::running_schema_reference().unwrap())
         );
         let expected = CanonicalObject::freeze(build).unwrap();
-        assert_eq!(identity.build_fingerprint.as_ref(), Some(expected.hash()));
+        assert_eq!(identity.build_fingerprint.as_ref(), Some(expected.key()));
         assert_eq!(
             fingerprint(build).unwrap(),
             fingerprint(&build.clone()).unwrap()
@@ -125,12 +125,12 @@ mod tests {
                     changed.schema_reference = Some(
                         CanonicalObject::freeze(&"different schema")
                             .unwrap()
-                            .hash()
+                            .key()
                             .clone(),
                     );
                 }
             }
-            assert_ne!(fingerprint(&changed).unwrap(), *expected.hash());
+            assert_ne!(fingerprint(&changed).unwrap(), *expected.key());
         }
         assert!(std::ptr::eq(current(), current()));
     }
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(value["executable"], "unavailable");
         assert_eq!(
             fingerprint(&build).unwrap(),
-            *CanonicalObject::freeze(&value).unwrap().hash()
+            *CanonicalObject::freeze(&value).unwrap().key()
         );
         assert_eq!(short_hash(None), "unavailable");
     }

@@ -173,7 +173,7 @@ pub(super) fn turn_evaluation(task_id: TaskId) -> TurnEvaluationInput {
         leases: Vec::new(),
         intent: TurnIntent {
             idempotency_key: "observe-turn-a".into(),
-            intent_fingerprint: ObjectHash::from_canonical_bytes(b"turn-a"),
+            intent_fingerprint: ObjectId::from_canonical_bytes(b"turn-a"),
             purpose: TurnPurpose::Ordinary,
             requested_effects: vec![EffectClass::Observe],
             resource_intents: Vec::new(),
@@ -270,7 +270,7 @@ pub(super) fn complete_control_turn(
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: format!("turn-{key}"),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(key.as_bytes()),
+                intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
                 purpose: crate::domain::TurnPurpose::Ordinary,
                 requested_effects,
                 resource_intents,

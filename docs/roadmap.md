@@ -50,7 +50,7 @@ on the V1 path below.
   leases, suspension-aware expiry, explicit handoff, root-shared memory,
   contribution/child-seal barrier, and a separate fenced report-assembly claim
 - Context packets: budgets, fail-closed pinned tier, omission manifest,
-  packet hash + explain, typed source-feed vectors plus independent
+  packet fingerprint + explain, typed source-feed vectors plus independent
   per-session delivery positions, peer deltas, and review counts —
   [context packets](features/context-packets.md)
 - `engram work note` / MCP `note`: one work finding feeds peer, handoff,
@@ -138,7 +138,7 @@ reduces the risk only once a copy leaves the host.
 | Embeddings | FTS5 + good titles measurably stop being enough (per the evaluation harness) |
 | Service backend / Signer / envelope encryption | Team scale or compliance posture demands them |
 | Capability requirements on work items matched against the host's bind-time capability map | More than one hosting environment can take the same item, or a host without a required skill claims work it cannot finish — [execution pipeline](features/execution-pipeline.md) |
-| Environment policy beyond shipped exact-hash obligation pins | Acceptance needs signed attestation, component predicates, or environment families rather than one previously recorded identity — [execution pipeline](features/execution-pipeline.md) |
+| Environment policy beyond shipped exact-id obligation pins | Acceptance needs signed attestation, component predicates, or environment families rather than one previously recorded identity — [execution pipeline](features/execution-pipeline.md) |
 | External intake system (enrichment, planning, sufficiency check) | The manual import → execute → publish loop has closed several times and the manual steps are the bottleneck — [execution pipeline](features/execution-pipeline.md) |
 | General obligation rule language beyond the shipped policy-selected typed rule sets | More projects need triggers, conditions, evidence kinds, blocking phases, and waiver authority that cannot be represented by the bounded V1 schema — [execution pipeline](features/execution-pipeline.md) |
 

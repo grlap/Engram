@@ -127,7 +127,7 @@ fn focus_derived_work_contradiction_publishes_one_feed_delta_and_doctor_backstop
     store
         .connection
         .execute(
-            "DELETE FROM work_feed_entries WHERE feed_kind = 'root_work' AND object_hash = ?1",
+            "DELETE FROM work_feed_entries WHERE feed_kind = 'root_work' AND object_id = ?1",
             [derived.contradiction.as_str()],
         )
         .expect("simulate a missing anchored feed entry");
@@ -171,8 +171,8 @@ fn indexed_feed_work_identity_is_fail_closed_and_doctor_visible() {
             "UPDATE work_feed_entries SET work_id = ?2
              WHERE object_kind = 'work_event'
                AND work_id = ?1
-               AND object_hash = (
-                   SELECT latest_event_hash FROM work_items WHERE work_id = ?1
+               AND object_id = (
+                   SELECT latest_event_id FROM work_items WHERE work_id = ?1
                )",
             params![root.work_id.0.to_string(), other.work_id.0.to_string()],
         )
@@ -193,7 +193,7 @@ fn indexed_feed_work_identity_is_fail_closed_and_doctor_visible() {
         report
             .invalid_work_records
             .iter()
-            .any(|record| { record == &format!("work_item:{}:latest_event_hash", root.work_id.0) })
+            .any(|record| { record == &format!("work_item:{}:latest_event_id", root.work_id.0) })
     );
     assert_eq!(
         store

@@ -618,11 +618,11 @@ The active immutable `ControlPolicy` selects a canonical
 `source_mutation_requires_test` rule, which evaluates every work-bound
 observation with `source_changed=true`, regardless of outcome or whether a
 source basis is present. The checkpoint resolves the rule set from the begun
-grant's frozen project-policy epoch and records its hash on the
+grant's frozen project-policy epoch and records its id on the
 `ExecutionObservation`; every resulting `WorkObligation` repeats that exact
 selection. Activating another set affects only observations from later policy
 epochs and cannot reinterpret a prior trigger, definition, or completion cut.
-Every observation carries the exact selected rule-set hash.
+Every observation carries the exact selected rule-set id.
 
 Each match appends one immutable `work_obligation` definition directly to the
 project, root-work, and run-execution feeds. A passed `test` verification
@@ -652,11 +652,11 @@ Policy refusals are typed as `waiver_not_admitted`, `obligation_not_open`, or
 `definition_changed`, and exact retries replay exactly. Agent-facing pages and
 the host receipt omit the reason. Completion evaluates the
 cut-aware open set at the exact pre-seal run-feed cut. Terminal definitions are
-frozen into the seal as exact definition/resolution hash pairs under obligation
+frozen into the seal as exact definition/resolution id pairs under obligation
 schema V1, and completion success reconstructs its page from that sealed basis.
 New seals separately declare environment schema V1 and bind the sorted,
-distinct environment-evidence hashes at or before the same dense run-feed cut.
-The seal carries hashes only, refuses more than 64 records, and never copies
+distinct environment-evidence ids at or before the same dense run-feed cut.
+The seal carries ids only, refuses more than 64 records, and never copies
 toolchain, sandbox, or image bytes. Every accepted seal carries the current
 environment-schema binding.
 
@@ -664,7 +664,7 @@ An observation effect outside the frozen grant is rejected as
 `observation_scope_mismatch`. A checkpoint against an issued-but-not-begun
 grant returns `grant_not_begun` with host bind/recovery guidance;
 `grant_scope_mismatch` remains the general frozen-basis mismatch. An
-exact retry replays the same observation and typed-evidence hashes, while a
+exact retry replays the same observation and typed-evidence ids, while a
 different ordered input under the same checkpoint key is an idempotency
 conflict. Task-only sessions cannot append run observations or typed run
 evidence, and another session cannot bind or reuse a peer's claim: the claim
@@ -724,7 +724,7 @@ constraint cannot be bypassed by a long-lived turn grant. Lease ownership
 changes are fenced independently; expiry invalidates the relevant grant
 without advancing either epoch.
 
-The packet hash reproduces delivered content, dense named feed positions order
+The packet fingerprint reproduces delivered content, dense named feed positions order
 changes, the project-policy epoch invalidates global rules, the work-admission
 epoch invalidates work/run rules and lifecycle, the claim fence invalidates
 stale responsibility, and a resource-lease fence invalidates old mutation
@@ -786,7 +786,7 @@ The minimum records are:
   monotonic claim fence, and transfer/recovery lifecycle.
 - `ResourceLease` and `HandoffOffer`: canonical subject set, mode, holder, expiry,
   revision, fencing epoch, and transfer lifecycle.
-- `ReportAssembly` and `ReportAssemblyClaim`: root completion-seal hash,
+- `ReportAssembly` and `ReportAssemblyClaim`: root completion-seal id,
   assembly generation/state/revision, designated holder, expiry, revision,
   monotonic fence, and handoff/recovery lifecycle. This is post-completion
   authority and is never a substitute for a work claim or resource lease.
@@ -798,7 +798,7 @@ The minimum records are:
   expiry, one-use state, and minimal outcome metadata; receipts and action
   state transitions are canonical, while terminal grants are operational.
 - `RequestKeyTombstone`: compact durable binding of request kind, key,
-  session/work/run, intent hash, terminal state, and optional result hash. It
+  session/work/run, intent fingerprint, terminal state, and optional result id. It
   outlives a pruned grant through the work retention boundary and can never
   mint authority.
 - `DegradedEnvelope` and `DegradedActionDebt`: bounded cached degradation
@@ -879,7 +879,7 @@ obligation rule set.
 Current policy state requires one canonical obligation-rule-set selection. The
 operator-only
 `engram control-policy set-obligation-rule-set` command may append an
-attributed successor under an epoch/hash compare-and-swap. It accepts bounded,
+attributed successor under an epoch/id compare-and-swap. It accepts bounded,
 strict JSON inline or through `@file`, and activates only the fully re-supplied
 typed set; rollback never trusts a hash alone. The command is not exposed
 through MCP or the host turn protocol. V1 rule sets are bounded typed data,
@@ -1062,7 +1062,7 @@ or explicit reason-attributed disposed-child waiver. Only
 after the drain succeeds does a
 `completion_seal` transaction capture a dense run-feed cut and bind the work
 revision, run/claim fences, executor checkpoint, action outcomes, acceptance
-results, and evidence hashes. A root seal also binds required child seals or
+results, and evidence ids. A root seal also binds required child seals or
 disposed-child waivers, contributions, decisions, and attributed participant
 waivers. It makes the work completed; an
 attributed abort before the seal returns it to `open`. The shipped alpha only
@@ -1089,7 +1089,7 @@ barrier, advances the work admission epoch, and requires a later fresh cut.
 Optional report finalization consumes the immutable completion seal; it does
 not drain execution a second time. Engram creates a `ReportAssembly` anchored
 to the root seal and issues a fenced `ReportAssemblyClaim` to the designated
-finalizer. A narrowly scoped `finalizer` turn grant binds the seal hash,
+finalizer. A narrowly scoped `finalizer` turn grant binds the seal id,
 assembly generation/revision, and live assembly-claim fence. It cannot reopen
 ordinary workspace mutation, and it requires no completed-run work claim or
 resource lease. Final report freeze requires that grant, the seal, and the
@@ -1230,7 +1230,7 @@ per-host-tool mediation map is still outstanding.
 Broader enforcement must remain disabled until Phase 1 makes these invariants
 true in the core, not only in wrappers:
 
-- context contents, task/work-root contradictions, packet hash, stamped task
+- context contents, task/work-root contradictions, packet fingerprint, stamped task
   head, persisted work focus, project/root/run work-feed heads, the
   project-visible context revision, and the owner-private context revision
   come from one consistent SQLite read transaction; begin rechecks that basis

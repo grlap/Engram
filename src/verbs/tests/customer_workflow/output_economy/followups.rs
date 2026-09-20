@@ -224,7 +224,7 @@ fn compact_remedy_elides_only_one_bound_title_and_preserves_core_wording() {
         obligation_id: crate::WorkObligationId::new(),
         definition: crate::canonical::CanonicalObject::freeze(&json!({"check": "test"}))
             .unwrap()
-            .hash()
+            .key()
             .clone(),
         required_check: VerificationKind::Test,
     };

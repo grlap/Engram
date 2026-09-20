@@ -136,7 +136,7 @@ fn required_successor_resolution_agrees_in_show_listing_and_completion_without_w
     let connection = rusqlite::Connection::open(&path).unwrap();
     let original_bytes: Vec<u8> = connection
         .query_row(
-            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
             [successor_hash.as_str()],
             |row| row.get(0),
         )
@@ -192,7 +192,7 @@ fn required_successor_resolution_agrees_in_show_listing_and_completion_without_w
     assert_eq!(
         connection
             .query_row::<Vec<u8>, _, _>(
-                "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+                "SELECT canonical_json FROM objects WHERE object_id = ?1",
                 [successor_hash.as_str()],
                 |row| row.get(0)
             )

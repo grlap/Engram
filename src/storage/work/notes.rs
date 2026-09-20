@@ -10,7 +10,7 @@ use crate::domain::{
     ActorContext, EnvironmentEvidence, GateEvidenceRecord, VerificationEvidence, WorkEvidence,
     WorkEvidenceKind, WorkId, WorkObservation,
 };
-use crate::{ObjectHash, RestoredWorkEvidence};
+use crate::{ObjectId, RestoredWorkEvidence};
 
 pub(crate) struct WorkNoteRecord {
     pub kind: WorkEvidenceKind,
@@ -22,13 +22,13 @@ pub(crate) struct WorkNoteRecord {
 }
 
 pub(super) const NOTE_OBJECTS: &str = "
-    SELECT evidence_hash AS hash, 'run' AS family, NULL AS restored_gate
+    SELECT evidence_id AS hash, 'run' AS family, NULL AS restored_gate
     FROM work_run_evidence WHERE work_id = ?1
     UNION ALL
-    SELECT evidence_hash, 'restored', gate_name IS NOT NULL
+    SELECT evidence_id, 'restored', gate_name IS NOT NULL
     FROM work_restored_evidence WHERE work_id = ?1
     UNION ALL
-    SELECT observation_hash, 'observation', NULL FROM work_observations WHERE work_id = ?1
+    SELECT observation_id, 'observation', NULL FROM work_observations WHERE work_id = ?1
 ";
 
 fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(), StoreError> {
@@ -41,7 +41,7 @@ fn validate_gate(gate: Option<&GateEvidenceRecord>, refs: &[String]) -> Result<(
 pub(super) fn load_note(
     connection: &Connection,
     work_id: WorkId,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     family: &str,
     kind: &str,
 ) -> Result<WorkNoteRecord, StoreError> {
@@ -97,9 +97,9 @@ pub(super) fn load_note(
             let evidence: RestoredWorkEvidence = load_typed_work_object(connection, hash, kind)?;
             let matches: bool = connection.query_row(
                 "SELECT EXISTS(SELECT 1 FROM work_restored_evidence evidence
-                 JOIN work_restored_records record ON record.record_hash = evidence.record_hash
+                 JOIN work_restored_records record ON record.record_id = evidence.record_id
                     AND record.work_id = evidence.work_id
-                 WHERE evidence.evidence_hash = ?1 AND evidence.record_hash = ?2
+                 WHERE evidence.evidence_id = ?1 AND evidence.record_id = ?2
                     AND evidence.sequence = ?3 AND evidence.created_at_ms = ?4)",
                 params![
                     hash.as_str(),
@@ -164,7 +164,7 @@ impl super::super::SqliteStore {
         criterion: usize,
         locator: &str,
         index: &[super::record_windows::WorkRecordIndex],
-    ) -> Result<ObjectHash, StoreError> {
+    ) -> Result<ObjectId, StoreError> {
         use super::record_windows::WorkRecordFamily;
         let refuse = |reason| StoreError::WorkCriterionLinkInvalid {
             criterion: (criterion > 0).then_some(criterion),
@@ -199,7 +199,7 @@ impl super::super::SqliteStore {
             let kind: Option<String> = self.connection.query_row(
                 "SELECT entry.object_kind FROM work_feed_entries entry
                  JOIN work_runs run ON entry.feed_kind = 'run_execution' AND entry.feed_id = run.run_id
-                 WHERE run.work_id = ?1 AND entry.object_hash LIKE ?2 LIMIT 1",
+                 WHERE run.work_id = ?1 AND entry.object_id LIKE ?2 LIMIT 1",
                 params![work.0.to_string(), format!("{prefix}%")], |row| row.get(0),
             ).optional()?;
             return Err(refuse(match kind.as_deref() {
@@ -229,8 +229,8 @@ impl super::super::SqliteStore {
         let (current_run, any_run): (bool, bool) = self
             .connection
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM work_run_evidence WHERE work_id = ?1 AND evidence_hash = ?2 AND run_id = ?3),
-                        EXISTS(SELECT 1 FROM work_run_evidence WHERE work_id = ?1 AND evidence_hash = ?2)",
+                "SELECT EXISTS(SELECT 1 FROM work_run_evidence WHERE work_id = ?1 AND evidence_id = ?2 AND run_id = ?3),
+                        EXISTS(SELECT 1 FROM work_run_evidence WHERE work_id = ?1 AND evidence_id = ?2)",
                 params![work.0.to_string(), row.address.hash.as_str(), run.0.to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?;
@@ -251,7 +251,7 @@ impl super::super::SqliteStore {
         &self,
         project: &crate::ProjectId,
         work: WorkId,
-        hash: &ObjectHash,
+        hash: &ObjectId,
     ) -> Result<Option<String>, StoreError> {
         if super::query::load_work_item(&self.connection, work)?.project_id != *project {
             return Err(invalid("criterion evidence preview cannot cross projects"));
@@ -261,7 +261,7 @@ impl super::super::SqliteStore {
             .query_row(
                 &format!(
                     "SELECT notes.family, object.object_kind FROM ({NOTE_OBJECTS}) notes
-                JOIN objects object ON object.object_hash = notes.hash WHERE notes.hash = ?2"
+                JOIN objects object ON object.object_id = notes.hash WHERE notes.hash = ?2"
                 ),
                 params![work.0.to_string(), hash.as_str()],
                 |row| Ok((row.get(0)?, row.get(1)?)),

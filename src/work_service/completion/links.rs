@@ -1,7 +1,7 @@
 //! Explicit author citations reuse immutable run evidence; never recapture it.
 
 use super::{
-    ActorContext, LocalWorkService, ObjectHash, SqliteStore, StoreError, WorkAcceptanceInput,
+    ActorContext, LocalWorkService, ObjectId, SqliteStore, StoreError, WorkAcceptanceInput,
     WorkClaim, WorkCompleteInput, WorkItem,
 };
 
@@ -33,7 +33,7 @@ pub(super) fn acceptance(
     claim: &WorkClaim,
     input: &WorkCompleteInput,
     actor: &ActorContext,
-    evidence: &[ObjectHash],
+    evidence: &[ObjectId],
 ) -> Result<Option<Vec<WorkAcceptanceInput>>, StoreError> {
     if input.links.is_empty() {
         return Ok(input.acceptance.clone());
@@ -113,7 +113,7 @@ pub(super) fn validated_acceptance(
     claim: &WorkClaim,
     input: &WorkCompleteInput,
     actor: &ActorContext,
-    evidence: &[ObjectHash],
+    evidence: &[ObjectId],
 ) -> Result<Vec<crate::AcceptanceResult>, StoreError> {
     if store.acceptance_evaluation_policy()?.is_evaluated() {
         // Under an evaluated policy the sealed vector derives from the newest

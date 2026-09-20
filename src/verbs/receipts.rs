@@ -210,7 +210,7 @@ impl Receipt {
                 identity
                     .build_fingerprint
                     .as_ref()
-                    .map(crate::ObjectHash::as_str)
+                    .map(crate::ObjectId::as_str)
             ),
             read_cut.project_position,
             read_cut.observed_at.to_rfc3339(),

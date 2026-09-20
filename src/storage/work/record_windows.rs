@@ -11,7 +11,7 @@ use super::feeds::load_typed_work_object;
 use super::notes::{NOTE_OBJECTS, WorkNoteRecord, load_note};
 use super::query::{load_work_item, restored_records_for_item};
 use crate::{
-    ActorContext, FeedId, FeedPosition, ObjectHash, ProjectId, RestoredRecord, WorkEvent, WorkId,
+    ActorContext, FeedId, FeedPosition, ObjectId, ProjectId, RestoredRecord, WorkEvent, WorkId,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -59,7 +59,7 @@ pub(crate) enum RestoredMember {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WorkRecordAddress {
-    pub hash: ObjectHash,
+    pub hash: ObjectId,
     pub member: Option<RestoredMember>,
 }
 
@@ -143,7 +143,7 @@ impl SqliteStore {
         for (record, carried_disposal) in records.into_iter().zip(carried_disposals) {
             // Use the verified stored identity, never re-freeze historical data.
             let raw: String = self.connection.query_row(
-                "SELECT record_hash FROM work_restored_records WHERE work_id = ?1 AND generation_index = ?2",
+                "SELECT record_id FROM work_restored_records WHERE work_id = ?1 AND generation_index = ?2",
                 params![work_id.0.to_string(), i64::try_from(record.generation_index).map_err(|_| invalid("record generation overflow"))?], |row| row.get(0),
             )?;
             let hash = parse_hash(raw)?;
@@ -225,12 +225,12 @@ impl SqliteStore {
                          ELSE 'notes' END
                  FROM ({NOTE_OBJECTS}) notes
                  LEFT JOIN work_feed_entries entry
-                   ON entry.object_hash = notes.hash AND entry.feed_kind = 'project' AND entry.feed_id = ?2
+                   ON entry.object_id = notes.hash AND entry.feed_kind = 'project' AND entry.feed_id = ?2
                  LEFT JOIN objects object ON notes.family = 'run'
-                   AND entry.object_kind = 'work_evidence' AND object.object_hash = notes.hash
+                   AND entry.object_kind = 'work_evidence' AND object.object_id = notes.hash
                  ORDER BY entry.position"),
             WorkRecordKind::History =>
-                "SELECT entry.object_hash, 'event', entry.position, entry.object_kind, 'history'
+                "SELECT entry.object_id, 'event', entry.position, entry.object_kind, 'history'
                  FROM work_feed_entries entry WHERE entry.work_id = ?1 AND entry.feed_kind = 'project'
                    AND entry.feed_id = ?2 AND entry.object_kind = 'work_event' ORDER BY entry.position".into(),
         };
@@ -375,8 +375,8 @@ fn inherited_content(
     })
 }
 
-fn parse_hash(raw: String) -> Result<ObjectHash, StoreError> {
-    ObjectHash::from_stored(raw.clone()).ok_or(StoreError::InvalidStoredHash(raw))
+fn parse_hash(raw: String) -> Result<ObjectId, StoreError> {
+    ObjectId::from_stored(raw.clone()).ok_or(StoreError::InvalidStoredKey(raw))
 }
 fn invalid(message: &str) -> StoreError {
     StoreError::InvalidWorkProjection(message.into())

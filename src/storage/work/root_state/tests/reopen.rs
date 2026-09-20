@@ -181,7 +181,7 @@ struct Ready {
     root: crate::WorkItem,
     child: crate::WorkItem,
     held: crate::WorkClaim,
-    proof: ObjectHash,
+    proof: ObjectId,
     child_seal: CompletionSeal,
     id: RootExecutionId,
 }
@@ -239,7 +239,7 @@ fn measure_new_generation(
     store: &mut SqliteStore,
     root: &crate::WorkItem,
     held: &crate::WorkClaim,
-    proof: &ObjectHash,
+    proof: &ObjectId,
     id: RootExecutionId,
     prior: u32,
 ) -> [Payload; 3] {
@@ -284,8 +284,8 @@ fn root_delta_reopen_payload_depends_on_change_not_unchanged_history() {
             child_seal,
             id,
         } = ready(prior);
-        let seal_hash = store.stored_seal_id(&child_seal);
-        let historical = store.completion_root_execution(&seal_hash).unwrap();
+        let seal_id = store.stored_seal_id(&child_seal);
+        let historical = store.completion_root_execution(&seal_id).unwrap();
         let (before_root, before_ref) = projected(&store.connection, id).unwrap();
         let depth = load_head(&store.connection, &before_ref).unwrap().sequence;
         let root_size = CanonicalObject::freeze(&before_root).unwrap().bytes().len();
@@ -304,7 +304,7 @@ fn root_delta_reopen_payload_depends_on_change_not_unchanged_history() {
         let changed = change_shape(&before_root, &after_root);
         assert_eq!((changed.0, changed.2), (1, 1));
         assert_eq!(
-            store.completion_root_execution(&seal_hash).unwrap(),
+            store.completion_root_execution(&seal_id).unwrap(),
             historical
         );
 

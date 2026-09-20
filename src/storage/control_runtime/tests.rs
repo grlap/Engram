@@ -67,7 +67,7 @@ fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
                 &binding.routing_token,
                 &TurnIntent {
                     idempotency_key: key.into(),
-                    intent_fingerprint: ObjectHash::from_canonical_bytes(key.as_bytes()),
+                    intent_fingerprint: ObjectId::from_canonical_bytes(key.as_bytes()),
                     purpose: TurnPurpose::Ordinary,
                     requested_effects: vec![EffectClass::Observe],
                     resource_intents: Vec::new(),
@@ -141,24 +141,18 @@ fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
             .expect("superseded state"),
         "superseded"
     );
-    let (supersession_hash, supersession_json, replacement_decision_hash) = store
+    let (supersession_json, replacement_decision_hash) = store
         .connection
         .query_row(
-            "SELECT supersession_hash, supersession_json, replacement_decision_hash
+            "SELECT supersession_json, replacement_decision_hash
              FROM control_turn_grant_supersessions
              WHERE superseded_grant_id = ?1",
             [&first.grant_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Vec<u8>>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            },
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
         )
         .expect("immutable supersession transition");
     let supersession: TurnGrantSupersession =
-        SqliteStore::decode_canonical_projection(&supersession_hash, supersession_json)
+        SqliteStore::decode_json_projection(&supersession_json)
             .expect("verified supersession transition");
     assert_eq!(supersession.superseded_grant_id, first.grant_id);
     assert_eq!(supersession.superseded_request_key, first.request_key);
@@ -310,7 +304,7 @@ fn shadow_turn_observations_are_idempotent_across_restart() {
     unknown_schema.control_schema_version = CONTROL_SCHEMA_VERSION + 1;
     unknown_schema.intent.idempotency_key = "observe-turn-unknown-schema".into();
     unknown_schema.intent.intent_fingerprint =
-        ObjectHash::from_canonical_bytes(b"turn-unknown-schema");
+        ObjectId::from_canonical_bytes(b"turn-unknown-schema");
     let unknown_schema_observation = reopened.record_turn_observation(&unknown_schema).unwrap();
     assert!(matches!(
         unknown_schema_observation.decision,
@@ -407,7 +401,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
 
     let first_intent = TurnIntent {
         idempotency_key: "host-turn-a".into(),
-        intent_fingerprint: ObjectHash::from_canonical_bytes(b"host-turn-a"),
+        intent_fingerprint: ObjectId::from_canonical_bytes(b"host-turn-a"),
         purpose: crate::domain::TurnPurpose::Ordinary,
         requested_effects: vec![EffectClass::Observe],
         resource_intents: Vec::new(),
@@ -473,7 +467,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
         .unwrap();
     let second_intent = TurnIntent {
         idempotency_key: "host-turn-b".into(),
-        intent_fingerprint: ObjectHash::from_canonical_bytes(b"host-turn-b"),
+        intent_fingerprint: ObjectId::from_canonical_bytes(b"host-turn-b"),
         purpose: crate::domain::TurnPurpose::Ordinary,
         requested_effects: vec![EffectClass::Observe, EffectClass::Communicate],
         resource_intents: Vec::new(),
@@ -524,7 +518,7 @@ fn host_control_turn_is_restart_safe_and_fails_closed_on_drift() {
 
     let denied_intent = TurnIntent {
         idempotency_key: "host-turn-mutation".into(),
-        intent_fingerprint: ObjectHash::from_canonical_bytes(b"host-turn-mutation"),
+        intent_fingerprint: ObjectId::from_canonical_bytes(b"host-turn-mutation"),
         purpose: crate::domain::TurnPurpose::Ordinary,
         requested_effects: vec![EffectClass::MutateLocal],
         resource_intents: Vec::new(),
@@ -898,7 +892,7 @@ fn expired_lease_invalidates_unbegun_turn_and_preserves_fence_history() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "turn-before-lease-expiry".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"turn-before-lease-expiry"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"turn-before-lease-expiry"),
                 purpose: crate::domain::TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![crate::domain::ResourceSubject::Path {
@@ -1104,7 +1098,7 @@ fn begun_mutation_turn_pins_its_lease_until_checkpoint() {
             &session_a.routing_token,
             &TurnIntent {
                 idempotency_key: "pin-mutation-turn".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"pin-mutation-turn"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"pin-mutation-turn"),
                 purpose: crate::domain::TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![crate::domain::ResourceSubject::Path {
@@ -1457,7 +1451,7 @@ fn exiting_a_control_session_releases_its_leases_for_the_next_holder() {
             &session_a.routing_token,
             &TurnIntent {
                 idempotency_key: "turn-before-exit".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"turn-before-exit"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"turn-before-exit"),
                 purpose: crate::domain::TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -1568,7 +1562,7 @@ fn task_only_control_checkpoint_cannot_append_execution_observations() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "task-only-observation-turn".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"task-only observation turn"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"task-only observation turn"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -1608,7 +1602,7 @@ fn task_only_control_checkpoint_cannot_append_execution_observations() {
         TurnNextIntent::Continue,
         &[ExecutionObservationInput {
             observation_id: "task-only-observation".into(),
-            action_fingerprint: ObjectHash::from_canonical_bytes(b"read task context"),
+            action_fingerprint: ObjectId::from_canonical_bytes(b"read task context"),
             effect: EffectClass::Observe,
             outcome: crate::domain::ExecutionOutcome::Succeeded,
             source_changed: false,
@@ -1715,7 +1709,7 @@ fn turn_gated_observe_only_session_cannot_reserve_undeclared_effects() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "observe-only-mutation-turn".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"observe-only-mutation-turn"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"observe-only-mutation-turn"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![subject],

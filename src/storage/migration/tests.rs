@@ -27,14 +27,14 @@ fn with_retired_tables(path: &Path) {
          ) STRICT;
          CREATE TABLE publication_intents (
             idempotency_key TEXT PRIMARY KEY,
-            report_hash TEXT NOT NULL REFERENCES objects(object_hash),
+            report_hash TEXT NOT NULL REFERENCES objects(object_id),
             external_ref TEXT, state TEXT NOT NULL, last_error TEXT,
             attempt_count INTEGER NOT NULL DEFAULT 0, receipt_json TEXT
          ) STRICT;
          INSERT INTO task_claims VALUES ('task', 'lease', 'old-session', 'claim', 1, 1);
          INSERT INTO task_claim_intents VALUES ('claim', 'task', 'old-session', X'7B7D');
          INSERT INTO publication_intents
-            SELECT 'publication', object_hash, 'external', 'pending', NULL, 0, NULL
+            SELECT 'publication', object_id, 'external', 'pending', NULL, 0, NULL
             FROM objects LIMIT 1;",
         )
         .expect("retired fixture rows");
@@ -44,8 +44,8 @@ fn with_retired_tables(path: &Path) {
     }))
     .expect("historical object");
     connection.execute(
-        "INSERT INTO objects (object_hash, object_kind, canonical_json) VALUES (?1, 'task_claim_event', ?2)",
-        rusqlite::params![event.hash().as_str(), event.bytes()],
+        "INSERT INTO objects (object_id, object_kind, canonical_json) VALUES (?1, 'task_claim_event', ?2)",
+        rusqlite::params![event.key().as_str(), event.bytes()],
     ).expect("historical audit");
 }
 
@@ -428,6 +428,355 @@ fn rows(path: &Path) -> BTreeMap<String, Vec<Vec<Value>>> {
         .collect()
 }
 
+#[test]
+fn renamed_record_columns_preserve_every_value_and_canonical_byte() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("previous.jsonl");
+    let target = directory.path().join("target.db");
+    populated(&source);
+    let before = rows(&source);
+    export_json(&source, &file).unwrap();
+    let mut document: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let schema = Connection::open(&source).unwrap();
+    let mut renamed = 0;
+    for (table, old, current) in RENAMED_COLUMNS {
+        let exists: bool = schema
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
+                rusqlite::params![table, current],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(exists, "mapped destination {table}.{current} must exist");
+        let Some(declaration) = document[0]["engram_export"]["tables"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["name"] == *table)
+        else {
+            // Rebuildable projections are recreated, not exported.
+            continue;
+        };
+        renamed += 1;
+        let columns = declaration["columns"].as_array_mut().unwrap();
+        let column = columns
+            .iter_mut()
+            .find(|column| **column == *current)
+            .expect("mapped column exists");
+        *column = Json::String((*old).into());
+        for line in document.iter_mut().skip(1) {
+            if line["row"]["table"] == *table {
+                let values = line["row"]["values"].as_object_mut().unwrap();
+                let value = values.remove(*current).unwrap();
+                assert!(values.insert((*old).into(), value).is_none());
+            }
+        }
+    }
+    assert!(renamed > 0);
+    let bytes = document
+        .iter()
+        .map(|line| serde_json::to_string(line).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    fs::write(&file, &bytes).unwrap();
+    import_json(&file, &target).expect("explicit old-column conversion");
+    assert_eq!(
+        rows(&target),
+        before,
+        "ids, rows, and canonical bytes are unchanged"
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), bytes);
+}
+
+#[test]
+fn old_and_current_record_columns_cannot_alias_one_destination() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("ambiguous.jsonl");
+    let target = directory.path().join("target.db");
+    populated(&source);
+    export_json(&source, &file).unwrap();
+    let mut document: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let table = document[0]["engram_export"]["tables"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["name"] == "objects")
+        .unwrap();
+    table["columns"]
+        .as_array_mut()
+        .unwrap()
+        .push(Json::String("object_hash".into()));
+    fs::write(
+        &file,
+        document
+            .iter()
+            .map(|line| serde_json::to_string(line).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let error = import_json(&file, &target).unwrap_err().to_string();
+    assert!(
+        error.contains("multiple source columns map to column object_id of table objects"),
+        "{error}"
+    );
+    assert!(!target.exists());
+}
+
+#[test]
+fn missing_required_import_columns_are_named_before_inserting_rows() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("missing.jsonl");
+    let target = directory.path().join("target.db");
+    populated(&source);
+    export_json(&source, &file).unwrap();
+    let mut document: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let table = document[0]["engram_export"]["tables"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["name"] == "objects")
+        .unwrap();
+    table["columns"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|column| column != "canonical_json");
+    fs::write(
+        &file,
+        document
+            .iter()
+            .map(|line| serde_json::to_string(line).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let error = import_json(&file, &target).unwrap_err().to_string();
+    assert!(
+        error.contains("table objects lacks required destination column canonical_json"),
+        "{error}"
+    );
+    assert!(!target.exists());
+}
+
+fn populated_control(path: &Path) {
+    use crate::domain::*;
+    use crate::storage::test_support::{bind_control_for, complete_control_turn, turn_evaluation};
+    populated(path);
+    let mut store =
+        SqliteStore::open_with_host_path_policy(path, crate::HostPathPolicy::host_default())
+            .unwrap();
+    let now = DateTime::parse_from_rfc3339("2026-09-20T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let effects = [
+        EffectClass::Observe,
+        EffectClass::Communicate,
+        EffectClass::MutateLocal,
+    ];
+    let binding = bind_control_for(
+        &mut store,
+        "control-session",
+        "migration-bind",
+        &effects,
+        now,
+    );
+    complete_control_turn(
+        &mut store,
+        &binding,
+        "migration-sync",
+        vec![EffectClass::Observe],
+        vec![],
+        now,
+    );
+    let lease = store
+        .acquire_work_lease(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            LeaseKind::Execution,
+            LeaseMode::Exclusive,
+            &ResourceSubject::Path {
+                project_id: ProjectId("project-a".into()),
+                segments: vec!["src".into()],
+                coverage: ResourceCoverage::Tree,
+            },
+            300,
+            "migration-lease",
+            now + chrono::Duration::seconds(1),
+        )
+        .unwrap();
+    assert!(matches!(lease, WorkLeaseDecision::Granted { .. }));
+    for (index, key) in ["migration-first", "migration-replacement"]
+        .iter()
+        .enumerate()
+    {
+        let decision = store
+            .evaluate_control_turn(
+                &ProjectId("project-a".into()),
+                &binding.status.session_id,
+                &binding.connection_token,
+                &binding.routing_token,
+                &TurnIntent {
+                    idempotency_key: (*key).into(),
+                    intent_fingerprint: crate::ObjectId::from_canonical_bytes(key.as_bytes()),
+                    purpose: TurnPurpose::Ordinary,
+                    requested_effects: vec![EffectClass::Observe],
+                    resource_intents: vec![],
+                },
+                now + chrono::Duration::seconds(i64::try_from(index).unwrap() + 2),
+            )
+            .unwrap();
+        assert!(matches!(decision, ControlTurnDecision::Grant { .. }));
+    }
+    store
+        .record_turn_observation(&turn_evaluation(binding.status.task_id))
+        .unwrap();
+    store
+        .set_required_control_assurance(
+            ControlAssurance::TurnGated,
+            &actor("operator"),
+            "migration fixture",
+            "migration-policy",
+            None,
+            now + chrono::Duration::seconds(4),
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    assert!(store.verify_all().unwrap().is_healthy());
+}
+
+#[test]
+fn uncompared_control_checksums_are_counted_and_payloads_survive_import() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("checksums.jsonl");
+    let target = directory.path().join("target.db");
+    populated_control(&source);
+    let before = rows(&source);
+    export_json(&source, &file).unwrap();
+    let mut document: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let mut expected = Vec::new();
+    for (table, column) in RETIRED_COLUMNS
+        .iter()
+        .filter(|(table, _)| table.starts_with("control_"))
+    {
+        let declaration = document[0]["engram_export"]["tables"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| entry["name"] == *table)
+            .unwrap();
+        assert!(
+            declaration["rows"].as_u64().unwrap() > 0,
+            "fixture must exercise {table}"
+        );
+        let columns = declaration["columns"].as_array_mut().unwrap();
+        assert!(
+            !columns.iter().any(|name| name == *column),
+            "current schema must not retain {table}.{column}"
+        );
+        columns.push(Json::String((*column).into()));
+        let mut count = 0;
+        for line in document.iter_mut().skip(1) {
+            if line["row"]["table"] == *table {
+                let value = if count == 0 {
+                    Json::String("uncompared historical value".into())
+                } else {
+                    Json::Null
+                };
+                line["row"]["values"]
+                    .as_object_mut()
+                    .unwrap()
+                    .insert((*column).into(), value);
+                count += 1;
+            }
+        }
+        assert!(count > 0);
+        expected.push(RetiredField {
+            table: (*table).into(),
+            column: (*column).into(),
+            values: 1,
+        });
+    }
+    fs::write(
+        &file,
+        document
+            .iter()
+            .map(Json::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let mut report = import_json(&file, &target).unwrap();
+    expected.sort_by(|a, b| (&a.table, &a.column).cmp(&(&b.table, &b.column)));
+    report
+        .retired_fields
+        .sort_by(|a, b| (&a.table, &a.column).cmp(&(&b.table, &b.column)));
+    assert_eq!(report.retired_fields, expected);
+    assert_eq!(
+        rows(&target),
+        before,
+        "retained JSON, replay intents, ids and rows must survive"
+    );
+}
+
+#[test]
+fn control_format_marker_mismatch_is_named_before_publication() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("marker.jsonl");
+    let target = directory.path().join("target.db");
+    populated(&source);
+    export_json(&source, &file).unwrap();
+    let mut document: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let row = document
+        .iter_mut()
+        .find(|line| line["row"]["table"] == "control_policy_state")
+        .unwrap();
+    row["row"]["values"]["schema_version"] =
+        Json::from(super::super::CONTROL_POLICY_STATE_SCHEMA_VERSION + 1);
+    fs::write(
+        &file,
+        document
+            .iter()
+            .map(Json::to_string)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
+    let error = import_json(&file, &target).unwrap_err().to_string();
+    assert!(
+        error.contains("format marker control_policy_state.schema_version"),
+        "{error}"
+    );
+    assert!(!target.exists());
+}
+
 /// `populated`, plus the derived state repair builds again: a project memory
 /// (the memory-state projection), one session's advertisement of it (delivery
 /// bookkeeping) and an observation on the work (the observation projection).
@@ -741,7 +1090,7 @@ fn a_store_of_the_previous_design_is_refused_by_name() {
                 "CREATE TABLE migration_object_map (
                      source_hash TEXT PRIMARY KEY, target_hash TEXT NOT NULL, binding_hash TEXT NOT NULL);
                  INSERT INTO migration_object_map VALUES ('old', 'current', 'binding');
-                 CREATE TABLE migration_original_objects (object_hash TEXT PRIMARY KEY, body BLOB);
+                 CREATE TABLE migration_original_objects (object_id TEXT PRIMARY KEY, body BLOB);
                  INSERT INTO migration_original_objects VALUES ('old', x'00');",
             )
             .expect("previous-design fixture");
@@ -1445,7 +1794,7 @@ fn a_copied_table_may_not_take_the_place_of_a_derived_one() {
     for (name, columns, row) in [
         (
             "object_fts",
-            "object_hash TEXT, title TEXT, body TEXT",
+            "object_id TEXT, title TEXT, body TEXT",
             "('independent', 'a row of its own', 'not derived from anything')",
         ),
         (
@@ -1778,7 +2127,7 @@ fn a_malformed_hex_blob_refuses_the_import_and_a_valid_one_is_the_same_bytes() {
     let (first_id, first_bytes): (String, Vec<u8>) = Connection::open(&source)
         .expect("source")
         .query_row(
-            "SELECT object_hash, canonical_json FROM objects ORDER BY rowid LIMIT 1",
+            "SELECT object_id, canonical_json FROM objects ORDER BY rowid LIMIT 1",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -1796,7 +2145,7 @@ fn a_malformed_hex_blob_refuses_the_import_and_a_valid_one_is_the_same_bytes() {
     let stored: Vec<u8> = Connection::open(&target)
         .expect("target")
         .query_row(
-            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
             [&first_id],
             |row| row.get(0),
         )

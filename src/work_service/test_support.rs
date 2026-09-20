@@ -30,9 +30,7 @@ pub(super) fn obligation_record(
 ) -> crate::storage::WorkObligationRecord {
     let run_id = WorkRunId(uuid::Uuid::from_u128(10));
     crate::storage::WorkObligationRecord {
-        definition_hash: ObjectHash::from_canonical_bytes(
-            format!("definition-{identity}").as_bytes(),
-        ),
+        definition_id: ObjectId::from_canonical_bytes(format!("definition-{identity}").as_bytes()),
         obligation: WorkObligation {
             schema_version: SCHEMA_VERSION,
             obligation_id: crate::WorkObligationId(uuid::Uuid::from_u128(
@@ -44,12 +42,12 @@ pub(super) fn obligation_record(
             work_id: WorkId(uuid::Uuid::from_u128(31)),
             run_id,
             work_revision: 1,
-            rule_set: ObjectHash::from_canonical_bytes(b"obligation-rule-set"),
+            rule_set: ObjectId::from_canonical_bytes(b"obligation-rule-set"),
             rule: crate::BuiltinObligationRuleRef {
                 rule_id: format!("rule-{identity}-{}", "x".repeat(rule_padding)),
                 rule_version: 1,
             },
-            triggering_observation: ObjectHash::from_canonical_bytes(
+            triggering_observation: ObjectId::from_canonical_bytes(
                 format!("observation-{identity}").as_bytes(),
             ),
             trigger_position: crate::FeedPosition {
@@ -64,8 +62,8 @@ pub(super) fn obligation_record(
             opened_at: at(trigger_position),
         },
         state,
-        resolution_hash: (state != WorkObligationState::Open)
-            .then(|| ObjectHash::from_canonical_bytes(format!("resolution-{identity}").as_bytes())),
+        resolution_id: (state != WorkObligationState::Open)
+            .then(|| ObjectId::from_canonical_bytes(format!("resolution-{identity}").as_bytes())),
         resolution: None,
         resolution_position: resolution_position.map(|position| crate::FeedPosition {
             feed: FeedId::RunExecution(run_id),

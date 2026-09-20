@@ -11,7 +11,7 @@ use super::query::{
     load_work_run, parse_work_id, parse_work_run_id,
 };
 use crate::{
-    ChildRequirement, ObjectHash, RequiredChildResolution, RootExecutionId, WorkEvent, WorkId,
+    ChildRequirement, ObjectId, RequiredChildResolution, RootExecutionId, WorkEvent, WorkId,
     WorkItem, WorkLifecycle, WorkRunState, WorkTransition,
     storage::{SqliteStore, StoreError},
 };
@@ -146,7 +146,7 @@ pub(super) fn required_child_successor_on(
         .ok_or_else(|| invalid("completed successor has no completed run/seal binding"))?;
     let bound: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM work_completion_seals
-         WHERE seal_hash = ?1 AND work_id = ?2 AND run_id = ?3 AND root_execution_id = ?4)",
+         WHERE seal_id = ?1 AND work_id = ?2 AND run_id = ?3 AND root_execution_id = ?4)",
         params![
             seal.as_str(),
             successor_id.0.to_string(),
@@ -173,12 +173,12 @@ pub(super) fn required_child_successor_on(
         ));
     }
     let stored_hash: String = connection.query_row(
-        "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+        "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
         [child.work_id.0.to_string()],
         |row| row.get(0),
     )?;
-    let supersession = ObjectHash::from_stored(stored_hash.clone())
-        .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    let supersession = ObjectId::from_stored(stored_hash.clone())
+        .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
     result.reason = "resolved by successor";
     result.resolution = Some(RequiredChildResolution::ResolvedBySuccessor {
         work_id: child.work_id,

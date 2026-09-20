@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ObjectHash;
+use crate::ObjectId;
 
 use super::{AssuranceLevel, SessionId, is_unsafe_rendered_text_char};
 
@@ -57,7 +57,7 @@ pub struct WorkSourceSnapshot {
     pub source_revision: Option<String>,
     pub fingerprint: String,
     pub canonical_url: Option<String>,
-    pub payload_hash: ObjectHash,
+    pub payload_hash: ObjectId,
     #[serde(default)]
     pub raw: BTreeMap<String, Value>,
 }

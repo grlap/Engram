@@ -291,7 +291,7 @@ fn shell_attribution_defaults_are_explicit_in_actor_provenance() {
         .pop()
         .expect("created event");
     let event = store
-        .get::<WorkEvent>(&entry.object_hash)
+        .get::<WorkEvent>(&entry.object_id)
         .expect("read defaulted attribution event")
         .expect("canonical defaulted attribution event");
     let actor = event.actor;
@@ -597,9 +597,9 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
     a.work_focus(&root.short_ref, at(41))
         .expect("restore original work focus");
     let attempt_connection = rusqlite::Connection::open(&database).expect("attempt store");
-    let (basis_json, result_hash, result_json) = attempt_connection
+    let (basis_json, result_id, result_json) = attempt_connection
         .query_row(
-            "SELECT basis_json, result_hash, result_json FROM work_protocol_attempts
+            "SELECT basis_json, result_id, result_json FROM work_protocol_attempts
                  WHERE project_id = ?1 AND session_id = ?2
                    AND operation = 'work_update:claim' AND idempotency_key = 'claim-a'",
             rusqlite::params!["protocol-project", "session-a"],
@@ -613,7 +613,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         )
         .expect("compacted attempt");
     assert!(basis_json.is_none());
-    assert!(result_hash.is_some());
+    assert!(result_id.is_some());
     let exact_result: serde_json::Value =
         serde_json::from_slice(&result_json).expect("exact replay JSON");
     assert_eq!(
@@ -647,7 +647,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .receipt
         .result
         .as_str()
-        .expect("evidence hash")
+        .expect("evidence id")
         .to_owned();
     a.work_handoff(
         WorkHandoffInput::Offer {
@@ -737,7 +737,7 @@ fn ambient_protocol_runs_root_claim_evidence_handoff_and_completion() {
         .query_row(
             "SELECT attempt.result_json, object.canonical_json
                  FROM work_protocol_attempts attempt
-                 JOIN objects object ON object.object_hash = attempt.result_hash
+                 JOIN objects object ON object.object_id = attempt.result_id
                  WHERE attempt.project_id = 'protocol-project'
                    AND attempt.session_id = 'session-a'
                    AND attempt.operation = 'work_update:claim'

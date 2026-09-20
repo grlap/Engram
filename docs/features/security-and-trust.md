@@ -53,7 +53,7 @@ boundary to 256 bytes. Altered input receives an
 `actor_context:normalized` provenance marker; an empty result is absent.
 Context is excluded from agent-protocol attempts, gate-observation replay, and
 project-memory replay identity: an identical retry through those surfaces
-returns the originally attributed result. Core storage request hashes still
+returns the originally attributed result. Core storage request fingerprints still
 bind the complete asserted actor context supplied to that request.
 
 When a project-bound session records a `note` or `gate` after work completes,
@@ -127,7 +127,7 @@ or FTS tables without DDL. Only the explicit
 objects and repopulate FTS, after full durable-definition and policy preflight;
 it never repairs canonical, authority, ordering, or idempotency state.
 
-The active immutable policy also selects a canonical obligation-rule-set hash.
+The active immutable policy also selects a canonical obligation-rule-set id.
 Checkpointing resolves that selection from the begun grant's frozen policy
 epoch, and both the execution observation and each generated obligation retain
 it. A later operator policy change cannot retroactively weaken or strengthen an
@@ -195,11 +195,11 @@ memory policy, grant token, revocation object, or validity timeout.
 
 The agent work protocol applies a separate authorized presentation projection.
 `work_next` verifies each canonical source object, then emits a typed compact
-summary beside the original dense position and object hash. The hash binds the
+summary beside the original dense position and object id. The id names the
 canonical source, not the summary. Restricted or out-of-focus memory is a typed
 omission at the same position; no body or structured value is delivered.
 Body-free memory indexes and bounded history tails direct an authorized caller
-to hash-addressed on-demand reads. The host-internal tentative delivery cursor
+to id-addressed on-demand reads. The host-internal tentative delivery cursor
 is never exposed, and no cursor is staged for a changes-free query.
 
 **V1 status:** no redaction backend is selected. The shipped implementation

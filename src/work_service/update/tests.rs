@@ -336,10 +336,10 @@ fn concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded() {
     barrier.wait();
     let first = first.join().expect("first thread").expect("first gate");
     let second = second.join().expect("second thread").expect("second gate");
-    let first_hash: ObjectHash =
-        serde_json::from_value(first.receipt.result).expect("first evidence hash");
-    let second_hash: ObjectHash =
-        serde_json::from_value(second.receipt.result).expect("second evidence hash");
+    let first_hash: ObjectId =
+        serde_json::from_value(first.receipt.result).expect("first evidence id");
+    let second_hash: ObjectId =
+        serde_json::from_value(second.receipt.result).expect("second evidence id");
     let store = SqliteStore::open(&database).expect("store");
     let first_evidence = store
         .get::<WorkEvidence>(&first_hash)
@@ -371,8 +371,7 @@ fn concurrent_gate_transitions_serialize_and_history_lookup_stays_bounded() {
         .work_gate("cargo-test", &latest_failed, None, at(3))
         .expect("replay latest transition");
     assert_eq!(
-        serde_json::from_value::<ObjectHash>(replay.receipt.result)
-            .expect("replayed evidence hash"),
+        serde_json::from_value::<ObjectId>(replay.receipt.result).expect("replayed evidence id"),
         latest_hash
     );
     assert_eq!(
@@ -669,8 +668,8 @@ fn pending_gate_attempt_recovers_without_appending_again() {
         )
         .expect("recover pending gate attempt");
     assert_eq!(
-        serde_json::from_value::<ObjectHash>(recovered.receipt.result)
-            .expect("recovered evidence hash"),
+        serde_json::from_value::<ObjectId>(recovered.receipt.result)
+            .expect("recovered evidence id"),
         pending.evidence
     );
     assert_eq!(
@@ -806,10 +805,10 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
             at(4),
         )
         .expect("peer appends a late note without a claim or reopen");
-    let note_hash: ObjectHash =
+    let note_hash: ObjectId =
         serde_json::from_value(late_note.evidence.result.clone()).expect("late note hash");
     assert_eq!(
-        serde_json::from_value::<ObjectHash>(late_note.receipt.result.clone())
+        serde_json::from_value::<ObjectId>(late_note.receipt.result.clone())
             .expect("late note primary hash"),
         note_hash,
         "a late note has no post-completion checkpoint"
@@ -833,7 +832,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
             at(6),
         )
         .expect("peer appends failed late gate without a claim or reopen");
-    let gate_hash: ObjectHash =
+    let gate_hash: ObjectId =
         serde_json::from_value(late_gate.receipt.result).expect("late gate hash");
 
     let store = SqliteStore::open(&database).expect("store after late findings");
@@ -858,7 +857,7 @@ fn project_bound_peers_append_late_notes_and_gates_after_the_frozen_completion_c
     for late_hash in [&note_hash, &gate_hash] {
         let position = run_entries
             .iter()
-            .find(|entry| &entry.object_hash == late_hash)
+            .find(|entry| &entry.object_id == late_hash)
             .expect("late evidence is in the completed run feed")
             .position
             .position;
@@ -1035,7 +1034,7 @@ fn identical_gate_after_handoff_or_reclaim_is_a_new_claim_observation() {
     let first_gate = first
         .work_gate("cargo-test", &[], None, at(2))
         .expect("first holder gate");
-    let first_hash: ObjectHash =
+    let first_hash: ObjectId =
         serde_json::from_value(first_gate.receipt.result).expect("first gate hash");
     second
         .work_focus(&work.short_ref, at(3))
@@ -1078,7 +1077,7 @@ fn identical_gate_after_handoff_or_reclaim_is_a_new_claim_observation() {
     let second_gate = second
         .work_gate("cargo-test", &[], None, at(8))
         .expect("second holder records the same result");
-    let second_hash: ObjectHash =
+    let second_hash: ObjectId =
         serde_json::from_value(second_gate.receipt.result).expect("second gate hash");
     assert_ne!(second_hash, first_hash);
     let evidence = SqliteStore::open(&database)
@@ -1126,7 +1125,7 @@ fn identical_gate_after_handoff_or_reclaim_is_a_new_claim_observation() {
     let reclaimed = second
         .work_gate("cargo-test", &[], None, at(12))
         .expect("same result under a new claim is a fresh observation");
-    let reclaimed_hash: ObjectHash =
+    let reclaimed_hash: ObjectId =
         serde_json::from_value(reclaimed.receipt.result).expect("reclaimed gate hash");
     assert_ne!(reclaimed_hash, second_hash);
     let reclaimed_evidence = SqliteStore::open(&database)
@@ -1189,11 +1188,10 @@ fn explicit_gate_target_wins_after_same_session_focus_change() {
             at(3),
         )
         .expect("explicit gate remains bound to target");
-    let evidence_hash: ObjectHash =
-        serde_json::from_value(result.receipt.result).expect("evidence hash");
+    let evidence_id: ObjectId = serde_json::from_value(result.receipt.result).expect("evidence id");
     let evidence = SqliteStore::open(&database)
         .expect("store")
-        .get::<WorkEvidence>(&evidence_hash)
+        .get::<WorkEvidence>(&evidence_id)
         .expect("evidence read")
         .expect("evidence");
     assert_eq!(evidence.work_id, target.work_id);
@@ -1252,7 +1250,7 @@ fn gate_storage_owns_normalization_and_bounds() {
         actor: service.actor("work_update", "exercise the gate storage boundary"),
         recorded_at: at(2),
     };
-    let evidence_hash = service
+    let evidence_id = service
         .store()
         .expect("store")
         .record_gate_evidence(&request, &DevelopmentNoopRedactor)
@@ -1260,7 +1258,7 @@ fn gate_storage_owns_normalization_and_bounds() {
     let evidence = service
         .store()
         .expect("store")
-        .get::<WorkEvidence>(&evidence_hash)
+        .get::<WorkEvidence>(&evidence_id)
         .expect("evidence read")
         .expect("evidence");
     let gate = evidence.gate.expect("typed gate payload");
@@ -1269,7 +1267,7 @@ fn gate_storage_owns_normalization_and_bounds() {
     assert_eq!(evidence.refs, vec!["logs/gate.txt"]);
     assert_eq!(evidence.summary, GATE_EVIDENCE_SUMMARY);
 
-    let mimicking_hash: ObjectHash = serde_json::from_value(
+    let mimicking_hash: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Evidence {
@@ -1284,14 +1282,14 @@ fn gate_storage_owns_normalization_and_bounds() {
             .receipt
             .result,
     )
-    .expect("generic evidence hash");
+    .expect("generic evidence id");
     let focus = service
         .inspect_work(&work.short_ref, at(4))
         .expect("projected evidence");
     let projected_gate = focus
         .evidence_items
         .iter()
-        .find(|item| item.evidence == evidence_hash)
+        .find(|item| item.evidence == evidence_id)
         .expect("typed gate projection")
         .gate
         .as_ref()
@@ -1522,7 +1520,7 @@ fn claim_validated_mutations_are_bounded_at_project_scale() {
             .pop()
             .expect("base event");
         let base = event_store
-            .get::<WorkEvent>(&entry.object_hash)
+            .get::<WorkEvent>(&entry.object_id)
             .expect("load base event")
             .expect("base event object");
         let event_count = if item_index == ITEM_COUNT - 1 {

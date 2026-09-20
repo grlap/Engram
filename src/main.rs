@@ -15,7 +15,7 @@ use engram::{
     ActorContext, AddInput, AgentVerbs, BuiltinObligationRuleRef, BuiltinObligationTrigger,
     ClaimInput, ClaimUnderInput, ControlAssurance, DevelopmentNoopRedactor, DoneInput, ForgetInput,
     GateInput, HandoffAction, HandoffInput, HostControlServer, HostPathPolicy, LocalWorkService,
-    LsInput, McpServer, MemoriesInput, NextInput, NoteInput, ObjectHash, ObligationRuleDefinition,
+    LsInput, McpServer, MemoriesInput, NextInput, NoteInput, ObjectId, ObligationRuleDefinition,
     ObligationRuleSet, ProjectId, RememberInput, SessionId, SqliteStore, StoreError, UpdateAction,
     UpdateInput, VerificationKind, VerificationRequirement, WaiveWorkObligationRequest,
     WorkAttributionDefaults, WorkAvailability, WorkCompleteInput, WorkCompleteResult,
@@ -437,9 +437,9 @@ struct CliBuiltinObligationRuleRef {
 struct CliVerificationRequirement {
     check_kind: VerificationKind,
     #[serde(default)]
-    check_fingerprint: Option<ObjectHash>,
+    check_fingerprint: Option<ObjectId>,
     #[serde(default)]
-    required_environment: Option<ObjectHash>,
+    required_environment: Option<ObjectId>,
 }
 
 impl From<CliObligationRuleSet> for ObligationRuleSet {
@@ -1427,11 +1427,11 @@ fn control_policy_actor(actor_id: String) -> ActorContext {
     }
 }
 
-fn parse_expected_policy_hash(value: Option<String>) -> Result<Option<ObjectHash>> {
+fn parse_expected_policy_hash(value: Option<String>) -> Result<Option<ObjectId>> {
     value
         .map(|value| {
-            ObjectHash::from_str(&value)
-                .map_err(|message| anyhow::anyhow!("invalid expected policy hash: {message}"))
+            ObjectId::from_str(&value)
+                .map_err(|message| anyhow::anyhow!("invalid expected policy id: {message}"))
         })
         .transpose()
 }
@@ -1458,8 +1458,8 @@ fn run_authority(
             let obligation_id = WorkObligationId(
                 uuid::Uuid::parse_str(&obligation_id).context("invalid work obligation id")?,
             );
-            let expected_definition = ObjectHash::from_str(&expected_definition)
-                .map_err(|message| anyhow::anyhow!("invalid definition hash: {message}"))?;
+            let expected_definition = ObjectId::from_str(&expected_definition)
+                .map_err(|message| anyhow::anyhow!("invalid definition id: {message}"))?;
             serde_json::to_value(store.waive_work_obligation(
                 &WaiveWorkObligationRequest {
                     obligation_id,

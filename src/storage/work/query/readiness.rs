@@ -81,12 +81,12 @@ pub(super) fn required_children_ready(
                      AND child.lifecycle = 'completed' AND run.state = 'completed'
                      AND run.root_execution_id = ?2 AND seal.root_execution_id = ?2
                      AND seal.work_id = child.work_id
-                     AND seal.seal_hash = run.completion_seal_hash
+                     AND seal.seal_id = run.completion_seal_id
                      AND run.generation = (
                          SELECT MAX(latest.generation) FROM work_runs latest
                          WHERE latest.work_id = child.work_id
                      )
-                     AND seal.seal_hash IN (SELECT value FROM json_each(?4))
+                     AND seal.seal_id IN (SELECT value FROM json_each(?4))
                )
          )",
         params![

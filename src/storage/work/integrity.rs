@@ -15,7 +15,7 @@ use super::feeds::{load_typed_work_object, validate_work_protocol_result_binding
 use super::planning::{encode_state, normalize_work_catalog_key, work_catalog_search_text};
 use super::query::{catalog_literal_fts_query, parse_work_id};
 use crate::{
-    CanonicalObject, ObjectHash, RestoredWorkEvidence,
+    CanonicalObject, ObjectId, RestoredWorkEvidence,
     domain::{
         CompletionSeal, EnvironmentEvidence, ExecutionObservation, MemoryAssertionEvent,
         MemoryVersion, SCHEMA_VERSION, VerificationEvidence, WorkCheckpoint, WorkClaim, WorkEvent,
@@ -190,7 +190,7 @@ pub(super) fn verify_prerequisite_rows(
 ) -> Result<(), StoreError> {
     let mut seen = HashSet::new();
     let mut statement = connection.prepare(
-        "SELECT work_id, prerequisite_id, event_hash
+        "SELECT work_id, prerequisite_id, event_id
          FROM work_prerequisites ORDER BY work_id, prerequisite_id",
     )?;
     let rows = statement.query_map([], |row| {
@@ -201,11 +201,11 @@ pub(super) fn verify_prerequisite_rows(
         ))
     })?;
     for row in rows {
-        let (work_id, prerequisite_id, event_hash) = row?;
+        let (work_id, prerequisite_id, event_id) = row?;
         *checked += 1;
         let key = (work_id, prerequisite_id);
         seen.insert(key.clone());
-        if expected.get(&key) != Some(&event_hash) {
+        if expected.get(&key) != Some(&event_id) {
             invalid.push(format!("work_prerequisite:{}:{}", key.0, key.1));
         }
     }
@@ -237,7 +237,7 @@ pub(super) fn verify_blocker_rows(
 ) -> Result<(), StoreError> {
     let mut seen = HashSet::new();
     let mut statement = connection.prepare(
-        "SELECT blocker_id, state, created_event_hash, cleared_event_hash
+        "SELECT blocker_id, state, created_event_id, cleared_event_id
          FROM work_blockers ORDER BY blocker_id",
     )?;
     let rows = statement.query_map([], |row| {
@@ -264,11 +264,11 @@ pub(super) fn verify_blocker_rows(
 
 pub(super) fn expected_verification_projection(
     connection: &Connection,
-    evidence_hash: &ObjectHash,
+    evidence_id: &ObjectId,
 ) -> Result<EvidenceProjectionRow, StoreError> {
     let evidence = load_typed_work_object::<VerificationEvidence>(
         connection,
-        evidence_hash,
+        evidence_id,
         "verification_evidence",
     )?;
     let producer = load_typed_work_object::<ExecutionObservation>(
@@ -320,7 +320,7 @@ pub(super) fn expected_verification_projection(
         && environment_matches;
     if !bound {
         return Err(StoreError::InvalidWorkProjection(format!(
-            "verification evidence {evidence_hash} is not bound to its producer observation"
+            "verification evidence {evidence_id} is not bound to its producer observation"
         )));
     }
     Ok(EvidenceProjectionRow {
@@ -330,23 +330,23 @@ pub(super) fn expected_verification_projection(
         workspace_id: Some(evidence.source_basis.workspace_id),
         source_revision: Some(evidence.source_basis.source_revision),
         producer_session_id: Some(evidence.session_id.0),
-        producer_observation_hash: Some(evidence.producer_observation.to_string()),
+        producer_observation_id: Some(evidence.producer_observation.to_string()),
         check_fingerprint: Some(evidence.check_fingerprint.to_string()),
         verification_result: Some(encode_state(evidence.result)?),
         observed_at_ms: Some(evidence.completed_at.timestamp_millis()),
         environment_fingerprint: None,
-        environment_evidence_hash: evidence.environment.map(|hash| hash.to_string()),
+        environment_evidence_id: evidence.environment.map(|hash| hash.to_string()),
         components_json: None,
     })
 }
 
 pub(super) fn expected_environment_projection(
     connection: &Connection,
-    evidence_hash: &ObjectHash,
+    evidence_id: &ObjectId,
 ) -> Result<EvidenceProjectionRow, StoreError> {
     let evidence = load_typed_work_object::<EnvironmentEvidence>(
         connection,
-        evidence_hash,
+        evidence_id,
         "environment_evidence",
     )?;
     let run_id = evidence.binding.run_id.0.to_string();
@@ -366,7 +366,7 @@ pub(super) fn expected_environment_projection(
             && components.sandbox.as_deref().is_none_or(text_is_valid)
             && components.workspace_id == evidence.source_basis.workspace_id
             && components.capability_map_revision > 0
-            && CanonicalObject::freeze(components)?.hash() == &evidence.environment_fingerprint
+            && CanonicalObject::freeze(components)?.key() == &evidence.environment_fingerprint
     } else {
         true
     };
@@ -378,7 +378,7 @@ pub(super) fn expected_environment_projection(
         && components_match;
     if !bound {
         return Err(StoreError::InvalidWorkProjection(format!(
-            "environment evidence {evidence_hash} has an invalid run/session binding"
+            "environment evidence {evidence_id} has an invalid run/session binding"
         )));
     }
     Ok(EvidenceProjectionRow {
@@ -388,12 +388,12 @@ pub(super) fn expected_environment_projection(
         workspace_id: Some(evidence.source_basis.workspace_id),
         source_revision: Some(evidence.source_basis.source_revision),
         producer_session_id: Some(evidence.session_id.0),
-        producer_observation_hash: None,
+        producer_observation_id: None,
         check_fingerprint: None,
         verification_result: None,
         observed_at_ms: Some(evidence.observed_at.timestamp_millis()),
         environment_fingerprint: Some(evidence.environment_fingerprint.to_string()),
-        environment_evidence_hash: None,
+        environment_evidence_id: None,
         components_json: evidence
             .components
             .as_ref()
@@ -410,12 +410,12 @@ pub(super) fn verify_evidence_rows(
 ) -> Result<(), StoreError> {
     let mut seen = HashSet::new();
     let mut statement = connection.prepare(
-        "SELECT evidence_hash, work_id, run_id, evidence_kind,
+        "SELECT evidence_id, work_id, run_id, evidence_kind,
                 workspace_id, source_revision, producer_session_id,
-                producer_observation_hash, check_fingerprint,
+                producer_observation_id, check_fingerprint,
                 verification_result, observed_at_ms, environment_fingerprint,
-                environment_evidence_hash, components_json
-         FROM work_run_evidence ORDER BY evidence_hash",
+                environment_evidence_id, components_json
+         FROM work_run_evidence ORDER BY evidence_id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -427,26 +427,26 @@ pub(super) fn verify_evidence_rows(
                 workspace_id: row.get(4)?,
                 source_revision: row.get(5)?,
                 producer_session_id: row.get(6)?,
-                producer_observation_hash: row.get(7)?,
+                producer_observation_id: row.get(7)?,
                 check_fingerprint: row.get(8)?,
                 verification_result: row.get(9)?,
                 observed_at_ms: row.get(10)?,
                 environment_fingerprint: row.get(11)?,
-                environment_evidence_hash: row.get(12)?,
+                environment_evidence_id: row.get(12)?,
                 components_json: row.get(13)?,
             },
         ))
     })?;
     for row in rows {
-        let (evidence_hash, projected) = row?;
+        let (evidence_id, projected) = row?;
         *checked += 1;
-        seen.insert(evidence_hash.clone());
-        if expected.get(&evidence_hash) != Some(&projected) {
-            invalid.push(format!("work_evidence:{evidence_hash}:run_binding"));
+        seen.insert(evidence_id.clone());
+        if expected.get(&evidence_id) != Some(&projected) {
+            invalid.push(format!("work_evidence:{evidence_id}:run_binding"));
         }
     }
-    for evidence_hash in expected.keys().filter(|hash| !seen.contains(*hash)) {
-        invalid.push(format!("work_evidence:{evidence_hash}:missing"));
+    for evidence_id in expected.keys().filter(|hash| !seen.contains(*hash)) {
+        invalid.push(format!("work_evidence:{evidence_id}:missing"));
     }
     Ok(())
 }
@@ -458,14 +458,14 @@ pub(super) fn verify_restored_evidence_rows(
 ) -> Result<(), StoreError> {
     let rows = connection
         .prepare(
-            "SELECT evidence.evidence_hash, evidence.work_id, evidence.record_hash,
+            "SELECT evidence.evidence_id, evidence.work_id, evidence.record_id,
                     evidence.sequence, evidence.gate_name, evidence.created_at_ms,
                     object.object_kind, object.canonical_json,
                     item.item_json
              FROM work_restored_evidence AS evidence
-             LEFT JOIN objects AS object ON object.object_hash = evidence.evidence_hash
+             LEFT JOIN objects AS object ON object.object_id = evidence.evidence_id
              LEFT JOIN work_items AS item ON item.work_id = evidence.work_id
-             ORDER BY evidence.work_id, evidence.sequence, evidence.evidence_hash",
+             ORDER BY evidence.work_id, evidence.sequence, evidence.evidence_id",
         )?
         .query_map([], |row| {
             Ok((
@@ -482,7 +482,7 @@ pub(super) fn verify_restored_evidence_rows(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut projected = HashSet::with_capacity(rows.len());
-    let mut chains = HashMap::<(WorkId, String), HashMap<ObjectHash, Option<ObjectHash>>>::new();
+    let mut chains = HashMap::<(WorkId, String), HashMap<ObjectId, Option<ObjectId>>>::new();
     let mut next_sequence = HashMap::<String, i64>::new();
     for (
         stored_hash,
@@ -499,7 +499,7 @@ pub(super) fn verify_restored_evidence_rows(
         *checked += 1;
         let label = format!("work_restored_evidence:{stored_hash}");
         projected.insert(stored_hash.clone());
-        let Some(hash) = ObjectHash::from_stored(stored_hash) else {
+        let Some(hash) = ObjectId::from_stored(stored_hash) else {
             invalid.push(label);
             continue;
         };
@@ -520,7 +520,7 @@ pub(super) fn verify_restored_evidence_rows(
         let record_is_bound = connection.query_row(
             "SELECT EXISTS(
                  SELECT 1 FROM work_restored_records
-                 WHERE work_id = ?1 AND record_hash = ?2
+                 WHERE work_id = ?1 AND record_id = ?2
              )",
             params![stored_work_id, stored_record],
             |row| row.get::<_, bool>(0),
@@ -575,9 +575,9 @@ pub(super) fn verify_restored_evidence_rows(
     }
     let orphaned = connection
         .prepare(
-            "SELECT object_hash FROM objects
+            "SELECT object_id FROM objects
              WHERE object_kind = 'work_restored_evidence'
-             ORDER BY object_hash",
+             ORDER BY object_id",
         )?
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -590,7 +590,7 @@ pub(super) fn verify_restored_evidence_rows(
     Ok(())
 }
 
-fn restored_gate_chain_is_linear(chain: &HashMap<ObjectHash, Option<ObjectHash>>) -> bool {
+fn restored_gate_chain_is_linear(chain: &HashMap<ObjectId, Option<ObjectId>>) -> bool {
     let mut referenced = HashSet::with_capacity(chain.len());
     for previous in chain.values().flatten() {
         if !chain.contains_key(previous) || !referenced.insert(previous.clone()) {
@@ -637,8 +637,8 @@ pub(super) fn verify_obligation_rows(
             });
         match id.and_then(|id| load_work_obligation_by_id_on(connection, id)) {
             Ok(record) => {
-                projected_definitions.insert(record.definition_hash);
-                if let Some(resolution) = record.resolution_hash {
+                projected_definitions.insert(record.definition_id);
+                if let Some(resolution) = record.resolution_id {
                     projected_resolutions.insert(resolution);
                 }
             }
@@ -650,12 +650,12 @@ pub(super) fn verify_obligation_rows(
         ("work_obligation_resolution", &projected_resolutions),
     ] {
         let hashes = connection
-            .prepare("SELECT object_hash FROM objects WHERE object_kind = ?1 ORDER BY object_hash")?
+            .prepare("SELECT object_id FROM objects WHERE object_kind = ?1 ORDER BY object_id")?
             .query_map([kind], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for stored_hash in hashes {
             *checked += 1;
-            let hash = ObjectHash::from_stored(stored_hash.clone());
+            let hash = ObjectId::from_stored(stored_hash.clone());
             if hash.as_ref().is_none_or(|hash| !projected.contains(hash)) {
                 invalid.push(format!("{kind}:{stored_hash}:missing_projection"));
             }
@@ -663,9 +663,9 @@ pub(super) fn verify_obligation_rows(
     }
     let expected = connection
         .prepare(
-            "SELECT entry.feed_id, entry.position, entry.object_hash, object.canonical_json
+            "SELECT entry.feed_id, entry.position, entry.object_id, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'run_execution'
                AND entry.object_kind = 'execution_observation'
                AND json_extract(object.canonical_json, '$.source_changed') = 1
@@ -682,7 +682,7 @@ pub(super) fn verify_obligation_rows(
         .collect::<Result<Vec<_>, _>>()?;
     for (run_id, position, stored_hash, bytes) in expected {
         *checked += 1;
-        let Some(hash) = ObjectHash::from_stored(stored_hash.clone()) else {
+        let Some(hash) = ObjectId::from_stored(stored_hash.clone()) else {
             invalid.push(format!("work_obligation_trigger:{run_id}:{position}"));
             continue;
         };
@@ -703,8 +703,8 @@ pub(super) fn verify_obligation_rows(
                 "SELECT EXISTS(
                      SELECT 1 FROM work_run_obligations
                      WHERE run_id = ?1 AND rule_id = ?2 AND rule_version = ?3
-                       AND triggering_observation_hash = ?4 AND trigger_position = ?5
-                       AND rule_set_hash = ?6
+                       AND triggering_observation_id = ?4 AND trigger_position = ?5
+                       AND rule_set_id = ?6
                  )",
                 params![
                     run_id,
@@ -734,8 +734,8 @@ pub(super) fn verify_completion_rows(
 ) -> Result<(), StoreError> {
     let mut seen = HashSet::new();
     let mut statement = connection.prepare(
-        "SELECT seal_hash, work_id, run_id, root_execution_id, seal_json
-         FROM work_completion_seals ORDER BY seal_hash",
+        "SELECT seal_id, work_id, run_id, root_execution_id, seal_json
+         FROM work_completion_seals ORDER BY seal_id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
@@ -747,14 +747,14 @@ pub(super) fn verify_completion_rows(
         ))
     })?;
     for row in rows {
-        let (seal_hash, work_id, run_id, root_execution_id, bytes) = row?;
+        let (seal_id, work_id, run_id, root_execution_id, bytes) = row?;
         *checked += 1;
-        seen.insert(seal_hash.clone());
+        seen.insert(seal_id.clone());
         let Some(seal) = decode_projection_bytes::<CompletionSeal>(&bytes) else {
-            invalid.push(format!("completion_seal:{seal_hash}:projection_binding"));
+            invalid.push(format!("completion_seal:{seal_id}:projection_binding"));
             continue;
         };
-        let valid = expected.get(&seal_hash).is_some_and(|expected| {
+        let valid = expected.get(&seal_id).is_some_and(|expected| {
             expected.0 == work_id
                 && expected.1 == run_id
                 && expected.2 == root_execution_id
@@ -762,21 +762,19 @@ pub(super) fn verify_completion_rows(
                     .is_some_and(|canonical| seal == canonical)
         });
         if !valid {
-            invalid.push(format!("completion_seal:{seal_hash}:projection_binding"));
+            invalid.push(format!("completion_seal:{seal_id}:projection_binding"));
             continue;
         }
         if validate_completion_seal_obligation_basis_on(connection, &seal).is_err() {
-            invalid.push(format!("completion_seal:{seal_hash}:obligation_basis"));
+            invalid.push(format!("completion_seal:{seal_id}:obligation_basis"));
             continue;
         }
         if validate_completion_seal_environment_basis_on(connection, &seal).is_err() {
-            invalid.push(format!("completion_seal:{seal_hash}:environment_basis"));
+            invalid.push(format!("completion_seal:{seal_id}:environment_basis"));
             continue;
         }
         if validate_completion_seal_children_on(connection, &seal, 0).is_err() {
-            invalid.push(format!(
-                "completion_seal:{seal_hash}:child_obligation_basis"
-            ));
+            invalid.push(format!("completion_seal:{seal_id}:child_obligation_basis"));
         }
         if super::acceptance_evaluation::validate_completion_seal_acceptance_evaluation_on(
             connection, &seal,
@@ -784,12 +782,12 @@ pub(super) fn verify_completion_rows(
         .is_err()
         {
             invalid.push(format!(
-                "completion_seal:{seal_hash}:acceptance_evaluation_binding"
+                "completion_seal:{seal_id}:acceptance_evaluation_binding"
             ));
         }
     }
-    for seal_hash in expected.keys().filter(|hash| !seen.contains(*hash)) {
-        invalid.push(format!("completion_seal:{seal_hash}:missing"));
+    for seal_id in expected.keys().filter(|hash| !seen.contains(*hash)) {
+        invalid.push(format!("completion_seal:{seal_id}:missing"));
     }
     Ok(())
 }
@@ -805,9 +803,9 @@ pub(super) fn verify_work_feed_integrity(
     let mut feed_sequences: HashMap<String, Vec<String>> = HashMap::new();
     let mut statement = connection.prepare(
         "SELECT entry.feed_kind, entry.feed_id, entry.position, entry.object_kind,
-                entry.object_hash, entry.work_id, object.object_kind, object.canonical_json
+                entry.object_id, entry.work_id, object.object_kind, object.canonical_json
          FROM work_feed_entries entry
-         LEFT JOIN objects object ON object.object_hash = entry.object_hash
+         LEFT JOIN objects object ON object.object_id = entry.object_id
          ORDER BY entry.feed_kind, entry.feed_id, entry.position",
     )?;
     let rows = statement.query_map([], |row| {
@@ -848,7 +846,7 @@ pub(super) fn verify_work_feed_integrity(
             invalid.push(label);
             continue;
         }
-        let Some(hash) = ObjectHash::from_stored(stored_hash.clone()) else {
+        let Some(hash) = ObjectId::from_stored(stored_hash.clone()) else {
             invalid.push(label);
             continue;
         };
@@ -963,7 +961,7 @@ pub(super) fn verify_work_feed_integrity(
                 .and_then(|obligation| {
                     load_work_obligation_by_id_on(connection, obligation.obligation_id)
                         .ok()
-                        .filter(|record| record.definition_hash == hash)
+                        .filter(|record| record.definition_id == hash)
                         .map(|_| obligation)
                 })
                 .map(|obligation| {
@@ -979,7 +977,7 @@ pub(super) fn verify_work_feed_integrity(
                 .and_then(|event| {
                     load_work_obligation_by_id_on(connection, event.obligation_id)
                         .ok()
-                        .filter(|record| record.resolution_hash.as_ref() == Some(&hash))
+                        .filter(|record| record.resolution_id.as_ref() == Some(&hash))
                         .map(|record| record.obligation)
                 })
                 .map(|obligation| {
@@ -1100,16 +1098,16 @@ pub(super) fn verify_work_feed_integrity(
     }
 
     let mut statement = connection.prepare(
-        "SELECT object.object_kind, object.object_hash FROM objects object
+        "SELECT object.object_kind, object.object_id FROM objects object
          LEFT JOIN work_feed_entries entry
-           ON entry.object_hash = object.object_hash
+           ON entry.object_id = object.object_id
          WHERE object.object_kind IN (
              'work_event', 'work_checkpoint', 'work_evidence', 'work_restored_evidence', 'work_observation', 'work_source_proposal',
              'verification_evidence', 'environment_evidence',
              'work_obligation', 'work_obligation_resolution'
          )
-           AND entry.object_hash IS NULL
-         ORDER BY object.object_hash",
+           AND entry.object_id IS NULL
+         ORDER BY object.object_id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -1125,7 +1123,7 @@ pub(super) fn verify_work_feed_integrity(
 fn expected_work_memory_feeds(
     connection: &Connection,
     work_items: &HashMap<String, serde_json::Value>,
-    object_hash: &str,
+    object_id: &str,
     version: &MemoryVersion,
 ) -> Result<Option<HashSet<String>>, StoreError> {
     let crate::domain::Scope::Work { project, work } = &version.scope else {
@@ -1150,10 +1148,10 @@ fn expected_work_memory_feeds(
     }
     let mut statement = connection.prepare(
         "SELECT feed_kind, feed_id FROM work_feed_entries
-         WHERE object_hash = ?1 ORDER BY feed_kind, feed_id",
+         WHERE object_id = ?1 ORDER BY feed_kind, feed_id",
     )?;
     let feeds = statement
-        .query_map([object_hash], |row| {
+        .query_map([object_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1186,7 +1184,7 @@ fn expected_work_memory_feeds(
 fn expected_work_contradiction_feeds(
     connection: &Connection,
     work_items: &HashMap<String, serde_json::Value>,
-    object_hash: &str,
+    object_id: &str,
     event: &crate::domain::MemoryContradictionEvent,
 ) -> Result<Option<HashSet<String>>, StoreError> {
     let Some(root_id) = event.work_root_id else {
@@ -1205,10 +1203,10 @@ fn expected_work_contradiction_feeds(
     let feeds = {
         let mut statement = connection.prepare(
             "SELECT feed_kind, feed_id FROM work_feed_entries
-             WHERE object_hash = ?1 ORDER BY feed_kind, feed_id",
+             WHERE object_id = ?1 ORDER BY feed_kind, feed_id",
         )?;
         statement
-            .query_map([object_hash], |row| {
+            .query_map([object_id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .collect::<Result<Vec<_>, _>>()?
@@ -1474,7 +1472,7 @@ pub(super) fn verify_work_scalar_bindings(
              COALESCE(assigned_to, '') != COALESCE(json_extract(item_json, '$.assigned_to'), '') OR
              revision != json_extract(item_json, '$.revision') OR
              COALESCE(active_run_id, '') != COALESCE(json_extract(item_json, '$.active_run_id'), '') OR
-             COALESCE(source_snapshot_hash, '') != COALESCE(json_extract(item_json, '$.source_snapshot_id'), '')",
+             COALESCE(source_snapshot_id, '') != COALESCE(json_extract(item_json, '$.source_snapshot_id'), '')",
         ),
         (
             "work_run",
@@ -1486,8 +1484,8 @@ pub(super) fn verify_work_scalar_bindings(
              COALESCE(executor_session_id, '') != COALESCE(json_extract(run_json, '$.executor'), '') OR
              state != json_extract(run_json, '$.state') OR
              revision != json_extract(run_json, '$.revision') OR
-             COALESCE(last_checkpoint_hash, '') != COALESCE(json_extract(run_json, '$.last_checkpoint'), '') OR
-             COALESCE(completion_seal_hash, '') != COALESCE(json_extract(run_json, '$.completion_seal'), '')",
+             COALESCE(last_checkpoint_id, '') != COALESCE(json_extract(run_json, '$.last_checkpoint'), '') OR
+             COALESCE(completion_seal_id, '') != COALESCE(json_extract(run_json, '$.completion_seal'), '')",
         ),
         (
             "work_root_execution",
@@ -1513,7 +1511,7 @@ pub(super) fn verify_work_scalar_bindings(
         (
             "work_handoff_offer",
             "SELECT offer_id FROM work_handoff_offers WHERE
-             offer_hash IS NULL OR
+             offer_object_id IS NULL OR
              offer_id != json_extract(offer_json, '$.offer_id') OR
              run_id != json_extract(offer_json, '$.run_id') OR
              work_id != json_extract(offer_json, '$.work_id') OR
@@ -1537,8 +1535,8 @@ pub(super) fn verify_work_scalar_bindings(
 
     let mut statement = connection.prepare(
         "SELECT item.work_id FROM work_items item WHERE
-         COALESCE(item.latest_event_hash, '') != COALESCE((
-             SELECT entry.object_hash FROM work_feed_entries entry
+         COALESCE(item.latest_event_id, '') != COALESCE((
+             SELECT entry.object_id FROM work_feed_entries entry
              WHERE entry.feed_kind = 'project'
                AND entry.object_kind = 'work_event'
                AND entry.work_id = item.work_id
@@ -1548,7 +1546,7 @@ pub(super) fn verify_work_scalar_bindings(
     let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
     for row in rows {
         *checked += 1;
-        invalid.push(format!("work_item:{}:latest_event_hash", row?));
+        invalid.push(format!("work_item:{}:latest_event_id", row?));
     }
     drop(statement);
 
@@ -1690,19 +1688,19 @@ pub(super) fn verify_canonical_work_rows(
     let projections = [
         (
             "completion_seal",
-            "SELECT projection.seal_hash, projection.seal_json,
+            "SELECT projection.seal_id, projection.seal_json,
                     object.object_kind, object.canonical_json
              FROM work_completion_seals projection
-             LEFT JOIN objects object ON object.object_hash = projection.seal_hash
-             ORDER BY projection.seal_hash",
+             LEFT JOIN objects object ON object.object_id = projection.seal_id
+             ORDER BY projection.seal_id",
             typed_projection_bytes_equal::<CompletionSeal> as fn(&[u8], &[u8]) -> bool,
         ),
         (
             "work_handoff_offer",
-            "SELECT projection.offer_hash, projection.offer_json,
+            "SELECT projection.offer_object_id, projection.offer_json,
                     object.object_kind, object.canonical_json
              FROM work_handoff_offers projection
-             LEFT JOIN objects object ON object.object_hash = projection.offer_hash
+             LEFT JOIN objects object ON object.object_id = projection.offer_object_id
              ORDER BY projection.offer_id",
             typed_projection_bytes_equal::<WorkHandoffOffer> as fn(&[u8], &[u8]) -> bool,
         ),
@@ -1721,7 +1719,7 @@ pub(super) fn verify_canonical_work_rows(
             let (stored_hash, projection, object_kind, canonical) = row?;
             *checked += 1;
             let valid = match (
-                ObjectHash::from_stored(stored_hash.clone()),
+                ObjectId::from_stored(stored_hash.clone()),
                 canonical.as_ref(),
             ) {
                 (Some(hash), Some(bytes)) => {
@@ -1800,7 +1798,7 @@ pub(super) fn verify_work_protocol_attempts(
 ) -> Result<(), StoreError> {
     let mut statement = connection.prepare(
         "SELECT project_id, session_id, operation, idempotency_key,
-                request_hash, basis_hash, basis_json, result_hash, result_json
+                request_hash, basis_hash, basis_json, result_id, result_json
          FROM work_protocol_attempts
          ORDER BY project_id, session_id, operation, idempotency_key",
     )?;
@@ -1826,23 +1824,23 @@ pub(super) fn verify_work_protocol_attempts(
             request_hash,
             basis_hash,
             basis_json,
-            result_hash,
+            result_id,
             result_json,
         ) = row?;
         *checked += 1;
         let label = format!("work_protocol_attempt:{project_id}:{session_id}:{operation}:{key}");
-        let request_valid = ObjectHash::from_stored(request_hash).is_some();
-        let basis_valid = match (&basis_hash, &basis_json, &result_hash, &result_json) {
-            (Some(stored_hash), Some(bytes), _, _) => ObjectHash::from_stored(stored_hash.clone())
+        let request_valid = ObjectId::from_stored(request_hash).is_some();
+        let basis_valid = match (&basis_hash, &basis_json, &result_id, &result_json) {
+            (Some(stored_hash), Some(bytes), _, _) => ObjectId::from_stored(stored_hash.clone())
                 .is_some_and(|hash| CanonicalObject::stored(&hash, bytes.clone()).is_ok()),
             (stored_hash, None, Some(_), Some(_)) => stored_hash
                 .as_ref()
-                .is_none_or(|hash| ObjectHash::from_stored(hash.clone()).is_some()),
+                .is_none_or(|hash| ObjectId::from_stored(hash.clone()).is_some()),
             _ => false,
         };
-        let result_valid = match (result_hash, result_json) {
+        let result_valid = match (result_id, result_json) {
             (None, None) => true,
-            (Some(stored_hash), Some(bytes)) => ObjectHash::from_stored(stored_hash)
+            (Some(stored_hash), Some(bytes)) => ObjectId::from_stored(stored_hash)
                 .and_then(|hash| {
                     load_typed_work_object::<serde_json::Value>(
                         connection,

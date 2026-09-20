@@ -61,7 +61,7 @@ fn live_control_policy_load_is_bounded_independently_of_history_depth() {
             &binding.routing_token,
             &TurnIntent {
                 idempotency_key: "bounded-policy-turn".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"bounded-policy-turn"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"bounded-policy-turn"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),

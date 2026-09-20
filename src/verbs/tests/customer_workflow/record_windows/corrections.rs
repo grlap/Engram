@@ -37,11 +37,11 @@ fn record_windows_live_member_guards_refuse_wrong_bindings_and_missing_feed_posi
     let hash = index[0].address.hash.as_str();
     let connection = rusqlite::Connection::open(&path).unwrap();
     let before = crate::storage::test_database_shape_snapshot(&connection);
-    connection.execute("CREATE TEMP TABLE removed_record_position AS SELECT * FROM work_feed_entries WHERE feed_kind = 'project' AND object_hash = ?1", [hash]).unwrap();
+    connection.execute("CREATE TEMP TABLE removed_record_position AS SELECT * FROM work_feed_entries WHERE feed_kind = 'project' AND object_id = ?1", [hash]).unwrap();
     assert_eq!(
         connection
             .execute(
-                "DELETE FROM work_feed_entries WHERE feed_kind = 'project' AND object_hash = ?1",
+                "DELETE FROM work_feed_entries WHERE feed_kind = 'project' AND object_id = ?1",
                 [hash]
             )
             .unwrap(),

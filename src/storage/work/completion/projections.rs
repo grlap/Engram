@@ -4,7 +4,7 @@ use crate::storage::work::observation;
 
 use super::{
     CanonicalObject, ChildRequirement, CompletionSeal, Connection, EvidenceProjectionRow, FeedId,
-    HashMap, HashSet, MemoryAssertionEvent, MemoryVersion, ObjectHash, OptionalExtension,
+    HashMap, HashSet, MemoryAssertionEvent, MemoryVersion, ObjectId, OptionalExtension,
     RestoredRecord, SCHEMA_VERSION, SqliteStore, StoreError, WorkBlocker, WorkClaim,
     WorkClaimState, WorkEvent, WorkEvidence, WorkEvidenceKind, WorkHandoffOffer, WorkId, WorkItem,
     WorkLifecycle, WorkRelationBasis, WorkRelationBlockerBasis, WorkRun, WorkRunState,
@@ -77,10 +77,10 @@ impl SqliteStore {
         )?;
 
         let mut statement = connection.prepare(
-            "SELECT entry.feed_id, entry.position, entry.object_hash,
+            "SELECT entry.feed_id, entry.position, entry.object_id,
                     object.object_kind, object.canonical_json
              FROM work_feed_entries entry
-             LEFT JOIN objects object ON object.object_hash = entry.object_hash
+             LEFT JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'project' AND entry.object_kind = 'work_event'
              ORDER BY entry.feed_id, entry.position",
         )?;
@@ -97,7 +97,7 @@ impl SqliteStore {
             let (feed_id, position, stored_hash, object_kind, bytes) = row?;
             checked += 1;
             let label = format!("work_event:{feed_id}:{position}:{stored_hash}");
-            let Some(hash) = ObjectHash::from_stored(stored_hash) else {
+            let Some(hash) = ObjectId::from_stored(stored_hash) else {
                 invalid.push(label);
                 continue;
             };
@@ -287,12 +287,12 @@ impl SqliteStore {
                                     workspace_id: None,
                                     source_revision: None,
                                     producer_session_id: None,
-                                    producer_observation_hash: None,
+                                    producer_observation_id: None,
                                     check_fingerprint: None,
                                     verification_result: None,
                                     observed_at_ms: None,
                                     environment_fingerprint: None,
-                                    environment_evidence_hash: None,
+                                    environment_evidence_id: None,
                                     components_json: None,
                                 },
                             );
@@ -511,10 +511,10 @@ fn seed_restored_projection_expectations(
 ) -> Result<(), StoreError> {
     let rows = connection
         .prepare(
-            "SELECT record.work_id, record.generation_index, record.record_hash,
+            "SELECT record.work_id, record.generation_index, record.record_id,
                     object.object_kind, object.canonical_json
              FROM work_restored_records record
-             LEFT JOIN objects object ON object.object_hash = record.record_hash
+             LEFT JOIN objects object ON object.object_id = record.record_id
              ORDER BY record.work_id, record.generation_index",
         )?
         .query_map([], |row| {
@@ -527,14 +527,14 @@ fn seed_restored_projection_expectations(
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let mut latest = HashMap::<WorkId, (i64, ObjectHash, RestoredRecord)>::new();
+    let mut latest = HashMap::<WorkId, (i64, ObjectId, RestoredRecord)>::new();
     let mut next_generation = HashMap::<WorkId, i64>::new();
     for (stored_work_id, generation, stored_hash, object_kind, bytes) in rows {
         *checked += 1;
         let label = format!("work_restored_record:{stored_work_id}:{generation}:{stored_hash}");
         let parsed = parse_work_id(&stored_work_id);
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()));
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.clone()));
         let Some(bytes) = bytes else {
             invalid.push(label);
             continue;
@@ -584,12 +584,12 @@ fn seed_restored_projection_expectations(
 
     let orphaned = connection
         .prepare(
-            "SELECT object.object_hash FROM objects object
+            "SELECT object.object_id FROM objects object
              LEFT JOIN work_restored_records record
-               ON record.record_hash = object.object_hash
+               ON record.record_id = object.object_id
              WHERE object.object_kind = 'work_restored_record'
-               AND record.record_hash IS NULL
-             ORDER BY object.object_hash",
+               AND record.record_id IS NULL
+             ORDER BY object.object_id",
         )?
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -653,7 +653,7 @@ fn seed_restored_projection_expectations(
                 invalid.push(format!("work_restored_record:{work_id:?}:blocker_binding"));
                 continue;
             }
-            let blocker_hash = CanonicalObject::freeze(&blocker)?.hash().clone();
+            let blocker_hash = CanonicalObject::freeze(&blocker)?.key().clone();
             restored_basis
                 .active_blockers
                 .push(WorkRelationBlockerBasis {

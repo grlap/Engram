@@ -1,6 +1,6 @@
 use super::{
     AcceptWorkHandoffRequest, CancelWorkHandoffRequest, CanonicalObject, Connection, FeedId,
-    FeedPosition, ObjectHash, OfferWorkHandoffRequest, OptionalExtension, Redactor, SCHEMA_VERSION,
+    FeedPosition, ObjectId, OfferWorkHandoffRequest, OptionalExtension, Redactor, SCHEMA_VERSION,
     SqliteStore, StoreError, WorkCheckpoint, WorkClaim, WorkEvent, WorkEventDraft,
     WorkHandoffOffer, WorkHandoffOfferId, WorkHandoffState, WorkLifecycle, WorkRunState,
     WorkTransition, add_root_contribution, append_to_work_feeds, append_work_event,
@@ -21,9 +21,9 @@ pub(in crate::storage::work) fn latest_canonical_handoff_offer(
 ) -> Result<Option<WorkHandoffOffer>, StoreError> {
     let stored = connection
         .query_row(
-            "SELECT entry.object_hash, object.object_kind, object.canonical_json
+            "SELECT entry.object_id, object.object_kind, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'project'
                 AND entry.object_kind = 'work_event'
                 AND entry.work_id = ?2
@@ -47,8 +47,8 @@ pub(in crate::storage::work) fn latest_canonical_handoff_offer(
             "handoff offer {offer_id} is bound to a non-event canonical object"
         )));
     }
-    let hash = ObjectHash::from_stored(stored_hash.clone())
-        .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    let hash = ObjectId::from_stored(stored_hash.clone())
+        .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
     let event: WorkEvent = CanonicalObject::stored(&hash, bytes)?.decode()?;
     if event
         .handoff_offer
@@ -92,7 +92,7 @@ impl SqliteStore {
             &transaction,
             "offer_work_handoff",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(offer);
@@ -142,14 +142,14 @@ impl SqliteStore {
             "work_checkpoint",
             &checkpoint_object,
         )?;
-        run.last_checkpoint = Some(checkpoint_object.hash().clone());
+        run.last_checkpoint = Some(checkpoint_object.key().clone());
         run.state = WorkRunState::Active;
         run.revision += 1;
         run.updated_at = request.offered_at;
         persist_work_run(&transaction, &run, claim.fence)?;
         let mut root_execution = load_root_execution(&transaction, run.root_execution_id)?;
         let root_changed = expect_root_contributor(&mut root_execution, &claim.holder)
-            | add_root_contribution(&mut root_execution, &claim.holder, checkpoint_object.hash());
+            | add_root_contribution(&mut root_execution, &claim.holder, checkpoint_object.key());
         if root_changed {
             root_execution.revision += 1;
             root_execution.updated_at = request.offered_at;
@@ -164,7 +164,7 @@ impl SqliteStore {
             work_revision: item.revision,
             from: request.from.clone(),
             to: request.to.clone(),
-            checkpoint: checkpoint_object.hash().clone(),
+            checkpoint: checkpoint_object.key().clone(),
             accepted_ttl_seconds: request.ttl_seconds,
             offered_at: request.offered_at,
             expires_at: claim.expires_at.min(requested_expiry),
@@ -175,14 +175,14 @@ impl SqliteStore {
         transaction.execute(
             "INSERT INTO work_handoff_offers (
                  offer_id, run_id, work_id, state, expires_at_ms,
-                 offer_hash, offer_json
+                 offer_object_id, offer_json
              ) VALUES (?1, ?2, ?3, 'offered', ?4, ?5, ?6)",
             params![
                 offer.offer_id.0.to_string(),
                 offer.run_id.0.to_string(),
                 offer.work_id.0.to_string(),
                 offer.expires_at.timestamp_millis(),
-                offer_object.hash().as_str(),
+                offer_object.key().as_str(),
                 serde_json::to_vec(&offer)?
             ],
         )?;
@@ -203,7 +203,7 @@ impl SqliteStore {
                 offer_id: offer.offer_id,
                 to: offer.to.clone(),
                 checkpoint: offer.checkpoint.clone(),
-                offer: offer_object.hash().clone(),
+                offer: offer_object.key().clone(),
             },
             actor: request.actor.clone(),
             created_at: request.offered_at,
@@ -213,7 +213,7 @@ impl SqliteStore {
             &transaction,
             "offer_work_handoff",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &offer,
         )?;
         transaction.commit()?;
@@ -239,14 +239,14 @@ impl SqliteStore {
             &transaction,
             "accept_work_handoff",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(claim);
         }
         let offer_row: Option<(Option<String>, Vec<u8>)> = transaction
             .query_row(
-                "SELECT offer_hash, offer_json FROM work_handoff_offers
+                "SELECT offer_object_id, offer_json FROM work_handoff_offers
                  WHERE offer_id = ?1",
                 [request.offer_id.0.to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -308,11 +308,11 @@ impl SqliteStore {
         SqliteStore::insert_object(&transaction, "work_handoff_offer", &accepted_offer_object)?;
         transaction.execute(
             "UPDATE work_handoff_offers
-             SET state = 'accepted', offer_hash = ?2, offer_json = ?3
+             SET state = 'accepted', offer_object_id = ?2, offer_json = ?3
              WHERE offer_id = ?1",
             params![
                 offer.offer_id.0.to_string(),
-                accepted_offer_object.hash().as_str(),
+                accepted_offer_object.key().as_str(),
                 serde_json::to_vec(&offer)?
             ],
         )?;
@@ -336,7 +336,7 @@ impl SqliteStore {
                 to: claim.holder.clone(),
                 fence: claim.fence,
                 checkpoint: offer.checkpoint,
-                offer: accepted_offer_object.hash().clone(),
+                offer: accepted_offer_object.key().clone(),
             },
             actor: request.actor.clone(),
             created_at: request.accepted_at,
@@ -346,7 +346,7 @@ impl SqliteStore {
             &transaction,
             "accept_work_handoff",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &claim,
         )?;
         transaction.commit()?;
@@ -373,14 +373,14 @@ impl SqliteStore {
             &transaction,
             "cancel_work_handoff",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(offer);
         }
         let offer_row: Option<(Option<String>, Vec<u8>)> = transaction
             .query_row(
-                "SELECT offer_hash, offer_json FROM work_handoff_offers
+                "SELECT offer_object_id, offer_json FROM work_handoff_offers
                  WHERE offer_id = ?1",
                 [request.offer_id.0.to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -428,11 +428,11 @@ impl SqliteStore {
         SqliteStore::insert_object(&transaction, "work_handoff_offer", &offer_object)?;
         transaction.execute(
             "UPDATE work_handoff_offers
-             SET state = 'cancelled', offer_hash = ?2, offer_json = ?3
+             SET state = 'cancelled', offer_object_id = ?2, offer_json = ?3
              WHERE offer_id = ?1 AND state = 'offered'",
             params![
                 offer.offer_id.0.to_string(),
-                offer_object.hash().as_str(),
+                offer_object.key().as_str(),
                 serde_json::to_vec(&offer)?
             ],
         )?;
@@ -452,7 +452,7 @@ impl SqliteStore {
             blocker: None,
             transition: WorkTransition::HandoffCancelled {
                 offer_id: offer.offer_id,
-                offer: offer_object.hash().clone(),
+                offer: offer_object.key().clone(),
                 reason,
             },
             actor: request.actor.clone(),
@@ -463,7 +463,7 @@ impl SqliteStore {
             &transaction,
             "cancel_work_handoff",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &offer,
         )?;
         transaction.commit()?;

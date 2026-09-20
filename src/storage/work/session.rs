@@ -24,7 +24,7 @@ use super::{
     CompletionRecoverySnapshot, StageWorkSessionDelivery, WorkPrerequisitePage, WorkProtocolAttempt,
 };
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectId,
     domain::{
         FeedId, SessionId, TaskId, WorkClaim, WorkCompletionRecoveryCause, WorkId, WorkItem,
         WorkLifecycle, WorkRun, WorkRunId, WorkSessionState,
@@ -38,7 +38,7 @@ struct WorkProtocolAttemptRow {
     request_hash: String,
     basis_hash: Option<String>,
     basis_json: Option<Vec<u8>>,
-    result_hash: Option<String>,
+    result_id: Option<String>,
     result_json: Option<Vec<u8>>,
 }
 
@@ -65,7 +65,7 @@ pub(super) const PROCESS_DEFAULT_SESSION_RECLAMATION_CANDIDATES_SQL: &str = r"
           SELECT 1 FROM work_protocol_attempts AS pending
           WHERE pending.project_id = ?1
             AND pending.session_id = stale.session_id
-            AND (pending.result_hash IS NULL OR pending.result_json IS NULL)
+            AND (pending.result_id IS NULL OR pending.result_json IS NULL)
       )
       AND NOT EXISTS (
           SELECT 1
@@ -163,7 +163,7 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
         "INSERT INTO work_protocol_attempts (
              project_id, session_id, operation, idempotency_key,
              request_hash, basis_hash, basis_json, initiated_at_ms,
-             result_hash, result_json
+             result_id, result_json
           ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL)
          ON CONFLICT(project_id, session_id, operation, idempotency_key)
          DO NOTHING",
@@ -172,14 +172,14 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
             session_id.0,
             operation,
             idempotency_key,
-            request_object.hash().as_str(),
-            basis_object.hash().as_str(),
+            request_object.key().as_str(),
+            basis_object.key().as_str(),
             basis_object.bytes(),
             request.now.timestamp_millis()
         ],
     )?;
     let stored = connection.query_row(
-        "SELECT request_hash, basis_hash, basis_json, result_hash, result_json
+        "SELECT request_hash, basis_hash, basis_json, result_id, result_json
          FROM work_protocol_attempts
          WHERE project_id = ?1 AND session_id = ?2
            AND operation = ?3 AND idempotency_key = ?4",
@@ -189,37 +189,37 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
                 request_hash: row.get(0)?,
                 basis_hash: row.get(1)?,
                 basis_json: row.get(2)?,
-                result_hash: row.get(3)?,
+                result_id: row.get(3)?,
                 result_json: row.get(4)?,
             })
         },
     )?;
-    if stored.request_hash != request_object.hash().as_str() {
+    if stored.request_hash != request_object.key().as_str() {
         return Err(StoreError::WorkOperationIdempotencyConflict {
             operation: operation.to_owned(),
             key: idempotency_key,
         });
     }
-    let basis_matches = stored.basis_hash.as_deref() == Some(basis_object.hash().as_str())
+    let basis_matches = stored.basis_hash.as_deref() == Some(basis_object.key().as_str())
         && stored.basis_json.as_deref() == Some(basis_object.bytes());
     let stored_basis = match (&stored.basis_hash, &stored.basis_json) {
         (Some(stored_hash), Some(bytes)) => {
-            let hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))?;
+            let hash = ObjectId::from_stored(stored_hash.clone())
+                .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.clone()))?;
             Some(CanonicalObject::stored(&hash, bytes.clone())?.decode()?)
         }
-        (_, None) if stored.result_hash.is_some() && stored.result_json.is_some() => None,
+        (_, None) if stored.result_id.is_some() && stored.result_json.is_some() => None,
         _ => {
             return Err(StoreError::InvalidWorkProjection(
                 "work-protocol attempt has no verified durable basis".into(),
             ));
         }
     };
-    let result = match (stored.result_hash, stored.result_json) {
+    let result = match (stored.result_id, stored.result_json) {
         (None, None) => None,
         (Some(stored_hash), Some(bytes)) => {
-            let hash = ObjectHash::from_stored(stored_hash.clone())
-                .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+            let hash = ObjectId::from_stored(stored_hash.clone())
+                .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
             let value = load_typed_work_object::<serde_json::Value>(
                 connection,
                 &hash,
@@ -237,7 +237,7 @@ pub(super) fn begin_work_protocol_attempt_on<T: Serialize, B: Serialize>(
         }
         _ => {
             return Err(StoreError::InvalidWorkProjection(
-                "work-protocol result hash and bytes must be present together".into(),
+                "work-protocol result id and bytes must be present together".into(),
             ));
         }
     };
@@ -615,16 +615,16 @@ impl SqliteStore {
             "UPDATE work_protocol_attempts
              SET basis_json = CASE WHEN operation = ?7
                                    THEN basis_json ELSE NULL END,
-                 result_hash = ?5, result_json = ?6
+                 result_id = ?5, result_json = ?6
              WHERE project_id = ?1 AND session_id = ?2
                AND operation = ?3 AND idempotency_key = ?4
-               AND result_hash IS NULL AND result_json IS NULL",
+               AND result_id IS NULL AND result_json IS NULL",
             params![
                 project_id.0,
                 session_id.0,
                 operation,
                 idempotency_key,
-                result_object.hash().as_str(),
+                result_object.key().as_str(),
                 result_object.bytes(),
                 DECOMPOSE_PROTOCOL_OPERATION
             ],
@@ -632,7 +632,7 @@ impl SqliteStore {
         if changed == 0 {
             let stored = transaction
                 .query_row(
-                    "SELECT result_hash, result_json FROM work_protocol_attempts
+                    "SELECT result_id, result_json FROM work_protocol_attempts
                      WHERE project_id = ?1 AND session_id = ?2
                        AND operation = ?3 AND idempotency_key = ?4",
                     params![project_id.0, session_id.0, operation, idempotency_key],
@@ -646,7 +646,7 @@ impl SqliteStore {
                 .optional()?;
             if stored
                 != Some((
-                    Some(result_object.hash().as_str().to_owned()),
+                    Some(result_object.key().as_str().to_owned()),
                     Some(result_object.bytes().to_vec()),
                 ))
             {
@@ -684,15 +684,15 @@ impl SqliteStore {
              WHERE project_id = ?1 AND session_id = ?2
                AND operation = ?3 AND idempotency_key = ?4
                AND basis_hash = ?5 AND basis_json = ?6
-               AND result_hash IS NULL AND result_json IS NULL",
+               AND result_id IS NULL AND result_json IS NULL",
             params![
                 project_id.0,
                 session_id.0,
                 operation,
                 idempotency_key,
-                expected.hash().as_str(),
+                expected.key().as_str(),
                 expected.bytes(),
-                current.hash().as_str(),
+                current.key().as_str(),
                 current.bytes()
             ],
         )?;
@@ -703,13 +703,13 @@ impl SqliteStore {
                      FROM work_protocol_attempts
                      WHERE project_id = ?1 AND session_id = ?2
                        AND operation = ?3 AND idempotency_key = ?4
-                       AND result_hash IS NULL AND result_json IS NULL",
+                       AND result_id IS NULL AND result_json IS NULL",
                     params![project_id.0, session_id.0, operation, idempotency_key],
                     |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
                 )
                 .optional()?
                 .is_some_and(|(hash, bytes)| {
-                    hash == current.hash().as_str() && bytes == current.bytes()
+                    hash == current.key().as_str() && bytes == current.bytes()
                 });
             if !matches_current {
                 return Err(StoreError::WorkOperationIdempotencyConflict {
@@ -747,9 +747,9 @@ impl SqliteStore {
             .transpose()
     }
 
-    /// Loads the canonical object named by a committed hash-valued core
+    /// Loads the canonical object named by a committed id-valued core
     /// operation result. The caller still replays the operation so its stored
-    /// request hash verifies the reconstructed request exactly.
+    /// request fingerprint verifies the reconstructed request exactly.
     pub(crate) fn work_operation_result_object<T: DeserializeOwned>(
         &self,
         operation: &str,
@@ -759,7 +759,7 @@ impl SqliteStore {
         let Some(value) = self.work_operation_result_value(operation, idempotency_key)? else {
             return Ok(None);
         };
-        let hash: ObjectHash = serde_json::from_value(value)?;
+        let hash: ObjectId = serde_json::from_value(value)?;
         load_typed_work_object(&self.connection, &hash, object_kind).map(Some)
     }
 
@@ -906,7 +906,7 @@ impl SqliteStore {
             let (feed_kind, feed_id) = feed_parts(&feed);
             let stored_entries = transaction
                 .prepare(
-                    "SELECT position, object_kind, object_hash
+                    "SELECT position, object_kind, object_id
                  FROM work_feed_entries
                  WHERE feed_kind = ?1 AND feed_id = ?2
                    AND position > ?3 AND position <= ?4
@@ -925,10 +925,10 @@ impl SqliteStore {
                 .collect::<Result<Vec<_>, _>>()?;
             let stored_matches = stored_entries.len() == expected_count
                 && stored_entries.iter().zip(delivered_entries).all(
-                    |((position, object_kind, object_hash), delivered)| {
+                    |((position, object_kind, object_id), delivered)| {
                         *position == delivered.position.position
                             && object_kind == &delivered.object_kind
-                            && object_hash == delivered.object_hash.as_str()
+                            && object_id == delivered.object_id.as_str()
                     },
                 );
             if !stored_matches {

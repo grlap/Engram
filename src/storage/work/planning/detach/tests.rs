@@ -123,7 +123,7 @@ fn detach_refuses_a_canonically_bound_run_from_another_root() {
     let event_id: String = store
         .connection
         .query_row(
-            "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+            "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
             [child.work_id.0.to_string()],
             |row| row.get(0),
         )
@@ -140,7 +140,7 @@ fn detach_refuses_a_canonically_bound_run_from_another_root() {
     assert_eq!(
         transaction
             .execute(
-                "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+                "UPDATE objects SET canonical_json = ?2 WHERE object_id = ?1",
                 params![event_id, forged.bytes()],
             )
             .expect("forged event"),
@@ -197,13 +197,13 @@ fn detach_catalog_is_projection_only_but_mutation_checks_canonical_ancestry() {
     );
     assert_eq!(crate::canonical::canonical_decode_count(), 0);
     let hash: String = store.connection.query_row(
-        "SELECT object_hash FROM work_feed_entries WHERE feed_kind = 'project' AND work_id = ?1 AND object_kind = 'work_event' ORDER BY position DESC LIMIT 1",
+        "SELECT object_id FROM work_feed_entries WHERE feed_kind = 'project' AND work_id = ?1 AND object_kind = 'work_event' ORDER BY position DESC LIMIT 1",
         [root.work_id.0.to_string()], |row| row.get(0)).expect("parent latest event");
     assert_eq!(
         store
             .connection
             .execute(
-                "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_hash = ?1",
+                "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_id = ?1",
                 [&hash]
             )
             .expect("damage parent event"),
@@ -472,12 +472,12 @@ fn detach_is_atomic_and_replays_without_changing_old_authority() {
             .expect("run");
         let execution =
             load_root_execution(&store.connection, old_run.root_execution_id).expect("execution");
-        let seal_hash = old_run.completion_seal.as_ref().expect("sealed parent");
+        let seal_id = old_run.completion_seal.as_ref().expect("sealed parent");
         let seal_bytes: Vec<u8> = store
             .connection
             .query_row(
-                "SELECT canonical_json FROM objects WHERE object_hash = ?1",
-                [seal_hash.as_str()],
+                "SELECT canonical_json FROM objects WHERE object_id = ?1",
+                [seal_id.as_str()],
                 |row| row.get(0),
             )
             .expect("seal bytes");
@@ -554,8 +554,8 @@ fn detach_is_atomic_and_replays_without_changing_old_authority() {
             store
                 .connection
                 .query_row(
-                    "SELECT canonical_json FROM objects WHERE object_hash = ?1",
-                    [seal_hash.as_str()],
+                    "SELECT canonical_json FROM objects WHERE object_id = ?1",
+                    [seal_id.as_str()],
                     |row| row.get::<_, Vec<u8>>(0)
                 )
                 .expect("unchanged seal bytes")

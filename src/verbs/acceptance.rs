@@ -38,7 +38,7 @@ pub(super) struct AcceptanceEvidence {
 #[derive(Clone, Debug, Serialize)]
 struct LinkedEvidence {
     #[serde(skip)]
-    evidence: crate::ObjectHash,
+    evidence: crate::ObjectId,
     criterion: usize,
     locator: String,
     #[serde(skip_serializing_if = "Option::is_none")]

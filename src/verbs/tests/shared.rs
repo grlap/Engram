@@ -34,7 +34,7 @@ fn checkpoint_before_completion_collapses_by_work_identity() {
                 position,
             },
             object_kind: "work_event".into(),
-            object_hash: hash(if position == 1 { 'a' } else { 'b' }),
+            object_id: hash(if position == 1 { 'a' } else { 'b' }),
         },
         delivery: WorkChangeProjection::Visible(crate::work_service::WorkChangeSummary {
             schema_version: crate::domain::SCHEMA_VERSION,

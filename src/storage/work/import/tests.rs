@@ -21,7 +21,7 @@ fn input() -> WorkImportInput {
             source_revision: Some("1".into()),
             fingerprint: "planner-revision-1".into(),
             canonical_url: None,
-            payload_hash: payload.hash().clone(),
+            payload_hash: payload.key().clone(),
             raw: std::collections::BTreeMap::default(),
         },
         draft: Some(crate::domain::WorkImportDraft {
@@ -585,14 +585,14 @@ fn import_recovery_refuses_duplicate_and_misbound_notices_without_writes() {
                 history.source_notices[0].cited_snapshot =
                     CanonicalObject::freeze(&"different citation")
                         .unwrap()
-                        .hash()
+                        .key()
                         .clone();
             }
             2 => {
                 history.source_notices[0].proposed_snapshot =
                     CanonicalObject::freeze(&"missing proposed source")
                         .unwrap()
-                        .hash()
+                        .key()
                         .clone();
             }
             3 => history.source_notices[0].recorded_at = at(-1),
@@ -603,7 +603,7 @@ fn import_recovery_refuses_duplicate_and_misbound_notices_without_writes() {
         // not merely fail the outer document checksum.
         document.manifest.body_sha256 = CanonicalObject::freeze(&document.body)
             .unwrap()
-            .hash()
+            .key()
             .clone();
         let mut destination = SqliteStore::open_in_memory().unwrap();
         let before = crate::storage::test_database_shape_snapshot(&destination.connection).unwrap();

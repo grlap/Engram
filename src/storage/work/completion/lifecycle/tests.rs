@@ -266,7 +266,7 @@ fn cancelled_required_child_blocks_completion_until_an_attributed_waiver() {
              VALUES (?1, ?2, ?3)",
             params![
                 root_execution_id.0.to_string(),
-                duplicate.hash().as_str(),
+                duplicate.key().as_str(),
                 duplicate.bytes(),
             ],
         )
@@ -575,7 +575,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
                     session_id: SessionId("child-agent".into()),
                     grant_id: "child-obligation-grant".into(),
                     observation_id: "child-source-mutation".into(),
-                    action_fingerprint: ObjectHash::from_canonical_bytes(b"write required child"),
+                    action_fingerprint: ObjectId::from_canonical_bytes(b"write required child"),
                     effect: EffectClass::MutateLocal,
                     outcome: ExecutionOutcome::Succeeded,
                     source_changed: true,
@@ -596,7 +596,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
                     session_id: SessionId("child-agent".into()),
                     grant_id: "child-obligation-grant".into(),
                     observation_id: "child-verification".into(),
-                    action_fingerprint: ObjectHash::from_canonical_bytes(
+                    action_fingerprint: ObjectId::from_canonical_bytes(
                         b"cargo test required child",
                     ),
                     effect: EffectClass::Observe,
@@ -621,9 +621,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
                     source_basis: child_basis,
                     environment: None,
                     check_kind: VerificationKind::Test,
-                    check_fingerprint: ObjectHash::from_canonical_bytes(
-                        b"cargo test required child",
-                    ),
+                    check_fingerprint: ObjectId::from_canonical_bytes(b"cargo test required child"),
                     result: VerificationResult::Passed,
                     completed_at: at(7),
                     summary: "required-child tests passed on the latest source basis".into(),
@@ -680,10 +678,10 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         store
             .connection
             .execute(
-                "UPDATE work_completion_seals SET seal_hash = ?1, seal_json = ?2
+                "UPDATE work_completion_seals SET seal_id = ?1, seal_json = ?2
                  WHERE run_id = ?3",
                 params![
-                    forged_child_object.hash().as_str(),
+                    forged_child_object.key().as_str(),
                     forged_child_object.bytes(),
                     child_seal.run_id.0.to_string(),
                 ],
@@ -692,9 +690,9 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         store
             .connection
             .execute(
-                "UPDATE work_runs SET completion_seal_hash = ?1 WHERE run_id = ?2",
+                "UPDATE work_runs SET completion_seal_id = ?1 WHERE run_id = ?2",
                 params![
-                    forged_child_object.hash().as_str(),
+                    forged_child_object.key().as_str(),
                     child_seal.run_id.0.to_string(),
                 ],
             )
@@ -723,10 +721,10 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         store
             .connection
             .execute(
-                "UPDATE work_completion_seals SET seal_hash = ?1, seal_json = ?2
+                "UPDATE work_completion_seals SET seal_id = ?1, seal_json = ?2
                  WHERE run_id = ?3",
                 params![
-                    child_seal_object.hash().as_str(),
+                    child_seal_object.key().as_str(),
                     child_seal_object.bytes(),
                     child_seal.run_id.0.to_string(),
                 ],
@@ -735,9 +733,9 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         store
             .connection
             .execute(
-                "UPDATE work_runs SET completion_seal_hash = ?1 WHERE run_id = ?2",
+                "UPDATE work_runs SET completion_seal_id = ?1 WHERE run_id = ?2",
                 params![
-                    child_seal_object.hash().as_str(),
+                    child_seal_object.key().as_str(),
                     child_seal.run_id.0.to_string(),
                 ],
             )
@@ -745,8 +743,8 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
         store
             .connection
             .execute(
-                "DELETE FROM objects WHERE object_hash = ?1",
-                [forged_child_object.hash().as_str()],
+                "DELETE FROM objects WHERE object_id = ?1",
+                [forged_child_object.key().as_str()],
             )
             .expect("remove forged child seal fixture");
         let root_seal = complete(
@@ -855,7 +853,7 @@ fn completion_seals_required_children_and_reopen_starts_a_clean_generation() {
             .pop()
             .expect("reopen event tail");
         let reopened_event: WorkEvent =
-            load_typed_work_object(&store.connection, &reopened_entry.object_hash, "work_event")
+            load_typed_work_object(&store.connection, &reopened_entry.object_id, "work_event")
                 .expect("canonical reopen event");
         assert!(matches!(
             reopened_event.transition,
@@ -1046,7 +1044,7 @@ fn root_completion_fences_live_optional_descendants_and_old_generations() {
         .pop()
         .expect("release event tail");
     let release_event: WorkEvent =
-        load_typed_work_object(&store.connection, &release_entry.object_hash, "work_event")
+        load_typed_work_object(&store.connection, &release_entry.object_id, "work_event")
             .expect("canonical release event");
     assert!(matches!(
         release_event.transition,
@@ -1178,9 +1176,9 @@ fn rewrite_historical_claim_holder(store: &SqliteStore, run_id: WorkRunId, holde
     let (old_hash, bytes): (String, Vec<u8>) = store
         .connection
         .query_row(
-            "SELECT object.object_hash, object.canonical_json
+            "SELECT object.object_id, object.canonical_json
              FROM work_feed_entries entry
-             JOIN objects object ON object.object_hash = entry.object_hash
+             JOIN objects object ON object.object_id = entry.object_id
              WHERE entry.feed_kind = 'run_execution' AND entry.feed_id = ?1
                AND entry.object_kind = 'work_event'
                AND json_type(object.canonical_json, '$.claim') IS NOT NULL
@@ -1199,15 +1197,15 @@ fn rewrite_historical_claim_holder(store: &SqliteStore, run_id: WorkRunId, holde
     store
         .connection
         .execute(
-            "UPDATE work_feed_entries SET object_hash = ?1 WHERE object_hash = ?2",
-            rusqlite::params![object.hash().as_str(), old_hash],
+            "UPDATE work_feed_entries SET object_id = ?1 WHERE object_id = ?2",
+            rusqlite::params![object.key().as_str(), old_hash],
         )
         .expect("repoint feeds");
     store
         .connection
         .execute(
-            "UPDATE work_items SET latest_event_hash = ?1 WHERE latest_event_hash = ?2",
-            rusqlite::params![object.hash().as_str(), old_hash],
+            "UPDATE work_items SET latest_event_id = ?1 WHERE latest_event_id = ?2",
+            rusqlite::params![object.key().as_str(), old_hash],
         )
         .expect("repoint item");
     store

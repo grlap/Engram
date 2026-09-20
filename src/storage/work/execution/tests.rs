@@ -95,7 +95,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &control_binding.routing_token,
             &TurnIntent {
                 idempotency_key: "synchronize-control-work".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"sync bound work"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"sync bound work"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -174,7 +174,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &control_binding.routing_token,
             &TurnIntent {
                 idempotency_key: "evaluate-control-work".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"mutate bound work"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"mutate bound work"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![subject],
@@ -224,7 +224,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert_ne!(changed_rules.obligation_rule_set, frozen_rule_set);
     let out_of_scope = ExecutionObservationInput {
         observation_id: "outside-grant-scope".into(),
-        action_fingerprint: ObjectHash::from_canonical_bytes(b"observe after mutation grant"),
+        action_fingerprint: ObjectId::from_canonical_bytes(b"observe after mutation grant"),
         effect: EffectClass::Observe,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: false,
@@ -249,7 +249,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let observations = vec![
         ExecutionObservationInput {
             observation_id: "source-mutation-1".into(),
-            action_fingerprint: ObjectHash::from_canonical_bytes(b"write src/lib.rs"),
+            action_fingerprint: ObjectId::from_canonical_bytes(b"write src/lib.rs"),
             effect: EffectClass::MutateLocal,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: true,
@@ -261,7 +261,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         },
         ExecutionObservationInput {
             observation_id: "verification-command-1".into(),
-            action_fingerprint: ObjectHash::from_canonical_bytes(b"cargo test --workspace"),
+            action_fingerprint: ObjectId::from_canonical_bytes(b"cargo test --workspace"),
             effect: EffectClass::MutateLocal,
             outcome: ExecutionOutcome::Succeeded,
             source_changed: false,
@@ -289,7 +289,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     };
     let environment_fingerprint = CanonicalObject::freeze(&environment_components)
         .expect("freeze environment components")
-        .hash()
+        .key()
         .clone();
     let environment_inputs = vec![EnvironmentEvidenceInput {
         source_basis: ExecutionSourceBasis {
@@ -301,8 +301,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         observed_at: at(9),
     }];
     let missing_producer = VerificationEvidenceInput {
-        producer_observation: ExecutionObservationReference::ObjectHash {
-            object_hash: ObjectHash::from_canonical_bytes(b"missing producer"),
+        producer_observation: ExecutionObservationReference::ObjectId {
+            object_id: ObjectId::from_canonical_bytes(b"missing producer"),
         },
         check_kind: VerificationKind::Test,
         environment: None,
@@ -320,7 +320,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &[],
             &[],
             &[EnvironmentEvidenceInput {
-                environment_fingerprint: ObjectHash::from_canonical_bytes(
+                environment_fingerprint: ObjectId::from_canonical_bytes(
                     b"wrong environment fingerprint"
                 ),
                 ..environment_inputs[0].clone()
@@ -347,7 +347,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &[EnvironmentEvidenceInput {
                 environment_fingerprint: CanonicalObject::freeze(&mismatched_components)
                     .expect("freeze mismatched environment components")
-                    .hash()
+                    .key()
                     .clone(),
                 components: Some(mismatched_components),
                 ..environment_inputs[0].clone()
@@ -410,10 +410,10 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert_eq!(receipt.execution_observations.len(), 2);
     assert_eq!(receipt.verification_evidence.len(), 1);
     assert_eq!(receipt.environment_evidence.len(), 1);
-    let observation_hash = &receipt.execution_observations[0];
+    let observation_id = &receipt.execution_observations[0];
     let observation = load_typed_work_object::<ExecutionObservation>(
         &store.connection,
-        observation_hash,
+        observation_id,
         "execution_observation",
     )
     .expect("load canonical execution observation");
@@ -427,8 +427,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let feed_count = store
         .connection
         .query_row(
-            "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
-            [observation_hash.as_str()],
+            "SELECT COUNT(*) FROM work_feed_entries WHERE object_id = ?1",
+            [observation_id.as_str()],
             |row| row.get::<_, i64>(0),
         )
         .expect("count observation feed entries");
@@ -464,7 +464,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         WorkEvidenceKind::Verification
     );
     let not_yet_recorded_environment =
-        ObjectHash::from_canonical_bytes(b"required environment not yet produced");
+        ObjectId::from_canonical_bytes(b"required environment not yet produced");
     let focus_candidates = store
         .work_run_evidence_projection(
             run.run_id,
@@ -485,7 +485,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         .connection
         .execute(
             "UPDATE work_run_evidence SET evidence_kind = 'generic'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             [verification_hash.as_str()],
         )
         .expect("corrupt selection-driving evidence kind");
@@ -497,7 +497,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         .connection
         .execute(
             "UPDATE work_run_evidence SET evidence_kind = 'verification'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             [verification_hash.as_str()],
         )
         .expect("restore evidence selection projection");
@@ -510,7 +510,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         environment.environment_fingerprint,
         CanonicalObject::freeze(&environment_components)
             .expect("re-freeze environment components")
-            .hash()
+            .key()
             .clone()
     );
     assert_eq!(
@@ -538,8 +538,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert_eq!(
         super::super::super::resolve_verification_environment_on(
             &store.connection,
-            Some(&EnvironmentEvidenceReference::ObjectHash {
-                object_hash: environment_hash.clone(),
+            Some(&EnvironmentEvidenceReference::ObjectId {
+                object_id: environment_hash.clone(),
             }),
             &[],
             &work.project_id,
@@ -554,8 +554,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert!(matches!(
         super::super::super::resolve_verification_environment_on(
             &store.connection,
-            Some(&EnvironmentEvidenceReference::ObjectHash {
-                object_hash: environment_hash.clone(),
+            Some(&EnvironmentEvidenceReference::ObjectId {
+                object_id: environment_hash.clone(),
             }),
             &[],
             &work.project_id,
@@ -571,8 +571,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert!(matches!(
         super::super::super::resolve_verification_environment_on(
             &store.connection,
-            Some(&EnvironmentEvidenceReference::ObjectHash {
-                object_hash: environment_hash.clone(),
+            Some(&EnvironmentEvidenceReference::ObjectId {
+                object_id: environment_hash.clone(),
             }),
             &[],
             &work.project_id,
@@ -584,8 +584,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert!(matches!(
         super::super::super::resolve_verification_environment_on(
             &store.connection,
-            Some(&EnvironmentEvidenceReference::ObjectHash {
-                object_hash: ObjectHash::from_canonical_bytes(b"missing environment"),
+            Some(&EnvironmentEvidenceReference::ObjectId {
+                object_id: ObjectId::from_canonical_bytes(b"missing environment"),
             }),
             &[],
             &work.project_id,
@@ -600,23 +600,23 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             .expect("environment projection kind"),
         WorkEvidenceKind::Environment
     );
-    for evidence_hash in [verification_hash, environment_hash] {
+    for evidence_id in [verification_hash, environment_hash] {
         let typed_feed_count = store
             .connection
             .query_row(
-                "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
-                [evidence_hash.as_str()],
+                "SELECT COUNT(*) FROM work_feed_entries WHERE object_id = ?1",
+                [evidence_id.as_str()],
                 |row| row.get::<_, i64>(0),
             )
             .expect("count typed evidence feed entries");
         assert_eq!(typed_feed_count, 3);
     }
-    let run_positions = |hash: &ObjectHash| {
+    let run_positions = |hash: &ObjectId| {
         store
             .connection
             .query_row(
                 "SELECT position FROM work_feed_entries
-                 WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_hash = ?2",
+                 WHERE feed_kind = 'run_execution' AND feed_id = ?1 AND object_id = ?2",
                 params![run.run_id.0.to_string(), hash.as_str()],
                 |row| row.get::<_, i64>(0),
             )
@@ -626,7 +626,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         candidate_kind: WorkEvidenceKind::Verification,
         evidence: Some(&verification),
         producer: Some(&producer),
-        latest_mutation: Some((&observation, run_positions(observation_hash))),
+        latest_mutation: Some((&observation, run_positions(observation_id))),
         evidence_position: run_positions(verification_hash),
         requirement: &crate::domain::VerificationRequirement {
             check_kind: crate::domain::VerificationKind::Test,
@@ -648,7 +648,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         Ok(())
     );
     let wrong_environment_requirement = crate::domain::VerificationRequirement {
-        required_environment: Some(ObjectHash::from_canonical_bytes(b"other environment")),
+        required_environment: Some(ObjectId::from_canonical_bytes(b"other environment")),
         ..exact_environment_requirement
     };
     assert_eq!(
@@ -667,7 +667,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     assert_eq!(obligation.obligation.rule_set, frozen_rule_set);
     assert_eq!(
         obligation.obligation.triggering_observation,
-        *observation_hash
+        *observation_id
     );
     assert_eq!(
         obligation.obligation.requirement.check_kind,
@@ -683,16 +683,16 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             if evidence == verification_hash
     ));
     for hash in [
-        &obligation.definition_hash,
+        &obligation.definition_id,
         obligation
-            .resolution_hash
+            .resolution_id
             .as_ref()
             .expect("satisfied resolution hash"),
     ] {
         let feed_count = store
             .connection
             .query_row(
-                "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+                "SELECT COUNT(*) FROM work_feed_entries WHERE object_id = ?1",
                 [hash.as_str()],
                 |row| row.get::<_, i64>(0),
             )
@@ -718,7 +718,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let objects_before_attach = store
         .connection
         .query_row(
-            "SELECT COUNT(*) FROM objects WHERE object_hash = ?1",
+            "SELECT COUNT(*) FROM objects WHERE object_id = ?1",
             [verification_hash.as_str()],
             |row| row.get::<_, i64>(0),
         )
@@ -726,7 +726,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let feeds_before_attach = store
         .connection
         .query_row(
-            "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+            "SELECT COUNT(*) FROM work_feed_entries WHERE object_id = ?1",
             [verification_hash.as_str()],
             |row| row.get::<_, i64>(0),
         )
@@ -771,7 +771,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let objects_after_attach = store
         .connection
         .query_row(
-            "SELECT COUNT(*) FROM objects WHERE object_hash = ?1",
+            "SELECT COUNT(*) FROM objects WHERE object_id = ?1",
             [verification_hash.as_str()],
             |row| row.get::<_, i64>(0),
         )
@@ -779,7 +779,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let feeds_after_attach = store
         .connection
         .query_row(
-            "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
+            "SELECT COUNT(*) FROM work_feed_entries WHERE object_id = ?1",
             [verification_hash.as_str()],
             |row| row.get::<_, i64>(0),
         )
@@ -806,8 +806,8 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let replay_feed_count = store
         .connection
         .query_row(
-            "SELECT COUNT(*) FROM work_feed_entries WHERE object_hash = ?1",
-            [observation_hash.as_str()],
+            "SELECT COUNT(*) FROM work_feed_entries WHERE object_id = ?1",
+            [observation_id.as_str()],
             |row| row.get::<_, i64>(0),
         )
         .expect("count replayed observation feed entries");
@@ -834,7 +834,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     let mut future_observation = observation.clone();
     future_observation.observation_id = "source-mutation-under-empty-rules".into();
     future_observation.action_fingerprint =
-        ObjectHash::from_canonical_bytes(b"write after rule-set activation");
+        ObjectId::from_canonical_bytes(b"write after rule-set activation");
     future_observation.obligation_rule_set = changed_rules.obligation_rule_set.clone();
     future_observation
         .source_basis
@@ -854,7 +854,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         .work_run_obligations(run.run_id)
         .expect("reload obligations after rule-set activation");
     assert_eq!(retained.len(), 1);
-    assert_eq!(retained[0].definition_hash, obligation.definition_hash);
+    assert_eq!(retained[0].definition_id, obligation.definition_id);
     store
         .connection
         .execute_batch("SAVEPOINT corrupt_obligation_rule_set")
@@ -862,11 +862,11 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
     store
         .connection
         .execute(
-            "UPDATE work_run_obligations SET rule_set_hash = ?1
-             WHERE definition_hash = ?2",
+            "UPDATE work_run_obligations SET rule_set_id = ?1
+             WHERE definition_id = ?2",
             params![
                 changed_rules.obligation_rule_set.as_str(),
-                obligation.definition_hash.as_str()
+                obligation.definition_id.as_str()
             ],
         )
         .expect("corrupt obligation rule-set projection");
@@ -896,7 +896,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             &control_binding.routing_token,
             &TurnIntent {
                 idempotency_key: "evaluate-expired-control-work".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"expired bound work"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"expired bound work"),
                 purpose: TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::Observe],
                 resource_intents: Vec::new(),
@@ -929,7 +929,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         ),
         Err(StoreError::ControlWorkBindingStale { .. })
     ));
-    let unbound_evidence = ObjectHash::from_canonical_bytes(b"unbound run evidence");
+    let unbound_evidence = ObjectId::from_canonical_bytes(b"unbound run evidence");
     assert!(ensure_run_evidence(&store.connection, run.run_id, &[]).is_ok());
     let mixed_evidence = [(*verification_hash).clone(), unbound_evidence.clone()];
     assert!(matches!(
@@ -946,158 +946,158 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             verification_hash,
             "verification-kind",
             "UPDATE work_run_evidence SET evidence_kind = 'environment'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             verification_hash,
             "verification-workspace",
             "UPDATE work_run_evidence SET workspace_id = 'forged-workspace'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             verification_hash,
             "verification-revision",
             "UPDATE work_run_evidence SET source_revision = 'forged-revision'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             verification_hash,
             "verification-session",
             "UPDATE work_run_evidence SET producer_session_id = 'forged-session'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             verification_hash,
             "verification-producer",
-            "UPDATE work_run_evidence SET producer_observation_hash = ?2
-             WHERE evidence_hash = ?1",
-            Some(observation_hash.as_str()),
+            "UPDATE work_run_evidence SET producer_observation_id = ?2
+             WHERE evidence_id = ?1",
+            Some(observation_id.as_str()),
         ),
         (
             verification_hash,
             "verification-check",
             "UPDATE work_run_evidence SET check_fingerprint = ?2
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             Some(environment_hash.as_str()),
         ),
         (
             verification_hash,
             "verification-result",
             "UPDATE work_run_evidence SET verification_result = 'failed'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             verification_hash,
             "verification-time",
             "UPDATE work_run_evidence SET observed_at_ms = observed_at_ms + 1
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             verification_hash,
             "verification-environment-fingerprint",
             "UPDATE work_run_evidence SET environment_fingerprint = ?2
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             Some(environment_hash.as_str()),
         ),
         (
             verification_hash,
             "verification-environment-link",
-            "UPDATE work_run_evidence SET environment_evidence_hash = ?2
-             WHERE evidence_hash = ?1",
+            "UPDATE work_run_evidence SET environment_evidence_id = ?2
+             WHERE evidence_id = ?1",
             Some(producer_hash.as_str()),
         ),
         (
             verification_hash,
             "verification-components",
             "UPDATE work_run_evidence SET components_json = X'7B7D'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             environment_hash,
             "environment-kind",
             "UPDATE work_run_evidence SET evidence_kind = 'verification'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             environment_hash,
             "environment-workspace",
             "UPDATE work_run_evidence SET workspace_id = 'forged-workspace'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             environment_hash,
             "environment-revision",
             "UPDATE work_run_evidence SET source_revision = 'forged-revision'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             environment_hash,
             "environment-session",
             "UPDATE work_run_evidence SET producer_session_id = 'forged-session'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             environment_hash,
             "environment-producer",
-            "UPDATE work_run_evidence SET producer_observation_hash = ?2
-             WHERE evidence_hash = ?1",
+            "UPDATE work_run_evidence SET producer_observation_id = ?2
+             WHERE evidence_id = ?1",
             Some(producer_hash.as_str()),
         ),
         (
             environment_hash,
             "environment-check",
             "UPDATE work_run_evidence SET check_fingerprint = ?2
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             Some(verification_hash.as_str()),
         ),
         (
             environment_hash,
             "environment-result",
             "UPDATE work_run_evidence SET verification_result = 'passed'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             environment_hash,
             "environment-time",
             "UPDATE work_run_evidence SET observed_at_ms = observed_at_ms + 1
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
         (
             environment_hash,
             "environment-fingerprint",
             "UPDATE work_run_evidence SET environment_fingerprint = ?2
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             Some(verification_hash.as_str()),
         ),
         (
             environment_hash,
             "environment-link",
-            "UPDATE work_run_evidence SET environment_evidence_hash = ?2
-             WHERE evidence_hash = ?1",
+            "UPDATE work_run_evidence SET environment_evidence_id = ?2
+             WHERE evidence_id = ?1",
             Some(verification_hash.as_str()),
         ),
         (
             environment_hash,
             "environment-components",
             "UPDATE work_run_evidence SET components_json = X'7B7D'
-             WHERE evidence_hash = ?1",
+             WHERE evidence_id = ?1",
             None,
         ),
     ];
-    for (evidence_hash, label, sql, second_value) in projection_corruptions {
+    for (evidence_id, label, sql, second_value) in projection_corruptions {
         store
             .connection
             .execute_batch("SAVEPOINT corrupt_typed_evidence")
@@ -1105,19 +1105,19 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         match second_value {
             Some(value) => store
                 .connection
-                .execute(sql, params![evidence_hash.as_str(), value]),
-            None => store.connection.execute(sql, [evidence_hash.as_str()]),
+                .execute(sql, params![evidence_id.as_str(), value]),
+            None => store.connection.execute(sql, [evidence_id.as_str()]),
         }
         .unwrap_or_else(|error| panic!("corrupt {label}: {error}"));
         assert!(
-            work_evidence_kind_on(&store.connection, run.run_id, evidence_hash).is_err(),
+            work_evidence_kind_on(&store.connection, run.run_id, evidence_id).is_err(),
             "{label} remained readable through the lifecycle path"
         );
         assert!(
             ensure_run_evidence(
                 &store.connection,
                 run.run_id,
-                std::slice::from_ref(evidence_hash),
+                std::slice::from_ref(evidence_id),
             )
             .is_ok(),
             "{label} lost its run-membership projection"
@@ -1129,7 +1129,7 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
             corrupt_report
                 .invalid_work_records
                 .iter()
-                .any(|record| { record == &format!("work_evidence:{evidence_hash}:run_binding") }),
+                .any(|record| { record == &format!("work_evidence:{evidence_id}:run_binding") }),
             "{label} was not reported: {corrupt_report:?}"
         );
         store

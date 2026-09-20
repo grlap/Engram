@@ -67,7 +67,7 @@ fn gate(
     name: &str,
     failed: &[&str],
     second: i64,
-) -> ObjectHash {
+) -> ObjectId {
     store
         .record_gate_evidence(
             &RecordGateEvidenceRequest {
@@ -92,7 +92,7 @@ fn verdict(
     position: usize,
     verdict: AcceptanceVerdict,
     basis: AcceptanceBasis,
-    evidence: &[ObjectHash],
+    evidence: &[ObjectId],
 ) -> CriterionVerdictInput {
     CriterionVerdictInput {
         criterion: position,
@@ -163,7 +163,7 @@ fn checkpoint_then_complete(
     work: &WorkItem,
     claim: &WorkClaim,
     holder: &str,
-    evidence: &[ObjectHash],
+    evidence: &[ObjectId],
     explicit_acceptance: bool,
     source_fingerprint: Option<&str>,
     key: &str,
@@ -197,7 +197,7 @@ fn complete_evaluated(
     work: &WorkItem,
     claim: &WorkClaim,
     holder: &str,
-    evidence: &ObjectHash,
+    evidence: &ObjectId,
     source_fingerprint: Option<&str>,
     key: &str,
     second: i64,
@@ -388,7 +388,7 @@ impl HostSession {
                 &self.routing_token,
                 &TurnIntent {
                     idempotency_key: self.key("evaluate"),
-                    intent_fingerprint: ObjectHash::from_canonical_bytes(
+                    intent_fingerprint: ObjectId::from_canonical_bytes(
                         self.key("intent").as_bytes(),
                     ),
                     purpose: TurnPurpose::Ordinary,
@@ -432,21 +432,21 @@ impl HostSession {
     }
 
     /// One mutation turn: an optional source change plus an optional
-    /// host-observed check. Returns the minted verification evidence hashes.
+    /// host-observed check. Returns the minted verification evidence ides.
     fn checkpoint(
         &mut self,
         store: &mut SqliteStore,
         source_changed: bool,
         check: Option<(VerificationKind, ExecutionOutcome)>,
         second: i64,
-    ) -> Vec<ObjectHash> {
+    ) -> Vec<ObjectId> {
         let grant = self.grant(store, &[EffectClass::MutateLocal], true, second);
         self.begin(store, &grant, second + 1);
         let mut observations = Vec::new();
         if source_changed {
             observations.push(ExecutionObservationInput {
                 observation_id: self.key("source-mutation"),
-                action_fingerprint: ObjectHash::from_canonical_bytes(
+                action_fingerprint: ObjectId::from_canonical_bytes(
                     self.key("write src").as_bytes(),
                 ),
                 effect: EffectClass::MutateLocal,
@@ -461,7 +461,7 @@ impl HostSession {
         if let Some((kind, outcome)) = check {
             observations.push(ExecutionObservationInput {
                 observation_id: self.key("check"),
-                action_fingerprint: ObjectHash::from_canonical_bytes(
+                action_fingerprint: ObjectId::from_canonical_bytes(
                     self.key("run check").as_bytes(),
                 ),
                 effect: EffectClass::MutateLocal,
@@ -480,7 +480,7 @@ impl HostSession {
                 source_basis: self.basis.clone(),
                 environment_fingerprint: CanonicalObject::freeze(&components)
                     .expect("freeze environment components")
-                    .hash()
+                    .key()
                     .clone(),
                 components: Some(components),
                 observed_at: at(second + 1),
@@ -525,7 +525,7 @@ struct Fixture {
     directory: crate::test_support::TempHome,
     work: WorkItem,
     claim: WorkClaim,
-    evidence: ObjectHash,
+    evidence: ObjectId,
 }
 
 /// A claimed root with one checkpointed generic evidence object, ready to
@@ -869,7 +869,7 @@ fn verdict_structure_and_provenance_are_validated_at_record_time() {
         7,
     );
     let note = fixture.evidence.clone();
-    let stranger = ObjectHash::from_canonical_bytes(b"not on this run");
+    let stranger = ObjectId::from_canonical_bytes(b"not on this run");
     let cases: Vec<(CriterionVerdictInput, &str)> = vec![
         (
             verdict(1, AcceptanceVerdict::Pass, AcceptanceBasis::Judgment, &[]),

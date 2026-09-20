@@ -1113,8 +1113,8 @@ directory, or change to that directory before retrying. No project is created
 implicitly. Paths and OS error text are safely framed in terminal output.
 
 `doctor` verifies every canonical object plus
-hash-bound control record, reports the active immutable policy hash, epoch,
-required assurance, selected obligation-rule-set hash, built-in effect
+record-bound control projection, reports the active immutable policy id, epoch,
+required assurance, selected obligation-rule-set id, built-in effect
 envelope, and live
 issued/begun turns, and visibly warns that action gating, organizational
 authority mediation, and action-outcome reconciliation are unavailable. V1's
@@ -1186,11 +1186,12 @@ host turn-protocol operation. Its `--input <JSON|@file>` is limited to 64 KiB
 of raw input, including any UTF-8 BOM. For files, one leading BOM is removed
 after the limit check. The input must be UTF-8. Unknown fields are rejected
 at every nested V1 object. The input passes through the same typed validator
-that storage uses. `check_fingerprint` and
-`required_environment` are exact canonical object hashes, not shell commands
-or environment descriptions. Re-supplying the active set under a fresh key
+that storage uses. `check_fingerprint` compares a canonical check description;
+`required_environment` names an exact canonical environment-evidence record.
+Neither accepts a shell command or an environment description in place of that
+fingerprint or id. Re-supplying the active set under a fresh key
 records an exactly replayable `changed=false` receipt. Rollback likewise
-re-supplies the desired prior JSON; a rule-set hash alone is never accepted as
+re-supplies the desired prior JSON; a rule-set id alone is never accepted as
 activation authority. Reapplying the active assurance under a fresh key also
 records an exactly replayable no-op receipt. Issued grants from the prior
 epoch fail begin with `policy_epoch_changed` and require one fresh evaluation;
@@ -1439,9 +1440,9 @@ remain unresolved. Open obligations are not an MCP error envelope.
 `work_complete` returns a typed `open_work_obligations` result with the same
 `obligation_page` used by `work_focus`, nested `work_next.focus`, and
 `work_update`. A completed receipt also returns that page reconstructed from
-the exact terminal obligation hashes bound into the seal. Each page is count-
+the exact terminal obligation ids bound into the seal. Each page is count-
 and byte-bounded, reports an explicit `omitted_count`, and carries immutable
-obligation/definition identities, the required exact rule-set hash, state,
+obligation/definition identities, the required exact rule-set id, state,
 rule, requirement, trigger, terminal
 resolution/evidence when present, and deterministic typed guidance. An open
 verification requirement directs the caller to record matching host
@@ -1648,14 +1649,14 @@ canonical bounded `obligation_page`, the same field appears inside
 leaking host authority.
 
 Every new completion seal declares obligation schema V1 and freezes the exact
-definition/resolution hash pairs applicable at its dense pre-seal cut. The
+definition/resolution id pairs applicable at its dense pre-seal cut. The
 final checkpoint must acknowledge the matching typed verification evidence.
 A later `note` or `gate` from any project-bound session is marked in the
 evidence actor's existing provenance chain and appended after that cut. It is
 visible in `show` notes and peer `next` changes but never changes the frozen
 seal or adds a completion barrier.
 A new seal also declares environment schema V1 and cites the sorted, distinct
-environment-evidence hashes at or before that cut. It refuses more than 64
+environment-evidence ids at or before that cut. It refuses more than 64
 environment records and never copies the component payload into the seal. A
 parent verifies required child seals transitively; every accepted seal carries
 the current obligation and environment schema bindings.

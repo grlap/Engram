@@ -1,6 +1,6 @@
 //! Facts from one immutable acceptance vector, not inferred evidence support.
 
-use super::{CompletionSeal, ObjectHash, SqliteStore, StoreError, WorkId, WorkRun, WorkRunId};
+use super::{CompletionSeal, ObjectId, SqliteStore, StoreError, WorkId, WorkRun, WorkRunId};
 
 /// Valid projections keep `unlinked_positions.len() <= unlinked_count <= criteria_count`;
 /// byte shedding removes positions only, never changes the frozen totals.
@@ -18,7 +18,7 @@ pub(crate) struct WorkAcceptanceEvidence {
 #[derive(Clone, Debug)]
 pub(crate) struct WorkAcceptanceLink {
     pub criterion: usize,
-    pub evidence: ObjectHash,
+    pub evidence: ObjectId,
     pub preview: Option<String>,
     pub preview_error_class: Option<&'static str>,
 }
@@ -121,7 +121,7 @@ pub(super) fn provenance(
 /// The completion seal named by hash, bound to the expected work and run.
 pub(super) fn bound_seal(
     store: &SqliteStore,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     work: WorkId,
     run: WorkRunId,
 ) -> Result<CompletionSeal, StoreError> {
@@ -139,7 +139,7 @@ pub(super) fn bound_seal(
 /// Provenance of a seal named by hash, bound to the expected work and run.
 pub(super) fn provenance_for_seal(
     store: &SqliteStore,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     work: WorkId,
     run: WorkRunId,
 ) -> Result<super::WorkAcceptanceProvenance, StoreError> {
@@ -161,7 +161,7 @@ pub(super) fn for_completed_run(
 
 pub(super) fn for_seal(
     store: &SqliteStore,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     work: WorkId,
     run: WorkRunId,
 ) -> Result<WorkAcceptanceEvidence, StoreError> {
@@ -209,7 +209,7 @@ mod tests {
                 at(1),
             )
             .unwrap();
-        let hash: ObjectHash = serde_json::from_value(
+        let hash: ObjectId = serde_json::from_value(
             service
                 .work_update(
                     WorkUpdateInput::Evidence {
@@ -250,7 +250,7 @@ mod tests {
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection
             .execute(
-                "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_hash = ?1",
+                "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_id = ?1",
                 [hash.as_str()],
             )
             .unwrap();
@@ -337,7 +337,7 @@ mod tests {
         let mut other = seal.clone();
         other.work_id = WorkId(uuid::Uuid::now_v7());
         other.run_id = WorkRunId(uuid::Uuid::now_v7());
-        let missing = crate::ObjectHash::mint();
+        let missing = crate::ObjectId::mint();
         assert!(
             matches!(for_seal(&store, &missing, work.work_id, completed.run_id),
             Err(StoreError::InvalidWorkProjection(reason)) if reason == "acceptance disclosure has no canonical seal")
@@ -349,7 +349,7 @@ mod tests {
             (work.work_id, completed.run_id),
         ] {
             assert!(
-                matches!(for_seal(&store, inserted.hash(), expected_work, expected_run),
+                matches!(for_seal(&store, inserted.key(), expected_work, expected_run),
                 Err(StoreError::InvalidWorkProjection(reason)) if reason == "acceptance disclosure seal crosses its work or run binding")
             );
         }

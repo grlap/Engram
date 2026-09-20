@@ -155,7 +155,7 @@ fn stale_self_consistent_projection_cannot_authorize_a_new_event() {
             .query_row(
                 "SELECT COUNT(*)
                  FROM objects object
-                 JOIN work_feed_entries entry ON entry.object_hash = object.object_hash
+                 JOIN work_feed_entries entry ON entry.object_id = object.object_id
                  WHERE entry.feed_kind = 'project'
                    AND object.object_kind = 'work_event'
                    AND json_extract(object.canonical_json, '$.work_id') = ?1",
@@ -254,10 +254,10 @@ fn work_event_trigger_rejects_null_work_binding() {
             [],
         )
         .expect("trigger probe feed");
-    let event_hash = store
+    let event_id = store
         .connection
         .query_row(
-            "SELECT latest_event_hash FROM work_items WHERE work_id = ?1",
+            "SELECT latest_event_id FROM work_items WHERE work_id = ?1",
             [root.work_id.0.to_string()],
             |row| row.get::<_, String>(0),
         )
@@ -267,9 +267,9 @@ fn work_event_trigger_rejects_null_work_binding() {
             .connection
             .execute(
                 "INSERT INTO work_feed_entries (
-                     feed_kind, feed_id, position, object_kind, object_hash, work_id
+                     feed_kind, feed_id, position, object_kind, object_id, work_id
                  ) VALUES ('project', 'trigger-probe', 1, 'work_event', ?1, NULL)",
-                [event_hash],
+                [event_id],
             )
             .is_err(),
         "schema trigger must reject a work event without work_id"

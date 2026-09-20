@@ -236,7 +236,7 @@ fn restored_completed_child_is_bound_into_a_new_parent_seal() {
             at(10),
         )
         .expect("record native late note");
-    let late_note_hash: ObjectHash =
+    let late_note_hash: ObjectId =
         serde_json::from_value(late_note.evidence.result).expect("late note hash");
     let late_gate = destination
         .work_gate_on(
@@ -247,7 +247,7 @@ fn restored_completed_child_is_bound_into_a_new_parent_seal() {
             at(11),
         )
         .expect("record native late gate");
-    let late_gate_hash: ObjectHash =
+    let late_gate_hash: ObjectId =
         serde_json::from_value(late_gate.receipt.result).expect("late gate hash");
     let store = SqliteStore::open(destination_database).expect("destination store");
     let seal: CompletionSeal = store
@@ -367,7 +367,7 @@ fn restored_completed_item_reopens_into_a_fresh_native_run() {
             at(9),
         )
         .expect("record late finding on fresh seal");
-    let late_note_hash: ObjectHash =
+    let late_note_hash: ObjectId =
         serde_json::from_value(late_note.evidence.result).expect("late note hash");
     let focus = destination
         .work_focus(&root.short_ref, at(10))
@@ -753,8 +753,7 @@ fn restored_completion_accepts_late_notes_and_gate_transitions() {
             at(6),
         )
         .expect("append late note");
-    let note_hash: ObjectHash =
-        serde_json::from_value(note.evidence.result).expect("late note hash");
+    let note_hash: ObjectId = serde_json::from_value(note.evidence.result).expect("late note hash");
     let failed_gate = destination
         .work_gate_on(
             Some(&root.short_ref),
@@ -764,7 +763,7 @@ fn restored_completion_accepts_late_notes_and_gate_transitions() {
             at(7),
         )
         .expect("append failed late gate");
-    let failed_gate_hash: ObjectHash =
+    let failed_gate_hash: ObjectId =
         serde_json::from_value(failed_gate.receipt.result).expect("failed gate hash");
     let passed_gate = destination
         .work_gate_on(
@@ -775,7 +774,7 @@ fn restored_completion_accepts_late_notes_and_gate_transitions() {
             at(7),
         )
         .expect("append passing late gate at the same timestamp");
-    let passed_gate_hash: ObjectHash =
+    let passed_gate_hash: ObjectId =
         serde_json::from_value(passed_gate.receipt.result).expect("passed gate hash");
 
     let store = SqliteStore::open(&destination_database).expect("destination store");
@@ -937,7 +936,7 @@ fn restored_completion_accepts_late_notes_and_gate_transitions() {
             at(7),
         )
         .expect("identical late gate appends even at the same timestamp");
-    let repeated_gate_hash: ObjectHash =
+    let repeated_gate_hash: ObjectId =
         serde_json::from_value(repeated_gate.receipt.result).expect("repeated gate hash");
     assert_ne!(repeated_gate_hash, passed_gate_hash);
     assert_eq!(

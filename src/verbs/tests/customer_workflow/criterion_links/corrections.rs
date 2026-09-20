@@ -244,7 +244,7 @@ fn criterion_links_genuine_interrupted_success_keeps_its_mapping() {
 fn criterion_links_preview_diagnostic_survives_receipt_roundtrip() {
     use crate::verbs::acceptance::AcceptanceEvidence;
     use crate::work_service::{WorkAcceptanceEvidence, WorkAcceptanceLink};
-    let evidence = crate::ObjectHash::from_canonical_bytes(b"preview-diagnostic-fixture");
+    let evidence = crate::ObjectId::from_canonical_bytes(b"preview-diagnostic-fixture");
     let facts = WorkAcceptanceEvidence {
         work_id: Some(crate::WorkId(uuid::Uuid::now_v7())),
         link_count: 1,

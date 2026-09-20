@@ -4,7 +4,7 @@
 use super::WorkCurrentStatus;
 use super::{
     ActorContext, ChildRequirement, ControlWorkBinding, DateTime, Deserialize, FromStr, JsonSchema,
-    ObjectHash, ProjectId, ProjectMemoryAdvertisement, Sensitivity, Serialize, SessionId, Utc,
+    ObjectId, ProjectId, ProjectMemoryAdvertisement, Sensitivity, Serialize, SessionId, Utc,
     VerificationKind, VerificationResult, WorkAvailability, WorkBlockerKind, WorkClaim,
     WorkEvidenceKind, WorkFeedEntry, WorkHandoffState, WorkId, WorkItemKind, WorkLifecycle,
     WorkObligationState, WorkPrerequisiteState, WorkRunId, WorkRunState,
@@ -21,7 +21,7 @@ use super::{
 pub struct WorkNextView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peek: Option<WorkNextPeek>,
-    pub build_fingerprint: Option<ObjectHash>,
+    pub build_fingerprint: Option<ObjectId>,
     pub read_cut: WorkNextReadCut,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_generation: Option<String>,
@@ -254,7 +254,8 @@ impl FromStr for WorkNextSection {
 }
 
 /// One source record at an exact project-feed position, exposed as an
-/// authority-redacted projection. `entry.object_hash` is that record's id; a
+/// authority-redacted projection. The serialized `entry.object_hash` field
+/// (`object_id` in Rust) is that record's id; a
 /// page is admitted by decoding it and by dense-interval agreement, and the
 /// compact `delivery` is projected from the record, not fingerprinted.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -293,7 +294,8 @@ pub enum WorkChangeProjection {
 }
 
 /// Compact, non-canonical description of one verified source object. Fetch
-/// content by `entry.object_hash` through an authorized object-specific read
+/// content by the serialized `entry.object_hash` (`object_id` in Rust)
+/// through an authorized object-specific read
 /// when more detail is needed.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkChangeSummary {
@@ -432,7 +434,7 @@ pub struct WorkCatalogSummaryPage {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkMemoryIndexEntry {
     pub memory_id: crate::MemoryId,
-    pub version: ObjectHash,
+    pub version: ObjectId,
     pub status: crate::MemoryStatus,
     pub kind: crate::MemoryKind,
     pub title: String,
@@ -557,7 +559,7 @@ pub struct WorkFocusView {
     pub prerequisites: Vec<WorkItemSummary>,
     pub handoffs: Vec<WorkHandoffSummary>,
     pub blockers: Vec<WorkBlockerSummary>,
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence_items: Vec<WorkEvidenceSummary>,
     /// Exact evidence membership count before the bounded focus selection.
@@ -605,7 +607,7 @@ pub struct WorkEvidenceSummary {
     /// producer, which is not necessarily the actor recording the evidence.
     #[serde(skip)]
     pub(crate) display_actor_session_id: Option<SessionId>,
-    pub evidence: ObjectHash,
+    pub evidence: ObjectId,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub non_holder: bool,
     pub evidence_kind: WorkEvidenceKind,
@@ -624,13 +626,13 @@ pub struct WorkEvidenceSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub check_kind: Option<VerificationKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub check_fingerprint: Option<ObjectHash>,
+    pub check_fingerprint: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verification_result: Option<VerificationResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub environment_fingerprint: Option<ObjectHash>,
+    pub environment_fingerprint: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub environment: Option<ObjectHash>,
+    pub environment: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environment_components: Option<crate::EnvironmentComponents>,
     pub summary: String,
@@ -649,17 +651,17 @@ pub struct WorkGateEvidenceSummary {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkObligationSummary {
     pub obligation_id: crate::WorkObligationId,
-    pub definition: ObjectHash,
+    pub definition: ObjectId,
     /// Exact immutable rule-set identity selected when the obligation opened.
-    pub rule_set: ObjectHash,
+    pub rule_set: ObjectId,
     pub state: WorkObligationState,
     pub rule: crate::BuiltinObligationRuleRef,
     pub requirement: crate::VerificationRequirement,
-    pub triggering_observation: ObjectHash,
+    pub triggering_observation: ObjectId,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub resolution: Option<ObjectHash>,
+    pub resolution: Option<ObjectId>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub evidence: Option<ObjectHash>,
+    pub evidence: Option<ObjectId>,
     /// Asserted human operator attribution for a waiver. The free-form waiver
     /// reason remains host-private.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -705,8 +707,8 @@ pub struct WorkRunSummary {
     pub executor: Option<SessionId>,
     pub state: WorkRunState,
     pub revision: i64,
-    pub last_checkpoint: Option<ObjectHash>,
-    pub completion_seal: Option<ObjectHash>,
+    pub last_checkpoint: Option<ObjectId>,
+    pub completion_seal: Option<ObjectId>,
 }
 
 /// Compact live handoff state for focus packets.

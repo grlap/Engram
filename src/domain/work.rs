@@ -8,7 +8,7 @@ use unicode_casefold::UnicodeCaseFold;
 use unicode_general_category::{GeneralCategory, get_general_category};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::ObjectHash;
+use crate::ObjectId;
 use crate::schema::SCHEMA_VERSION;
 
 use super::{
@@ -49,7 +49,8 @@ pub struct FeedPosition {
 pub struct WorkFeedEntry {
     pub position: FeedPosition,
     pub object_kind: String,
-    pub object_hash: ObjectHash,
+    #[serde(rename = "object_hash")]
+    pub object_id: ObjectId,
 }
 
 /// Mutable, host-local navigation state for one agent session.
@@ -260,7 +261,7 @@ pub struct WorkItem {
     pub assigned_to: Option<String>,
     pub deferred_until: Option<DateTime<Utc>>,
     pub origin: WorkOrigin,
-    pub source_snapshot_id: Option<ObjectHash>,
+    pub source_snapshot_id: Option<ObjectId>,
     pub lifecycle: WorkLifecycle,
     pub revision: i64,
     pub active_run_id: Option<WorkRunId>,
@@ -303,8 +304,8 @@ impl AcceptanceBinding {
     /// # Errors
     ///
     /// Returns the reason when the text is not a fingerprint in that form.
-    pub fn check_fingerprint_from(text: &str) -> Result<ObjectHash, String> {
-        ObjectHash::from_stored(text.trim().to_owned()).ok_or_else(|| {
+    pub fn check_fingerprint_from(text: &str) -> Result<ObjectId, String> {
+        ObjectId::from_stored(text.trim().to_owned()).ok_or_else(|| {
             "a pinned check is the command fingerprint the host recorded as check_fingerprint on its verification evidence, in lowercase hex".to_owned()
         })
     }
@@ -408,7 +409,7 @@ pub struct WorkReferenceCandidate {
 pub enum WorkCompletionRecoveryCause {
     OpenObligation {
         obligation_id: WorkObligationId,
-        definition: ObjectHash,
+        definition: ObjectId,
         required_check: VerificationKind,
     },
     RequiredChildUnsealed {
@@ -464,7 +465,7 @@ pub struct RootExecution {
     pub state: RootExecutionState,
     pub revision: i64,
     pub run_ids: Vec<WorkRunId>,
-    pub required_child_seals: Vec<ObjectHash>,
+    pub required_child_seals: Vec<ObjectId>,
     #[serde(default)]
     pub required_child_waivers: Vec<RequiredChildWaiver>,
     pub expected_contributors: Vec<SessionId>,
@@ -482,7 +483,7 @@ pub struct RootExecutionRef {
     pub project_id: ProjectId,
     pub root_id: WorkId,
     pub generation: i64,
-    pub head: ObjectHash,
+    pub head: ObjectId,
 }
 
 /// Fixed-size metadata; growing collections are separate facts.
@@ -504,7 +505,7 @@ pub struct RootExecutionHeader {
 #[serde(tag = "collection", content = "value", rename_all = "snake_case")]
 pub enum RootExecutionMember {
     Run(WorkRunId),
-    ChildSeal(ObjectHash),
+    ChildSeal(ObjectId),
     ChildWaiver(RequiredChildWaiver),
     Contributor(SessionId),
     Contribution(RootContribution),
@@ -518,12 +519,12 @@ pub enum RootExecutionMember {
 pub struct RootExecutionDelta {
     pub header: RootExecutionHeader,
     pub sequence: u64,
-    pub predecessor: Option<ObjectHash>,
+    pub predecessor: Option<ObjectId>,
     pub previous_revision: Option<i64>,
     pub removed: Vec<RootExecutionMember>,
     pub added: Vec<RootExecutionMember>,
     /// Checksum of the complete assembled state, never an object reference.
-    pub state_checksum: ObjectHash,
+    pub state_checksum: ObjectId,
 }
 
 /// One ordinary-executor generation for a work item.
@@ -537,8 +538,8 @@ pub struct WorkRun {
     pub executor: Option<SessionId>,
     pub state: WorkRunState,
     pub revision: i64,
-    pub last_checkpoint: Option<ObjectHash>,
-    pub completion_seal: Option<ObjectHash>,
+    pub last_checkpoint: Option<ObjectId>,
+    pub completion_seal: Option<ObjectId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -568,7 +569,7 @@ pub struct WorkHandoffOffer {
     pub work_revision: i64,
     pub from: SessionId,
     pub to: SessionId,
-    pub checkpoint: ObjectHash,
+    pub checkpoint: ObjectId,
     pub accepted_ttl_seconds: i64,
     pub offered_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
@@ -585,7 +586,7 @@ pub struct GateEvidenceRecord {
     /// Previous observation for this gate name. This makes a later return to
     /// the same result a distinct immutable transition even at one timestamp.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub previous: Option<ObjectHash>,
+    pub previous: Option<ObjectId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -795,7 +796,7 @@ pub struct WorkCheckpoint {
     pub claim_fence: i64,
     pub acknowledged_run_position: FeedPosition,
     pub summary: String,
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
 }
@@ -804,7 +805,7 @@ pub struct WorkCheckpoint {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RootContribution {
     pub participant: SessionId,
-    pub object: ObjectHash,
+    pub object: ObjectId,
 }
 
 /// Attributed authority decision accounting for an expected participant omission.
@@ -834,9 +835,9 @@ pub enum RequiredChildResolution {
     ResolvedBySuccessor {
         work_id: WorkId,
         work_revision: i64,
-        supersession: ObjectHash,
+        supersession: ObjectId,
         successor: WorkId,
-        successor_seal: ObjectHash,
+        successor_seal: ObjectId,
     },
 }
 
@@ -861,9 +862,9 @@ pub struct WorkObligation {
     pub run_id: WorkRunId,
     pub work_revision: i64,
     /// Exact rule-set identity selected by the triggering observation.
-    pub rule_set: ObjectHash,
+    pub rule_set: ObjectId,
     pub rule: BuiltinObligationRuleRef,
-    pub triggering_observation: ObjectHash,
+    pub triggering_observation: ObjectId,
     pub trigger_position: FeedPosition,
     pub requirement: VerificationRequirement,
     pub opened_at: DateTime<Utc>,
@@ -873,7 +874,7 @@ pub struct WorkObligation {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OpenWorkObligation {
     pub obligation_id: WorkObligationId,
-    pub definition: ObjectHash,
+    pub definition: ObjectId,
     pub required_check: VerificationKind,
 }
 
@@ -882,7 +883,7 @@ pub struct OpenWorkObligation {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkObligationResolution {
     Satisfied {
-        evidence: ObjectHash,
+        evidence: ObjectId,
         evaluated_cut: FeedPosition,
     },
     Waived {
@@ -897,7 +898,7 @@ pub struct WorkObligationResolutionEvent {
     pub schema_version: u16,
     pub project_id: ProjectId,
     pub obligation_id: WorkObligationId,
-    pub definition: ObjectHash,
+    pub definition: ObjectId,
     pub run_id: WorkRunId,
     pub resolution: WorkObligationResolution,
     pub actor: ActorContext,
@@ -929,7 +930,7 @@ pub enum WorkPlanningAuthority {
 /// Attributed host statement that action and resource authority is drained.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionDrainAttestation {
-    pub reconciled_action_outcomes: Vec<ObjectHash>,
+    pub reconciled_action_outcomes: Vec<ObjectId>,
     pub released_resource_leases: Vec<String>,
 }
 
@@ -941,7 +942,7 @@ pub struct AcceptanceResult {
     /// Explicit per-criterion citations drawn from the seal's completion evidence.
     /// Empty means unlinked, not that the work is unevidenced. Pre-correction
     /// seals retain their auto-bound values exactly as originally recorded.
-    pub evidence: Vec<ObjectHash>,
+    pub evidence: Vec<ObjectId>,
     pub assurance: AssuranceLevel,
     pub note: String,
 }
@@ -950,8 +951,8 @@ pub struct AcceptanceResult {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionObligationBinding {
     pub obligation_id: WorkObligationId,
-    pub definition: ObjectHash,
-    pub resolution: ObjectHash,
+    pub definition: ObjectId,
+    pub resolution: ObjectId,
 }
 
 /// Immutable proof that one run completed under current work and claim fences.
@@ -968,30 +969,30 @@ pub struct CompletionSeal {
     pub run_id: WorkRunId,
     pub run_generation: i64,
     pub accepted_work_revision: i64,
-    pub accepted_work_revision_hash: ObjectHash,
+    pub accepted_work_revision_hash: ObjectId,
     pub claim_id: WorkClaimId,
     pub claim_fence: i64,
     pub completion_cut: FeedPosition,
-    pub checkpoint: Option<ObjectHash>,
-    pub evidence: Vec<ObjectHash>,
+    pub checkpoint: Option<ObjectId>,
+    pub evidence: Vec<ObjectId>,
     pub acceptance: Vec<AcceptanceResult>,
     /// The passing acceptance evaluation this seal derived its acceptance
     /// vector from; absent for legacy self-asserted completions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub acceptance_evaluation: Option<ObjectHash>,
+    pub acceptance_evaluation: Option<ObjectId>,
     pub obligation_schema_version: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub obligations: Vec<CompletionObligationBinding>,
     pub environment_schema_version: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub environment: Vec<ObjectHash>,
-    pub required_child_seals: Vec<ObjectHash>,
+    pub environment: Vec<ObjectId>,
+    pub required_child_seals: Vec<ObjectId>,
     #[serde(default)]
     pub required_child_waivers: Vec<RequiredChildWaiver>,
     /// Completion proofs inherited from inert restored records rather than
     /// from live child execution in this store.
     #[serde(default)]
-    pub restored_child_completions: Vec<ObjectHash>,
+    pub restored_child_completions: Vec<ObjectId>,
     /// Sparse derived facts: absence means no successor credit was admitted.
     /// Reads never add these to an already frozen seal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1078,7 +1079,7 @@ pub struct WorkEvent {
     pub blocker: Option<WorkBlocker>,
     /// Hash of the exact prerequisite and active-blocker projection after this
     /// transition.
-    pub relation_fingerprint: ObjectHash,
+    pub relation_fingerprint: ObjectId,
     pub transition: WorkTransition,
     pub actor: ActorContext,
     pub created_at: DateTime<Utc>,
@@ -1125,21 +1126,21 @@ pub enum WorkTransition {
         reason: String,
     },
     Checkpointed {
-        checkpoint: ObjectHash,
+        checkpoint: ObjectId,
     },
     HandoffOffered {
         offer_id: WorkHandoffOfferId,
         to: SessionId,
-        checkpoint: ObjectHash,
-        offer: ObjectHash,
+        checkpoint: ObjectId,
+        offer: ObjectId,
     },
     HandoffExpired {
         offer_id: WorkHandoffOfferId,
-        offer: ObjectHash,
+        offer: ObjectId,
     },
     HandoffCancelled {
         offer_id: WorkHandoffOfferId,
-        offer: ObjectHash,
+        offer: ObjectId,
         reason: String,
     },
     HandedOff {
@@ -1148,22 +1149,22 @@ pub enum WorkTransition {
         from: SessionId,
         to: SessionId,
         fence: i64,
-        checkpoint: ObjectHash,
-        offer: ObjectHash,
+        checkpoint: ObjectId,
+        offer: ObjectId,
     },
     EvidenceAdded {
-        evidence: ObjectHash,
+        evidence: ObjectId,
     },
     MemoryCaptured {
-        version: ObjectHash,
-        assertion: ObjectHash,
+        version: ObjectId,
+        assertion: ObjectId,
     },
     TypedEvidenceAdded {
-        evidence: ObjectHash,
+        evidence: ObjectId,
         evidence_kind: WorkEvidenceKind,
     },
     Completed {
-        seal: ObjectHash,
+        seal: ObjectId,
     },
     Disposed {
         lifecycle: WorkLifecycle,

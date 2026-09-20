@@ -36,7 +36,7 @@ impl SqliteStore {
             &transaction,
             "reject_required_child",
             &request.idempotency_key,
-            frozen.hash(),
+            frozen.key(),
         )? {
             transaction.commit()?;
             return Ok(receipt);
@@ -127,7 +127,7 @@ impl SqliteStore {
             &transaction,
             "reject_required_child",
             &request.idempotency_key,
-            frozen.hash(),
+            frozen.key(),
             &receipt,
         )?;
         transaction.commit()?;
@@ -153,7 +153,7 @@ impl SqliteStore {
             &transaction,
             "reopen_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(run);
@@ -225,7 +225,7 @@ impl SqliteStore {
                 &transaction,
                 "reopen_work",
                 &request.idempotency_key,
-                request_object.hash(),
+                request_object.key(),
                 &run,
             )?;
             transaction.commit()?;
@@ -267,7 +267,7 @@ impl SqliteStore {
             if item.child_requirement == ChildRequirement::Required {
                 let old_seal: Option<String> = transaction
                     .query_row(
-                        "SELECT seal_hash FROM work_completion_seals WHERE work_id = ?1
+                        "SELECT seal_id FROM work_completion_seals WHERE work_id = ?1
                          ORDER BY rowid DESC LIMIT 1",
                         [item.work_id.0.to_string()],
                         |row| row.get(0),
@@ -312,7 +312,7 @@ impl SqliteStore {
             "INSERT INTO work_runs (
                  run_id, root_execution_id, work_id, generation,
                  executor_session_id, state, revision, claim_fence_head,
-                 last_checkpoint_hash, completion_seal_hash,
+                 last_checkpoint_id, completion_seal_id,
                  created_at_ms, updated_at_ms, run_json
              ) VALUES (?1, ?2, ?3, ?4, NULL, 'open', 1, 0, NULL, NULL, ?5, ?6, ?7)",
             params![
@@ -356,7 +356,7 @@ impl SqliteStore {
             &transaction,
             "reopen_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &run,
         )?;
         transaction.commit()?;
@@ -431,7 +431,7 @@ fn dispose_work_on(
         transaction,
         "dispose_work",
         &request.idempotency_key,
-        request_object.hash(),
+        request_object.key(),
     )? {
         return Ok(item);
     }
@@ -626,7 +626,7 @@ fn dispose_work_on(
         transaction,
         "dispose_work",
         &request.idempotency_key,
-        request_object.hash(),
+        request_object.key(),
         &item,
     )?;
     Ok(item)
@@ -642,7 +642,7 @@ fn waive_required_child_on(
         transaction,
         "waive_required_child",
         &request.idempotency_key,
-        request_object.hash(),
+        request_object.key(),
     )? {
         return Ok(waiver);
     }
@@ -716,7 +716,7 @@ fn waive_required_child_on(
         transaction,
         "waive_required_child",
         &request.idempotency_key,
-        request_object.hash(),
+        request_object.key(),
         &waiver,
     )?;
     Ok(waiver)

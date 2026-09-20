@@ -97,7 +97,7 @@ fn a_bound_plan_task_opens_its_obligation_and_a_record_id_pin_is_refused() {
     let before = count(&store);
     let stored: String = store
         .connection
-        .query_row("SELECT object_hash FROM objects LIMIT 1", [], |row| {
+        .query_row("SELECT object_id FROM objects LIMIT 1", [], |row| {
             row.get(0)
         })
         .expect("a stored record id");

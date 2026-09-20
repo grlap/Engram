@@ -113,7 +113,7 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
             at(1),
         )
         .expect("claim");
-    let evidence: ObjectHash = serde_json::from_value(
+    let evidence: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Evidence {
@@ -128,7 +128,7 @@ fn evaluate_records_under_policy_and_completion_consumes_it() {
             .receipt
             .result,
     )
-    .expect("evidence hash");
+    .expect("evidence id");
     let citation = vec![evidence.as_str().to_owned()];
     let work_ref = root.short_ref.clone();
 

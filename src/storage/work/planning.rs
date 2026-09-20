@@ -29,7 +29,7 @@ use super::{
     MAX_WORK_TTL_SECONDS, WorkEventDraft, WorkRelationBasis, WorkRelationBlockerBasis,
 };
 use crate::{
-    CanonicalObject, ObjectHash,
+    CanonicalObject, ObjectId,
     domain::{
         AddWorkBlockerRequest, ChangeWorkPrerequisiteRequest, ClearWorkBlockerRequest,
         CompletionWaiver, ControlWorkBinding, CreateWorkRequest, DEFAULT_WORK_CLAIM_TTL_SECONDS,
@@ -196,7 +196,7 @@ fn create_root_with_validation_on<R: Redactor>(
         "INSERT INTO work_items (
              work_id, project_id, short_ref, root_id, parent_id,
              child_requirement, lifecycle, priority, assigned_to,
-             deferred_until_ms, revision, active_run_id, source_snapshot_hash,
+             deferred_until_ms, revision, active_run_id, source_snapshot_id,
              created_at_ms, updated_at_ms, item_json
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
@@ -215,7 +215,7 @@ fn create_root_with_validation_on<R: Redactor>(
             item.deferred_until.map(|value| value.timestamp_millis()),
             item.revision,
             run_id.0.to_string(),
-            item.source_snapshot_id.as_ref().map(ObjectHash::as_str),
+            item.source_snapshot_id.as_ref().map(ObjectId::as_str),
             item.created_at.timestamp_millis(),
             item.updated_at.timestamp_millis(),
             serde_json::to_vec(&item)?
@@ -241,7 +241,7 @@ fn create_root_with_validation_on<R: Redactor>(
         "INSERT INTO work_runs (
              run_id, root_execution_id, work_id, generation,
              executor_session_id, state, revision, claim_fence_head,
-             last_checkpoint_hash, completion_seal_hash,
+             last_checkpoint_id, completion_seal_id,
              created_at_ms, updated_at_ms, run_json
          ) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, 0, NULL, NULL, ?7, ?8, ?9)",
         params![
@@ -276,7 +276,7 @@ fn create_root_with_validation_on<R: Redactor>(
         actor: request.actor.clone(),
         created_at: request.created_at,
     };
-    let (event_hash, positions) = append_work_event(transaction, &event)?;
+    let (event_id, positions) = append_work_event(transaction, &event)?;
     if let Some(position) = positions
         .iter()
         .find(|position| position.feed == crate::domain::FeedId::RunExecution(run_id))
@@ -285,7 +285,7 @@ fn create_root_with_validation_on<R: Redactor>(
             transaction,
             &item,
             &run,
-            &event_hash,
+            &event_id,
             position,
             &[],
             request.created_at,
@@ -340,7 +340,7 @@ impl SqliteStore {
             &transaction,
             "create_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(item);
@@ -350,7 +350,7 @@ impl SqliteStore {
             &transaction,
             "create_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &item,
         )?;
         transaction.commit()?;
@@ -408,7 +408,7 @@ impl SqliteStore {
             &transaction,
             "decompose_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(decomposition);
@@ -418,7 +418,7 @@ impl SqliteStore {
             &transaction,
             "decompose_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &decomposition,
         )?;
         transaction.commit()?;
@@ -521,7 +521,7 @@ impl SqliteStore {
             &transaction,
             "revise_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(item);
@@ -667,7 +667,7 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.updated_at,
         };
-        let (event_hash, positions) = append_work_event(&transaction, &event)?;
+        let (event_id, positions) = append_work_event(&transaction, &event)?;
         if let Some(run_id) = item.active_run_id {
             // A binding the revision removed retires its obligation in the
             // revising actor's name; one it added opens from this revision.
@@ -688,7 +688,7 @@ impl SqliteStore {
                     &transaction,
                     &item,
                     run,
-                    &event_hash,
+                    &event_id,
                     position,
                     &reauthored,
                     request.updated_at,
@@ -699,7 +699,7 @@ impl SqliteStore {
             &transaction,
             "revise_work",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &item,
         )?;
         transaction.commit()?;
@@ -755,7 +755,7 @@ impl SqliteStore {
             &transaction,
             operation,
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(item);
@@ -765,7 +765,7 @@ impl SqliteStore {
             &transaction,
             operation,
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &item,
         )?;
         transaction.commit()?;
@@ -791,7 +791,7 @@ impl SqliteStore {
             &transaction,
             "add_work_blocker",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(blocker);
@@ -846,16 +846,16 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.blocked_at,
         };
-        let (event_hash, _) = append_work_event(&transaction, &event)?;
+        let (event_id, _) = append_work_event(&transaction, &event)?;
         transaction.execute(
             "INSERT INTO work_blockers (
-                 blocker_id, work_id, state, blocker_json, created_event_hash
+                 blocker_id, work_id, state, blocker_json, created_event_id
              ) VALUES (?1, ?2, 'active', ?3, ?4)",
             params![
                 blocker.blocker_id,
                 blocker.work_id.0.to_string(),
                 serde_json::to_vec(&blocker)?,
-                event_hash.as_str()
+                event_id.as_str()
             ],
         )?;
         refresh_work_catalog_projection(&transaction, &item)?;
@@ -863,7 +863,7 @@ impl SqliteStore {
             &transaction,
             "add_work_blocker",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &blocker,
         )?;
         transaction.commit()?;
@@ -888,7 +888,7 @@ impl SqliteStore {
             &transaction,
             "clear_work_blocker",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
         )? {
             transaction.commit()?;
             return Ok(item);
@@ -946,18 +946,18 @@ impl SqliteStore {
             actor: request.actor.clone(),
             created_at: request.cleared_at,
         };
-        let (event_hash, _) = append_work_event(&transaction, &event)?;
+        let (event_id, _) = append_work_event(&transaction, &event)?;
         transaction.execute(
-            "UPDATE work_blockers SET state = 'cleared', cleared_event_hash = ?2
+            "UPDATE work_blockers SET state = 'cleared', cleared_event_id = ?2
              WHERE blocker_id = ?1",
-            params![request.blocker_id, event_hash.as_str()],
+            params![request.blocker_id, event_id.as_str()],
         )?;
         refresh_work_catalog_projection(&transaction, &item)?;
         persist_operation_result(
             &transaction,
             "clear_work_blocker",
             &request.idempotency_key,
-            request_object.hash(),
+            request_object.key(),
             &item,
         )?;
         transaction.commit()?;
@@ -1129,7 +1129,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
             "INSERT INTO work_items (
                  work_id, project_id, short_ref, root_id, parent_id,
                  child_requirement, lifecycle, priority, assigned_to,
-                 deferred_until_ms, revision, active_run_id, source_snapshot_hash,
+                 deferred_until_ms, revision, active_run_id, source_snapshot_id,
                  created_at_ms, updated_at_ms, item_json
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, 1, ?10,
                        NULL, ?11, ?12, ?13)",
@@ -1168,7 +1168,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
             "INSERT INTO work_runs (
                  run_id, root_execution_id, work_id, generation,
                  executor_session_id, state, revision, claim_fence_head,
-                 last_checkpoint_hash, completion_seal_hash,
+                 last_checkpoint_id, completion_seal_id,
                  created_at_ms, updated_at_ms, run_json
              ) VALUES (?1, ?2, ?3, 1, NULL, 'open', 1, 0, NULL, NULL, ?4, ?5, ?6)",
             params![
@@ -1219,15 +1219,15 @@ fn decompose_work_with_validation_on<R: Redactor>(
             actor: child_actor.clone(),
             created_at: request.created_at,
         };
-        let (event_hash, positions) = append_work_event(transaction, &event)?;
+        let (event_id, positions) = append_work_event(transaction, &event)?;
         for prerequisite in item_prerequisites {
             transaction.execute(
-                "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
+                "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_id)
                  VALUES (?1, ?2, ?3)",
                 params![
                     item.work_id.0.to_string(),
                     prerequisite.0.to_string(),
-                    event_hash.as_str()
+                    event_id.as_str()
                 ],
             )?;
         }
@@ -1239,7 +1239,7 @@ fn decompose_work_with_validation_on<R: Redactor>(
                 transaction,
                 item,
                 run,
-                &event_hash,
+                &event_id,
                 position,
                 &[],
                 request.created_at,
@@ -1357,7 +1357,7 @@ fn change_work_prerequisite_with_validation_on(
     }
     let exists: Option<String> = transaction
         .query_row(
-            "SELECT event_hash FROM work_prerequisites
+            "SELECT event_id FROM work_prerequisites
              WHERE work_id = ?1 AND prerequisite_id = ?2",
             params![
                 item.work_id.0.to_string(),
@@ -1403,7 +1403,7 @@ fn change_work_prerequisite_with_validation_on(
         actor: request.actor.clone(),
         created_at: request.changed_at,
     };
-    let (event_hash, _) = if let Some(relations) = planned_relations {
+    let (event_id, _) = if let Some(relations) = planned_relations {
         let appended =
             super::feeds::append_planned_prerequisite_event(transaction, &event, &relations.basis)?;
         apply_work_relation_transition(
@@ -1417,12 +1417,12 @@ fn change_work_prerequisite_with_validation_on(
     };
     if add {
         transaction.execute(
-            "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_hash)
+            "INSERT INTO work_prerequisites (work_id, prerequisite_id, event_id)
              VALUES (?1, ?2, ?3)",
             params![
                 item.work_id.0.to_string(),
                 prerequisite.work_id.0.to_string(),
-                event_hash.as_str()
+                event_id.as_str()
             ],
         )?;
         validation.check_graph(transaction, &item.project_id.0)?;
@@ -1450,7 +1450,7 @@ pub(super) fn projected_work_relation_basis(
         .into_iter()
         .map(|blocker| {
             let blocker_id = blocker.blocker_id.clone();
-            let blocker_hash = CanonicalObject::freeze(&blocker)?.hash().clone();
+            let blocker_hash = CanonicalObject::freeze(&blocker)?.key().clone();
             Ok(WorkRelationBlockerBasis {
                 blocker_id,
                 blocker_hash,
@@ -1465,10 +1465,8 @@ pub(super) fn projected_work_relation_basis(
     })
 }
 
-pub(super) fn work_relation_fingerprint(
-    basis: &WorkRelationBasis,
-) -> Result<ObjectHash, StoreError> {
-    Ok(CanonicalObject::freeze(basis)?.hash().clone())
+pub(super) fn work_relation_fingerprint(basis: &WorkRelationBasis) -> Result<ObjectId, StoreError> {
+    Ok(CanonicalObject::freeze(basis)?.key().clone())
 }
 
 pub(super) fn validated_current_work_relation_basis(
@@ -1506,7 +1504,7 @@ pub(super) fn validated_current_work_relation_basis(
                     };
                     Ok(WorkRelationBlockerBasis {
                         blocker_id: blocker.blocker_id.clone(),
-                        blocker_hash: CanonicalObject::freeze(&blocker)?.hash().clone(),
+                        blocker_hash: CanonicalObject::freeze(&blocker)?.key().clone(),
                     })
                 })
                 .collect::<Result<Vec<_>, StoreError>>()?,
@@ -1582,7 +1580,7 @@ pub(super) fn apply_work_relation_transition(
             }
             basis.active_blockers.push(WorkRelationBlockerBasis {
                 blocker_id: blocker_id.clone(),
-                blocker_hash: CanonicalObject::freeze(blocker)?.hash().clone(),
+                blocker_hash: CanonicalObject::freeze(blocker)?.key().clone(),
             });
             basis
                 .active_blockers
@@ -1616,7 +1614,7 @@ pub(super) fn persist_operation_result<T: Serialize>(
     transaction: &Transaction<'_>,
     operation: &str,
     key: &str,
-    request_hash: &ObjectHash,
+    request_hash: &ObjectId,
     result: &T,
 ) -> Result<(), StoreError> {
     transaction.execute(
@@ -1740,7 +1738,7 @@ fn refuse_record_id_pins_on(
             continue;
         };
         let is_record: bool = connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM objects WHERE object_hash = ?1)",
+            "SELECT EXISTS(SELECT 1 FROM objects WHERE object_id = ?1)",
             [pinned.as_str()],
             |row| row.get(0),
         )?;
@@ -2134,8 +2132,8 @@ pub(super) fn persist_work_run(
     transaction.execute(
         "UPDATE work_runs SET
              executor_session_id = ?2, state = ?3, revision = ?4,
-             claim_fence_head = ?5, last_checkpoint_hash = ?6,
-             completion_seal_hash = ?7, updated_at_ms = ?8, run_json = ?9
+             claim_fence_head = ?5, last_checkpoint_id = ?6,
+             completion_seal_id = ?7, updated_at_ms = ?8, run_json = ?9
          WHERE run_id = ?1",
         params![
             run.run_id.0.to_string(),
@@ -2143,8 +2141,8 @@ pub(super) fn persist_work_run(
             encode_state(run.state)?,
             run.revision,
             claim_fence_head,
-            run.last_checkpoint.as_ref().map(ObjectHash::as_str),
-            run.completion_seal.as_ref().map(ObjectHash::as_str),
+            run.last_checkpoint.as_ref().map(ObjectId::as_str),
+            run.completion_seal.as_ref().map(ObjectId::as_str),
             run.updated_at.timestamp_millis(),
             serde_json::to_vec(run)?
         ],
@@ -2364,7 +2362,7 @@ fn control_work_binding_was_valid_on(
         }))
 }
 
-pub(super) fn unique_hashes(values: &[ObjectHash]) -> Vec<ObjectHash> {
+pub(super) fn unique_hashes(values: &[ObjectId]) -> Vec<ObjectId> {
     let mut seen = HashSet::new();
     values
         .iter()
@@ -2390,7 +2388,7 @@ pub(super) fn expect_root_contributor(
 pub(super) fn add_root_contribution(
     execution: &mut RootExecution,
     participant: &SessionId,
-    object: &ObjectHash,
+    object: &ObjectId,
 ) -> bool {
     let contribution = RootContribution {
         participant: participant.clone(),

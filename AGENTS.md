@@ -138,7 +138,15 @@ obsolete task_claims, task_claim_intents, and publication_intents tables
 (retired 2026-09-20 during Greg's requested cleanup). Import reports retired
 column value counts and retired table row counts; canonical objects and ids
 remain unchanged. Unknown columns in a retired table still refuse. These
-lists are the whole of that authority; export does not filter retired data.
+retirements also include the uncompared control checksums:
+`control_observations.input_hash` and `.decision_hash`,
+`control_turn_grants.grant_hash`, `control_work_leases.lease_hash`,
+`control_turn_grant_supersessions.supersession_hash`, and `result_hash` in
+`control_operation_results` and `control_policy_operation_results`.
+Their non-null value counts are reported; payloads and compared replay
+fingerprints are retained. Record-link column renames are explicit per-table
+import mappings, preserving ids and canonical bytes, not a generic alias rule.
+These lists are the whole of that authority; export does not filter retired data.
 The operator stops store consumers, keeps the old file as the backup, and
 swaps the files; see
 [full store migration](docs/features/full-store-migration.md).

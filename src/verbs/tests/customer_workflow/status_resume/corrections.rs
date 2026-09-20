@@ -161,7 +161,7 @@ fn status_correction_late_status_is_advisory_outside_the_seal() {
     let seal = || {
         connection
             .query_row(
-                "SELECT seal_hash, seal_json FROM work_completion_seals WHERE work_id = ?1",
+                "SELECT seal_id, seal_json FROM work_completion_seals WHERE work_id = ?1",
                 [item.work_id.0.to_string()],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
             )
@@ -270,7 +270,7 @@ fn status_correction_restored_history_decoded_once() {
     }
     changed.manifest.body_sha256 = crate::CanonicalObject::freeze(&changed.body)
         .unwrap()
-        .hash()
+        .key()
         .clone();
     let mut other = SqliteStore::open_in_memory().unwrap();
     other

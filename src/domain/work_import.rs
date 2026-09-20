@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{ActorContext, ProjectId, WorkId, WorkObservationBasis, WorkSourceSnapshot};
-use crate::ObjectHash;
+use crate::ObjectId;
 
 /// Exact source identity within one local project. Neither field is a display alias.
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -40,8 +40,8 @@ pub struct WorkImportInput {
 #[serde(deny_unknown_fields)]
 pub struct WorkSourceNotice {
     pub work_revision: i64,
-    pub cited_snapshot: ObjectHash,
-    pub proposed_snapshot: ObjectHash,
+    pub cited_snapshot: ObjectId,
+    pub proposed_snapshot: ObjectId,
     pub actor: ActorContext,
     pub recorded_at: DateTime<Utc>,
 }
@@ -75,14 +75,14 @@ pub struct WorkImportPreview {
     pub source_key: WorkSourceKey,
     /// The stored snapshot with this content that the item already knows;
     /// absent when applying would store a new snapshot.
-    pub snapshot: Option<ObjectHash>,
+    pub snapshot: Option<ObjectId>,
     pub effect: WorkImportEffect,
     pub work_id: Option<WorkId>,
     pub work_ref: Option<String>,
     pub work_revision: Option<i64>,
-    pub cited_snapshot: Option<ObjectHash>,
+    pub cited_snapshot: Option<ObjectId>,
     pub draft: Option<WorkImportDraft>,
-    pub preview_token: ObjectHash,
+    pub preview_token: ObjectId,
 }
 
 /// Committed import facts, not a claim that later local state stayed unchanged.
@@ -90,12 +90,12 @@ pub struct WorkImportPreview {
 pub struct WorkImportReceipt {
     pub effect: WorkImportEffect,
     pub source_key: WorkSourceKey,
-    pub snapshot: ObjectHash,
-    pub cited_snapshot: ObjectHash,
+    pub snapshot: ObjectId,
+    pub cited_snapshot: ObjectId,
     pub work_id: WorkId,
     pub work_ref: String,
     pub work_revision: i64,
-    pub proposal: Option<ObjectHash>,
+    pub proposal: Option<ObjectId>,
 }
 
 /// Current source citation, with the latest notification kept distinct from it.
@@ -105,7 +105,7 @@ pub struct WorkSourceLookup {
     pub work_id: WorkId,
     pub work_ref: String,
     pub work_revision: i64,
-    pub cited_snapshot: ObjectHash,
+    pub cited_snapshot: ObjectId,
     pub notice_count: usize,
     pub latest_notice: Option<WorkSourceNotice>,
 }

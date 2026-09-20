@@ -41,15 +41,15 @@ pub(super) fn process_default_session_at(pid: u32, created_at: DateTime<Utc>) ->
 }
 
 /// The id of the rule set that the store's active control policy names.
-pub(super) fn active_rule_set_id(connection: &Connection) -> ObjectHash {
+pub(super) fn active_rule_set_id(connection: &Connection) -> ObjectId {
     let policy: String = connection
         .query_row(
-            "SELECT policy_hash FROM control_policy_state WHERE singleton = 1",
+            "SELECT policy_id FROM control_policy_state WHERE singleton = 1",
             [],
             |row| row.get(0),
         )
         .expect("active control policy");
-    let policy = ObjectHash::from_stored(policy).expect("stored policy id");
+    let policy = ObjectId::from_stored(policy).expect("stored policy id");
     SqliteStore::obligation_rule_set_for_policy_on(connection, &policy)
         .expect("active obligation rule set")
         .0
@@ -171,8 +171,8 @@ pub(super) fn checkpoint(
     holder: &str,
     key: &str,
     second: i64,
-    evidence: &[ObjectHash],
-) -> ObjectHash {
+    evidence: &[ObjectId],
+) -> ObjectId {
     store
         .checkpoint_work(
             &CheckpointWorkRequest {
@@ -200,7 +200,7 @@ pub(super) fn evidence(
     holder: &str,
     key: &str,
     second: i64,
-) -> ObjectHash {
+) -> ObjectId {
     store
         .record_work_evidence(
             &RecordWorkEvidenceRequest {
@@ -225,7 +225,7 @@ pub(super) fn completion_request(
     work: &WorkItem,
     claim: &WorkClaim,
     holder: &str,
-    evidence: &ObjectHash,
+    evidence: &ObjectId,
     key: &str,
     second: i64,
 ) -> CompleteWorkRequest {
@@ -264,7 +264,7 @@ pub(super) fn complete(
     work: &WorkItem,
     claim: &WorkClaim,
     holder: &str,
-    evidence: &ObjectHash,
+    evidence: &ObjectId,
     key: &str,
     second: i64,
 ) -> Result<CompletionSeal, StoreError> {
@@ -290,7 +290,7 @@ pub(super) fn host_verification(
     kind: crate::domain::VerificationKind,
     result: crate::domain::VerificationResult,
     second: i64,
-) -> ObjectHash {
+) -> ObjectId {
     host_verification_of(
         store,
         work,
@@ -320,7 +320,7 @@ pub(super) fn host_verification_of(
     result: crate::domain::VerificationResult,
     second: i64,
     source_revision: &str,
-) -> ObjectHash {
+) -> ObjectId {
     use crate::domain::{
         ControlWorkBinding, EffectClass, EnvironmentComponents, EnvironmentEvidence,
         ExecutionObservation, ExecutionOutcome, ExecutionSourceBasis, VerificationEvidence,
@@ -365,7 +365,7 @@ pub(super) fn host_verification_of(
     };
     let environment_fingerprint = CanonicalObject::freeze(&components)
         .expect("freeze environment components")
-        .hash()
+        .key()
         .clone();
     let transaction = store
         .connection
@@ -416,8 +416,8 @@ pub(super) fn host_verification_of(
 }
 
 /// The command fingerprint `host_verification` records for the check `key`.
-pub(super) fn check_fingerprint(key: &str) -> ObjectHash {
-    ObjectHash::from_canonical_bytes(format!("check {key}").as_bytes())
+pub(super) fn check_fingerprint(key: &str) -> ObjectId {
+    ObjectId::from_canonical_bytes(format!("check {key}").as_bytes())
 }
 
 /// Appends a host-observed source mutation on the claimed run that leaves
@@ -432,7 +432,7 @@ pub(super) fn source_mutation(
     key: &str,
     second: i64,
     source_revision: Option<&str>,
-) -> ObjectHash {
+) -> ObjectId {
     use crate::domain::{
         ControlWorkBinding, EffectClass, ExecutionObservation, ExecutionOutcome,
         ExecutionSourceBasis,
@@ -454,7 +454,7 @@ pub(super) fn source_mutation(
         session_id: SessionId(holder.into()),
         grant_id: format!("grant-write-{key}"),
         observation_id: format!("write-{key}"),
-        action_fingerprint: ObjectHash::from_canonical_bytes(format!("write {key}").as_bytes()),
+        action_fingerprint: ObjectId::from_canonical_bytes(format!("write {key}").as_bytes()),
         effect: EffectClass::MutateLocal,
         outcome: ExecutionOutcome::Succeeded,
         source_changed: true,

@@ -6,7 +6,7 @@ fn assert_family_index_does_not_parse_body(
     path: &std::path::Path,
     project: &ProjectId,
     work: &str,
-    hash: &crate::ObjectHash,
+    hash: &crate::ObjectId,
     family: WorkRecordFamily,
 ) {
     let id = store.resolve_work_ref(project, work).unwrap().work_id;
@@ -14,7 +14,7 @@ fn assert_family_index_does_not_parse_body(
     let before = crate::storage::test_database_shape_snapshot(&connection);
     let original: Vec<u8> = connection
         .query_row(
-            "SELECT canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
             |row| row.get(0),
         )
@@ -23,7 +23,7 @@ fn assert_family_index_does_not_parse_body(
     // during indexing must fail. Selected content must still reject corruption.
     connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
             rusqlite::params![b"{".as_slice(), hash.as_str()],
         )
         .unwrap();
@@ -37,7 +37,7 @@ fn assert_family_index_does_not_parse_body(
     });
     connection
         .execute(
-            "UPDATE objects SET canonical_json = ?1 WHERE object_hash = ?2",
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
             rusqlite::params![original, hash.as_str()],
         )
         .unwrap();

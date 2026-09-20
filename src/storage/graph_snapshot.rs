@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     ActorContext, CanonicalObject, CompletionSeal, EnvironmentEvidence, MemoryStatus,
-    MemoryVersion, ObjectHash, ProjectId, RestoredRecord, RestoredWorkEvidence, Scope, Sensitivity,
+    MemoryVersion, ObjectId, ProjectId, RestoredRecord, RestoredWorkEvidence, Scope, Sensitivity,
     VerificationEvidence, WorkCheckpoint, WorkEvidence, WorkEvidenceKind, WorkGraphSnapshotBlocker,
     WorkGraphSnapshotBody, WorkGraphSnapshotCompletion, WorkGraphSnapshotCut,
     WorkGraphSnapshotDestinationKind, WorkGraphSnapshotDocument, WorkGraphSnapshotEvent,
@@ -65,7 +65,7 @@ impl SqliteStore {
             redactor,
         )?;
         let body_object = CanonicalObject::freeze(&body)?;
-        let body_sha256 = body_object.hash().clone();
+        let body_sha256 = body_object.key().clone();
         let manifest = WorkGraphSnapshotManifest {
             exported_at,
             exporting_build: work_graph_snapshot_exporting_build(),
@@ -120,11 +120,11 @@ impl SqliteStore {
         let rows = self
             .connection
             .prepare(
-                "SELECT object_hash, canonical_json
+                "SELECT object_id, canonical_json
                  FROM objects INDEXED BY objects_graph_snapshot_audit
                  WHERE object_kind = 'work_graph_snapshot_saved'
                    AND json_extract(canonical_json, '$.project_id') = ?1
-                 ORDER BY json_extract(canonical_json, '$.attempt_id'), object_hash",
+                 ORDER BY json_extract(canonical_json, '$.attempt_id'), object_id",
             )?
             .query_map([project_id.0.as_str()], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -132,8 +132,8 @@ impl SqliteStore {
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter()
             .map(|(stored_hash, bytes)| {
-                let hash = ObjectHash::from_stored(stored_hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+                let hash = ObjectId::from_stored(stored_hash.clone())
+                    .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
                 let event: WorkGraphSnapshotSavedEvent =
                     CanonicalObject::stored(&hash, bytes)?.decode()?;
                 validate_saved_event(&event, Some(project_id))?;
@@ -170,11 +170,11 @@ impl SqliteStore {
         let mut rows = self
             .connection
             .prepare(
-                "SELECT object_hash, canonical_json
+                "SELECT object_id, canonical_json
                  FROM objects INDEXED BY objects_graph_snapshot_audit
                  WHERE object_kind = 'work_graph_snapshot_saved'
                    AND json_extract(canonical_json, '$.project_id') = ?1
-                 ORDER BY json_extract(canonical_json, '$.attempt_id') DESC, object_hash DESC
+                 ORDER BY json_extract(canonical_json, '$.attempt_id') DESC, object_id DESC
                  LIMIT ?2",
             )?
             .query_map(rusqlite::params![project_id.0, limit], |row| {
@@ -183,8 +183,8 @@ impl SqliteStore {
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .map(|(stored_hash, bytes)| {
-                let hash = ObjectHash::from_stored(stored_hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+                let hash = ObjectId::from_stored(stored_hash.clone())
+                    .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
                 let event: WorkGraphSnapshotSavedEvent =
                     CanonicalObject::stored(&hash, bytes)?.decode()?;
                 validate_saved_event(&event, Some(project_id))?;
@@ -228,11 +228,11 @@ impl SqliteStore {
         let mut rows = self
             .connection
             .prepare(
-                "SELECT object_hash, canonical_json
+                "SELECT object_id, canonical_json
                  FROM objects INDEXED BY objects_graph_snapshot_load_audit
                  WHERE object_kind = 'work_graph_snapshot_loaded'
                    AND json_extract(canonical_json, '$.project_id') = ?1
-                 ORDER BY json_extract(canonical_json, '$.attempt_id') DESC, object_hash DESC
+                 ORDER BY json_extract(canonical_json, '$.attempt_id') DESC, object_id DESC
                  LIMIT ?2",
             )?
             .query_map(rusqlite::params![project_id.0, limit], |row| {
@@ -241,8 +241,8 @@ impl SqliteStore {
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .map(|(stored_hash, bytes)| {
-                let hash = ObjectHash::from_stored(stored_hash.clone())
-                    .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+                let hash = ObjectId::from_stored(stored_hash.clone())
+                    .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
                 let event: WorkGraphSnapshotLoadedEvent =
                     CanonicalObject::stored(&hash, bytes)?.decode()?;
                 validate_loaded_event(&event, Some(project_id))?;
@@ -270,9 +270,9 @@ pub(super) fn verify_work_graph_snapshot_saved_events_on(
     }
     let rows = connection
         .prepare(
-            "SELECT object_hash, canonical_json
+            "SELECT object_id, canonical_json
              FROM objects WHERE object_kind = 'work_graph_snapshot_saved'
-             ORDER BY object_hash",
+             ORDER BY object_id",
         )?
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -281,8 +281,8 @@ pub(super) fn verify_work_graph_snapshot_saved_events_on(
     let mut invalid = Vec::new();
     let mut attempt_ids = HashSet::new();
     for (stored_hash, bytes) in &rows {
-        let valid = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
+        let valid = ObjectId::from_stored(stored_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.clone()))
             .and_then(|hash| CanonicalObject::stored(&hash, bytes.clone()))
             .and_then(|object| object.decode::<WorkGraphSnapshotSavedEvent>())
             .and_then(|event| {
@@ -302,9 +302,9 @@ pub(super) fn verify_work_graph_snapshot_saved_events_on(
     let mut checked = rows.len();
     let loaded_rows = connection
         .prepare(
-            "SELECT object_hash, canonical_json
+            "SELECT object_id, canonical_json
              FROM objects WHERE object_kind = 'work_graph_snapshot_loaded'
-             ORDER BY object_hash",
+             ORDER BY object_id",
         )?
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -313,8 +313,8 @@ pub(super) fn verify_work_graph_snapshot_saved_events_on(
     checked += loaded_rows.len();
     let mut load_attempt_ids = HashSet::new();
     for (stored_hash, bytes) in loaded_rows {
-        let valid = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(stored_hash.clone()))
+        let valid = ObjectId::from_stored(stored_hash.clone())
+            .ok_or_else(|| StoreError::InvalidStoredKey(stored_hash.clone()))
             .and_then(|hash| CanonicalObject::stored(&hash, bytes))
             .and_then(|object| object.decode::<WorkGraphSnapshotLoadedEvent>())
             .and_then(|event| {
@@ -377,7 +377,7 @@ pub(in crate::storage) fn work_graph_snapshot_load_origin_on(
     // operation clock that moves backwards between loads.
     let row = connection
         .query_row(
-            "SELECT object_hash, canonical_json
+            "SELECT object_id, canonical_json
              FROM objects INDEXED BY objects_graph_snapshot_load_audit
              WHERE object_kind = 'work_graph_snapshot_loaded'
                AND json_extract(canonical_json, '$.project_id') = ?1
@@ -392,8 +392,8 @@ pub(in crate::storage) fn work_graph_snapshot_load_origin_on(
             project_id.0
         ))
     })?;
-    let hash = ObjectHash::from_stored(stored_hash.clone())
-        .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    let hash = ObjectId::from_stored(stored_hash.clone())
+        .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
     let event: WorkGraphSnapshotLoadedEvent = CanonicalObject::stored(&hash, bytes)?.decode()?;
     validate_loaded_event(&event, Some(project_id))?;
     Ok(event)
@@ -594,7 +594,7 @@ fn work_sections_on(
     let item_ids = snapshot_work_ids_on(connection, project_id)?;
     let mut items = Vec::with_capacity(item_ids.len());
     let mut blockers = Vec::new();
-    let mut sources = BTreeMap::<ObjectHash, WorkGraphSnapshotSource>::new();
+    let mut sources = BTreeMap::<ObjectId, WorkGraphSnapshotSource>::new();
     let mut records = Vec::with_capacity(item_ids.len());
     for work_id in item_ids {
         let item = super::work::load_work_item(connection, work_id)?;
@@ -631,7 +631,7 @@ fn work_sections_on(
                 work_id,
                 generation_index: record.generation_index,
                 payload: WorkGraphSnapshotRecordPayload::Restored {
-                    object_hash: hash.clone(),
+                    object_id: hash.clone(),
                     canonical_json: canonical_json.clone(),
                 },
             });
@@ -724,7 +724,7 @@ fn snapshot_item(
     item: &crate::WorkItem,
     prerequisites: Vec<WorkId>,
     events: &[crate::WorkEvent],
-    restored_records: &[(ObjectHash, Value, RestoredRecord)],
+    restored_records: &[(ObjectId, Value, RestoredRecord)],
 ) -> Result<WorkGraphSnapshotItem, StoreError> {
     Ok(WorkGraphSnapshotItem {
         external_ref: item.external_ref.clone(),
@@ -754,7 +754,7 @@ fn snapshot_item(
 fn current_disposal_reason(
     lifecycle: WorkLifecycle,
     events: &[crate::WorkEvent],
-    restored_records: &[(ObjectHash, Value, RestoredRecord)],
+    restored_records: &[(ObjectId, Value, RestoredRecord)],
 ) -> Result<Option<String>, StoreError> {
     if !matches!(
         lifecycle,
@@ -790,10 +790,10 @@ fn current_disposal_reason(
 fn restored_records_on(
     connection: &Connection,
     work_id: WorkId,
-) -> Result<Vec<(ObjectHash, Value, RestoredRecord)>, StoreError> {
+) -> Result<Vec<(ObjectId, Value, RestoredRecord)>, StoreError> {
     let rows = connection
         .prepare(
-            "SELECT generation_index, record_hash FROM work_restored_records
+            "SELECT generation_index, record_id FROM work_restored_records
              WHERE work_id = ?1 ORDER BY generation_index",
         )?
         .query_map([work_id.0.to_string()], |row| {
@@ -807,8 +807,8 @@ fn restored_records_on(
                 "restored history for {work_id:?} is not dense"
             )));
         }
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         let object =
             SqliteStore::get_canonical_object_on(connection, &hash, "work_restored_record")?
                 .ok_or_else(|| {
@@ -829,7 +829,7 @@ fn restored_records_on(
 
 fn load_source_on(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
 ) -> Result<WorkGraphSnapshotSource, StoreError> {
     let value = load_verified_value_on(connection, hash, "work_source_snapshot")?;
     let _: WorkSourceSnapshot = serde_json::from_value(value.clone())?;
@@ -841,12 +841,12 @@ fn load_source_on(
 
 fn load_verified_value_on(
     connection: &Connection,
-    hash: &ObjectHash,
+    hash: &ObjectId,
     required_kind: &str,
 ) -> Result<Value, StoreError> {
     let stored = connection
         .query_row(
-            "SELECT object_kind, canonical_json FROM objects WHERE object_hash = ?1",
+            "SELECT object_kind, canonical_json FROM objects WHERE object_id = ?1",
             [hash.as_str()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
@@ -869,10 +869,10 @@ fn notes_for_item_on(
 ) -> Result<Vec<WorkGraphSnapshotNote>, StoreError> {
     let rows = connection
         .prepare(
-            "SELECT evidence.evidence_kind, object.object_hash,
+            "SELECT evidence.evidence_kind, object.object_id,
                     object.object_kind, object.canonical_json
              FROM work_run_evidence AS evidence INDEXED BY work_run_evidence_work
-             JOIN objects AS object ON object.object_hash = evidence.evidence_hash
+             JOIN objects AS object ON object.object_id = evidence.evidence_id
              WHERE evidence.work_id = ?1",
         )?
         .query_map([work_id.0.to_string()], |row| {
@@ -902,12 +902,12 @@ fn notes_for_item_on(
     }
     let restored_rows = connection
         .prepare(
-            "SELECT evidence.evidence_hash, evidence.record_hash,
+            "SELECT evidence.evidence_id, evidence.record_id,
                     evidence.gate_name, evidence.created_at_ms,
                     object.object_kind, object.canonical_json
              FROM work_restored_evidence AS evidence
                   INDEXED BY work_restored_evidence_work
-             JOIN objects AS object ON object.object_hash = evidence.evidence_hash
+             JOIN objects AS object ON object.object_id = evidence.evidence_id
              WHERE evidence.work_id = ?1",
         )?
         .query_map([work_id.0.to_string()], |row| {
@@ -921,9 +921,9 @@ fn notes_for_item_on(
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    for (stored_hash, record_hash, gate_name, created_at_ms, object_kind, bytes) in restored_rows {
-        let hash = ObjectHash::from_stored(stored_hash.clone())
-            .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    for (stored_hash, record_id, gate_name, created_at_ms, object_kind, bytes) in restored_rows {
+        let hash = ObjectId::from_stored(stored_hash.clone())
+            .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
         if object_kind != "work_restored_evidence" {
             return Err(StoreError::ObjectKindMismatch {
                 hash,
@@ -933,13 +933,13 @@ fn notes_for_item_on(
         }
         let evidence: RestoredWorkEvidence = CanonicalObject::stored(&hash, bytes)?.decode()?;
         let projection_matches = evidence.work_id == work_id
-            && evidence.restored_record.as_str() == record_hash
+            && evidence.restored_record.as_str() == record_id
             && evidence.gate.as_ref().map(|gate| gate.name.as_str()) == gate_name.as_deref()
             && evidence.created_at.timestamp_millis() == created_at_ms
             && connection.query_row(
                 "SELECT EXISTS(
                      SELECT 1 FROM work_restored_records
-                     WHERE work_id = ?1 AND record_hash = ?2
+                     WHERE work_id = ?1 AND record_id = ?2
                  )",
                 rusqlite::params![work_id.0.to_string(), evidence.restored_record.as_str()],
                 |row| row.get::<_, bool>(0),
@@ -971,13 +971,13 @@ fn notes_for_item_on(
 fn order_snapshot_notes_on(
     connection: &Connection,
     project_id: &ProjectId,
-    notes: Vec<(ObjectHash, WorkGraphSnapshotNote)>,
+    notes: Vec<(ObjectId, WorkGraphSnapshotNote)>,
 ) -> Result<Vec<WorkGraphSnapshotNote>, StoreError> {
     // Every native note family enters the project feed. Asserted timestamps
     // and content hashes cannot order observations, including initial batches.
     let mut positions = connection.prepare(
         "SELECT position FROM work_feed_entries
-         WHERE feed_kind = 'project' AND feed_id = ?1 AND object_hash = ?2",
+         WHERE feed_kind = 'project' AND feed_id = ?1 AND object_id = ?2",
     )?;
     let mut ordered = notes
         .into_iter()
@@ -996,10 +996,10 @@ fn order_snapshot_notes_on(
 fn snapshot_note_from_row(
     work_id: WorkId,
     row: (String, String, String, Vec<u8>),
-) -> Result<(WorkGraphSnapshotNote, ObjectHash), StoreError> {
+) -> Result<(WorkGraphSnapshotNote, ObjectId), StoreError> {
     let (stored_kind, stored_hash, object_kind, bytes) = row;
-    let hash = ObjectHash::from_stored(stored_hash.clone())
-        .ok_or(StoreError::InvalidStoredHash(stored_hash))?;
+    let hash = ObjectId::from_stored(stored_hash.clone())
+        .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
     let object = CanonicalObject::stored(&hash, bytes)?;
     let (note, expected_kind) = match object_kind.as_str() {
         "work_evidence" => {
@@ -1083,7 +1083,7 @@ fn completion_from_events(
     connection: &Connection,
     item: &crate::WorkItem,
     events: &[crate::WorkEvent],
-    restored_records: &[(ObjectHash, Value, RestoredRecord)],
+    restored_records: &[(ObjectId, Value, RestoredRecord)],
 ) -> Result<Option<WorkGraphSnapshotCompletion>, StoreError> {
     if item.lifecycle != WorkLifecycle::Completed {
         return Ok(None);
@@ -1293,7 +1293,7 @@ fn snapshot_event_on(
 fn checkpoint_summary_on(
     connection: &Connection,
     work_id: WorkId,
-    checkpoint: &ObjectHash,
+    checkpoint: &ObjectId,
 ) -> Result<String, StoreError> {
     let checkpoint: WorkCheckpoint =
         super::work::load_typed_work_object(connection, checkpoint, "work_checkpoint")?;
@@ -1312,13 +1312,13 @@ fn snapshot_memory_projection_rows_on(
     Ok(connection
         .prepare(
             "SELECT json_extract(object.canonical_json, '$.project_key'),
-                    head.memory_id, head.version_hash, head.assertion_hash,
+                    head.memory_id, head.version_id, head.assertion_id,
                     head.schema_version, head.status, head.scope_kind,
                     head.project_id, head.task_id, head.work_id, head.agent_id,
                     head.memory_kind, head.authority, head.delivery,
                     head.sensitivity, head.title, head.body, head.created_at_ms
              FROM memory_heads AS head
-             JOIN objects AS object ON object.object_hash = head.version_hash
+             JOIN objects AS object ON object.object_id = head.version_id
              WHERE head.scope_kind = 'project' AND head.project_id = ?1
                AND object.object_kind = 'memory_version'
                AND json_type(object.canonical_json, '$.project_key') = 'text'
@@ -1329,8 +1329,8 @@ fn snapshot_memory_projection_rows_on(
                 row.get::<_, String>(0)?,
                 MemoryHeadProjectionRow {
                     memory_id: row.get(1)?,
-                    version_hash: row.get(2)?,
-                    assertion_hash: row.get(3)?,
+                    version_id: row.get(2)?,
+                    assertion_id: row.get(3)?,
                     schema_version: row.get(4)?,
                     status: row.get(5)?,
                     scope_kind: row.get(6)?,
@@ -1363,36 +1363,30 @@ fn memories_on(
     let mut active_count = 0;
     for (key, projected) in rows {
         let key = validate_stored_project_memory_key(&key)?;
-        let version_hash = ObjectHash::from_stored(projected.version_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(projected.version_hash.clone()))?;
-        let assertion_hash = ObjectHash::from_stored(projected.assertion_hash.clone())
-            .ok_or_else(|| StoreError::InvalidStoredHash(projected.assertion_hash.clone()))?;
+        let version_id = ObjectId::from_stored(projected.version_id.clone())
+            .ok_or_else(|| StoreError::InvalidStoredKey(projected.version_id.clone()))?;
+        let assertion_id = ObjectId::from_stored(projected.assertion_id.clone())
+            .ok_or_else(|| StoreError::InvalidStoredKey(projected.assertion_id.clone()))?;
         let version: MemoryVersion =
-            SqliteStore::get_typed_object_on(connection, &version_hash, "memory_version")?
+            SqliteStore::get_typed_object_on(connection, &version_id, "memory_version")?
                 .ok_or_else(|| {
                     StoreError::InvalidMemoryProjection(
                         "snapshot project memory version is missing".into(),
                     )
                 })?;
-        let assertion: MemoryAssertionEvent = SqliteStore::get_typed_object_on(
-            connection,
-            &assertion_hash,
-            "memory_assertion_event",
-        )?
-        .ok_or_else(|| {
-            StoreError::InvalidMemoryProjection(
-                "snapshot project memory assertion is missing".into(),
-            )
-        })?;
+        let assertion: MemoryAssertionEvent =
+            SqliteStore::get_typed_object_on(connection, &assertion_id, "memory_assertion_event")?
+                .ok_or_else(|| {
+                    StoreError::InvalidMemoryProjection(
+                        "snapshot project memory assertion is missing".into(),
+                    )
+                })?;
         validate_keyed_project_memory_shape(&version, &assertion)?;
-        let projected_status = SqliteStore::expected_memory_head_status_on(
-            connection,
-            &version_hash,
-            assertion.status,
-        )?;
+        let projected_status =
+            SqliteStore::expected_memory_head_status_on(connection, &version_id, assertion.status)?;
         let expected = SqliteStore::expected_memory_head_projection_from_canonical(
-            &version_hash,
-            &assertion_hash,
+            &version_id,
+            &assertion_id,
             &version,
             &assertion,
             projected_status,
@@ -1408,7 +1402,7 @@ fn memories_on(
         let chain = super::project_memory::project_memory_history_on(connection, project_id, &key)?;
         if chain
             .last()
-            .is_none_or(|entry| entry.version_hash != version_hash || entry.assertion != assertion)
+            .is_none_or(|entry| entry.version_id != version_id || entry.assertion != assertion)
         {
             return Err(StoreError::InvalidMemoryProjection(
                 "snapshot memory is not its current canonical revision".into(),

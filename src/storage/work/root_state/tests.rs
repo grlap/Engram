@@ -47,9 +47,9 @@ fn install_write_probe(store: &SqliteStore) {
     store.connection.execute_batch(
         "CREATE TEMP TABLE root_write_bytes (bytes INTEGER NOT NULL);
          CREATE TEMP TRIGGER root_header_insert AFTER INSERT ON main.work_root_executions BEGIN
-             INSERT INTO root_write_bytes VALUES(length(NEW.header_json) + length(NEW.head_hash) + length(NEW.root_execution_id) + length(NEW.project_id) + length(NEW.root_id) + length(NEW.state) + 32); END;
+             INSERT INTO root_write_bytes VALUES(length(NEW.header_json) + length(NEW.head_id) + length(NEW.root_execution_id) + length(NEW.project_id) + length(NEW.root_id) + length(NEW.state) + 32); END;
          CREATE TEMP TRIGGER root_header_update AFTER UPDATE ON main.work_root_executions BEGIN
-             INSERT INTO root_write_bytes VALUES(length(NEW.header_json) + length(NEW.head_hash) + length(NEW.root_execution_id) + length(NEW.state) + 16); END;
+             INSERT INTO root_write_bytes VALUES(length(NEW.header_json) + length(NEW.head_id) + length(NEW.root_execution_id) + length(NEW.state) + 16); END;
          CREATE TEMP TRIGGER root_member_insert AFTER INSERT ON main.work_root_members BEGIN
              INSERT INTO root_write_bytes VALUES(length(NEW.member_json) + length(NEW.member_hash) + length(NEW.root_execution_id)); END;
          CREATE TEMP TRIGGER root_member_update AFTER UPDATE ON main.work_root_members BEGIN
@@ -130,7 +130,7 @@ fn root_delta_full_copy_counterfactual_exceeds_shared_budgets() {
         .pop()
         .unwrap();
     let mut json: serde_json::Value =
-        load_typed_work_object(&store.connection, &entry.object_hash, "work_event").unwrap();
+        load_typed_work_object(&store.connection, &entry.object_id, "work_event").unwrap();
     json["root_execution"] = serde_json::to_value(&full).unwrap();
     let object = CanonicalObject::freeze(&json).unwrap();
     install_write_probe(&store);
@@ -300,7 +300,7 @@ fn root_delta_audit_checks_each_historical_event_reference() {
     let mut absent = first.clone();
     absent.head = CanonicalObject::freeze(&"absent root head")
         .unwrap()
-        .hash()
+        .key()
         .clone();
     let mut wrong_generation = first.clone();
     wrong_generation.generation += 1;
@@ -410,7 +410,7 @@ fn root_delta_history_and_current_projection_have_independent_integrity() {
                 store
                     .connection
                     .execute(
-                        "DELETE FROM objects WHERE object_hash = ?1",
+                        "DELETE FROM objects WHERE object_id = ?1",
                         [old_ref.head.as_str()],
                     )
                     .unwrap();
@@ -494,7 +494,7 @@ fn root_delta_removal_replay_and_wrong_chain_refuse_without_projection_writes() 
         let object = CanonicalObject::freeze(&head).unwrap();
         SqliteStore::insert_object(&transaction, KIND, &object).unwrap();
         let mut damaged_ref = removed_ref.clone();
-        damaged_ref.head = object.hash().clone();
+        damaged_ref.head = object.key().clone();
         assert!(
             resolve(&transaction, &damaged_ref).is_err(),
             "accepted {fault}"

@@ -76,13 +76,13 @@ fn advance_root(store: &mut SqliteStore, root: &crate::WorkItem) {
 // Rewrites the stored head `id` as `new`. The record keeps its id, so every
 // edge that names it still resolves: the reader must reject the semantic
 // fault itself.
-fn rewrite_head(store: &SqliteStore, id: &ObjectHash, new: &RootExecutionDelta) {
+fn rewrite_head(store: &SqliteStore, id: &ObjectId, new: &RootExecutionDelta) {
     let object = CanonicalObject::identified(id, new).unwrap();
     assert_eq!(
         store
             .connection
             .execute(
-                "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+                "UPDATE objects SET canonical_json = ?2 WHERE object_id = ?1",
                 params![id.as_str(), object.bytes()],
             )
             .unwrap(),
@@ -91,11 +91,11 @@ fn rewrite_head(store: &SqliteStore, id: &ObjectHash, new: &RootExecutionDelta) 
 }
 
 // Points every event that names the head `old` at the stored head `new`.
-fn rebind_events(store: &SqliteStore, old: &ObjectHash, new: &ObjectHash) {
+fn rebind_events(store: &SqliteStore, old: &ObjectId, new: &ObjectId) {
     let ids: Vec<String> = store
         .connection
         .prepare(
-            "SELECT object_hash FROM objects WHERE object_kind = 'work_event'
+            "SELECT object_id FROM objects WHERE object_kind = 'work_event'
          AND json_extract(canonical_json, '$.root_execution.head') = ?1",
         )
         .unwrap()
@@ -105,7 +105,7 @@ fn rebind_events(store: &SqliteStore, old: &ObjectHash, new: &ObjectHash) {
         .unwrap();
     assert!(!ids.is_empty());
     for id in ids {
-        let id = ObjectHash::from_stored(id).unwrap();
+        let id = ObjectId::from_stored(id).unwrap();
         let mut event: WorkEvent =
             load_typed_work_object(&store.connection, &id, "work_event").unwrap();
         event.root_execution.as_mut().unwrap().head = new.clone();
@@ -113,7 +113,7 @@ fn rebind_events(store: &SqliteStore, old: &ObjectHash, new: &ObjectHash) {
         store
             .connection
             .execute(
-                "UPDATE objects SET canonical_json = ?2 WHERE object_hash = ?1",
+                "UPDATE objects SET canonical_json = ?2 WHERE object_id = ?1",
                 params![id.as_str(), object.bytes()],
             )
             .unwrap();
@@ -165,7 +165,7 @@ fn root_delta_waiver_fact_proof_checks_ancestry_exact_addition_and_current_ancho
     let object = CanonicalObject::mint(&branch).unwrap();
     SqliteStore::insert_object(&store.connection, KIND, &object).unwrap();
     let mut fork = witness.clone();
-    fork.0.head = object.hash().clone();
+    fork.0.head = object.key().clone();
     let snapshot = test_database_shape_snapshot(&store.connection).unwrap();
     assert!(
         verify_waiver_witnesses(&store.connection, &state, &[fork])
@@ -232,7 +232,7 @@ fn root_delta_waiver_fact_proof_refuses_broken_chain_without_writes() {
         let mut head = load_head(&store.connection, &current).unwrap();
         match fault {
             "missing_predecessor" => {
-                head.predecessor = Some(ObjectHash::mint());
+                head.predecessor = Some(ObjectId::mint());
             }
             "sequence" => head.sequence += 1,
             "revision" => head.previous_revision = Some(0),

@@ -31,7 +31,7 @@ fn done_with_links_is_refused_under_an_evaluated_policy_without_capture_effects(
             at(1),
         )
         .expect("claim");
-    let evidence: ObjectHash = serde_json::from_value(
+    let evidence: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Evidence {
@@ -46,7 +46,7 @@ fn done_with_links_is_refused_under_an_evaluated_policy_without_capture_effects(
             .receipt
             .result,
     )
-    .expect("evidence hash");
+    .expect("evidence id");
     enable(&database, &[AcceptanceEvaluationMode::SameSession], 3);
     let head = completion_run_feed_head(&service, root.work_id);
     let refused = service
@@ -100,7 +100,7 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
             at(1),
         )
         .expect("claim");
-    let evidence: ObjectHash = serde_json::from_value(
+    let evidence: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Evidence {
@@ -115,7 +115,7 @@ fn exact_retries_replay_after_a_revision_and_after_completion() {
             .receipt
             .result,
     )
-    .expect("evidence hash");
+    .expect("evidence id");
     enable(&database, &[AcceptanceEvaluationMode::SameSession], 3);
     let citation = vec![evidence.as_str().to_owned()];
     let work_ref = root.short_ref.clone();
@@ -310,7 +310,7 @@ fn the_preflight_projection_carries_the_recorded_attempt_key() {
             at(1),
         )
         .expect("claim");
-    let evidence: ObjectHash = serde_json::from_value(
+    let evidence: ObjectId = serde_json::from_value(
         service
             .work_update(
                 WorkUpdateInput::Evidence {
@@ -325,7 +325,7 @@ fn the_preflight_projection_carries_the_recorded_attempt_key() {
             .receipt
             .result,
     )
-    .expect("evidence hash");
+    .expect("evidence id");
     enable(&database, &[AcceptanceEvaluationMode::SameSession], 3);
     let mut store = SqliteStore::open(&database).expect("store");
     let work = store.get_work_item(root.work_id).expect("item");

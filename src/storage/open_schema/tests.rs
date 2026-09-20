@@ -87,14 +87,14 @@ fn centralized_schema_versions_match_fresh_store_projections_and_policy_objects(
         .connection
         .query_row(
             "SELECT type, \"notnull\" FROM pragma_table_info('work_run_obligations')
-             WHERE name = 'rule_set_hash'",
+             WHERE name = 'rule_set_id'",
             [],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
         )
         .expect("required obligation rule-set column");
     assert_eq!(rule_set_column, ("TEXT".into(), true));
-    let rule_set_hash = &policy.obligation_rule_set;
-    let rule_set = SqliteStore::load_obligation_rule_set_on(&store.connection, rule_set_hash)
+    let rule_set_id = &policy.obligation_rule_set;
+    let rule_set = SqliteStore::load_obligation_rule_set_on(&store.connection, rule_set_id)
         .expect("live obligation rule set");
     assert_eq!(
         rule_set.schema_version,
@@ -568,9 +568,9 @@ fn store_persists_and_enforces_one_host_path_identity_policy() {
     unsafe_connection
         .execute(
             "INSERT INTO control_work_leases (
-                 lease_id, task_id, holder_session_id, lease_hash, lease_json,
+                 lease_id, task_id, holder_session_id, lease_json,
                  state, expires_at_ms
-              ) VALUES ('existing-path', 'task', 'session', 'hash',
+              ) VALUES ('existing-path', 'task', 'session',
                        CAST('{\"subject\":{\"kind\":\"path\"}}' AS BLOB),
                        'active', 1)",
             [],
@@ -979,7 +979,7 @@ fn unresolved_opener_cannot_begin_a_path_bearing_grant() {
             &session.routing_token,
             &TurnIntent {
                 idempotency_key: "ub-turn".into(),
-                intent_fingerprint: ObjectHash::from_canonical_bytes(b"ub-turn"),
+                intent_fingerprint: ObjectId::from_canonical_bytes(b"ub-turn"),
                 purpose: crate::domain::TurnPurpose::Ordinary,
                 requested_effects: vec![EffectClass::MutateLocal],
                 resource_intents: vec![crate::domain::ResourceSubject::Path {
@@ -1039,7 +1039,7 @@ fn explicit_projection_repair_rebuilds_missing_core_index_and_fts() {
             "DROP INDEX memory_heads_scope;
              CREATE INDEX memory_heads_scope ON memory_heads(memory_id);
              DROP INDEX objects_project_memory_key;
-             CREATE INDEX objects_project_memory_key ON objects(object_hash);
+             CREATE INDEX objects_project_memory_key ON objects(object_id);
              DROP TABLE project_memory_advertisements;
              CREATE TABLE project_memory_advertisements (
                  project_id TEXT PRIMARY KEY
@@ -1052,7 +1052,7 @@ fn explicit_projection_repair_rebuilds_missing_core_index_and_fts() {
              ) STRICT;
              DROP TABLE object_fts;
              CREATE TABLE object_fts (
-                 object_hash TEXT,
+                 object_id TEXT,
                  title TEXT,
                  body TEXT
              ) STRICT;",
@@ -1267,7 +1267,7 @@ fn explicit_projection_repair_rebuilds_existing_object_fts_content() {
         reopened
             .connection
             .query_row(
-                "SELECT COUNT(*) FROM object_fts WHERE object_hash = ?1",
+                "SELECT COUNT(*) FROM object_fts WHERE object_id = ?1",
                 [receipt.version.as_str()],
                 |row| row.get::<_, i64>(0),
             )
@@ -1278,7 +1278,7 @@ fn explicit_projection_repair_rebuilds_existing_object_fts_content() {
         .connection
         .execute(
             "UPDATE memory_heads SET title = 'tampered durable title'
-             WHERE version_hash = ?1",
+             WHERE version_id = ?1",
             [receipt.version.as_str()],
         )
         .expect("corrupt durable memory-head projection");

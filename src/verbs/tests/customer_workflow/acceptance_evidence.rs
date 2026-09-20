@@ -60,7 +60,7 @@ fn assert_service_citation_refusal(malformed: bool) {
     let citation = if malformed {
         "not-a-hash".to_owned()
     } else {
-        outside.hash().to_string()
+        outside.key().to_string()
     };
     let store = SqliteStore::open(&path).unwrap();
     let before = store.resolve_work_ref(&project, &reference).unwrap();
@@ -255,7 +255,7 @@ fn criterion_disclosure_words_keep_work_evidence_separate_and_frozen() {
     let done = verbs.done(input.clone(), at(4)).unwrap();
     assert!(!done.owed);
     assert_disclosure(&done, 2, &[1, 2]);
-    let hash: ObjectHash = serde_json::from_value(done.value["seal"].clone()).unwrap();
+    let hash: ObjectId = serde_json::from_value(done.value["seal"].clone()).unwrap();
     let store = SqliteStore::open(&path).unwrap();
     let seal: crate::CompletionSeal = store.get(&hash).unwrap().unwrap();
     assert!(!seal.evidence.is_empty());
@@ -297,7 +297,7 @@ fn criterion_disclosure_explicit_and_mixed_core_inputs_use_seal_positions() {
             .map(|index| format!("{} tail {index}", "same ".repeat(30)))
             .collect();
         let reference = claimed(&verbs, criteria.clone());
-        let evidence: ObjectHash = serde_json::from_value(
+        let evidence: ObjectId = serde_json::from_value(
             verbs
                 .service
                 .work_update_on(
@@ -875,7 +875,7 @@ fn criterion_disclosure_damaged_native_run_refuses_without_writes() {
     let run = store.latest_work_run(work.work_id).unwrap().unwrap();
     let connection = rusqlite::Connection::open(&path).unwrap();
     connection.execute(
-        "UPDATE work_runs SET completion_seal_hash = NULL, run_json = CAST(json_set(run_json, '$.completion_seal', NULL) AS BLOB) WHERE work_id = ?1",
+        "UPDATE work_runs SET completion_seal_id = NULL, run_json = CAST(json_set(run_json, '$.completion_seal', NULL) AS BLOB) WHERE work_id = ?1",
         [work.work_id.0.to_string()],
     ).unwrap();
     let before = crate::storage::test_database_shape_snapshot(&connection).unwrap();
@@ -972,7 +972,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
                 .unwrap();
             connection
                 .execute(
-                    "DELETE FROM objects WHERE object_hash = ?1",
+                    "DELETE FROM objects WHERE object_id = ?1",
                     [completed.seal.as_str()],
                 )
                 .unwrap();
@@ -982,7 +982,7 @@ fn criterion_disclosure_seal_failure_preserves_replay_and_readable_audit_context
         } else {
             connection
                 .execute(
-                    "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_hash = ?1",
+                    "UPDATE objects SET canonical_json = CAST('{}' AS BLOB) WHERE object_id = ?1",
                     [completed.seal.as_str()],
                 )
                 .unwrap();

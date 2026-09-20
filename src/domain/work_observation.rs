@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{ActorContext, ProjectId, ProvenanceLink, ProvenanceRelation, SessionId, WorkId};
-use crate::ObjectHash;
+use crate::ObjectId;
 
 /// Bounds all initial observations in one root creation or decomposition.
 pub(crate) const MAX_INITIAL_WORK_NOTES: usize = 16;
@@ -150,8 +150,8 @@ pub(crate) fn is_peer_child_proposal_marker(link: &ProvenanceLink) -> bool {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkObservationBasis {
-    NativeEvent { event: ObjectHash },
-    RestoredRecord { record: ObjectHash },
+    NativeEvent { event: ObjectId },
+    RestoredRecord { record: ObjectId },
 }
 
 /// A non-holder's note on open work. It enters project/root feeds only and
