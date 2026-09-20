@@ -29,7 +29,6 @@ engram.db
   work_session_state # mutable ambient focus + processed project-feed cursor; never authority
   task_changes # dense task-local feed positions plus an internal global row sequence
   context_deliveries # target dense per-session delivery + exact source ranges
-  task_claims  # historical whole-task advisory claim data; not an agent tool
   control_observations # non-authoritative shadow decisions, replayed by idempotency intent
   control_sessions     # durable host routing, phase, cursors, epochs
   control_connections  # current host-process generation; fences predecessors
@@ -93,11 +92,12 @@ Existing different-build stores still refuse ordinary open; cutover and any
 live-store operation need a separate operator decision.
 
 `control_observations` is the first observe/replay implementation slice. It
-stores canonical input and decision bytes plus their hashes, binds an
+stores canonical input and decision bytes plus diagnostic fingerprints, binds an
 idempotency key to one session/turn intent, and returns the original decision
 after restart. The write transaction derives task state, task head, and
-session participation from durable tables; `doctor` validates the input and
-decision hashes and their redundant row bindings. That observation table
+session participation from durable tables; `doctor` decodes the input and
+decision, compares the recomputed intent fingerprint, and validates their
+redundant row bindings. That observation table
 neither enters the canonical object graph nor grants a turn; authority is
 issued only through the separate host-control projections below.
 
@@ -118,8 +118,9 @@ connections atomically rotate `control_connections`, making requests from a
 still-live predecessor fail closed.
 Store-scoped policy administration uses a separate
 `control_policy_operation_results` table because operator updates do not belong
-to an agent session. It hash-verifies the complete normalized intent and exact
-receipt, and commits the receipt in the same transaction as policy activation.
+to an agent session. It compares the complete normalized retry intent, decodes
+the exact stored receipt, and commits it in the same transaction as policy
+activation.
 The caller's wall-clock retry time is attribution rather than intent, so a
 lost-response retry can replay the original receipt after restart even when
 the original compare-and-swap hash is no longer the active head.
@@ -129,7 +130,8 @@ record id from bytes and treats no checksum as a corruption check. The
 fingerprints it does recompute and compare are of content: a stored control
 observation's intent is re-fingerprinted from its input and must match the
 intent fingerprint the row carries, which is the same comparison a retried
-operation makes before it replays the stored receipt. Context contents, pinned-safety evaluation, packet hash, and the
+operation makes before it replays the stored receipt. Context contents,
+pinned-safety evaluation, packet hash, and the
 stamped task head are read in one immediate transaction before a grant is
 persisted.
 
@@ -141,9 +143,12 @@ Task events larger than the single-object delivery limit are rejected before
 they enter the task feed.
 
 `task_changes.task_cursor` is dense and local to one task; an internal
-`sequence` is only a SQLite row identity. Stores created with the earlier
-global-cursor schema fail open with an explicit export/rebind/reset error
-because silently renumbering durable cursors could skip future delivery.
+`sequence` is only a SQLite row identity. Ordinary open refuses different-build
+schemas before mutation; explicit [full-store migration](full-store-migration.md)
+exports unchanged rows and imports into a new current-schema database. It never
+silently renumbers durable cursors. The retired whole-task advisory claim and
+unused publication tables are omitted only by the importer's named retirement
+rules, with row-count reporting; current host task bindings remain.
 First-class work uses `work_feed_heads` and `work_feed_entries` to allocate a
 typed dense `feed_kind + feed_id + position` for project, root-work, and
 run-execution feeds in the same transaction as each

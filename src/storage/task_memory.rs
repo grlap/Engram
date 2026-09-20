@@ -1492,18 +1492,6 @@ fn note_intent_key(request: &NoteRequest) -> Result<String, StoreError> {
     .to_owned())
 }
 
-pub(super) fn claim_expiry(
-    now: DateTime<Utc>,
-    ttl_seconds: i64,
-) -> Result<DateTime<Utc>, StoreError> {
-    if !(1..=86_400).contains(&ttl_seconds) {
-        return Err(StoreError::InvalidStoredClaim(
-            "lease TTL must be from 1 through 86400 seconds".into(),
-        ));
-    }
-    Ok(now + chrono::TimeDelta::seconds(ttl_seconds))
-}
-
 fn inspect_generic_memory_actor_context<R: Redactor>(
     actor: &ActorContext,
     redactor: &R,

@@ -32,7 +32,10 @@ optional intake ─────────────────────�
 └──────────────────┘   └──────────────┘
 ```
 
-Ports (Rust traits) keep domain semantics independent of backends:
+Port contracts keep domain semantics independent of backends. These describe
+the target boundaries, not a catalog of shipped Rust traits; only `Redactor`
+is currently a trait. See the [installed inventory](shipped.md) for shipped
+capabilities.
 
 | Port | Responsibility | V1 implementation |
 | --- | --- | --- |
@@ -42,7 +45,7 @@ Ports (Rust traits) keep domain semantics independent of backends:
 | `BackupAdapter` | store/retrieve verified recovery snapshots | optional |
 | `PortableStoreAdapter` | sequential publish/handoff/restore under remote-head CAS | optional V1 |
 | `Sync` | concurrent fetch / push / verify between active stores | dormant until later |
-| `PublicationAdapter` | publish a frozen report/work projection under a receipt | side-effect-free dummy |
+| `PublicationAdapter` | publish a frozen report/work projection under a receipt | deferred; no adapter shipped |
 | `Redactor` | pre-write DLP / secret scanning | visibly labeled no-op |
 | `Signer` | optional cryptographic attestation | not shipped in V1 |
 

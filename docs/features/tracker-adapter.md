@@ -6,9 +6,10 @@
 > [execution pipeline](execution-pipeline.md).
 
 External systems are optional sources, backup/portable/sync substrates, and publication
-targets, never a prerequisite for local work. The core defines vendor-neutral ports—no
-Jira-, GitHub-, or Beads-shaped types—and proves outbound idempotency against
-a side-effect-free dummy implementation.
+targets, never a prerequisite for local work. The ports below are target
+contracts, not shipped Rust traits. Publication and its former unwired dummy
+adapter are not part of the current implementation; vendor-specific types
+stay outside the core.
 
 ## The ports
 
@@ -106,19 +107,13 @@ idempotency key, and receipt. Intake and publication are independent: local
 work may use neither, one, or both. Task notes, handoffs, readiness, evidence,
 and report sections remain views of one Engram working set.
 
-## DummyPublicationAdapter (V1)
+## Publication status
 
-The dummy exercises the *exact* production contract with no external side
-effects:
-
-- accepts an explicit target, a frozen report, and an idempotency key;
-- writes and returns a **deterministic local receipt**;
-- supports retry/idempotency tests — same key + same payload returns the
-  original receipt; same key + different payload is a conflict.
-
-Because the finalization pipeline proves this neutral contract, a real adapter
-later swaps in without changing work or report semantics. `DummyTrackerAdapter`
-implements this publication role, not external tracker ownership.
+No report-publication adapter, durable publication-intent pipeline, or
+report-assembly API ships today. The disconnected dummy and unused report
+types have been removed. A future implementation must prove the frozen-payload
+retry and explicit-authority contract above through the actual pipeline, not
+an isolated in-memory adapter.
 
 ## Portable durability and deferred integrations
 

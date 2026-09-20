@@ -803,9 +803,10 @@ The minimum records are:
   mint authority.
 - `DegradedEnvelope` and `DegradedActionDebt`: bounded cached degradation
   authority and typed host-spooled reconciliation evidence.
-- `ParticipantContribution`, `CompletionBarrier`, and `FrozenReport`: source
-  hashes, validation evidence, checkpoint cursor, roster/waivers, immutable
-  report bytes, and publication intent.
+- Deferred report/finalization records — `ParticipantContribution`,
+  `CompletionBarrier`, and `FrozenReport`: source hashes, validation evidence,
+  checkpoint cursor, roster/waivers, immutable report bytes, and publication
+  intent. These are target contracts, not shipped Rust types or tables.
 
 Every safety-relevant projection can be rebuilt from canonical transitions;
 restart deliberately discards any authority that existed only in a live
@@ -1244,9 +1245,10 @@ true in the core, not only in wrappers:
 - the minimum scoped execution lease is extended with renew, explicit handoff,
   intent conversion, durable expiry/recovery, suspension, and host path-remap
   identity binding; and
-- work/run states, contributions, completion seal, report freeze, durable
-  publication intent, and dummy publication receipt are wired on a real
-  restart-safe path.
+- work/run states, contributions and completion seal are wired on a real
+  restart-safe path. The optional report freeze, durable publication intent
+  and adapter receipt remain deferred; any future publication capability must
+  be proved end to end before it can claim controlled finalization.
 
 Until those are process-tested, the existing MCP loop remains advisory. The
 host-control alpha can authorize only a declared local-mutation *turn* under a
@@ -1258,11 +1260,11 @@ effects, lifecycle transitions, or finalization.
 | Phase | Deliverable | Honest control claim |
 | --- | --- | --- |
 | 0 — observe and replay | Safe policy bootstrap, daemon/thin client, host mediation map, decision log, latency/false-refusal baseline; control decisions are shadow-only and never weaken existing user/host denials or shipped packet safety errors | Advisory observation only |
-| 1 — repair prerequisites | Transactional context snapshots, consistent task cursor, real task transitions, scoped lease lifecycle, contribution barrier, durable dummy publication path | No new control claim |
+| 1 — repair prerequisites | Transactional context snapshots, consistent task cursor, real task transitions, scoped lease lifecycle, contribution barrier; optional publication remains deferred | No new control claim |
 | 2 — freshness mediation | Impact-classed events, durable tentative/checkpointed delivery, recovery grants, pre-turn inline packet/delta, compaction re-delivery, checkpoint; enforce only unknown-schema, unsafe-packet, and failed-required-injection refusals | `turn_gated` delivery plus the minimal non-overridable refusal set |
 | 3 — scoped coordination | Normalized resource leases, intent/exclusive modes, suspension, handoff, recovery/fencing, out-of-band detection | `turn_gated` coordination |
 | 4 — widen refusal and action gate | Enable the broader replay-proven closed turn-refusal set, degraded-envelope matrix, and action authorization/begin/outcome mediator | `action_gated` for the declared capability set |
-| 5 — controlled completion/finalization | Stable completion cut, recovery/finalizer grants, contribution barrier, optional report freeze and receipted dummy publication | End-to-end controlled local loop |
+| 5 — controlled completion/finalization | Stable completion cut, recovery/finalizer grants, contribution barrier; any future optional report freeze and receipted publication must be proved end to end | End-to-end controlled local loop |
 
 The current implementation deliberately process-tests a narrow
 `observe`/`communicate` lifecycle plus lease-backed local-mutation turns while

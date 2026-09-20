@@ -9,6 +9,317 @@ use crate::{
     memory::DevelopmentNoopRedactor,
 };
 
+/// Retired operational rows are fixture data, never a schema opened by the
+/// current product. Export must still carry all of them without interpretation.
+fn with_retired_tables(path: &Path) {
+    populated(path);
+    let connection = Connection::open(path).expect("fixture");
+    connection
+        .execute_batch(
+            "CREATE TABLE task_claims (
+            task_id TEXT PRIMARY KEY, lease_id TEXT NOT NULL UNIQUE,
+            holder_session_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+            expires_at_ms INTEGER NOT NULL, revision INTEGER NOT NULL
+         ) STRICT;
+         CREATE TABLE task_claim_intents (
+            idempotency_key TEXT PRIMARY KEY, task_id TEXT NOT NULL,
+            holder_session_id TEXT NOT NULL, lease_json BLOB NOT NULL
+         ) STRICT;
+         CREATE TABLE publication_intents (
+            idempotency_key TEXT PRIMARY KEY,
+            report_hash TEXT NOT NULL REFERENCES objects(object_hash),
+            external_ref TEXT, state TEXT NOT NULL, last_error TEXT,
+            attempt_count INTEGER NOT NULL DEFAULT 0, receipt_json TEXT
+         ) STRICT;
+         INSERT INTO task_claims VALUES ('task', 'lease', 'old-session', 'claim', 1, 1);
+         INSERT INTO task_claim_intents VALUES ('claim', 'task', 'old-session', X'7B7D');
+         INSERT INTO publication_intents
+            SELECT 'publication', object_hash, 'external', 'pending', NULL, 0, NULL
+            FROM objects LIMIT 1;",
+        )
+        .expect("retired fixture rows");
+    // Historical canonical audit remains an opaque record with its original id.
+    let event = crate::CanonicalObject::mint(&serde_json::json!({
+        "schema_version": 1, "lease": {"task_id": "task"}
+    }))
+    .expect("historical object");
+    connection.execute(
+        "INSERT INTO objects (object_hash, object_kind, canonical_json) VALUES (?1, 'task_claim_event', ?2)",
+        rusqlite::params![event.hash().as_str(), event.bytes()],
+    ).expect("historical audit");
+}
+
+#[test]
+fn retired_tables_export_losslessly_and_import_reports_only_explicit_omissions() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    let target = directory.path().join("target.db");
+    with_retired_tables(&source);
+    let before = rows(&source);
+    let exported = export_json(&source, &file).expect("lossless export");
+    let input = fs::read(&file).expect("export bytes");
+    let imported = import_json(&file, &target).expect("fresh schema import");
+    let after = rows(&target);
+    for name in ["task_claims", "task_claim_intents", "publication_intents"] {
+        assert_eq!(
+            exported
+                .tables
+                .iter()
+                .find(|table| table.name == name)
+                .unwrap()
+                .rows,
+            1
+        );
+        assert!(!exported.left_out.iter().any(|table| table.name == name));
+        assert!(!after.contains_key(name), "new schema retained {name}");
+        assert!(!imported.tables.iter().any(|table| table.name == name));
+        let omitted = imported
+            .left_out
+            .iter()
+            .find(|table| table.name == name)
+            .unwrap();
+        assert_eq!(omitted.rows, 1);
+        assert!(omitted.reason.contains("explicitly retired"));
+        let exported_row = lines(&file)
+            .unwrap()
+            .find_map(|line| match line.unwrap() {
+                Line::Row { table, values } if table == name => Some(values),
+                _ => None,
+            })
+            .expect("retired row remains in export");
+        let declaration = exported
+            .tables
+            .iter()
+            .find(|table| table.name == name)
+            .unwrap();
+        let decoded = declaration
+            .columns
+            .iter()
+            .map(|column| decode(exported_row[column].clone()).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(decoded, before[name][0], "retired export changed {name}");
+    }
+    for (name, values) in &after {
+        if name != "work_schema_metadata" {
+            assert_eq!(values, &before[name], "retained table {name} changed");
+        }
+    }
+    assert_eq!(rows(&source), before, "source must be unchanged");
+    assert_eq!(
+        fs::read(&file).unwrap(),
+        input,
+        "import must not rewrite export"
+    );
+    assert!(
+        SqliteStore::open_unresolved(&target)
+            .unwrap()
+            .verify_all()
+            .unwrap()
+            .is_healthy()
+    );
+    assert!(matches!(
+        SqliteStore::open_unresolved(&source),
+        Err(crate::StoreError::DifferentBuildSchema)
+    ));
+}
+
+#[test]
+fn retired_table_rows_are_validated_and_counted_before_publication() {
+    let directory = crate::test_support::temp_home().expect("temporary directory");
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    with_retired_tables(&source);
+    export_json(&source, &file).unwrap();
+    let original: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    for (case, expected) in [
+        (
+            "unknown column",
+            "column unknown_payload of retired table task_claims has no place",
+        ),
+        (
+            "missing value",
+            "a row of table task_claims lacks column lease_id",
+        ),
+        (
+            "extra value",
+            "a row of table task_claims has undeclared column unknown_payload",
+        ),
+        (
+            "bad value",
+            "column lease_id of a row of table task_claims: a blob is written as json, text, or hex",
+        ),
+        (
+            "count swap",
+            "table task_claim_intents declares 2 rows but the file holds 1",
+        ),
+        (
+            "duplicate table",
+            "duplicate table task_claims in the header",
+        ),
+        (
+            "duplicate column",
+            "duplicate column task_id of table task_claims",
+        ),
+        ("second end", "the file has a second end line"),
+    ] {
+        let mut modified = original.clone();
+        let header = &mut modified[0]["engram_export"]["tables"];
+        let declarations = header.as_array_mut().unwrap();
+        let index = declarations
+            .iter()
+            .position(|table| table["name"] == "task_claims")
+            .unwrap();
+        match case {
+            "unknown column" => declarations[index]["columns"]
+                .as_array_mut()
+                .unwrap()
+                .push(Json::String("unknown_payload".into())),
+            "count swap" => {
+                declarations[index]["rows"] = Json::from(0);
+                let other = declarations
+                    .iter_mut()
+                    .find(|table| table["name"] == "task_claim_intents")
+                    .unwrap();
+                other["rows"] = Json::from(2);
+            }
+            "duplicate table" => declarations.push(declarations[index].clone()),
+            "duplicate column" => declarations[index]["columns"]
+                .as_array_mut()
+                .unwrap()
+                .push(Json::String("task_id".into())),
+            "second end" => modified.push(modified.last().unwrap().clone()),
+            _ => {
+                let row = modified
+                    .iter_mut()
+                    .find(|line| line["row"]["table"] == "task_claims")
+                    .unwrap();
+                let values = row["row"]["values"].as_object_mut().unwrap();
+                match case {
+                    "missing value" => {
+                        values.remove("lease_id");
+                    }
+                    "extra value" => {
+                        values.insert("unknown_payload".into(), Json::Null);
+                    }
+                    "bad value" => {
+                        values.insert(
+                            "lease_id".into(),
+                            serde_json::json!({"unknown_blob": "private-value"}),
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        fs::write(
+            &file,
+            modified
+                .iter()
+                .map(Json::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let target = directory.path().join("target.db");
+        let error = import_json(&file, &target).expect_err(case).to_string();
+        assert!(error.contains(expected), "{case}: wrong refusal: {error}");
+        assert!(
+            !error.contains("private-value"),
+            "{case}: leaked a cell value"
+        );
+        assert!(!target.exists(), "{case}: published invalid input");
+    }
+}
+
+#[test]
+fn omitted_format_marker_rows_are_validated_and_counted() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    let target = directory.path().join("target.db");
+    with_retired_tables(&source);
+    export_json(&source, &file).unwrap();
+    let original: Vec<Json> = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    for corrupt_value in [true, false] {
+        let mut modified = original.clone();
+        let expected = if corrupt_value {
+            let values = modified
+                .iter_mut()
+                .find(|line| line["row"]["table"] == "work_schema_metadata")
+                .unwrap()["row"]["values"]
+                .as_object_mut()
+                .unwrap();
+            let column = values.keys().next().unwrap().clone();
+            values.insert(
+                column.clone(),
+                serde_json::json!({"unknown_blob": "private-value"}),
+            );
+            format!(
+                "column {column} of a row of table work_schema_metadata: a blob is written as json, text, or hex"
+            )
+        } else {
+            let declarations = modified[0]["engram_export"]["tables"]
+                .as_array_mut()
+                .unwrap();
+            let index = declarations
+                .iter()
+                .position(|table| table["name"] == "work_schema_metadata")
+                .unwrap();
+            let mut marker = declarations.remove(index);
+            assert_eq!(marker["rows"], 1);
+            marker["rows"] = Json::from(0);
+            // Keep the global total unchanged; the marker's own count must refuse.
+            declarations
+                .iter_mut()
+                .find(|table| table["name"] == "task_claims")
+                .unwrap()["rows"] = Json::from(2);
+            declarations.insert(0, marker);
+            "table work_schema_metadata declares 0 rows but the file holds 1".into()
+        };
+        fs::write(
+            &file,
+            modified
+                .iter()
+                .map(Json::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let error = import_json(&file, &target)
+            .expect_err("invalid format marker")
+            .to_string();
+        assert!(error.contains(&expected), "wrong refusal: {error}");
+        assert!(!error.contains("private-value"), "leaked a cell value");
+        assert!(!target.exists(), "published invalid marker");
+    }
+}
+
+#[test]
+fn unknown_table_beside_retired_tables_still_refuses_by_name() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("store.jsonl");
+    let target = directory.path().join("target.db");
+    with_retired_tables(&source);
+    Connection::open(&source)
+        .unwrap()
+        .execute_batch("CREATE TABLE unknown_data (body TEXT);")
+        .unwrap();
+    export_json(&source, &file).unwrap();
+    let error = import_json(&file, &target).unwrap_err().to_string();
+    assert!(error.contains("table unknown_data has no place"), "{error}");
+    assert!(!target.exists());
+}
+
 fn actor(session: &str) -> ActorContext {
     ActorContext {
         actor_id: session.into(),

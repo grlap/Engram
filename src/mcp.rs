@@ -791,14 +791,7 @@ fn verb(outcome: Result<Receipt, VerbError>, words: &AgentVerbs) -> CallToolResu
 )]
 pub fn store_error_value(error: &StoreError) -> Value {
     let details = match error {
-        StoreError::TaskClaimHeld { holder, expires_at } => json!({
-            "holder": holder,
-            "expires_at_ms": expires_at,
-            "expires_at": chrono::DateTime::<Utc>::from_timestamp_millis(*expires_at)
-                .map(|value| value.to_rfc3339()),
-        }),
         StoreError::NoteIdempotencyConflict(key)
-        | StoreError::ClaimIdempotencyConflict(key)
         | StoreError::ContradictionIdempotencyConflict(key) => {
             json!({ "idempotency_key": key })
         }
@@ -1048,9 +1041,7 @@ fn ambiguous_work_reference_details(
 fn error_code(error: &StoreError) -> &'static str {
     match error {
         StoreError::StoreNotInitialized => "store_not_initialized",
-        StoreError::TaskClaimHeld { .. } => "task_claim_held",
         StoreError::NoteIdempotencyConflict(_) => "note_idempotency_conflict",
-        StoreError::ClaimIdempotencyConflict(_) => "claim_idempotency_conflict",
         StoreError::ContradictionIdempotencyConflict(_) => "contradiction_idempotency_conflict",
         StoreError::ContradictionAlreadyRecorded(_) => "contradiction_already_recorded",
         StoreError::InvalidContradiction(_) => "invalid_contradiction",
@@ -1104,7 +1095,6 @@ fn error_code(error: &StoreError) -> &'static str {
         | StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
         | StoreError::InvalidStoredHash(_)
-        | StoreError::InvalidStoredClaim(_)
         | StoreError::InvalidMemoryProjection(_)
         | StoreError::InvalidTaskBinding
         | StoreError::InvalidTaskProjection(_)

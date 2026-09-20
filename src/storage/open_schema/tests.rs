@@ -1195,17 +1195,13 @@ fn same_name_wrong_core_table_definition_is_refused_without_mutation() {
     fixture
         .execute_batch(
             "PRAGMA foreign_keys = OFF;
-             ALTER TABLE publication_intents RENAME TO publication_intents_old;
-             CREATE TABLE publication_intents (
+             ALTER TABLE note_intents RENAME TO note_intents_old;
+             CREATE TABLE note_intents (
                  idempotency_key TEXT PRIMARY KEY,
-                 report_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 external_ref TEXT,
-                 state TEXT NOT NULL,
-                 last_error TEXT,
-                 attempt_count INTEGER DEFAULT 0,
-                 receipt_json TEXT
+                 request_hash TEXT NOT NULL,
+                 receipt_json BLOB
              ) STRICT;
-             DROP TABLE publication_intents_old;
+             DROP TABLE note_intents_old;
              PRAGMA foreign_keys = ON;",
         )
         .expect("replace durable table with a weaker same-name definition");

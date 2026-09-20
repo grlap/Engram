@@ -1,10 +1,8 @@
-//! Local task lifecycle, finalization barrier, context packets, task deltas,
-//! and frozen report records.
+//! Host-local task bindings, context packets, and task deltas.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uuid::Uuid;
 
 use crate::ObjectHash;
 
@@ -24,99 +22,6 @@ pub enum TaskState {
     ReportReady,
     Publishing,
     Published,
-}
-
-/// One participant's state at the task finalization barrier.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum ParticipantReadiness {
-    Working {
-        participant: String,
-    },
-    Ready {
-        participant: String,
-        contribution: ObjectHash,
-    },
-    Waived {
-        participant: String,
-        waived_by: String,
-        reason: String,
-    },
-}
-
-impl ParticipantReadiness {
-    /// Returns the participant represented by this barrier entry.
-    #[must_use]
-    pub fn participant(&self) -> &str {
-        match self {
-            Self::Working { participant }
-            | Self::Ready { participant, .. }
-            | Self::Waived { participant, .. } => participant,
-        }
-    }
-
-    /// Whether this participant is accounted for before report freeze.
-    #[must_use]
-    pub fn is_accounted_for(&self) -> bool {
-        matches!(self, Self::Ready { .. } | Self::Waived { .. })
-    }
-}
-
-/// Barrier that prevents a coordinator from freezing a report while a peer
-/// is still contributing, unless that omission is explicitly waived.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct FinalizationBarrier {
-    pub task_id: TaskId,
-    pub participants: Vec<ParticipantReadiness>,
-}
-
-impl FinalizationBarrier {
-    /// Whether every expected participant contributed or was explicitly
-    /// waived. An empty participant list is invalid and never ready.
-    #[must_use]
-    pub fn is_satisfied(&self) -> bool {
-        !self.participants.is_empty()
-            && self
-                .participants
-                .iter()
-                .all(ParticipantReadiness::is_accounted_for)
-    }
-
-    /// Participants whose contribution still blocks report freeze.
-    #[must_use]
-    pub fn waiting_on(&self) -> Vec<&str> {
-        self.participants
-            .iter()
-            .filter(|participant| !participant.is_accounted_for())
-            .map(ParticipantReadiness::participant)
-            .collect()
-    }
-}
-
-/// Current exclusive execution claim. The mutable row is a coordination
-/// projection; every transition also emits an immutable task event.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TaskLease {
-    pub task_id: TaskId,
-    pub lease_id: String,
-    pub holder: SessionId,
-    pub idempotency_key: String,
-    /// Original requested duration. It fingerprints a retry independently of
-    /// the wall-clock instant at which the transport repeats the call.
-    #[serde(default)]
-    pub ttl_seconds: i64,
-    pub expires_at: DateTime<Utc>,
-    pub revision: i64,
-}
-
-/// Immutable audit event for task ownership transitions.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TaskClaimEvent {
-    pub schema_version: u16,
-    pub lease: TaskLease,
-    pub previous_holder: Option<SessionId>,
-    pub actor: ActorContext,
-    pub created_at: DateTime<Utc>,
 }
 
 /// Header returned with a context packet. The hash reproduces content; the
@@ -282,83 +187,4 @@ pub struct TaskBindReceipt {
     pub task: LocalTask,
     pub joined: bool,
     pub cursor: ChangeCursor,
-}
-
-/// Structured report sections frozen before any publication attempt.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ReportSections {
-    pub outcome: String,
-    pub work_performed: String,
-    pub decisions: String,
-    pub constraints_and_conventions: String,
-    pub validation_and_evidence: String,
-    pub unresolved_follow_ups: String,
-    pub promotion_candidates: String,
-    pub provenance: String,
-}
-
-/// Immutable report payload. Publication binds the resulting object hash to
-/// exactly one idempotency key.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct FrozenReport {
-    pub schema_version: u16,
-    pub report_id: Uuid,
-    pub task_id: TaskId,
-    pub supersedes: Option<ObjectHash>,
-    pub source_memory_versions: Vec<ObjectHash>,
-    pub participant_contributions: Vec<ObjectHash>,
-    pub waived_participants: Vec<String>,
-    pub sections: ReportSections,
-    pub actor: ActorContext,
-    pub created_at: DateTime<Utc>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn hash(seed: &str) -> ObjectHash {
-        ObjectHash::from_canonical_bytes(seed.as_bytes())
-    }
-
-    #[test]
-    fn finalization_waits_for_every_participant() {
-        let task_id = TaskId::new();
-        let barrier = FinalizationBarrier {
-            task_id,
-            participants: vec![
-                ParticipantReadiness::Ready {
-                    participant: "codex".into(),
-                    contribution: hash("codex contribution"),
-                },
-                ParticipantReadiness::Working {
-                    participant: "fable".into(),
-                },
-            ],
-        };
-
-        assert!(!barrier.is_satisfied());
-        assert_eq!(barrier.waiting_on(), vec!["fable"]);
-    }
-
-    #[test]
-    fn explicit_waiver_satisfies_the_barrier() {
-        let barrier = FinalizationBarrier {
-            task_id: TaskId::new(),
-            participants: vec![
-                ParticipantReadiness::Ready {
-                    participant: "codex".into(),
-                    contribution: hash("codex contribution"),
-                },
-                ParticipantReadiness::Waived {
-                    participant: "fable".into(),
-                    waived_by: "coordinator".into(),
-                    reason: "session ended before contributing".into(),
-                },
-            ],
-        };
-
-        assert!(barrier.is_satisfied());
-        assert!(barrier.waiting_on().is_empty());
-    }
 }

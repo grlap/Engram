@@ -806,8 +806,9 @@ Domain semantics bind to interfaces, not backends: `Store` (append / get /
 list-heads), `Index` (rebuild / search), optional `BackupAdapter`,
 `PortableStoreAdapter`, and later `Sync`, `WorkSourceAdapter` and
 `PublicationAdapter` (§9.2), `Redactor` (§7), and `Signer` (optional, §7). V1
-ships `SqliteStore`, recovery snapshot/restore, the portable sequential
-contract, and a side-effect-free dummy publication adapter. Git, internal
+ships `SqliteStore` and recovery snapshot/restore. The portable sequential
+contract is a target; publication adapters are deferred, and the unwired
+dummy implementation has been removed. Git, internal
 object storage, and later service transports implement the appropriate port
 without changing work semantics.
 
@@ -1321,9 +1322,8 @@ reproducible after the source changes or disappears.
 - **V1 portability/compatibility:** previewed, round-trip Beads snapshot
   import/export; deterministic work-graph recovery snapshot/restore;
   sequential portable publish/handoff/restore with cadence, lag reporting,
-  head CAS, and divergence refusal; a dummy publication adapter proving
-  frozen-payload idempotency with no external side effects. The dummy adapter
-  remains explicitly side-effect free.
+  head CAS, and divergence refusal. Publication remains a separate deferred
+  capability whose frozen-payload idempotency must be proved end to end.
 - **Later optional modes:** live concurrent `Sync`, real GitHub/Jira/
   proprietary intake and publication, comments, and link-backs. Automatic
   tracker mirroring and autonomous reprioritization remain non-goals.
@@ -1436,7 +1436,7 @@ Codex::AgentMemory):
 | --- | --- |
 | Name | **Engram** — settled (binary: `engram`). |
 | Implementation language | **Rust.** |
-| External adapters | Optional on intake, durability, and publication. V1 targets deterministic recovery plus sequential portable handoff, keeps a dummy publication adapter, and targets round-trip Beads compatibility; no proprietary integration is required (§9.4). |
+| External adapters | Optional on intake, durability, and publication. V1 targets deterministic recovery plus sequential portable handoff, defers publication adapters, and targets round-trip Beads compatibility; no proprietary integration is required (§9.4). |
 | Identity source | Proprietary runtime context: instruction/authority arrives as text through the tools and skills in use — asserted context, not cryptographic identity (§7). No SSO/LDAP in V1. |
 | Cross-host storage / team scope | V1 starts local and adds optional sequential `portable` handoff for one active host. Concurrent team scope remains deferred with its design preserved (§3.3). |
 | Redaction backend | None selected. Port + safe defaults ship; the no-op development implementation is visibly labeled and implies no compliance assurance (§7). |
@@ -1480,7 +1480,7 @@ outcomes:
 | Ticketing | Never mirror; adapter port; read-only first | Agree, but snapshot mutable sources for reproducible provenance | **Fable** boundary + **Codex** snapshots (§9) |
 | Evaluation | — | Golden queries, precision-first metrics, retrieval decision logs, in v1 | **Codex** (§10) |
 | Round-2 hardening | Draft 0.1 as adjudicated | Four clarifications: fail-closed pinned contradictions; canonical-bytes contract (JCS); identity assurance not overclaimed; purge realism vs. Git history | **Codex**, all four adopted (§4.1, §3.1.1, §7, §6.5) → Draft 0.2, ACKed by both authors |
-| Greg's decisions | Round 3 — name Engram; Rust; proprietary tracker → `DummyTrackerAdapter` in V1; runtime-context identity, no SSO/LDAP; no DLP backend selected; no team scope in V1 (Greg, relayed via Codex::AgentMemory) | | Recorded (§12) → Draft 0.3 |
+| Greg's decisions | Round 3 — name Engram; Rust; proprietary tracker → `DummyTrackerAdapter` in V1; runtime-context identity, no SSO/LDAP; no DLP backend selected; no team scope in V1 (Greg, relayed via Codex::AgentMemory) | | Recorded (§12) → Draft 0.3. *Publication scaffolding superseded 2026-09-20: the unwired dummy adapter is removed; publication remains a deferred optional capability (§9.2).* |
 | Dual memory / report model | Greg: local working memory while work runs; polished final report published to the tracker at finalization. Codex elaboration: SQLite canonical in V1; Git store deferred, not rejected; finalization state machine; report contract with cited memory/version IDs; configurable post-publication retention | | Adopted (§1, §2.6, §3, §9.5) → Draft 0.3 |
 | Round-4 correction | Failure transition returned to `finalization_pending` | Freeze the report at `report_ready`: immutable report + hash bound to the idempotency key; failure retries identical bytes, never re-enters distillation; revision = superseding version + new intent. Endorsed keeping §3.1.1/JCS in V1 | **Codex**, adopted (§2.6, §9.5) → Draft 0.4, final ACK by both authors |
 | Round-5 product test | Greg asked whether the authors would actually use Engram and clarified that multi-session work is normal. Fable identified capture ceremony, double entry, claims, and peer visibility as adoption blockers. | Codex separated packet hash from ordered event cursor, added leases/recovery, finalization barrier, and stable project identity across worktrees. | **Both**, joint position confirmed: narrow Engram to concurrent execution memory with three visibility rings, one-write-many-views, deterministic report assembly, and the backlog/execution seam (§1–5, §8–9) → Draft 0.5 |

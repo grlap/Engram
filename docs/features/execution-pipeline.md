@@ -25,9 +25,7 @@ context delivery, host execution observations, typed verification/environment
 evidence, immutable policy-selected obligation rule sets with the stock
 source-change/test rule plus operator-selected exact check/environment pins,
 obligation-gated `CompletionSeal`, the
-`WorkSourceSnapshot` type and its admission path, and a
-side-effect-free dummy publication adapter that proves the idempotency
-contract.
+`WorkSourceSnapshot` type and its admission path.
 
 Specified but not yet shipped: a `WorkSourceAdapter` intake port; fenced report
 assembly (`ReportAssemblyClaim`, `report_ready`) and durable publication
@@ -78,7 +76,7 @@ frozen artifact back.
 | **Decomposition** (admitted by Engram) | splitting the root once the code is visible, under the holder's claim or the ordinary project-bound planning path | child `WorkItem`s and their `WorkRun`s, registered in the existing `RootExecution`; each run is separately claimable, owns a dense run feed, and receives a seal on completion | under Engram admission |
 | **Obligations** (Engram; typed canonical rule sets shipped) | selecting a bounded immutable rule set through project policy and turning matching host observations into concrete duties on their runs | a canonical `ObligationRuleSet` hash frozen into each observation and immutable `WorkObligation` definition (run, rule-set hash, rule version, triggering observation, required evidence kind), immutable resolution events (`satisfied` by matching verification evidence, `waived` by an attributed host-authorized decision), and exact definition/resolution bindings in `CompletionSeal`; a rebuildable projection holds current state | no — a policy successor affects only later observations and obligation state advances only by appending a resolution through an Engram transaction |
 | **Capability & context assignment** (fine pass, under a claim; **planned**) | what each run needs delivered | per-run context packets (packets carry `work_id` and feed heads today, not `run_id`) | yes, per run |
-| **Publication** (adapter) | returning the report to the ticket source | a frozen report, a publication intent with an idempotency key, a receipt (**planned** beyond the dummy contract) | no |
+| **Publication** (adapter) | returning the report to the ticket source | a frozen report, a publication intent with an idempotency key, a receipt (**planned**) | no |
 
 ## The flow
 
@@ -269,8 +267,8 @@ capability requirements and packet assignment do not.
    environment evidence, checkpoint that typed evidence, and freeze the exact
    obligation and bounded environment basis in `CompletionSeal`. Then
    exercise the report path; until fenced report assembly and a real
-   side-effecting adapter exist, the dummy receipt does not claim the ticket
-   was updated.
+   side-effecting adapter exist, no publication receipt or ticket-update claim
+   can be produced by this pipeline.
 4. Only after that loop has closed by hand several times: automated evidence
    gathering, then the sufficiency check, then capability matching.
 
@@ -279,8 +277,8 @@ capability requirements and packet assignment do not.
 - **`WorkSourceAdapter` intake port.** The `WorkSourceSnapshot` type and its
   admission path exist; the port trait does not.
 - **Fenced report assembly and durable publication intents**
-  (`ReportAssemblyClaim`, `report_ready`). Only `CompletionSeal` and the
-  dummy adapter's idempotency contract exist.
+  (`ReportAssemblyClaim`, `report_ready`). `CompletionSeal` exists; the unwired
+  dummy adapter and unused publication scaffolding have been removed.
 - **Capability requirements on work items** matched against the host's
   capability map at bind. Today `session_bind` carries only
   `capability_map_revision`; work items have no requirement field and no
@@ -298,4 +296,5 @@ capability requirements and packet assignment do not.
   general rule language remain planned.
 - **Automated evidence gathering and the sufficiency check** live in the
   external intake system, not in this repository.
-- **A real publication adapter.** V1 proves the contract against the dummy.
+- **A publication adapter.** No adapter ships; its retry contract must be
+  proved with the future end-to-end report pipeline.

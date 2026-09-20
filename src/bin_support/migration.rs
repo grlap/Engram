@@ -18,7 +18,8 @@ pub(crate) enum MigrationCommand {
         out: PathBuf,
     },
     /// Create a new store in the current format from an export file.
-    /// Record ids are kept as they are. Does not install or activate the store.
+    /// Record ids are kept as they are; explicitly retired data is reported.
+    /// Does not install or activate the store.
     Import {
         /// File written by `migration export`.
         #[arg(long)]

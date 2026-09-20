@@ -1463,7 +1463,7 @@ deliberately a single next command, and the `done` verb exposes exactly that
 one entry in its `next` list. Recovery guidance is not a replayable result: it
 is rebuilt from a coherent current snapshot so a retry observes a child,
 contribution, obligation, or acceptance barrier that moved. Native `done` and
-the fourteen-tool MCP surface return this as a typed refusal receipt. The JSON
+the fifteen-tool MCP surface return this as a typed refusal receipt. The JSON
 core prints the same typed refusal receipt on stdout and exits with status 1;
 it does not wrap the refusal in an error envelope. Short-ref ambiguity likewise
 returns a stable

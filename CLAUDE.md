@@ -58,9 +58,8 @@ their presence in a file alone does not prove delivery.
   vocabulary; receipt shaping, terse show rendering, and word handlers live
   in owning modules, and `src/verbs/tests/` mirrors those modules; its public
   re-exports preserve the existing `crate::verbs` paths.
-- `src/tracker.rs` currently owns the neutral external adapter port and
-  side-effect-free dummy publication adapter; vendor-specific types stay
-  outside the core.
+- External publication adapters are deferred; no publication port or dummy
+  implementation is shipped. Vendor-specific types stay outside the core.
 - Engram owns host-local work from creation/decomposition through completion.
   An item may cite an immutable external snapshot, but Engram never silently
   mirrors external task state.
@@ -133,12 +132,15 @@ A record's id is a random UUID minted when the record is stored. Ids travel
 unchanged: an import never recomputes an id, never rewrites a link because a
 record changed shape, and never keeps a copy of the old format beside the new.
 A table or column the current format has no place for is refused by name, not
-dropped in silence. The one exception is a column this build has explicitly
-retired, named in its retired-column list (today: the staged delivery page's
-fingerprint, retired on 2026-09-17 at Greg's decision); import stores nothing
-for it and reports it with the values it carried. That list is the whole of
-that authority. The operator stops store consumers, keeps the old file as
-the backup, and swaps the files; see
+dropped in silence. Import may omit only explicitly named retired data:
+the staged delivery page's fingerprint column (retired 2026-09-17), and the
+obsolete task_claims, task_claim_intents, and publication_intents tables
+(retired 2026-09-20 during Greg's requested cleanup). Import reports retired
+column value counts and retired table row counts; canonical objects and ids
+remain unchanged. Unknown columns in a retired table still refuse. These
+lists are the whole of that authority; export does not filter retired data.
+The operator stops store consumers, keeps the old file as the backup, and
+swaps the files; see
 [full store migration](docs/features/full-store-migration.md).
 Ordinary store opening remains strict and never migrates implicitly. Every
 schema marker stays 1 until release; change schemas in place, guarded by the

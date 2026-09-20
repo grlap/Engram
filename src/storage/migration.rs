@@ -47,6 +47,65 @@ fn is_retired_column(table: &str, column: &str) -> bool {
         .any(|(retired_table, retired_column)| *retired_table == table && *retired_column == column)
 }
 
+/// Explicitly retired operational scaffolding. This is not an old schema or
+/// migration chain: only these named tables may be omitted on fresh import,
+/// and only when every declared column is in the corresponding allowed set.
+/// Canonical objects and task-feed history are still copied unchanged.
+fn retired_table_columns(table: &str) -> Option<&'static [&'static str]> {
+    match table {
+        "task_claims" => Some(&[
+            "task_id",
+            "lease_id",
+            "holder_session_id",
+            "idempotency_key",
+            "expires_at_ms",
+            "revision",
+        ]),
+        "task_claim_intents" => Some(&[
+            "idempotency_key",
+            "task_id",
+            "holder_session_id",
+            "lease_json",
+        ]),
+        "publication_intents" => Some(&[
+            "idempotency_key",
+            "report_hash",
+            "external_ref",
+            "state",
+            "last_error",
+            "attempt_count",
+            "receipt_json",
+        ]),
+        _ => None,
+    }
+}
+
+/// Validate the complete row even when its table is explicitly retired.
+/// Retirement never excuses a malformed value or an undeclared column.
+fn validate_omitted_row(
+    table: &str,
+    columns: &[String],
+    mut values: serde_json::Map<String, Json>,
+) -> Result<(), MigrationError> {
+    for column in columns {
+        let value = values
+            .remove(column)
+            .ok_or_else(|| refused(format!("a row of table {table} lacks column {column}")))?;
+        decode(value).map_err(|error| match error {
+            MigrationError::Refused(reason) => refused(format!(
+                "column {column} of a row of table {table}: {reason}"
+            )),
+            other => other,
+        })?;
+    }
+    if let Some(extra) = values.keys().next() {
+        return Err(refused(format!(
+            "a row of table {table} has undeclared column {extra}"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
     #[error("migration store: {0}")]
@@ -676,9 +735,9 @@ fn header_of(file: &Path) -> Result<Header, MigrationError> {
 /// Creates a new store at `out` in the current format from an export file.
 ///
 /// Rows go in by column name under the ids they already have. A table or
-/// column the current format has no place for is refused by name, never
-/// dropped in silence. The doctor must find the result healthy before it is
-/// published, and an existing `out` is never replaced.
+/// column the current format has no place for is refused by name, except the
+/// explicitly retired lists reported as omissions. The doctor must find the
+/// result healthy before it is published, and an existing `out` is never replaced.
 ///
 /// # Errors
 /// Refuses a damaged or truncated file, an unknown table or column, a broken
@@ -705,16 +764,51 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     transaction.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
 
     let mut inserts = HashMap::new();
+    let mut omitted = HashMap::new();
+    let mut declared_names = std::collections::HashSet::new();
     let mut tables = Vec::new();
     let mut left_out = header.left_out.clone();
     let mut retired_fields: Vec<RetiredField> = Vec::new();
     for table in &header.tables {
+        if !declared_names.insert(&table.name) {
+            return Err(refused(format!(
+                "duplicate table {} in the header",
+                table.name
+            )));
+        }
+        let mut declared_columns = std::collections::HashSet::new();
+        for column in &table.columns {
+            if !declared_columns.insert(column) {
+                return Err(refused(format!(
+                    "duplicate column {column} of table {}",
+                    table.name
+                )));
+            }
+        }
+        if let Some(known) = retired_table_columns(&table.name) {
+            for column in &table.columns {
+                if !known.contains(&column.as_str()) {
+                    return Err(refused(format!(
+                        "column {column} of retired table {} has no place in the current format",
+                        table.name
+                    )));
+                }
+            }
+            left_out.push(LeftOut {
+                name: table.name.clone(),
+                rows: table.rows,
+                reason: "explicitly retired operational table; rows remain in the source export, not the new store".into(),
+            });
+            omitted.insert(table.name.clone(), (table.columns.clone(), 0_u64));
+            continue;
+        }
         if FORMAT_MARKER_TABLES.contains(&table.name.as_str()) {
             left_out.push(LeftOut {
                 name: table.name.clone(),
                 rows: table.rows,
                 reason: "format marker; the new store keeps its own".into(),
             });
+            omitted.insert(table.name.clone(), (table.columns.clone(), 0_u64));
             continue;
         }
         let (columns, retired): (Vec<String>, Vec<String>) = table
@@ -756,16 +850,21 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
     for line in lines(file)?.skip(1) {
         match line? {
             Line::Header(_) => return Err(refused("the file has a second header")),
+            Line::End { .. } if ended.is_some() => {
+                return Err(refused("the file has a second end line"));
+            }
             Line::End { rows } => ended = Some(rows),
             Line::Row { .. } if ended.is_some() => {
                 return Err(refused("the file has rows after its end line"));
             }
             Line::Row { table, mut values } => {
                 seen += 1;
+                if let Some((columns, count)) = omitted.get_mut(&table) {
+                    validate_omitted_row(&table, columns, values)?;
+                    *count += 1;
+                    continue;
+                }
                 let Some((insert, columns, retired, inserted)) = inserts.get_mut(&table) else {
-                    if header.tables.iter().any(|declared| declared.name == table) {
-                        continue;
-                    }
                     return Err(refused(format!(
                         "the file has a row for undeclared table {table}"
                     )));
@@ -811,8 +910,12 @@ pub fn import_json(file: &Path, out: &Path) -> Result<ImportReport, MigrationErr
         .into_iter()
         .map(|(name, (_, _, _, rows))| (name, rows))
         .collect::<HashMap<_, _>>();
-    for table in &tables {
-        let inserted = inserted[&table.name];
+    for table in &header.tables {
+        let inserted = inserted
+            .get(&table.name)
+            .copied()
+            .or_else(|| omitted.get(&table.name).map(|(_, count)| *count))
+            .ok_or_else(|| refused(format!("unaccounted table {}", table.name)))?;
         if inserted != table.rows {
             return Err(refused(format!(
                 "table {} declares {} rows but the file holds {}",

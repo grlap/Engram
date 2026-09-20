@@ -15,7 +15,6 @@ pub mod memory;
 pub mod project;
 pub mod schema;
 pub mod storage;
-pub mod tracker;
 pub mod verbs;
 pub mod work_service;
 
@@ -48,21 +47,20 @@ pub use domain::{
     EnvironmentComponents, EnvironmentEvidence, EnvironmentEvidenceInput,
     EnvironmentEvidenceReference, ExecutionObservation, ExecutionObservationInput,
     ExecutionObservationReference, ExecutionOutcome, ExecutionSourceBasis, FeedId, FeedPosition,
-    FinalizationBarrier, ForgetProjectMemoryRequest, FrozenReport, GateEvidenceRecord,
-    HostPathPolicy, IssuedTurnGrant, LeaseBasis, LeaseKind, LeaseMode, LocalTask,
-    MAX_SESSION_ID_BYTES, MemoryContradictionEvent, MemoryContradictionReceipt, MemoryId,
-    MemoryKind, MemoryRecord, MemoryStatus, MemorySummary, MemoryVersion, NoteReceipt, NoteRequest,
-    NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION, ObligationRuleDefinition,
-    ObligationRuleSet, ObservedActionBeginDecision, ObservedTurnDecision, OfferWorkHandoffRequest,
-    OpenWorkObligation, PLAIN_READY_REASON, PacketSafety, ParentTurnState, ParticipantMembership,
-    ParticipantReadiness, ProjectId, ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow,
+    ForgetProjectMemoryRequest, GateEvidenceRecord, HostPathPolicy, IssuedTurnGrant, LeaseBasis,
+    LeaseKind, LeaseMode, LocalTask, MAX_SESSION_ID_BYTES, MemoryContradictionEvent,
+    MemoryContradictionReceipt, MemoryId, MemoryKind, MemoryRecord, MemoryStatus, MemorySummary,
+    MemoryVersion, NoteReceipt, NoteRequest, NoteVisibility, OBLIGATION_RULE_SET_SCHEMA_VERSION,
+    ObligationRuleDefinition, ObligationRuleSet, ObservedActionBeginDecision, ObservedTurnDecision,
+    OfferWorkHandoffRequest, OpenWorkObligation, PLAIN_READY_REASON, PacketSafety, ParentTurnState,
+    ParticipantMembership, ProjectId, ProjectMemoryFull, ProjectMemoryList, ProjectMemoryListRow,
     ProjectMemoryMutationReceipt, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
     ProjectPolicyOperation, ReadyWork, RecordWorkEvidenceRequest, RejectRequiredChildReceipt,
     RejectRequiredChildRequest, ReleaseWorkRequest, RememberProjectMemoryRequest,
     ReopenWorkRequest, RequiredChildResolution, RequiredChildWaiver, ResolutionAssurance,
     ResourceCoverage, ResourceSubject, ReviseWorkRequest, RootContribution, RootExecution,
     RootExecutionId, RootExecutionState, Scope, Sensitivity, SessionId, SessionIdAdmissionError,
-    SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskLease, TaskState,
+    SessionPhase, TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskState,
     TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
     TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
     TurnEvaluationInput, TurnGrantBasis, TurnGrantState, TurnGrantSupersession,
@@ -109,7 +107,6 @@ pub use storage::{
     ObligationRuleSetUpdateReceipt, SqliteStore, StoreError, TaskChange, describe_host_path_policy,
     install_store_copy_without_replacing,
 };
-pub use tracker::{DummyTrackerAdapter, PublicationReceipt, TrackerAdapter};
 pub use verbs::{
     AddInput, AgentVerbs, ClaimInput, ClaimUnderInput, DoneInput, EvaluateInput, ForgetInput,
     GateInput, Guidance, HandoffAction, HandoffInput, LsInput, MemoriesInput, NextInput, NoteInput,

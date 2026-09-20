@@ -566,15 +566,6 @@ impl SqliteStore {
                  canonical_json BLOB NOT NULL,
                  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
              ) STRICT;
-             CREATE TABLE IF NOT EXISTS publication_intents (
-                 idempotency_key TEXT PRIMARY KEY,
-                 report_hash TEXT NOT NULL REFERENCES objects(object_hash),
-                 external_ref TEXT,
-                 state TEXT NOT NULL,
-                 last_error TEXT,
-                 attempt_count INTEGER NOT NULL DEFAULT 0,
-                 receipt_json TEXT
-             ) STRICT;
              CREATE VIRTUAL TABLE IF NOT EXISTS object_fts USING fts5(
                  object_hash UNINDEXED,
                  title,
@@ -720,20 +711,6 @@ impl SqliteStore {
                   UNIQUE(task_id, task_cursor),
                   UNIQUE(task_id, object_hash)
               ) STRICT;
-              CREATE TABLE IF NOT EXISTS task_claims (
-                 task_id TEXT PRIMARY KEY,
-                 lease_id TEXT NOT NULL UNIQUE,
-                 holder_session_id TEXT NOT NULL,
-                 idempotency_key TEXT NOT NULL,
-                 expires_at_ms INTEGER NOT NULL,
-                 revision INTEGER NOT NULL
-             ) STRICT;
-             CREATE TABLE IF NOT EXISTS task_claim_intents (
-                 idempotency_key TEXT PRIMARY KEY,
-                 task_id TEXT NOT NULL,
-                 holder_session_id TEXT NOT NULL,
-                 lease_json BLOB NOT NULL
-             ) STRICT;
              CREATE TABLE IF NOT EXISTS control_observations (
                  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                  session_id TEXT NOT NULL,

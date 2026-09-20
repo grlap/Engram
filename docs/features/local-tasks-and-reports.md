@@ -22,6 +22,11 @@ run is active, its working memory is the operational source of truth for its
   root members. Root memory is shared by default; agent-scoped scratch remains
 private.
 
+Report assembly and publication below are target design, not shipped APIs.
+The current local-work completion seal is implemented; the obsolete standalone
+barrier/report types and dummy publication adapter have been removed. Consult
+[the installed inventory](../shipped.md) for implemented capabilities.
+
 ## Multi-session coordination
 
 - A stable project id resolves every session and isolated worktree to one

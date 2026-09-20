@@ -85,7 +85,8 @@ once, at commit. It then rebuilds the search indexes and runs the full doctor.
 The new file is published, by a non-replacing hard link, only when:
 
 - the file has its header and end line and every declared row count matches;
-- every table and column in the file has a place in the current format;
+- every table and column has a place in the current format or is explicitly
+  named as retired below;
 - no reference between rows is broken;
 - SQLite's integrity check passes and the doctor finds the store healthy;
 - every delivery page staged but not yet acknowledged can be admitted (below).
@@ -94,13 +95,25 @@ Anything else is refused with the table, column or record named, and no output
 file exists afterwards. A refusal names the place and the shape it met, never
 the value in a cell: the file holds private bodies, and a refusal reaches the
 operator's terminal. A table or column that the current format has no place
-for is never dropped in silence. The one exception is a column this build has
-explicitly retired, named in its retired-column list: it appears in the report
-under `retired_fields` with the number of values it carried, its rows having
-gone in without it. Any other unknown table or column refuses by name. Today
-one column is retired: a fingerprint of the staged delivery page that nothing
-compared. A store written by a design this build no longer knows is refused
-the same way; the build that still reads it is kept beside its backups.
+for is never dropped in silence. Explicit retirement is limited to:
+
+- `work_session_state.tentative_delivery_payload_hash`: reported under
+  `retired_fields` with its non-null value count; the rest of each row is
+  imported.
+- `task_claims`, `task_claim_intents`, and `publication_intents`: obsolete
+  whole-task advisory claims and unwired publication scaffolding. Import reports
+  each table under `left_out` with its row count and retirement reason. It does
+  not recreate those tables or turn their rows into live work claims.
+
+Export still carries all retired data unchanged. Import validates retired rows
+and their declared counts, and refuses any column outside the explicit retired
+column set for that table. Canonical objects, including historical task claim
+and report records, keep their ids, bytes and links. The new database holds
+only the current schema, not an archived copy of the retired tables. Keep the
+source database and JSON export to retain those operational rows. Every other
+unknown table or column still refuses by name. A store written by a design
+this build no longer knows is refused the same way; the build that still
+reads it is kept beside its backups.
 
 The store's own format marker is not imported; the new store keeps its own.
 A table this build drops and recreates whenever it repairs a store — the
@@ -137,7 +150,8 @@ the session rows checked.
 
 A format change edits the schema in place and teaches import the difference:
 a renamed column is mapped, a reshaped record is rewritten from its nested JSON
-under its existing id, a retired column is named in the retired-column list.
+under its existing id, and retired data is named in the explicit column/table
+lists. Export never performs these changes.
 There is no profile detection, no archive format, and no chain of versions to
 maintain. What the current build cannot name, it refuses, and the operator
 converts with the last build that could.
@@ -153,13 +167,15 @@ converts with the last build that could.
    refuses a destination that has a `-wal`, `-shm` or `-journal` file beside
    it before it stages anything; the swap in the next step is the operator's
    and no check here can see it.
-4. Move the old file aside as the backup **together with its `-wal` and
-   `-shm` files**: they hold committed data until the next checkpoint and
-   belong to that file alone. Put the new file in its place with nothing of
-   the old one beside it; SQLite applies whatever log it finds at a database's
-   name to that database.
+4. Inspect the import report, including `left_out` and `retired_fields`, before
+   deciding to activate it. Move the old file aside as the backup **together
+   with its `-wal` and `-shm` files**: they hold committed data until the next
+   checkpoint and belong to that file alone. Put the new file in its place
+   with nothing of the old one beside it; SQLite applies whatever log it
+   finds at a database's name to that database.
 5. Start the consumers again.
 
-Live claims, leases, grants and delivery state are rows like any other and are
-carried as they are. The imported store is the same store on the same host: do
-not run it beside its source, and do not treat it as authority on another host.
+Current work claims, leases, grants and delivery state are carried as they
+are; the retired whole-task advisory claim tables above are not. The imported
+store is the same store on the same host: do not run it beside its source,
+and do not treat it as authority on another host.

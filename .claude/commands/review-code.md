@@ -47,16 +47,19 @@ Engram V1 is a Rust, host-local concurrent execution-memory system:
   agent scope private.
 - Claims are idempotent leases; immutable task events and monotonic cursors
   drive peer deltas.
-- Final report freeze requires participant contributions or explicit waivers.
+- In the deferred report design, final report freeze requires participant
+  contributions or explicit waivers.
 - One capture feeds task delta, handoff, and report views; Engram owns
   host-local work, and external trackers are immutable snapshot references.
 - Local tasks reference but never mirror external organizational tickets.
-- `report_ready` freezes bytes, hash, and idempotency key.
-- Publication requires an adapter receipt; retry reuses the frozen payload.
+- In that target design, `report_ready` freezes report bytes and hash; a
+  separately requested publication freezes its target and idempotency key.
+  Publication requires an adapter receipt; retry reuses the frozen payload.
 - Actor/authority text from tools and skills is asserted context, not
   authenticated identity.
-- V1 uses a side-effect-free dummy tracker. Proprietary integration, cross-host sync,
-  embeddings, real DLP, signing, service storage, and encryption are deferred.
+- Publication adapters (including the former unwired dummy), proprietary
+  integration, cross-host sync, embeddings, real DLP, signing, service storage,
+  and encryption are deferred.
 
 Read `AGENTS.md`, `.agents/skills/engram-repo/SKILL.md`, and the relevant docs
 when a change needs deeper context.

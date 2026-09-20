@@ -1,12 +1,11 @@
 use super::{
-    ActorContext, CanonicalObject, ChangeCursor, Connection, DateTime, DeltaItem, DeserializeOwned,
-    LocalTask, MAX_CONTROL_DELIVERY_EVENTS, MAX_CONTROL_DELIVERY_OBJECT_BYTES,
-    MAX_TASK_CHANGE_OBJECT_BYTES, MemoryAssertionEvent, MemoryId, MemoryStatus, MemorySummary,
-    MemorySummaryRow, ObjectHash, ObservedTurnDecision, OptionalExtension, ParticipantMembership,
-    SCHEMA_VERSION, Scope, Serialize, SessionId, SqliteStore, StoreError, StoredControlObservation,
-    TaskChange, TaskClaimEvent, TaskDelta, TaskId, TaskLease, TaskState, Transaction,
-    TransactionBehavior, TurnEvaluationInput, TurnObservationIntentFingerprint, Utc, claim_expiry,
-    lookup_project_memory_on, params, parse_enum,
+    CanonicalObject, ChangeCursor, Connection, DateTime, DeltaItem, DeserializeOwned, LocalTask,
+    MAX_CONTROL_DELIVERY_EVENTS, MAX_CONTROL_DELIVERY_OBJECT_BYTES, MAX_TASK_CHANGE_OBJECT_BYTES,
+    MemoryAssertionEvent, MemoryId, MemoryStatus, MemorySummary, MemorySummaryRow, ObjectHash,
+    ObservedTurnDecision, OptionalExtension, ParticipantMembership, SCHEMA_VERSION, Scope,
+    Serialize, SessionId, SqliteStore, StoreError, StoredControlObservation, TaskChange, TaskDelta,
+    TaskId, TaskState, Transaction, TransactionBehavior, TurnEvaluationInput,
+    TurnObservationIntentFingerprint, lookup_project_memory_on, params, parse_enum,
 };
 
 #[cfg(test)]
@@ -431,126 +430,6 @@ impl SqliteStore {
                 "one task event exceeds the bounded host-delivery object budget".into(),
             )
         })
-    }
-
-    /// Atomically acquires an execution lease. An exact idempotent retry
-    /// returns its original lease; a live claim by another session conflicts.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StoreError`] for an invalid lease interval, idempotency
-    /// conflict, live competing claim, corrupt stored intent, or SQLite
-    /// transaction failure.
-    pub fn claim_task(
-        &mut self,
-        task_id: TaskId,
-        holder: &SessionId,
-        idempotency_key: &str,
-        now: DateTime<Utc>,
-        ttl_seconds: i64,
-        actor: ActorContext,
-    ) -> Result<TaskLease, StoreError> {
-        let expires_at = claim_expiry(now, ttl_seconds)?;
-
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let prior_intent: Option<(String, String, Vec<u8>)> = transaction
-            .query_row(
-                "SELECT task_id, holder_session_id, lease_json
-                 FROM task_claim_intents WHERE idempotency_key = ?1",
-                [idempotency_key],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .optional()?;
-        if let Some((stored_task, stored_holder, lease_json)) = prior_intent {
-            let lease: TaskLease = serde_json::from_slice(&lease_json)?;
-            if stored_task != task_id.0.to_string()
-                || stored_holder != holder.0
-                || (lease.ttl_seconds != 0 && lease.ttl_seconds != ttl_seconds)
-            {
-                return Err(StoreError::ClaimIdempotencyConflict(
-                    idempotency_key.to_owned(),
-                ));
-            }
-            return Ok(lease);
-        }
-
-        let current: Option<(String, String, i64, i64)> = transaction
-            .query_row(
-                "SELECT lease_id, holder_session_id, expires_at_ms, revision
-                 FROM task_claims WHERE task_id = ?1",
-                [task_id.0.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-            )
-            .optional()?;
-        if let Some((_, current_holder, current_expiry, _)) = &current
-            && *current_expiry > now.timestamp_millis()
-        {
-            return Err(StoreError::TaskClaimHeld {
-                holder: current_holder.clone(),
-                expires_at: *current_expiry,
-            });
-        }
-
-        let revision = current
-            .as_ref()
-            .map_or(1, |(_, _, _, revision)| revision + 1);
-        let lease = TaskLease {
-            task_id,
-            lease_id: uuid::Uuid::now_v7().to_string(),
-            holder: holder.clone(),
-            idempotency_key: idempotency_key.to_owned(),
-            ttl_seconds,
-            expires_at,
-            revision,
-        };
-        let previous_holder = current.map(|(_, holder, _, _)| SessionId(holder));
-
-        transaction.execute(
-            "INSERT INTO task_claims (
-                 task_id, lease_id, holder_session_id, idempotency_key,
-                 expires_at_ms, revision
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(task_id) DO UPDATE SET
-                 lease_id = excluded.lease_id,
-                 holder_session_id = excluded.holder_session_id,
-                 idempotency_key = excluded.idempotency_key,
-                 expires_at_ms = excluded.expires_at_ms,
-                 revision = excluded.revision",
-            params![
-                task_id.0.to_string(),
-                lease.lease_id,
-                holder.0,
-                idempotency_key,
-                expires_at.timestamp_millis(),
-                revision,
-            ],
-        )?;
-        transaction.execute(
-            "INSERT INTO task_claim_intents (
-                 idempotency_key, task_id, holder_session_id, lease_json
-             ) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                idempotency_key,
-                task_id.0.to_string(),
-                lease.holder.0,
-                serde_json::to_vec(&lease)?,
-            ],
-        )?;
-
-        let event = TaskClaimEvent {
-            schema_version: SCHEMA_VERSION,
-            lease: lease.clone(),
-            previous_holder,
-            actor,
-            created_at: now,
-        };
-        let object = CanonicalObject::mint(&event)?;
-        Self::insert_object(&transaction, "task_claim_event", &object)?;
-        Self::insert_task_change(&transaction, task_id, "task_claim_event", &object)?;
-        transaction.commit()?;
-        Ok(lease)
     }
 
     /// Loads and verifies an object before deserializing it.

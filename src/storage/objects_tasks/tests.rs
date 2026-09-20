@@ -1,4 +1,4 @@
-use chrono::{TimeDelta, TimeZone};
+use chrono::{TimeDelta, TimeZone, Utc};
 
 use super::*;
 use crate::storage::test_support::*;
@@ -656,77 +656,4 @@ fn begun_partial_recovery_is_exactly_redeliverable_after_host_restart() {
     };
     assert_eq!(receipt.confirmed_cursor, grant.basis.delivery_cursor);
     assert_eq!(receipt.phase, SessionPhase::SyncRequired);
-}
-
-#[test]
-fn live_task_claims_are_atomic_across_connections() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let database = directory.path().join("engram.db");
-    let mut first_store = SqliteStore::open(&database).unwrap();
-    let mut peer_store = SqliteStore::open(&database).unwrap();
-    let task_id = TaskId::new();
-    let now = Utc::now();
-    let first = first_store
-        .claim_task(
-            task_id,
-            &SessionId("session-a".into()),
-            "claim-a",
-            now,
-            300,
-            actor("session-a"),
-        )
-        .unwrap();
-    let replay = first_store
-        .claim_task(
-            task_id,
-            &SessionId("session-a".into()),
-            "claim-a",
-            now + TimeDelta::seconds(2),
-            300,
-            actor("session-a"),
-        )
-        .unwrap();
-    let conflict = peer_store.claim_task(
-        task_id,
-        &SessionId("session-b".into()),
-        "claim-b",
-        now,
-        300,
-        actor("session-b"),
-    );
-
-    assert_eq!(first, replay);
-    assert!(matches!(conflict, Err(StoreError::TaskClaimHeld { .. })));
-    assert!(matches!(
-        first_store.claim_task(
-            task_id,
-            &SessionId("session-a".into()),
-            "claim-a",
-            now,
-            360,
-            actor("session-a"),
-        ),
-        Err(StoreError::ClaimIdempotencyConflict(_))
-    ));
-
-    let after_expiry = first.expires_at + TimeDelta::milliseconds(1);
-    let peer = peer_store
-        .claim_task(
-            task_id,
-            &SessionId("session-b".into()),
-            "claim-b-after-expiry",
-            after_expiry,
-            300,
-            actor("session-b"),
-        )
-        .unwrap();
-
-    assert_eq!(peer.revision, first.revision + 1);
-    assert_eq!(
-        peer_store
-            .task_changes_since(task_id, ChangeCursor::default(), 100)
-            .unwrap()
-            .len(),
-        2
-    );
 }

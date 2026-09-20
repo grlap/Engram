@@ -59,7 +59,7 @@ use project_memory::{
     lookup_project_memory_on, project_memory_state_on, validate_keyed_project_memory_shape,
     validate_stored_project_memory_key,
 };
-use task_memory::{claim_expiry, fts_query, normalize_project_memory_query};
+use task_memory::{fts_query, normalize_project_memory_query};
 
 pub(crate) use work::RequiredChildSuccessor;
 pub(crate) use work::SelectedStatusNote;
@@ -242,14 +242,14 @@ use crate::{
         ProjectMemoryList, ProjectMemoryListRow, ProjectMemoryMutationReceipt,
         ProjectPolicyAuthorityDecision, ProjectPolicyEpoch, ProjectPolicyOperation,
         RememberProjectMemoryRequest, SCHEMA_VERSION, Scope, Sensitivity, SessionId, SessionPhase,
-        TaskAdmissionEpoch, TaskBindReceipt, TaskClaimEvent, TaskDelta, TaskId, TaskJoinedEvent,
-        TaskLease, TaskStartedEvent, TaskState, TurnBeginDecision, TurnBeginReceipt,
-        TurnBeginSnapshot, TurnCheckpointDecision, TurnCheckpointEvent, TurnCheckpointReceipt,
-        TurnCheckpointSnapshot, TurnDecision, TurnEvaluationInput, TurnGrantState,
-        TurnGrantSupersession, TurnGrantSupersessionReason, TurnIntent, TurnNextIntent,
-        VerificationEvidence, VerificationEvidenceInput, VerificationKind, VerificationResult,
-        WorkCompletionRecoveryCause, WorkLease, WorkLeaseDecision, WorkLeaseEvent,
-        WorkLeaseReleaseReceipt, WorkLeaseTransition, WorkReferenceCandidate,
+        TaskAdmissionEpoch, TaskBindReceipt, TaskDelta, TaskId, TaskJoinedEvent, TaskStartedEvent,
+        TaskState, TurnBeginDecision, TurnBeginReceipt, TurnBeginSnapshot, TurnCheckpointDecision,
+        TurnCheckpointEvent, TurnCheckpointReceipt, TurnCheckpointSnapshot, TurnDecision,
+        TurnEvaluationInput, TurnGrantState, TurnGrantSupersession, TurnGrantSupersessionReason,
+        TurnIntent, TurnNextIntent, VerificationEvidence, VerificationEvidenceInput,
+        VerificationKind, VerificationResult, WorkCompletionRecoveryCause, WorkLease,
+        WorkLeaseDecision, WorkLeaseEvent, WorkLeaseReleaseReceipt, WorkLeaseTransition,
+        WorkReferenceCandidate,
     },
     memory::{DevelopmentNoopRedactor, Redactor, activation_policy, classify_note},
     schema::{
@@ -742,10 +742,6 @@ pub enum StoreError {
     },
     #[error("stored object hash is invalid: {0}")]
     InvalidStoredHash(String),
-    #[error("task is claimed by session {holder} until {expires_at}")]
-    TaskClaimHeld { holder: String, expires_at: i64 },
-    #[error("claim idempotency key {0:?} was reused for a different task, holder, or TTL")]
-    ClaimIdempotencyConflict(String),
     #[error("contradiction idempotency key {0:?} was reused for different content")]
     ContradictionIdempotencyConflict(String),
     #[error("memory contradiction is invalid: {0}")]
@@ -760,8 +756,6 @@ pub enum StoreError {
         left: ObjectHash,
         right: ObjectHash,
     },
-    #[error("stored claim data is invalid: {0}")]
-    InvalidStoredClaim(String),
     #[error("note idempotency key {0:?} was reused for different content")]
     NoteIdempotencyConflict(String),
     #[error("note prose must not be empty")]

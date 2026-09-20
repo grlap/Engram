@@ -604,12 +604,9 @@ fn store_error_code(error: &StoreError) -> &'static str {
         | StoreError::ImmutableCollision(_)
         | StoreError::ObjectKindMismatch { .. }
         | StoreError::InvalidStoredHash(_)
-        | StoreError::TaskClaimHeld { .. }
-        | StoreError::ClaimIdempotencyConflict(_)
         | StoreError::ContradictionIdempotencyConflict(_)
         | StoreError::InvalidContradiction(_)
         | StoreError::ContradictionAlreadyRecorded(_)
-        | StoreError::InvalidStoredClaim(_)
         | StoreError::NoteIdempotencyConflict(_)
         | StoreError::EmptyNote
         | StoreError::RedactionRefused(_)

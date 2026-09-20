@@ -69,7 +69,7 @@ on the V1 path below.
   supersede/contradict/contested, tombstones —
   [write policy & review](features/write-policy-and-review.md)
 - Optional report path: deterministic assembly, polish/freeze state machine,
-  dummy publication under idempotent receipts —
+  publication under idempotent receipts (all deferred; no dummy ships) —
   [local tasks & reports](features/local-tasks-and-reports.md),
   [tracker adapter](features/tracker-adapter.md)
 - Audit attribution at asserted-runtime-context assurance; visibly labeled
