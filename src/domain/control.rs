@@ -75,7 +75,6 @@ pub struct ProjectPolicyAuthorityDecision {
     #[serde(default, skip_serializing_if = "AcceptanceEvaluationPolicy::is_legacy")]
     pub acceptance_evaluation: AcceptanceEvaluationPolicy,
     pub authorized_by: ActorContext,
-    pub reason: String,
     pub decided_at: DateTime<Utc>,
 }
 

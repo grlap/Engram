@@ -233,7 +233,6 @@ function ok(response) {
 function setObligationRuleSet(
   engramHome,
   input,
-  reason,
   idempotencyKey,
   expectedPolicy,
 ) {
@@ -246,8 +245,6 @@ function setObligationRuleSet(
     input,
     "--authorized-by",
     "control-dogfood-policy-operator",
-    "--reason",
-    reason,
     "--idempotency-key",
     idempotencyKey,
   ];
@@ -369,8 +366,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         "action_gated",
         "--authorized-by",
         "dogfood-bootstrap-operator",
-        "--reason",
-        "exercise an attributed fail-closed bootstrap",
       ],
       { cwd: root, encoding: "utf8" },
     );
@@ -390,8 +385,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         "action_gated",
         "--authorized-by",
         "dogfood-operator",
-        "--reason",
-        "exercise the fail-closed warning",
         "--idempotency-key",
         "dogfood-action-gated",
       ],
@@ -412,8 +405,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         "turn_gated",
         "--authorized-by",
         "dogfood-operator",
-        "--reason",
-        "restore a bindable V1 requirement",
         "--idempotency-key",
         "dogfood-action-recovery",
       ],
@@ -442,8 +433,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         "advisory",
         "--authorized-by",
         "dogfood-bootstrap-operator",
-        "--reason",
-        "exercise an attributed advisory bootstrap",
       ],
       { cwd: root, encoding: "utf8" },
     );
@@ -462,7 +451,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     const unknownRuleField = setObligationRuleSet(
       engramHome,
       JSON.stringify({ schema_version: 1, rules: [], typo: true }),
-      "reject a misspelled policy field",
       "dogfood-rule-unknown-field",
       initialPolicy[1],
     );
@@ -480,7 +468,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
           },
         ],
       }),
-      "reject a misspelled nested requirement field",
       "dogfood-rule-unknown-nested-field",
       initialPolicy[1],
     );
@@ -491,7 +478,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     const oversizedRuleSet = setObligationRuleSet(
       engramHome,
       `@${oversizedRulePath}`,
-      "reject oversized policy input",
       "dogfood-rule-oversized-input",
       initialPolicy[1],
     );
@@ -641,10 +627,7 @@ test("host control survives restart and gates turn dispatch", async (t) => {
     );
     assert.equal(advisoryIssued.decision, "grant");
 
-    for (const [authorizedBy, reason] of [
-      ["", "missing administrator"],
-      ["dogfood-operator", ""],
-    ]) {
+    for (const authorizedBy of ["", "   "]) {
       const invalidAttribution = spawnSync(
         binary,
         [
@@ -655,10 +638,8 @@ test("host control survives restart and gates turn dispatch", async (t) => {
           "advisory",
           "--authorized-by",
           authorizedBy,
-          "--reason",
-          reason,
           "--idempotency-key",
-          `invalid-attribution-${authorizedBy || "missing"}-${reason || "missing"}`,
+          `invalid-attribution-${authorizedBy || "missing"}`,
         ],
         { cwd: root, encoding: "utf8" },
       );
@@ -675,8 +656,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         "turn_gated",
         "--authorized-by",
         "dogfood-operator",
-        "--reason",
-        "reject a stale operator",
         "--idempotency-key",
         "dogfood-stale-policy",
         "--expected-policy-hash",
@@ -697,8 +676,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         "turn_gated",
         "--authorized-by",
         "dogfood-operator",
-        "--reason",
-        "exercise attributed policy activation",
         "--idempotency-key",
         "dogfood-policy-activation",
         "--expected-policy-hash",
@@ -724,8 +701,6 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         "turn_gated",
         "--authorized-by",
         "dogfood-operator",
-        "--reason",
-        "exercise attributed policy activation",
         "--idempotency-key",
         "dogfood-policy-activation",
         "--expected-policy-hash",
@@ -742,11 +717,9 @@ test("host control survives restart and gates turn dispatch", async (t) => {
         engramHome,
         "control-policy",
         "set-required-assurance",
-        "turn_gated",
+        "advisory",
         "--authorized-by",
         "dogfood-operator",
-        "--reason",
-        "different intent under the same durable key",
         "--idempotency-key",
         "dogfood-policy-activation",
         "--expected-policy-hash",
@@ -1855,7 +1828,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const pinnedRuleActivation = setObligationRuleSet(
       engramHome,
       JSON.stringify(pinnedRuleSet),
-      "pin the exact verification command and environment",
       "dogfood-pinned-rule-set",
       boundInitialPolicy[1],
     );
@@ -1871,7 +1843,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const pinnedRuleReplay = setObligationRuleSet(
       engramHome,
       JSON.stringify(pinnedRuleSet),
-      "pin the exact verification command and environment",
       "dogfood-pinned-rule-set",
       boundInitialPolicy[1],
     );
@@ -1884,7 +1855,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const pinnedRuleConflict = setObligationRuleSet(
       engramHome,
       JSON.stringify({ schema_version: 1, rules: [] }),
-      "change the intent under a durable key",
       "dogfood-pinned-rule-set",
       boundInitialPolicy[1],
     );
@@ -1893,7 +1863,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const pinnedRuleStaleCas = setObligationRuleSet(
       engramHome,
       JSON.stringify({ schema_version: 1, rules: [] }),
-      "reject a stale rule-set administrator",
       "dogfood-pinned-rule-stale-cas",
       boundInitialPolicy[1],
     );
@@ -2409,7 +2378,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const rollbackRuleSet = setObligationRuleSet(
       engramHome,
       `@${stockRuleSetPath}`,
-      "roll back to the earlier stock rule set",
       "dogfood-rule-set-rollback",
       pinnedRuleReceipt.active_policy,
     );
@@ -2425,7 +2393,6 @@ test("work-bound control records observations and rebinds after a stale fence", 
     const rollbackReplay = setObligationRuleSet(
       engramHome,
       `@${stockRuleSetPath}`,
-      "roll back to the earlier stock rule set",
       "dogfood-rule-set-rollback",
       pinnedRuleReceipt.active_policy,
     );

@@ -64,7 +64,7 @@ Run these commands from the project directory:
 
 ```sh
 engram init --required-assurance advisory \
-  --authorized-by alice --reason "Use Engram as a local task tracker"
+  --authorized-by alice
 engram doctor
 ```
 

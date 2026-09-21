@@ -483,9 +483,12 @@ hosts that track evaluator attempts; they grant no authority and imply no
 identity assurance beyond the recorded one.
 
 Operators enable the feature with
-`engram control-policy set-acceptance-evaluation --modes M[,M] --mechanical-basis asserted|observed [--require-source-freshness] --authorized-by ACTOR --reason TEXT --idempotency-key KEY`;
+`engram control-policy set-acceptance-evaluation --modes M[,M] --mechanical-basis asserted|observed [--require-source-freshness] --authorized-by ACTOR --idempotency-key KEY`;
 an empty mode list restores the legacy path through the same audited
 transition.
+Changing this policy does not require justification text. The operator,
+selected policy, compare-and-swap basis and retry key remain explicit;
+evaluation verdict rationales are a separate contract and remain required.
 
 ## Host integration
 

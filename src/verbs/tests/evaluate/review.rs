@@ -1188,7 +1188,6 @@ fn enable_with_source_freshness(database: &std::path::Path, second: i64) {
                 provenance_chain: Vec::<ProvenanceLink>::new(),
                 reason: "require source freshness for the verbs test".into(),
             },
-            "evaluated completion with source freshness",
             "enable-source-freshness",
             None,
             at(second),

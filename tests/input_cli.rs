@@ -185,8 +185,6 @@ fn json_file_bom_reaches_all_core_mutation_readers_and_bounded_policy_reader() {
             "set-obligation-rule-set",
             "--authorized-by",
             "input-operator",
-            "--reason",
-            "Explicit test policy",
             "--idempotency-key",
             "bom-policy",
         ],

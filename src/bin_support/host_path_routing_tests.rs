@@ -63,7 +63,6 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
             Command::Init {
                 required_assurance: None,
                 authorized_by: None,
-                reason: None,
             },
         ),
         (
@@ -105,7 +104,6 @@ fn host_path_identity_resolution_is_exhaustive_over_command_variants() {
                 operation: ControlPolicyCommand::SetRequiredAssurance {
                     level: ControlAssuranceArg::Advisory,
                     authorized_by: "host".into(),
-                    reason: "reason".into(),
                     idempotency_key: "key".into(),
                     expected_policy_hash: None,
                 },

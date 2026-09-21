@@ -2844,7 +2844,6 @@ test("evaluated acceptance policy over the real transports: locators, source fre
       "--home", engramHome, "control-policy", "set-acceptance-evaluation",
       "--modes", "same-session,independent-session", "--mechanical-basis", "asserted",
       "--require-source-freshness", "--authorized-by", "dogfood-operator",
-      "--reason", "evaluated completion for the dogfood fixture",
       "--idempotency-key", "dogfood-enable-evaluation",
     ], { cwd: root, encoding: "utf8" });
     assert.equal(policy.status, 0, policy.stderr);

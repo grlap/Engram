@@ -64,7 +64,6 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
         .set_acceptance_evaluation_policy(
             &evaluated,
             &actor("policy-admin"),
-            "enable evaluated completion",
             "preserve-enable",
             None,
             now,
@@ -76,7 +75,6 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("policy-admin"),
-            "require turn mediation while evaluation stays on",
             "preserve-assurance",
             Some(&enabled.active_policy),
             now + TimeDelta::minutes(1),
@@ -97,7 +95,6 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
         .set_obligation_rule_set(
             &empty_rules,
             &actor("policy-admin"),
-            "select the empty rule set while evaluation stays on",
             "preserve-rules",
             Some(&assurance.active_policy),
             now + TimeDelta::minutes(2),
@@ -114,7 +111,6 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("policy-admin"),
-            "an exact no-op keeps the evaluation policy too",
             "preserve-noop",
             Some(&rules.active_policy),
             now + TimeDelta::minutes(3),
@@ -134,6 +130,25 @@ fn acceptance_evaluation_policy_survives_assurance_and_rule_set_changes() {
         evaluated,
         "the diagnostics a host reads name the modes the store admits"
     );
+    let mut statement = store
+        .connection
+        .prepare("SELECT intent_json FROM control_policy_operation_results ORDER BY sequence")
+        .expect("prepare policy-operation fingerprint query");
+    let fingerprints = statement
+        .query_map([], |row| row.get::<_, Vec<u8>>(0))
+        .expect("query policy-operation fingerprints")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read policy-operation fingerprints");
+    assert_eq!(fingerprints.len(), 4);
+    for fingerprint in fingerprints {
+        let fingerprint: serde_json::Value =
+            serde_json::from_slice(&fingerprint).expect("decode policy-operation fingerprint");
+        assert!(
+            fingerprint.get("reason").is_none(),
+            "policy-operation fingerprints must not carry a justification"
+        );
+    }
+    drop(statement);
     let report = store.verify_all().expect("scan");
     assert!(report.is_healthy(), "{report:?}");
     drop(store);
@@ -162,7 +177,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("durable-policy-admin"),
-            "require durable turn mediation",
             "durable-assurance-update",
             Some(&initial.active_policy),
             now,
@@ -176,7 +190,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("durable-policy-admin"),
-            "require durable turn mediation",
             "durable-assurance-update",
             Some(&initial.active_policy),
             now + TimeDelta::minutes(10),
@@ -187,8 +200,7 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
     assert!(matches!(
         store.set_required_control_assurance(
             ControlAssurance::TurnGated,
-            &actor("durable-policy-admin"),
-            "different intent under the same key",
+            &actor("different-policy-admin"),
             "durable-assurance-update",
             Some(&initial.active_policy),
             now + TimeDelta::minutes(11),
@@ -201,7 +213,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("durable-policy-admin"),
-            "record an exact no-op receipt",
             "durable-assurance-noop",
             Some(&changed.active_policy),
             now + TimeDelta::minutes(12),
@@ -216,7 +227,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("durable-policy-admin"),
-            "record an exact no-op receipt",
             "durable-assurance-noop",
             Some(&changed.active_policy),
             now + TimeDelta::minutes(13),
@@ -233,7 +243,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_obligation_rule_set(
             &empty_rules,
             &actor("durable-rule-admin"),
-            "select the empty obligation rule set",
             "durable-rule-update",
             Some(&changed.active_policy),
             now + TimeDelta::minutes(14),
@@ -247,7 +256,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_obligation_rule_set(
             &empty_rules,
             &actor("durable-rule-admin"),
-            "select the empty obligation rule set",
             "durable-rule-update",
             Some(&changed.active_policy),
             now + TimeDelta::minutes(15),
@@ -259,7 +267,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_required_control_assurance(
             ControlAssurance::Advisory,
             &actor("later-policy-admin"),
-            "advance beyond the stored rule receipt",
             "later-assurance-update",
             Some(&rule_changed.active_policy),
             now + TimeDelta::minutes(16),
@@ -271,7 +278,6 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
         .set_obligation_rule_set(
             &empty_rules,
             &actor("durable-rule-admin"),
-            "select the empty obligation rule set",
             "durable-rule-update",
             Some(&changed.active_policy),
             now + TimeDelta::minutes(17),
@@ -282,8 +288,7 @@ fn policy_admin_receipts_replay_after_restart_and_later_policy_heads() {
     assert!(matches!(
         store.set_obligation_rule_set(
             &empty_rules,
-            &actor("durable-rule-admin"),
-            "different rule intent under the same key",
+            &actor("different-rule-admin"),
             "durable-rule-update",
             Some(&changed.active_policy),
             now + TimeDelta::minutes(18),
@@ -345,7 +350,6 @@ fn failed_policy_receipt_insert_rolls_back_the_policy_activation() {
         store.set_required_control_assurance(
             ControlAssurance::Advisory,
             &actor("rollback-policy-admin"),
-            "prove receipt and activation share one transaction",
             "rollback-policy-update",
             Some(&initial.active_policy),
             now,
@@ -389,7 +393,6 @@ fn failed_policy_receipt_insert_rolls_back_the_policy_activation() {
         store.set_obligation_rule_set(
             &empty_rules,
             &actor("rollback-rule-admin"),
-            "prove rule receipt and activation share one transaction",
             "rollback-rule-update",
             Some(&initial.active_policy),
             now + TimeDelta::seconds(1),
@@ -447,13 +450,16 @@ fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
         initial_authority.authorized_by.actor_id,
         "bootstrap-policy-admin"
     );
-    assert_eq!(initial_authority.reason, "select the test bootstrap policy");
-
+    let initial_authority_json =
+        serde_json::to_value(&initial_authority).expect("serialize the initial authority decision");
+    assert!(
+        initial_authority_json.get("reason").is_none(),
+        "policy authority decisions must not carry a top-level justification"
+    );
     let changed = store
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("policy-admin"),
-            "require host turn mediation",
             "policy-turn-gated",
             Some(&initial.active_policy),
             now,
@@ -469,7 +475,6 @@ fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("policy-admin"),
-            "idempotent replay",
             "policy-turn-gated-noop",
             Some(&changed.active_policy),
             now + TimeDelta::seconds(1),
@@ -483,7 +488,6 @@ fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
         store.set_required_control_assurance(
             ControlAssurance::ActionGated,
             &actor("policy-admin"),
-            "stale compare and swap",
             "policy-stale-cas",
             Some(&initial.active_policy),
             now + TimeDelta::seconds(2),
@@ -537,6 +541,99 @@ fn control_policy_versions_are_canonical_idempotent_and_restart_safe() {
 }
 
 #[test]
+fn historical_authority_extra_member_is_preserved_but_new_policy_records_are_reason_free() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().expect("store");
+    let initial = store.control_diagnostics().expect("initial policy");
+    let initial_policy: ControlPolicy = store
+        .get(&initial.active_policy)
+        .expect("read initial policy")
+        .expect("initial policy object");
+    let original_bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [initial_policy.authority.as_str()],
+            |row| row.get(0),
+        )
+        .expect("read initial authority bytes");
+    let mut historical_json: serde_json::Value =
+        serde_json::from_slice(&original_bytes).expect("decode initial authority bytes");
+    historical_json
+        .as_object_mut()
+        .expect("authority object")
+        .insert(
+            "reason".into(),
+            serde_json::Value::String("historical policy justification".into()),
+        );
+    let historical_bytes =
+        serde_json_canonicalizer::to_vec(&historical_json).expect("canonical historical bytes");
+    store
+        .connection
+        .execute(
+            "UPDATE objects SET canonical_json = ?1 WHERE object_id = ?2",
+            params![historical_bytes, initial_policy.authority.as_str()],
+        )
+        .expect("install historical authority shape");
+
+    let historical_authority: ProjectPolicyAuthorityDecision = store
+        .get(&initial_policy.authority)
+        .expect("load historical authority")
+        .expect("historical authority object");
+    assert_eq!(historical_authority.policy_epoch, ProjectPolicyEpoch(1));
+    let changed = store
+        .set_required_control_assurance(
+            ControlAssurance::Advisory,
+            &actor("policy-admin"),
+            "advance-historical-policy",
+            Some(&initial.active_policy),
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .expect("advance policy with historical authority");
+
+    let preserved_bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [initial_policy.authority.as_str()],
+            |row| row.get(0),
+        )
+        .expect("reread historical authority bytes");
+    assert_eq!(preserved_bytes, historical_bytes);
+    let new_authority_bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT canonical_json FROM objects WHERE object_id = ?1",
+            [changed.authority.as_str()],
+            |row| row.get(0),
+        )
+        .expect("read new authority bytes");
+    let new_authority_json: serde_json::Value =
+        serde_json::from_slice(&new_authority_bytes).expect("decode new authority bytes");
+    assert!(new_authority_json.get("reason").is_none());
+    let new_intent_bytes: Vec<u8> = store
+        .connection
+        .query_row(
+            "SELECT intent_json FROM control_policy_operation_results
+             WHERE operation = 'set_required_assurance'
+               AND idempotency_key = 'advance-historical-policy'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read new operation fingerprint");
+    let new_intent_json: serde_json::Value =
+        serde_json::from_slice(&new_intent_bytes).expect("decode new operation fingerprint");
+    assert!(new_intent_json.get("reason").is_none());
+    assert!(
+        store
+            .verify_all()
+            .expect("verify policy history")
+            .is_healthy()
+    );
+}
+
+#[test]
 fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
     let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("obligation-rules.db");
@@ -557,7 +654,6 @@ fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
         .set_obligation_rule_set(
             &empty,
             &actor("rule-policy-admin"),
-            "disable future obligation triggers",
             "rule-set-empty",
             Some(&initial.active_policy),
             now,
@@ -574,7 +670,6 @@ fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
         .set_obligation_rule_set(
             &empty,
             &actor("rule-policy-admin"),
-            "exact semantic replay",
             "rule-set-empty-noop",
             Some(&changed.active_policy),
             now + TimeDelta::seconds(1),
@@ -589,7 +684,6 @@ fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
         .set_obligation_rule_set(
             &empty,
             &actor("rule-policy-admin"),
-            "exact semantic replay",
             "rule-set-empty-noop",
             Some(&changed.active_policy),
             now + TimeDelta::seconds(10),
@@ -604,7 +698,6 @@ fn obligation_rule_set_activation_is_canonical_idempotent_and_restart_safe() {
                 rules: Vec::new(),
             },
             &actor("rule-policy-admin"),
-            "unknown schema must fail closed",
             "rule-set-invalid-schema",
             None,
             now + TimeDelta::seconds(2),
@@ -646,7 +739,6 @@ fn returning_to_an_earlier_rule_set_names_the_same_record() {
         .set_obligation_rule_set(
             &empty,
             &actor("rule-policy-admin"),
-            "disable future obligation triggers",
             "rule-set-empty",
             Some(&initial.active_policy),
             now,
@@ -670,7 +762,6 @@ fn returning_to_an_earlier_rule_set_names_the_same_record() {
         .set_obligation_rule_set(
             &crate::control::builtin_obligation_rule_set(),
             &actor("rule-policy-admin"),
-            "return to the stock rule set",
             "rule-set-stock-again",
             Some(&emptied.active_policy),
             now + TimeDelta::seconds(1),
@@ -868,7 +959,6 @@ fn active_policy_must_be_the_unique_maximal_history_head() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("policy-admin"),
-            "create a successor",
             "policy-successor-rollback",
             Some(&initial.active_policy),
             now,
@@ -998,7 +1088,6 @@ fn set_required_assurance_history_cannot_change_effects_or_ttl() {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("policy-admin"),
-            "create current policy",
             "policy-current-envelope",
             Some(&initial.active_policy),
             now,
@@ -1116,7 +1205,6 @@ fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
             store.set_required_control_assurance(
                 ControlAssurance::Advisory,
                 &candidate,
-                "inspect every attribution leaf",
                 "policy-redaction-leaf",
                 None,
                 now,
@@ -1132,7 +1220,6 @@ fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
         store.set_required_control_assurance(
             ControlAssurance::Advisory,
             &oversized_field,
-            "bound optional fields",
             "policy-oversized-field",
             None,
             now,
@@ -1153,7 +1240,6 @@ fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
         store.set_required_control_assurance(
             ControlAssurance::Advisory,
             &too_many_links,
-            "bound provenance count",
             "policy-provenance-count",
             None,
             now,
@@ -1174,7 +1260,6 @@ fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
         store.set_required_control_assurance(
             ControlAssurance::Advisory,
             &oversized_attribution,
-            "bound aggregate attribution",
             "policy-oversized-attribution",
             None,
             now,
@@ -1197,7 +1282,6 @@ fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
         .set_required_control_assurance(
             ControlAssurance::Advisory,
             &normalized,
-            " normalize persisted attribution ",
             "policy-normalized-attribution",
             None,
             now,
@@ -1220,7 +1304,12 @@ fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
             .as_deref(),
         Some("receipt-1")
     );
-    assert_eq!(authority.reason, "normalize persisted attribution");
+    let authority_json =
+        serde_json::to_value(&authority).expect("serialize the normalized authority decision");
+    assert!(
+        authority_json.get("reason").is_none(),
+        "normalized authority decisions must remain reason-free"
+    );
 }
 
 #[test]
@@ -1305,7 +1394,6 @@ fn policy_epoch_change_expires_issued_grants_but_not_begun_checkpoints() {
         .set_required_control_assurance(
             ControlAssurance::Advisory,
             &actor("policy-admin"),
-            "exercise policy epoch transition",
             "policy-epoch-transition",
             None,
             now + TimeDelta::seconds(1),
@@ -1423,7 +1511,6 @@ fn action_gated_requirement_refuses_every_v1_host_fail_closed() {
         .set_required_control_assurance(
             ControlAssurance::ActionGated,
             &actor("action-policy-admin"),
-            "prove the unavailable assurance fails closed",
             "policy-action-gated",
             Some(&current.active_policy),
             now + TimeDelta::seconds(1),
@@ -1535,7 +1622,6 @@ fn lease_epoch_refusal_is_sticky_and_adopts_for_a_fresh_key() {
         .set_required_control_assurance(
             ControlAssurance::Advisory,
             &actor("lease-epoch-admin"),
-            "exercise lease epoch adoption",
             "policy-lease-epoch",
             Some(&current.active_policy),
             now + TimeDelta::seconds(2),
@@ -1813,7 +1899,6 @@ fn refuse_policy_actor_before_effects(live: &SessionId) {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &ctx,
-            "require turn mediation",
             "should-not-write",
             None,
             Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),
@@ -1853,7 +1938,6 @@ fn set_required_control_assurance_preserves_an_exact_64_byte_actor_session() {
         .set_required_control_assurance(
             next,
             &ctx,
-            "require turn mediation",
             "policy-64",
             None,
             Utc.timestamp_millis_opt(1_700_000_000_000).unwrap(),

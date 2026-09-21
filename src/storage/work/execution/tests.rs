@@ -214,7 +214,6 @@ fn work_bound_control_checkpoint_records_execution_observation_once() {
         .set_obligation_rule_set(
             &empty_rule_set,
             &actor("obligation-rule-admin"),
-            "disable future built-in obligation triggers in this test",
             "work-obligation-rule-disable",
             None,
             at(9),

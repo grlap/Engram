@@ -65,8 +65,6 @@ fn doctor_reports_the_acceptance_evaluation_policy_in_json_and_text() {
             "asserted",
             "--authorized-by",
             "operator",
-            "--reason",
-            "evaluate before completion",
             "--idempotency-key",
             "doctor-reports-evaluation",
         ],

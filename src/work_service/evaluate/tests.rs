@@ -35,7 +35,6 @@ fn enable(database: &Path, modes: &[AcceptanceEvaluationMode], second: i64) {
                 require_source_freshness: false,
             },
             &policy_admin(),
-            "evaluated completion for this test project",
             "enable-evaluated-completion",
             None,
             at(second),

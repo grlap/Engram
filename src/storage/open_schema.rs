@@ -12,7 +12,7 @@ use super::{
     SqliteStore, StoreError, TransactionBehavior, Utc, current_schema_definition_issue,
     derived_project_memory_state_rows_on, describe_host_path_policy, different_build_store_error,
     drop_schema_object, enum_name, fts_query, immutable_uri, normalize_control_policy_actor,
-    normalize_control_text, params, parse_enum, publish_without_replacing, remove_store_files,
+    params, parse_enum, publish_without_replacing, remove_store_files,
     require_current_schema_marker, store_sidecars, unique_sibling_path,
     validate_keyed_project_memory_shape, work,
 };
@@ -519,7 +519,6 @@ impl SqliteStore {
         identity: Option<HostPathPolicy>,
         required_assurance: ControlAssurance,
         authorized_by: &ActorContext,
-        reason: &str,
         redactor: &R,
     ) -> Result<Self, StoreError> {
         if authorized_by.assurance != AssuranceLevel::Asserted {
@@ -528,10 +527,6 @@ impl SqliteStore {
             ));
         }
         let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
-        let reason = normalize_control_text(reason, "control policy bootstrap reason")?;
-        redactor
-            .inspect(&reason)
-            .map_err(StoreError::RedactionRefused)?;
         let connection = Connection::open(path)?;
         Self::from_connection(
             connection,
@@ -539,7 +534,6 @@ impl SqliteStore {
             Some(InitialControlPolicy {
                 required_assurance,
                 authorized_by,
-                reason,
             }),
         )
     }
@@ -1298,32 +1292,26 @@ impl SqliteStore {
             ));
         }
         let now = Utc::now();
-        let (required_assurance, authorized_by, reason) =
-            if let Some(initial) = initial_control_policy {
-                (
-                    initial.required_assurance,
-                    initial.authorized_by,
-                    initial.reason,
-                )
-            } else {
-                let source = "engram:init";
-                let reason = "install the default project bootstrap control policy";
-                (
-                    ControlAssurance::TurnGated,
-                    ActorContext {
-                        actor_id: source.into(),
-                        actor_kind: "system".into(),
-                        assurance: AssuranceLevel::Asserted,
-                        run_id: None,
-                        session_id: None,
-                        source_tool: Some(source.into()),
-                        source_skill: None,
-                        provenance_chain: Vec::new(),
-                        reason: reason.into(),
-                    },
-                    reason.to_owned(),
-                )
-            };
+        let (required_assurance, authorized_by) = if let Some(initial) = initial_control_policy {
+            (initial.required_assurance, initial.authorized_by)
+        } else {
+            let source = "engram:init";
+            let reason = "install the default project bootstrap control policy";
+            (
+                ControlAssurance::TurnGated,
+                ActorContext {
+                    actor_id: source.into(),
+                    actor_kind: "system".into(),
+                    assurance: AssuranceLevel::Asserted,
+                    run_id: None,
+                    session_id: None,
+                    source_tool: Some(source.into()),
+                    source_skill: None,
+                    provenance_chain: Vec::new(),
+                    reason: reason.into(),
+                },
+            )
+        };
         let obligation_rule_set = Self::insert_builtin_obligation_rule_set(connection)?;
         let authority = ProjectPolicyAuthorityDecision {
             schema_version: CONTROL_POLICY_AUTHORITY_SCHEMA_VERSION,
@@ -1334,7 +1322,6 @@ impl SqliteStore {
             obligation_rule_set: obligation_rule_set.clone(),
             acceptance_evaluation: crate::domain::AcceptanceEvaluationPolicy::default(),
             authorized_by,
-            reason,
             decided_at: now,
         };
         let authority_object = CanonicalObject::mint(&authority)?;

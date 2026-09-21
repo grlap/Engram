@@ -56,7 +56,6 @@ pub(super) fn open_with_assurance(
         Some(HostPathPolicy::host_default()),
         required_assurance,
         &actor("bootstrap-policy-admin"),
-        "select the test bootstrap policy",
         &DevelopmentNoopRedactor,
     )
 }

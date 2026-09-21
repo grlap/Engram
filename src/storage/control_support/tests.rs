@@ -31,7 +31,6 @@ fn live_control_policy_load_is_bounded_independently_of_history_depth() {
             .set_required_control_assurance(
                 required_assurance,
                 &actor("policy-load-admin"),
-                &format!("install policy epoch {epoch}"),
                 &format!("policy-load-{epoch}"),
                 Some(&active),
                 now + TimeDelta::milliseconds(epoch),

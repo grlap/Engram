@@ -44,10 +44,10 @@ receipt supplies presence facts, never permission to clear recovery state.
    relative value resolves against each process's working directory and
    silently splits the project across stores). Initialize it once per
    project on each host, before any other word touches the store, with
-   `engram init --required-assurance advisory --authorized-by <operator>
-   --reason "<why>"`: a plain `engram init` selects `turn_gated` as the
-   project's required assurance, which an advisory pilot cannot honestly
-   claim, and `engram doctor` would print that requirement. The flagged
+   `engram init --required-assurance advisory --authorized-by <operator>`:
+   a plain `engram init` selects `turn_gated` as the project's required
+   assurance, which an advisory pilot cannot honestly claim, and
+   `engram doctor` would print that requirement. The flagged
    `init` is idempotent when the stored assurance already matches (a re-run
    records no new attribution) and is refused when it differs; change an
    existing store with `engram control-policy set-required-assurance`.

@@ -32,7 +32,6 @@ fn enable(database: &std::path::Path, modes: &[AcceptanceEvaluationMode], second
                 provenance_chain: Vec::<ProvenanceLink>::new(),
                 reason: "enable acceptance evaluation for the verbs test".into(),
             },
-            "evaluated completion for this test project",
             "enable-evaluated-completion",
             None,
             at(second),

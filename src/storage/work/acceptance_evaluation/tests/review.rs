@@ -902,7 +902,6 @@ fn legacy_policy_normalizes_its_other_fields_and_round_trips() {
         .set_acceptance_evaluation_policy(
             &flagged_legacy,
             &actor("policy-admin"),
-            "legacy with stray flags",
             "legacy-with-flags",
             None,
             at(5),
@@ -931,7 +930,6 @@ fn legacy_policy_normalizes_its_other_fields_and_round_trips() {
         .set_acceptance_evaluation_policy(
             &flagged_legacy,
             &actor("policy-admin"),
-            "back to legacy with stray flags",
             "back-to-legacy",
             None,
             at(7),

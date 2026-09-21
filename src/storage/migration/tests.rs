@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use rusqlite::{Connection, OptionalExtension, types::Value};
 
@@ -428,6 +432,520 @@ fn rows(path: &Path) -> BTreeMap<String, Vec<Vec<Value>>> {
         .collect()
 }
 
+type RecordLinkColumn = (String, String);
+
+/// This inventory covers columns whose schema declares a foreign key to
+/// `objects(object_id)`, rather than inferring links from suffixes: compared
+/// fingerprints legitimately coexist in the same tables. The objects primary
+/// key is the one record id that cannot point back to itself.
+fn current_record_link_columns(
+    connection: &Connection,
+) -> Result<BTreeSet<RecordLinkColumn>, String> {
+    let tables: Vec<String> = connection
+        .prepare(
+            "SELECT name FROM pragma_table_list
+             WHERE schema = 'main' AND type = 'table'
+               AND substr(name, 1, 7) COLLATE NOCASE != 'sqlite_'
+             ORDER BY name",
+        )
+        .expect("prepare table inventory")
+        .query_map([], |row| row.get(0))
+        .expect("table inventory")
+        .collect::<Result<_, _>>()
+        .expect("table names");
+    let mut links = BTreeSet::from([("objects".into(), "object_id".into())]);
+    for table in tables {
+        let foreign_keys: Vec<(String, String, Option<String>)> = connection
+            .prepare(&format!("PRAGMA foreign_key_list({})", quoted(&table)))
+            .expect("prepare foreign keys")
+            .query_map([], |row| Ok((row.get(2)?, row.get(3)?, row.get(4)?)))
+            .expect("foreign keys")
+            .collect::<Result<_, _>>()
+            .expect("foreign key columns");
+        for (destination_table, source_column, destination_column) in foreign_keys {
+            if !destination_table.eq_ignore_ascii_case("objects") {
+                continue;
+            }
+            match destination_column {
+                Some(destination) if destination.eq_ignore_ascii_case("object_id") => {}
+                Some(other) => {
+                    return Err(format!(
+                        "record-link foreign key {table}.{source_column} targets objects.{other}, not objects.object_id"
+                    ));
+                }
+                None => {
+                    return Err(format!(
+                        "record-link foreign key {table}.{source_column} uses an implicit objects primary key; declare objects(object_id) explicitly"
+                    ));
+                }
+            }
+            if !links.insert((table.clone(), source_column.clone())) {
+                return Err(format!(
+                    "duplicate record-link foreign key {table}.{source_column}"
+                ));
+            }
+        }
+    }
+    Ok(links)
+}
+
+fn mapped_record_link_columns(
+    connection: &Connection,
+    mappings: &[(&str, &str, &str)],
+) -> Result<BTreeSet<RecordLinkColumn>, String> {
+    let current = current_record_link_columns(connection)?;
+    let mapped: BTreeSet<RecordLinkColumn> = mappings
+        .iter()
+        .map(|(table, _, destination)| ((*table).into(), (*destination).into()))
+        .collect();
+    if mapped.len() != mappings.len() {
+        return Err("duplicate record-link mapping destination".into());
+    }
+    let missing = current.difference(&mapped).cloned().collect::<Vec<_>>();
+    let unknown = mapped.difference(&current).cloned().collect::<Vec<_>>();
+    if !missing.is_empty() || !unknown.is_empty() {
+        return Err(format!(
+            "record-link mapping mismatch; missing={missing:?}; unknown={unknown:?}"
+        ));
+    }
+    Ok(current)
+}
+
+const REBUILT_RECORD_LINK_COLUMNS: &[(&str, &str)] = &[
+    ("work_observations", "observation_id"),
+    ("work_restored_evidence", "evidence_id"),
+    ("work_restored_evidence", "record_id"),
+    ("work_restored_records", "record_id"),
+];
+
+/// The pre-rename DDL consistently changed a trailing `_id` to `_hash`, with
+/// this one named exception where `offer_id` was already an operational id.
+const OLD_RECORD_LINK_NAME_EXCEPTIONS: &[(&str, &str, &str)] =
+    &[("work_handoff_offers", "offer_object_id", "offer_hash")];
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct OldRecordLinkNameMismatch {
+    table: String,
+    destination: String,
+    expected: String,
+    actual: String,
+}
+
+fn old_record_link_name_mismatches(
+    mappings: &[(&str, &str, &str)],
+) -> BTreeSet<OldRecordLinkNameMismatch> {
+    mappings
+        .iter()
+        .filter_map(|(table, old, destination)| {
+            let expected = OLD_RECORD_LINK_NAME_EXCEPTIONS
+                .iter()
+                .find(|(exception_table, exception_destination, _)| {
+                    exception_table == table && exception_destination == destination
+                })
+                .map_or_else(
+                    || {
+                        format!(
+                            "{}_hash",
+                            destination
+                                .strip_suffix("_id")
+                                .expect("record-link destination ends in _id")
+                        )
+                    },
+                    |(_, _, source)| (*source).to_owned(),
+                );
+            (*old != expected).then(|| OldRecordLinkNameMismatch {
+                table: (*table).into(),
+                destination: (*destination).into(),
+                expected,
+                actual: (*old).into(),
+            })
+        })
+        .collect()
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct RecordLinkExercise {
+    header: BTreeSet<RecordLinkColumn>,
+    rows: BTreeSet<RecordLinkColumn>,
+    non_null_rows: BTreeSet<RecordLinkColumn>,
+}
+
+const REQUIRED_NON_NULL_RECORD_LINK_EXERCISE: &[(&str, &str)] = &[
+    ("objects", "object_id"),
+    ("work_feed_entries", "object_id"),
+    ("work_items", "latest_event_id"),
+    ("work_root_executions", "head_id"),
+];
+
+fn expected_record_link_exercise(
+    document: &[Json],
+    current_links: &BTreeSet<RecordLinkColumn>,
+) -> RecordLinkExercise {
+    let declarations = document[0]["engram_export"]["tables"]
+        .as_array()
+        .expect("exported tables");
+    let mut expected = RecordLinkExercise::default();
+    for link @ (table, _) in current_links {
+        let Some(declaration) = declarations.iter().find(|entry| entry["name"] == *table) else {
+            continue;
+        };
+        expected.header.insert(link.clone());
+        if declaration["rows"].as_u64().expect("declared row count") > 0 {
+            expected.rows.insert(link.clone());
+        }
+    }
+    expected
+}
+
+fn rewrite_record_link_columns(
+    document: &mut [Json],
+    mappings: &[(&str, &str, &str)],
+) -> RecordLinkExercise {
+    let mut exercised = RecordLinkExercise::default();
+    for (table, old, current) in mappings {
+        let Some(declaration) = document[0]["engram_export"]["tables"]
+            .as_array_mut()
+            .expect("exported tables")
+            .iter_mut()
+            .find(|entry| entry["name"] == *table)
+        else {
+            continue;
+        };
+        let link = ((*table).into(), (*current).into());
+        let column = declaration["columns"]
+            .as_array_mut()
+            .expect("declared columns")
+            .iter_mut()
+            .find(|column| **column == *current)
+            .expect("mapped destination column");
+        *column = Json::String((*old).into());
+        assert!(exercised.header.insert(link.clone()));
+        for line in document.iter_mut().skip(1) {
+            if line["row"]["table"] != *table {
+                continue;
+            }
+            let values = line["row"]["values"].as_object_mut().unwrap();
+            let value = values.remove(*current).expect("mapped row value");
+            if !value.is_null() {
+                exercised.non_null_rows.insert(link.clone());
+            }
+            assert!(values.insert((*old).into(), value).is_none());
+            exercised.rows.insert(link.clone());
+        }
+    }
+    exercised
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct RecordLinkExerciseDifference {
+    missing_header: BTreeSet<RecordLinkColumn>,
+    unexpected_header: BTreeSet<RecordLinkColumn>,
+    missing_rows: BTreeSet<RecordLinkColumn>,
+    unexpected_rows: BTreeSet<RecordLinkColumn>,
+}
+
+fn record_link_exercise_difference(
+    expected: &RecordLinkExercise,
+    exercised: &RecordLinkExercise,
+) -> RecordLinkExerciseDifference {
+    RecordLinkExerciseDifference {
+        missing_header: expected
+            .header
+            .difference(&exercised.header)
+            .cloned()
+            .collect(),
+        unexpected_header: exercised
+            .header
+            .difference(&expected.header)
+            .cloned()
+            .collect(),
+        missing_rows: expected.rows.difference(&exercised.rows).cloned().collect(),
+        unexpected_rows: exercised.rows.difference(&expected.rows).cloned().collect(),
+    }
+}
+
+fn missing_required_non_null_record_links(
+    exercised: &RecordLinkExercise,
+) -> BTreeSet<RecordLinkColumn> {
+    REQUIRED_NON_NULL_RECORD_LINK_EXERCISE
+        .iter()
+        .map(|(table, column)| ((*table).into(), (*column).into()))
+        .collect::<BTreeSet<_>>()
+        .difference(&exercised.non_null_rows)
+        .cloned()
+        .collect()
+}
+
+fn rebuilt_projection_record_links(
+    document: &[Json],
+    current_links: &BTreeSet<RecordLinkColumn>,
+) -> Result<BTreeSet<RecordLinkColumn>, String> {
+    let copied = document[0]["engram_export"]["tables"]
+        .as_array()
+        .expect("exported tables")
+        .iter()
+        .map(|entry| entry["name"].as_str().expect("table name"))
+        .collect::<BTreeSet<_>>();
+    let omitted = current_links
+        .iter()
+        .filter(|(table, _)| !copied.contains(table.as_str()))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let left_out = document[0]["engram_export"]["left_out"]
+        .as_array()
+        .expect("left-out tables");
+    for table in omitted
+        .iter()
+        .map(|(table, _)| table)
+        .collect::<BTreeSet<_>>()
+    {
+        let entries = left_out
+            .iter()
+            .filter(|entry| entry["name"] == *table)
+            .collect::<Vec<_>>();
+        if entries.len() != 1 {
+            return Err(format!(
+                "rebuilt record-link table {table} has {} left_out entries, expected one",
+                entries.len()
+            ));
+        }
+        let reason = entries[0]["reason"].as_str().unwrap_or("<missing>");
+        if reason != REBUILT_PROJECTION {
+            return Err(format!(
+                "rebuilt record-link table {table} has left_out reason {reason:?}, expected {REBUILT_PROJECTION:?}"
+            ));
+        }
+    }
+    Ok(omitted)
+}
+
+#[test]
+fn record_link_mapping_inventory_rejects_an_omitted_applicable_column() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("source.jsonl");
+    populated(&source);
+    let schema = Connection::open(&source).unwrap();
+    assert!(
+        old_record_link_name_mismatches(RENAMED_COLUMNS).is_empty(),
+        "current source names follow the historical DDL convention"
+    );
+
+    let mut typo = RENAMED_COLUMNS.to_vec();
+    *typo
+        .iter_mut()
+        .find(|(table, _, destination)| *table == "objects" && *destination == "object_id")
+        .unwrap() = ("objects", "object_hahs", "object_id");
+    assert_eq!(
+        old_record_link_name_mismatches(&typo),
+        BTreeSet::from([OldRecordLinkNameMismatch {
+            table: "objects".into(),
+            destination: "object_id".into(),
+            expected: "object_hash".into(),
+            actual: "object_hahs".into(),
+        }])
+    );
+
+    let mut crossed = RENAMED_COLUMNS.to_vec();
+    *crossed
+        .iter_mut()
+        .find(|(table, _, destination)| {
+            *table == "work_items" && *destination == "source_snapshot_id"
+        })
+        .unwrap() = ("work_items", "latest_event_hash", "source_snapshot_id");
+    *crossed
+        .iter_mut()
+        .find(|(table, _, destination)| *table == "work_items" && *destination == "latest_event_id")
+        .unwrap() = ("work_items", "source_snapshot_hash", "latest_event_id");
+    assert_eq!(
+        old_record_link_name_mismatches(&crossed),
+        BTreeSet::from([
+            OldRecordLinkNameMismatch {
+                table: "work_items".into(),
+                destination: "latest_event_id".into(),
+                expected: "latest_event_hash".into(),
+                actual: "source_snapshot_hash".into(),
+            },
+            OldRecordLinkNameMismatch {
+                table: "work_items".into(),
+                destination: "source_snapshot_id".into(),
+                expected: "source_snapshot_hash".into(),
+                actual: "latest_event_hash".into(),
+            },
+        ])
+    );
+
+    let incomplete = RENAMED_COLUMNS
+        .iter()
+        .copied()
+        .filter(|(table, _, current)| !(*table == "work_items" && *current == "latest_event_id"))
+        .collect::<Vec<_>>();
+    let error = mapped_record_link_columns(&schema, &incomplete)
+        .expect_err("an omitted applicable mapping must fail the inventory");
+    assert!(
+        error.contains("(\"work_items\", \"latest_event_id\")"),
+        "{error}"
+    );
+
+    let mut unknown = RENAMED_COLUMNS.to_vec();
+    unknown.push(("work_items", "unknown_hash", "unknown_id"));
+    let error = mapped_record_link_columns(&schema, &unknown)
+        .expect_err("an unknown mapping destination must fail the inventory");
+    assert!(
+        error.contains("(\"work_items\", \"unknown_id\")"),
+        "{error}"
+    );
+
+    let mut duplicate = RENAMED_COLUMNS.to_vec();
+    duplicate.push(("work_items", "other_event_hash", "latest_event_id"));
+    let error = mapped_record_link_columns(&schema, &duplicate)
+        .expect_err("a duplicate mapping destination must fail the inventory");
+    assert_eq!(error, "duplicate record-link mapping destination");
+
+    export_json(&source, &file).unwrap();
+    let mut document = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect::<Vec<Json>>();
+    let current_links = mapped_record_link_columns(&schema, RENAMED_COLUMNS).unwrap();
+    let expected = expected_record_link_exercise(&document, &current_links);
+    let exercised = rewrite_record_link_columns(&mut document, &incomplete);
+    let omitted = BTreeSet::from([("work_items".into(), "latest_event_id".into())]);
+    assert_eq!(
+        record_link_exercise_difference(&expected, &exercised),
+        RecordLinkExerciseDifference {
+            missing_header: omitted.clone(),
+            missing_rows: omitted.clone(),
+            ..RecordLinkExerciseDifference::default()
+        },
+        "skipping one copied mapping must name only that exercise gap"
+    );
+    assert_eq!(
+        missing_required_non_null_record_links(&exercised),
+        omitted,
+        "the named non-null exercise floor must fail for the skipped link"
+    );
+}
+
+#[test]
+fn record_link_inventory_handles_declared_foreign_key_shapes() {
+    let implicit = Connection::open_in_memory().unwrap();
+    implicit
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE objects (object_id TEXT PRIMARY KEY);
+             CREATE TABLE implicit_link (
+                 record_id TEXT REFERENCES objects
+             );",
+        )
+        .unwrap();
+    let error = current_record_link_columns(&implicit)
+        .expect_err("implicit record-link targets must receive a readable refusal");
+    assert_eq!(
+        error,
+        "record-link foreign key implicit_link.record_id uses an implicit objects primary key; declare objects(object_id) explicitly"
+    );
+
+    let wrong_target = Connection::open_in_memory().unwrap();
+    wrong_target
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE objects (
+                 object_id TEXT PRIMARY KEY,
+                 other_id TEXT UNIQUE
+             );
+             CREATE TABLE wrong_link (
+                 record_id TEXT REFERENCES objects(other_id)
+             );",
+        )
+        .unwrap();
+    let error = current_record_link_columns(&wrong_target)
+        .expect_err("a foreign key to another objects column must refuse");
+    assert_eq!(
+        error,
+        "record-link foreign key wrong_link.record_id targets objects.other_id, not objects.object_id"
+    );
+
+    let duplicate = Connection::open_in_memory().unwrap();
+    duplicate
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE objects (object_id TEXT PRIMARY KEY);
+             CREATE TABLE duplicate_link (
+                 record_id TEXT,
+                 FOREIGN KEY(record_id) REFERENCES objects(object_id),
+                 FOREIGN KEY(record_id) REFERENCES objects(object_id)
+             );",
+        )
+        .unwrap();
+    let error = current_record_link_columns(&duplicate)
+        .expect_err("duplicate record-link foreign keys must refuse");
+    assert_eq!(
+        error,
+        "duplicate record-link foreign key duplicate_link.record_id"
+    );
+
+    let mixed_case = Connection::open_in_memory().unwrap();
+    mixed_case
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE Objects (OBJECT_ID TEXT PRIMARY KEY);
+             CREATE TABLE case_link (
+                 record_id TEXT REFERENCES Objects(OBJECT_ID)
+             );",
+        )
+        .unwrap();
+    let links = current_record_link_columns(&mixed_case).expect("SQLite identifiers ignore case");
+    assert!(links.contains(&("case_link".into(), "record_id".into())));
+}
+
+#[test]
+fn rebuilt_record_link_exclusions_require_the_exported_reason() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let file = directory.path().join("source.jsonl");
+    populated(&source);
+    export_json(&source, &file).unwrap();
+    let document = fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect::<Vec<Json>>();
+    let schema = Connection::open(&source).unwrap();
+    let current_links = mapped_record_link_columns(&schema, RENAMED_COLUMNS).unwrap();
+    rebuilt_projection_record_links(&document, &current_links)
+        .expect("current rebuilt record-link reasons");
+
+    let mut missing = document.clone();
+    missing[0]["engram_export"]["left_out"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| entry["name"] != "work_observations");
+    let error = rebuilt_projection_record_links(&missing, &current_links)
+        .expect_err("a missing rebuilt reason must fail");
+    assert!(
+        error.contains("work_observations has 0 left_out entries"),
+        "{error}"
+    );
+
+    let mut wrong = document;
+    wrong[0]["engram_export"]["left_out"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["name"] == "work_observations")
+        .unwrap()["reason"] = Json::String(SEARCH_INDEX.into());
+    let error = rebuilt_projection_record_links(&wrong, &current_links)
+        .expect_err("a wrong rebuilt reason must fail");
+    assert_eq!(
+        error,
+        format!(
+            "rebuilt record-link table work_observations has left_out reason {SEARCH_INDEX:?}, expected {REBUILT_PROJECTION:?}"
+        )
+    );
+}
+
 #[test]
 fn renamed_record_columns_preserve_every_value_and_canonical_byte() {
     let directory = crate::test_support::temp_home().unwrap();
@@ -443,41 +961,29 @@ fn renamed_record_columns_preserve_every_value_and_canonical_byte() {
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     let schema = Connection::open(&source).unwrap();
-    let mut renamed = 0;
-    for (table, old, current) in RENAMED_COLUMNS {
-        let exists: bool = schema
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
-                rusqlite::params![table, current],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(exists, "mapped destination {table}.{current} must exist");
-        let Some(declaration) = document[0]["engram_export"]["tables"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            .find(|entry| entry["name"] == *table)
-        else {
-            // Rebuildable projections are recreated, not exported.
-            continue;
-        };
-        renamed += 1;
-        let columns = declaration["columns"].as_array_mut().unwrap();
-        let column = columns
-            .iter_mut()
-            .find(|column| **column == *current)
-            .expect("mapped column exists");
-        *column = Json::String((*old).into());
-        for line in document.iter_mut().skip(1) {
-            if line["row"]["table"] == *table {
-                let values = line["row"]["values"].as_object_mut().unwrap();
-                let value = values.remove(*current).unwrap();
-                assert!(values.insert((*old).into(), value).is_none());
-            }
-        }
-    }
-    assert!(renamed > 0);
+    let current_links = mapped_record_link_columns(&schema, RENAMED_COLUMNS)
+        .expect("every current record link has one explicit rename mapping");
+    let rebuilt_links = rebuilt_projection_record_links(&document, &current_links)
+        .expect("every omitted record-link table is a named rebuilt projection");
+    let expected_rebuilt_links = REBUILT_RECORD_LINK_COLUMNS
+        .iter()
+        .map(|(table, column)| ((*table).into(), (*column).into()))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        rebuilt_links, expected_rebuilt_links,
+        "rebuilt record-link exclusions are explicit"
+    );
+    let expected_exercise = expected_record_link_exercise(&document, &current_links);
+    let exercised = rewrite_record_link_columns(&mut document, RENAMED_COLUMNS);
+    assert_eq!(
+        record_link_exercise_difference(&expected_exercise, &exercised),
+        RecordLinkExerciseDifference::default(),
+        "every copied mapping is admitted by its header and every populated one rewrites rows"
+    );
+    assert!(
+        missing_required_non_null_record_links(&exercised).is_empty(),
+        "the populated fixture must retain its named non-null record-link exercise floor"
+    );
     let bytes = document
         .iter()
         .map(|line| serde_json::to_string(line).unwrap())
@@ -652,7 +1158,6 @@ fn populated_control(path: &Path) {
         .set_required_control_assurance(
             ControlAssurance::TurnGated,
             &actor("operator"),
-            "migration fixture",
             "migration-policy",
             None,
             now + chrono::Duration::seconds(4),

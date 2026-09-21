@@ -52,10 +52,7 @@ mod test_support;
 
 #[cfg(test)]
 use control_runtime::resolve_verification_environment_on;
-use control_support::{
-    normalize_control_policy_actor, normalize_control_policy_idempotency_key,
-    normalize_control_text,
-};
+use control_support::{normalize_control_policy_actor, normalize_control_policy_idempotency_key};
 use project_memory::{
     derived_project_memory_state_on, derived_project_memory_state_rows_on,
     lookup_project_memory_on, project_memory_state_on, validate_keyed_project_memory_shape,
@@ -702,7 +699,6 @@ enum ControlPolicyOperationFingerprint<'a> {
         idempotency_key: &'a str,
         required_assurance: ControlAssurance,
         authorized_by: &'a ActorContext,
-        reason: &'a str,
         expected_policy: Option<&'a ObjectId>,
     },
     SetObligationRuleSet {
@@ -710,7 +706,6 @@ enum ControlPolicyOperationFingerprint<'a> {
         idempotency_key: &'a str,
         obligation_rule_set: &'a ObjectId,
         authorized_by: &'a ActorContext,
-        reason: &'a str,
         expected_policy: Option<&'a ObjectId>,
     },
     SetAcceptanceEvaluation {
@@ -718,7 +713,6 @@ enum ControlPolicyOperationFingerprint<'a> {
         idempotency_key: &'a str,
         acceptance_evaluation: &'a crate::domain::AcceptanceEvaluationPolicy,
         authorized_by: &'a ActorContext,
-        reason: &'a str,
         expected_policy: Option<&'a ObjectId>,
     },
 }
@@ -1329,7 +1323,6 @@ struct ControlPolicyProjection {
 struct InitialControlPolicy {
     required_assurance: ControlAssurance,
     authorized_by: ActorContext,
-    reason: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -90,7 +90,6 @@ fn diagnostics_only_policy_recovery_names_every_invalid_binding_without_mutation
         .set_required_control_assurance(
             ControlAssurance::Advisory,
             &actor("recovery-test-admin"),
-            "create a second policy version",
             "recovery-test-policy-update",
             Some(&initial.active_policy),
             now,

@@ -33,7 +33,6 @@ fn enable(
         .set_acceptance_evaluation_policy(
             &policy(modes, mechanical, fresh),
             &actor("policy-admin"),
-            "select the acceptance evaluation policy for this test",
             key,
             None,
             at(second),
@@ -50,7 +49,6 @@ fn disable_obligation_rules(store: &mut SqliteStore, second: i64) {
                 rules: Vec::new(),
             },
             &actor("obligation-rule-admin"),
-            "keep built-in obligations out of this evaluation test",
             "disable-obligation-rules",
             None,
             at(second),

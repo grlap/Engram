@@ -118,18 +118,11 @@ enum Command {
         /// Changing this on an existing store requires `control-policy
         /// set-required-assurance`, which records attribution and bumps the
         /// policy epoch.
-        #[arg(
-            long,
-            value_enum,
-            requires_all = ["authorized_by", "reason"]
-        )]
+        #[arg(long, value_enum, requires = "authorized_by")]
         required_assurance: Option<ControlAssuranceArg>,
         /// Host/operator actor id attributed to an explicit bootstrap choice.
         #[arg(long, requires = "required_assurance")]
         authorized_by: Option<String>,
-        /// Auditable reason for an explicit bootstrap policy choice.
-        #[arg(long, requires = "required_assurance")]
-        reason: Option<String>,
     },
     /// Check existing-store compatibility and policy without a full history audit.
     Readiness {
@@ -304,7 +297,7 @@ fn control_assurance_name(value: ControlAssurance) -> &'static str {
 fn warn_if_action_gated(value: ControlAssurance) {
     if value == ControlAssurance::ActionGated {
         eprintln!(
-            "CONTROL WARNING: no current V1 host can bind at action_gated; recover with `engram control-policy set-required-assurance turn_gated --authorized-by <actor> --reason <reason> --idempotency-key <key>`"
+            "CONTROL WARNING: no current V1 host can bind at action_gated; recover with `engram control-policy set-required-assurance turn_gated --authorized-by <actor> --idempotency-key <key>`"
         );
     }
 }
@@ -340,9 +333,6 @@ enum ControlPolicyCommand {
         /// Host/operator actor id attributed to the policy decision.
         #[arg(long)]
         authorized_by: String,
-        /// Auditable reason for changing the project-wide requirement.
-        #[arg(long)]
-        reason: String,
         /// Durable caller key for exact receipt replay after an uncertain response.
         #[arg(long)]
         idempotency_key: String,
@@ -358,9 +348,6 @@ enum ControlPolicyCommand {
         /// Host/operator actor id attributed to the policy decision.
         #[arg(long)]
         authorized_by: String,
-        /// Auditable reason for selecting this rule set.
-        #[arg(long)]
-        reason: String,
         /// Durable caller key for exact receipt replay after an uncertain response.
         #[arg(long)]
         idempotency_key: String,
@@ -387,9 +374,6 @@ enum ControlPolicyCommand {
         /// Host/operator actor id attributed to the policy decision.
         #[arg(long)]
         authorized_by: String,
-        /// Auditable reason for selecting this policy.
-        #[arg(long)]
-        reason: String,
         /// Durable caller key for exact receipt replay after an uncertain response.
         #[arg(long)]
         idempotency_key: String,
@@ -1085,13 +1069,11 @@ async fn run_cli() -> Result<ExitCode> {
         Command::Init {
             required_assurance,
             authorized_by,
-            reason,
         } => initialize(
             &database,
             identity,
             required_assurance.map(Into::into),
             authorized_by,
-            reason,
         )?,
         Command::Readiness { json } => {
             bin_support::readiness::run(&database, identity, &project_id, json)?;
@@ -1230,7 +1212,6 @@ fn run_control_policy(
         ControlPolicyCommand::SetRequiredAssurance {
             level,
             authorized_by,
-            reason,
             idempotency_key,
             expected_policy_hash,
         } => {
@@ -1239,7 +1220,6 @@ fn run_control_policy(
             let receipt = store.set_required_control_assurance(
                 level,
                 &control_policy_actor(authorized_by),
-                &reason,
                 &idempotency_key,
                 expected_policy.as_ref(),
                 chrono::Utc::now(),
@@ -1260,7 +1240,6 @@ fn run_control_policy(
         ControlPolicyCommand::SetObligationRuleSet {
             input,
             authorized_by,
-            reason,
             idempotency_key,
             expected_policy_hash,
         } => {
@@ -1274,7 +1253,6 @@ fn run_control_policy(
             let receipt = store.set_obligation_rule_set(
                 &rule_set,
                 &control_policy_actor(authorized_by),
-                &reason,
                 &idempotency_key,
                 expected_policy.as_ref(),
                 chrono::Utc::now(),
@@ -1292,7 +1270,6 @@ fn run_control_policy(
             mechanical_basis,
             require_source_freshness,
             authorized_by,
-            reason,
             idempotency_key,
             expected_policy_hash,
         } => {
@@ -1320,7 +1297,6 @@ fn run_control_policy(
             let receipt = store.set_acceptance_evaluation_policy(
                 &policy,
                 &control_policy_actor(authorized_by),
-                &reason,
                 &idempotency_key,
                 expected_policy.as_ref(),
                 chrono::Utc::now(),
@@ -2369,6 +2345,61 @@ mod tests {
             .expect("spawn CLI command-graph test")
             .join()
             .expect("CLI command graph remains valid");
+    }
+
+    #[test]
+    fn policy_administration_has_no_reason_argument_or_help() {
+        let commands = [
+            vec![
+                "init",
+                "--required-assurance",
+                "advisory",
+                "--authorized-by",
+                "operator",
+            ],
+            vec![
+                "control-policy",
+                "set-required-assurance",
+                "advisory",
+                "--authorized-by",
+                "operator",
+                "--idempotency-key",
+                "key",
+            ],
+            vec![
+                "control-policy",
+                "set-obligation-rule-set",
+                "--input",
+                "{}",
+                "--authorized-by",
+                "operator",
+                "--idempotency-key",
+                "key",
+            ],
+            vec![
+                "control-policy",
+                "set-acceptance-evaluation",
+                "--modes",
+                "independent-session",
+                "--authorized-by",
+                "operator",
+                "--idempotency-key",
+                "key",
+            ],
+        ];
+        for command in commands {
+            let mut args = vec!["engram"];
+            args.extend(command);
+            assert!(Cli::try_parse_from(&args).is_ok(), "{args:?}");
+            let mut help_args = args.clone();
+            help_args.push("--help");
+            let help = Cli::try_parse_from(help_args).unwrap_err();
+            assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
+            assert!(!help.to_string().contains("--reason"), "{help}");
+            args.extend(["--reason", "removed"]);
+            let error = Cli::try_parse_from(args).unwrap_err();
+            assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
+        }
     }
 
     #[test]

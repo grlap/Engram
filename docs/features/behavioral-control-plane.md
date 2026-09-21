@@ -819,9 +819,9 @@ any external adapter.
 `ControlPolicy` and its `policy_epoch` are project-scoped in V1; task-specific
 policy languages are out of scope. The per-project SQLite store is the V1
 selection scope. `engram init --required-assurance advisory|turn_gated|action_gated`
-with `--authorized-by <actor> --reason <text>` installs a versioned built-in
-safe policy, records the explicit operator choice as asserted attribution, and
-atomically selects its hash. `turn_gated` is the default; plain `engram init`
+with `--authorized-by <actor>` installs a versioned built-in safe policy,
+records the explicit operator choice as asserted attribution, and atomically
+selects its hash. `turn_gated` is the default; plain `engram init`
 uses synthetic system attribution because no operator choice was made. Plain
 `engram init` preserves the selected policy on an existing current store. Any
 missing, different-build, or corrupt schema or active policy fails store open for

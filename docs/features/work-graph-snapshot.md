@@ -27,9 +27,9 @@ and not canonical-object interchange.
 - **Recreation across builds.** Every store schema marker stays 1 until
   release and a store from a different build is refused generically. Save
   on the build that wrote the store, `engram init` on the new build with the
-  same `--required-assurance … --authorized-by … --reason …` bootstrap the
-  project had, re-apply any obligation rule set, load. The file carries no
-  control policy — that is host authority the operator asserts, never a
+  same `--required-assurance … --authorized-by …` bootstrap the project had,
+  re-apply any obligation rule set, load. The file carries no control policy —
+  that is host authority the operator asserts, never a
   file — so a plain `init` would leave the recreated project on the fresh
   default `turn_gated`. No migration chain, no carry script. Stores written
   by builds that predate the exporter keep the manual path in

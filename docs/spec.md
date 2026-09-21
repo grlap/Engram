@@ -542,7 +542,7 @@ A new immutable version records a canonical
 records that attribution as asserted context, not authenticated identity;
 authenticated policy administration is deferred. The implicit bootstrap
 default uses synthetic system attribution; an explicit initial assurance
-requires and records an asserted operator plus reason. Selecting the new policy
+requires and records an asserted operator. Selecting the new policy
 and advancing the project epoch is one transaction.
 The active policy also selects one canonical `ObligationRuleSet` id.
 Assurance-only transitions preserve the selected set. A host/operator-only

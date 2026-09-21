@@ -989,8 +989,7 @@ the [SQLite contract](sqlite-store.md#canonical-bytes-contract).
 ```bash
 export ENGRAM_HOME=/absolute/host-local/path
 engram init --required-assurance advisory \
-  --authorized-by host-operator \
-  --reason "bootstrap this project for an advisory host"
+  --authorized-by host-operator
 engram doctor
 
 # Fast read-only store/policy admission; not a full audit or execution authority.
@@ -1015,7 +1014,6 @@ engram doctor --repair-projections [--json]
 # operator from overwriting a concurrent policy update.
 engram control-policy set-required-assurance turn_gated \
   --authorized-by host-operator \
-  --reason "enable mandatory host turn mediation" \
   --idempotency-key enable-host-turn-mediation \
   --expected-policy-hash <active-policy-id>
 
@@ -1024,7 +1022,6 @@ engram control-policy set-required-assurance turn_gated \
 engram control-policy set-obligation-rule-set \
   --input @obligation-rules.json \
   --authorized-by host-operator \
-  --reason "pin the repository test command and environment" \
   --idempotency-key pin-repository-verification \
   --expected-policy-hash <active-policy-id>
 
@@ -1156,21 +1153,26 @@ missing durable state or rewrites canonical objects.
 
 On a fresh store, plain `engram init` defaults to `turn_gated`;
 `--required-assurance` may instead select `advisory`, `turn_gated`, or
-`action_gated` for that first policy and requires `--authorized-by` plus
-`--reason`; the resulting epoch-one authority object records that operator
+`action_gated` for that first policy and requires `--authorized-by`;
+the resulting epoch-one authority object records that operator
 choice as asserted context. Plain `engram init` remains an
 idempotent create-or-verify operation and preserves any existing active
 policy. Explicitly passing a different bootstrap value for an existing store
 fails instead of silently changing policy.
 `engram control-policy set-required-assurance` records asserted operator
-attribution and a reason,
-creates immutable authority and policy objects, atomically advances the active
-policy id and epoch, and supports an optional compare-and-swap policy id while
-preserving the selected obligation rule set. Its required idempotency key
+attribution, creates immutable authority and policy objects, atomically
+advances the active policy id and epoch, and supports an optional
+compare-and-swap policy id while preserving the selected obligation rule set.
+Its required idempotency key
 binds the complete normalized intent and persists the exact receipt in that
 same transaction. A retry after restart or an uncertain response returns the
 original receipt even though its expected policy id is now stale; reusing
 the key for another intent is a typed conflict.
+
+Policy administration requires no justification text. Neither explicit
+bootstrap nor any `control-policy` setter accepts `--reason`; policy authority
+records carry the attributed operator and selected policy, not a reason field.
+This does not change the reasons required for separate waiver operations.
 
 `engram control-policy show` prints the active policy as JSON: `policy` (the
 record id a compare-and-swap names), `epoch`, `required_assurance`,

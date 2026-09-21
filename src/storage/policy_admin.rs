@@ -7,8 +7,7 @@ use super::{
     MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES, ObjectId, ObligationRuleSet,
     ObligationRuleSetUpdateReceipt, ProjectPolicyAuthorityDecision, ProjectPolicyEpoch,
     ProjectPolicyOperation, Redactor, SqliteStore, StoreError, TransactionBehavior, Utc, enum_name,
-    normalize_control_policy_actor, normalize_control_policy_idempotency_key,
-    normalize_control_text, params,
+    normalize_control_policy_actor, normalize_control_policy_idempotency_key, params,
 };
 use rusqlite::OptionalExtension;
 
@@ -36,7 +35,6 @@ impl SqliteStore {
         &mut self,
         required_assurance: ControlAssurance,
         authorized_by: &ActorContext,
-        reason: &str,
         idempotency_key: &str,
         expected_policy: Option<&ObjectId>,
         now: DateTime<Utc>,
@@ -48,10 +46,6 @@ impl SqliteStore {
             ));
         }
         let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
-        let reason = normalize_control_text(reason, "control policy update reason")?;
-        redactor
-            .inspect(&reason)
-            .map_err(StoreError::RedactionRefused)?;
         let idempotency_key = normalize_control_policy_idempotency_key(idempotency_key)?;
         let intent =
             CanonicalObject::freeze(&ControlPolicyOperationFingerprint::SetRequiredAssurance {
@@ -59,7 +53,6 @@ impl SqliteStore {
                 idempotency_key,
                 required_assurance,
                 authorized_by: &authorized_by,
-                reason: &reason,
                 expected_policy,
             })?;
         if intent.bytes().len() > MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES {
@@ -126,7 +119,6 @@ impl SqliteStore {
             obligation_rule_set: current.obligation_rule_set.clone(),
             acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
             authorized_by,
-            reason,
             decided_at: now,
         };
         let authority_object = CanonicalObject::mint(&authority)?;
@@ -235,7 +227,6 @@ impl SqliteStore {
         &mut self,
         rule_set: &ObligationRuleSet,
         authorized_by: &ActorContext,
-        reason: &str,
         idempotency_key: &str,
         expected_policy: Option<&ObjectId>,
         now: DateTime<Utc>,
@@ -248,10 +239,6 @@ impl SqliteStore {
             ));
         }
         let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
-        let reason = normalize_control_text(reason, "obligation rule-set update reason")?;
-        redactor
-            .inspect(&reason)
-            .map_err(StoreError::RedactionRefused)?;
         let requested = CanonicalObject::freeze(rule_set)?;
         let idempotency_key = normalize_control_policy_idempotency_key(idempotency_key)?;
         let intent =
@@ -260,7 +247,6 @@ impl SqliteStore {
                 idempotency_key,
                 obligation_rule_set: requested.key(),
                 authorized_by: &authorized_by,
-                reason: &reason,
                 expected_policy,
             })?;
         if intent.bytes().len() > MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES {
@@ -360,7 +346,6 @@ impl SqliteStore {
             obligation_rule_set: rule_set_object.key().clone(),
             acceptance_evaluation: active_policy.acceptance_evaluation.clone(),
             authorized_by,
-            reason,
             decided_at: now,
         };
         let authority_object = CanonicalObject::mint(&authority)?;
@@ -470,7 +455,6 @@ impl SqliteStore {
         &mut self,
         acceptance_evaluation: &crate::domain::AcceptanceEvaluationPolicy,
         authorized_by: &ActorContext,
-        reason: &str,
         idempotency_key: &str,
         expected_policy: Option<&ObjectId>,
         now: DateTime<Utc>,
@@ -483,10 +467,6 @@ impl SqliteStore {
             ));
         }
         let authorized_by = normalize_control_policy_actor(authorized_by, redactor)?;
-        let reason = normalize_control_text(reason, "acceptance evaluation policy reason")?;
-        redactor
-            .inspect(&reason)
-            .map_err(StoreError::RedactionRefused)?;
         let idempotency_key = normalize_control_policy_idempotency_key(idempotency_key)?;
         let intent = CanonicalObject::freeze(
             &ControlPolicyOperationFingerprint::SetAcceptanceEvaluation {
@@ -494,7 +474,6 @@ impl SqliteStore {
                 idempotency_key,
                 acceptance_evaluation: &acceptance_evaluation,
                 authorized_by: &authorized_by,
-                reason: &reason,
                 expected_policy,
             },
         )?;
@@ -565,7 +544,6 @@ impl SqliteStore {
             obligation_rule_set: current.obligation_rule_set.clone(),
             acceptance_evaluation: acceptance_evaluation.clone(),
             authorized_by,
-            reason,
             decided_at: now,
         };
         let authority_object = CanonicalObject::mint(&authority)?;

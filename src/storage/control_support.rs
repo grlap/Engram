@@ -251,13 +251,6 @@ impl SqliteStore {
             )));
         }
         validate_control_policy_actor_shape(&authority.authorized_by)?;
-        if normalize_control_text(&authority.reason, "control policy authority reason")?
-            != authority.reason
-        {
-            return Err(StoreError::InvalidControlProjection(format!(
-                "control policy {policy_id} authority reason is not normalized"
-            )));
-        }
         Ok((policy, authority))
     }
 

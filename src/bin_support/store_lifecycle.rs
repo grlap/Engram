@@ -21,19 +21,15 @@ pub(crate) fn initialize(
     identity: Option<HostPathPolicy>,
     required_assurance: Option<ControlAssurance>,
     authorized_by: Option<String>,
-    reason: Option<String>,
 ) -> Result<()> {
     if let Some(parent) = database.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    let requested_attribution = authorized_by
-        .as_deref()
-        .zip(reason.as_deref())
-        .map(|(actor_id, reason)| (actor_id.trim().to_owned(), reason.trim().to_owned()));
-    let store = match (required_assurance, authorized_by, reason) {
-        (None, None, None) => SqliteStore::open_with_host_path_identity(database, identity),
-        (Some(required_assurance), Some(authorized_by), Some(reason)) => {
+    let requested_attribution = authorized_by.as_deref().map(str::trim).map(str::to_owned);
+    let store = match (required_assurance, authorized_by) {
+        (None, None) => SqliteStore::open_with_host_path_identity(database, identity),
+        (Some(required_assurance), Some(authorized_by)) => {
             SqliteStore::open_with_initial_control_assurance(
                 database,
                 identity,
@@ -49,22 +45,21 @@ pub(crate) fn initialize(
                     provenance_chain: Vec::new(),
                     reason: "authorize an explicit project bootstrap control policy".into(),
                 },
-                &reason,
                 &DevelopmentNoopRedactor,
             )
         }
-        _ => bail!("--required-assurance, --authorized-by, and --reason must be supplied together"),
+        _ => bail!("--required-assurance and --authorized-by must be supplied together"),
     }
     .with_context(|| format!("failed to initialize {}", database.display()))?;
     let control = store.control_diagnostics()?;
-    let bootstrap_attribution_recorded = if let Some((actor_id, reason)) = requested_attribution {
+    let bootstrap_attribution_recorded = if let Some(actor_id) = requested_attribution {
         let policy: ControlPolicy = store
             .get(&control.active_policy)?
             .context("active bootstrap policy object is missing")?;
         let authority: ProjectPolicyAuthorityDecision = store
             .get(&policy.authority)?
             .context("active bootstrap policy authority object is missing")?;
-        authority.authorized_by.actor_id == actor_id && authority.reason == reason
+        authority.authorized_by.actor_id == actor_id
     } else {
         false
     };
