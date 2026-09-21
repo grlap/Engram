@@ -165,7 +165,7 @@ engram work next --peek [--verbose]  # orientation without advancing delivery
 engram work next [--verbose]         # explicitly advance ordinary delivery
 engram work ls [--search TEXT] [--ready | --blocked] [--mine] [--label L] [--all] [--under PARENT [--optional | --required]] [--limit N] [--after CURSOR] [--verbose]
 engram work show REF [--notes [--gates] | --history] [--after CURSOR]
-engram work show REF --note HASH[:INDEX]  # complete immutable note detail
+engram work show REF --note ID[:INDEX]  # complete immutable note detail
 engram work add "Title" [--note "Initial finding"]... [--outcome "..."] [--accept "criterion"]... [--bind POSITION=KIND[:FINGERPRINT]]... [--under REF [--optional]] [--priority 0-4] [--kind KIND] [--label L]
 engram work claim REF [--ttl SECONDS] [--recover "why"]   # same holder renews; --recover is for another prior holder
 engram work claim --under PARENT [--ttl SECONDS] [--recover "why"]   # hold the parent's next ready child, chosen in ls --ready order and claimed in one transaction
@@ -781,7 +781,7 @@ Rules that matter:
   POSITION=TEXT [--evidence POSITION=LOCATOR]...`, where `show` prints both
   bases and `LOCATOR` is a note/gate locator exactly as `show --notes
   --gates` prints it (resolved as `done --link` resolves it) or the full
-  hash of host-minted verification or environment evidence. The evaluator's
+  record id of host-minted verification or environment evidence. The evaluator's
   own session is the attributed identity; a pass needs at least one
   run-evidence citation; the core validates structure and provenance, never
   relevance, and refuses a submission whose evidence basis a host-observed
@@ -1011,22 +1011,22 @@ engram doctor --recover-policy [--json]
 engram doctor --repair-projections [--json]
 
 # Host/operator boundary: activate a new immutable policy version. The
-# optional expected hash is the `id=` reported by doctor and prevents a stale
+# optional expected policy id is the `id=` reported by doctor and prevents a stale
 # operator from overwriting a concurrent policy update.
 engram control-policy set-required-assurance turn_gated \
   --authorized-by host-operator \
   --reason "enable mandatory host turn mediation" \
   --idempotency-key enable-host-turn-mediation \
-  --expected-policy-hash <active-policy-hash>
+  --expected-policy-hash <active-policy-id>
 
 # Select a bounded typed obligation set. The required environment must already
-# be a canonical EnvironmentEvidence hash returned by a host checkpoint.
+# be a canonical EnvironmentEvidence record id returned by a host checkpoint.
 engram control-policy set-obligation-rule-set \
   --input @obligation-rules.json \
   --authorized-by host-operator \
   --reason "pin the repository test command and environment" \
   --idempotency-key pin-repository-verification \
-  --expected-policy-hash <active-policy-hash>
+  --expected-policy-hash <active-policy-id>
 
 engram mcp \
   --actor-id codex \
@@ -1165,15 +1165,15 @@ fails instead of silently changing policy.
 `engram control-policy set-required-assurance` records asserted operator
 attribution and a reason,
 creates immutable authority and policy objects, atomically advances the active
-policy hash and epoch, and supports an optional compare-and-swap hash while
+policy id and epoch, and supports an optional compare-and-swap policy id while
 preserving the selected obligation rule set. Its required idempotency key
 binds the complete normalized intent and persists the exact receipt in that
 same transaction. A retry after restart or an uncertain response returns the
-original receipt even though its expected policy hash is now stale; reusing
+original receipt even though its expected policy id is now stale; reusing
 the key for another intent is a typed conflict.
 
 `engram control-policy show` prints the active policy as JSON: `policy` (the
-hash a compare-and-swap names), `epoch`, `required_assurance`,
+record id a compare-and-swap names), `epoch`, `required_assurance`,
 `obligation_rules`, `acceptance_evaluation` and `supported_effects`. It reads
 the policy head and changes nothing, so a host asks it whenever it needs the
 admitted evaluator modes; the `doctor` report carries the same keys but runs
@@ -1232,7 +1232,7 @@ with an attributed reason and retry key:
 ```bash
 engram authority waive-obligation \
   --obligation-id <uuid> \
-  --expected-definition <hash> \
+  --expected-definition <record-id> \
   --waived-by host-operator \
   --reason "accepted without the required test" \
   --idempotency-key <retry-key>
@@ -1240,7 +1240,7 @@ engram authority waive-obligation \
 
 The equivalent native-host operation is `obligation_waive` on the private
 JSON-lines channel. Its request names the routing token, exact obligation and
-definition hashes, asserted `waived_by` human, bounded reason,
+definition ids, asserted `waived_by` human, bounded reason,
 and idempotency key. The control session must be bound to that obligation's
 live run. Policy outcomes are typed as `waiver_not_admitted`,
 `obligation_not_open`, or `definition_changed`; transport, token, and
@@ -1623,15 +1623,15 @@ typed policies. Mismatched derived bytes, a missing reference, or a run/source/
 session basis mismatch return `environment_fingerprint_mismatch`,
 `environment_evidence_not_found`, or `environment_basis_mismatch`.
 
-The receipt returns all three typed hash lists. Begin and checkpoint keys are
-each scoped to the exact grant and canonical request intent. An exact retry returns those
-hashes without another feed append; changing any ordered list under the same
-checkpoint key fails with `control_operation_idempotency_conflict`.
+The receipt returns all three typed record-id lists. Begin and checkpoint keys
+are each scoped to the exact grant and canonical request intent. An exact retry
+returns those ids without another feed append; changing any ordered list under
+the same checkpoint key fails with `control_operation_idempotency_conflict`.
 
 Agent-facing `work_update:evidence` retains its generic form. It also
 accepts the attach-only form
-`{ kind: "evidence", attach: { evidence: <typed-hash> }, idempotency_key }`.
-Attach validates that the hash is verification/environment evidence on the
+`{ kind: "evidence", attach: { evidence: <typed-record-id> }, idempotency_key }`.
+Attach validates that the id names verification/environment evidence on the
 focused run and does not mint another canonical object or feed entry. Generic
 evidence can be cited for context and completion, but cannot satisfy a typed
 verification requirement.

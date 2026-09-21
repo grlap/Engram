@@ -52,7 +52,7 @@ Engram V1 is a Rust, host-local concurrent execution-memory system:
 - One capture feeds task delta, handoff, and report views; Engram owns
   host-local work, and external trackers are immutable snapshot references.
 - Local tasks reference but never mirror external organizational tickets.
-- In that target design, `report_ready` freezes report bytes and hash; a
+- In that target design, `report_ready` freezes report bytes and fingerprint; a
   separately requested publication freezes its target and idempotency key.
   Publication requires an adapter receipt; retry reuses the frozen payload.
 - Actor/authority text from tools and skills is asserted context, not
