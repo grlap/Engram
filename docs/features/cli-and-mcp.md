@@ -1820,6 +1820,10 @@ fence, or key. The CLI path drives the same lifecycle through the words in text
 and `--json` modes and keeps one `engram work core focus` call. Both scripts are
 part of `scripts/check.sh`.
 
+The shared [test launcher](../development.md#test-launcher) drives these gates;
+`scripts/test-launcher.test.mjs` checks its execution, diagnostics and completion
+delivery behavior alongside the review-fingerprint suite.
+
 `scripts/control-dogfood.test.mjs` launches the real bounded JSON-lines service,
 bootstraps an advisory policy, activates a turn-gated successor through the
 operator CLI, verifies both versions through `doctor`, binds, evaluates,

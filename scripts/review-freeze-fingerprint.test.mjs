@@ -341,7 +341,7 @@ test("index symlink targets and type changes are detected without filesystem sym
   });
 });
 
-test("CLI discloses unverified Windows filesystem properties separately from stdout", () => {
+test("CLI discloses normalization and Windows limitations separately from stdout", () => {
   withRepository((root) => {
     const script = fileURLToPath(new URL("./review-freeze-fingerprint.mjs", import.meta.url));
     const snapshot = join(root, ".git", "engram-review-freeze.json");
@@ -352,10 +352,11 @@ test("CLI discloses unverified Windows filesystem properties separately from std
       assert.equal(result.status, 0, result.stderr);
       if (args.length === 0) assert.equal(JSON.parse(result.stdout).root, realpathSync.native(root));
       else assert.equal(result.stdout, `${JSON.parse(readFileSync(snapshot, "utf8")).fingerprint}\n`);
+      assert.match(result.stderr, /tracked content follows Git clean\/eol normalization/u);
       if (process.platform === "win32") {
         assert.match(result.stderr, /untracked executable-mode and filesystem symlink properties are unverified on Windows/u);
         assert.match(result.stderr, /Git index modes and symlink targets are covered separately/u);
-      } else assert.equal(result.stderr, "");
+      } else assert.doesNotMatch(result.stderr, /unverified on Windows/u);
     }
   });
 });

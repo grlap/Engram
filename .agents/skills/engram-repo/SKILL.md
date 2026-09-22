@@ -486,14 +486,17 @@ When injected, the same fourteen words are MCP tools (`next`, `ls`, `show`,
 
 ## Verification
 
-Run the smallest focused test while iterating, then finish with:
+Use `node scripts/test-launcher.mjs focused -- COMMAND ARGS...` for the
+smallest focused test while iterating, then `node scripts/test-launcher.mjs full`
+for the following gates. Full logs stay on disk; see
+[launcher usage](../../../docs/development.md#test-launcher) for completion delivery.
 
 ```bash
 cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs
+node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs

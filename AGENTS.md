@@ -164,12 +164,17 @@ protocol). Ceremony is the enemy; speed of change is the point.
 
 Run these before handing off code changes:
 
+Use `node scripts/test-launcher.mjs full` to execute this sequence with full
+logs on disk and compact failures/warnings in context. For an authorized focused
+check use `node scripts/test-launcher.mjs focused -- COMMAND ARGS...`.
+See [launcher usage](docs/development.md#test-launcher) for completion delivery.
+
 ```bash
 cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs
+node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs

@@ -136,13 +136,15 @@ function parseArguments(arguments_) {
   throw new Error("usage: review-freeze-fingerprint.mjs [--write FILE | --check FILE]");
 }
 
+// Keep the schema-1 algorithm aligned with the independent compiled host checker.
+export const NORMALIZATION_LIMITATION = "Review freeze limitation: tracked content follows Git clean/eol normalization; changes erased by that conversion are not detected (not raw-byte coverage).";
+export const WINDOWS_LIMITATION = "Review freeze limitation: untracked executable-mode and filesystem symlink properties are unverified on Windows; Git index modes and symlink targets are covered separately.";
+export const fingerprintLimitations = (platform = process.platform) =>
+  [NORMALIZATION_LIMITATION, ...(platform === "win32" ? [WINDOWS_LIMITATION] : [])];
+
 export function runCli(arguments_, startDirectory = process.cwd()) {
   const options = parseArguments(arguments_);
-  if (process.platform === "win32") {
-    process.stderr.write(
-      "Review freeze limitation: untracked executable-mode and filesystem symlink properties are unverified on Windows; Git index modes and symlink targets are covered separately.\n",
-    );
-  }
+  process.stderr.write(`${fingerprintLimitations().join("\n")}\n`);
   if (options.mode === "check") {
     const snapshotPath = resolve(startDirectory, options.path);
     const expected = JSON.parse(readFileSync(snapshotPath, "utf8"));

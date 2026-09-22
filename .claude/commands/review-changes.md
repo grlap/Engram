@@ -38,14 +38,14 @@ If there are no changes, report that and stop.
 
 ## 2. Run parent-owned gates
 
-Run, in order:
+Use `node scripts/test-launcher.mjs full` to run, in order:
 
 ```bash
 cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs
+node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs
@@ -58,9 +58,10 @@ phases without the Unix-only file-descriptor-limit adjustment.
 
 ### Completion-driven execution: do not babysit tests
 
-Use an existing suitable runner or prepare a task-local runner for the exact
-commands above, including the Windows substitution. This is a runner contract,
-not a claim that `scripts/check.sh` supplies structured logging. Launch one
+Use the maintained `scripts/test-launcher.mjs` entrypoint, including its Windows
+substitution; `scripts/check.sh` forwards to its full mode. See
+[launcher usage](../../docs/development.md#test-launcher) for focused checks,
+detached root-worker delivery and notification-only retries. Launch one
 batch, retaining each command's full output and its exit code, start/end times,
 and log path in a compact result file. Halt the remaining commands at the first
 failure so the parent can investigate. Inspect the summary at completion;
@@ -74,15 +75,23 @@ Record the exact runner command, execution owner, completion handle and artifact
 paths in the parent work status before yielding. A PID alone is not a durable
 completion handle; use the host job/session identity and recorded start time.
 
-Before launch, capture the current input with the existing freeze script's
-`--write` into that run directory and retain its printed fingerprint separately
-from the manifest. Record that literal and manifest path alongside the results.
+The launcher captures the input using the existing freeze implementation in
+`input.json`, saves the expected value in `request.json`, and checks it before
+execution and at completion. Before yielding, the parent retains that exact
+`expectedFingerprint` literal in its own work status, alongside the run directory
+and manifest path. Foreground and detached launch receipts print it for this
+purpose, before waiting for completion.
+Do not recover the comparison value from the run's files at completion.
 Hold source and index unchanged during execution. At completion, and before
-reusing recovered results, require `--check` to exit zero with stdout exactly
-that saved literal plus LF. A mismatch or missing identity is an evidence gap,
-not a current pass. These boundary checks do not prove the absence of transient
+reusing recovered results, require the existing freeze script's `--check` to
+exit zero with stdout exactly the parent-held literal plus LF. A mismatch or
+missing independently retained identity is an evidence gap, not a current pass.
+These boundary checks do not prove the absence of transient
 edits; a known intervening edit invalidates the run. This gate-input snapshot
 is separate from the post-gate review freeze in section 3.
+Tracked content follows Git's clean/eol normalization, so changes erased by
+that conversion (including line-ending-only edits) are not detected by the
+fingerprint on any platform. Do not claim raw-byte coverage for tracked files.
 
 Use a completion notification or supported resume-on-completion mechanism, then
 yield the turn. If none is available, wait on the same runner's completion using
@@ -152,7 +161,11 @@ value until fan-in: a later run or another session can overwrite the manifest.
 Do not replace this saved value with a fingerprint read back from that file.
 
 The snapshot records the canonical Git worktree root and covers HEAD, the
-index, tracked worktree changes, and untracked file contents. A check from
+index, Git-normalized tracked worktree changes, and untracked file contents.
+Git clean/eol conversion can erase tracked-byte differences; this is not
+raw-byte coverage or proof against transient edits. The freeze CLI reports
+this normalization limitation on stderr on every platform, separately from
+the exact fingerprint on stdout. A check from
 another worktree or repository refuses with both roots before comparing
 content fingerprints. Running from a subdirectory still checks the whole
 worktree. A manifest without a root is refused; create a new freeze.

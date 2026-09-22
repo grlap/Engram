@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Test review input fingerprinting
-        run: node --test scripts/review-freeze-fingerprint.test.mjs
+      - name: Test review input fingerprinting and completion launcher
+        run: node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
       - name: Check documentation links
         run: node scripts/check-doc-links.mjs

@@ -49,14 +49,15 @@ This project tracks its work in Engram — the fourteen agent words, documented 
 
 ## Quality gates
 
-Run before any commit prompt (once the Rust workspace exists):
+Run `node scripts/test-launcher.mjs full` before any commit prompt. It preserves
+these gates in order:
 
 ```bash
 cargo fmt --check
 cargo check
 cargo clippy --all-targets --all-features -- -D warnings
 scripts/test-rust.sh
-node --test scripts/review-freeze-fingerprint.test.mjs
+node --test scripts/review-freeze-fingerprint.test.mjs scripts/test-launcher.test.mjs
 node --test scripts/mcp-dogfood.test.mjs
 node --test scripts/control-dogfood.test.mjs
 node --test scripts/parity.test.mjs
@@ -86,6 +87,124 @@ periodic heartbeat. Do not stop the gate just because it is quiet or passes
 that warning threshold. Check process activity and possible lock contention
 when investigating a suspected hang. The root-delta checks assert byte and
 operation bounds; elapsed time is diagnostic only.
+
+### Test launcher
+
+One entrypoint handles full validation and authorized focused checks:
+
+```bash
+node scripts/test-launcher.mjs full
+node scripts/test-launcher.mjs focused -- node --test scripts/test-launcher.test.mjs
+node scripts/test-launcher.mjs focused -- cargo test --lib control_runtime
+```
+
+Commands are argument arrays, not shell strings. Name `pwsh -NoProfile -File`
+or `sh` explicitly for shell scripts. Full mode chooses the correct Rust runner,
+including its ordinary and scale phases, then the Node integration gates.
+Both full and focused modes clear inherited `RUSTUP_TOOLCHAIN` overrides,
+leaving selection to Rustup. A directory override at the repository root still
+takes precedence over `rust-toolchain.toml`; `rustup show active-toolchain`
+reports the selection. Removed names and values
+are recorded in `results.json` as `clearedToolchainOverrides`, with a summary
+notice when present. To intentionally use another toolchain for a focused check,
+pass it explicitly, e.g. `focused -- cargo +nightly test ...`.
+Full mode probes Cargo components; both modes check required executables before
+expensive stages. For a focused external
+integration requiring a supplied binary, add `--require-binary-env VARIABLE`
+before `--`; the variable must contain an absolute executable path that passes
+`--version`. No test command formats source, installs binaries or restarts a host.
+
+Each invocation creates a unique directory below Git's `review-runs` metadata
+directory (also works with linked worktrees). `request.json` identifies commands,
+owner and expected source fingerprint; `input.json` uses the existing review
+freeze format. Before yielding, retain the exact expected fingerprint in the
+parent's work status, independently of these run files. Use that parent-held
+literal when checking recovered results. Source and index must stay unchanged.
+`results.json` records
+stage exits, timestamps, full log paths and bounded diagnostics. Stdout/stderr
+go directly to logs, never through a terminal stream. Only the final summary,
+warnings and bounded failures reach context; truncation points to the full log.
+Filtering does not decide success: actual process exits do. A failed command
+stops subsequent stages, which stay explicitly unrun. Exceptions fail the run;
+a killed process without terminal results remains unknown, never a pass.
+The snapshot checks are boundary checks, not proof against transient edits.
+Normalization limits are emitted in freeze CLI stderr and every run's
+results/summary; fingerprint stdout remains unchanged.
+Tracked content is compared through Git's normalized diff, not raw filesystem
+bytes: line-ending-only changes (or changes erased by clean filters) can be
+invisible on any platform. Known intervening edits still invalidate a run.
+The Windows executable-mode/symlink limitation is separate. Artifacts use
+owner-only POSIX modes (0700 run directory, 0600 files); Windows uses its ACLs.
+
+Foreground and detached launch receipts both print the run directory, manifest
+path and expected fingerprint before waiting for completion. Foreground mode
+prints this after execution admission and before running stages, so the parent
+can retain recovery details while using its host's process-completion wait.
+
+For an existing root worker delivering completion to a different coordinator:
+
+```bash
+node scripts/test-launcher.mjs full --detach --notify COORDINATOR_SESSION_ID
+```
+
+The worker must inherit its genuine `TERMAL_SESSION_ID`, `TERMAL_CLI` and host
+connection configuration. Never supply someone else's identity; self-send is
+refused before detachment. On Windows `TERMAL_CLI` must be an absolute `.exe`
+path, not a `.cmd` or `.bat` shim. `STARTED` is emitted only after the child
+has acquired its execution lock and read its run files; failures of those
+admission steps return to the caller before it is told to yield. Subsequent
+command validation and preflight failures arrive in the terminal completion
+message. A duplicate execution never overwrites
+the original owner's results. The detached process has no terminal handles and
+saves results before
+sending a stable-key mailbox message through `--message-file`. End the agent
+turn after the launch receipt. No sleep/status/log-tail loop or watcher agent.
+If admission fails after the request can be read, the caller can receive an
+error without `STARTED` while the coordinator also receives the saved `FAIL`.
+These describe the same run, not two executions; use its run directory to
+inspect the failure before deciding what needs correction.
+Actual survival after turn end and wake delivery must be verified on the host;
+`STARTED` alone is not proof of either. User Stop and host dispatch restrictions
+still apply. If the coordinator launches its own command, use foreground mode
+and the host's supported process-completion wait; do not pretend self-mailbox
+notifications work. Where no completion wake exists, disclose that limitation.
+
+Recover an existing run at completion, without rerunning its tests:
+
+```bash
+node scripts/test-launcher.mjs summary RUN_DIRECTORY
+node scripts/test-launcher.mjs notify RUN_DIRECTORY
+```
+
+`notify` is only for a recorded notification target, using the original root
+identity. It resends the same saved body and idempotency key, not the tests.
+Sender equality checks asserted session context, not authenticated identity.
+Diagnostic excerpts are not redacted: anything a gate prints within the bounded
+excerpt can be sent to the coordinator. Do not put secrets in gate output.
+Notification errors do not erase test results. `notification.json` retains the
+latest attempt's receipt; each attempt's separate log remains available.
+The notification body is written to a unique temporary file, then published
+without replacement through a hard link. Filesystems without hard-link support
+refuse notification publication; test results remain available. An interrupted
+write leaves a temporary artifact rather than a partial retry body. This does
+not add a power-loss durability guarantee.
+An unreadable request cannot supply a notification target, so it fails startup
+without a `STARTED` receipt. A killed process or unwritable results directory
+cannot guarantee completion delivery; missing terminal results remain unknown.
+`execution.lock` prevents a second execution of the same run directory, not
+separate launches; the caller owns repository-level serialization. After a
+crash, recover its artifacts and classify
+the failure before choosing a new run. Diagnose actual failures and repair them
+within the authorized scope, then validate the changed input; never retry blindly.
+
+Run evidence is retained until explicitly removed by the operator; there is no
+automatic pruning. After a run has terminal results, its outcome has been
+recovered and recorded, and any pending notification or review use is resolved,
+the operator may archive or delete that exact run directory if its full logs
+are no longer needed. Preserve referenced evidence before removal. Never delete
+running, unrecovered, or still-needed runs; inspect their state first. Deleting
+a run also removes its notification-retry data. Do not remove the whole
+`review-runs` directory as a shortcut.
 
 ### Test temporary files
 
