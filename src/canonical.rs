@@ -19,6 +19,16 @@ use sha2::{Digest, Sha256};
 
 use crate::storage::StoreError;
 
+/// Serializes a value to RFC 8785 canonical JSON bytes without deriving an id
+/// or content fingerprint.
+///
+/// # Errors
+///
+/// Returns [`StoreError`] when JSON serialization or canonicalization fails.
+pub(crate) fn canonical_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, StoreError> {
+    Ok(serde_json_canonicalizer::to_vec(value)?)
+}
+
 #[cfg(test)]
 thread_local! {
     static CANONICAL_DECODE_COUNT: Cell<usize> = const { Cell::new(0) };
@@ -128,7 +138,7 @@ impl CanonicalObject {
     pub fn mint<T: Serialize>(value: &T) -> Result<Self, StoreError> {
         Ok(Self {
             key: ObjectId::mint(),
-            bytes: serde_json_canonicalizer::to_vec(value)?,
+            bytes: canonical_bytes(value)?,
         })
     }
 
@@ -142,7 +152,7 @@ impl CanonicalObject {
     pub fn identified<T: Serialize>(id: &ObjectId, value: &T) -> Result<Self, StoreError> {
         Ok(Self {
             key: id.clone(),
-            bytes: serde_json_canonicalizer::to_vec(value)?,
+            bytes: canonical_bytes(value)?,
         })
     }
 
@@ -154,7 +164,7 @@ impl CanonicalObject {
     /// Returns [`StoreError`] when JSON serialization or canonicalization
     /// fails.
     pub fn freeze<T: Serialize>(value: &T) -> Result<Self, StoreError> {
-        let bytes = serde_json_canonicalizer::to_vec(value)?;
+        let bytes = canonical_bytes(value)?;
         let key = ObjectId::from_canonical_bytes(&bytes);
         Ok(Self { key, bytes })
     }

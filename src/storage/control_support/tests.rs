@@ -14,6 +14,62 @@ use crate::{
 };
 
 #[test]
+fn policy_operation_result_enforces_the_canonical_byte_limit() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let intent = CanonicalObject::freeze(&"result-size-boundary").unwrap();
+    let transaction = store.connection.transaction().unwrap();
+    // A JSON string adds two quote bytes to this ASCII payload.
+    let at_limit = "x".repeat(MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES - 2);
+    assert_eq!(
+        CanonicalObject::freeze(&at_limit).unwrap().bytes().len(),
+        MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES
+    );
+    SqliteStore::persist_control_policy_operation(
+        &transaction,
+        "set_required_assurance",
+        "at-result-limit",
+        &intent,
+        &at_limit,
+        now,
+    )
+    .expect("exact limit is admitted");
+    let over_limit = format!("{at_limit}x");
+    let error = SqliteStore::persist_control_policy_operation(
+        &transaction,
+        "set_required_assurance",
+        "over-result-limit",
+        &intent,
+        &over_limit,
+        now,
+    )
+    .expect_err("one byte over the limit refuses");
+    assert!(matches!(
+        error,
+        StoreError::InvalidControlProjection(message)
+            if message == format!(
+                "control policy operation result exceeds the {MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES}-byte canonical limit"
+            )
+    ));
+    let keys = transaction
+        .prepare("SELECT idempotency_key FROM control_policy_operation_results")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(keys, ["at-result-limit"]);
+    transaction.commit().unwrap();
+    assert_projection_bytes(
+        &store,
+        "SELECT result_json FROM control_policy_operation_results
+         WHERE operation = 'set_required_assurance' AND idempotency_key = ?1",
+        ["at-result-limit"],
+        &at_limit,
+    );
+}
+
+#[test]
 fn live_control_policy_load_is_bounded_independently_of_history_depth() {
     let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
     let mut store = SqliteStore::open_in_memory().expect("store");

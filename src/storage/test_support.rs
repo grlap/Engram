@@ -19,6 +19,31 @@ pub(super) struct Example {
 
 pub(super) struct SentinelRedactor;
 
+pub(super) fn assert_projection_bytes<T: Serialize>(
+    store: &SqliteStore,
+    query: &str,
+    parameters: impl rusqlite::Params,
+    expected: &T,
+) {
+    let mut statement = store
+        .connection
+        .prepare(query)
+        .expect("prepare stored projection query");
+    let mut rows = statement
+        .query_map(parameters, |row| row.get::<_, Vec<u8>>(0))
+        .expect("query stored projection");
+    let stored = rows
+        .next()
+        .expect("one stored projection")
+        .expect("read stored projection");
+    assert!(
+        rows.next().is_none(),
+        "expected exactly one stored projection"
+    );
+    // Derive the expected canonical form at runtime rather than pinning a digest.
+    assert_eq!(stored, crate::canonical::canonical_bytes(expected).unwrap());
+}
+
 impl Redactor for SentinelRedactor {
     fn inspect(&self, prose: &str) -> Result<(), String> {
         if prose.contains("reject-me") {

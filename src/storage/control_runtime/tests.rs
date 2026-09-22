@@ -130,6 +130,12 @@ fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
         panic!("fresh evaluation must replace issued grant");
     };
     assert_ne!(first.grant_id, second.grant_id);
+    assert_projection_bytes(
+        &store,
+        "SELECT grant_json FROM control_turn_grants WHERE grant_id = ?1",
+        [&second.grant_id],
+        &second,
+    );
     assert_eq!(
         store
             .connection
@@ -154,6 +160,33 @@ fn fresh_evaluate_replaces_issued_grant_but_preserves_begun_checkpoint() {
     let supersession: TurnGrantSupersession =
         SqliteStore::decode_json_projection(&supersession_json)
             .expect("verified supersession transition");
+    let replacement = ControlTurnDecision::Grant {
+        grant: second.clone(),
+    };
+    let expected_transition = TurnGrantSupersession {
+        control_schema_version: CONTROL_SCHEMA_VERSION,
+        session_id: binding.status.session_id.clone(),
+        task_id: first.basis.task_id,
+        superseded_grant_id: first.grant_id.clone(),
+        superseded_request_key: first.request_key.clone(),
+        replacement_request_key: second.request_key.clone(),
+        replacement_decision: CanonicalObject::freeze(&replacement).unwrap().key().clone(),
+        reason: TurnGrantSupersessionReason::FreshEvaluation,
+        superseded_at: now + TimeDelta::seconds(4),
+    };
+    assert_eq!(
+        supersession_json,
+        CanonicalObject::freeze(&expected_transition)
+            .unwrap()
+            .bytes()
+    );
+    assert_eq!(
+        replacement_decision_hash,
+        CanonicalObject::freeze(&replacement)
+            .unwrap()
+            .key()
+            .as_str()
+    );
     assert_eq!(supersession.superseded_grant_id, first.grant_id);
     assert_eq!(supersession.superseded_request_key, first.request_key);
     assert_eq!(supersession.replacement_request_key, second.request_key);
@@ -286,6 +319,22 @@ fn shadow_turn_observations_are_idempotent_across_restart() {
         input.blocking_watermark = note_cursor;
         input.acknowledged_blocking_watermark = note_cursor;
         let first = store.record_turn_observation(&input).unwrap();
+        let mut hydrated = input.clone();
+        hydrated.participant_membership = ParticipantMembership::Member;
+        hydrated.task_state = Some(TaskState::Active);
+        hydrated.head_cursor = note_cursor;
+        assert_projection_bytes(
+            &store,
+            "SELECT input_json FROM control_observations WHERE idempotency_key = ?1",
+            [&input.intent.idempotency_key],
+            &hydrated,
+        );
+        assert_projection_bytes(
+            &store,
+            "SELECT decision_json FROM control_observations WHERE idempotency_key = ?1",
+            [&input.intent.idempotency_key],
+            &first,
+        );
         (first, input)
     };
     assert!(matches!(first.decision, TurnDecision::Grant { .. }));
@@ -588,6 +637,12 @@ fn scoped_work_leases_gate_mutation_and_fence_transfer() {
     let WorkLeaseDecision::Granted { lease: lease_a } = lease_a else {
         panic!("first non-conflicting lease must grant");
     };
+    assert_projection_bytes(
+        &store,
+        "SELECT lease_json FROM control_work_leases WHERE lease_id = ?1",
+        [&lease_a.lease_id],
+        &lease_a,
+    );
     assert_eq!(
         store
             .acquire_work_lease(
@@ -683,6 +738,21 @@ fn scoped_work_leases_gate_mutation_and_fence_transfer() {
             now + TimeDelta::seconds(6),
         )
         .unwrap();
+    let mut terminal_lease = lease_a.clone();
+    terminal_lease.revision += 1;
+    assert_projection_bytes(
+        &store,
+        "SELECT lease_json FROM control_work_leases WHERE lease_id = ?1",
+        [&lease_a.lease_id],
+        &terminal_lease,
+    );
+    assert_projection_bytes(
+        &store,
+        "SELECT result_json FROM control_operation_results
+         WHERE session_id = ?1 AND operation = 'lease_release' AND idempotency_key = ?2",
+        [&session_a.status.session_id.0, "release-src-a"],
+        &released,
+    );
     assert_eq!(
         store
             .release_work_lease(

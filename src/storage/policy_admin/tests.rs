@@ -16,6 +16,29 @@ use crate::{
 };
 
 #[test]
+fn policy_operation_result_preserves_canonical_bytes() {
+    let now = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let mut store = SqliteStore::open_in_memory().unwrap();
+    let receipt = store
+        .set_required_control_assurance(
+            ControlAssurance::Advisory,
+            &actor("payload-admin"),
+            "canonical-policy-result",
+            None,
+            now,
+            &DevelopmentNoopRedactor,
+        )
+        .unwrap();
+    assert_projection_bytes(
+        &store,
+        "SELECT result_json FROM control_policy_operation_results
+         WHERE operation = 'set_required_assurance' AND idempotency_key = ?1",
+        ["canonical-policy-result"],
+        &receipt,
+    );
+}
+
+#[test]
 fn cold_schema_failure_after_ddl_rolls_back_every_control_table() {
     let directory = crate::test_support::temp_home().expect("temporary store directory");
     let database = directory.path().join("interrupted-cold-schema.db");
@@ -1265,7 +1288,11 @@ fn policy_administrator_attribution_is_fully_inspected_and_bounded() {
             now,
             &DevelopmentNoopRedactor,
         ),
-        Err(StoreError::InvalidControlProjection(_))
+        Err(StoreError::InvalidControlProjection(message))
+            if message == format!(
+                "control policy administrator attribution exceeds the {}-byte canonical limit",
+                crate::storage::MAX_CONTROL_POLICY_ATTRIBUTION_BYTES
+            )
     ));
 
     let mut normalized = actor(" policy-admin ");

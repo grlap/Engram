@@ -1156,8 +1156,8 @@ impl SqliteStore {
                 "control policy operation intent exceeds the {MAX_CONTROL_POLICY_OPERATION_INTENT_BYTES}-byte canonical limit"
             )));
         }
-        let result = CanonicalObject::freeze(result)?;
-        if result.bytes().len() > MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES {
+        let result_json = crate::canonical::canonical_bytes(result)?;
+        if result_json.len() > MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES {
             return Err(StoreError::InvalidControlProjection(format!(
                 "control policy operation result exceeds the {MAX_CONTROL_POLICY_OPERATION_RESULT_BYTES}-byte canonical limit"
             )));
@@ -1172,7 +1172,7 @@ impl SqliteStore {
                 idempotency_key,
                 intent.key().as_str(),
                 intent.bytes(),
-                result.bytes(),
+                result_json,
                 now.timestamp_millis(),
             ],
         )?;
@@ -1218,7 +1218,7 @@ impl SqliteStore {
                 "control operation idempotency key is empty".into(),
             ));
         }
-        let result = CanonicalObject::freeze(result)?;
+        let result_json = crate::canonical::canonical_bytes(result)?;
         transaction.execute(
             "INSERT INTO control_operation_results (
                  session_id, operation, idempotency_key, intent_hash, intent_json,
@@ -1230,7 +1230,7 @@ impl SqliteStore {
                 idempotency_key,
                 intent.key().as_str(),
                 intent.bytes(),
-                result.bytes(),
+                result_json,
                 now.timestamp_millis(),
             ],
         )?;
@@ -1361,8 +1361,8 @@ fn normalized_control_policy_actor(actor: &ActorContext) -> Result<ActorContext,
         )?;
     }
 
-    let canonical_candidate = CanonicalObject::freeze(&normalized)?;
-    if canonical_candidate.bytes().len() > MAX_CONTROL_POLICY_ATTRIBUTION_BYTES {
+    let canonical_bytes = crate::canonical::canonical_bytes(&normalized)?;
+    if canonical_bytes.len() > MAX_CONTROL_POLICY_ATTRIBUTION_BYTES {
         return Err(StoreError::InvalidControlProjection(format!(
             "control policy administrator attribution exceeds the {MAX_CONTROL_POLICY_ATTRIBUTION_BYTES}-byte canonical limit"
         )));

@@ -100,7 +100,6 @@ impl SqliteStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut evaluated_input = input.clone();
         Self::hydrate_durable_turn_state(&transaction, &mut evaluated_input)?;
-        let input_object = CanonicalObject::freeze(&evaluated_input)?;
         let existing = transaction
             .query_row(
                 "SELECT intent_hash, sequence, session_id, task_id, idempotency_key,
@@ -137,8 +136,9 @@ impl SqliteStore {
             return Ok(observation);
         }
 
+        let input_json = crate::canonical::canonical_bytes(&evaluated_input)?;
         let observation = crate::control::observe_turn(&evaluated_input);
-        let decision_object = CanonicalObject::freeze(&observation)?;
+        let decision_json = crate::canonical::canonical_bytes(&observation)?;
         transaction.execute(
             "INSERT INTO control_observations (
                  session_id, task_id, idempotency_key, intent_hash,
@@ -149,8 +149,8 @@ impl SqliteStore {
                 evaluated_input.task_id.map(|task_id| task_id.0.to_string()),
                 evaluated_input.intent.idempotency_key,
                 intent.key().as_str(),
-                input_object.bytes(),
-                decision_object.bytes(),
+                input_json,
+                decision_json,
                 evaluated_input.evaluated_at.timestamp_millis(),
             ],
         )?;

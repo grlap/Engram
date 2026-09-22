@@ -815,7 +815,7 @@ impl SqliteStore {
             idempotency_key: idempotency_key.into(),
             expires_at: now + chrono::TimeDelta::seconds(ttl_seconds),
         };
-        let lease_object = CanonicalObject::freeze(&lease)?;
+        let lease_json = crate::canonical::canonical_bytes(&lease)?;
         transaction.execute(
             "INSERT INTO control_work_leases (
                  lease_id, task_id, holder_session_id, lease_json,
@@ -825,7 +825,7 @@ impl SqliteStore {
                 lease.lease_id,
                 lease.task_id.0.to_string(),
                 lease.holder.0,
-                lease_object.bytes(),
+                lease_json,
                 lease.expires_at.timestamp_millis(),
             ],
         )?;
@@ -1101,11 +1101,11 @@ impl SqliteStore {
             )));
         }
         lease.revision += 1;
-        let lease_object = CanonicalObject::freeze(&lease)?;
+        let lease_json = crate::canonical::canonical_bytes(&lease)?;
         let changed = transaction.execute(
             "UPDATE control_work_leases SET lease_json = ?2, state = ?3
              WHERE lease_id = ?1 AND state = 'active'",
-            params![lease.lease_id, lease_object.bytes(), state],
+            params![lease.lease_id, lease_json, state],
         )?;
         if changed != 1 {
             return Err(StoreError::InvalidControlProjection(format!(
@@ -1300,9 +1300,9 @@ impl SqliteStore {
         };
         let delivery_too_large = delivery
             .as_ref()
-            .map(CanonicalObject::freeze)
+            .map(crate::canonical::canonical_bytes)
             .transpose()?
-            .is_some_and(|object| object.bytes().len() > MAX_CONTROL_DELIVERY_BYTES);
+            .is_some_and(|bytes| bytes.len() > MAX_CONTROL_DELIVERY_BYTES);
         if delivery_too_large {
             packet_safety = PacketSafety::DeliveryBudgetExceeded;
             delivery = None;
@@ -1372,7 +1372,7 @@ impl SqliteStore {
                     delivery,
                     issued_at: now,
                 };
-                let grant_object = CanonicalObject::freeze(&grant)?;
+                let grant_json = crate::canonical::canonical_bytes(&grant)?;
                 transaction.execute(
                     "INSERT INTO control_turn_grants (
                          grant_id, session_id, task_id, request_key,
@@ -1383,7 +1383,7 @@ impl SqliteStore {
                         session_id.0,
                         session.task_id.0.to_string(),
                         intent.idempotency_key,
-                        grant_object.bytes(),
+                        grant_json,
                         now.timestamp_millis(),
                         grant.basis.expires_at.timestamp_millis(),
                     ],
@@ -1442,7 +1442,7 @@ impl SqliteStore {
                 reason: TurnGrantSupersessionReason::FreshEvaluation,
                 superseded_at: now,
             };
-            let transition_object = CanonicalObject::freeze(&transition)?;
+            let transition_json = crate::canonical::canonical_bytes(&transition)?;
             transaction.execute(
                 "INSERT INTO control_turn_grant_supersessions (
                      superseded_grant_id, session_id, task_id,
@@ -1455,7 +1455,7 @@ impl SqliteStore {
                     transition.task_id.0.to_string(),
                     transition.replacement_request_key,
                     transition.replacement_decision.as_str(),
-                    transition_object.bytes(),
+                    transition_json,
                     transition.superseded_at.timestamp_millis(),
                 ],
             )?;
