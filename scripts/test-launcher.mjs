@@ -3,7 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants, accessSync, closeSync, createReadStream, existsSync, linkSync, mkdirSync,
-  openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+  openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureFingerprint, fingerprintLimitations } from "./review-freeze-fingerprint.mjs";
@@ -406,6 +406,8 @@ async function main(args) {
   await startDetached(runDir);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === script) {
+// Node resolves this module's own path through links (macOS temp paths run
+// through /var -> /private/var), so resolve the invoked path the same way.
+if (process.argv[1] && realpathSync(process.argv[1]) === script) {
   main(process.argv.slice(2)).catch((error) => { console.error(`FAIL launcher: ${error.message}`); process.exitCode = 1; });
 }

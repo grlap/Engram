@@ -1,5 +1,5 @@
 // Test-only fixture ownership and read-only user-Temp leak detection.
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, rmdirSync, lstatSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, rmdirSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -66,7 +66,9 @@ export function assertTempClean(before, root = fixtureRoot) {
 }
 
 // Used by both Rust gate launchers; checks even when the child gate fails.
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// Node resolves this module's own URL through links (macOS temp paths run
+// through /var -> /private/var), so resolve the invoked path the same way.
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const [separator, program, ...args] = process.argv.slice(2);
   const before = tempSnapshot();
   try {

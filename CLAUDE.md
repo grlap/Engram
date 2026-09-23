@@ -33,6 +33,29 @@ their presence in a file alone does not prove delivery.
 
 - Never commit, push, rebase, or force-push without explicit user
   permission. Read-only Git inspection is always allowed.
+- Greg's word "commit" for a presented changeset also authorizes pushing
+  it and installing its build (2026-09-23). `readiness` checks only schema
+  and policy admission, so first judge the changeset itself. When it
+  changes what existing durable rows must hold (a mapped column, a
+  reshaped record, retired data, or a durable derived row computed
+  differently), it must also teach import that conversion, and every live
+  store needs migration export and import
+  ([full store migration](docs/features/full-store-migration.md)),
+  whatever readiness reports. When it changes only how a table or search
+  index that projection repair rebuilds is derived, treat every live store
+  as reporting `projection_repair_required`. Otherwise, run `readiness`
+  with the new build on every live store and act on each result. When a
+  store is ready, nothing needs stopping: replace the installed binary and
+  keep the old one as a backup (a running Windows executable can be
+  renamed aside); running processes keep the old build until they
+  restart. A store reporting `projection_repair_required` needs its
+  consumers stopped, `engram doctor --repair-projections` run with the new
+  build, and the consumers restarted on it. A store reporting
+  `different_build_schema` (a durable schema change, or a projection the
+  new build no longer declares) needs migration export and import too.
+  Repair and migration interrupt sessions, so say so when presenting the
+  changeset. Rebase, force-push and history rewrites still need their own
+  word.
 - Implementers claim their own Engram items and complete them with the
   words; never place work refs in source comments, identifiers,
   documentation prose, or user-facing output.

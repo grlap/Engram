@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { devNull } from "node:os";
 import { once } from "node:events";
@@ -365,6 +365,34 @@ test("malformed notification targets and duplicate prerequisites refuse before c
       assert.doesNotMatch(result.stdout, /STARTED|PASS/u);
       assert.equal(existsSync(join(root, ".git", "review-runs")), false);
     }
+  });
+});
+
+test("entry points run their main path when invoked through a directory link", async () => {
+  await repository(async (root) => {
+    const real = join(root, "scripts-real");
+    mkdirSync(real);
+    for (const name of ["test-launcher.mjs", "review-freeze-fingerprint.mjs", "test-temp.mjs"]) {
+      copyFileSync(fileURLToPath(new URL(name, import.meta.url)), join(real, name));
+    }
+    // Node resolves a module's own URL through links, as macOS does for
+    // /var -> /private/var temp paths. A junction reproduces that aliasing on
+    // Windows without extra privileges.
+    const linked = join(root, "scripts");
+    symlinkSync(real, linked, process.platform === "win32" ? "junction" : "dir");
+    assert.notEqual(realpathSync(linked), linked, "the fixture must invoke through an alias");
+
+    const launched = spawnSync(process.execPath, [join(linked, "test-launcher.mjs"), "focused", "--notify", "",
+      "--", process.execPath, "-e", ""], { cwd: root, env, encoding: "utf8", windowsHide: true });
+    assert.equal(launched.status, 1, `launcher skipped its main path: ${launched.stderr}`);
+    assert.match(launched.stderr, /--notify requires a session id/u);
+
+    const auditEnv = { ...env };
+    delete auditEnv.ENGRAM_TEST_RUN_ROOT;
+    const audited = spawnSync(process.execPath, [join(linked, "test-temp.mjs")],
+      { cwd: root, env: auditEnv, encoding: "utf8", windowsHide: true });
+    assert.equal(audited.status, 1, `temp audit skipped its main path: ${audited.stderr}`);
+    assert.match(audited.stderr, /Usage: node scripts\/test-temp\.mjs -- PROGRAM/u);
   });
 });
 
