@@ -330,7 +330,7 @@ impl SqliteStore {
         object_kind: &str,
     ) -> Result<Option<T>, StoreError> {
         Self::get_canonical_object_on(connection, hash, object_kind)?
-            .map(|object| super::work::decode_work_object(object_kind, &object))
+            .map(|object| object.decode())
             .transpose()
     }
 

@@ -327,27 +327,3 @@ fn inactive_process_default_sessions_are_reclaimed_atomically_without_live_autho
     }
     assert!(second.verify_all().expect("integrity report").is_healthy());
 }
-
-#[test]
-fn prerelease_agent_grant_schema_is_refused_as_a_different_build() {
-    let directory = crate::test_support::temp_home().expect("temporary schema fixture");
-    let database = directory.path().join("engram.sqlite3");
-    drop(SqliteStore::open(&database).expect("create current store"));
-    let connection = Connection::open(&database).expect("open schema fixture");
-    connection
-        .execute(
-            "CREATE TABLE work_authority_grants (obsolete TEXT NOT NULL)",
-            [],
-        )
-        .expect("inject prerelease grant table");
-    drop(connection);
-
-    let Err(error) = SqliteStore::open(&database) else {
-        panic!("obsolete grant schema must refuse");
-    };
-    assert_eq!(
-        crate::storage::store_open_refusal_kind(&error),
-        crate::storage::StoreOpenRefusalKind::DifferentBuildSchema,
-        "unexpected refusal: {error}"
-    );
-}

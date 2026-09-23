@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    path::Path,
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use rusqlite::{Connection, OptionalExtension, types::Value};
 
@@ -13,372 +9,13 @@ use crate::{
     memory::DevelopmentNoopRedactor,
 };
 
-mod control_conversion;
-
-/// Retired operational rows are fixture data, never a schema opened by the
-/// current product. Export must still carry all of them without interpretation.
-fn with_retired_tables(path: &Path) {
-    populated(path);
-    let connection = Connection::open(path).expect("fixture");
-    // Retired rows are carried by export and never inserted by import, so
-    // their references are not what these fixtures exercise.
-    connection
-        .execute_batch(
-            "PRAGMA foreign_keys = OFF;
-         CREATE TABLE task_claims (
-            task_id TEXT PRIMARY KEY, lease_id TEXT NOT NULL UNIQUE,
-            holder_session_id TEXT NOT NULL, idempotency_key TEXT NOT NULL,
-            expires_at_ms INTEGER NOT NULL, revision INTEGER NOT NULL
-         ) STRICT;
-         CREATE TABLE task_claim_intents (
-            idempotency_key TEXT PRIMARY KEY, task_id TEXT NOT NULL,
-            holder_session_id TEXT NOT NULL, lease_json BLOB NOT NULL
-         ) STRICT;
-         CREATE TABLE publication_intents (
-            idempotency_key TEXT PRIMARY KEY,
-            report_hash TEXT NOT NULL REFERENCES objects(object_id),
-            external_ref TEXT, state TEXT NOT NULL, last_error TEXT,
-            attempt_count INTEGER NOT NULL DEFAULT 0, receipt_json TEXT
-         ) STRICT;
-         CREATE TABLE control_observations (
-            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL, task_id TEXT, idempotency_key TEXT NOT NULL,
-            intent_hash TEXT NOT NULL, input_json BLOB NOT NULL,
-            decision_json BLOB NOT NULL, observed_at_ms INTEGER NOT NULL,
-            UNIQUE(session_id, idempotency_key)
-         ) STRICT;
-         CREATE TABLE memory_contradictions (
-            contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
-            task_id TEXT NOT NULL REFERENCES tasks(task_id),
-            left_version_id TEXT NOT NULL REFERENCES objects(object_id),
-            right_version_id TEXT NOT NULL REFERENCES objects(object_id),
-            UNIQUE(left_version_id, right_version_id),
-            CHECK(left_version_id < right_version_id)
-         ) STRICT;
-         CREATE TABLE memory_contradiction_edges (
-            contradiction_id TEXT PRIMARY KEY REFERENCES objects(object_id),
-            project_id TEXT NOT NULL, task_id TEXT, work_root_id TEXT,
-            left_version_id TEXT NOT NULL REFERENCES objects(object_id),
-            right_version_id TEXT NOT NULL REFERENCES objects(object_id),
-            UNIQUE(left_version_id, right_version_id),
-            CHECK(left_version_id < right_version_id)
-         ) STRICT;
-         CREATE TABLE contradiction_intents (
-            idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL,
-            receipt_json BLOB NOT NULL
-         ) STRICT;
-         INSERT INTO task_claims VALUES ('task', 'lease', 'old-session', 'claim', 1, 1);
-         INSERT INTO task_claim_intents VALUES ('claim', 'task', 'old-session', X'7B7D');
-         INSERT INTO publication_intents
-            SELECT 'publication', object_id, 'external', 'pending', NULL, 0, NULL
-            FROM objects LIMIT 1;
-         INSERT INTO control_observations (
-            session_id, task_id, idempotency_key, intent_hash,
-            input_json, decision_json, observed_at_ms
-         ) VALUES ('old-session', 'task', 'observe', 'intent', X'7B7D', X'7B7D', 1);
-         INSERT INTO memory_contradictions VALUES ('contradiction', 'task', 'left', 'right');
-         INSERT INTO memory_contradiction_edges
-            VALUES ('contradiction', 'project', 'task', NULL, 'left', 'right');
-         INSERT INTO contradiction_intents VALUES ('contradict', 'request', X'7B7D');",
-        )
-        .expect("retired fixture rows");
-    // Historical canonical audit remains an opaque record with its original id.
-    let event = crate::CanonicalObject::mint(&serde_json::json!({
-        "schema_version": 1, "lease": {"task_id": "task"}
-    }))
-    .expect("historical object");
-    connection.execute(
-        "INSERT INTO objects (object_id, object_kind, canonical_json) VALUES (?1, 'task_claim_event', ?2)",
-        rusqlite::params![event.key().as_str(), event.bytes()],
-    ).expect("historical audit");
-}
-
-#[test]
-fn resource_lease_retirement_admits_only_empty_known_tables() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("store.jsonl");
-    populated(&source);
-    let connection = Connection::open(&source).unwrap();
-    connection
-        .execute_batch(
-            "CREATE TABLE control_work_leases (
-            lease_id TEXT PRIMARY KEY, task_id TEXT, holder_session_id TEXT,
-            lease_json BLOB, state TEXT, expires_at_ms INTEGER, lease_hash TEXT
-        ) STRICT;",
-        )
-        .unwrap();
-    export_json(&source, &file).unwrap();
-    let target = directory.path().join("empty.db");
-    let report = import_json(&file, &target).unwrap();
-    assert!(
-        report
-            .left_out
-            .iter()
-            .any(|table| table.name == "control_work_leases" && table.rows == 0)
-    );
-    assert!(!rows(&target).contains_key("control_work_leases"));
-
-    connection
-        .execute(
-            "INSERT INTO control_work_leases (lease_id) VALUES ('retained-authority')",
-            [],
-        )
-        .unwrap();
-    let file = directory.path().join("populated.jsonl");
-    export_json(&source, &file).unwrap();
-    let refused_target = directory.path().join("populated.db");
-    assert!(
-        import_json(&file, &refused_target)
-            .unwrap_err()
-            .to_string()
-            .contains("requires an empty table")
-    );
-    assert!(!refused_target.exists());
-
-    // A false zero in the header must not allow an actual authority row through.
-    let mut document: Vec<Json> = fs::read_to_string(&file)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    document[0]["engram_export"]["tables"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|table| table["name"] == "control_work_leases")
-        .unwrap()["rows"] = Json::from(0);
-    fs::write(
-        &file,
-        document
-            .iter()
-            .map(Json::to_string)
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
-    .unwrap();
-    assert!(
-        import_json(&file, &refused_target)
-            .unwrap_err()
-            .to_string()
-            .contains("contains a row")
-    );
-    assert!(!refused_target.exists());
-
-    connection.execute_batch("DELETE FROM control_work_leases; ALTER TABLE control_work_leases ADD COLUMN unknown_authority TEXT;").unwrap();
-    let unknown = directory.path().join("unknown.jsonl");
-    export_json(&source, &unknown).unwrap();
-    assert!(
-        import_json(&unknown, &refused_target)
-            .unwrap_err()
-            .to_string()
-            .contains("unknown_authority")
-    );
-    assert!(!refused_target.exists());
-}
-
-#[test]
-fn retired_tables_export_losslessly_and_import_reports_only_explicit_omissions() {
-    let directory = crate::test_support::temp_home().expect("temporary directory");
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("store.jsonl");
-    let target = directory.path().join("target.db");
-    with_retired_tables(&source);
-    let before = rows(&source);
-    let exported = export_json(&source, &file).expect("lossless export");
-    let input = fs::read(&file).expect("export bytes");
-    let imported = import_json(&file, &target).expect("fresh schema import");
-    let after = rows(&target);
-    for name in [
-        "task_claims",
-        "task_claim_intents",
-        "publication_intents",
-        "control_observations",
-        "memory_contradictions",
-        "memory_contradiction_edges",
-        "contradiction_intents",
-    ] {
-        assert_eq!(
-            exported
-                .tables
-                .iter()
-                .find(|table| table.name == name)
-                .unwrap()
-                .rows,
-            1
-        );
-        assert!(!exported.left_out.iter().any(|table| table.name == name));
-        assert!(!after.contains_key(name), "new schema retained {name}");
-        assert!(!imported.tables.iter().any(|table| table.name == name));
-        let omitted = imported
-            .left_out
-            .iter()
-            .find(|table| table.name == name)
-            .unwrap();
-        assert_eq!(omitted.rows, 1);
-        assert!(omitted.reason.contains("explicitly retired"));
-        let exported_row = lines(&file)
-            .unwrap()
-            .find_map(|line| match line.unwrap() {
-                Line::Row { table, values } if table == name => Some(values),
-                _ => None,
-            })
-            .expect("retired row remains in export");
-        let declaration = exported
-            .tables
-            .iter()
-            .find(|table| table.name == name)
-            .unwrap();
-        let decoded = declaration
-            .columns
-            .iter()
-            .map(|column| decode(exported_row[column].clone()).unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(decoded, before[name][0], "retired export changed {name}");
-    }
-    for (name, values) in &after {
-        if name != "work_schema_metadata" {
-            assert_eq!(values, &before[name], "retained table {name} changed");
-        }
-    }
-    assert_eq!(rows(&source), before, "source must be unchanged");
-    assert_eq!(
-        fs::read(&file).unwrap(),
-        input,
-        "import must not rewrite export"
-    );
-    assert!(
-        SqliteStore::open_unresolved(&target)
-            .unwrap()
-            .verify_all()
-            .unwrap()
-            .is_healthy()
-    );
-    assert!(matches!(
-        SqliteStore::open_unresolved(&source),
-        Err(crate::StoreError::DifferentBuildSchema)
-    ));
-}
-
-#[test]
-fn retired_table_rows_are_validated_and_counted_before_publication() {
-    let directory = crate::test_support::temp_home().expect("temporary directory");
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("store.jsonl");
-    with_retired_tables(&source);
-    export_json(&source, &file).unwrap();
-    let original: Vec<Json> = fs::read_to_string(&file)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    for (case, expected) in [
-        (
-            "unknown column",
-            "column unknown_payload of retired table task_claims has no place",
-        ),
-        (
-            "missing value",
-            "a row of table task_claims lacks column lease_id",
-        ),
-        (
-            "extra value",
-            "a row of table task_claims has undeclared column unknown_payload",
-        ),
-        (
-            "bad value",
-            "column lease_id of a row of table task_claims: a blob is written as json, text, or hex",
-        ),
-        (
-            "count swap",
-            "table task_claim_intents declares 2 rows but the file holds 1",
-        ),
-        (
-            "duplicate table",
-            "duplicate table task_claims in the header",
-        ),
-        (
-            "duplicate column",
-            "duplicate column task_id of table task_claims",
-        ),
-        ("second end", "the file has a second end line"),
-    ] {
-        let mut modified = original.clone();
-        let header = &mut modified[0]["engram_export"]["tables"];
-        let declarations = header.as_array_mut().unwrap();
-        let index = declarations
-            .iter()
-            .position(|table| table["name"] == "task_claims")
-            .unwrap();
-        match case {
-            "unknown column" => declarations[index]["columns"]
-                .as_array_mut()
-                .unwrap()
-                .push(Json::String("unknown_payload".into())),
-            "count swap" => {
-                declarations[index]["rows"] = Json::from(0);
-                let other = declarations
-                    .iter_mut()
-                    .find(|table| table["name"] == "task_claim_intents")
-                    .unwrap();
-                other["rows"] = Json::from(2);
-            }
-            "duplicate table" => declarations.push(declarations[index].clone()),
-            "duplicate column" => declarations[index]["columns"]
-                .as_array_mut()
-                .unwrap()
-                .push(Json::String("task_id".into())),
-            "second end" => modified.push(modified.last().unwrap().clone()),
-            _ => {
-                let row = modified
-                    .iter_mut()
-                    .find(|line| line["row"]["table"] == "task_claims")
-                    .unwrap();
-                let values = row["row"]["values"].as_object_mut().unwrap();
-                match case {
-                    "missing value" => {
-                        values.remove("lease_id");
-                    }
-                    "extra value" => {
-                        values.insert("unknown_payload".into(), Json::Null);
-                    }
-                    "bad value" => {
-                        values.insert(
-                            "lease_id".into(),
-                            serde_json::json!({"unknown_blob": "private-value"}),
-                        );
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        }
-        fs::write(
-            &file,
-            modified
-                .iter()
-                .map(Json::to_string)
-                .collect::<Vec<_>>()
-                .join("\n"),
-        )
-        .unwrap();
-        let target = directory.path().join("target.db");
-        let error = import_json(&file, &target).expect_err(case).to_string();
-        assert!(error.contains(expected), "{case}: wrong refusal: {error}");
-        assert!(
-            !error.contains("private-value"),
-            "{case}: leaked a cell value"
-        );
-        assert!(!target.exists(), "{case}: published invalid input");
-    }
-}
-
 #[test]
 fn omitted_format_marker_rows_are_validated_and_counted() {
     let directory = crate::test_support::temp_home().unwrap();
     let source = directory.path().join("source.db");
     let file = directory.path().join("store.jsonl");
     let target = directory.path().join("target.db");
-    with_retired_tables(&source);
+    populated(&source);
     export_json(&source, &file).unwrap();
     let original: Vec<Json> = fs::read_to_string(&file)
         .unwrap()
@@ -414,10 +51,11 @@ fn omitted_format_marker_rows_are_validated_and_counted() {
             assert_eq!(marker["rows"], 1);
             marker["rows"] = Json::from(0);
             // Keep the global total unchanged; the marker's own count must refuse.
-            declarations
+            let objects = declarations
                 .iter_mut()
-                .find(|table| table["name"] == "task_claims")
-                .unwrap()["rows"] = Json::from(2);
+                .find(|table| table["name"] == "objects")
+                .unwrap();
+            objects["rows"] = Json::from(objects["rows"].as_u64().unwrap() + 1);
             declarations.insert(0, marker);
             "table work_schema_metadata declares 0 rows but the file holds 1".into()
         };
@@ -436,78 +74,6 @@ fn omitted_format_marker_rows_are_validated_and_counted() {
         assert!(error.contains(&expected), "wrong refusal: {error}");
         assert!(!error.contains("private-value"), "leaked a cell value");
         assert!(!target.exists(), "published invalid marker");
-    }
-}
-
-#[test]
-fn unknown_table_beside_retired_tables_still_refuses_by_name() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("store.jsonl");
-    let target = directory.path().join("target.db");
-    with_retired_tables(&source);
-    Connection::open(&source)
-        .unwrap()
-        .execute_batch("CREATE TABLE unknown_data (body TEXT);")
-        .unwrap();
-    export_json(&source, &file).unwrap();
-    let error = import_json(&file, &target).unwrap_err().to_string();
-    assert!(error.contains("table unknown_data has no place"), "{error}");
-    assert!(!target.exists());
-}
-
-#[test]
-fn retired_tables_under_their_pre_rename_column_names_are_left_out() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("store.jsonl");
-    let target = directory.path().join("target.db");
-    populated(&source);
-    Connection::open(&source)
-        .unwrap()
-        .execute_batch(
-            "PRAGMA foreign_keys = OFF;
-             CREATE TABLE control_observations (
-                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL, task_id TEXT, idempotency_key TEXT NOT NULL,
-                intent_hash TEXT NOT NULL, input_json BLOB NOT NULL,
-                decision_json BLOB NOT NULL, observed_at_ms INTEGER NOT NULL,
-                input_hash TEXT, decision_hash TEXT
-             ) STRICT;
-             CREATE TABLE memory_contradictions (
-                contradiction_hash TEXT PRIMARY KEY, task_id TEXT NOT NULL,
-                left_version_hash TEXT NOT NULL, right_version_hash TEXT NOT NULL
-             ) STRICT;
-             CREATE TABLE memory_contradiction_edges (
-                contradiction_hash TEXT PRIMARY KEY, project_id TEXT NOT NULL,
-                task_id TEXT, work_root_id TEXT,
-                left_version_hash TEXT NOT NULL, right_version_hash TEXT NOT NULL
-             ) STRICT;
-             INSERT INTO control_observations (
-                session_id, task_id, idempotency_key, intent_hash, input_json,
-                decision_json, observed_at_ms, input_hash, decision_hash
-             ) VALUES ('old-session', 'task', 'observe', 'intent', X'7B7D', X'7B7D', 1,
-                'input', 'decision');
-             INSERT INTO memory_contradictions VALUES ('contradiction', 'task', 'left', 'right');
-             INSERT INTO memory_contradiction_edges
-                VALUES ('contradiction', 'project', 'task', NULL, 'left', 'right');",
-        )
-        .unwrap();
-    export_json(&source, &file).unwrap();
-    let imported = import_json(&file, &target).expect("pre-rename retired tables import");
-    let after = rows(&target);
-    for name in [
-        "control_observations",
-        "memory_contradictions",
-        "memory_contradiction_edges",
-    ] {
-        let omitted = imported
-            .left_out
-            .iter()
-            .find(|table| table.name == name)
-            .unwrap_or_else(|| panic!("{name} is reported as left out"));
-        assert_eq!(omitted.rows, 1, "{name}");
-        assert!(!after.contains_key(name), "new schema retained {name}");
     }
 }
 
@@ -619,617 +185,6 @@ fn rows(path: &Path) -> BTreeMap<String, Vec<Vec<Value>>> {
         .collect()
 }
 
-type RecordLinkColumn = (String, String);
-
-/// This inventory covers columns whose schema declares a foreign key to
-/// `objects(object_id)`, rather than inferring links from suffixes: compared
-/// fingerprints legitimately coexist in the same tables. The objects primary
-/// key is the one record id that cannot point back to itself.
-fn current_record_link_columns(
-    connection: &Connection,
-) -> Result<BTreeSet<RecordLinkColumn>, String> {
-    let tables: Vec<String> = connection
-        .prepare(
-            "SELECT name FROM pragma_table_list
-             WHERE schema = 'main' AND type = 'table'
-               AND substr(name, 1, 7) COLLATE NOCASE != 'sqlite_'
-             ORDER BY name",
-        )
-        .expect("prepare table inventory")
-        .query_map([], |row| row.get(0))
-        .expect("table inventory")
-        .collect::<Result<_, _>>()
-        .expect("table names");
-    let mut links = BTreeSet::from([("objects".into(), "object_id".into())]);
-    for table in tables {
-        let foreign_keys: Vec<(String, String, Option<String>)> = connection
-            .prepare(&format!("PRAGMA foreign_key_list({})", quoted(&table)))
-            .expect("prepare foreign keys")
-            .query_map([], |row| Ok((row.get(2)?, row.get(3)?, row.get(4)?)))
-            .expect("foreign keys")
-            .collect::<Result<_, _>>()
-            .expect("foreign key columns");
-        for (destination_table, source_column, destination_column) in foreign_keys {
-            if !destination_table.eq_ignore_ascii_case("objects") {
-                continue;
-            }
-            match destination_column {
-                Some(destination) if destination.eq_ignore_ascii_case("object_id") => {}
-                Some(other) => {
-                    return Err(format!(
-                        "record-link foreign key {table}.{source_column} targets objects.{other}, not objects.object_id"
-                    ));
-                }
-                None => {
-                    return Err(format!(
-                        "record-link foreign key {table}.{source_column} uses an implicit objects primary key; declare objects(object_id) explicitly"
-                    ));
-                }
-            }
-            if !links.insert((table.clone(), source_column.clone())) {
-                return Err(format!(
-                    "duplicate record-link foreign key {table}.{source_column}"
-                ));
-            }
-        }
-    }
-    Ok(links)
-}
-
-fn mapped_record_link_columns(
-    connection: &Connection,
-    mappings: &[(&str, &str, &str)],
-) -> Result<BTreeSet<RecordLinkColumn>, String> {
-    let current = current_record_link_columns(connection)?;
-    let mapped: BTreeSet<RecordLinkColumn> = mappings
-        .iter()
-        .map(|(table, _, destination)| (destination_table(table).into(), (*destination).into()))
-        .collect();
-    if mapped.len() != mappings.len() {
-        return Err("duplicate record-link mapping destination".into());
-    }
-    let missing = current.difference(&mapped).cloned().collect::<Vec<_>>();
-    let unknown = mapped.difference(&current).cloned().collect::<Vec<_>>();
-    if !missing.is_empty() || !unknown.is_empty() {
-        return Err(format!(
-            "record-link mapping mismatch; missing={missing:?}; unknown={unknown:?}"
-        ));
-    }
-    Ok(current)
-}
-
-const REBUILT_RECORD_LINK_COLUMNS: &[(&str, &str)] = &[
-    ("work_observations", "observation_id"),
-    ("work_restored_evidence", "evidence_id"),
-    ("work_restored_evidence", "record_id"),
-    ("work_restored_records", "record_id"),
-];
-
-/// The pre-rename DDL consistently changed a trailing `_id` to `_hash`, with
-/// this one named exception where `offer_id` was already an operational id.
-const OLD_RECORD_LINK_NAME_EXCEPTIONS: &[(&str, &str, &str)] =
-    &[("work_handoff_offers", "offer_object_id", "offer_hash")];
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct OldRecordLinkNameMismatch {
-    table: String,
-    destination: String,
-    expected: String,
-    actual: String,
-}
-
-fn old_record_link_name_mismatches(
-    mappings: &[(&str, &str, &str)],
-) -> BTreeSet<OldRecordLinkNameMismatch> {
-    mappings
-        .iter()
-        .filter_map(|(table, old, destination)| {
-            let expected = OLD_RECORD_LINK_NAME_EXCEPTIONS
-                .iter()
-                .find(|(exception_table, exception_destination, _)| {
-                    exception_table == table && exception_destination == destination
-                })
-                .map_or_else(
-                    || {
-                        format!(
-                            "{}_hash",
-                            destination
-                                .strip_suffix("_id")
-                                .expect("record-link destination ends in _id")
-                        )
-                    },
-                    |(_, _, source)| (*source).to_owned(),
-                );
-            (*old != expected).then(|| OldRecordLinkNameMismatch {
-                table: (*table).into(),
-                destination: (*destination).into(),
-                expected,
-                actual: (*old).into(),
-            })
-        })
-        .collect()
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct RecordLinkExercise {
-    header: BTreeSet<RecordLinkColumn>,
-    rows: BTreeSet<RecordLinkColumn>,
-    non_null_rows: BTreeSet<RecordLinkColumn>,
-}
-
-const REQUIRED_NON_NULL_RECORD_LINK_EXERCISE: &[(&str, &str)] = &[
-    ("objects", "object_id"),
-    ("work_feed_entries", "object_id"),
-    ("work_items", "latest_event_id"),
-    ("work_root_executions", "head_id"),
-];
-
-fn expected_record_link_exercise(
-    document: &[Json],
-    current_links: &BTreeSet<RecordLinkColumn>,
-) -> RecordLinkExercise {
-    let declarations = document[0]["engram_export"]["tables"]
-        .as_array()
-        .expect("exported tables");
-    let mut expected = RecordLinkExercise::default();
-    for link @ (table, _) in current_links {
-        let Some(declaration) = declarations.iter().find(|entry| entry["name"] == *table) else {
-            continue;
-        };
-        expected.header.insert(link.clone());
-        if declaration["rows"].as_u64().expect("declared row count") > 0 {
-            expected.rows.insert(link.clone());
-        }
-    }
-    expected
-}
-
-fn rewrite_record_link_columns(
-    document: &mut [Json],
-    mappings: &[(&str, &str, &str)],
-) -> RecordLinkExercise {
-    let mut exercised = RecordLinkExercise::default();
-    for (table, old, current) in mappings {
-        let destination = destination_table(table);
-        let Some(declaration) = document[0]["engram_export"]["tables"]
-            .as_array_mut()
-            .expect("exported tables")
-            .iter_mut()
-            .find(|entry| entry["name"] == destination)
-        else {
-            continue;
-        };
-        let link = (destination.into(), (*current).into());
-        declaration["name"] = Json::String((*table).into());
-        let column = declaration["columns"]
-            .as_array_mut()
-            .expect("declared columns")
-            .iter_mut()
-            .find(|column| **column == *current)
-            .expect("mapped destination column");
-        *column = Json::String((*old).into());
-        assert!(exercised.header.insert(link.clone()));
-        for line in document.iter_mut().skip(1) {
-            if line["row"]["table"] != destination {
-                continue;
-            }
-            line["row"]["table"] = Json::String((*table).into());
-            let values = line["row"]["values"].as_object_mut().unwrap();
-            let value = values.remove(*current).expect("mapped row value");
-            if !value.is_null() {
-                exercised.non_null_rows.insert(link.clone());
-            }
-            assert!(values.insert((*old).into(), value).is_none());
-            exercised.rows.insert(link.clone());
-        }
-    }
-    exercised
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct RecordLinkExerciseDifference {
-    missing_header: BTreeSet<RecordLinkColumn>,
-    unexpected_header: BTreeSet<RecordLinkColumn>,
-    missing_rows: BTreeSet<RecordLinkColumn>,
-    unexpected_rows: BTreeSet<RecordLinkColumn>,
-}
-
-fn record_link_exercise_difference(
-    expected: &RecordLinkExercise,
-    exercised: &RecordLinkExercise,
-) -> RecordLinkExerciseDifference {
-    RecordLinkExerciseDifference {
-        missing_header: expected
-            .header
-            .difference(&exercised.header)
-            .cloned()
-            .collect(),
-        unexpected_header: exercised
-            .header
-            .difference(&expected.header)
-            .cloned()
-            .collect(),
-        missing_rows: expected.rows.difference(&exercised.rows).cloned().collect(),
-        unexpected_rows: exercised.rows.difference(&expected.rows).cloned().collect(),
-    }
-}
-
-fn missing_required_non_null_record_links(
-    exercised: &RecordLinkExercise,
-) -> BTreeSet<RecordLinkColumn> {
-    REQUIRED_NON_NULL_RECORD_LINK_EXERCISE
-        .iter()
-        .map(|(table, column)| ((*table).into(), (*column).into()))
-        .collect::<BTreeSet<_>>()
-        .difference(&exercised.non_null_rows)
-        .cloned()
-        .collect()
-}
-
-fn rebuilt_projection_record_links(
-    document: &[Json],
-    current_links: &BTreeSet<RecordLinkColumn>,
-) -> Result<BTreeSet<RecordLinkColumn>, String> {
-    let copied = document[0]["engram_export"]["tables"]
-        .as_array()
-        .expect("exported tables")
-        .iter()
-        .map(|entry| entry["name"].as_str().expect("table name"))
-        .collect::<BTreeSet<_>>();
-    let omitted = current_links
-        .iter()
-        .filter(|(table, _)| !copied.contains(table.as_str()))
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let left_out = document[0]["engram_export"]["left_out"]
-        .as_array()
-        .expect("left-out tables");
-    for table in omitted
-        .iter()
-        .map(|(table, _)| table)
-        .collect::<BTreeSet<_>>()
-    {
-        let entries = left_out
-            .iter()
-            .filter(|entry| entry["name"] == *table)
-            .collect::<Vec<_>>();
-        if entries.len() != 1 {
-            return Err(format!(
-                "rebuilt record-link table {table} has {} left_out entries, expected one",
-                entries.len()
-            ));
-        }
-        let reason = entries[0]["reason"].as_str().unwrap_or("<missing>");
-        if reason != REBUILT_PROJECTION {
-            return Err(format!(
-                "rebuilt record-link table {table} has left_out reason {reason:?}, expected {REBUILT_PROJECTION:?}"
-            ));
-        }
-    }
-    Ok(omitted)
-}
-
-#[test]
-fn record_link_mapping_inventory_rejects_an_omitted_applicable_column() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("source.jsonl");
-    populated(&source);
-    let schema = Connection::open(&source).unwrap();
-    assert!(
-        old_record_link_name_mismatches(RENAMED_COLUMNS).is_empty(),
-        "current source names follow the historical DDL convention"
-    );
-
-    let mut typo = RENAMED_COLUMNS.to_vec();
-    *typo
-        .iter_mut()
-        .find(|(table, _, destination)| *table == "objects" && *destination == "object_id")
-        .unwrap() = ("objects", "object_hahs", "object_id");
-    assert_eq!(
-        old_record_link_name_mismatches(&typo),
-        BTreeSet::from([OldRecordLinkNameMismatch {
-            table: "objects".into(),
-            destination: "object_id".into(),
-            expected: "object_hash".into(),
-            actual: "object_hahs".into(),
-        }])
-    );
-
-    let mut crossed = RENAMED_COLUMNS.to_vec();
-    *crossed
-        .iter_mut()
-        .find(|(table, _, destination)| {
-            *table == "work_items" && *destination == "source_snapshot_id"
-        })
-        .unwrap() = ("work_items", "latest_event_hash", "source_snapshot_id");
-    *crossed
-        .iter_mut()
-        .find(|(table, _, destination)| *table == "work_items" && *destination == "latest_event_id")
-        .unwrap() = ("work_items", "source_snapshot_hash", "latest_event_id");
-    assert_eq!(
-        old_record_link_name_mismatches(&crossed),
-        BTreeSet::from([
-            OldRecordLinkNameMismatch {
-                table: "work_items".into(),
-                destination: "latest_event_id".into(),
-                expected: "latest_event_hash".into(),
-                actual: "source_snapshot_hash".into(),
-            },
-            OldRecordLinkNameMismatch {
-                table: "work_items".into(),
-                destination: "source_snapshot_id".into(),
-                expected: "source_snapshot_hash".into(),
-                actual: "latest_event_hash".into(),
-            },
-        ])
-    );
-
-    let incomplete = RENAMED_COLUMNS
-        .iter()
-        .copied()
-        .filter(|(table, _, current)| !(*table == "work_items" && *current == "latest_event_id"))
-        .collect::<Vec<_>>();
-    let error = mapped_record_link_columns(&schema, &incomplete)
-        .expect_err("an omitted applicable mapping must fail the inventory");
-    assert!(
-        error.contains("(\"work_items\", \"latest_event_id\")"),
-        "{error}"
-    );
-
-    let mut unknown = RENAMED_COLUMNS.to_vec();
-    unknown.push(("work_items", "unknown_hash", "unknown_id"));
-    let error = mapped_record_link_columns(&schema, &unknown)
-        .expect_err("an unknown mapping destination must fail the inventory");
-    assert!(
-        error.contains("(\"work_items\", \"unknown_id\")"),
-        "{error}"
-    );
-
-    let mut duplicate = RENAMED_COLUMNS.to_vec();
-    duplicate.push(("work_items", "other_event_hash", "latest_event_id"));
-    let error = mapped_record_link_columns(&schema, &duplicate)
-        .expect_err("a duplicate mapping destination must fail the inventory");
-    assert_eq!(error, "duplicate record-link mapping destination");
-
-    export_json(&source, &file).unwrap();
-    let mut document = fs::read_to_string(&file)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect::<Vec<Json>>();
-    let current_links = mapped_record_link_columns(&schema, RENAMED_COLUMNS).unwrap();
-    let expected = expected_record_link_exercise(&document, &current_links);
-    let exercised = rewrite_record_link_columns(&mut document, &incomplete);
-    let omitted = BTreeSet::from([("work_items".into(), "latest_event_id".into())]);
-    assert_eq!(
-        record_link_exercise_difference(&expected, &exercised),
-        RecordLinkExerciseDifference {
-            missing_header: omitted.clone(),
-            missing_rows: omitted.clone(),
-            ..RecordLinkExerciseDifference::default()
-        },
-        "skipping one copied mapping must name only that exercise gap"
-    );
-    assert_eq!(
-        missing_required_non_null_record_links(&exercised),
-        omitted,
-        "the named non-null exercise floor must fail for the skipped link"
-    );
-}
-
-#[test]
-fn record_link_inventory_handles_declared_foreign_key_shapes() {
-    let implicit = Connection::open_in_memory().unwrap();
-    implicit
-        .execute_batch(
-            "PRAGMA foreign_keys = ON;
-             CREATE TABLE objects (object_id TEXT PRIMARY KEY);
-             CREATE TABLE implicit_link (
-                 record_id TEXT REFERENCES objects
-             );",
-        )
-        .unwrap();
-    let error = current_record_link_columns(&implicit)
-        .expect_err("implicit record-link targets must receive a readable refusal");
-    assert_eq!(
-        error,
-        "record-link foreign key implicit_link.record_id uses an implicit objects primary key; declare objects(object_id) explicitly"
-    );
-
-    let wrong_target = Connection::open_in_memory().unwrap();
-    wrong_target
-        .execute_batch(
-            "PRAGMA foreign_keys = ON;
-             CREATE TABLE objects (
-                 object_id TEXT PRIMARY KEY,
-                 other_id TEXT UNIQUE
-             );
-             CREATE TABLE wrong_link (
-                 record_id TEXT REFERENCES objects(other_id)
-             );",
-        )
-        .unwrap();
-    let error = current_record_link_columns(&wrong_target)
-        .expect_err("a foreign key to another objects column must refuse");
-    assert_eq!(
-        error,
-        "record-link foreign key wrong_link.record_id targets objects.other_id, not objects.object_id"
-    );
-
-    let duplicate = Connection::open_in_memory().unwrap();
-    duplicate
-        .execute_batch(
-            "PRAGMA foreign_keys = ON;
-             CREATE TABLE objects (object_id TEXT PRIMARY KEY);
-             CREATE TABLE duplicate_link (
-                 record_id TEXT,
-                 FOREIGN KEY(record_id) REFERENCES objects(object_id),
-                 FOREIGN KEY(record_id) REFERENCES objects(object_id)
-             );",
-        )
-        .unwrap();
-    let error = current_record_link_columns(&duplicate)
-        .expect_err("duplicate record-link foreign keys must refuse");
-    assert_eq!(
-        error,
-        "duplicate record-link foreign key duplicate_link.record_id"
-    );
-
-    let mixed_case = Connection::open_in_memory().unwrap();
-    mixed_case
-        .execute_batch(
-            "PRAGMA foreign_keys = ON;
-             CREATE TABLE Objects (OBJECT_ID TEXT PRIMARY KEY);
-             CREATE TABLE case_link (
-                 record_id TEXT REFERENCES Objects(OBJECT_ID)
-             );",
-        )
-        .unwrap();
-    let links = current_record_link_columns(&mixed_case).expect("SQLite identifiers ignore case");
-    assert!(links.contains(&("case_link".into(), "record_id".into())));
-}
-
-#[test]
-fn rebuilt_record_link_exclusions_require_the_exported_reason() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("source.jsonl");
-    populated(&source);
-    export_json(&source, &file).unwrap();
-    let document = fs::read_to_string(&file)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect::<Vec<Json>>();
-    let schema = Connection::open(&source).unwrap();
-    let current_links = mapped_record_link_columns(&schema, RENAMED_COLUMNS).unwrap();
-    rebuilt_projection_record_links(&document, &current_links)
-        .expect("current rebuilt record-link reasons");
-
-    let mut missing = document.clone();
-    missing[0]["engram_export"]["left_out"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|entry| entry["name"] != "work_observations");
-    let error = rebuilt_projection_record_links(&missing, &current_links)
-        .expect_err("a missing rebuilt reason must fail");
-    assert!(
-        error.contains("work_observations has 0 left_out entries"),
-        "{error}"
-    );
-
-    let mut wrong = document;
-    wrong[0]["engram_export"]["left_out"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|entry| entry["name"] == "work_observations")
-        .unwrap()["reason"] = Json::String(SEARCH_INDEX.into());
-    let error = rebuilt_projection_record_links(&wrong, &current_links)
-        .expect_err("a wrong rebuilt reason must fail");
-    assert_eq!(
-        error,
-        format!(
-            "rebuilt record-link table work_observations has left_out reason {SEARCH_INDEX:?}, expected {REBUILT_PROJECTION:?}"
-        )
-    );
-}
-
-#[test]
-fn renamed_record_columns_preserve_every_value_and_canonical_byte() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("previous.jsonl");
-    let target = directory.path().join("target.db");
-    populated(&source);
-    let before = rows(&source);
-    export_json(&source, &file).unwrap();
-    let mut document: Vec<Json> = fs::read_to_string(&file)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    let schema = Connection::open(&source).unwrap();
-    let current_links = mapped_record_link_columns(&schema, RENAMED_COLUMNS)
-        .expect("every current record link has one explicit rename mapping");
-    let rebuilt_links = rebuilt_projection_record_links(&document, &current_links)
-        .expect("every omitted record-link table is a named rebuilt projection");
-    let expected_rebuilt_links = REBUILT_RECORD_LINK_COLUMNS
-        .iter()
-        .map(|(table, column)| ((*table).into(), (*column).into()))
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        rebuilt_links, expected_rebuilt_links,
-        "rebuilt record-link exclusions are explicit"
-    );
-    let expected_exercise = expected_record_link_exercise(&document, &current_links);
-    let exercised = rewrite_record_link_columns(&mut document, RENAMED_COLUMNS);
-    assert_eq!(
-        record_link_exercise_difference(&expected_exercise, &exercised),
-        RecordLinkExerciseDifference::default(),
-        "every copied mapping is admitted by its header and every populated one rewrites rows"
-    );
-    assert!(
-        missing_required_non_null_record_links(&exercised).is_empty(),
-        "the populated fixture must retain its named non-null record-link exercise floor"
-    );
-    let bytes = document
-        .iter()
-        .map(|line| serde_json::to_string(line).unwrap())
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n";
-    fs::write(&file, &bytes).unwrap();
-    import_json(&file, &target).expect("explicit old-column conversion");
-    assert_eq!(
-        rows(&target),
-        before,
-        "ids, rows, and canonical bytes are unchanged"
-    );
-    assert_eq!(fs::read_to_string(&file).unwrap(), bytes);
-}
-
-#[test]
-fn old_and_current_record_columns_cannot_alias_one_destination() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("ambiguous.jsonl");
-    let target = directory.path().join("target.db");
-    populated(&source);
-    export_json(&source, &file).unwrap();
-    let mut document: Vec<Json> = fs::read_to_string(&file)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    let table = document[0]["engram_export"]["tables"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|entry| entry["name"] == "objects")
-        .unwrap();
-    table["columns"]
-        .as_array_mut()
-        .unwrap()
-        .push(Json::String("object_hash".into()));
-    fs::write(
-        &file,
-        document
-            .iter()
-            .map(|line| serde_json::to_string(line).unwrap())
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
-    .unwrap();
-    let error = import_json(&file, &target).unwrap_err().to_string();
-    assert!(
-        error.contains("multiple source columns map to column object_id of table objects"),
-        "{error}"
-    );
-    assert!(!target.exists());
-}
-
 #[test]
 fn missing_required_import_columns_are_named_before_inserting_rows() {
     let directory = crate::test_support::temp_home().unwrap();
@@ -1268,272 +223,6 @@ fn missing_required_import_columns_are_named_before_inserting_rows() {
         "{error}"
     );
     assert!(!target.exists());
-}
-
-fn populated_control(path: &Path) -> crate::storage::test_support::TestControlBinding {
-    use crate::domain::*;
-    use crate::storage::test_support::{bind_control_for, complete_control_turn};
-    populated(path);
-    let mut store =
-        SqliteStore::open_with_host_path_policy(path, crate::HostPathPolicy::host_default())
-            .unwrap();
-    let now = DateTime::parse_from_rfc3339("2026-09-20T10:00:00Z")
-        .unwrap()
-        .with_timezone(&Utc);
-    let effects = [
-        EffectClass::Observe,
-        EffectClass::Communicate,
-        EffectClass::MutateLocal,
-    ];
-    let binding = bind_control_for(
-        &mut store,
-        "control-session",
-        "migration-bind",
-        &effects,
-        now,
-    );
-    complete_control_turn(
-        &mut store,
-        &binding,
-        "migration-sync",
-        vec![EffectClass::Observe],
-        vec![],
-        now,
-    );
-    let mut note = crate::storage::test_support::note_request(
-        binding.status.task_id,
-        "control-session",
-        "Observation: preserve this peer delta",
-        "migration-delta",
-        NoteVisibility::Shared,
-    );
-    note.created_at = now + chrono::Duration::seconds(1);
-    store.capture_note(&note, &DevelopmentNoopRedactor).unwrap();
-    for (index, key) in ["migration-first", "migration-replacement"]
-        .iter()
-        .enumerate()
-    {
-        let decision = store
-            .evaluate_control_turn(
-                &ProjectId("project-a".into()),
-                &binding.status.session_id,
-                &binding.connection_token,
-                &binding.routing_token,
-                &TurnIntent {
-                    idempotency_key: (*key).into(),
-                    intent_fingerprint: crate::ObjectId::from_canonical_bytes(key.as_bytes()),
-                    purpose: TurnPurpose::Ordinary,
-                    requested_effects: vec![EffectClass::Observe],
-                    resource_intents: vec![],
-                },
-                now + chrono::Duration::seconds(i64::try_from(index).unwrap() + 2),
-            )
-            .unwrap();
-        assert!(matches!(decision, ControlTurnDecision::Grant { .. }));
-    }
-    store
-        .set_required_control_assurance(
-            ControlAssurance::TurnGated,
-            &actor("operator"),
-            "migration-policy",
-            None,
-            now + chrono::Duration::seconds(4),
-            &DevelopmentNoopRedactor,
-        )
-        .unwrap();
-    assert!(store.verify_all().unwrap().is_healthy());
-    binding
-}
-
-fn preceding_control_tables(connection: &Connection) {
-    connection
-        .execute_batch(
-            "ALTER TABLE control_anchors RENAME TO tasks;
-         ALTER TABLE control_changes RENAME TO task_changes;
-         CREATE TABLE task_control_state AS SELECT task_id, admission_epoch FROM tasks;
-         ALTER TABLE tasks DROP COLUMN admission_epoch;
-         ALTER TABLE tasks ADD COLUMN state TEXT NOT NULL DEFAULT 'active';
-         ALTER TABLE tasks ADD COLUMN event_cursor INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE tasks ADD COLUMN created_at_ms INTEGER NOT NULL DEFAULT 0;
-         ALTER TABLE tasks ADD COLUMN updated_at_ms INTEGER NOT NULL DEFAULT 0;
-         UPDATE tasks SET event_cursor = (SELECT COALESCE(MAX(task_cursor), 0)
-             FROM task_changes WHERE task_changes.task_id = tasks.task_id);
-         CREATE TABLE task_participants AS
-             SELECT task_id, session_id, updated_at_ms AS joined_at_ms FROM control_sessions;
-         CREATE TABLE session_bindings AS
-             SELECT session_id, task_id, updated_at_ms AS bound_at_ms FROM control_sessions;",
-        )
-        .unwrap();
-}
-
-#[test]
-fn direct_control_conversion_preserves_populated_history_and_bindings() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("store.jsonl");
-    let target = directory.path().join("target.db");
-    populated_control(&source);
-    let expected = rows(&source);
-    let connection = Connection::open(&source).unwrap();
-    preceding_control_tables(&connection);
-    let sequence_mark: i64 = connection
-        .query_row(
-            "UPDATE sqlite_sequence SET seq = (SELECT MAX(sequence) + 1000 FROM task_changes)
-             WHERE name = 'task_changes' RETURNING seq",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    drop(connection);
-    export_json(&source, &file).unwrap();
-    let imported = import_json(&file, &target).expect("direct binding conversion");
-    let converted = Connection::open(&target).unwrap();
-    let sequence: (i64, i64) = converted
-        .query_row(
-            "SELECT (SELECT seq FROM sqlite_sequence WHERE name = 'control_changes'),
-                    (SELECT COUNT(*) FROM sqlite_sequence WHERE name = 'task_changes')",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(sequence, (sequence_mark, 0));
-    drop(converted);
-    let actual = rows(&target);
-    for (table, expected_rows) in &expected {
-        if table != "work_schema_metadata" {
-            assert_eq!(&actual[table], expected_rows, "retained table {table}");
-        }
-    }
-    for table in [
-        "tasks",
-        "task_changes",
-        "task_participants",
-        "session_bindings",
-        "task_control_state",
-    ] {
-        assert!(!actual.contains_key(table), "obsolete table {table}");
-    }
-    for table in [
-        "task_participants",
-        "session_bindings",
-        "task_control_state",
-    ] {
-        assert!(
-            imported
-                .left_out
-                .iter()
-                .any(|entry| entry.name == table && entry.rows > 0)
-        );
-    }
-    assert_eq!(
-        imported
-            .retired_fields
-            .iter()
-            .filter(|field| field.table == "tasks")
-            .count(),
-        4
-    );
-
-    // Refuse a binding that cannot be represented by the retained control
-    // session. Conversion must not silently revoke a former memory scope.
-    let connection = Connection::open(&source).unwrap();
-    connection
-        .execute(
-            "UPDATE session_bindings SET session_id = 'unrepresented-session'",
-            [],
-        )
-        .unwrap();
-    drop(connection);
-    let invalid = directory.path().join("unrepresented.jsonl");
-    export_json(&source, &invalid).unwrap();
-    let refused_target = directory.path().join("refused.db");
-    let error = import_json(&invalid, &refused_target)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("not represented by control_sessions"),
-        "{error}"
-    );
-    assert!(!refused_target.exists());
-}
-
-#[test]
-fn uncompared_control_checksums_are_counted_and_payloads_survive_import() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let file = directory.path().join("checksums.jsonl");
-    let target = directory.path().join("target.db");
-    populated_control(&source);
-    let before = rows(&source);
-    export_json(&source, &file).unwrap();
-    let mut document: Vec<Json> = fs::read_to_string(&file)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
-    let mut expected = Vec::new();
-    for (table, column) in RETIRED_COLUMNS
-        .iter()
-        .filter(|(table, _)| table.starts_with("control_"))
-    {
-        let declaration = document[0]["engram_export"]["tables"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            .find(|entry| entry["name"] == *table)
-            .unwrap();
-        assert!(
-            declaration["rows"].as_u64().unwrap() > 0,
-            "fixture must exercise {table}"
-        );
-        let columns = declaration["columns"].as_array_mut().unwrap();
-        assert!(
-            !columns.iter().any(|name| name == *column),
-            "current schema must not retain {table}.{column}"
-        );
-        columns.push(Json::String((*column).into()));
-        let mut count = 0;
-        for line in document.iter_mut().skip(1) {
-            if line["row"]["table"] == *table {
-                let value = if count == 0 {
-                    Json::String("uncompared historical value".into())
-                } else {
-                    Json::Null
-                };
-                line["row"]["values"]
-                    .as_object_mut()
-                    .unwrap()
-                    .insert((*column).into(), value);
-                count += 1;
-            }
-        }
-        assert!(count > 0);
-        expected.push(RetiredField {
-            table: (*table).into(),
-            column: (*column).into(),
-            values: 1,
-        });
-    }
-    fs::write(
-        &file,
-        document
-            .iter()
-            .map(Json::to_string)
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )
-    .unwrap();
-    let mut report = import_json(&file, &target).unwrap();
-    expected.sort_by(|a, b| (&a.table, &a.column).cmp(&(&b.table, &b.column)));
-    report
-        .retired_fields
-        .sort_by(|a, b| (&a.table, &a.column).cmp(&(&b.table, &b.column)));
-    assert_eq!(report.retired_fields, expected);
-    assert_eq!(
-        rows(&target),
-        before,
-        "retained JSON, replay intents, ids and rows must survive"
-    );
 }
 
 #[test]
@@ -1809,6 +498,130 @@ fn import_refuses_without_publishing_anything() {
             "column object_flavour of table objects has no place",
         ),
         (
+            "unknown format-marker column",
+            Box::new(|lines| {
+                // Declared in the header and carried by the row, so only the
+                // current format can refuse it: the marker table is left out.
+                lines
+                    .into_iter()
+                    .map(|line| {
+                        let mut value: Json = serde_json::from_str(&line).unwrap();
+                        if let Some(tables) = value
+                            .pointer_mut("/engram_export/tables")
+                            .and_then(Json::as_array_mut)
+                        {
+                            let marker = tables
+                                .iter_mut()
+                                .find(|table| table["name"] == "work_schema_metadata")
+                                .unwrap();
+                            marker["columns"]
+                                .as_array_mut()
+                                .unwrap()
+                                .push(Json::from("marker_of_tomorrow"));
+                        } else if value["row"]["table"] == "work_schema_metadata" {
+                            value["row"]["values"]["marker_of_tomorrow"] = Json::from(1);
+                        } else {
+                            return line;
+                        }
+                        serde_json::to_string(&value).unwrap()
+                    })
+                    .collect()
+            }),
+            "column marker_of_tomorrow of table work_schema_metadata has no place",
+        ),
+        (
+            "format marker without its required column",
+            Box::new(|lines| {
+                lines
+                    .into_iter()
+                    .map(|line| {
+                        let mut value: Json = serde_json::from_str(&line).unwrap();
+                        if let Some(tables) = value
+                            .pointer_mut("/engram_export/tables")
+                            .and_then(Json::as_array_mut)
+                        {
+                            tables
+                                .iter_mut()
+                                .find(|table| table["name"] == "work_schema_metadata")
+                                .unwrap()["columns"]
+                                .as_array_mut()
+                                .unwrap()
+                                .retain(|column| column != "schema_version");
+                        } else if value["row"]["table"] == "work_schema_metadata" {
+                            value["row"]["values"]
+                                .as_object_mut()
+                                .unwrap()
+                                .remove("schema_version")
+                                .unwrap();
+                        } else {
+                            return line;
+                        }
+                        serde_json::to_string(&value).unwrap()
+                    })
+                    .collect()
+            }),
+            "table work_schema_metadata lacks required destination column schema_version",
+        ),
+        (
+            "record table claimed as left out",
+            Box::new(|mut lines| {
+                // A build that classified this table as derived would leave its
+                // records out of the file; this build keeps them, so it refuses.
+                let mut header: Json = serde_json::from_str(&lines[0]).unwrap();
+                let export = &mut header["engram_export"];
+                let tables = export["tables"].as_array_mut().unwrap();
+                let position = tables
+                    .iter()
+                    .position(|table| table["name"] == "note_intents")
+                    .unwrap();
+                assert_eq!(tables.remove(position)["rows"], 0, "fixture has no rows");
+                export["left_out"].as_array_mut().unwrap().push(serde_json::json!({
+                    "name": "note_intents", "rows": 0,
+                    "reason": "rebuilt projection; import starts it empty and repair derives it again"
+                }));
+                lines[0] = serde_json::to_string(&header).unwrap();
+                lines
+            }),
+            "left-out table note_intents holds records in the current format",
+        ),
+        (
+            "rebuilt projection carried as copied rows",
+            Box::new(|mut lines| {
+                // Repair drops and derives this table again, so rows copied into
+                // it would be counted by the report but never held by the store.
+                let mut header: Json = serde_json::from_str(&lines[0]).unwrap();
+                let export = &mut header["engram_export"];
+                export["left_out"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|entry| entry["name"] != "work_observations");
+                export["tables"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "name": "work_observations", "columns": [], "rows": 0
+                    }));
+                lines[0] = serde_json::to_string(&header).unwrap();
+                lines
+            }),
+            "table work_observations is a derived rebuilt projection",
+        ),
+        (
+            "unknown table claimed as left out",
+            Box::new(|mut lines| {
+                let mut header: Json = serde_json::from_str(&lines[0]).unwrap();
+                header["engram_export"]["left_out"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "name": "tasks_of_yesterday", "rows": 2, "reason": "retired"
+                    }));
+                lines[0] = serde_json::to_string(&header).unwrap();
+                lines
+            }),
+            "left-out tasks_of_yesterday has no place in the current format",
+        ),
+        (
             "not an export",
             Box::new(|mut lines| {
                 lines[0] = "{\"hello\":1}".into();
@@ -1881,47 +694,6 @@ fn a_broken_reference_between_rows_is_refused() {
     let error = import_json(&file, &target).expect_err("dangling reference");
     assert!(matches!(error, MigrationError::Sqlite(_)), "{error}");
     assert!(!target.exists());
-}
-
-#[test]
-fn a_store_of_the_previous_design_is_refused_by_name() {
-    let directory = crate::test_support::temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    populated(&source);
-    {
-        // The shape the previous design left behind: its id-pair table beside a
-        // copy of every pre-migration record. Nothing in this build knows them,
-        // so they are unknown tables like any other, and the build kept beside
-        // the old-format backups is the one that reads them.
-        let connection = Connection::open(&source).expect("source");
-        connection
-            .execute_batch(
-                "CREATE TABLE migration_object_map (
-                     source_hash TEXT PRIMARY KEY, target_hash TEXT NOT NULL, binding_hash TEXT NOT NULL);
-                 INSERT INTO migration_object_map VALUES ('old', 'current', 'binding');
-                 CREATE TABLE migration_original_objects (object_id TEXT PRIMARY KEY, body BLOB);
-                 INSERT INTO migration_original_objects VALUES ('old', x'00');",
-            )
-            .expect("previous-design fixture");
-    }
-    let file = directory.path().join("export.jsonl");
-    let exported = export_json(&source, &file).expect("export writes the source as it is");
-    assert!(
-        exported
-            .tables
-            .iter()
-            .any(|table| table.name == "migration_object_map" && table.rows == 1),
-        "export carries the table like any other"
-    );
-    let target = directory.path().join("target.db");
-    let error = import_json(&file, &target).expect_err("a table of the previous design");
-    assert!(
-        matches!(&error, MigrationError::Refused(reason)
-            if reason.starts_with("table migration_")
-                && reason.contains("has no place in the current format")),
-        "{error}"
-    );
-    assert!(!target.exists(), "nothing was published");
 }
 
 #[test]
@@ -2328,100 +1100,6 @@ fn staged_pending_delivery(database: &Path) -> (ProjectId, crate::SessionId) {
     (project, session)
 }
 
-/// Named stored reply fields convert while record identity and user bodies stay intact.
-#[test]
-fn stored_reply_id_fields_convert_without_changing_ids_links_or_user_bodies() {
-    let directory = crate::test_support::temp_home().unwrap();
-    let source = directory.path().join("source.db");
-    let target = directory.path().join("target.db");
-    let file = directory.path().join("store.jsonl");
-    staged_pending_delivery(&source);
-    let expected = rows(&source);
-    let connection = Connection::open(&source).unwrap();
-    let mut rewritten = 0;
-    for (table, column, filter) in [
-        (
-            "objects",
-            "canonical_json",
-            "object_kind = 'work_protocol_result'",
-        ),
-        ("work_protocol_attempts", "result_json", "1"),
-        (
-            "work_session_state",
-            "tentative_delivery_payload",
-            "tentative_delivery_payload IS NOT NULL",
-        ),
-    ] {
-        let mut statement = connection
-            .prepare(&format!(
-                "SELECT rowid, {column} FROM {table} WHERE {filter}"
-            ))
-            .unwrap();
-        let mut selected = statement.query([]).unwrap();
-        while let Some(row) = selected.next().unwrap() {
-            let rowid: i64 = row.get(0).unwrap();
-            let bytes: Vec<u8> = row.get(1).unwrap();
-            let mut value: Json = serde_json::from_slice(&bytes).unwrap();
-            let changes = if table == "work_session_state" {
-                value.get_mut("changes")
-            } else {
-                value.pointer_mut("/focus/history/items")
-            };
-            let mut count = 0;
-            if let Some(changes) = changes.and_then(Json::as_array_mut) {
-                for change in changes {
-                    let entry = change["entry"].as_object_mut().unwrap();
-                    let id = entry.remove("object_id").unwrap();
-                    entry.insert("object_hash".into(), id);
-                    count += 1;
-                }
-            }
-            if count != 0 {
-                connection
-                    .execute(
-                        &format!("UPDATE {table} SET {column} = ?1 WHERE rowid = ?2"),
-                        rusqlite::params![
-                            crate::canonical::canonical_bytes(&value).unwrap(),
-                            rowid
-                        ],
-                    )
-                    .unwrap();
-                rewritten += count;
-            }
-        }
-    }
-    assert!(rewritten > 0);
-    drop(connection);
-    export_json(&source, &file).unwrap();
-    let report = import_json(&file, &target).unwrap();
-    assert_eq!(
-        report
-            .rewritten_fields
-            .iter()
-            .map(|entry| entry.values)
-            .sum::<u64>(),
-        rewritten
-    );
-    assert!(
-        report
-            .rewritten_fields
-            .iter()
-            .any(|entry| entry.object_kind.as_deref() == Some("work_protocol_result"))
-    );
-    let actual = rows(&target);
-    for table in [
-        "objects",
-        "work_protocol_attempts",
-        "work_session_state",
-        "work_feed_entries",
-    ] {
-        assert_eq!(
-            actual[table], expected[table],
-            "{table}: ids, bodies and links unchanged"
-        );
-    }
-}
-
 /// The confirmed cursor, the cursor a page is staged through, and its capability.
 fn pending_state(path: &Path) -> (i64, i64, Option<String>) {
     Connection::open(path)
@@ -2482,78 +1160,6 @@ fn a_staged_delivery_page_survives_the_transfer_and_replays_at_its_confirmed_cur
     assert_eq!(after, before, "the frozen payload is carried verbatim");
 
     assert_replays_without_acknowledging(&target, &project, &session, &before);
-}
-
-/// The pending state a source holds before a transfer, captured for comparison.
-struct SourcePending {
-    confirmed: i64,
-    through: i64,
-    token: Option<String>,
-    source_bytes: Vec<u8>,
-}
-
-fn source_pending(source: &Path) -> SourcePending {
-    let (confirmed, through, token) = pending_state(source);
-    SourcePending {
-        confirmed,
-        through,
-        token,
-        source_bytes: fs::read(source).expect("source bytes"),
-    }
-}
-
-/// One transfer under test: the store it read, the file it wrote and that
-/// file's bytes as written, the store it published, and whose page it carried.
-struct Transfer<'a> {
-    source: &'a Path,
-    export: &'a Path,
-    export_bytes_before: &'a [u8],
-    target: &'a Path,
-    project: &'a ProjectId,
-    session: &'a crate::SessionId,
-}
-
-/// Proves the transfer carried the source's pending delivery state: the target
-/// holds the same confirmed cursor, staged cursor and delivery capability the
-/// source held before export, the page replays there at the confirmed cursor
-/// without being acknowledged away, and neither the source nor the export file
-/// changed in the process.
-fn assert_transfer_keeps_pending_state(
-    transfer: &Transfer<'_>,
-    before: &SourcePending,
-    expected_page: &Json,
-) {
-    let Transfer {
-        source,
-        export,
-        export_bytes_before,
-        target,
-        project,
-        session,
-    } = *transfer;
-    let (confirmed, through, token) = pending_state(target);
-    assert_eq!(
-        (confirmed, through, &token),
-        (before.confirmed, before.through, &before.token),
-        "import carried the source's cursors and delivery capability"
-    );
-    assert_replays_without_acknowledging(target, project, session, expected_page);
-    let (still_confirmed, still_through, still_token) = pending_state(target);
-    assert_eq!(
-        (still_confirmed, still_through, &still_token),
-        (before.confirmed, before.through, &before.token),
-        "replay changed nothing"
-    );
-    assert_eq!(
-        fs::read(source).expect("source bytes"),
-        before.source_bytes,
-        "the source was only read"
-    );
-    assert_eq!(
-        fs::read(export).expect("export bytes"),
-        export_bytes_before,
-        "the export file was only read"
-    );
 }
 
 /// Replays the retained page the way a core retry does: at the cursor already
@@ -2830,141 +1436,6 @@ fn a_failed_publication_names_the_operation_and_keeps_the_cause() {
         );
         assert!(text.contains("the cause"), "{text}");
     }
-}
-
-#[test]
-fn a_retired_column_is_named_and_its_rows_go_in_without_it() {
-    let directory = crate::test_support::temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let (project, session) = staged_pending_delivery(&source);
-    let (_, before) = pending_payload(&source);
-    {
-        // A store written before the column was retired still carries it,
-        // with a value on the staged row.
-        let connection = Connection::open(&source).expect("source");
-        connection
-            .execute_batch(
-                "ALTER TABLE work_session_state ADD COLUMN tentative_delivery_payload_hash TEXT;
-                 UPDATE work_session_state SET tentative_delivery_payload_hash = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-                 WHERE tentative_project_cursor IS NOT NULL;",
-            )
-            .expect("the retired column, as an older store holds it");
-    }
-    let file = directory.path().join("export.jsonl");
-    let exported = export_json(&source, &file).expect("export writes the source as it is");
-    let state = exported
-        .tables
-        .iter()
-        .find(|table| table.name == "work_session_state")
-        .expect("the session table");
-    assert!(
-        state
-            .columns
-            .iter()
-            .any(|column| column == "tentative_delivery_payload_hash"),
-        "export carries the retired column"
-    );
-
-    let before_transfer = source_pending(&source);
-    let export_bytes = fs::read(&file).expect("export bytes");
-    let target = directory.path().join("target.db");
-    let imported = import_json(&file, &target).expect("import names the retired column");
-    assert_eq!(
-        imported.retired_fields,
-        vec![RetiredField {
-            table: "work_session_state".into(),
-            column: "tentative_delivery_payload_hash".into(),
-            values: 1,
-        }],
-        "the field is reported apart from any rows left out"
-    );
-    assert!(
-        !imported
-            .left_out
-            .iter()
-            .any(|left| left.name.contains("payload_hash")),
-        "a retired column is not a row count"
-    );
-    let connection = Connection::open(&target).expect("target");
-    let columns: Vec<String> = connection
-        .prepare("PRAGMA table_info(work_session_state)")
-        .expect("columns")
-        .query_map([], |row| row.get::<_, String>(1))
-        .expect("columns")
-        .collect::<Result<_, _>>()
-        .expect("column names");
-    assert!(
-        !columns
-            .iter()
-            .any(|column| column == "tentative_delivery_payload_hash")
-    );
-    // The page went in without it, under the source's own cursors and delivery
-    // capability, and still replays there at its confirmed cursor.
-    assert_transfer_keeps_pending_state(
-        &Transfer {
-            source: &source,
-            export: &file,
-            export_bytes_before: &export_bytes,
-            target: &target,
-            project: &project,
-            session: &session,
-        },
-        &before_transfer,
-        &before,
-    );
-}
-
-#[test]
-fn an_unknown_column_beside_a_retired_one_still_refuses_by_name() {
-    let directory = crate::test_support::temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    populated(&source);
-    {
-        let connection = Connection::open(&source).expect("source");
-        connection
-            .execute_batch(
-                "ALTER TABLE work_session_state ADD COLUMN tentative_delivery_payload_hash TEXT;
-                 ALTER TABLE work_session_state ADD COLUMN stray_note TEXT;",
-            )
-            .expect("a retired column and an unknown one");
-    }
-    let file = directory.path().join("export.jsonl");
-    export_json(&source, &file).expect("export");
-    let target = directory.path().join("target.db");
-    let error = import_json(&file, &target).expect_err("an unknown column");
-    assert!(
-        matches!(&error, MigrationError::Refused(reason)
-            if reason.contains("stray_note") && reason.contains("no place")),
-        "{error}"
-    );
-    assert!(!target.exists());
-}
-
-#[test]
-fn a_current_store_carries_no_retired_fields() {
-    let directory = crate::test_support::temp_home().expect("directory");
-    let source = directory.path().join("source.db");
-    let (project, session) = staged_pending_delivery(&source);
-    let (_, page) = pending_payload(&source);
-    let before = source_pending(&source);
-    let file = directory.path().join("export.jsonl");
-    export_json(&source, &file).expect("export");
-    let export_bytes = fs::read(&file).expect("export bytes");
-    let target = directory.path().join("target.db");
-    let imported = import_json(&file, &target).expect("import");
-    assert!(imported.retired_fields.is_empty());
-    assert_transfer_keeps_pending_state(
-        &Transfer {
-            source: &source,
-            export: &file,
-            export_bytes_before: &export_bytes,
-            target: &target,
-            project: &project,
-            session: &session,
-        },
-        &before,
-        &page,
-    );
 }
 
 /// Rewrites the first stored record's blob in an export file as `{"hex": …}`.
@@ -3445,4 +1916,222 @@ fn an_export_reads_the_source_wal_and_reports_it() {
         )
         .expect("the row that was only in the log");
     assert_eq!(revision, 7);
+}
+
+/// A populated store with one bound control session, the moment it was bound.
+fn bound_control(
+    path: &Path,
+) -> (
+    crate::storage::test_support::TestControlBinding,
+    chrono::DateTime<Utc>,
+) {
+    use crate::domain::EffectClass;
+    populated(path);
+    let mut store =
+        SqliteStore::open_with_host_path_policy(path, crate::HostPathPolicy::host_default())
+            .unwrap();
+    let now = chrono::DateTime::parse_from_rfc3339("2026-09-20T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let binding = crate::storage::test_support::bind_control_for(
+        &mut store,
+        "historical-session",
+        "historical-bind",
+        &[EffectClass::Observe, EffectClass::MutateLocal],
+        now,
+    );
+    (binding, now)
+}
+
+#[test]
+fn historical_control_operation_receipts_import_unchanged() {
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let target = directory.path().join("target.db");
+    let file = directory.path().join("store.jsonl");
+    let (binding, _) = bound_control(&source);
+    let connection = Connection::open(&source).unwrap();
+    let bind_intent: String = connection
+        .query_row(
+            "SELECT bind_intent_hash FROM control_sessions WHERE session_id = ?1",
+            [&binding.status.session_id.0],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let definition = crate::ObjectId::mint();
+    let obligation = uuid::Uuid::new_v4();
+    // Receipts of operations this build no longer offers, retained as history
+    // rather than as authority.
+    for (operation, mut intent, result) in [
+        (
+            "lease_acquire",
+            serde_json::json!({
+                "fingerprint_schema_version": 1, "bind_intent_hash": bind_intent,
+                "kind": "execution", "mode": "exclusive",
+                "subject": {"kind": "logical", "namespace": "historical",
+                    "segments": ["resource"], "coverage": "exact"}, "ttl_seconds": 60
+            }),
+            serde_json::json!({"decision": "refuse", "directive": {
+                "directive_id": "historical-policy-refusal", "code": "capability_not_permitted",
+                "target": "host", "satisfaction": "host_transition", "recovery_effects": ["observe"]
+            }}),
+        ),
+        (
+            "lease_release",
+            serde_json::json!({
+                "control_schema_version": crate::CONTROL_SCHEMA_VERSION,
+                "lease_id": "historical-lease"
+            }),
+            serde_json::json!({
+                "lease_id": "historical-lease", "task_id": binding.status.task_id,
+                "holder": binding.status.session_id, "fence": 1, "cursor": 1,
+                "released_at": "2026-09-20T10:00:00Z"
+            }),
+        ),
+        (
+            "obligation_waive",
+            serde_json::json!({
+                "control_schema_version": crate::CONTROL_SCHEMA_VERSION,
+                "bind_intent_hash": bind_intent,
+                "obligation_id": obligation, "expected_definition": definition,
+                "waived_by": "historical-operator", "reason": "historical waiver request"
+            }),
+            serde_json::json!({
+                "decision": "refused", "code": "waiver_not_admitted", "obligation_id": obligation,
+                "current_definition": definition,
+                "remedy": "bind the host control session to the live claim for this obligation run"
+            }),
+        ),
+    ] {
+        let key = format!("historical-{operation}");
+        intent["session_id"] = serde_json::json!(binding.status.session_id);
+        intent["idempotency_key"] = serde_json::json!(key);
+        let frozen = crate::CanonicalObject::freeze(&intent).unwrap();
+        connection
+            .execute(
+                "INSERT INTO control_operation_results (session_id, operation, idempotency_key,
+                 intent_hash, intent_json, result_json, created_at_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    binding.status.session_id.0,
+                    operation,
+                    key,
+                    frozen.key().as_str(),
+                    frozen.bytes(),
+                    crate::canonical::canonical_bytes(&result).unwrap(),
+                    1_790_000_000_000_i64
+                ],
+            )
+            .unwrap();
+    }
+    drop(connection);
+    let before = rows(&source)["control_operation_results"].clone();
+    assert_eq!(before.len(), 3, "the fixture holds each historical receipt");
+    export_json(&source, &file).unwrap();
+    import_json(&file, &target).unwrap();
+    assert_eq!(rows(&target)["control_operation_results"], before);
+    let imported =
+        SqliteStore::open_with_host_path_policy(&target, crate::HostPathPolicy::host_default())
+            .unwrap();
+    assert!(imported.verify_all().unwrap().is_healthy());
+
+    // A historical receipt is admitted by its shape, not by its name alone.
+    let connection = Connection::open(&source).unwrap();
+    let release: i64 = connection
+        .query_row(
+            "SELECT sequence FROM control_operation_results WHERE operation = 'lease_release'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE control_operation_results SET result_json = ?1
+             WHERE operation = 'lease_release'",
+            [crate::canonical::canonical_bytes(
+                &serde_json::json!({"released_at": "2026-09-20T10:00:00Z"}),
+            )
+            .unwrap()],
+        )
+        .unwrap();
+    drop(connection);
+    let broken_file = directory.path().join("broken.jsonl");
+    let broken_target = directory.path().join("broken.db");
+    export_json(&source, &broken_file).unwrap();
+    let error = import_json(&broken_file, &broken_target)
+        .expect_err("a lease release receipt without its lease must refuse")
+        .to_string();
+    assert!(
+        error.contains(&format!("invalid labels: control_operation:{release}")),
+        "{error}"
+    );
+    assert!(!broken_target.exists(), "published an unhealthy store");
+}
+
+#[test]
+fn historical_lease_refusal_imports_and_replays_without_lease_authority() {
+    use crate::domain::{EffectClass, TurnIntent, TurnPurpose};
+    let directory = crate::test_support::temp_home().unwrap();
+    let source = directory.path().join("source.db");
+    let target = directory.path().join("target.db");
+    let file = directory.path().join("store.jsonl");
+    let (binding, now) = bound_control(&source);
+    let intent = TurnIntent {
+        idempotency_key: "unleased-mutation".into(),
+        intent_fingerprint: crate::ObjectId::mint(),
+        purpose: TurnPurpose::Ordinary,
+        requested_effects: vec![EffectClass::MutateLocal],
+        resource_intents: vec![],
+    };
+    // Written by an earlier evaluator; the current one never produces this code.
+    let decision = serde_json::json!({"decision": "refuse", "directive": {
+        "directive_id": "unleased-mutation:lease_required", "code": "lease_required",
+        "target": "host", "satisfaction": "host_transition", "recovery_effects": ["observe"]
+    }});
+    let saved_intent = crate::CanonicalObject::freeze(&serde_json::json!({
+        "control_schema_version": crate::CONTROL_SCHEMA_VERSION,
+        "session_id": binding.status.session_id,
+        "task_id": binding.status.task_id,
+        "intent": intent
+    }))
+    .unwrap();
+    let saved_decision = crate::CanonicalObject::freeze(&decision).unwrap();
+    Connection::open(&source)
+        .unwrap()
+        .execute(
+            "INSERT INTO control_turn_results (session_id, task_id, idempotency_key,
+             intent_hash, intent_json, decision_hash, decision_json, created_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                binding.status.session_id.0,
+                binding.status.task_id.0.to_string(),
+                intent.idempotency_key,
+                saved_intent.key().as_str(),
+                saved_intent.bytes(),
+                saved_decision.key().as_str(),
+                saved_decision.bytes(),
+                now.timestamp_millis()
+            ],
+        )
+        .unwrap();
+    let before = rows(&source)["control_turn_results"].clone();
+    export_json(&source, &file).unwrap();
+    import_json(&file, &target).unwrap();
+    assert_eq!(rows(&target)["control_turn_results"], before);
+    let mut imported =
+        SqliteStore::open_with_host_path_policy(&target, crate::HostPathPolicy::host_default())
+            .unwrap();
+    assert!(imported.verify_all().unwrap().is_healthy());
+    let replay = imported
+        .evaluate_control_turn(
+            &ProjectId("project-a".into()),
+            &binding.status.session_id,
+            &binding.connection_token,
+            &binding.routing_token,
+            &intent,
+            now + chrono::Duration::seconds(1),
+        )
+        .unwrap();
+    assert_eq!(serde_json::to_value(replay).unwrap(), decision);
+    assert_eq!(rows(&target)["control_turn_results"], before);
 }

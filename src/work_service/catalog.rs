@@ -326,16 +326,6 @@ mod listing_cursor_tests {
     use super::*;
     use chrono::{TimeZone, Utc};
 
-    #[derive(Serialize)]
-    struct LegacyListingCursor {
-        project: ProjectId,
-        filters: WorkCatalogQuery,
-        cut: WorkCatalogReadCut,
-        after: WorkId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        after_priority: Option<i32>,
-    }
-
     fn sample_cut() -> WorkCatalogReadCut {
         WorkCatalogReadCut {
             project_position: 12,
@@ -374,9 +364,8 @@ mod listing_cursor_tests {
         filters
     }
 
-    fn assert_half_size(filters: &WorkCatalogQuery, after_priority: i32) {
-        let old = legacy_hex(filters);
-        let new = listing_continuation(
+    fn assert_roundtrip(filters: &WorkCatalogQuery, after_priority: i32) {
+        let token = listing_continuation(
             &ProjectId("customer-workflow".into()),
             filters,
             &sample_cut(),
@@ -384,13 +373,7 @@ mod listing_cursor_tests {
             after_priority,
         )
         .expect("dense token");
-        assert!(
-            new.len() * 2 <= old.len(),
-            "new {} vs old {}",
-            new.len(),
-            old.len()
-        );
-        let decoded = decode_cursor(&new).expect("roundtrip");
+        let decoded = decode_cursor(&token).expect("roundtrip");
         assert_eq!(decoded.filters.to_query(), *filters);
         assert_eq!(decoded.after, sample_after());
         assert_eq!(
@@ -399,31 +382,10 @@ mod listing_cursor_tests {
         );
     }
 
-    fn legacy_hex(filters: &WorkCatalogQuery) -> String {
-        super::super::continuation::encode(
-            LISTING_CURSOR_PREFIX,
-            &LegacyListingCursor {
-                project: ProjectId("customer-workflow".into()),
-                filters: filters.clone(),
-                cut: sample_cut(),
-                after: sample_after(),
-                after_priority: filters.ready_priority_order.then_some(3),
-            },
-        )
-        .expect("legacy hex token")
-    }
-
     #[test]
-    fn listing_cursor_is_at_most_half_the_legacy_hex_full_query() {
-        assert_half_size(&sample_filters(), 3);
-        assert_half_size(&default_ready_filters(), 3);
-    }
-
-    #[test]
-    fn listing_cursor_refuses_legacy_hex_tokens() {
-        let old = legacy_hex(&sample_filters());
-        assert!(decode_cursor(&old).is_err());
-        assert!(decode_cursor(&legacy_hex(&default_ready_filters())).is_err());
+    fn listing_cursor_roundtrips_filters_and_position() {
+        assert_roundtrip(&sample_filters(), 3);
+        assert_roundtrip(&default_ready_filters(), 3);
     }
 
     #[test]

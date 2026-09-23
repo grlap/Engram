@@ -134,14 +134,12 @@ they enter the task feed.
 `sequence` is only a SQLite row identity. Ordinary open refuses different-build
 schemas before mutation; explicit [full-store migration](full-store-migration.md)
 exports unchanged rows and imports into a new current-schema database. It never
-silently renumbers durable cursors. The retired whole-task advisory claim and
-unused publication tables are omitted only by the importer's named retirement
-rules, with row-count reporting. Control sessions bind directly to a shared
+silently renumbers durable cursors. Control sessions bind directly to a shared
 `control_anchors` row, optionally with an exact local-work claim. There is no
 compatibility-task lifecycle, participant roster, or duplicate session-binding
 table. The retained `task_id` field names the control scope in existing host
-records and memory scopes; it is not a local work item. Conversion preserves
-these ids and the ordered feed unchanged.
+records and memory scopes; it is not a local work item. Full-store export and
+import carry these ids and the ordered feed unchanged.
 First-class work uses `work_feed_heads` and `work_feed_entries` to allocate a
 typed dense `feed_kind + feed_id + position` for project, root-work, and
 run-execution feeds in the same transaction as each

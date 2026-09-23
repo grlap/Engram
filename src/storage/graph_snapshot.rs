@@ -814,8 +814,7 @@ fn restored_records_on(
                 .ok_or_else(|| {
                     StoreError::InvalidWorkProjection("restored record is missing".into())
                 })?;
-        let record: RestoredRecord =
-            super::work::decode_work_object("work_restored_record", &object)?;
+        let record: RestoredRecord = object.decode()?;
         let canonical_json = object.decode()?;
         if record.work_id != work_id || record.generation_index != expected {
             return Err(StoreError::InvalidWorkProjection(format!(

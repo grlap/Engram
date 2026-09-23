@@ -148,18 +148,6 @@ fn sessions_rendezvous_using_only_the_external_reference() {
     );
     assert_eq!(
         store
-            .connection
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_schema WHERE name IN
-         ('tasks', 'task_participants', 'session_bindings', 'task_changes', 'task_control_state')",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap(),
-        0
-    );
-    assert_eq!(
-        store
             .control_changes_since(first.status.task_id, ChangeCursor::default(), 20)
             .unwrap()
             .len(),

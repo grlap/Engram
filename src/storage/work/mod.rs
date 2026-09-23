@@ -16,7 +16,6 @@ mod completion;
 mod discovery;
 mod execution;
 mod feeds;
-pub(in crate::storage) use feeds::decode_work_object;
 mod import;
 mod integrity;
 pub(in crate::storage) use import::{

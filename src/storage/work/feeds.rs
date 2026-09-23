@@ -569,33 +569,7 @@ pub(in crate::storage) fn load_typed_work_object<T: DeserializeOwned>(
             requested: object_kind.into(),
         });
     }
-    decode_work_object(object_kind, &CanonicalObject::stored(hash, bytes)?)
-}
-
-/// Keep the current required restored shape distinct from ordinary corruption.
-/// Healthy typed reads do no extra parsing or storage work. On failure inspect
-/// only the already verified object's history, never sample or scan the store.
-pub(in crate::storage) fn decode_work_object<T: DeserializeOwned>(
-    kind: &str,
-    object: &CanonicalObject,
-) -> Result<T, StoreError> {
-    object.decode().map_err(|error| {
-        if kind == "work_restored_record"
-            && serde_json::from_slice::<serde_json::Value>(object.bytes())
-                .ok()
-                .and_then(|value| {
-                    value
-                        .get("history")
-                        .and_then(serde_json::Value::as_object)
-                        .map(|history| !history.contains_key("source_notices"))
-                })
-                == Some(true)
-        {
-            super::super::different_build_store_error()
-        } else {
-            error
-        }
-    })
+    CanonicalObject::stored(hash, bytes)?.decode()
 }
 
 pub(super) fn load_handoff_offer_projection(

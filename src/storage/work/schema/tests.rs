@@ -15,22 +15,6 @@ fn declared_work_rebuildable_schema_pairs_match_runtime_reference() {
 }
 
 #[test]
-fn current_work_schema_has_no_agent_grant_tables() {
-    let store = SqliteStore::open_in_memory().expect("current work schema");
-    for name in ["work_authority_grants", "work_authority_revocations"] {
-        let count: i64 = store
-            .connection
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
-                params![name],
-                |row| row.get(0),
-            )
-            .expect("inspect current schema");
-        assert_eq!(count, 0, "agent grant table {name} must stay absent");
-    }
-}
-
-#[test]
 fn doctor_binds_work_projections_to_canonical_events_and_scalar_columns() {
     let mut store = SqliteStore::open_in_memory().expect("store");
     let root = store

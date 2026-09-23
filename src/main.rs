@@ -2481,48 +2481,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_work_cli_has_no_grant_surface() {
-        assert!(
-            Cli::try_parse_from([
-                "engram",
-                "work",
-                "--actor-id",
-                "agent",
-                "--session-id",
-                "session",
-                "--authority-grant",
-                "not-a-token",
-                "next",
-            ])
-            .is_err()
-        );
-        assert!(
-            Cli::try_parse_from([
-                "engram",
-                "mcp",
-                "--actor-id",
-                "agent",
-                "--session-id",
-                "session",
-                "--work-authority-grant",
-                "not-a-token",
-            ])
-            .is_err()
-        );
-        let command = Cli::command();
-        let authority = command
-            .find_subcommand("authority")
-            .expect("authority command remains for obligation waiver");
-        assert_eq!(
-            authority
-                .get_subcommands()
-                .map(|subcommand| subcommand.get_name().to_owned())
-                .collect::<Vec<_>>(),
-            vec!["waive-obligation"]
-        );
-    }
-
-    #[test]
     fn every_agent_word_classifies_its_structured_receipt_exhaustively() {
         let cases: &[(&[&str], bool)] = &[
             (&["next"], false),

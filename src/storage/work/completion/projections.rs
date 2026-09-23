@@ -539,22 +539,11 @@ fn seed_restored_projection_expectations(
             invalid.push(label);
             continue;
         };
-        let record = if let Ok(hash) = &hash {
-            match CanonicalObject::stored(hash, bytes).and_then(|object| {
-                crate::storage::work::decode_work_object::<RestoredRecord>(
-                    object_kind.as_deref().unwrap_or(""),
-                    &object,
-                )
-            }) {
-                Ok(record) => Some(record),
-                Err(error) if crate::storage::is_different_build_store_error(&error) => {
-                    return Err(error);
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
+        let record = hash.as_ref().ok().and_then(|hash| {
+            CanonicalObject::stored(hash, bytes)
+                .and_then(|object| object.decode::<RestoredRecord>())
+                .ok()
+        });
         let (Ok(work_id), Ok(hash), Some(record)) = (parsed, hash, record) else {
             invalid.push(label);
             continue;

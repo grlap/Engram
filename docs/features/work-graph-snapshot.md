@@ -91,11 +91,19 @@ This is a deliberate pre-release format boundary. This build refuses snapshot
 files saved before that rename; keeping schema version 1 does not make them
 compatible. Do not edit a saved fingerprint or digest to bypass admission.
 
-For this boundary, use [full-store migration](full-store-migration.md) on the
-source database, then save a new graph snapshot with the new build. If only an
-old graph file remains, first load it into a disposable, empty store with the
-matching old build and the project's explicitly chosen bootstrap policy; export
-that store and import it into the current format, then save a new graph file.
+For this boundary, convert the source database with
+[full-store migration](full-store-migration.md), importing with the last build
+that still carries the record-field conversion; the current build no longer
+converts that format. That build is the parent of the commit that deleted
+`src/storage/migration/record_fields.rs`, found with
+`git log --diff-filter=D -1 --format=%H -- src/storage/migration/record_fields.rs`.
+If the current build refuses the converted store because its schema has
+changed since, export that store and import it with the current build too.
+Then save a new graph snapshot with the current build. If only an old graph
+file remains, first load it into a disposable, empty store with the matching
+old build and the project's explicitly chosen bootstrap policy; export that
+store and convert it the same way, then save a new graph file with the
+current build.
 That recovers only what the old graph carried, not omitted execution state or
 redacted bodies. Keep the old build and original file until recovery is verified;
 an unsupported file still requires its matching build, not a guessed migration

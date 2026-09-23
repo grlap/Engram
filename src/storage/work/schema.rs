@@ -95,22 +95,6 @@ pub(in crate::storage) fn preflight_schema(
     super::super::require_current_schema_marker(version, CURRENT_WORK_SCHEMA_VERSION)
 }
 
-// Only explicit schema initialization/repair scans before writes. Ordinary
-// opens do not inspect history; typed reads classify the failing row instead.
-fn require_current_restored_history_shape(connection: &Connection) -> Result<(), StoreError> {
-    let incompatible_history = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM objects WHERE object_kind = 'work_restored_record'
-         AND json_type(canonical_json, '$.history') = 'object'
-         AND json_type(canonical_json, '$.history.source_notices') IS NULL)",
-        [],
-        |row| row.get::<_, bool>(0),
-    )?;
-    if incompatible_history {
-        return Err(super::super::different_build_store_error());
-    }
-    Ok(())
-}
-
 pub(super) fn current_work_durable_schema_issue(
     connection: &Connection,
 ) -> Result<Option<String>, StoreError> {
@@ -177,7 +161,6 @@ pub(in crate::storage) fn initialize_schema(
     }
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     preflight_schema(&transaction, allow_initialization)?;
-    require_current_restored_history_shape(&transaction)?;
     transaction.execute_batch(
         "CREATE TABLE IF NOT EXISTS work_schema_metadata (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
@@ -508,7 +491,6 @@ pub(in crate::storage) fn repair_rebuildable_schema_on(
     connection: &Connection,
 ) -> Result<bool, StoreError> {
     preflight_schema(connection, false)?;
-    require_current_restored_history_shape(connection)?;
     for (_, object) in REBUILDABLE_WORK_SCHEMA_OBJECTS {
         super::super::drop_schema_object(connection, object)?;
     }
@@ -653,10 +635,7 @@ fn rebuild_restored_projections_on(connection: &Connection) -> Result<(), StoreE
     for (stored_hash, bytes) in restored_records {
         let hash = ObjectId::from_stored(stored_hash.clone())
             .ok_or(StoreError::InvalidStoredKey(stored_hash))?;
-        let record: RestoredRecord = super::feeds::decode_work_object(
-            "work_restored_record",
-            &CanonicalObject::stored(&hash, bytes)?,
-        )?;
+        let record: RestoredRecord = CanonicalObject::stored(&hash, bytes)?.decode()?;
         connection.execute(
             "INSERT INTO work_restored_records (work_id, generation_index, record_id)
              VALUES (?1, ?2, ?3)",
